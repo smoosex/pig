@@ -1,0 +1,25 @@
+appId: dev.pig.desktop
+productName: Pig
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{.env,.env.*}'
+  - '!{bun.lock,bun.lockb}'
+asarUnpack:
+  - resources/**
+win:
+  executableName: Pig
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+npmRebuild: false
