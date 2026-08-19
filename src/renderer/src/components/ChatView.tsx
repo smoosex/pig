@@ -1,10 +1,15 @@
 import { useEffect, useRef } from 'react'
+import { groupTurns } from '../chat/turns'
 import { useSessionsStore } from '../stores/sessions'
+import { TurnView } from './TurnView'
 
 export function ChatView() {
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const messages = useSessionsStore((s) =>
     s.activeSessionId ? s.runtime[s.activeSessionId]?.messages ?? [] : []
+  )
+  const isStreaming = useSessionsStore((s) =>
+    s.activeSessionId ? s.runtime[s.activeSessionId]?.isStreaming ?? false : false
   )
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -20,12 +25,12 @@ export function ChatView() {
     )
   }
 
+  const turns = groupTurns(messages, isStreaming)
+
   return (
     <div className="messages" ref={scrollRef}>
-      {messages.map((m) => (
-        <div key={m.id} className={`msg ${m.role}`}>
-          <div className="msg-bubble">{m.text}</div>
-        </div>
+      {turns.map((turn, i) => (
+        <TurnView key={`${turn.startedAt}-${i}`} turn={turn} />
       ))}
     </div>
   )

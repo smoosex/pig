@@ -192,6 +192,10 @@ body,
   padding: 16px;
 }
 
+.turn {
+  margin-bottom: 16px;
+}
+
 .msg {
   margin-bottom: 16px;
   max-width: 90%;
@@ -217,6 +221,234 @@ body,
 
 .msg.assistant .msg-bubble {
   background: var(--bg-elev);
+}
+
+.msg.streaming .msg-bubble:last-of-type::after {
+  content: '▍';
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.msg-image {
+  max-width: 360px;
+  border-radius: 8px;
+  display: block;
+  margin: 6px 0;
+}
+
+.msg-error {
+  color: var(--error);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.process {
+  margin-bottom: 12px;
+  max-width: 90%;
+}
+
+.process.open {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+
+.process.open .msg.assistant .msg-bubble,
+.process.open .block-thinking,
+.process.open .block-tool {
+  background: var(--bg-elev-2);
+}
+
+.process-toggle,
+.tool-group-toggle,
+.tool-row-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron,
+.tool-group-icon {
+  flex-shrink: 0;
+}
+
+.chevron {
+  display: inline-block;
+  font-size: 13px;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+.process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.block-thinking {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.block-thinking summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.block-thinking pre,
+.block-tool pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.block-tool {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+}
+
+.block-tool.error {
+  border-color: var(--error);
+}
+
+.block-tool-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.block-tool.error .block-tool-name,
+.block-tool.error .tool-card-status {
+  color: var(--error);
+}
+
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tool-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-left: 18px;
+}
+
+.tool-card-cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
+.tool-card-status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.process-elapsed {
+  margin-top: 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.live-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.live-text,
+.tool-row-toggle .truncate,
+.tool-group-toggle .truncate {
+  flex: 0 1 auto;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-text.wave {
+  background: linear-gradient(90deg, var(--fg-muted) 0%, #eee 42%, var(--fg-muted) 84%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: live-shimmer 1.5s linear infinite;
+}
+
+@keyframes live-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
+.think-wave {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.think-wave span {
+  animation: think-wave 1.2s ease-in-out infinite;
+}
+
+.think-wave span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+@keyframes think-wave {
+  0%, 100% { opacity: 0.28; }
+  45% { opacity: 1; }
 }
 
 /* ---------- Composer ---------- */

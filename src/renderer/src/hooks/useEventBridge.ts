@@ -1,18 +1,17 @@
 import { useEffect } from 'react'
-import { api, type PiEvent } from '../ipc/api'
+import { api } from '../ipc/api'
+import { isPiMessage, type PiSessionEvent } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
 
-type DeltaEvent = { type: string; delta?: string }
-
 export function useEventBridge(): void {
-  const beginAssistant = useSessionsStore((s) => s.beginAssistant)
-  const appendChunk = useSessionsStore((s) => s.appendChunk)
-  const finalizeAssistant = useSessionsStore((s) => s.finalizeAssistant)
   const setStreaming = useSessionsStore((s) => s.setStreaming)
+  const appendMessage = useSessionsStore((s) => s.appendMessage)
+  const replaceLastMessage = useSessionsStore((s) => s.replaceLastMessage)
+  const renameTab = useSessionsStore((s) => s.renameTab)
 
   useEffect(() => {
     const off = api.onEvent((raw) => {
-      const payload = raw as { sessionId: string; event: PiEvent }
+      const payload = raw as { sessionId: string; event: PiSessionEvent }
       if (!payload?.sessionId || !payload?.event) return
       const { sessionId, event } = payload
       switch (event.type) {
@@ -20,21 +19,22 @@ export function useEventBridge(): void {
           setStreaming(sessionId, true)
           break
         case 'message_start':
-          beginAssistant(sessionId)
+          if (isPiMessage(event.message)) appendMessage(sessionId, event.message)
           break
-        case 'message_update': {
-          const ev = event.assistantMessageEvent as DeltaEvent | undefined
-          if (ev && ev.type === 'text_delta' && typeof ev.delta === 'string') {
-            appendChunk(sessionId, ev.delta)
-          }
+        case 'message_update':
+        case 'message_end':
+          if (isPiMessage(event.message)) replaceLastMessage(sessionId, event.message)
           break
-        }
         case 'agent_end':
-          finalizeAssistant(sessionId)
           setStreaming(sessionId, false)
+          break
+        case 'session_info_changed':
+          if (typeof event.name === 'string' && event.name.length > 0) {
+            renameTab(sessionId, event.name)
+          }
           break
       }
     })
     return off
-  }, [beginAssistant, appendChunk, finalizeAssistant, setStreaming])
+  }, [setStreaming, appendMessage, replaceLastMessage, renameTab])
 }

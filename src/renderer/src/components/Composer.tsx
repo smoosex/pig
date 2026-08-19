@@ -8,17 +8,13 @@ export function Composer() {
   const isStreaming = useSessionsStore((s) =>
     s.activeSessionId ? s.runtime[s.activeSessionId]?.isStreaming ?? false : false
   )
-  const addUserMessage = useSessionsStore((s) => s.addUserMessage)
-  const beginAssistant = useSessionsStore((s) => s.beginAssistant)
 
   const send = useCallback(async () => {
     const trimmed = text.trim()
     if (!trimmed || isStreaming || !activeSessionId) return
     setText('')
-    addUserMessage(activeSessionId, trimmed)
-    beginAssistant(activeSessionId)
     await api.prompt(activeSessionId, trimmed)
-  }, [text, isStreaming, activeSessionId, addUserMessage, beginAssistant])
+  }, [text, isStreaming, activeSessionId])
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return
