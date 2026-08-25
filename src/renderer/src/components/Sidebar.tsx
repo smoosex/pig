@@ -24,6 +24,7 @@ export function Sidebar() {
   const openExisting = useSessionsStore((s) => s.openExisting)
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteProject = useSessionsStore((s) => s.deleteProject)
+  const deleteSession = useSessionsStore((s) => s.deleteSession)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
@@ -78,7 +79,7 @@ export function Sidebar() {
                           <Button
                             variant="ghost"
                             size="icon-xs"
-                            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:bg-transparent"
+                            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
                             aria-label={`项目 ${p.name} 更多操作`}
                             onClick={(event) => event.stopPropagation()}
                           >
@@ -100,7 +101,7 @@ export function Sidebar() {
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        className="hover:bg-transparent"
+                        className="!bg-transparent"
                         aria-label={`在 ${p.name} 中新建会话`}
                         onClick={(event) => {
                           event.stopPropagation()
@@ -114,16 +115,46 @@ export function Sidebar() {
                   <CollapsibleContent>
                     <div className="flex flex-col gap-0.5 px-2 pb-1">
                       {p.sessions.map((s) => (
-                        <Button
+                        <div
                           key={s.id}
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-full justify-start truncate rounded-md pl-6.5 text-left text-xs font-light text-muted-foreground"
-                          title={s.firstMessage}
-                          onClick={() => void openExisting(s)}
+                          className="group/session flex min-w-0 items-center gap-0.5 rounded-md transition-colors hover:bg-background focus-within:bg-background"
                         >
-                          {s.name || s.firstMessage || '(空会话)'}
-                        </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 min-w-0 flex-1 justify-start rounded-md pl-6.5 text-left text-xs font-light text-muted-foreground !bg-transparent"
+                            title={s.firstMessage}
+                            onClick={() => void openExisting(s)}
+                          >
+                            <span className="min-w-0 truncate">
+                              {s.name || s.firstMessage || '(空会话)'}
+                            </span>
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                className="pointer-events-none opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
+                                aria-label={`会话 ${s.name || s.firstMessage || '空会话'} 更多操作`}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => void deleteSession(s)}
+                                >
+                                  <Trash2 data-icon="inline-start" />
+                                  删除会话
+                                </DropdownMenuItem>
+                              </DropdownMenuGroup>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       ))}
                     </div>
                   </CollapsibleContent>

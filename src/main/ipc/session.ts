@@ -39,6 +39,15 @@ export function registerSessionIpc(): void {
     await Promise.all(projectSessions.map((session) => rm(session.path, { force: true })))
   })
 
+  ipcMain.handle('session:delete', async (_event, sessionId: string, path: string) => {
+    if (!sessionId || !path) throw new Error('Session id and path are required')
+    const sessions = await SessionManager.listAll()
+    const session = sessions.find((item) => item.id === sessionId && item.path === path)
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    closeSession(sessionId)
+    await rm(session.path, { force: true })
+  })
+
   ipcMain.handle('session:prompt', async (_event, sessionId: string, text: string) => {
     const ls = getLive(sessionId)
     if (!ls) throw new Error(`Session not found: ${sessionId}`)

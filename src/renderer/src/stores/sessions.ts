@@ -48,6 +48,7 @@ interface SessionsStore {
   openExisting: (meta: SessionMeta) => Promise<void>
   newSession: (cwd: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
+  deleteSession: (meta: SessionMeta) => Promise<void>
   closeTab: (sessionId: string) => void
   setActive: (sessionId: string) => void
   renameTab: (sessionId: string, title: string) => void
@@ -141,6 +142,31 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       }
     })
     void get().loadProjects()
+  },
+
+  deleteSession: async (meta) => {
+    await api.deleteSession(meta.id, meta.path)
+    set((s) => {
+      const openTabs = s.openTabs.filter((tab) => tab.sessionId !== meta.id)
+      const runtime = { ...s.runtime }
+      delete runtime[meta.id]
+      const activeWasDeleted = s.activeSessionId === meta.id
+      const projects = s.projects
+        .map((project) =>
+          project.cwd === meta.cwd
+            ? { ...project, sessions: project.sessions.filter((session) => session.id !== meta.id) }
+            : project
+        )
+        .filter((project) => project.sessions.length > 0)
+      return {
+        projects,
+        openTabs,
+        runtime,
+        activeSessionId: activeWasDeleted
+          ? openTabs[openTabs.length - 1]?.sessionId ?? null
+          : s.activeSessionId
+      }
+    })
   },
 
   closeTab: (sessionId) => {
