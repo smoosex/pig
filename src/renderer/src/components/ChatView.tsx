@@ -19,8 +19,8 @@ export function ChatView() {
 
   if (messages.length === 0) {
     return (
-      <div className="messages">
-        <div className="empty">和 Pig 说点什么吧</div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex h-full items-center justify-center text-sm text-muted">和 Pig 说点什么吧</div>
       </div>
     )
   }
@@ -28,7 +28,7 @@ export function ChatView() {
   const turns = groupTurns(messages, isStreaming)
 
   return (
-    <div className="messages" ref={scrollRef}>
+    <div className="flex-1 overflow-y-auto p-4" ref={scrollRef}>
       {turns.map((turn, i) => (
         <TurnView key={`${turn.startedAt}-${i}`} turn={turn} />
       ))}

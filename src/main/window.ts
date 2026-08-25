@@ -22,6 +22,9 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     title: 'Pig',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 16, y: 14 },
+    backgroundColor: '#1a1a1a',
     webPreferences: {
       preload: resolvePreload(),
       sandbox: true,
@@ -30,6 +33,7 @@ export function createMainWindow(): BrowserWindow {
     }
   })
 
+  mainWindow.on('page-title-updated', (event) => event.preventDefault())
   mainWindow.on('ready-to-show', () => mainWindow.show())
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

@@ -22,8 +22,9 @@ export function Composer() {
   }, [activeSessionId])
 
   return (
-    <div className="composer">
+    <div className="flex gap-2 border-t border-line bg-canvas px-4 py-3">
       <textarea
+        className="max-h-40 flex-1 resize-none rounded-lg border border-line bg-elev px-3 py-2.5 font-sans text-sm leading-snug text-fg focus:border-accent focus:outline-none disabled:opacity-50"
         value={text}
         placeholder={activeSessionId ? '输入消息，Shift+Enter 换行' : '请先选择会话'}
         rows={1}
@@ -37,11 +38,18 @@ export function Composer() {
         }}
       />
       {isStreaming ? (
-        <button className="abort" onClick={() => void abort()}>
+        <button
+          className="cursor-pointer self-end rounded-lg border-none bg-danger px-4.5 py-2.5 font-semibold text-white"
+          onClick={() => void abort()}
+        >
           停止
         </button>
       ) : (
-        <button disabled={!text.trim() || !activeSessionId} onClick={() => void send()}>
+        <button
+          className="cursor-pointer self-end rounded-lg border-none bg-accent px-4.5 py-2.5 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!text.trim() || !activeSessionId}
+          onClick={() => void send()}
+        >
           发送
         </button>
       )}
