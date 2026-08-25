@@ -1,13 +1,13 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-@import 'maplemono-normal-nf-cn/regular.css';
+@import '@fontsource-variable/geist';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Maple Mono Normal NF CN', monospace;
+  --font-sans: 'Geist Variable', sans-serif;
   --color-canvas: var(--background);
   --color-elev: var(--card);
   --color-elev-2: var(--muted);
@@ -89,9 +89,9 @@
 	--sidebar-accent-foreground: #fdf6e3;
 	--sidebar-border: #939f91;
 	--sidebar-ring: #35a77c;
-	--font-sans: 'Maple Mono Normal NF CN', monospace;
+	--font-sans: 'Geist Variable', sans-serif;
 	--font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-	--font-mono: 'Maple Mono Normal NF CN', monospace;
+	--font-mono: 'Geist Variable', monospace;
 	--radius: 0.5rem;
 	--shadow-x: 0;
 	--shadow-y: 1px;
@@ -150,9 +150,9 @@
 	--sidebar-accent-foreground: #2d353b;
 	--sidebar-border: #859289;
 	--sidebar-ring: #83c092;
-	--font-sans: 'Maple Mono Normal NF CN', monospace;
+	--font-sans: 'Geist Variable', sans-serif;
 	--font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-	--font-mono: 'Maple Mono Normal NF CN', monospace;
+	--font-mono: 'Geist Variable', monospace;
 	--radius: 0.5rem;
 	--shadow-x: 0;
 	--shadow-y: 1px;

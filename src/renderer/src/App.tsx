@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
-import { api } from './ipc/api'
 import { useEventBridge } from './hooks/useEventBridge'
 import { Button } from './components/ui/button'
 import { Empty, EmptyDescription } from './components/ui/empty'
@@ -33,7 +32,6 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 
 export default function App() {
   const loadProjects = useSessionsStore((s) => s.loadProjects)
-  const newSession = useSessionsStore((s) => s.newSession)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   useEventBridge()
@@ -42,22 +40,12 @@ export default function App() {
     void loadProjects()
   }, [loadProjects])
 
-  const handleNew = async (): Promise<void> => {
-    const cwd = await api.pickDirectory()
-    if (cwd) await newSession(cwd)
-  }
-
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col bg-card">
         <div className="drag flex h-11 shrink-0 items-center">
           <div className={cn('flex h-full shrink-0 items-center pr-3 pl-19.5', sidebarOpen && 'w-60')}>
             <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
-            {sidebarOpen ? (
-              <Button type="button" size="sm" className="no-drag ml-auto" onClick={() => void handleNew()}>
-                + 新建
-              </Button>
-            ) : null}
           </div>
           {activeSessionId ? <TabBar /> : <div className="flex-1" />}
         </div>
