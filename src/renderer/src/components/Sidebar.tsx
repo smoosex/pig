@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
+import { Badge } from './ui/badge'
+import { Button } from './ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
+import { Empty, EmptyDescription } from './ui/empty'
+import { ScrollArea } from './ui/scroll-area'
 
 export function Sidebar() {
   const projects = useSessionsStore((s) => s.projects)
@@ -9,41 +14,54 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col">
-      <div className="flex-1 overflow-y-auto py-1.5">
-        {projects.length === 0 && <div className="px-3 py-4 text-[13px] text-muted">暂无历史会话</div>}
-        {projects.map((p) => {
-          const isCollapsed = collapsed[p.cwd] ?? true
-          return (
-            <div key={p.cwd} className="mb-0.5">
-              <div
-                className="flex cursor-pointer items-center gap-1 px-3 py-1 text-[13px] select-none hover:bg-elev-2"
-                onClick={() => setCollapsed((c) => ({ ...c, [p.cwd]: !(c[p.cwd] ?? true) }))}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="size-3 shrink-0 text-muted" />
-                ) : (
-                  <ChevronDown className="size-3 shrink-0 text-muted" />
-                )}
-                <span className="min-w-0 flex-1 truncate" title={p.cwd}>
-                  {p.name}
-                </span>
-                <span className="text-[11px] text-muted">{p.sessions.length}</span>
-              </div>
-              {!isCollapsed &&
-                p.sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className="cursor-pointer truncate py-1 pr-3 pl-6.5 text-xs text-muted hover:bg-elev-2 hover:text-fg"
-                    title={s.firstMessage}
-                    onClick={() => void openExisting(s)}
-                  >
-                    {s.name || s.firstMessage || '(空会话)'}
-                  </div>
-                ))}
-            </div>
-          )
-        })}
-      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="py-1.5">
+          {projects.length === 0 ? (
+            <Empty className="min-h-24 p-3">
+              <EmptyDescription>暂无历史会话</EmptyDescription>
+            </Empty>
+          ) : (
+            projects.map((p) => {
+              const isCollapsed = collapsed[p.cwd] ?? true
+              return (
+                <Collapsible
+                  key={p.cwd}
+                  open={!isCollapsed}
+                  onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
+                  className="mb-0.5"
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 w-full justify-start gap-1 rounded-none px-3 text-left font-normal">
+                      {isCollapsed ? <ChevronRight /> : <ChevronDown />}
+                      <span className="min-w-0 flex-1 truncate" title={p.cwd}>
+                        {p.name}
+                      </span>
+                      <Badge variant="ghost" className="ml-auto px-1 text-muted-foreground">
+                        {p.sessions.length}
+                      </Badge>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    {p.sessions.map((s) => (
+                      <Button
+                        key={s.id}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-full justify-start truncate rounded-none pl-6.5 text-left text-xs font-normal text-muted-foreground"
+                        title={s.firstMessage}
+                        onClick={() => void openExisting(s)}
+                      >
+                        {s.name || s.firstMessage || '(空会话)'}
+                      </Button>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              )
+            })
+          )}
+        </div>
+      </ScrollArea>
     </aside>
   )
 }
