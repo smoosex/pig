@@ -1,15 +1,29 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronRight, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
-import { Badge } from './ui/badge'
+import { Avatar, AvatarFallback } from './ui/avatar'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from './ui/dropdown-menu'
 import { Empty, EmptyDescription } from './ui/empty'
 import { ScrollArea } from './ui/scroll-area'
+import { cn } from '../lib/utils'
+
+function projectInitial(name: string): string {
+  return name.trim().charAt(0).toUpperCase() || '?'
+}
 
 export function Sidebar() {
   const projects = useSessionsStore((s) => s.projects)
   const openExisting = useSessionsStore((s) => s.openExisting)
+  const newSession = useSessionsStore((s) => s.newSession)
+  const deleteProject = useSessionsStore((s) => s.deleteProject)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
@@ -28,33 +42,90 @@ export function Sidebar() {
                   key={p.cwd}
                   open={!isCollapsed}
                   onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
-                  className="mb-0.5"
+                  className="mb-1.5"
                 >
                   <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 w-full justify-start gap-1 rounded-none px-3 text-left font-normal">
-                      {isCollapsed ? <ChevronRight /> : <ChevronDown />}
-                      <span className="min-w-0 flex-1 truncate" title={p.cwd}>
-                        {p.name}
-                      </span>
-                      <Badge variant="ghost" className="ml-auto px-1 text-muted-foreground">
-                        {p.sessions.length}
-                      </Badge>
-                    </Button>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="group mx-1.5 flex min-h-11 cursor-pointer items-center gap-0.5 rounded-lg px-1 transition-colors hover:bg-background"
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          event.currentTarget.click()
+                        }
+                      }}
+                    >
+                      <div className="flex min-w-0 basis-0 flex-1 items-center gap-1.5 rounded-md px-1 text-sm font-light">
+                        <Avatar className="size-6 rounded-md after:rounded-md">
+                          <AvatarFallback className="rounded-md bg-chart-5 text-xs font-light text-primary-foreground">
+                            {projectInitial(p.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="min-w-0 truncate text-sm font-light" title={p.cwd}>
+                          {p.name}
+                        </span>
+                        <ChevronRight
+                          className={cn(
+                            'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                            !isCollapsed && 'rotate-90'
+                          )}
+                        />
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:bg-transparent"
+                            aria-label={`项目 ${p.name} 更多操作`}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => void deleteProject(p.cwd)}
+                            >
+                              <Trash2 data-icon="inline-start" />
+                              删除项目
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="hover:bg-transparent"
+                        aria-label={`在 ${p.name} 中新建会话`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void newSession(p.cwd)
+                        }}
+                      >
+                        <Plus />
+                      </Button>
+                    </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    {p.sessions.map((s) => (
-                      <Button
-                        key={s.id}
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-full justify-start truncate rounded-none pl-6.5 text-left text-xs font-normal text-muted-foreground"
-                        title={s.firstMessage}
-                        onClick={() => void openExisting(s)}
-                      >
-                        {s.name || s.firstMessage || '(空会话)'}
-                      </Button>
-                    ))}
+                    <div className="flex flex-col gap-0.5 px-2 pb-1">
+                      {p.sessions.map((s) => (
+                        <Button
+                          key={s.id}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-full justify-start truncate rounded-md pl-6.5 text-left text-xs font-light text-muted-foreground"
+                          title={s.firstMessage}
+                          onClick={() => void openExisting(s)}
+                        >
+                          {s.name || s.firstMessage || '(空会话)'}
+                        </Button>
+                      ))}
+                    </div>
                   </CollapsibleContent>
                 </Collapsible>
               )

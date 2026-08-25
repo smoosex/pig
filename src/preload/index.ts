@@ -7,6 +7,7 @@ const api = {
   openSession: (path: string): Promise<{ sessionId: string; cwd: string }> =>
     ipcRenderer.invoke('session:open', path),
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
+  deleteProject: (cwd: string): Promise<void> => ipcRenderer.invoke('session:delete-project', cwd),
   prompt: (sessionId: string, text: string): Promise<void> =>
     ipcRenderer.invoke('session:prompt', sessionId, text),
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),

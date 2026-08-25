@@ -1,5 +1,13 @@
+import { rm } from 'node:fs/promises'
 import { BrowserWindow, ipcMain } from 'electron'
-import { closeSession, createSession, getLive, openSession } from '../pi/session-registry'
+import { SessionManager } from '@earendil-works/pi-coding-agent'
+import {
+  closeSession,
+  closeSessionsForCwd,
+  createSession,
+  getLive,
+  openSession
+} from '../pi/session-registry'
 import { listProjects } from '../pi/session-loader'
 
 export function registerSessionIpc(): void {
@@ -21,6 +29,14 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:close', async (_event, sessionId: string) => {
     closeSession(sessionId)
+  })
+
+  ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
+    if (!cwd) throw new Error('Project cwd is required')
+    closeSessionsForCwd(cwd)
+    const sessions = await SessionManager.listAll()
+    const projectSessions = sessions.filter((session) => (session.cwd || '(unknown)') === cwd)
+    await Promise.all(projectSessions.map((session) => rm(session.path, { force: true })))
   })
 
   ipcMain.handle('session:prompt', async (_event, sessionId: string, text: string) => {

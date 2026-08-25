@@ -22,6 +22,7 @@ declare global {
       createSession: (cwd: string) => Promise<{ sessionId: string; cwd: string }>
       openSession: (path: string) => Promise<{ sessionId: string; cwd: string }>
       closeSession: (sessionId: string) => Promise<void>
+      deleteProject: (cwd: string) => Promise<void>
       prompt: (sessionId: string, text: string) => Promise<void>
       abort: (sessionId: string) => Promise<void>
       getMessages: (sessionId: string) => Promise<unknown[]>

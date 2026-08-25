@@ -8,6 +8,7 @@ import { Textarea } from './ui/textarea'
 export function Composer() {
   const [text, setText] = useState('')
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const loadProjects = useSessionsStore((s) => s.loadProjects)
   const isStreaming = useSessionsStore((s) =>
     s.activeSessionId ? s.runtime[s.activeSessionId]?.isStreaming ?? false : false
   )
@@ -17,7 +18,8 @@ export function Composer() {
     if (!trimmed || isStreaming || !activeSessionId) return
     setText('')
     await api.prompt(activeSessionId, trimmed)
-  }, [text, isStreaming, activeSessionId])
+    await loadProjects()
+  }, [text, isStreaming, activeSessionId, loadProjects])
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return

@@ -47,6 +47,7 @@ interface SessionsStore {
 
   openExisting: (meta: SessionMeta) => Promise<void>
   newSession: (cwd: string) => Promise<void>
+  deleteProject: (cwd: string) => Promise<void>
   closeTab: (sessionId: string) => void
   setActive: (sessionId: string) => void
   renameTab: (sessionId: string, title: string) => void
@@ -64,7 +65,19 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
 
   loadProjects: async () => {
     const projects = await api.listProjects()
-    set({ projects })
+    const metas = new Map(projects.flatMap((project) => project.sessions).map((meta) => [meta.id, meta]))
+    set((s) => ({
+      projects,
+      openTabs: s.openTabs.map((tab) => {
+        const meta = metas.get(tab.sessionId)
+        if (!meta) return tab
+        return {
+          ...tab,
+          title: meta.name || meta.firstMessage || tab.title,
+          meta
+        }
+      })
+    }))
   },
 
   hydrateMessages: async (sessionId) => {
@@ -74,7 +87,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   },
 
   openExisting: async (meta) => {
-    const existing = get().openTabs.find((t) => t.meta?.path === meta.path)
+    const existing = get().openTabs.find(
+      (t) => t.meta?.path === meta.path || t.sessionId === meta.id
+    )
     if (existing) {
       set({ activeSessionId: existing.sessionId })
       return
@@ -102,6 +117,29 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       activeSessionId: ref.sessionId,
       runtime: patchRuntime(s.runtime, ref.sessionId, emptyRuntime())
     }))
+  },
+
+  deleteProject: async (cwd) => {
+    await api.deleteProject(cwd)
+    set((s) => {
+      const deletedSessionIds = new Set(
+        s.openTabs.filter((tab) => tab.cwd === cwd).map((tab) => tab.sessionId)
+      )
+      const openTabs = s.openTabs.filter((tab) => tab.cwd !== cwd)
+      const runtime = { ...s.runtime }
+      for (const sessionId of deletedSessionIds) delete runtime[sessionId]
+      const activeWasDeleted = s.activeSessionId
+        ? deletedSessionIds.has(s.activeSessionId)
+        : false
+      return {
+        projects: s.projects.filter((project) => project.cwd !== cwd),
+        openTabs,
+        runtime,
+        activeSessionId: activeWasDeleted
+          ? openTabs[openTabs.length - 1]?.sessionId ?? null
+          : s.activeSessionId
+      }
+    })
     void get().loadProjects()
   },
 

@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron'
+import { resolve } from 'node:path'
 import {
   AuthStorage,
   createAgentSession,
@@ -61,6 +62,13 @@ export function closeSession(sessionId: string): void {
   ls.unsubscribe()
   ls.agentSession.dispose()
   live.delete(sessionId)
+}
+
+export function closeSessionsForCwd(cwd: string): void {
+  const target = resolve(cwd)
+  for (const ls of [...live.values()]) {
+    if (resolve(ls.cwd) === target) closeSession(ls.sessionId)
+  }
 }
 
 export function disposeAll(): void {
