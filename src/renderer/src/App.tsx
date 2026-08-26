@@ -47,11 +47,13 @@ export default function App() {
           <div className={cn('flex h-full shrink-0 items-center pr-3 pl-19.5', sidebarOpen && 'w-60')}>
             <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
           </div>
-          {activeSessionId ? <TabBar /> : <div className="flex-1" />}
         </div>
         <div className="flex min-h-0 flex-1">
           {sidebarOpen ? <Sidebar /> : null}
           <div className="m-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background">
+            <div className="flex h-9 shrink-0 items-center overflow-hidden">
+              {activeSessionId ? <TabBar /> : <div className="flex-1" />}
+            </div>
             {activeSessionId ? (
               <>
                 <ChatView />
