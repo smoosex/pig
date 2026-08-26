@@ -4,20 +4,22 @@ import { SessionManager } from '@earendil-works/pi-coding-agent'
 import {
   closeSession,
   closeSessionsForCwd,
-  createSession,
+  createPendingSession,
   getLive,
-  openSession
+  openSession,
+  prepareSession
 } from '../pi/session-registry'
-import { listProjects } from '../pi/session-loader'
+import { listProject, listProjects } from '../pi/session-loader'
 
 export function registerSessionIpc(): void {
   ipcMain.handle('session:list-projects', async () => listProjects())
+  ipcMain.handle('session:list-project', async (_event, cwd: string) => listProject(cwd))
 
   ipcMain.handle('session:create', async (event, cwd: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window attached to sender')
-    const ls = await createSession(cwd, win)
-    return { sessionId: ls.sessionId, cwd: ls.cwd }
+    const session = createPendingSession(cwd, win)
+    return { sessionId: session.sessionId, cwd: session.cwd }
   })
 
   ipcMain.handle('session:open', async (event, path: string) => {
@@ -25,6 +27,12 @@ export function registerSessionIpc(): void {
     if (!win) throw new Error('No window attached to sender')
     const ls = await openSession(path, win)
     return { sessionId: ls.sessionId, cwd: ls.cwd }
+  })
+
+  ipcMain.handle('session:prepare', async (_event, sessionId: string) => {
+    const created = !getLive(sessionId)
+    const session = await prepareSession(sessionId)
+    return { sessionId: session.sessionId, cwd: session.cwd, created }
   })
 
   ipcMain.handle('session:close', async (_event, sessionId: string) => {
@@ -57,8 +65,7 @@ export function registerSessionIpc(): void {
   )
 
   ipcMain.handle('session:prompt', async (_event, sessionId: string, text: string) => {
-    const ls = getLive(sessionId)
-    if (!ls) throw new Error(`Session not found: ${sessionId}`)
+    const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
     await ls.agentSession.prompt(text)
   })
 

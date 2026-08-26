@@ -43,6 +43,7 @@ interface SessionsStore {
   runtime: Record<string, RuntimeState>
 
   loadProjects: () => Promise<void>
+  refreshProject: (cwd: string) => Promise<void>
   hydrateMessages: (sessionId: string) => Promise<void>
 
   openExisting: (meta: SessionMeta) => Promise<void>
@@ -79,6 +80,33 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         }
       })
     }))
+  },
+
+  refreshProject: async (cwd) => {
+    const project = await api.listProject(cwd)
+    set((s) => {
+      const index = s.projects.findIndex((item) => item.cwd === cwd)
+      const projects = [...s.projects]
+      if (project) {
+        if (index === -1) projects.push(project)
+        else projects[index] = project
+      } else if (index !== -1) {
+        projects.splice(index, 1)
+      }
+      const metas = new Map((project?.sessions ?? []).map((meta) => [meta.id, meta]))
+      return {
+        projects,
+        openTabs: s.openTabs.map((tab) => {
+          const meta = metas.get(tab.sessionId)
+          if (!meta) return tab
+          return {
+            ...tab,
+            title: meta.name || meta.firstMessage || tab.title,
+            meta
+          }
+        })
+      }
+    })
   },
 
   hydrateMessages: async (sessionId) => {

@@ -2,10 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
   listProjects: (): Promise<unknown> => ipcRenderer.invoke('session:list-projects'),
+  listProject: (cwd: string): Promise<unknown> => ipcRenderer.invoke('session:list-project', cwd),
   createSession: (cwd: string): Promise<{ sessionId: string; cwd: string }> =>
     ipcRenderer.invoke('session:create', cwd),
   openSession: (path: string): Promise<{ sessionId: string; cwd: string }> =>
     ipcRenderer.invoke('session:open', path),
+  prepareSession: (sessionId: string): Promise<{ sessionId: string; cwd: string; created: boolean }> =>
+    ipcRenderer.invoke('session:prepare', sessionId),
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
   deleteProject: (cwd: string): Promise<void> => ipcRenderer.invoke('session:delete-project', cwd),
   deleteSession: (sessionId: string, path: string, cwd: string): Promise<void> =>

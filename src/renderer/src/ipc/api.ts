@@ -18,6 +18,7 @@ export interface ProjectGroup {
 export interface SessionRef {
   sessionId: string
   cwd: string
+  created?: boolean
 }
 
 export type PiEvent = {
@@ -27,6 +28,8 @@ export type PiEvent = {
 
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
+  listProject: (cwd: string) => Promise<ProjectGroup | null>
+  prepareSession: (sessionId: string) => Promise<SessionRef>
   createSession: (cwd: string) => Promise<SessionRef>
   openSession: (path: string) => Promise<SessionRef>
   closeSession: (sessionId: string) => Promise<void>

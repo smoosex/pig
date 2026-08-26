@@ -19,8 +19,10 @@ declare global {
   interface Window {
     api: {
       listProjects: () => Promise<ProjectGroup[]>
+      listProject: (cwd: string) => Promise<ProjectGroup | null>
       createSession: (cwd: string) => Promise<{ sessionId: string; cwd: string }>
       openSession: (path: string) => Promise<{ sessionId: string; cwd: string }>
+      prepareSession: (sessionId: string) => Promise<{ sessionId: string; cwd: string; created: boolean }>
       closeSession: (sessionId: string) => Promise<void>
       deleteProject: (cwd: string) => Promise<void>
       deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
