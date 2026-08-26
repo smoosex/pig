@@ -29,7 +29,7 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
         <div className="py-1.5">
           {projects.length === 0 ? (
             <Empty className="min-h-24 p-3">
