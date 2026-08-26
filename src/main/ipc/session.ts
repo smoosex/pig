@@ -34,19 +34,27 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
     closeSessionsForCwd(cwd)
-    const sessions = await SessionManager.listAll()
-    const projectSessions = sessions.filter((session) => (session.cwd || '(unknown)') === cwd)
+    const projectSessions =
+      cwd === '(unknown)'
+        ? (await SessionManager.listAll()).filter((session) => !session.cwd)
+        : await SessionManager.list(cwd)
     await Promise.all(projectSessions.map((session) => rm(session.path, { force: true })))
   })
 
-  ipcMain.handle('session:delete', async (_event, sessionId: string, path: string) => {
-    if (!sessionId || !path) throw new Error('Session id and path are required')
-    const sessions = await SessionManager.listAll()
-    const session = sessions.find((item) => item.id === sessionId && item.path === path)
-    if (!session) throw new Error(`Session not found: ${sessionId}`)
-    closeSession(sessionId)
-    await rm(session.path, { force: true })
-  })
+  ipcMain.handle(
+    'session:delete',
+    async (_event, sessionId: string, path: string, cwd: string) => {
+      if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
+      const sessions =
+        cwd === '(unknown)'
+          ? (await SessionManager.listAll()).filter((item) => !item.cwd)
+          : await SessionManager.list(cwd)
+      const session = sessions.find((item) => item.id === sessionId && item.path === path)
+      if (!session) throw new Error(`Session not found: ${sessionId}`)
+      closeSession(sessionId)
+      await rm(session.path, { force: true })
+    }
+  )
 
   ipcMain.handle('session:prompt', async (_event, sessionId: string, text: string) => {
     const ls = getLive(sessionId)

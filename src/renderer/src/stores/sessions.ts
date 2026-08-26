@@ -141,11 +141,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           : s.activeSessionId
       }
     })
-    void get().loadProjects()
   },
 
   deleteSession: async (meta) => {
-    await api.deleteSession(meta.id, meta.path)
+    await api.deleteSession(meta.id, meta.path, meta.cwd)
+
     set((s) => {
       const openTabs = s.openTabs.filter((tab) => tab.sessionId !== meta.id)
       const runtime = { ...s.runtime }

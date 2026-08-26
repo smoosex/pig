@@ -8,8 +8,8 @@ const api = {
     ipcRenderer.invoke('session:open', path),
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
   deleteProject: (cwd: string): Promise<void> => ipcRenderer.invoke('session:delete-project', cwd),
-  deleteSession: (sessionId: string, path: string): Promise<void> =>
-    ipcRenderer.invoke('session:delete', sessionId, path),
+  deleteSession: (sessionId: string, path: string, cwd: string): Promise<void> =>
+    ipcRenderer.invoke('session:delete', sessionId, path, cwd),
   prompt: (sessionId: string, text: string): Promise<void> =>
     ipcRenderer.invoke('session:prompt', sessionId, text),
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),

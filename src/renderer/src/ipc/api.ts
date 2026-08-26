@@ -31,7 +31,7 @@ export interface SessionApi {
   openSession: (path: string) => Promise<SessionRef>
   closeSession: (sessionId: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
-  deleteSession: (sessionId: string, path: string) => Promise<void>
+  deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
   prompt: (sessionId: string, text: string) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>
