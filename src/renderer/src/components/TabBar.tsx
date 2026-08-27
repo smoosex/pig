@@ -10,7 +10,7 @@ export function TabBar() {
   const closeTab = useSessionsStore((s) => s.closeTab)
 
   return (
-    <div className="flex h-full min-h-0 flex-1 items-stretch overflow-x-auto px-1.5">
+    <div className="flex h-full min-h-0 flex-1 items-stretch overflow-x-auto px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {openTabs.map((t) => (
         <div
           key={t.sessionId}
