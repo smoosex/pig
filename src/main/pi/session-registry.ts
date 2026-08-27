@@ -89,6 +89,8 @@ const THINKING_LEVELS: SessionThinkingLevel[] = [
   'max'
 ]
 
+const HIDDEN_THINKING_LEVELS = new Set<SessionThinkingLevel>(['off', 'minimal'])
+
 export interface LiveSession {
   sessionId: string
   cwd: string
@@ -202,9 +204,28 @@ function availableModels(): SessionModelInfo[] {
   return (modelRuntime?.getAvailableSnapshot() ?? []).map(toModelInfo)
 }
 
-function thinkingLevelsFor(model: SessionModelInfo | null): SessionThinkingLevel[] {
-  if (!model?.reasoning) return ['off']
-  return THINKING_LEVELS
+function thinkingLevelsFor(model: { provider: string; id: string } | null): SessionThinkingLevel[] {
+  if (!model) return ['off']
+  const full = modelRuntime?.getModel(model.provider, model.id)
+  if (!full?.reasoning) return ['off']
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = full.thinkingLevelMap?.[level]
+    if (mapped === null) return false
+    if (level === 'xhigh' || level === 'max') return mapped !== undefined
+    return true
+  })
+}
+
+function clampThinking(
+  level: SessionThinkingLevel | undefined,
+  levels: SessionThinkingLevel[]
+): SessionThinkingLevel {
+  if (level && levels.includes(level)) return level
+  return levels[0] ?? 'off'
+}
+
+function pickerThinkingLevels(levels: SessionThinkingLevel[]): SessionThinkingLevel[] {
+  return levels.filter((level) => !HIDDEN_THINKING_LEVELS.has(level))
 }
 
 function findModel(provider: string, id: string): SessionModelInfo | null {
@@ -239,7 +260,9 @@ export async function getSessionControls(sessionId: string): Promise<SessionCont
       model,
       models,
       thinkingLevel: liveSession.agentSession.thinkingLevel,
-      thinkingLevels: liveSession.agentSession.getAvailableThinkingLevels(),
+      thinkingLevels: pickerThinkingLevels(
+        liveSession.agentSession.getAvailableThinkingLevels() as SessionThinkingLevel[]
+      ),
       contextUsage: usage
         ? {
             tokens: usage.tokens,
@@ -257,11 +280,12 @@ export async function getSessionControls(sessionId: string): Promise<SessionCont
     session.modelProvider && session.modelId
       ? findModel(session.modelProvider, session.modelId)
       : (models[0] ?? null)
+  const supported = thinkingLevelsFor(model)
   return {
     model,
     models,
-    thinkingLevel: session.thinkingLevel ?? 'off',
-    thinkingLevels: thinkingLevelsFor(model),
+    thinkingLevel: clampThinking(session.thinkingLevel, supported),
+    thinkingLevels: pickerThinkingLevels(supported),
     contextUsage: null,
     tokens: tokenStatsFromEntries(session.sessionManager)
   }
@@ -285,6 +309,7 @@ export async function setSessionModel(
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   session.modelProvider = provider
   session.modelId = id
+  session.thinkingLevel = clampThinking(session.thinkingLevel, thinkingLevelsFor({ provider, id }))
   return getSessionControls(sessionId)
 }
 
@@ -292,7 +317,9 @@ export async function setSessionThinking(
   sessionId: string,
   level: SessionThinkingLevel
 ): Promise<SessionControls> {
-  if (!THINKING_LEVELS.includes(level)) throw new Error(`Invalid thinking level: ${level}`)
+  if (!THINKING_LEVELS.includes(level) || HIDDEN_THINKING_LEVELS.has(level)) {
+    throw new Error(`Invalid thinking level: ${level}`)
+  }
 
   const liveSession = live.get(sessionId)
   if (liveSession) {
@@ -302,6 +329,12 @@ export async function setSessionThinking(
 
   const session = pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
+  const model =
+    session.modelProvider && session.modelId
+      ? { provider: session.modelProvider, id: session.modelId }
+      : (availableModels()[0] ?? null)
+  const levels = pickerThinkingLevels(thinkingLevelsFor(model))
+  if (!levels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
   session.thinkingLevel = level
   return getSessionControls(sessionId)
 }

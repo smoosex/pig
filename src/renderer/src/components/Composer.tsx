@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { ArrowUp, Box, Brain, RefreshCw, Square } from 'lucide-react'
+import { ArrowUp, Box, RefreshCw, Square } from 'lucide-react'
 import {
   api,
   type SessionContextUsage,
@@ -11,14 +11,6 @@ import { chatColumn } from '../chat/layout'
 import { useSessionsStore } from '../stores/sessions'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger
-} from './ui/dropdown-menu'
 import {
   InputGroup,
   InputGroupAddon,
@@ -46,6 +38,46 @@ const thinkingLabels: Record<ThinkingLevel, string> = {
   high: '高',
   xhigh: '极高',
   max: '最高'
+}
+
+const thinkingStrength: Record<ThinkingLevel, number> = {
+  off: 0,
+  minimal: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  xhigh: 4,
+  max: 5
+}
+
+function ThinkingStrengthIcon({
+  level,
+  active = false
+}: {
+  level: ThinkingLevel
+  active?: boolean
+}) {
+  const filled = thinkingStrength[level]
+  const heights = ['h-1', 'h-1.5', 'h-2', 'h-2.5', 'h-3']
+
+  return (
+    <span aria-hidden="true" className="inline-flex h-3 w-4 shrink-0 items-end gap-px">
+      {heights.map((height, index) => (
+        <span
+          key={height}
+          className={cn(
+            'w-0.5 rounded-xs',
+            height,
+            index < filled
+              ? active
+                ? 'bg-primary'
+                : 'bg-muted-foreground/40'
+              : 'bg-muted-foreground/20'
+          )}
+        />
+      ))}
+    </span>
+  )
 }
 
 const toolbarBtn =
@@ -301,11 +333,75 @@ function ModelPicker({
   )
 }
 
+function ThinkingPicker({
+  sessionId,
+  thinkingLevel,
+  thinkingLevels,
+  disabled
+}: {
+  sessionId: string | null
+  thinkingLevel: ThinkingLevel
+  thinkingLevels: ThinkingLevel[]
+  disabled?: boolean
+}) {
+  const applyControls = useSessionsStore((s) => s.applyControls)
+  const [open, setOpen] = useState(false)
+  const [hovered, setHovered] = useState<string | null>(null)
+
+  const select = async (level: ThinkingLevel) => {
+    if (!sessionId) return
+    applyControls(sessionId, await api.setThinking(sessionId, level))
+    setOpen(false)
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setHovered(null)
+      }}
+    >
+      <PopoverTrigger asChild>
+        <InputGroupButton className={toolbarBtn} disabled={disabled}>
+          <ThinkingStrengthIcon level={thinkingLevel} active />
+          {thinkingLabels[thinkingLevel]}
+        </InputGroupButton>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-auto min-w-44 gap-0.5 rounded-2xl p-1.5">
+        <p className="px-3 py-1.5 text-xs text-muted-foreground">推理强度</p>
+        {thinkingLevels.map((level, index) => {
+          const selected = level === thinkingLevel
+          return (
+            <Button
+              key={level}
+              type="button"
+              variant="ghost"
+              className={cn(
+                'h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-transparent',
+                (selected || hovered === level) && 'bg-muted hover:bg-muted'
+              )}
+              onPointerEnter={() => setHovered(level)}
+              onPointerLeave={() => setHovered(null)}
+              onClick={() => void select(level)}
+            >
+              <span className="w-4 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
+                {index + 1}
+              </span>
+              <ThinkingStrengthIcon level={level} active={selected} />
+              {thinkingLabels[level]}
+            </Button>
+          )
+        })}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function Composer() {
   const [text, setText] = useState('')
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshProject = useSessionsStore((s) => s.refreshProject)
-  const applyControls = useSessionsStore((s) => s.applyControls)
   const runtime = useSessionsStore((s) =>
     s.activeSessionId ? s.runtime[s.activeSessionId] : undefined
   )
@@ -338,14 +434,6 @@ export function Composer() {
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
-  const changeThinking = useCallback(
-    async (value: string) => {
-      if (!activeSessionId) return
-      applyControls(activeSessionId, await api.setThinking(activeSessionId, value as ThinkingLevel))
-    },
-    [activeSessionId, applyControls]
-  )
-
   const canSend = Boolean(text.trim() && activeSessionId && !isStreaming)
 
   return (
@@ -376,28 +464,12 @@ export function Composer() {
               models={models}
               disabled={!activeSessionId}
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <InputGroupButton
-                  className={toolbarBtn}
-                  disabled={!activeSessionId || thinkingLevels.length <= 1}
-                >
-                  <Brain data-icon="inline-start" />
-                  {thinkingLabels[thinkingLevel]}
-                </InputGroupButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-auto min-w-28">
-                <DropdownMenuGroup>
-                  <DropdownMenuRadioGroup value={thinkingLevel} onValueChange={(value) => void changeThinking(value)}>
-                    {thinkingLevels.map((level) => (
-                      <DropdownMenuRadioItem key={level} value={level}>
-                        {thinkingLabels[level]}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ThinkingPicker
+              sessionId={activeSessionId}
+              thinkingLevel={thinkingLevel}
+              thinkingLevels={thinkingLevels}
+              disabled={!activeSessionId || thinkingLevels.length <= 1}
+            />
             <SessionTreeButton disabled={!activeSessionId || isStreaming} />
           </div>
           <div className="flex items-center gap-1.5">
