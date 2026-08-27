@@ -18,6 +18,12 @@ const api = {
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),
   getMessages: (sessionId: string): Promise<unknown[]> =>
     ipcRenderer.invoke('session:get-messages', sessionId),
+  getControls: (sessionId: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:get-controls', sessionId),
+  setModel: (sessionId: string, provider: string, id: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:set-model', sessionId, provider, id),
+  setThinking: (sessionId: string, level: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:set-thinking', sessionId, level),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('system:pick-directory'),
   onEvent: (listener: (event: unknown) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: unknown): void => listener(event)

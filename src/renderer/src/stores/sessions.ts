@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import { api, type ProjectGroup, type SessionMeta } from '../ipc/api'
+import {
+  api,
+  type ProjectGroup,
+  type SessionContextUsage,
+  type SessionControls,
+  type SessionMeta,
+  type SessionModelInfo,
+  type SessionTokenStats,
+  type ThinkingLevel
+} from '../ipc/api'
 import { isPiMessage, type PiMessage } from '../pi/types'
 
 export type { ProjectGroup, SessionMeta }
@@ -7,6 +16,12 @@ export type { ProjectGroup, SessionMeta }
 interface RuntimeState {
   messages: PiMessage[]
   isStreaming: boolean
+  model: SessionModelInfo | null
+  models: SessionModelInfo[]
+  thinkingLevel: ThinkingLevel
+  thinkingLevels: ThinkingLevel[]
+  contextUsage: SessionContextUsage | null
+  tokens: SessionTokenStats
 }
 
 interface OpenTab {
@@ -18,7 +33,13 @@ interface OpenTab {
 
 const emptyRuntime = (): RuntimeState => ({
   messages: [],
-  isStreaming: false
+  isStreaming: false,
+  model: null,
+  models: [],
+  thinkingLevel: 'off',
+  thinkingLevels: ['off'],
+  contextUsage: null,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
 })
 
 function ensureRuntime(runtime: Record<string, RuntimeState>, sessionId: string): RuntimeState {
@@ -45,6 +66,9 @@ interface SessionsStore {
   loadProjects: () => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
   hydrateMessages: (sessionId: string) => Promise<void>
+  loadControls: (sessionId: string) => Promise<void>
+  applyControls: (sessionId: string, controls: SessionControls) => void
+  setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
 
   openExisting: (meta: SessionMeta) => Promise<void>
   newSession: (cwd: string) => Promise<void>
@@ -115,6 +139,19 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { messages }) }))
   },
 
+  loadControls: async (sessionId) => {
+    const controls = await api.getControls(sessionId)
+    get().applyControls(sessionId, controls)
+  },
+
+  applyControls: (sessionId, controls) => {
+    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, controls) }))
+  },
+
+  setThinkingLevel: (sessionId, thinkingLevel) => {
+    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { thinkingLevel }) }))
+  },
+
   openExisting: async (meta) => {
     const existing = get().openTabs.find(
       (t) => t.meta?.path === meta.path || t.sessionId === meta.id
@@ -135,7 +172,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       activeSessionId: ref.sessionId,
       runtime: patchRuntime(s.runtime, ref.sessionId, emptyRuntime())
     }))
-    await get().hydrateMessages(ref.sessionId)
+    await Promise.all([get().hydrateMessages(ref.sessionId), get().loadControls(ref.sessionId)])
   },
 
   newSession: async (cwd) => {
@@ -146,6 +183,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       activeSessionId: ref.sessionId,
       runtime: patchRuntime(s.runtime, ref.sessionId, emptyRuntime())
     }))
+    await get().loadControls(ref.sessionId)
   },
 
   deleteProject: async (cwd) => {

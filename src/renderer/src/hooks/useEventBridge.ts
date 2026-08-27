@@ -8,6 +8,8 @@ export function useEventBridge(): void {
   const appendMessage = useSessionsStore((s) => s.appendMessage)
   const replaceLastMessage = useSessionsStore((s) => s.replaceLastMessage)
   const renameTab = useSessionsStore((s) => s.renameTab)
+  const loadControls = useSessionsStore((s) => s.loadControls)
+  const setThinkingLevel = useSessionsStore((s) => s.setThinkingLevel)
 
   useEffect(() => {
     const off = api.onEvent((raw) => {
@@ -27,6 +29,19 @@ export function useEventBridge(): void {
           break
         case 'agent_end':
           setStreaming(sessionId, false)
+          void loadControls(sessionId)
+          break
+        case 'thinking_level_changed':
+          if (
+            event.level === 'off' ||
+            event.level === 'minimal' ||
+            event.level === 'low' ||
+            event.level === 'medium' ||
+            event.level === 'high' ||
+            event.level === 'xhigh'
+          ) {
+            setThinkingLevel(sessionId, event.level)
+          }
           break
         case 'session_info_changed':
           if (typeof event.name === 'string' && event.name.length > 0) {
@@ -36,5 +51,5 @@ export function useEventBridge(): void {
       }
     })
     return off
-  }, [setStreaming, appendMessage, replaceLastMessage, renameTab])
+  }, [setStreaming, appendMessage, replaceLastMessage, renameTab, loadControls, setThinkingLevel])
 }

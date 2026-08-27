@@ -6,8 +6,12 @@ import {
   closeSessionsForCwd,
   createPendingSession,
   getLive,
+  getSessionControls,
   openSession,
-  prepareSession
+  prepareSession,
+  setSessionModel,
+  setSessionThinking,
+  type SessionThinkingLevel
 } from '../pi/session-registry'
 import { listProject, listProjects } from '../pi/session-loader'
 
@@ -80,4 +84,22 @@ export function registerSessionIpc(): void {
     if (!ls) throw new Error(`Session not found: ${sessionId}`)
     return ls.agentSession.messages
   })
+
+  ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {
+    return getSessionControls(sessionId)
+  })
+
+  ipcMain.handle(
+    'session:set-model',
+    async (_event, sessionId: string, provider: string, id: string) => {
+      return setSessionModel(sessionId, provider, id)
+    }
+  )
+
+  ipcMain.handle(
+    'session:set-thinking',
+    async (_event, sessionId: string, level: SessionThinkingLevel) => {
+      return setSessionThinking(sessionId, level)
+    }
+  )
 }
