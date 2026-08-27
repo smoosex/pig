@@ -81,6 +81,7 @@ interface SessionsStore {
   setStreaming: (sessionId: string, streaming: boolean) => void
   appendMessage: (sessionId: string, message: PiMessage) => void
   replaceLastMessage: (sessionId: string, message: PiMessage) => void
+  viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 
 export const useSessionsStore = create<SessionsStore>((set, get) => ({
@@ -282,5 +283,10 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           messages: [...rt.messages.slice(0, -1), message]
         })
       }
-    })
+    }),
+
+  viewBranch: async (sessionId, tipId) => {
+    await api.viewBranch(sessionId, tipId)
+    await Promise.all([get().hydrateMessages(sessionId), get().loadControls(sessionId)])
+  }
 }))

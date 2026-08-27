@@ -54,6 +54,26 @@ export interface SessionControls {
   tokens: SessionTokenStats
 }
 
+export interface SessionTreeGutter {
+  position: number
+  show: boolean
+}
+
+export interface SessionTreeRow {
+  id: string
+  parentId: string | null
+  indent: number
+  gutters: SessionTreeGutter[]
+  showConnector: boolean
+  isLast: boolean
+  isVirtualRootChild: boolean
+  foldable: boolean
+  onPath: boolean
+  current: boolean
+  kind: 'user' | 'assistant' | 'tool' | 'other'
+  text: string
+}
+
 export type PiEvent = {
   type: string
   [key: string]: unknown
@@ -71,6 +91,8 @@ export interface SessionApi {
   prompt: (sessionId: string, text: string) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>
+  getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
+  viewBranch: (sessionId: string, tipId: string) => Promise<void>
   getControls: (sessionId: string) => Promise<SessionControls>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>

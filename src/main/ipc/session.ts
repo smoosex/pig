@@ -5,10 +5,12 @@ import {
   createPendingSession,
   getLive,
   getSessionControls,
+  getSessionTree,
   openSession,
   prepareSession,
   setSessionModel,
   setSessionThinking,
+  viewSessionBranch,
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { listProject, listProjects, removeProjectDir, removeSessionFile } from '../pi/session-loader'
@@ -71,6 +73,15 @@ export function registerSessionIpc(): void {
     const ls = getLive(sessionId)
     if (!ls) throw new Error(`Session not found: ${sessionId}`)
     return ls.agentSession.messages
+  })
+
+  ipcMain.handle('session:get-tree', async (_event, sessionId: string) => {
+    return getSessionTree(sessionId)
+  })
+
+  ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {
+    if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
+    viewSessionBranch(sessionId, tipId)
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {

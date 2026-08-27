@@ -33,6 +33,7 @@ import {
 import { Progress } from './ui/progress'
 import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { SessionTreeButton } from './SessionTreeDialog'
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: '关闭',
@@ -282,6 +283,7 @@ export function Composer() {
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
+            <SessionTreeButton disabled={!activeSessionId || isStreaming} />
           </div>
           <div className="flex items-center gap-1.5">
             <ContextUsageButton

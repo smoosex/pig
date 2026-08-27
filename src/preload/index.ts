@@ -18,6 +18,10 @@ const api = {
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),
   getMessages: (sessionId: string): Promise<unknown[]> =>
     ipcRenderer.invoke('session:get-messages', sessionId),
+  getSessionTree: (sessionId: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:get-tree', sessionId),
+  viewBranch: (sessionId: string, tipId: string): Promise<void> =>
+    ipcRenderer.invoke('session:view-branch', sessionId, tipId),
   getControls: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:get-controls', sessionId),
   setModel: (sessionId: string, provider: string, id: string): Promise<unknown> =>
