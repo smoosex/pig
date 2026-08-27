@@ -11,7 +11,7 @@ import {
   setSessionThinking,
   type SessionThinkingLevel
 } from '../pi/session-registry'
-import { listProject, listProjectFiles, listProjects, removeSessionFile } from '../pi/session-loader'
+import { listProject, listProjects, removeProjectDir, removeSessionFile } from '../pi/session-loader'
 
 export function registerSessionIpc(): void {
   ipcMain.handle('session:list-projects', async () => listProjects())
@@ -44,8 +44,7 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
     closeSessionsForCwd(cwd)
-    const projectSessions = await listProjectFiles(cwd)
-    await Promise.all(projectSessions.map((path) => removeSessionFile(path)))
+    await removeProjectDir(cwd)
   })
 
   ipcMain.handle(

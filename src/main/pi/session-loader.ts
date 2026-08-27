@@ -213,3 +213,15 @@ export async function removeSessionFile(path: string): Promise<void> {
   if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
   await rm(path, { force: true })
 }
+
+export async function removeProjectDir(cwd: string): Promise<void> {
+  if (cwd === '(unknown)') {
+    const files = await listProjectFiles(cwd)
+    await Promise.all(files.map((path) => removeSessionFile(path)))
+    return
+  }
+  const dir = resolve(sessionDirForCwd(cwd))
+  const root = resolve(sessionsRoot()) + sep
+  if (!dir.startsWith(root)) throw new Error(`Invalid project dir: ${dir}`)
+  await rm(dir, { recursive: true, force: true })
+}
