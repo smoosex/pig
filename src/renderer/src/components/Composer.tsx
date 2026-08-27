@@ -1,14 +1,16 @@
-import { useCallback, useState } from 'react'
-import { ArrowUp, Box, Brain, Square } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { ArrowUp, Box, Brain, RefreshCw, Square } from 'lucide-react'
 import {
   api,
   type SessionContextUsage,
+  type SessionModelInfo,
   type SessionTokenStats,
   type ThinkingLevel
 } from '../ipc/api'
 import { chatColumn } from '../chat/layout'
 import { useSessionsStore } from '../stores/sessions'
 import { cn } from '../lib/utils'
+import { Button } from './ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +32,7 @@ import {
   PopoverTitle,
   PopoverTrigger
 } from './ui/popover'
+import { Input } from './ui/input'
 import { Progress } from './ui/progress'
 import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -162,6 +165,142 @@ function ContextMeter({ percent }: { percent: number | null }) {
   )
 }
 
+function modelKey(item: SessionModelInfo): string {
+  return `${item.provider}::${item.id}`
+}
+
+function ModelPicker({
+  sessionId,
+  model,
+  models,
+  disabled
+}: {
+  sessionId: string | null
+  model: SessionModelInfo | null
+  models: SessionModelInfo[]
+  disabled?: boolean
+}) {
+  const applyControls = useSessionsStore((s) => s.applyControls)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const pointer = useRef({ x: 0, y: 0 })
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((item) =>
+      `${item.name} ${item.providerName} ${item.provider} ${item.id}`.toLowerCase().includes(q)
+    )
+  }, [models, query])
+
+  const syncHover = () => {
+    const node = document.elementFromPoint(pointer.current.x, pointer.current.y)?.closest('[data-model]')
+    setHovered(node instanceof HTMLElement ? (node.dataset.model ?? null) : null)
+  }
+
+  const select = async (item: SessionModelInfo) => {
+    if (!sessionId) return
+    applyControls(sessionId, await api.setModel(sessionId, item.provider, item.id))
+    setOpen(false)
+  }
+
+  const refresh = async () => {
+    if (!sessionId || refreshing) return
+    setRefreshing(true)
+    try {
+      applyControls(sessionId, await api.refreshModels(sessionId))
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) {
+          setQuery('')
+          setHovered(null)
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <InputGroupButton className={cn(toolbarBtn, 'max-w-44')} disabled={disabled}>
+          <Box data-icon="inline-start" />
+          <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
+        </InputGroupButton>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5">
+        <div className="flex items-center gap-1">
+          <Input
+            autoFocus
+            value={query}
+            placeholder="搜索模型"
+            className="h-7 md:text-xs"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="刷新模型列表"
+            disabled={!sessionId || refreshing}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
+          </Button>
+        </div>
+        <div
+          className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onPointerMove={(e) => {
+            pointer.current = { x: e.clientX, y: e.clientY }
+            syncHover()
+          }}
+          onPointerLeave={() => setHovered(null)}
+          onScroll={syncHover}
+        >
+          {filtered.length === 0 ? (
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+              {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
+            </p>
+          ) : (
+            filtered.map((item, index) => {
+              const key = modelKey(item)
+              const selected = model?.provider === item.provider && model.id === item.id
+              return (
+                <Button
+                  key={key}
+                  type="button"
+                  variant="ghost"
+                  data-model={key}
+                  className={cn(
+                    'h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-transparent',
+                    (selected || hovered === key) && 'bg-muted hover:bg-muted'
+                  )}
+                  onClick={() => void select(item)}
+                >
+                  <span className="w-6 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm font-medium">{item.name}</span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {item.providerName} · {item.provider}/{item.id}
+                    </span>
+                  </span>
+                </Button>
+              )
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function Composer() {
   const [text, setText] = useState('')
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
@@ -199,17 +338,6 @@ export function Composer() {
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
-  const changeModel = useCallback(
-    async (value: string) => {
-      if (!activeSessionId) return
-      const [provider, ...rest] = value.split('::')
-      const id = rest.join('::')
-      if (!provider || !id) return
-      applyControls(activeSessionId, await api.setModel(activeSessionId, provider, id))
-    },
-    [activeSessionId, applyControls]
-  )
-
   const changeThinking = useCallback(
     async (value: string) => {
       if (!activeSessionId) return
@@ -218,7 +346,6 @@ export function Composer() {
     [activeSessionId, applyControls]
   )
 
-  const modelValue = model ? `${model.provider}::${model.id}` : ''
   const canSend = Boolean(text.trim() && activeSessionId && !isStreaming)
 
   return (
@@ -243,25 +370,12 @@ export function Composer() {
         />
         <InputGroupAddon align="block-end" className="justify-between px-2.5 pb-2.5">
           <div className="flex min-w-0 items-center gap-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <InputGroupButton className={cn(toolbarBtn, 'max-w-44')} disabled={!activeSessionId}>
-                  <Box data-icon="inline-start" />
-                  <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
-                </InputGroupButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-auto min-w-48 max-h-72">
-                <DropdownMenuGroup>
-                  <DropdownMenuRadioGroup value={modelValue} onValueChange={(value) => void changeModel(value)}>
-                    {models.map((item) => (
-                      <DropdownMenuRadioItem key={`${item.provider}::${item.id}`} value={`${item.provider}::${item.id}`}>
-                        {item.name}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ModelPicker
+              sessionId={activeSessionId}
+              model={model}
+              models={models}
+              disabled={!activeSessionId}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <InputGroupButton

@@ -32,6 +32,8 @@ const api = {
     ipcRenderer.invoke('session:set-model', sessionId, provider, id),
   setThinking: (sessionId: string, level: string): Promise<unknown> =>
     ipcRenderer.invoke('session:set-thinking', sessionId, level),
+  refreshModels: (sessionId: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:refresh-models', sessionId),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('system:pick-directory'),
   onEvent: (listener: (event: unknown) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: unknown): void => listener(event)

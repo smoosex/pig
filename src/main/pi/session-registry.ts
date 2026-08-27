@@ -23,6 +23,7 @@ export interface SessionModelInfo {
   id: string
   name: string
   provider: string
+  providerName: string
   contextWindow: number
   reasoning: boolean
 }
@@ -191,6 +192,7 @@ function toModelInfo(model: {
     id: model.id,
     name: model.name,
     provider: model.provider,
+    providerName: modelRuntime?.getProvider(model.provider)?.name ?? model.provider,
     contextWindow: model.contextWindow,
     reasoning: model.reasoning
   }
@@ -301,6 +303,11 @@ export async function setSessionThinking(
   const session = pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   session.thinkingLevel = level
+  return getSessionControls(sessionId)
+}
+
+export async function refreshSessionModels(sessionId: string): Promise<SessionControls> {
+  await (await startModelRuntime()).refresh()
   return getSessionControls(sessionId)
 }
 

@@ -8,6 +8,7 @@ import {
   getSessionTree,
   openSession,
   prepareSession,
+  refreshSessionModels,
   setSessionModel,
   setSessionThinking,
   viewSessionBranch,
@@ -111,4 +112,8 @@ export function registerSessionIpc(): void {
       return setSessionThinking(sessionId, level)
     }
   )
+
+  ipcMain.handle('session:refresh-models', async (_event, sessionId: string) => {
+    return refreshSessionModels(sessionId)
+  })
 }

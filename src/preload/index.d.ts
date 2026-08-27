@@ -19,6 +19,7 @@ interface SessionModelInfo {
   id: string
   name: string
   provider: string
+  providerName: string
   contextWindow: number
   reasoning: boolean
 }
@@ -104,6 +105,7 @@ declare global {
       getControls: (sessionId: string) => Promise<SessionControls>
       setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
       setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
+      refreshModels: (sessionId: string) => Promise<SessionControls>
       pickDirectory: () => Promise<string | null>
       onEvent: (listener: (event: unknown) => void) => () => void
     }
