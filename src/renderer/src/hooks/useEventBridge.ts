@@ -5,10 +5,11 @@ import { useSessionsStore } from '../stores/sessions'
 
 export function useEventBridge(): void {
   const setStreaming = useSessionsStore((s) => s.setStreaming)
-  const appendMessage = useSessionsStore((s) => s.appendMessage)
-  const replaceLastMessage = useSessionsStore((s) => s.replaceLastMessage)
+  const appendLiveMessage = useSessionsStore((s) => s.appendLiveMessage)
+  const replaceLiveMessage = useSessionsStore((s) => s.replaceLiveMessage)
   const renameTab = useSessionsStore((s) => s.renameTab)
   const loadControls = useSessionsStore((s) => s.loadControls)
+  const hydrateTurns = useSessionsStore((s) => s.hydrateTurns)
   const setThinkingLevel = useSessionsStore((s) => s.setThinkingLevel)
 
   useEffect(() => {
@@ -21,15 +22,15 @@ export function useEventBridge(): void {
           setStreaming(sessionId, true)
           break
         case 'message_start':
-          if (isPiMessage(event.message)) appendMessage(sessionId, event.message)
+          if (isPiMessage(event.message)) appendLiveMessage(sessionId, event.message)
           break
         case 'message_update':
         case 'message_end':
-          if (isPiMessage(event.message)) replaceLastMessage(sessionId, event.message)
+          if (isPiMessage(event.message)) replaceLiveMessage(sessionId, event.message)
           break
         case 'agent_end':
           setStreaming(sessionId, false)
-          void loadControls(sessionId)
+          void Promise.all([hydrateTurns(sessionId), loadControls(sessionId)])
           break
         case 'thinking_level_changed':
           if (
@@ -51,5 +52,13 @@ export function useEventBridge(): void {
       }
     })
     return off
-  }, [setStreaming, appendMessage, replaceLastMessage, renameTab, loadControls, setThinkingLevel])
+  }, [
+    setStreaming,
+    appendLiveMessage,
+    replaceLiveMessage,
+    renameTab,
+    loadControls,
+    hydrateTurns,
+    setThinkingLevel
+  ])
 }

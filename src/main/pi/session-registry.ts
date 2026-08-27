@@ -646,7 +646,7 @@ function layoutVisible(visible: VisibleNode[], parentOf: Map<string, string | nu
   }
 }
 
-function sessionManagerFor(sessionId: string): SessionManager {
+export function sessionManagerFor(sessionId: string): SessionManager {
   const liveSession = live.get(sessionId)
   if (liveSession) return liveSession.agentSession.sessionManager
   const pendingSession = pending.get(sessionId)

@@ -293,9 +293,16 @@ function ProcessList({ items }: { items: ProcessItem[] }) {
   )
 }
 
-export function TurnView({ turn }: { turn: Turn }) {
-  const hasProcess = turn.process.length > 0 || turn.streaming
+export function TurnView({
+  turn,
+  onNeedProcess
+}: {
+  turn: Turn
+  onNeedProcess?: () => Promise<void>
+}) {
+  const hasProcess = Boolean(turn.hasProcess) || turn.process.length > 0 || turn.streaming
   const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     setOpen(false)
@@ -305,6 +312,22 @@ export function TurnView({ turn }: { turn: Turn }) {
   const live = turn.streaming ? liveProcessItem(turn.process) : null
   const expanded = turn.streaming || open
   const label = `推理/执行过程(${formatDuration(turn.startedAt, turn.endedAt)})`
+
+  async function toggleProcess(): Promise<void> {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    if (turn.process.length === 0 && onNeedProcess) {
+      setLoading(true)
+      try {
+        await onNeedProcess()
+      } finally {
+        setLoading(false)
+      }
+    }
+    setOpen(true)
+  }
 
   return (
     <div className="mb-4">
@@ -322,7 +345,8 @@ export function TurnView({ turn }: { turn: Turn }) {
               variant="ghost"
               size="sm"
               className={cn(disclosureButton, 'w-fit')}
-              onClick={() => setOpen((v) => !v)}
+              disabled={loading}
+              onClick={() => void toggleProcess()}
             >
               <span>{label}</span>
               <Chevron open={open} />

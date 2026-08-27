@@ -30,6 +30,7 @@ export type AnswerBlock =
   | { type: 'image'; image: ImageContent }
 
 export interface Turn {
+  id?: string
   user?: UserMessage
   process: ProcessItem[]
   answer: AnswerBlock[]
@@ -37,6 +38,7 @@ export interface Turn {
   startedAt: number
   endedAt: number
   streaming: boolean
+  hasProcess?: boolean
 }
 
 function lastToolCallIndex(content: AssistantMessage['content']): number {
@@ -126,7 +128,7 @@ function consumeAssistant(
   return answer
 }
 
-function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
+export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
   const user = chunk[0]?.role === 'user' ? (chunk[0] as UserMessage) : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
@@ -182,7 +184,16 @@ function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
   const startedAt = rest[0]?.timestamp ?? user?.timestamp ?? 0
   const endedAt = rest[rest.length - 1]?.timestamp ?? startedAt
 
-  return { user, process, answer, errorMessage, startedAt, endedAt, streaming }
+  return {
+    user,
+    process,
+    answer,
+    errorMessage,
+    startedAt,
+    endedAt,
+    streaming,
+    hasProcess: process.length > 0 || streaming
+  }
 }
 
 export function groupTurns(messages: PiMessage[], streaming: boolean): Turn[] {

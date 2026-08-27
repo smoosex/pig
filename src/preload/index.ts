@@ -18,6 +18,10 @@ const api = {
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),
   getMessages: (sessionId: string): Promise<unknown[]> =>
     ipcRenderer.invoke('session:get-messages', sessionId),
+  getDisplayTurns: (sessionId: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:get-display-turns', sessionId),
+  getTurnMessages: (sessionId: string, turnId: string): Promise<unknown[]> =>
+    ipcRenderer.invoke('session:get-turn-messages', sessionId, turnId),
   getSessionTree: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:get-tree', sessionId),
   viewBranch: (sessionId: string, tipId: string): Promise<void> =>

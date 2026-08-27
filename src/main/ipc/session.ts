@@ -13,6 +13,7 @@ import {
   viewSessionBranch,
   type SessionThinkingLevel
 } from '../pi/session-registry'
+import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
 import { listProject, listProjects, removeProjectDir, removeSessionFile } from '../pi/session-loader'
 
 export function registerSessionIpc(): void {
@@ -73,6 +74,15 @@ export function registerSessionIpc(): void {
     const ls = getLive(sessionId)
     if (!ls) throw new Error(`Session not found: ${sessionId}`)
     return ls.agentSession.messages
+  })
+
+  ipcMain.handle('session:get-display-turns', async (_event, sessionId: string) => {
+    return getDisplayTurns(sessionId)
+  })
+
+  ipcMain.handle('session:get-turn-messages', async (_event, sessionId: string, turnId: string) => {
+    if (!sessionId || !turnId) throw new Error('Session id and turn id are required')
+    return getTurnMessages(sessionId, turnId)
   })
 
   ipcMain.handle('session:get-tree', async (_event, sessionId: string) => {

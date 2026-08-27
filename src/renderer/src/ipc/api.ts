@@ -54,6 +54,25 @@ export interface SessionControls {
   tokens: SessionTokenStats
 }
 
+export interface DisplayUser {
+  text: string
+  images: { mimeType: string; data: string }[]
+}
+
+export type DisplayAnswer =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mimeType: string; data: string }
+
+export interface DisplayTurn {
+  id: string
+  user?: DisplayUser
+  answer: DisplayAnswer[]
+  errorMessage?: string
+  startedAt: number
+  endedAt: number
+  hasProcess: boolean
+}
+
 export interface SessionTreeGutter {
   position: number
   show: boolean
@@ -91,6 +110,8 @@ export interface SessionApi {
   prompt: (sessionId: string, text: string) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>
+  getDisplayTurns: (sessionId: string) => Promise<DisplayTurn[]>
+  getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
   getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
   getControls: (sessionId: string) => Promise<SessionControls>

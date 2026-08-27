@@ -53,6 +53,21 @@ interface SessionTreeGutter {
   show: boolean
 }
 
+interface DisplayUser {
+  text: string
+  images: { mimeType: string; data: string }[]
+}
+
+interface DisplayTurn {
+  id: string
+  user?: DisplayUser
+  answer: Array<{ type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string }>
+  errorMessage?: string
+  startedAt: number
+  endedAt: number
+  hasProcess: boolean
+}
+
 interface SessionTreeRow {
   id: string
   parentId: string | null
@@ -82,6 +97,8 @@ declare global {
       prompt: (sessionId: string, text: string) => Promise<void>
       abort: (sessionId: string) => Promise<void>
       getMessages: (sessionId: string) => Promise<unknown[]>
+      getDisplayTurns: (sessionId: string) => Promise<DisplayTurn[]>
+      getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
       getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
       viewBranch: (sessionId: string, tipId: string) => Promise<void>
       getControls: (sessionId: string) => Promise<SessionControls>

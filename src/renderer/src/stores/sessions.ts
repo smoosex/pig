@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   api,
+  type DisplayTurn,
   type ProjectGroup,
   type SessionContextUsage,
   type SessionControls,
@@ -9,12 +10,15 @@ import {
   type SessionTokenStats,
   type ThinkingLevel
 } from '../ipc/api'
+import { buildTurn, type ProcessItem } from '../chat/turns'
 import { isPiMessage, type PiMessage } from '../pi/types'
 
 export type { ProjectGroup, SessionMeta }
 
 interface RuntimeState {
-  messages: PiMessage[]
+  turns: DisplayTurn[]
+  liveMessages: PiMessage[]
+  processByTurnId: Record<string, ProcessItem[]>
   isStreaming: boolean
   model: SessionModelInfo | null
   models: SessionModelInfo[]
@@ -32,7 +36,9 @@ interface OpenTab {
 }
 
 const emptyRuntime = (): RuntimeState => ({
-  messages: [],
+  turns: [],
+  liveMessages: [],
+  processByTurnId: {},
   isStreaming: false,
   model: null,
   models: [],
@@ -65,7 +71,8 @@ interface SessionsStore {
 
   loadProjects: () => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
-  hydrateMessages: (sessionId: string) => Promise<void>
+  hydrateTurns: (sessionId: string) => Promise<void>
+  loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
   setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
@@ -79,8 +86,8 @@ interface SessionsStore {
   renameTab: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
-  appendMessage: (sessionId: string, message: PiMessage) => void
-  replaceLastMessage: (sessionId: string, message: PiMessage) => void
+  appendLiveMessage: (sessionId: string, message: PiMessage) => void
+  replaceLiveMessage: (sessionId: string, message: PiMessage) => void
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 
@@ -134,10 +141,33 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     })
   },
 
-  hydrateMessages: async (sessionId) => {
-    const raw = await api.getMessages(sessionId)
-    const messages = (raw ?? []).filter(isPiMessage)
-    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { messages }) }))
+  hydrateTurns: async (sessionId) => {
+    const turns = await api.getDisplayTurns(sessionId)
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          turns,
+          liveMessages: rt.isStreaming ? rt.liveMessages : [],
+          processByTurnId: rt.isStreaming ? rt.processByTurnId : {}
+        })
+      }
+    })
+  },
+
+  loadTurnProcess: async (sessionId, turnId) => {
+    const cached = ensureRuntime(get().runtime, sessionId).processByTurnId[turnId]
+    if (cached) return
+    const raw = await api.getTurnMessages(sessionId, turnId)
+    const process = buildTurn((raw ?? []).filter(isPiMessage), false).process
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          processByTurnId: { ...rt.processByTurnId, [turnId]: process }
+        })
+      }
+    })
   },
 
   loadControls: async (sessionId) => {
@@ -173,7 +203,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       activeSessionId: ref.sessionId,
       runtime: patchRuntime(s.runtime, ref.sessionId, emptyRuntime())
     }))
-    await Promise.all([get().hydrateMessages(ref.sessionId), get().loadControls(ref.sessionId)])
+    await Promise.all([get().hydrateTurns(ref.sessionId), get().loadControls(ref.sessionId)])
   },
 
   newSession: async (cwd) => {
@@ -258,35 +288,49 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     })),
 
   setStreaming: (sessionId, streaming) =>
-    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { isStreaming: streaming }) })),
-
-  appendMessage: (sessionId, message) =>
     set((s) => {
       const rt = ensureRuntime(s.runtime, sessionId)
       return {
-        runtime: patchRuntime(s.runtime, sessionId, { messages: [...rt.messages, message] })
+        runtime: patchRuntime(s.runtime, sessionId, {
+          isStreaming: streaming,
+          liveMessages: streaming ? [] : rt.liveMessages
+        })
       }
     }),
 
-  replaceLastMessage: (sessionId, message) =>
+  appendLiveMessage: (sessionId, message) =>
     set((s) => {
       const rt = ensureRuntime(s.runtime, sessionId)
-      if (rt.messages.length === 0) {
-        return { runtime: patchRuntime(s.runtime, sessionId, { messages: [message] }) }
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          liveMessages: [...rt.liveMessages, message]
+        })
       }
-      const last = rt.messages[rt.messages.length - 1]
+    }),
+
+  replaceLiveMessage: (sessionId, message) =>
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      if (rt.liveMessages.length === 0) {
+        return { runtime: patchRuntime(s.runtime, sessionId, { liveMessages: [message] }) }
+      }
+      const last = rt.liveMessages[rt.liveMessages.length - 1]
       if (last.role !== message.role) {
-        return { runtime: patchRuntime(s.runtime, sessionId, { messages: [...rt.messages, message] }) }
+        return {
+          runtime: patchRuntime(s.runtime, sessionId, {
+            liveMessages: [...rt.liveMessages, message]
+          })
+        }
       }
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
-          messages: [...rt.messages.slice(0, -1), message]
+          liveMessages: [...rt.liveMessages.slice(0, -1), message]
         })
       }
     }),
 
   viewBranch: async (sessionId, tipId) => {
     await api.viewBranch(sessionId, tipId)
-    await Promise.all([get().hydrateMessages(sessionId), get().loadControls(sessionId)])
+    await Promise.all([get().hydrateTurns(sessionId), get().loadControls(sessionId)])
   }
 }))
