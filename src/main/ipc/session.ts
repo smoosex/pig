@@ -1,6 +1,4 @@
-import { rm } from 'node:fs/promises'
 import { BrowserWindow, ipcMain } from 'electron'
-import { SessionManager } from '@earendil-works/pi-coding-agent'
 import {
   closeSession,
   closeSessionsForCwd,
@@ -13,7 +11,7 @@ import {
   setSessionThinking,
   type SessionThinkingLevel
 } from '../pi/session-registry'
-import { listProject, listProjects } from '../pi/session-loader'
+import { listProject, listProjectFiles, listProjects, removeSessionFile } from '../pi/session-loader'
 
 export function registerSessionIpc(): void {
   ipcMain.handle('session:list-projects', async () => listProjects())
@@ -46,25 +44,16 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
     closeSessionsForCwd(cwd)
-    const projectSessions =
-      cwd === '(unknown)'
-        ? (await SessionManager.listAll()).filter((session) => !session.cwd)
-        : await SessionManager.list(cwd)
-    await Promise.all(projectSessions.map((session) => rm(session.path, { force: true })))
+    const projectSessions = await listProjectFiles(cwd)
+    await Promise.all(projectSessions.map((path) => removeSessionFile(path)))
   })
 
   ipcMain.handle(
     'session:delete',
     async (_event, sessionId: string, path: string, cwd: string) => {
       if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
-      const sessions =
-        cwd === '(unknown)'
-          ? (await SessionManager.listAll()).filter((item) => !item.cwd)
-          : await SessionManager.list(cwd)
-      const session = sessions.find((item) => item.id === sessionId && item.path === path)
-      if (!session) throw new Error(`Session not found: ${sessionId}`)
       closeSession(sessionId)
-      await rm(session.path, { force: true })
+      await removeSessionFile(path)
     }
   )
 
