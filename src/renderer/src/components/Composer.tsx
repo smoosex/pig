@@ -41,7 +41,8 @@ const thinkingLabels: Record<ThinkingLevel, string> = {
   low: '低',
   medium: '中',
   high: '高',
-  xhigh: '极高'
+  xhigh: '极高',
+  max: '最高'
 }
 
 const toolbarBtn =
@@ -249,7 +250,7 @@ export function Composer() {
                   <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
                 </InputGroupButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-auto min-w-48">
+              <DropdownMenuContent align="start" side="top" className="w-auto min-w-48 max-h-72">
                 <DropdownMenuGroup>
                   <DropdownMenuRadioGroup value={modelValue} onValueChange={(value) => void changeModel(value)}>
                     {models.map((item) => (

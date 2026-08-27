@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
-import { disposeAll } from './pi/session-registry'
+import { disposeAll, startModelRuntime } from './pi/session-registry'
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('dev.pig.desktop')
@@ -11,6 +11,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  void startModelRuntime()
   registerIpc()
   createMainWindow()
 

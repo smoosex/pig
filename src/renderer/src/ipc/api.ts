@@ -21,7 +21,7 @@ export interface SessionRef {
   created?: boolean
 }
 
-export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface SessionModelInfo {
   id: string

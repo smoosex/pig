@@ -39,7 +39,8 @@ export function useEventBridge(): void {
             event.level === 'low' ||
             event.level === 'medium' ||
             event.level === 'high' ||
-            event.level === 'xhigh'
+            event.level === 'xhigh' ||
+            event.level === 'max'
           ) {
             setThinkingLevel(sessionId, event.level)
           }

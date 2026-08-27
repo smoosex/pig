@@ -37,7 +37,7 @@ interface SessionTokenStats {
   total: number
 }
 
-type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 interface SessionControls {
   model: SessionModelInfo | null

@@ -3,15 +3,21 @@ import { homedir } from 'node:os'
 import type { BrowserWindow } from 'electron'
 import { resolve } from 'node:path'
 import {
-  AuthStorage,
   createAgentSession,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   type AgentSession
 } from '@earendil-works/pi-coding-agent'
 import { bridgeEvents } from './event-bridge'
 
-export type SessionThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type SessionThinkingLevel =
+  | 'off'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
 
 export interface SessionModelInfo {
   id: string
@@ -72,7 +78,15 @@ const emptyTokens: SessionTokenStats = {
   total: 0
 }
 
-const THINKING_LEVELS: SessionThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const THINKING_LEVELS: SessionThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max'
+]
 
 export interface LiveSession {
   sessionId: string
@@ -95,8 +109,19 @@ const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
 const preparing = new Map<string, Promise<LiveSession>>()
 
-const authStorage = AuthStorage.create()
-const modelRegistry = ModelRegistry.create(authStorage)
+let modelRuntime: ModelRuntime | undefined
+let modelRuntimePromise: Promise<ModelRuntime> | undefined
+
+export function startModelRuntime(): Promise<ModelRuntime> {
+  if (!modelRuntimePromise) {
+    modelRuntimePromise = ModelRuntime.create().then((runtime) => {
+      modelRuntime = runtime
+      void runtime.refresh()
+      return runtime
+    })
+  }
+  return modelRuntimePromise
+}
 
 async function build(
   sessionManager: SessionManager,
@@ -106,8 +131,7 @@ async function build(
   const result = await createAgentSession({
     cwd,
     sessionManager,
-    authStorage,
-    modelRegistry
+    modelRuntime: await startModelRuntime()
   })
   const session = result.session
   const unsubscribe = bridgeEvents(session, session.sessionId, win)
@@ -148,7 +172,7 @@ async function applyPendingControls(
   liveSession: LiveSession
 ): Promise<void> {
   if (session.modelProvider && session.modelId) {
-    const model = modelRegistry.find(session.modelProvider, session.modelId)
+    const model = (await startModelRuntime()).getModel(session.modelProvider, session.modelId)
     if (model) await liveSession.agentSession.setModel(model)
   }
   if (session.thinkingLevel) {
@@ -173,7 +197,7 @@ function toModelInfo(model: {
 }
 
 function availableModels(): SessionModelInfo[] {
-  return modelRegistry.getAvailable().map(toModelInfo)
+  return (modelRuntime?.getAvailableSnapshot() ?? []).map(toModelInfo)
 }
 
 function thinkingLevelsFor(model: SessionModelInfo | null): SessionThinkingLevel[] {
@@ -182,7 +206,7 @@ function thinkingLevelsFor(model: SessionModelInfo | null): SessionThinkingLevel
 }
 
 function findModel(provider: string, id: string): SessionModelInfo | null {
-  const model = modelRegistry.find(provider, id)
+  const model = modelRuntime?.getModel(provider, id)
   return model ? toModelInfo(model) : null
 }
 
@@ -200,7 +224,8 @@ function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStat
   return tokens
 }
 
-export function getSessionControls(sessionId: string): SessionControls {
+export async function getSessionControls(sessionId: string): Promise<SessionControls> {
+  await startModelRuntime()
   const models = availableModels()
   const liveSession = live.get(sessionId)
   if (liveSession) {
@@ -245,7 +270,7 @@ export async function setSessionModel(
   provider: string,
   id: string
 ): Promise<SessionControls> {
-  const model = modelRegistry.find(provider, id)
+  const model = (await startModelRuntime()).getModel(provider, id)
   if (!model) throw new Error(`Model not found: ${provider}/${id}`)
 
   const liveSession = live.get(sessionId)
@@ -261,10 +286,10 @@ export async function setSessionModel(
   return getSessionControls(sessionId)
 }
 
-export function setSessionThinking(
+export async function setSessionThinking(
   sessionId: string,
   level: SessionThinkingLevel
-): SessionControls {
+): Promise<SessionControls> {
   if (!THINKING_LEVELS.includes(level)) throw new Error(`Invalid thinking level: ${level}`)
 
   const liveSession = live.get(sessionId)
