@@ -28,9 +28,9 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col">
+    <aside className="flex w-62 shrink-0 flex-col pl-2">
       <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
-        <div className="py-1.5">
+        <div className="flex flex-col gap-y-1 py-1.5">
           {projects.length === 0 ? (
             <Empty className="min-h-24 p-3">
               <EmptyDescription>暂无历史会话</EmptyDescription>
@@ -43,13 +43,12 @@ export function Sidebar() {
                   key={p.cwd}
                   open={!isCollapsed}
                   onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
-                  className="mb-1.5"
                 >
                   <CollapsibleTrigger asChild>
                     <div
                       role="button"
                       tabIndex={0}
-                      className="group mx-1.5 flex min-h-11 cursor-pointer items-center gap-0.5 rounded-lg px-1 transition-colors hover:bg-background"
+                      className="group flex h-9 cursor-pointer items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-background"
                       onKeyDown={(event) => {
                         if (event.target !== event.currentTarget) return
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -58,18 +57,18 @@ export function Sidebar() {
                         }
                       }}
                     >
-                      <div className="flex min-w-0 basis-0 flex-1 items-center gap-1.5 rounded-md px-1 text-sm font-light">
-                        <Avatar className="size-6 rounded-md after:rounded-md">
-                          <AvatarFallback className="rounded-md bg-chart-5 text-xs font-light text-primary-foreground">
+                      <div className="flex min-w-0 basis-0 flex-1 items-center gap-1.5 rounded-md px-1 text-sm font-normal">
+                        <Avatar className="size-5 rounded-sm after:rounded-sm">
+                          <AvatarFallback className="rounded-sm bg-chart-5 text-xs font-normal text-primary-foreground">
                             {projectInitial(p.name)}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="min-w-0 truncate text-sm font-light" title={p.cwd}>
+                        <span className="min-w-0 truncate text-xs font-normal" title={p.cwd}>
                           {p.name}
                         </span>
                         <ChevronRight
                           className={cn(
-                            'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                            'size-2.5 shrink-0 text-muted-foreground transition-transform',
                             !isCollapsed && 'rotate-90'
                           )}
                         />
@@ -113,16 +112,16 @@ export function Sidebar() {
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="flex flex-col gap-0.5 px-2 pb-1">
+                    <div className="flex flex-col gap-0.5 pb-1">
                       {p.sessions.map((s) => (
                         <div
                           key={s.id}
-                          className="group/session flex min-w-0 items-center gap-0.5 rounded-md transition-colors hover:bg-background focus-within:bg-background"
+                          className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-background focus-within:bg-background"
                         >
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-7 min-w-0 flex-1 justify-start rounded-md pl-6.5 text-left text-xs font-light text-muted-foreground !bg-transparent"
+                            size="xs"
+                            className="h-7 min-w-0 flex-1 justify-start rounded-md text-left text-xs font-normal text-muted-foreground !bg-transparent"
                             title={s.firstMessage}
                             onClick={() => void openExisting(s)}
                           >

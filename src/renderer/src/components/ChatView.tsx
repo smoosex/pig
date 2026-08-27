@@ -154,7 +154,7 @@ function VirtualTurns({ items, sessionId }: { items: Turn[]; sessionId: string |
                     key={row.key}
                     data-index={row.index}
                     ref={virtualizer.measureElement}
-                    className="absolute top-0 left-0 w-full"
+                    className="absolute top-0 left-0 w-full px-8"
                     style={{ transform: `translateY(${row.start}px)` }}
                   >
                     <TurnView

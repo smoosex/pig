@@ -44,7 +44,7 @@ export default function App() {
     <TooltipProvider>
       <div className="flex h-full flex-col bg-card">
         <div className="drag flex h-11 shrink-0 items-center">
-          <div className={cn('flex h-full shrink-0 items-center pr-3 pl-19.5', sidebarOpen && 'w-60')}>
+          <div className={cn('flex h-full shrink-0 items-center pr-3 pl-19.5', sidebarOpen && 'w-62')}>
             <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
           </div>
         </div>
