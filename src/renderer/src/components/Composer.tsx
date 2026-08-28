@@ -40,28 +40,33 @@ const thinkingLabels: Record<ThinkingLevel, string> = {
   max: '最高'
 }
 
-const thinkingStrength: Record<ThinkingLevel, number> = {
-  off: 0,
-  minimal: 0,
-  low: 1,
-  medium: 2,
-  high: 3,
-  xhigh: 4,
-  max: 5
+const thinkingBarHeights: Record<3 | 4 | 5, string[]> = {
+  3: ['h-1.5', 'h-2.5', 'h-3'],
+  4: ['h-1.5', 'h-2', 'h-2.5', 'h-3'],
+  5: ['h-1', 'h-1.5', 'h-2', 'h-2.5', 'h-3']
 }
 
 function ThinkingStrengthIcon({
   level,
+  levels,
   active = false
 }: {
   level: ThinkingLevel
+  levels: ThinkingLevel[]
   active?: boolean
 }) {
-  const filled = thinkingStrength[level]
-  const heights = ['h-1', 'h-1.5', 'h-2', 'h-2.5', 'h-3']
+  const bars = levels.length === 4 || levels.length === 3 ? levels.length : 5
+  const filled = Math.max(levels.indexOf(level) + 1, 0)
+  const heights = thinkingBarHeights[bars]
 
   return (
-    <span aria-hidden="true" className="inline-flex h-3 w-6 shrink-0 items-end gap-px">
+    <span
+      aria-hidden="true"
+      className={cn(
+        'inline-flex h-3 shrink-0 items-end gap-px',
+        bars === 5 ? 'w-6' : bars === 4 ? 'w-5' : 'w-4'
+      )}
+    >
       {heights.map((height, index) => (
         <span
           key={height}
@@ -364,7 +369,7 @@ function ThinkingPicker({
     >
       <PopoverTrigger asChild>
         <InputGroupButton className={toolbarBtn} disabled={disabled}>
-          <ThinkingStrengthIcon level={thinkingLevel} active />
+          <ThinkingStrengthIcon level={thinkingLevel} levels={thinkingLevels} active />
           {thinkingLabels[thinkingLevel]}
         </InputGroupButton>
       </PopoverTrigger>
@@ -388,7 +393,7 @@ function ThinkingPicker({
               <span className="w-4 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
                 {index + 1}
               </span>
-              <ThinkingStrengthIcon level={level} active={selected} />
+              <ThinkingStrengthIcon level={level} levels={thinkingLevels} active={selected} />
               {thinkingLabels[level]}
             </Button>
           )
