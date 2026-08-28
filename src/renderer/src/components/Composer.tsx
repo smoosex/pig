@@ -61,12 +61,12 @@ function ThinkingStrengthIcon({
   const heights = ['h-1', 'h-1.5', 'h-2', 'h-2.5', 'h-3']
 
   return (
-    <span aria-hidden="true" className="inline-flex h-3 w-4 shrink-0 items-end gap-px">
+    <span aria-hidden="true" className="inline-flex h-3 w-6 shrink-0 items-end gap-px">
       {heights.map((height, index) => (
         <span
           key={height}
           className={cn(
-            'w-0.5 rounded-xs',
+            'w-1 rounded-xs',
             height,
             index < filled
               ? active
