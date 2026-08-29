@@ -68,7 +68,7 @@ function Chevron({ open }: { open: boolean }) {
 
 function UserBubble({ message }: { message: UserMessage }) {
   return (
-    <Message align="end" className="mb-4">
+    <Message align="end" className="mb-4" data-turn-user="">
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
         <Bubble align="end" className="max-w-full">
           <BubbleContent className="whitespace-pre-wrap">{userText(message)}</BubbleContent>

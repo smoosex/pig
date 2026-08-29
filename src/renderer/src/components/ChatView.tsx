@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
@@ -52,34 +52,119 @@ function toTurn(display: DisplayTurn, process: ProcessItem[]): Turn {
   }
 }
 
+const MINIMAP_MIN = 8
+const MINIMAP_MAX = 24
+const MINIMAP_DOCK = 0.55
+const MINIMAP_REACH = 3
+const MINIMAP_BAR = 2
+const MINIMAP_GAP = 6
+const MINIMAP_PAD_Y = 8
+const MINIMAP_FADE = MINIMAP_PAD_Y + 4 * MINIMAP_BAR + 3 * MINIMAP_GAP
+
+function userTextLength(user: Turn['user']): number {
+  if (!user) return 0
+  if (typeof user.content === 'string') return user.content.length
+  if (!Array.isArray(user.content)) return 0
+  let n = 0
+  for (const block of user.content) {
+    if (block.type === 'text') n += block.text.length
+  }
+  return n
+}
+
+function turnLength(turn: Turn): number {
+  let n = userTextLength(turn.user)
+  for (const block of turn.answer) {
+    if (block.type === 'text') n += block.text.length
+  }
+  return n
+}
+
+function dockBoost(index: number, hoverPos: number | null): number {
+  if (hoverPos == null) return 0
+  const dist = Math.abs(index - hoverPos)
+  if (dist >= MINIMAP_REACH) return 0
+  return Math.cos((dist / MINIMAP_REACH) * (Math.PI / 2))
+}
+
 function TurnMinimap({
-  ids,
-  visibleIds,
+  items,
   onJump
 }: {
-  ids: string[]
-  visibleIds: string[]
+  items: Turn[]
   onJump: (index: number) => void
 }) {
-  if (ids.length === 0) return null
-  const visible = new Set(visibleIds)
-  const current = visibleIds[0]
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [hoverPos, setHoverPos] = useState<number | null>(null)
+  const [overflow, setOverflow] = useState({ top: false, bottom: false })
+  const lengths = useMemo(() => items.map(turnLength), [items])
+  const maxLen = Math.max(...lengths, 1)
+  const hovering = hoverPos != null
+
+  useLayoutEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const sync = () => {
+      const top = el.scrollTop > 1
+      const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+      setOverflow((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }))
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [items.length])
+
+  if (items.length === 0) return null
+  const hoveredIndex =
+    hoverPos == null ? -1 : Math.min(items.length - 1, Math.max(0, Math.round(hoverPos)))
+  const mask = `linear-gradient(to bottom, ${overflow.top ? 'transparent' : 'black'} 0, black ${MINIMAP_FADE}px, black calc(100% - ${MINIMAP_FADE}px), ${overflow.bottom ? 'transparent' : 'black'} 100%)`
 
   return (
-    <div className="absolute top-1/2 right-3 z-10 flex max-h-1/2 -translate-y-1/2 flex-col items-end gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {ids.map((id, index) => {
-        const active = id === current
-        const onScreen = visible.has(id)
+    <div
+      ref={rootRef}
+      className="absolute top-1/2 right-3 z-10 flex max-h-3/4 min-w-9 -translate-y-1/2 cursor-pointer flex-col items-end gap-1.5 overflow-y-auto py-2 pl-10 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
+      onScroll={(event) => {
+        const el = event.currentTarget
+        const top = el.scrollTop > 1
+        const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+        setOverflow((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }))
+      }}
+      onPointerMove={(event) => {
+        const el = event.currentTarget
+        const y =
+          event.clientY - el.getBoundingClientRect().top + el.scrollTop - MINIMAP_PAD_Y
+        setHoverPos((y - MINIMAP_BAR / 2) / (MINIMAP_BAR + MINIMAP_GAP))
+      }}
+      onPointerLeave={() => setHoverPos(null)}
+      onClick={(event) => {
+        const el = event.currentTarget
+        const y =
+          event.clientY - el.getBoundingClientRect().top + el.scrollTop - MINIMAP_PAD_Y
+        const index = Math.round((y - MINIMAP_BAR / 2) / (MINIMAP_BAR + MINIMAP_GAP))
+        if (index >= 0 && index < items.length) onJump(index)
+      }}
+    >
+      {items.map((item, index) => {
+        const id = item.id ?? String(index)
+        const content =
+          MINIMAP_MIN + Math.sqrt(lengths[index] / maxLen) * (MINIMAP_MAX - MINIMAP_MIN)
+        const boost = dockBoost(index, hoverPos)
         return (
           <button
-            key={id || index}
+            key={id}
             type="button"
+            tabIndex={-1}
             aria-label="跳转到该轮对话"
             className={cn(
-              'h-0.5 shrink-0 rounded-full transition-all',
-              active ? 'w-4 bg-foreground' : onScreen ? 'w-3 bg-muted-foreground' : 'w-3 bg-border'
+              'pointer-events-none h-0.5 origin-right shrink-0 rounded-full transition-[width] duration-300 ease-out',
+              index === hoveredIndex ? 'bg-foreground' : 'bg-border'
             )}
-            onClick={() => onJump(index)}
+            style={{
+              width: hovering ? content : MINIMAP_MIN,
+              transform: `scaleX(${1 + MINIMAP_DOCK * boost})`
+            }}
           />
         )
       })}
@@ -119,10 +204,20 @@ export function ChatView() {
     )
   }
 
-  return <VirtualTurns items={items} sessionId={activeSessionId} />
+  return <VirtualTurns items={items} sessionId={activeSessionId} isStreaming={isStreaming} />
 }
 
-function VirtualTurns({ items, sessionId }: { items: Turn[]; sessionId: string | null }) {
+const TURN_ALIGN = 12
+
+function VirtualTurns({
+  items,
+  sessionId,
+  isStreaming
+}: {
+  items: Turn[]
+  sessionId: string | null
+  isStreaming: boolean
+}) {
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const parentRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -131,15 +226,52 @@ function VirtualTurns({ items, sessionId }: { items: Turn[]; sessionId: string |
     estimateSize: () => 160,
     overscan: 8,
     paddingStart: 16,
-    paddingEnd: 16,
+    paddingEnd: TURN_ALIGN,
     getItemKey: (index) => items[index]?.id ?? index
   })
   const virtualItems = virtualizer.getVirtualItems()
-  const ids = items.map((item, index) => item.id ?? String(index))
+
+  const jumpToTurn = (index: number) => {
+    const scroller = parentRef.current
+    if (!scroller) return
+    scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -1 }))
+
+    const place = (): boolean => {
+      const row = scroller.querySelector(`[data-index="${index}"]`)
+      const target = row?.querySelector('[data-turn-user]') ?? row
+      if (!target) return false
+      const sRect = scroller.getBoundingClientRect()
+      const tRect = target.getBoundingClientRect()
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight
+      const toTop = scroller.scrollTop + tRect.top - sRect.top - TURN_ALIGN
+      if (toTop <= maxScroll + 1) {
+        scroller.scrollTop = Math.max(0, toTop)
+      } else {
+        const toBottom = scroller.scrollTop + tRect.bottom - sRect.bottom + TURN_ALIGN
+        scroller.scrollTop = Math.max(0, Math.min(maxScroll, toBottom))
+      }
+      return true
+    }
+
+    if (place()) return
+
+    const measured = virtualizer.measurementsCache[index]
+    if (measured) {
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight
+      scroller.scrollTop = Math.max(0, Math.min(maxScroll, measured.start - TURN_ALIGN))
+    }
+
+    let tries = 0
+    const tick = () => {
+      if (place() || tries++ >= 30) return
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
 
   return (
     <div className="relative min-h-0 flex-1">
-      <MessageScrollerProvider autoScroll>
+      <MessageScrollerProvider autoScroll={isStreaming}>
         <MessageScroller>
           <MessageScrollerViewport
             ref={parentRef}
@@ -172,9 +304,8 @@ function VirtualTurns({ items, sessionId }: { items: Turn[]; sessionId: string |
           </MessageScrollerViewport>
           <MessageScrollerButton />
           <TurnMinimap
-            ids={ids}
-            visibleIds={virtualItems.map((row) => ids[row.index] ?? '')}
-            onJump={(index) => virtualizer.scrollToIndex(index, { align: 'start' })}
+            items={items}
+            onJump={jumpToTurn}
           />
         </MessageScroller>
       </MessageScrollerProvider>
