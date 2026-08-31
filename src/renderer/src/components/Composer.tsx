@@ -406,7 +406,7 @@ function ThinkingPicker({
 export function Composer() {
   const [text, setText] = useState('')
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
-  const refreshProject = useSessionsStore((s) => s.refreshProject)
+  const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const runtime = useSessionsStore((s) =>
     s.activeSessionId ? s.runtime[s.activeSessionId] : undefined
   )
@@ -428,11 +428,11 @@ export function Composer() {
     const trimmed = text.trim()
     if (!trimmed || isStreaming || !activeSessionId) return
     const prepared = await api.prepareSession(activeSessionId)
-    if (prepared.created) await refreshProject(prepared.cwd)
+    if (prepared.created) await refreshCwd(prepared.cwd)
     setText('')
     await api.prompt(activeSessionId, trimmed)
-    await Promise.all([refreshProject(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
-  }, [text, isStreaming, activeSessionId, refreshProject])
+    await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
+  }, [text, isStreaming, activeSessionId, refreshCwd])
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return

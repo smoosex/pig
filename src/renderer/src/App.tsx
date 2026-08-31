@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderPlus, PanelLeft } from 'lucide-react'
+import { FolderPlus, MessageSquarePlus, PanelLeft } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
 import { useEventBridge } from './hooks/useEventBridge'
 import { Button } from './components/ui/button'
@@ -32,14 +32,17 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 
 export default function App() {
   const loadProjects = useSessionsStore((s) => s.loadProjects)
+  const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
+  const newChat = useSessionsStore((s) => s.newChat)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   useEventBridge()
 
   useEffect(() => {
     void loadProjects()
-  }, [loadProjects])
+    void loadChats()
+  }, [loadProjects, loadChats])
 
   return (
     <TooltipProvider>
@@ -62,11 +65,17 @@ export default function App() {
               </>
             ) : (
               <Empty className="gap-4">
-                <EmptyDescription>从左侧选择会话，或打开一个项目</EmptyDescription>
-                <Button variant="outline" size="sm" onClick={() => void openProject()}>
-                  <FolderPlus />
-                  打开项目
-                </Button>
+                <EmptyDescription>从左侧选择，或打开项目、开始对话</EmptyDescription>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => void openProject()}>
+                    <FolderPlus />
+                    打开项目
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void newChat()}>
+                    <MessageSquarePlus />
+                    新对话
+                  </Button>
+                </div>
               </Empty>
             )}
           </div>

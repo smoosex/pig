@@ -63,16 +63,50 @@ function patchRuntime(
   }
 }
 
+function patchTabsFromGroups(tabs: OpenTab[], groups: ProjectGroup[]): OpenTab[] {
+  const metas = new Map(groups.flatMap((group) => group.sessions).map((meta) => [meta.id, meta]))
+  return tabs.map((tab) => {
+    const meta = metas.get(tab.sessionId)
+    if (!meta) return tab
+    return {
+      ...tab,
+      title: meta.name || meta.firstMessage || tab.title,
+      meta
+    }
+  })
+}
+
+function upsertGroup(
+  groups: ProjectGroup[],
+  cwd: string,
+  group: ProjectGroup | null,
+  keepEmpty: boolean
+): ProjectGroup[] {
+  const index = groups.findIndex((item) => item.cwd === cwd)
+  const next = [...groups]
+  const keep = group && (keepEmpty || group.sessions.length > 0)
+  if (keep && group) {
+    if (index === -1) next.push(group)
+    else next[index] = group
+  } else if (index !== -1) {
+    next.splice(index, 1)
+  }
+  return next
+}
+
 interface SessionsStore {
   projects: ProjectGroup[]
+  chats: ProjectGroup[]
   openTabs: OpenTab[]
   activeSessionId: string | null
   runtime: Record<string, RuntimeState>
 
   loadProjects: () => Promise<void>
+  loadChats: () => Promise<void>
   openProject: () => Promise<void>
   unpinProject: (cwd: string) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
+  refreshCwd: (cwd: string) => Promise<void>
   hydrateTurns: (sessionId: string) => Promise<void>
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
   loadControls: (sessionId: string) => Promise<void>
@@ -81,7 +115,9 @@ interface SessionsStore {
 
   openExisting: (meta: SessionMeta) => Promise<void>
   newSession: (cwd: string) => Promise<void>
+  newChat: () => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
+  deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>
   closeTab: (sessionId: string) => void
   setActive: (sessionId: string) => void
@@ -95,24 +131,24 @@ interface SessionsStore {
 
 export const useSessionsStore = create<SessionsStore>((set, get) => ({
   projects: [],
+  chats: [],
   openTabs: [],
   activeSessionId: null,
   runtime: {},
 
   loadProjects: async () => {
     const projects = await api.listProjects()
-    const metas = new Map(projects.flatMap((project) => project.sessions).map((meta) => [meta.id, meta]))
     set((s) => ({
       projects,
-      openTabs: s.openTabs.map((tab) => {
-        const meta = metas.get(tab.sessionId)
-        if (!meta) return tab
-        return {
-          ...tab,
-          title: meta.name || meta.firstMessage || tab.title,
-          meta
-        }
-      })
+      openTabs: patchTabsFromGroups(s.openTabs, projects)
+    }))
+  },
+
+  loadChats: async () => {
+    const chats = await api.listChats()
+    set((s) => ({
+      chats,
+      openTabs: patchTabsFromGroups(s.openTabs, chats)
     }))
   },
 
@@ -137,29 +173,22 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
 
   refreshProject: async (cwd) => {
     const project = await api.listProject(cwd)
-    set((s) => {
-      const index = s.projects.findIndex((item) => item.cwd === cwd)
-      const projects = [...s.projects]
-      if (project) {
-        if (index === -1) projects.push(project)
-        else projects[index] = project
-      } else if (index !== -1) {
-        projects.splice(index, 1)
-      }
-      const metas = new Map((project?.sessions ?? []).map((meta) => [meta.id, meta]))
-      return {
-        projects,
-        openTabs: s.openTabs.map((tab) => {
-          const meta = metas.get(tab.sessionId)
-          if (!meta) return tab
-          return {
-            ...tab,
-            title: meta.name || meta.firstMessage || tab.title,
-            meta
-          }
-        })
-      }
-    })
+    set((s) => ({
+      projects: upsertGroup(s.projects, cwd, project, true),
+      openTabs: patchTabsFromGroups(s.openTabs, project ? [project] : [])
+    }))
+  },
+
+  refreshCwd: async (cwd) => {
+    if (await api.isChatCwd(cwd)) {
+      const chat = await api.listProject(cwd)
+      set((s) => ({
+        chats: upsertGroup(s.chats, cwd, chat, false),
+        openTabs: patchTabsFromGroups(s.openTabs, chat ? [chat] : [])
+      }))
+      return
+    }
+    await get().refreshProject(cwd)
   },
 
   hydrateTurns: async (sessionId) => {
@@ -238,6 +267,17 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     await get().loadControls(ref.sessionId)
   },
 
+  newChat: async () => {
+    const ref = await api.createChat()
+    const tab: OpenTab = { sessionId: ref.sessionId, cwd: ref.cwd, title: 'New Session' }
+    set((s) => ({
+      openTabs: [...s.openTabs, tab],
+      activeSessionId: ref.sessionId,
+      runtime: patchRuntime(s.runtime, ref.sessionId, emptyRuntime())
+    }))
+    await get().loadControls(ref.sessionId)
+  },
+
   deleteProject: async (cwd) => {
     await api.deleteProject(cwd)
     set((s) => {
@@ -252,6 +292,29 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
         : false
       return {
         projects: s.projects.filter((project) => project.cwd !== cwd),
+        openTabs,
+        runtime,
+        activeSessionId: activeWasDeleted
+          ? openTabs[openTabs.length - 1]?.sessionId ?? null
+          : s.activeSessionId
+      }
+    })
+  },
+
+  deleteChat: async (cwd) => {
+    await api.deleteChat(cwd)
+    set((s) => {
+      const deletedSessionIds = new Set(
+        s.openTabs.filter((tab) => tab.cwd === cwd).map((tab) => tab.sessionId)
+      )
+      const openTabs = s.openTabs.filter((tab) => tab.cwd !== cwd)
+      const runtime = { ...s.runtime }
+      for (const sessionId of deletedSessionIds) delete runtime[sessionId]
+      const activeWasDeleted = s.activeSessionId
+        ? deletedSessionIds.has(s.activeSessionId)
+        : false
+      return {
+        chats: s.chats.filter((chat) => chat.cwd !== cwd),
         openTabs,
         runtime,
         activeSessionId: activeWasDeleted

@@ -15,6 +15,12 @@ export interface ProjectGroup {
   sessions: SessionMeta[]
 }
 
+export interface SidebarPrefs {
+  projectsCollapsed: boolean
+  chatsCollapsed: boolean
+  split: number
+}
+
 export interface SessionRef {
   sessionId: string
   cwd: string
@@ -102,10 +108,14 @@ export type PiEvent = {
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
   listProject: (cwd: string) => Promise<ProjectGroup | null>
+  listChats: () => Promise<ProjectGroup[]>
+  isChatCwd: (cwd: string) => Promise<boolean>
   openProject: () => Promise<ProjectGroup | null>
   unpinProject: (cwd: string) => Promise<void>
   prepareSession: (sessionId: string) => Promise<SessionRef>
   createSession: (cwd: string) => Promise<SessionRef>
+  createChat: () => Promise<SessionRef>
+  deleteChat: (cwd: string) => Promise<void>
   openSession: (path: string) => Promise<SessionRef>
   closeSession: (sessionId: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
@@ -122,6 +132,8 @@ export interface SessionApi {
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   refreshModels: (sessionId: string) => Promise<SessionControls>
   pickDirectory: () => Promise<string | null>
+  getSidebarPrefs: () => Promise<SidebarPrefs>
+  setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   onEvent: (listener: (event: unknown) => void) => () => void
 }
 

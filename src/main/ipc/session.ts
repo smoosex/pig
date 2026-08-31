@@ -17,6 +17,13 @@ import {
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
 import { listOpenedProjects, listProject, removeProjectDir, removeSessionFile } from '../pi/session-loader'
 import { addOpenedProject, listOpenedCwds, removeOpenedProject } from '../opened-projects'
+import {
+  createChatDir,
+  isChatCwd,
+  isChatsRoot,
+  listChats,
+  removeChatWorkDir
+} from '../chats'
 
 export function registerSessionIpc(): void {
   ipcMain.handle('session:list-projects', async () => listOpenedProjects(await listOpenedCwds()))
@@ -27,8 +34,28 @@ export function registerSessionIpc(): void {
     if (!win) throw new Error('No window attached to sender')
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null
-    const cwd = await addOpenedProject(result.filePaths[0])
+    const picked = result.filePaths[0]
+    if (isChatCwd(picked) || isChatsRoot(picked)) return null
+    const cwd = await addOpenedProject(picked)
     return listProject(cwd)
+  })
+
+  ipcMain.handle('session:list-chats', async () => listChats())
+  ipcMain.handle('session:is-chat-cwd', async (_event, cwd: string) => isChatCwd(cwd))
+
+  ipcMain.handle('session:create-chat', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window attached to sender')
+    const cwd = await createChatDir()
+    const session = createPendingSession(cwd, win)
+    return { sessionId: session.sessionId, cwd: session.cwd }
+  })
+
+  ipcMain.handle('session:delete-chat', async (_event, cwd: string) => {
+    if (!cwd || !isChatCwd(cwd)) throw new Error('Chat cwd is required')
+    closeSessionsForCwd(cwd)
+    await removeProjectDir(cwd)
+    await removeChatWorkDir(cwd)
   })
 
   ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
@@ -39,6 +66,9 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:create', async (event, cwd: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window attached to sender')
+    if (isChatCwd(cwd) || isChatsRoot(cwd)) {
+      throw new Error('Chat directories allow only one session')
+    }
     const session = createPendingSession(cwd, win)
     return { sessionId: session.sessionId, cwd: session.cwd }
   })

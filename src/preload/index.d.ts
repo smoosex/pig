@@ -15,6 +15,12 @@ interface ProjectGroup {
   sessions: SessionMeta[]
 }
 
+interface SidebarPrefs {
+  projectsCollapsed: boolean
+  chatsCollapsed: boolean
+  split: number
+}
+
 interface SessionModelInfo {
   id: string
   name: string
@@ -89,8 +95,12 @@ declare global {
     api: {
       listProjects: () => Promise<ProjectGroup[]>
       listProject: (cwd: string) => Promise<ProjectGroup | null>
+      listChats: () => Promise<ProjectGroup[]>
+      isChatCwd: (cwd: string) => Promise<boolean>
       openProject: () => Promise<ProjectGroup | null>
       unpinProject: (cwd: string) => Promise<void>
+      createChat: () => Promise<{ sessionId: string; cwd: string }>
+      deleteChat: (cwd: string) => Promise<void>
       createSession: (cwd: string) => Promise<{ sessionId: string; cwd: string }>
       openSession: (path: string) => Promise<{ sessionId: string; cwd: string }>
       prepareSession: (sessionId: string) => Promise<{ sessionId: string; cwd: string; created: boolean }>
@@ -109,6 +119,8 @@ declare global {
       setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
       refreshModels: (sessionId: string) => Promise<SessionControls>
       pickDirectory: () => Promise<string | null>
+      getSidebarPrefs: () => Promise<SidebarPrefs>
+      setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
       onEvent: (listener: (event: unknown) => void) => () => void
     }
   }
