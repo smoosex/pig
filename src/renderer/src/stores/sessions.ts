@@ -19,7 +19,10 @@ interface RuntimeState {
   turns: DisplayTurn[]
   liveMessages: PiMessage[]
   processByTurnId: Record<string, ProcessItem[]>
+  elapsedByTurnId: Record<string, number>
   isStreaming: boolean
+  streamStartedAt: number | null
+  streamElapsedMs: number | null
   model: SessionModelInfo | null
   models: SessionModelInfo[]
   thinkingLevel: ThinkingLevel
@@ -39,7 +42,10 @@ const emptyRuntime = (): RuntimeState => ({
   turns: [],
   liveMessages: [],
   processByTurnId: {},
+  elapsedByTurnId: {},
   isStreaming: false,
+  streamStartedAt: null,
+  streamElapsedMs: null,
   model: null,
   models: [],
   thinkingLevel: 'off',
@@ -195,11 +201,17 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     const turns = await api.getDisplayTurns(sessionId)
     set((s) => {
       const rt = ensureRuntime(s.runtime, sessionId)
+      const elapsedByTurnId = { ...rt.elapsedByTurnId }
+      const last = turns[turns.length - 1]
+      if (!rt.isStreaming && rt.streamElapsedMs != null && last) {
+        elapsedByTurnId[last.id] = rt.streamElapsedMs
+      }
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
           turns,
           liveMessages: rt.isStreaming ? rt.liveMessages : [],
-          processByTurnId: rt.isStreaming ? rt.processByTurnId : {}
+          processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
+          elapsedByTurnId
         })
       }
     })
@@ -376,6 +388,16 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
           isStreaming: streaming,
+          streamStartedAt: streaming
+            ? rt.isStreaming && rt.streamStartedAt != null
+              ? rt.streamStartedAt
+              : Date.now()
+            : null,
+          streamElapsedMs: streaming
+            ? null
+            : rt.streamStartedAt != null
+              ? Date.now() - rt.streamStartedAt
+              : rt.streamElapsedMs,
           liveMessages: streaming ? [] : rt.liveMessages
         })
       }

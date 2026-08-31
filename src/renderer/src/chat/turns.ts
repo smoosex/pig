@@ -19,7 +19,7 @@ export interface ToolStep {
 
 export type ProcessItem =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string }
+  | { kind: 'thinking'; text: string; durationMs: number }
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
@@ -39,6 +39,13 @@ export interface Turn {
   endedAt: number
   streaming: boolean
   hasProcess?: boolean
+  workedMs?: number
+}
+
+function persistedAtOf(message: PiMessage): number | undefined {
+  if (!('persistedAt' in message)) return undefined
+  const value = (message as { persistedAt?: unknown }).persistedAt
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function lastToolCallIndex(content: AssistantMessage['content']): number {
@@ -103,15 +110,20 @@ function addToolResult(process: ProcessItem[], result: ToolResultMessage): void 
 function consumeAssistant(
   process: ProcessItem[],
   message: AssistantMessage,
-  splitTrailingText: boolean
+  splitTrailingText: boolean,
+  durationMs: number
 ): AnswerBlock[] {
   const answer: AnswerBlock[] = []
   const splitAt = splitTrailingText ? lastToolCallIndex(message.content) : -1
+  let thinkingDuration = durationMs
 
   message.content.forEach((block, i) => {
     const toAnswer = splitTrailingText && i > splitAt
     if (block.type === 'thinking') {
-      if (block.thinking) process.push({ kind: 'thinking', text: block.thinking })
+      if (block.thinking) {
+        process.push({ kind: 'thinking', text: block.thinking, durationMs: thinkingDuration })
+        thinkingDuration = 0
+      }
       return
     }
     if (block.type === 'toolCall') {
@@ -145,7 +157,11 @@ export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
       const isLast = i === lastAssistant
       const trailingIsAnswer = isLast && rest.slice(i + 1).every((m) => m.role !== 'toolResult')
       const splitTrailing = isLast && lastToolCallIndex(message.content) >= 0
-      const blocks = consumeAssistant(process, message, splitTrailing && trailingIsAnswer)
+      const nextTs =
+        rest[i + 1]?.timestamp ??
+        (streaming && isLast ? Date.now() : persistedAtOf(message) ?? message.timestamp)
+      const durationMs = Math.max(0, nextTs - message.timestamp)
+      const blocks = consumeAssistant(process, message, splitTrailing && trailingIsAnswer, durationMs)
       if (!streaming && isLast && (trailingIsAnswer || lastToolCallIndex(message.content) < 0)) {
         if (blocks.length) answer = blocks
         else if (!splitTrailing) {
@@ -211,19 +227,6 @@ export function groupTurns(messages: PiMessage[], streaming: boolean): Turn[] {
   return chunks.map((chunk, i) => buildTurn(chunk, streaming && i === chunks.length - 1))
 }
 
-export function liveProcessItem(process: ProcessItem[]): ProcessItem {
-  for (let i = process.length - 1; i >= 0; i--) {
-    const item = process[i]
-    if (item.kind === 'text' || item.kind === 'summary' || item.kind === 'custom') continue
-    if (item.kind === 'tools') {
-      if (item.tools.length === 0) continue
-      return { kind: 'tools', tools: [item.tools[item.tools.length - 1]] }
-    }
-    return item
-  }
-  return { kind: 'thinking', text: '' }
-}
-
 export function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))
   if (s < 60) return `${s} 秒`
@@ -261,7 +264,7 @@ export function toolStepLabel(step: ToolStep): string {
     case 'grep':
       return args.pattern ? `搜索 ${oneLine(args.pattern)}` : '搜索代码'
     default:
-      return step.name
+      return `调用 ${step.name}`
   }
 }
 

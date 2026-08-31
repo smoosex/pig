@@ -20,7 +20,7 @@ export interface DisplayTurn {
   hasProcess: boolean
 }
 
-type PathMessage = { id: string; message: Record<string, unknown> }
+type PathMessage = { id: string; message: Record<string, unknown>; persistedAt: number }
 
 function isHidden(type: string): boolean {
   return (
@@ -51,6 +51,7 @@ function pathMessages(sessionId: string): PathMessage[] {
     if (entry.type === 'message') {
       items.push({
         id: entry.id,
+        persistedAt: fallback,
         message: withTimestamp(entry.message as unknown as Record<string, unknown>, fallback)
       })
       continue
@@ -59,6 +60,7 @@ function pathMessages(sessionId: string): PathMessage[] {
       if (entry.display === false) continue
       items.push({
         id: entry.id,
+        persistedAt: fallback,
         message: {
           role: 'custom',
           customType: entry.customType,
@@ -73,6 +75,7 @@ function pathMessages(sessionId: string): PathMessage[] {
     if (entry.type === 'compaction') {
       items.push({
         id: entry.id,
+        persistedAt: fallback,
         message: {
           role: 'compactionSummary',
           summary: entry.summary,
@@ -85,6 +88,7 @@ function pathMessages(sessionId: string): PathMessage[] {
     if (entry.type === 'branch_summary') {
       items.push({
         id: entry.id,
+        persistedAt: fallback,
         message: {
           role: 'branchSummary',
           summary: entry.summary,
@@ -153,7 +157,8 @@ function asAnswer(block: {
   return null
 }
 
-function summarizeChunk(messages: Record<string, unknown>[]): Omit<DisplayTurn, 'id'> {
+function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
+  const messages = chunk.map((item) => item.message)
   const userMsg = messages[0]?.role === 'user' ? messages[0] : undefined
   const rest = userMsg ? messages.slice(1) : messages
   const user = userMsg ? displayUser(userMsg) : undefined
@@ -219,8 +224,9 @@ function summarizeChunk(messages: Record<string, unknown>[]): Omit<DisplayTurn, 
 
   const timeOf = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value) ? value : undefined
-  const startedAt = timeOf(rest[0]?.timestamp) ?? timeOf(userMsg?.timestamp) ?? 0
-  const endedAt = timeOf(rest[rest.length - 1]?.timestamp) ?? startedAt
+  const startedAt =
+    timeOf(rest[0]?.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
+  const endedAt = chunk[chunk.length - 1]?.persistedAt ?? startedAt
 
   return { user, answer, errorMessage, startedAt, endedAt, hasProcess }
 }
@@ -228,7 +234,7 @@ function summarizeChunk(messages: Record<string, unknown>[]): Omit<DisplayTurn, 
 export function getDisplayTurns(sessionId: string): DisplayTurn[] {
   return groupPath(pathMessages(sessionId)).map((chunk) => ({
     id: chunk[0].id,
-    ...summarizeChunk(chunk.map((item) => item.message))
+    ...summarizeChunk(chunk)
   }))
 }
 
@@ -237,5 +243,5 @@ export function getTurnMessages(sessionId: string, turnId: string): unknown[] {
     (group) => group[0].id === turnId || group.some((item) => item.id === turnId)
   )
   if (!chunk) throw new Error(`Turn not found: ${turnId}`)
-  return chunk.map((item) => item.message)
+  return chunk.map((item) => ({ ...item.message, persistedAt: item.persistedAt }))
 }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
@@ -9,12 +9,14 @@ import { Empty } from './ui/empty'
 import {
   MessageScroller,
   MessageScrollerButton,
+  MessageScrollerContent,
   MessageScrollerProvider,
-  MessageScrollerViewport
+  MessageScrollerViewport,
+  useMessageScroller
 } from './ui/message-scroller'
 import { TurnView } from './TurnView'
 
-function toTurn(display: DisplayTurn, process: ProcessItem[]): Turn {
+function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
   const user = display.user
     ? display.user.images.length > 0
       ? {
@@ -48,7 +50,8 @@ function toTurn(display: DisplayTurn, process: ProcessItem[]): Turn {
     startedAt: display.startedAt,
     endedAt: display.endedAt,
     streaming: false,
-    hasProcess: display.hasProcess
+    hasProcess: display.hasProcess,
+    workedMs
   }
 }
 
@@ -183,18 +186,27 @@ export function ChatView() {
   const processByTurnId = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.processByTurnId ?? {}) : {}
   )
+  const elapsedByTurnId = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.elapsedByTurnId ?? {}) : {}
+  )
+  const streamElapsedMs = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamElapsedMs ?? null) : null
+  )
   const isStreaming = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.isStreaming ?? false) : false
   )
   const items = useMemo(() => {
-    const historical = turns.map((turn) => toTurn(turn, processByTurnId[turn.id] ?? []))
+    const historical = turns.map((turn) =>
+      toTurn(turn, processByTurnId[turn.id] ?? [], elapsedByTurnId[turn.id])
+    )
     if (liveMessages.length === 0) return historical
     const live = groupTurns(liveMessages, isStreaming).map((turn, index) => ({
       ...turn,
-      id: `live-${index}`
+      id: `live-${index}`,
+      workedMs: streamElapsedMs ?? undefined
     }))
     return [...historical, ...live]
-  }, [turns, liveMessages, processByTurnId, isStreaming])
+  }, [turns, liveMessages, processByTurnId, elapsedByTurnId, streamElapsedMs, isStreaming])
 
   if (items.length === 0) {
     return (
@@ -219,7 +231,59 @@ export function ChatView() {
     )
   }
 
-  return <VirtualTurns items={items} sessionId={activeSessionId} isStreaming={isStreaming} />
+  return (
+    <VirtualTurns
+      key={activeSessionId ?? 'none'}
+      items={items}
+      sessionId={activeSessionId}
+      isStreaming={isStreaming}
+    />
+  )
+}
+
+function FollowScroller({
+  sessionId,
+  isStreaming,
+  turnCount,
+  viewportRef
+}: {
+  sessionId: string | null
+  isStreaming: boolean
+  turnCount: number
+  viewportRef: RefObject<HTMLDivElement | null>
+}) {
+  const { scrollToEnd } = useMessageScroller()
+  const prevCount = useRef(turnCount)
+  const prevStreaming = useRef(isStreaming)
+
+  const jump = (behavior: ScrollBehavior) => {
+    const el = viewportRef.current
+    if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    scrollToEnd({ behavior })
+    requestAnimationFrame(() => {
+      if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+      scrollToEnd({ behavior: 'auto' })
+    })
+  }
+
+  useLayoutEffect(() => {
+    prevCount.current = turnCount
+    prevStreaming.current = isStreaming
+    jump('auto')
+  }, [sessionId])
+
+  useLayoutEffect(() => {
+    if (turnCount > prevCount.current) jump(isStreaming ? 'auto' : 'smooth')
+    prevCount.current = turnCount
+  }, [turnCount, isStreaming])
+
+  useLayoutEffect(() => {
+    if (isStreaming && !prevStreaming.current) jump('auto')
+    if (!isStreaming && prevStreaming.current) jump('smooth')
+    prevStreaming.current = isStreaming
+  }, [isStreaming])
+
+  return null
 }
 
 const TURN_ALIGN = 12
@@ -242,7 +306,10 @@ function VirtualTurns({
     overscan: 8,
     paddingStart: 16,
     paddingEnd: TURN_ALIGN,
-    getItemKey: (index) => items[index]?.id ?? index
+    getItemKey: (index) => items[index]?.id ?? index,
+    anchorTo: 'end',
+    scrollEndThreshold: 32,
+    directDomUpdates: true
   })
   const virtualItems = virtualizer.getVirtualItems()
 
@@ -286,13 +353,20 @@ function VirtualTurns({
 
   return (
     <div className="relative min-h-0 flex-1">
-      <MessageScrollerProvider autoScroll={isStreaming}>
+      <MessageScrollerProvider autoScroll={isStreaming} defaultScrollPosition="end">
+        <FollowScroller
+          sessionId={sessionId}
+          isStreaming={isStreaming}
+          turnCount={items.length}
+          viewportRef={parentRef}
+        />
         <MessageScroller>
           <MessageScrollerViewport
             ref={parentRef}
-            className="[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="[overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            <div className={cn(chatColumn, 'relative')} style={{ height: virtualizer.getTotalSize() }}>
+            <MessageScrollerContent className="gap-0">
+            <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
               {virtualItems.map((row) => {
                 const turn = items[row.index]
                 const turnId = turn.id
@@ -302,7 +376,6 @@ function VirtualTurns({
                     data-index={row.index}
                     ref={virtualizer.measureElement}
                     className="absolute top-0 left-0 w-full px-8"
-                    style={{ transform: `translateY(${row.start}px)` }}
                   >
                     <TurnView
                       turn={turn}
@@ -316,6 +389,7 @@ function VirtualTurns({
                 )
               })}
             </div>
+            </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
           <TurnMinimap

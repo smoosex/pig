@@ -1,7 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { api } from '../ipc/api'
 import { isPiMessage, type PiSessionEvent } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
+
+const HYDRATE_DELAY_MS = 320
 
 export function useEventBridge(): void {
   const setStreaming = useSessionsStore((s) => s.setStreaming)
@@ -11,16 +13,24 @@ export function useEventBridge(): void {
   const loadControls = useSessionsStore((s) => s.loadControls)
   const hydrateTurns = useSessionsStore((s) => s.hydrateTurns)
   const setThinkingLevel = useSessionsStore((s) => s.setThinkingLevel)
+  const hydrateDelay = useRef(new Map<string, number>())
 
   useEffect(() => {
+    const delays = hydrateDelay.current
     const off = api.onEvent((raw) => {
       const payload = raw as { sessionId: string; event: PiSessionEvent }
       if (!payload?.sessionId || !payload?.event) return
       const { sessionId, event } = payload
       switch (event.type) {
-        case 'agent_start':
+        case 'agent_start': {
+          const pending = delays.get(sessionId)
+          if (pending != null) {
+            window.clearTimeout(pending)
+            delays.delete(sessionId)
+          }
           setStreaming(sessionId, true)
           break
+        }
         case 'message_start':
           if (isPiMessage(event.message)) appendLiveMessage(sessionId, event.message)
           break
@@ -28,10 +38,20 @@ export function useEventBridge(): void {
         case 'message_end':
           if (isPiMessage(event.message)) replaceLiveMessage(sessionId, event.message)
           break
-        case 'agent_end':
+        case 'agent_end': {
+          const pending = delays.get(sessionId)
+          if (pending != null) window.clearTimeout(pending)
           setStreaming(sessionId, false)
-          void Promise.all([hydrateTurns(sessionId), loadControls(sessionId)])
+          void loadControls(sessionId)
+          delays.set(
+            sessionId,
+            window.setTimeout(() => {
+              delays.delete(sessionId)
+              void hydrateTurns(sessionId)
+            }, HYDRATE_DELAY_MS)
+          )
           break
+        }
         case 'thinking_level_changed':
           if (
             event.level === 'off' ||
@@ -52,7 +72,11 @@ export function useEventBridge(): void {
           break
       }
     })
-    return off
+    return () => {
+      off()
+      for (const id of delays.values()) window.clearTimeout(id)
+      delays.clear()
+    }
   }, [
     setStreaming,
     appendLiveMessage,

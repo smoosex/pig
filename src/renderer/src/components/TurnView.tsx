@@ -1,5 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Command, SquareTerminal } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useSessionsStore } from '../stores/sessions'
+import {
+  AlignLeft,
+  Brain,
+  ChevronRight,
+  FilePen,
+  FilePlus,
+  FileText,
+  MessageSquare,
+  SquareTerminal,
+  Wrench,
+  type LucideIcon
+} from 'lucide-react'
 import type {
   BashExecutionMessage,
   CustomMessage,
@@ -8,28 +20,38 @@ import type {
   UserMessage
 } from '../pi/types'
 import {
-  formatDuration,
   formatElapsed,
-  liveProcessItem,
   resultText,
-  toolGroupLabel,
   toolStepLabel,
   type AnswerBlock,
   type ProcessItem,
   type ToolStep,
   type Turn
 } from '../chat/turns'
+import { langFromPath, useHighlightHtml } from '../lib/highlight'
 import { cn } from '../lib/utils'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
+import { Separator } from './ui/separator'
+import { MarkdownText } from './MarkdownText'
 import { Message, MessageContent } from './ui/message'
 
-const pre = 'mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap'
-const halfTruncate = 'max-w-1/2 min-w-0 truncate'
+const hideScroll = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap ${hideScroll}`
+const disclosureRow =
+  'flex h-7 w-full min-w-0 items-center justify-start gap-1.5 px-1 text-sm font-normal text-muted-foreground'
 const disclosureButton =
-  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground'
+  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted/50'
+
+function VerbLabel({ text, failed }: { text: string; failed?: boolean }) {
+  return (
+    <span className={cn('min-w-0 flex-1 truncate text-left', failed && 'text-destructive')}>
+      <span className={cn(!failed && 'text-foreground')}>{text.slice(0, 2)}</span>
+      {text.slice(2)}
+    </span>
+  )
+}
 
 function userText(message: UserMessage): string {
   if (typeof message.content === 'string') return message.content
@@ -42,24 +64,6 @@ function userText(message: UserMessage): string {
 function userImages(message: UserMessage): ImageContent[] {
   if (typeof message.content === 'string') return []
   return message.content.filter((b): b is ImageContent => b.type === 'image')
-}
-
-function useElapsed(streaming: boolean): number {
-  const [elapsed, setElapsed] = useState(0)
-  const origin = useRef(Date.now())
-
-  useEffect(() => {
-    if (!streaming) {
-      setElapsed(0)
-      return
-    }
-    origin.current = Date.now()
-    setElapsed(0)
-    const id = window.setInterval(() => setElapsed(Date.now() - origin.current), 200)
-    return () => window.clearInterval(id)
-  }, [streaming])
-
-  return elapsed
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -90,12 +94,10 @@ function Answer({ blocks, errorMessage }: { blocks: AnswerBlock[]; errorMessage?
   if (blocks.length === 0 && !errorMessage) return null
   return (
     <Message align="start" className="mb-4">
-      <MessageContent className="w-fit max-w-9/10 gap-1.5">
+      <MessageContent className="w-fit max-w-9/10 gap-1.5 px-1">
         {blocks.map((block, i) =>
           block.type === 'text' ? (
-            <Bubble key={i} variant="elevated" className="max-w-full">
-              <BubbleContent className="whitespace-pre-wrap">{block.text}</BubbleContent>
-            </Bubble>
+            <MarkdownText key={i} text={block.text} />
           ) : (
             <img
               key={i}
@@ -111,104 +113,260 @@ function Answer({ blocks, errorMessage }: { blocks: AnswerBlock[]; errorMessage?
   )
 }
 
-function ToolDetail({ step, inset }: { step: ToolStep; inset?: boolean }) {
+type IconKind = 'thinking' | 'bash' | 'read' | 'write' | 'edit' | 'custom' | 'summary' | 'tool'
+
+const ICONS: Record<IconKind, LucideIcon> = {
+  thinking: Brain,
+  bash: SquareTerminal,
+  read: FileText,
+  write: FilePlus,
+  edit: FilePen,
+  custom: MessageSquare,
+  summary: AlignLeft,
+  tool: Wrench
+}
+
+function toolKind(name: string): IconKind {
+  if (name === 'bash') return 'bash'
+  if (name === 'read') return 'read'
+  if (name === 'write') return 'write'
+  if (name === 'edit') return 'edit'
+  return 'tool'
+}
+
+function iconKinds(items: ProcessItem[]): IconKind[] {
+  const kinds: IconKind[] = []
+  const push = (kind: IconKind) => {
+    if (kinds[kinds.length - 1] !== kind) kinds.push(kind)
+  }
+  for (const item of items) {
+    if (item.kind === 'thinking') push('thinking')
+    else if (item.kind === 'bash') push('bash')
+    else if (item.kind === 'custom') push('custom')
+    else if (item.kind === 'summary') push('summary')
+    else if (item.kind === 'tools') {
+      for (const step of item.tools) push(toolKind(step.name))
+    }
+  }
+  return kinds
+}
+
+function countTools(items: ProcessItem[]): number {
+  let n = 0
+  for (const item of items) {
+    if (item.kind === 'tools') n += item.tools.length
+    else if (item.kind === 'bash') n += 1
+  }
+  return n
+}
+
+function toolInput(step: ToolStep): string {
   const command = typeof step.args.command === 'string' ? step.args.command : undefined
-  const output = resultText(step.result)
-  const failed = !!step.result?.isError
-  const pending = !step.result
+  if (command) return `$ ${command}`
+  const path = typeof step.args.path === 'string' ? step.args.path : undefined
+  if (path) return path
+  const pattern = typeof step.args.pattern === 'string' ? step.args.pattern : undefined
+  if (pattern) return pattern
+  return Object.keys(step.args).length > 0 ? JSON.stringify(step.args, null, 2) : ''
+}
+
+const panelCell =
+  `max-h-60 overflow-auto px-3 py-2 font-mono text-xs leading-snug break-words whitespace-pre-wrap text-muted-foreground ${hideScroll}`
+
+function editList(args: Record<string, unknown>): { oldText: string; newText: string }[] {
+  const edits = args.edits
+  if (Array.isArray(edits)) {
+    return edits.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const row = item as { oldText?: unknown; newText?: unknown }
+      if (typeof row.oldText === 'string' && typeof row.newText === 'string') {
+        return [{ oldText: row.oldText, newText: row.newText }]
+      }
+      return []
+    })
+  }
+  if (typeof args.oldText === 'string' && typeof args.newText === 'string') {
+    return [{ oldText: args.oldText, newText: args.newText }]
+  }
+  return []
+}
+
+function splitLines(text: string): string[] {
+  if (!text) return []
+  const lines = text.split('\n')
+  if (lines[lines.length - 1] === '') lines.pop()
+  return lines
+}
+
+function hunkRows(oldText: string, newText: string): { type: 'ctx' | 'del' | 'add'; text: string }[] {
+  const a = splitLines(oldText)
+  const b = splitLines(newText)
+  let start = 0
+  while (start < a.length && start < b.length && a[start] === b[start]) start++
+  let endA = a.length
+  let endB = b.length
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA--
+    endB--
+  }
+  const rows: { type: 'ctx' | 'del' | 'add'; text: string }[] = []
+  for (let i = 0; i < start; i++) rows.push({ type: 'ctx', text: a[i] })
+  for (let i = start; i < endA; i++) rows.push({ type: 'del', text: a[i] })
+  for (let i = start; i < endB; i++) rows.push({ type: 'add', text: b[i] })
+  for (let i = endA; i < a.length; i++) rows.push({ type: 'ctx', text: a[i] })
+  return rows
+}
+
+function EditDiff({ edits }: { edits: { oldText: string; newText: string }[] }) {
   return (
-    <Card
-      size="sm"
-      className={cn('mt-1.5 py-0', inset && 'bg-muted', failed && 'ring-destructive')}
-    >
-      <CardContent className="p-3">
-        <div className={cn('text-xs font-semibold', failed ? 'text-destructive' : 'text-muted-foreground')}>
-          {step.name}
+    <div className="max-h-80 overflow-auto rounded-lg border border-border bg-card font-mono text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {edits.map((edit, i) => (
+        <div key={i}>
+          <div className="px-3 py-1.5 text-muted-foreground">{`// — edit ${i + 1} —`}</div>
+          {hunkRows(edit.oldText, edit.newText).map((row, j) => (
+            <div
+              key={j}
+              className={cn(
+                'min-h-5 whitespace-pre px-3',
+                row.type === 'del' && 'bg-destructive/15 text-destructive',
+                row.type === 'add' && 'bg-primary/15 text-primary',
+                row.type === 'ctx' && 'text-muted-foreground'
+              )}
+            >
+              {`${row.type === 'del' ? '-' : row.type === 'add' ? '+' : ' '} ${row.text}`}
+            </div>
+          ))}
         </div>
-        {command ? <div className="mt-1 font-mono text-xs text-muted-foreground">$ {command}</div> : null}
-        {!command && Object.keys(step.args).length > 0 ? (
-          <pre className={pre}>{JSON.stringify(step.args, null, 2)}</pre>
-        ) : null}
-        {output ? <pre className={pre}>{output}</pre> : null}
-        <div className={cn('mt-1.5 text-xs', failed ? 'text-destructive' : 'text-muted-foreground')}>
-          {failed ? '✗ 失败' : pending ? '… 执行中' : '✓ 成功'}
-        </div>
-      </CardContent>
-    </Card>
+      ))}
+    </div>
+  )
+}
+
+function splitReadOutput(text: string): { code: string; notice?: string } {
+  const idx = text.lastIndexOf('\n\n[')
+  if (idx === -1) return { code: text }
+  const tail = text.slice(idx + 2)
+  if (tail.startsWith('[') && tail.endsWith(']') && /offset=|exceeds /.test(tail)) {
+    return { code: text.slice(0, idx), notice: tail }
+  }
+  return { code: text }
+}
+
+function CodePanel({ path, code, notice }: { path: string; code: string; notice?: string }) {
+  const html = useHighlightHtml(code, langFromPath(path))
+  return (
+    <div className="max-h-80 overflow-auto rounded-lg border border-border bg-card font-mono text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {html ? (
+        <div
+          className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <pre className="m-0 whitespace-pre p-3">{code}</pre>
+      )}
+      {notice ? <div className="px-3 pb-3 text-muted-foreground">{notice}</div> : null}
+    </div>
+  )
+}
+
+function ToolPanel({ input, output }: { input?: string; output?: string }) {
+  if (!input && !output) return null
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      {input ? <pre className={panelCell}>{input}</pre> : null}
+      {input && output ? <Separator /> : null}
+      {output ? <pre className={panelCell}>{output}</pre> : null}
+    </div>
+  )
+}
+
+function Rail({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative">
+      <div className="absolute inset-y-0 left-3.5 w-px -translate-x-1/2 bg-border" />
+      <div className="min-w-0 py-1 pl-6">{children}</div>
+    </div>
+  )
+}
+
+function StackedIcons({ kinds }: { kinds: IconKind[] }) {
+  return (
+    <span className="flex shrink-0 items-center">
+      {kinds.map((kind, i) => {
+        const Icon = ICONS[kind]
+        return (
+          <span
+            key={`${kind}-${i}`}
+            className={cn(
+              'relative flex size-5 items-center justify-center rounded-full border border-border bg-background',
+              i > 0 && '-ml-1.5'
+            )}
+            style={{ zIndex: i }}
+          >
+            <Icon className="size-2.5" />
+          </span>
+        )
+      })}
+    </span>
   )
 }
 
 function ToolRow({ step }: { step: ToolStep }) {
   const [open, setOpen] = useState(false)
-  return (
-    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0 pl-4.5">
-      <CollapsibleTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <Chevron open={open} />
-          <span className={halfTruncate}>{toolStepLabel(step)}</span>
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <ToolDetail step={step} inset />
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-function ToolGroup({ tools }: { tools: ToolStep[] }) {
-  const [open, setOpen] = useState(false)
+  const failed = !!step.result?.isError
+  const edits = step.name === 'edit' ? editList(step.args) : []
+  const path = typeof step.args.path === 'string' ? step.args.path : ''
+  const writeCode = step.name === 'write' && typeof step.args.content === 'string' ? step.args.content : ''
+  const read = step.name === 'read' && !failed ? splitReadOutput(resultText(step.result)) : undefined
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <Command />
-          <span className={halfTruncate}>{toolGroupLabel(tools)}</span>
+          <VerbLabel text={toolStepLabel(step)} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="flex min-w-0 flex-col">
-        {tools.map((step) => (
-          <ToolRow key={step.id} step={step} />
-        ))}
+      <CollapsibleContent className="px-1 pt-1">
+        {read?.code ? (
+          <CodePanel path={path} code={read.code} notice={read.notice} />
+        ) : writeCode && !failed ? (
+          <CodePanel path={path} code={writeCode} />
+        ) : edits.length > 0 ? (
+          <EditDiff edits={edits} />
+        ) : (
+          <ToolPanel input={toolInput(step)} output={resultText(step.result)} />
+        )}
       </CollapsibleContent>
     </Collapsible>
   )
 }
 
-function BashProcess({ message }: { message: BashExecutionMessage }) {
+function BashRow({ message }: { message: BashExecutionMessage }) {
   const [open, setOpen] = useState(false)
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <SquareTerminal />
-          <span className={halfTruncate}>执行 {message.command}</span>
+          <VerbLabel text={`执行 ${message.command}`} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent>
-        <Card size="sm" className={cn('mt-1.5 py-0', failed && 'ring-destructive')}>
-          <CardContent className="p-3">
-            <div className={cn('text-xs font-semibold', failed ? 'text-destructive' : 'text-muted-foreground')}>
-              bash
-            </div>
-            <div className="mt-1 font-mono text-xs text-muted-foreground">$ {message.command}</div>
-            {message.output ? <pre className={pre}>{message.output}</pre> : null}
-            <div className={cn('mt-1.5 text-xs', failed ? 'text-destructive' : 'text-muted-foreground')}>
-              {message.cancelled ? '已取消' : failed ? '✗ 失败' : '✓ 成功'}
-            </div>
-          </CardContent>
-        </Card>
+      <CollapsibleContent className="px-1 pt-1">
+        <ToolPanel input={`$ ${message.command}`} output={message.output} />
       </CollapsibleContent>
     </Collapsible>
   )
 }
 
+function stripThoughtHeading(text: string): string {
+  return text.replace(/^(Thought for \d+s|已?思考了?\s*\d+\s*(秒|s)?)\s*\n+/i, '').trim()
+}
+
 function ProcessDisclosure({ title, text }: { title: string; text: string }) {
   const [open, setOpen] = useState(false)
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg bg-muted px-2 py-1">
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
           <Chevron open={open} />
@@ -217,6 +375,113 @@ function ProcessDisclosure({ title, text }: { title: string; text: string }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         <pre className={cn(pre, 'px-2 pb-2 text-muted-foreground')}>{text}</pre>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function ThinkingBlock({ text, durationMs }: { text: string; durationMs: number }) {
+  const [open, setOpen] = useState(false)
+  const body = stripThoughtHeading(text)
+  const title = durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className={cn(disclosureButton, 'w-full')}>
+          <StackedIcons kinds={['thinking']} />
+          <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+          <Chevron open={open} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {body ? (
+          <Rail>
+            <pre className={cn(pre, 'mt-0 text-muted-foreground')}>{body}</pre>
+          </Rail>
+        ) : null}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function ThinkingLine({ text, durationMs }: { text: string; durationMs: number }) {
+  const [open, setOpen] = useState(false)
+  const body = stripThoughtHeading(text)
+  const title = durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
+          <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+          <Chevron open={open} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-1 pt-1">
+        {body ? (
+          <pre className={cn(pre, 'mt-0 ml-2.5 border-l border-border px-3 py-1 text-muted-foreground')}>
+            {body}
+          </pre>
+        ) : null}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function GroupBody({ items }: { items: ProcessItem[] }) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      {items.map((item, i) => {
+        if (item.kind === 'thinking') {
+          return <ThinkingLine key={i} text={item.text} durationMs={item.durationMs} />
+        }
+        if (item.kind === 'tools') {
+          return (
+            <div key={i} className="flex min-w-0 flex-col">
+              {item.tools.map((step) => (
+                <ToolRow key={step.id} step={step} />
+              ))}
+            </div>
+          )
+        }
+        if (item.kind === 'bash') return <BashRow key={i} message={item.message} />
+        if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
+        if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+        return null
+      })}
+    </div>
+  )
+}
+
+function ActivityGroup({ items }: { items: ProcessItem[] }) {
+  const [open, setOpen] = useState(false)
+  const tools = countTools(items)
+  if (tools === 0) {
+    return (
+      <>
+        {items.map((item, i) => {
+          if (item.kind === 'thinking') {
+            return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
+          }
+          if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
+          if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+          return null
+        })}
+      </>
+    )
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className={cn(disclosureButton, 'w-full')}>
+          <StackedIcons kinds={iconKinds(items)} />
+          <span className="min-w-0 flex-1 truncate text-left">使用了 {tools} 个工具</span>
+          <Chevron open={open} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <Rail>
+          <GroupBody items={items} />
+        </Rail>
       </CollapsibleContent>
     </Collapsible>
   )
@@ -247,50 +512,185 @@ function ThinkLabel() {
   )
 }
 
-function liveLine(item: ProcessItem): string | null {
-  if (item.kind === 'tools' && item.tools[0]) return toolStepLabel(item.tools[0])
-  if (item.kind === 'bash') return `执行 ${item.message.command}`
-  return null
+function OutlineThinking({
+  durationMs,
+  current,
+  stacked
+}: {
+  durationMs: number
+  current?: boolean
+  stacked?: boolean
+}) {
+  return (
+    <div className={cn(disclosureRow, 'pointer-events-none')}>
+      {stacked ? <StackedIcons kinds={['thinking']} /> : null}
+      <span className="min-w-0 flex-1 truncate text-left">
+        {current ? <ThinkLabel /> : durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'}
+      </span>
+    </div>
+  )
 }
 
-function LiveStep({ item }: { item?: ProcessItem }) {
-  const line = item ? liveLine(item) : null
-  if (!line) {
+function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
+  return (
+    <div className={cn(disclosureRow, 'pointer-events-none', active && 'text-shimmer')}>
+      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} />
+    </div>
+  )
+}
+
+function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
+  const failed = message.cancelled || (message.exitCode ?? 0) !== 0
+  return (
+    <div className={cn(disclosureRow, 'pointer-events-none', active && 'text-shimmer')}>
+      <VerbLabel text={`执行 ${message.command}`} failed={failed} />
+    </div>
+  )
+}
+
+function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      {items.map((item, i) => {
+        const last = active && i === items.length - 1
+        if (item.kind === 'thinking') {
+          return (
+            <OutlineThinking
+              key={i}
+              durationMs={item.durationMs}
+              current={last && item.durationMs === 0}
+            />
+          )
+        }
+        if (item.kind === 'tools') {
+          return (
+            <div key={i} className="flex min-w-0 flex-col">
+              {item.tools.map((step, ti) => (
+                <OutlineTool
+                  key={step.id}
+                  step={step}
+                  active={last && ti === item.tools.length - 1}
+                />
+              ))}
+            </div>
+          )
+        }
+        if (item.kind === 'bash') return <OutlineBash key={i} message={item.message} active={last} />
+        if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
+        if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+        return null
+      })}
+    </div>
+  )
+}
+
+function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean }) {
+  const tools = countTools(items)
+  if (tools === 0) {
     return (
-      <div className="flex w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
-        <ThinkLabel />
-      </div>
+      <>
+        {items.map((item, i) => {
+          if (item.kind === 'thinking') {
+            return (
+              <OutlineThinking
+                key={i}
+                durationMs={item.durationMs}
+                current={active && i === items.length - 1 && item.durationMs === 0}
+                stacked
+              />
+            )
+          }
+          if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
+          if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+          return null
+        })}
+      </>
     )
   }
   return (
-    <div className="flex w-full min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
-      <ChevronRight className="size-3.5 shrink-0" />
-      <span className={cn('text-shimmer', halfTruncate)}>{line}</span>
+    <div className="min-w-0">
+      <div className={cn(disclosureRow, 'pointer-events-none')}>
+        <StackedIcons kinds={iconKinds(items)} />
+        <span className="min-w-0 flex-1 truncate text-left">使用了 {tools} 个工具</span>
+      </div>
+      <Rail>
+        <OutlineBody items={items} active={active} />
+      </Rail>
     </div>
   )
+}
+
+function ProcessOutline({ items }: { items: ProcessItem[] }) {
+  const segments = processSegments(items)
+  if (segments.length === 0) {
+    return <OutlineThinking durationMs={0} current stacked />
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {segments.map((segment, i) =>
+        segment.kind === 'text' ? (
+          <MarkdownText key={i} className="px-1 text-sm" text={segment.text} />
+        ) : (
+          <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} />
+        )
+      )}
+    </div>
+  )
+}
+
+function processSegments(items: ProcessItem[]): Array<{ kind: 'text'; text: string } | { kind: 'group'; items: ProcessItem[] }> {
+  const segments: Array<{ kind: 'text'; text: string } | { kind: 'group'; items: ProcessItem[] }> = []
+  let group: ProcessItem[] = []
+  const flush = () => {
+    if (group.length === 0) return
+    segments.push({ kind: 'group', items: group })
+    group = []
+  }
+  for (const item of items) {
+    if (item.kind === 'text') {
+      flush()
+      segments.push({ kind: 'text', text: item.text })
+    } else {
+      group.push(item)
+    }
+  }
+  flush()
+  return segments
 }
 
 function ProcessList({ items }: { items: ProcessItem[] }) {
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2">
-      {items.map((item, i) => {
-        if (item.kind === 'text') {
-          return (
-            <Bubble key={i} variant="muted" className="max-w-none">
-              <BubbleContent className="whitespace-pre-wrap">{item.text}</BubbleContent>
-            </Bubble>
-          )
-        }
-        if (item.kind === 'thinking') {
-          return <ProcessDisclosure key={i} title="思考" text={item.text} />
-        }
-        if (item.kind === 'tools') return <ToolGroup key={i} tools={item.tools} />
-        if (item.kind === 'bash') return <BashProcess key={i} message={item.message} />
-        if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-        return <ProcessDisclosure key={i} title={item.title} text={item.text} />
-      })}
+      {processSegments(items).map((segment, i) =>
+        segment.kind === 'text' ? (
+          <MarkdownText key={i} className="px-1 text-sm" text={segment.text} />
+        ) : (
+          <ActivityGroup key={i} items={segment.items} />
+        )
+      )}
     </div>
   )
+}
+
+function useWorkedMs(turn: Turn): number {
+  const streamStartedAt = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamStartedAt ?? null) : null
+  )
+  const streamElapsedMs = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamElapsedMs ?? null) : null
+  )
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!turn.streaming || streamStartedAt == null) return
+    const id = window.setInterval(() => setNow(Date.now()), 200)
+    return () => window.clearInterval(id)
+  }, [turn.streaming, streamStartedAt])
+
+  if (turn.streaming && streamStartedAt != null) return Math.max(0, now - streamStartedAt)
+  if (turn.workedMs != null) return turn.workedMs
+  if (turn.id?.startsWith('live-') && streamElapsedMs != null) return streamElapsedMs
+  return Math.max(1000, turn.endedAt - turn.startedAt)
 }
 
 export function TurnView({
@@ -301,20 +701,28 @@ export function TurnView({
   onNeedProcess?: () => Promise<void>
 }) {
   const hasProcess = Boolean(turn.hasProcess) || turn.process.length > 0 || turn.streaming
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(turn.streaming)
+  const [liveOutline, setLiveOutline] = useState(turn.streaming)
   const [loading, setLoading] = useState(false)
+  const workedMs = useWorkedMs(turn)
+  const label = turn.streaming
+    ? `已工作 ${formatElapsed(workedMs)}`
+    : `工作耗时 ${formatElapsed(workedMs)}`
 
   useEffect(() => {
+    if (turn.streaming) {
+      setLiveOutline(true)
+      setOpen(true)
+      return
+    }
     setOpen(false)
+    const id = window.setTimeout(() => setLiveOutline(false), 300)
+    return () => window.clearTimeout(id)
   }, [turn.streaming])
 
-  const elapsed = useElapsed(turn.streaming)
-  const live = turn.streaming ? liveProcessItem(turn.process) : null
-  const expanded = turn.streaming || open
-  const label = `推理/执行过程(${formatDuration(turn.startedAt, turn.endedAt)})`
-
-  async function toggleProcess(): Promise<void> {
-    if (open) {
+  async function toggleProcess(next: boolean): Promise<void> {
+    if (turn.streaming) return
+    if (!next) {
       setOpen(false)
       return
     }
@@ -333,29 +741,36 @@ export function TurnView({
     <div className="mb-4">
       {turn.user ? <UserBubble message={turn.user} /> : null}
       {hasProcess ? (
-        <div
-          className={cn(
-            'mb-3 max-w-9/10',
-            expanded && 'overflow-hidden rounded-lg border border-border bg-card px-3 py-2'
-          )}
+        <Collapsible
+          open={open}
+          onOpenChange={(next) => void toggleProcess(next)}
+          className="mb-3"
         >
-          {!turn.streaming ? (
-            <Button
+          <CollapsibleTrigger asChild>
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(disclosureButton, 'w-fit')}
               disabled={loading}
-              onClick={() => void toggleProcess()}
+              className={cn(
+                'flex h-7 w-full items-center gap-3 bg-transparent px-0 text-xs font-normal text-muted-foreground',
+                turn.streaming && 'pointer-events-none'
+              )}
             >
-              <span>{label}</span>
-              <Chevron open={open} />
-            </Button>
-          ) : null}
-          {turn.streaming ? <LiveStep item={live ?? undefined} /> : null}
-          {turn.streaming ? <div className="mt-1.5 text-xs text-muted-foreground">{formatElapsed(elapsed)}</div> : null}
-          {!turn.streaming && open ? <ProcessList items={turn.process} /> : null}
-        </div>
+              <span className="h-px min-w-4 flex-1 bg-border" />
+              <span className="flex shrink-0 items-center gap-1">
+                {label}
+                <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
+              </span>
+              <span className="h-px min-w-4 flex-1 bg-border" />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="duration-300">
+            {liveOutline ? (
+              <ProcessOutline items={turn.process} />
+            ) : (
+              <ProcessList items={turn.process} />
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
     </div>
