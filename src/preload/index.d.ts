@@ -89,6 +89,8 @@ declare global {
     api: {
       listProjects: () => Promise<ProjectGroup[]>
       listProject: (cwd: string) => Promise<ProjectGroup | null>
+      openProject: () => Promise<ProjectGroup | null>
+      unpinProject: (cwd: string) => Promise<void>
       createSession: (cwd: string) => Promise<{ sessionId: string; cwd: string }>
       openSession: (path: string) => Promise<{ sessionId: string; cwd: string }>
       prepareSession: (sessionId: string) => Promise<{ sessionId: string; cwd: string; created: boolean }>

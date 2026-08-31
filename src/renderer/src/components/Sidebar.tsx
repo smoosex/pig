@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, FolderMinus, FolderPlus, MoreHorizontal, Plus, Settings, Trash2 } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { Avatar, AvatarFallback } from './ui/avatar'
 import { Button } from './ui/button'
@@ -25,6 +25,8 @@ export function Sidebar() {
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteProject = useSessionsStore((s) => s.deleteProject)
   const deleteSession = useSessionsStore((s) => s.deleteSession)
+  const openProject = useSessionsStore((s) => s.openProject)
+  const unpinProject = useSessionsStore((s) => s.unpinProject)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
@@ -33,7 +35,7 @@ export function Sidebar() {
         <div className="flex flex-col gap-y-1 py-1.5">
           {projects.length === 0 ? (
             <Empty className="min-h-24 p-3">
-              <EmptyDescription>暂无历史会话</EmptyDescription>
+              <EmptyDescription>添加项目即可开始</EmptyDescription>
             </Empty>
           ) : (
             projects.map((p) => {
@@ -87,6 +89,10 @@ export function Sidebar() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuGroup>
+                            <DropdownMenuItem onSelect={() => void unpinProject(p.cwd)}>
+                              <FolderMinus data-icon="inline-start" />
+                              从列表移除
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"
                               onSelect={() => void deleteProject(p.cwd)}
@@ -163,6 +169,25 @@ export function Sidebar() {
           )}
         </div>
       </ScrollArea>
+      <div className="flex shrink-0 items-center gap-0.5 px-1 pb-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground"
+          aria-label="设置"
+        >
+          <Settings />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground"
+          aria-label="打开项目"
+          onClick={() => void openProject()}
+        >
+          <FolderPlus />
+        </Button>
+      </div>
     </aside>
   )
 }

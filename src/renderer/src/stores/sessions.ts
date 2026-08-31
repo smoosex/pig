@@ -70,6 +70,8 @@ interface SessionsStore {
   runtime: Record<string, RuntimeState>
 
   loadProjects: () => Promise<void>
+  openProject: () => Promise<void>
+  unpinProject: (cwd: string) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
   hydrateTurns: (sessionId: string) => Promise<void>
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
@@ -111,6 +113,25 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
           meta
         }
       })
+    }))
+  },
+
+  openProject: async () => {
+    const project = await api.openProject()
+    if (!project) return
+    set((s) => {
+      const index = s.projects.findIndex((item) => item.cwd === project.cwd)
+      const projects = [...s.projects]
+      if (index === -1) projects.push(project)
+      else projects[index] = project
+      return { projects }
+    })
+  },
+
+  unpinProject: async (cwd) => {
+    await api.unpinProject(cwd)
+    set((s) => ({
+      projects: s.projects.filter((project) => project.cwd !== cwd)
     }))
   },
 
@@ -254,7 +275,6 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
             ? { ...project, sessions: project.sessions.filter((session) => session.id !== meta.id) }
             : project
         )
-        .filter((project) => project.sessions.length > 0)
       return {
         projects,
         openTabs,

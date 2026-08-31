@@ -151,11 +151,11 @@ async function scanFiles(files: string[]): Promise<SessionMeta[]> {
   return metas.filter((meta): meta is SessionMeta => meta !== null)
 }
 
-function toProject(cwd: string, sessions: SessionMeta[]): ProjectGroup | null {
-  if (sessions.length === 0) return null
+function projectGroup(cwd: string, sessions: SessionMeta[]): ProjectGroup {
+  const resolved = cwd === '(unknown)' ? cwd : resolve(cwd)
   return {
-    cwd,
-    name: cwd === '(unknown)' ? '未知项目' : basename(cwd) || cwd,
+    cwd: resolved,
+    name: resolved === '(unknown)' ? '未知项目' : basename(resolved) || resolved,
     sessions: [...sessions].sort((a, b) => b.modified.localeCompare(a.modified))
   }
 }
@@ -176,12 +176,17 @@ async function collectAllFiles(): Promise<string[]> {
 export async function listProject(cwd: string): Promise<ProjectGroup | null> {
   if (cwd === '(unknown)') {
     const metas = (await scanFiles(await collectAllFiles())).filter((meta) => !meta.cwd)
-    return toProject(cwd, metas)
+    return metas.length === 0 ? null : projectGroup(cwd, metas)
   }
-  const metas = (await scanFiles(await listJsonlFiles(sessionDirForCwd(cwd)))).filter(
-    (meta) => meta.cwd === cwd || resolve(meta.cwd) === resolve(cwd)
+  const resolved = resolve(cwd)
+  const metas = (await scanFiles(await listJsonlFiles(sessionDirForCwd(resolved)))).filter(
+    (meta) => !meta.cwd || resolve(meta.cwd) === resolved
   )
-  return toProject(cwd, metas)
+  return projectGroup(resolved, metas)
+}
+
+export async function listOpenedProjects(cwds: string[]): Promise<ProjectGroup[]> {
+  return Promise.all(cwds.map(async (cwd) => (await listProject(cwd)) ?? projectGroup(cwd, [])))
 }
 
 export async function listProjects(): Promise<ProjectGroup[]> {
@@ -194,10 +199,7 @@ export async function listProjects(): Promise<ProjectGroup[]> {
     else byCwd.set(cwd, [meta])
   }
 
-  const groups = [...byCwd].flatMap(([cwd, sessions]) => {
-    const project = toProject(cwd, sessions)
-    return project ? [project] : []
-  })
+  const groups = [...byCwd].map(([cwd, sessions]) => projectGroup(cwd, sessions))
   groups.sort((a, b) => (b.sessions[0]?.modified ?? '').localeCompare(a.sessions[0]?.modified ?? ''))
   return groups
 }

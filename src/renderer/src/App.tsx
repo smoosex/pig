@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PanelLeft } from 'lucide-react'
+import { FolderPlus, PanelLeft } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
 import { useEventBridge } from './hooks/useEventBridge'
 import { Button } from './components/ui/button'
@@ -18,7 +18,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="no-drag"
+          className="no-drag translate-y-px"
           onClick={onClick}
           aria-label="侧边栏"
         >
@@ -32,6 +32,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 
 export default function App() {
   const loadProjects = useSessionsStore((s) => s.loadProjects)
+  const openProject = useSessionsStore((s) => s.openProject)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   useEventBridge()
@@ -43,8 +44,8 @@ export default function App() {
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col bg-card">
-        <div className="drag flex h-11 shrink-0 items-center">
-          <div className={cn('flex h-full shrink-0 items-center pr-3 pl-19.5', sidebarOpen && 'w-62')}>
+        <div className="drag flex h-10 shrink-0 items-center">
+          <div className={cn('flex h-full shrink-0 items-center pr-3 pl-20', sidebarOpen && 'w-62')}>
             <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
           </div>
         </div>
@@ -60,8 +61,12 @@ export default function App() {
                 <Composer />
               </>
             ) : (
-              <Empty>
-                <EmptyDescription>从左侧选择或新建一个会话</EmptyDescription>
+              <Empty className="gap-4">
+                <EmptyDescription>从左侧选择会话，或打开一个项目</EmptyDescription>
+                <Button variant="outline" size="sm" onClick={() => void openProject()}>
+                  <FolderPlus />
+                  打开项目
+                </Button>
               </Empty>
             )}
           </div>

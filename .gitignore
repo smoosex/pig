@@ -6,3 +6,5 @@ release
 *.log
 .env
 .env.*
+.pig/*
+!.pig/.gitkeep

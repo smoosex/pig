@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import {
   closeSession,
   closeSessionsForCwd,
@@ -15,11 +15,26 @@ import {
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
-import { listProject, listProjects, removeProjectDir, removeSessionFile } from '../pi/session-loader'
+import { listOpenedProjects, listProject, removeProjectDir, removeSessionFile } from '../pi/session-loader'
+import { addOpenedProject, listOpenedCwds, removeOpenedProject } from '../opened-projects'
 
 export function registerSessionIpc(): void {
-  ipcMain.handle('session:list-projects', async () => listProjects())
+  ipcMain.handle('session:list-projects', async () => listOpenedProjects(await listOpenedCwds()))
   ipcMain.handle('session:list-project', async (_event, cwd: string) => listProject(cwd))
+
+  ipcMain.handle('session:open-project', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window attached to sender')
+    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const cwd = await addOpenedProject(result.filePaths[0])
+    return listProject(cwd)
+  })
+
+  ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
+    if (!cwd) throw new Error('Project cwd is required')
+    await removeOpenedProject(cwd)
+  })
 
   ipcMain.handle('session:create', async (event, cwd: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -49,6 +64,7 @@ export function registerSessionIpc(): void {
     if (!cwd) throw new Error('Project cwd is required')
     closeSessionsForCwd(cwd)
     await removeProjectDir(cwd)
+    await removeOpenedProject(cwd)
   })
 
   ipcMain.handle(

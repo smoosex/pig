@@ -102,6 +102,8 @@ export type PiEvent = {
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
   listProject: (cwd: string) => Promise<ProjectGroup | null>
+  openProject: () => Promise<ProjectGroup | null>
+  unpinProject: (cwd: string) => Promise<void>
   prepareSession: (sessionId: string) => Promise<SessionRef>
   createSession: (cwd: string) => Promise<SessionRef>
   openSession: (path: string) => Promise<SessionRef>
