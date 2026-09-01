@@ -643,10 +643,11 @@ function WaitBars() {
 function WaitLabel() {
   return (
     <span className="think-wave">
-      <span>理</span>
-      <span>解</span>
-      <span>问</span>
-      <span>题</span>
+      {[...'正在理解用户问题......'].map((char, i) => (
+        <span key={`${char}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
+          {char}
+        </span>
+      ))}
     </span>
   )
 }
@@ -698,7 +699,7 @@ function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean 
             <OutlineThinking
               key={i}
               durationMs={row.durationMs}
-              current={last}
+              current={last && row.durationMs <= 0}
             />
           )
         }
@@ -743,7 +744,7 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
               <OutlineThinking
                 key={i}
                 durationMs={item.durationMs}
-                current={active && i === items.length - 1}
+                current={active && i === items.length - 1 && item.durationMs <= 0}
                 stacked
               />
             )
@@ -842,7 +843,7 @@ function useWorkedMs(turn: Turn): number {
     return () => window.clearInterval(id)
   }, [turn.streaming, streamStartedAt])
 
-  if (turn.streaming && streamStartedAt != null) return Math.max(0, now - streamStartedAt)
+  if (turn.streaming) return streamStartedAt != null ? Math.max(0, now - streamStartedAt) : 0
   if (turn.workedMs != null) return turn.workedMs
   if (turn.id?.startsWith('live-') && streamElapsedMs != null) return streamElapsedMs
   return Math.max(1000, turn.endedAt - turn.startedAt)

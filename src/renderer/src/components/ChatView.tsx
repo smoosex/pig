@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
@@ -186,6 +186,9 @@ export function ChatView() {
   const processByTurnId = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.processByTurnId ?? {}) : {}
   )
+  const thinkingDurations = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.thinkingDurations ?? {}) : {}
+  )
   const elapsedByTurnId = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.elapsedByTurnId ?? {}) : {}
   )
@@ -200,13 +203,21 @@ export function ChatView() {
       toTurn(turn, processByTurnId[turn.id] ?? [], elapsedByTurnId[turn.id])
     )
     if (liveMessages.length === 0) return historical
-    const live = groupTurns(liveMessages, isStreaming).map((turn, index) => ({
+    const live = groupTurns(liveMessages, isStreaming, thinkingDurations).map((turn, index) => ({
       ...turn,
       id: `live-${index}`,
       workedMs: streamElapsedMs ?? undefined
     }))
     return [...historical, ...live]
-  }, [turns, liveMessages, processByTurnId, elapsedByTurnId, streamElapsedMs, isStreaming])
+  }, [
+    turns,
+    liveMessages,
+    processByTurnId,
+    thinkingDurations,
+    elapsedByTurnId,
+    streamElapsedMs,
+    isStreaming
+  ])
 
   if (items.length === 0) {
     return (
@@ -241,6 +252,9 @@ export function ChatView() {
   )
 }
 
+const STREAM_FOLLOW_EASE = 0.28
+const STREAM_FOLLOW_MIN_DELTA = 0.5
+
 function FollowScroller({
   sessionId,
   isStreaming,
@@ -255,16 +269,82 @@ function FollowScroller({
   const { scrollToEnd } = useMessageScroller()
   const prevCount = useRef(turnCount)
   const prevStreaming = useRef(isStreaming)
+  const following = useRef(true)
+  const userIntent = useRef(false)
+  const followFrame = useRef<number | null>(null)
+
+  const distanceFromEnd = (el: HTMLDivElement): number =>
+    Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop)
 
   const jump = (behavior: ScrollBehavior) => {
     const el = viewportRef.current
-    if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    if (el) {
+      following.current = true
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    }
     scrollToEnd({ behavior })
     requestAnimationFrame(() => {
       if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
       scrollToEnd({ behavior: 'auto' })
     })
   }
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+
+    const onScroll = () => {
+      if (!userIntent.current) return
+      userIntent.current = false
+      if (distanceFromEnd(el) <= SCROLL_END) following.current = true
+      else if (isStreaming) following.current = false
+    }
+    const onUserInput = () => {
+      userIntent.current = true
+      if (isStreaming) following.current = false
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('wheel', onUserInput, { passive: true })
+    el.addEventListener('touchmove', onUserInput, { passive: true })
+    el.addEventListener('keydown', onUserInput)
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('wheel', onUserInput)
+      el.removeEventListener('touchmove', onUserInput)
+      el.removeEventListener('keydown', onUserInput)
+    }
+  }, [isStreaming, viewportRef])
+
+  useEffect(() => {
+    if (!isStreaming) {
+      if (followFrame.current != null) cancelAnimationFrame(followFrame.current)
+      followFrame.current = null
+      return
+    }
+
+    following.current = true
+    const tick = () => {
+      const el = viewportRef.current
+      if (el && following.current) {
+        const target = Math.max(0, el.scrollHeight - el.clientHeight)
+        const delta = target - el.scrollTop
+        if (Math.abs(delta) > STREAM_FOLLOW_MIN_DELTA) {
+          const next =
+            Math.abs(delta) <= 1
+              ? target
+              : el.scrollTop + delta * STREAM_FOLLOW_EASE
+          el.scrollTop = next
+        }
+      }
+      followFrame.current = requestAnimationFrame(tick)
+    }
+    followFrame.current = requestAnimationFrame(tick)
+    return () => {
+      if (followFrame.current != null) cancelAnimationFrame(followFrame.current)
+      followFrame.current = null
+    }
+  }, [isStreaming, viewportRef])
 
   useLayoutEffect(() => {
     prevCount.current = turnCount
@@ -291,17 +371,11 @@ const SCROLL_END = 32
 
 function shouldAdjustOnItemResize(
   item: { key: string | number | bigint; start: number; size: number },
-  delta: number,
-  instance: Virtualizer<HTMLDivElement, Element>,
-  pinGrow: boolean
+  instance: Virtualizer<HTMLDivElement, Element>
 ): boolean {
   const scrollOffset = (instance.scrollOffset ?? 0) + instance.scrollAdjustments
   if (!instance.itemSizeCache.has(item.key)) return item.start < scrollOffset
-  if (item.start + item.size <= scrollOffset && instance.scrollDirection !== 'backward') {
-    return true
-  }
-  if (delta <= 0) return false
-  return pinGrow && instance.isAtEnd(SCROLL_END)
+  return item.start + item.size <= scrollOffset && instance.scrollDirection !== 'backward'
 }
 
 function VirtualTurns({
@@ -327,8 +401,8 @@ function VirtualTurns({
     scrollEndThreshold: SCROLL_END,
     directDomUpdates: true
   })
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) =>
-    shouldAdjustOnItemResize(item, delta, instance, isStreaming)
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
+    shouldAdjustOnItemResize(item, instance)
   const virtualItems = virtualizer.getVirtualItems()
 
   const jumpToTurn = (index: number) => {
@@ -371,7 +445,7 @@ function VirtualTurns({
 
   return (
     <div className="relative min-h-0 flex-1">
-      <MessageScrollerProvider autoScroll={isStreaming} defaultScrollPosition="end">
+      <MessageScrollerProvider autoScroll={false} defaultScrollPosition="end">
         <FollowScroller
           sessionId={sessionId}
           isStreaming={isStreaming}
@@ -409,7 +483,7 @@ function VirtualTurns({
             </div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
-          <MessageScrollerButton />
+          <MessageScrollerButton className={isStreaming ? 'hidden' : undefined} />
           <TurnMinimap
             items={items}
             onJump={jumpToTurn}

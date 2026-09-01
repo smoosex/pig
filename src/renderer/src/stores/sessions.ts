@@ -10,7 +10,7 @@ import {
   type SessionTokenStats,
   type ThinkingLevel
 } from '../ipc/api'
-import { buildTurn, type ProcessItem } from '../chat/turns'
+import { buildTurn, thinkingTimingKey, type ProcessItem, type ThinkingDurations } from '../chat/turns'
 import { isPiMessage, type PiMessage } from '../pi/types'
 
 export type { ProjectGroup, SessionMeta }
@@ -19,6 +19,7 @@ interface RuntimeState {
   turns: DisplayTurn[]
   liveMessages: PiMessage[]
   processByTurnId: Record<string, ProcessItem[]>
+  thinkingDurations: ThinkingDurations
   elapsedByTurnId: Record<string, number>
   isStreaming: boolean
   streamStartedAt: number | null
@@ -42,6 +43,7 @@ const emptyRuntime = (): RuntimeState => ({
   turns: [],
   liveMessages: [],
   processByTurnId: {},
+  thinkingDurations: {},
   elapsedByTurnId: {},
   isStreaming: false,
   streamStartedAt: null,
@@ -130,6 +132,13 @@ interface SessionsStore {
   renameTab: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
+  startStreamTimer: (sessionId: string) => void
+  setThinkingDuration: (
+    sessionId: string,
+    messageTimestamp: number,
+    contentIndex: number,
+    durationMs: number
+  ) => void
   appendLiveMessage: (sessionId: string, message: PiMessage) => void
   replaceLiveMessage: (sessionId: string, message: PiMessage) => void
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
@@ -218,10 +227,10 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   },
 
   loadTurnProcess: async (sessionId, turnId) => {
-    const cached = ensureRuntime(get().runtime, sessionId).processByTurnId[turnId]
-    if (cached) return
+    const runtime = ensureRuntime(get().runtime, sessionId)
+    if (runtime.processByTurnId[turnId]) return
     const raw = await api.getTurnMessages(sessionId, turnId)
-    const process = buildTurn((raw ?? []).filter(isPiMessage), false).process
+    const process = buildTurn((raw ?? []).filter(isPiMessage), false, runtime.thinkingDurations).process
     set((s) => {
       const rt = ensureRuntime(s.runtime, sessionId)
       return {
@@ -388,17 +397,36 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
           isStreaming: streaming,
-          streamStartedAt: streaming
-            ? rt.isStreaming && rt.streamStartedAt != null
-              ? rt.streamStartedAt
-              : Date.now()
-            : null,
+          streamStartedAt: streaming ? (rt.isStreaming ? rt.streamStartedAt : null) : null,
           streamElapsedMs: streaming
             ? null
             : rt.streamStartedAt != null
               ? Date.now() - rt.streamStartedAt
               : rt.streamElapsedMs,
           liveMessages: streaming ? [] : rt.liveMessages
+        })
+      }
+    }),
+
+  startStreamTimer: (sessionId) =>
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      if (!rt.isStreaming || rt.streamStartedAt != null) return s
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          streamStartedAt: Date.now()
+        })
+      }
+    }),
+
+  setThinkingDuration: (sessionId, messageTimestamp, contentIndex, durationMs) =>
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      const key = thinkingTimingKey(messageTimestamp, contentIndex)
+      if (rt.thinkingDurations[key] != null) return s
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          thinkingDurations: { ...rt.thinkingDurations, [key]: Math.max(1000, durationMs) }
         })
       }
     }),

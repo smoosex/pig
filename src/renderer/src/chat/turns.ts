@@ -17,6 +17,12 @@ export interface ToolStep {
   result?: ToolResultMessage
 }
 
+export type ThinkingDurations = Record<string, number>
+
+export function thinkingTimingKey(messageTimestamp: number, contentIndex: number): string {
+  return `${messageTimestamp}:${contentIndex}`
+}
+
 export type ProcessItem =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string; durationMs: number }
@@ -40,12 +46,6 @@ export interface Turn {
   streaming: boolean
   hasProcess?: boolean
   workedMs?: number
-}
-
-function persistedAtOf(message: PiMessage): number | undefined {
-  if (!('persistedAt' in message)) return undefined
-  const value = (message as { persistedAt?: unknown }).persistedAt
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function lastToolCallIndex(content: AssistantMessage['content']): number {
@@ -111,18 +111,20 @@ function consumeAssistant(
   process: ProcessItem[],
   message: AssistantMessage,
   splitTrailingText: boolean,
-  durationMs: number
+  thinkingDurations: ThinkingDurations
 ): AnswerBlock[] {
   const answer: AnswerBlock[] = []
   const splitAt = splitTrailingText ? lastToolCallIndex(message.content) : -1
-  let thinkingDuration = durationMs
 
   message.content.forEach((block, i) => {
     const toAnswer = splitTrailingText && i > splitAt
     if (block.type === 'thinking') {
       if (block.thinking) {
-        process.push({ kind: 'thinking', text: block.thinking, durationMs: thinkingDuration })
-        thinkingDuration = 0
+        process.push({
+          kind: 'thinking',
+          text: block.thinking,
+          durationMs: thinkingDurations[thinkingTimingKey(message.timestamp, i)] ?? 0
+        })
       }
       return
     }
@@ -140,7 +142,11 @@ function consumeAssistant(
   return answer
 }
 
-export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
+export function buildTurn(
+  chunk: PiMessage[],
+  streaming: boolean,
+  thinkingDurations: ThinkingDurations = {}
+): Turn {
   const user = chunk[0]?.role === 'user' ? (chunk[0] as UserMessage) : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
@@ -157,10 +163,12 @@ export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
       const isLast = i === lastAssistant
       const trailingIsAnswer = isLast && rest.slice(i + 1).every((m) => m.role !== 'toolResult')
       const splitTrailing = isLast && lastToolCallIndex(message.content) >= 0
-      const nextTs = rest[i + 1]?.timestamp ?? (streaming && isLast ? undefined : persistedAtOf(message))
-      const durationMs =
-        nextTs != null ? Math.max(0, nextTs - message.timestamp) : 0
-      const blocks = consumeAssistant(process, message, splitTrailing && trailingIsAnswer, durationMs)
+      const blocks = consumeAssistant(
+        process,
+        message,
+        splitTrailing && trailingIsAnswer,
+        thinkingDurations
+      )
       if (!streaming && isLast && (trailingIsAnswer || lastToolCallIndex(message.content) < 0)) {
         if (blocks.length) answer = blocks
         else if (!splitTrailing) {
@@ -211,7 +219,11 @@ export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
   }
 }
 
-export function groupTurns(messages: PiMessage[], streaming: boolean): Turn[] {
+export function groupTurns(
+  messages: PiMessage[],
+  streaming: boolean,
+  thinkingDurations: ThinkingDurations = {}
+): Turn[] {
   const chunks: PiMessage[][] = []
   let current: PiMessage[] = []
   for (const message of messages) {
@@ -223,7 +235,9 @@ export function groupTurns(messages: PiMessage[], streaming: boolean): Turn[] {
     }
   }
   if (current.length) chunks.push(current)
-  return chunks.map((chunk, i) => buildTurn(chunk, streaming && i === chunks.length - 1))
+  return chunks.map((chunk, i) =>
+    buildTurn(chunk, streaming && i === chunks.length - 1, thinkingDurations)
+  )
 }
 
 export function formatElapsed(ms: number): string {
