@@ -1,17 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSessionsStore } from '../stores/sessions'
-import {
-  AlignLeft,
-  Brain,
-  ChevronRight,
-  FilePen,
-  FilePlus,
-  FileText,
-  MessageSquare,
-  SquareTerminal,
-  Wrench,
-  type LucideIcon
-} from 'lucide-react'
+import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type {
   BashExecutionMessage,
   CustomMessage,
@@ -44,11 +33,11 @@ const disclosureRow =
 const disclosureButton =
   'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted/50'
 
-function VerbLabel({ text, failed }: { text: string; failed?: boolean }) {
+function VerbLabel({ text, failed, className }: { text: string; failed?: boolean; className?: string }) {
   return (
     <span className={cn('min-w-0 flex-1 truncate text-left', failed && 'text-destructive')}>
       <span className={cn(!failed && 'text-foreground')}>{text.slice(0, 2)}</span>
-      {text.slice(2)}
+      <span className={className}>{text.slice(2)}</span>
     </span>
   )
 }
@@ -113,42 +102,96 @@ function Answer({ blocks, errorMessage }: { blocks: AnswerBlock[]; errorMessage?
   )
 }
 
-type IconKind = 'thinking' | 'bash' | 'read' | 'write' | 'edit' | 'custom' | 'summary' | 'tool'
+type IconKind = 'thinking' | 'bash' | 'file' | 'tool'
 
 const ICONS: Record<IconKind, LucideIcon> = {
   thinking: Brain,
   bash: SquareTerminal,
-  read: FileText,
-  write: FilePlus,
-  edit: FilePen,
-  custom: MessageSquare,
-  summary: AlignLeft,
+  file: FileText,
   tool: Wrench
 }
 
-function toolKind(name: string): IconKind {
+function stackKindForTool(name: string): IconKind {
   if (name === 'bash') return 'bash'
-  if (name === 'read') return 'read'
-  if (name === 'write') return 'write'
-  if (name === 'edit') return 'edit'
+  if (name === 'read' || name === 'write' || name === 'edit') return 'file'
   return 'tool'
 }
 
 function iconKinds(items: ProcessItem[]): IconKind[] {
   const kinds: IconKind[] = []
+  const seen = new Set<IconKind>()
   const push = (kind: IconKind) => {
-    if (kinds[kinds.length - 1] !== kind) kinds.push(kind)
+    if (seen.has(kind)) return
+    seen.add(kind)
+    kinds.push(kind)
   }
   for (const item of items) {
     if (item.kind === 'thinking') push('thinking')
     else if (item.kind === 'bash') push('bash')
-    else if (item.kind === 'custom') push('custom')
-    else if (item.kind === 'summary') push('summary')
+    else if (item.kind === 'custom' || item.kind === 'summary') push('tool')
     else if (item.kind === 'tools') {
-      for (const step of item.tools) push(toolKind(step.name))
+      for (const step of item.tools) push(stackKindForTool(step.name))
     }
   }
   return kinds
+}
+
+type WorkRow =
+  | { kind: 'thinking'; text: string; durationMs: number }
+  | { kind: 'tools'; steps: ToolStep[] }
+  | { kind: 'bash'; messages: BashExecutionMessage[] }
+  | { kind: 'custom'; message: CustomMessage }
+  | { kind: 'summary'; title: string; text: string }
+
+function clusterWork(items: ProcessItem[]): WorkRow[] {
+  const rows: WorkRow[] = []
+  for (const item of items) {
+    if (item.kind === 'thinking') {
+      rows.push({ kind: 'thinking', text: item.text, durationMs: item.durationMs })
+      continue
+    }
+    if (item.kind === 'tools') {
+      for (const step of item.tools) {
+        const last = rows[rows.length - 1]
+        if (last?.kind === 'tools' && last.steps[0].name === step.name) last.steps.push(step)
+        else rows.push({ kind: 'tools', steps: [step] })
+      }
+      continue
+    }
+    if (item.kind === 'bash') {
+      const last = rows[rows.length - 1]
+      if (last?.kind === 'bash') last.messages.push(item.message)
+      else rows.push({ kind: 'bash', messages: [item.message] })
+      continue
+    }
+    if (item.kind === 'custom') rows.push({ kind: 'custom', message: item.message })
+    else if (item.kind === 'summary') rows.push({ kind: 'summary', title: item.title, text: item.text })
+  }
+  return rows
+}
+
+function toolClusterLabel(steps: ToolStep[]): string {
+  const n = steps.length
+  switch (steps[0].name) {
+    case 'read':
+      return `读取 ${n} 个文件`
+    case 'write':
+      return `写入 ${n} 个文件`
+    case 'edit':
+      return `编辑 ${n} 个文件`
+    case 'bash':
+      return `执行 ${n} 个命令`
+    case 'ls':
+      return `列出 ${n} 次`
+    case 'fffind':
+    case 'find':
+      return `查找 ${n} 次`
+    case 'ffgrep':
+    case 'grep':
+      return `搜索 ${n} 次`
+    default:
+      return `调用 ${steps[0].name} ${n} 次`
+  }
 }
 
 function countTools(items: ProcessItem[]): number {
@@ -359,6 +402,52 @@ function BashRow({ message }: { message: BashExecutionMessage }) {
   )
 }
 
+function ToolCluster({ steps }: { steps: ToolStep[] }) {
+  const [open, setOpen] = useState(false)
+  if (steps.length === 1) return <ToolRow step={steps[0]} />
+  const failed = steps.some((step) => !!step.result?.isError)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
+          <VerbLabel text={toolClusterLabel(steps)} failed={failed} />
+          <Chevron open={open} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-1 pt-1">
+        <div className="flex min-w-0 flex-col">
+          {steps.map((step) => (
+            <ToolRow key={step.id} step={step} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function BashCluster({ messages }: { messages: BashExecutionMessage[] }) {
+  const [open, setOpen] = useState(false)
+  if (messages.length === 1) return <BashRow message={messages[0]} />
+  const failed = messages.some((message) => message.cancelled || (message.exitCode ?? 0) !== 0)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
+          <VerbLabel text={`执行 ${messages.length} 个命令`} failed={failed} />
+          <Chevron open={open} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-1 pt-1">
+        <div className="flex min-w-0 flex-col">
+          {messages.map((message, i) => (
+            <BashRow key={i} message={message} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 function stripThoughtHeading(text: string): string {
   return text.replace(/^(Thought for \d+s|已?思考了?\s*\d+\s*(秒|s)?)\s*\n+/i, '').trim()
 }
@@ -430,22 +519,14 @@ function ThinkingLine({ text, durationMs }: { text: string; durationMs: number }
 function GroupBody({ items }: { items: ProcessItem[] }) {
   return (
     <div className="flex min-w-0 flex-col">
-      {items.map((item, i) => {
-        if (item.kind === 'thinking') {
-          return <ThinkingLine key={i} text={item.text} durationMs={item.durationMs} />
+      {clusterWork(items).map((row, i) => {
+        if (row.kind === 'thinking') {
+          return <ThinkingLine key={i} text={row.text} durationMs={row.durationMs} />
         }
-        if (item.kind === 'tools') {
-          return (
-            <div key={i} className="flex min-w-0 flex-col">
-              {item.tools.map((step) => (
-                <ToolRow key={step.id} step={step} />
-              ))}
-            </div>
-          )
-        }
-        if (item.kind === 'bash') return <BashRow key={i} message={item.message} />
-        if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-        if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+        if (row.kind === 'tools') return <ToolCluster key={row.steps[0].id} steps={row.steps} />
+        if (row.kind === 'bash') return <BashCluster key={i} messages={row.messages} />
+        if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
+        if (row.kind === 'summary') return <ProcessDisclosure key={i} title={row.title} text={row.text} />
         return null
       })}
     </div>
@@ -512,6 +593,56 @@ function ThinkLabel() {
   )
 }
 
+const waitBarsCss = `
+.wait-cell-a{animation:wait-cell-size 1.2s linear infinite,wait-cell-a 1.2s linear infinite}
+.wait-cell-b{animation:wait-cell-size 1.2s linear infinite,wait-cell-b 1.2s linear infinite;animation-delay:.1s}
+.wait-cell-c{animation:wait-cell-size 1.2s linear infinite,wait-cell-c 1.2s linear infinite;animation-delay:.1s}
+.wait-cell-d{animation:wait-cell-size 1.2s linear infinite,wait-cell-d 1.2s linear infinite;animation-delay:.2s}
+.wait-cell-e{animation:wait-cell-size 1.2s linear infinite,wait-cell-e 1.2s linear infinite;animation-delay:.2s}
+.wait-cell-f{animation:wait-cell-size 1.2s linear infinite,wait-cell-f 1.2s linear infinite;animation-delay:.2s}
+.wait-cell-g{animation:wait-cell-size 1.2s linear infinite,wait-cell-g 1.2s linear infinite;animation-delay:.3s}
+.wait-cell-h{animation:wait-cell-size 1.2s linear infinite,wait-cell-h 1.2s linear infinite;animation-delay:.3s}
+.wait-cell-i{animation:wait-cell-size 1.2s linear infinite,wait-cell-i 1.2s linear infinite;animation-delay:.4s}
+@keyframes wait-cell-size{0%,50%{width:7.33px;height:7.33px}25%{width:1.33px;height:1.33px}}
+@keyframes wait-cell-a{0%,50%{x:1px;y:1px}25%{x:4px;y:4px}}
+@keyframes wait-cell-b{0%,50%{x:8.33px;y:1px}25%{x:11.33px;y:4px}}
+@keyframes wait-cell-c{0%,50%{x:1px;y:8.33px}25%{x:4px;y:11.33px}}
+@keyframes wait-cell-d{0%,50%{x:15.66px;y:1px}25%{x:18.66px;y:4px}}
+@keyframes wait-cell-e{0%,50%{x:8.33px;y:8.33px}25%{x:11.33px;y:11.33px}}
+@keyframes wait-cell-f{0%,50%{x:1px;y:15.66px}25%{x:4px;y:18.66px}}
+@keyframes wait-cell-g{0%,50%{x:15.66px;y:8.33px}25%{x:18.66px;y:11.33px}}
+@keyframes wait-cell-h{0%,50%{x:8.33px;y:15.66px}25%{x:11.33px;y:18.66px}}
+@keyframes wait-cell-i{0%,50%{x:15.66px;y:15.66px}25%{x:18.66px;y:18.66px}}
+`
+
+function WaitBars() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0 fill-current" aria-hidden="true">
+      <style>{waitBarsCss}</style>
+      <rect className="wait-cell-a" x="1" y="1" width="7.33" height="7.33" />
+      <rect className="wait-cell-b" x="8.33" y="1" width="7.33" height="7.33" />
+      <rect className="wait-cell-c" x="1" y="8.33" width="7.33" height="7.33" />
+      <rect className="wait-cell-d" x="15.66" y="1" width="7.33" height="7.33" />
+      <rect className="wait-cell-e" x="8.33" y="8.33" width="7.33" height="7.33" />
+      <rect className="wait-cell-f" x="1" y="15.66" width="7.33" height="7.33" />
+      <rect className="wait-cell-g" x="15.66" y="8.33" width="7.33" height="7.33" />
+      <rect className="wait-cell-h" x="8.33" y="15.66" width="7.33" height="7.33" />
+      <rect className="wait-cell-i" x="15.66" y="15.66" width="7.33" height="7.33" />
+    </svg>
+  )
+}
+
+function WaitLabel() {
+  return (
+    <span className="think-wave">
+      <span>理</span>
+      <span>解</span>
+      <span>问</span>
+      <span>题</span>
+    </span>
+  )
+}
+
 function OutlineThinking({
   durationMs,
   current,
@@ -533,8 +664,8 @@ function OutlineThinking({
 
 function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
   return (
-    <div className={cn(disclosureRow, 'pointer-events-none', active && 'text-shimmer')}>
-      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} />
+    <div className={cn(disclosureRow, 'pointer-events-none')}>
+      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} className={active ? 'text-shimmer' : undefined} />
     </div>
   )
 }
@@ -542,42 +673,59 @@ function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
 function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
-    <div className={cn(disclosureRow, 'pointer-events-none', active && 'text-shimmer')}>
-      <VerbLabel text={`执行 ${message.command}`} failed={failed} />
+    <div className={cn(disclosureRow, 'pointer-events-none')}>
+      <VerbLabel text={`执行 ${message.command}`} failed={failed} className={active ? 'text-shimmer' : undefined} />
     </div>
   )
 }
 
 function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean }) {
+  const rows = clusterWork(items)
   return (
     <div className="flex min-w-0 flex-col">
-      {items.map((item, i) => {
-        const last = active && i === items.length - 1
-        if (item.kind === 'thinking') {
+      {rows.map((row, i) => {
+        const last = active && i === rows.length - 1
+        if (row.kind === 'thinking') {
           return (
             <OutlineThinking
               key={i}
-              durationMs={item.durationMs}
-              current={last && item.durationMs === 0}
+              durationMs={row.durationMs}
+              current={last}
             />
           )
         }
-        if (item.kind === 'tools') {
+        if (row.kind === 'tools') {
+          if (row.steps.length === 1) {
+            return <OutlineTool key={row.steps[0].id} step={row.steps[0]} active={last} />
+          }
+          const failed = row.steps.some((step) => !!step.result?.isError)
           return (
-            <div key={i} className="flex min-w-0 flex-col">
-              {item.tools.map((step, ti) => (
-                <OutlineTool
-                  key={step.id}
-                  step={step}
-                  active={last && ti === item.tools.length - 1}
-                />
-              ))}
+            <div key={row.steps[0].id} className={cn(disclosureRow, 'pointer-events-none')}>
+              <VerbLabel
+                text={toolClusterLabel(row.steps)}
+                failed={failed}
+                className={last ? 'text-shimmer' : undefined}
+              />
             </div>
           )
         }
-        if (item.kind === 'bash') return <OutlineBash key={i} message={item.message} active={last} />
-        if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-        if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+        if (row.kind === 'bash') {
+          if (row.messages.length === 1) {
+            return <OutlineBash key={i} message={row.messages[0]} active={last} />
+          }
+          const failed = row.messages.some((message) => message.cancelled || (message.exitCode ?? 0) !== 0)
+          return (
+            <div key={i} className={cn(disclosureRow, 'pointer-events-none')}>
+              <VerbLabel
+                text={`执行 ${row.messages.length} 个命令`}
+                failed={failed}
+                className={last ? 'text-shimmer' : undefined}
+              />
+            </div>
+          )
+        }
+        if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
+        if (row.kind === 'summary') return <ProcessDisclosure key={i} title={row.title} text={row.text} />
         return null
       })}
     </div>
@@ -595,7 +743,7 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
               <OutlineThinking
                 key={i}
                 durationMs={item.durationMs}
-                current={active && i === items.length - 1 && item.durationMs === 0}
+                current={active && i === items.length - 1}
                 stacked
               />
             )
@@ -611,7 +759,7 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
     <div className="min-w-0">
       <div className={cn(disclosureRow, 'pointer-events-none')}>
         <StackedIcons kinds={iconKinds(items)} />
-        <span className="min-w-0 flex-1 truncate text-left">使用了 {tools} 个工具</span>
+        <span className="min-w-0 flex-1 truncate text-left">正在使用工具</span>
       </div>
       <Rail>
         <OutlineBody items={items} active={active} />
@@ -623,7 +771,14 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
 function ProcessOutline({ items }: { items: ProcessItem[] }) {
   const segments = processSegments(items)
   if (segments.length === 0) {
-    return <OutlineThinking durationMs={0} current stacked />
+    return (
+      <div className={cn(disclosureRow, 'pointer-events-none')}>
+        <WaitBars />
+        <span className="min-w-0 flex-1 truncate text-left">
+          <WaitLabel />
+        </span>
+      </div>
+    )
   }
   return (
     <div className="flex min-w-0 flex-col gap-2">

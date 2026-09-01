@@ -157,10 +157,9 @@ export function buildTurn(chunk: PiMessage[], streaming: boolean): Turn {
       const isLast = i === lastAssistant
       const trailingIsAnswer = isLast && rest.slice(i + 1).every((m) => m.role !== 'toolResult')
       const splitTrailing = isLast && lastToolCallIndex(message.content) >= 0
-      const nextTs =
-        rest[i + 1]?.timestamp ??
-        (streaming && isLast ? Date.now() : persistedAtOf(message) ?? message.timestamp)
-      const durationMs = Math.max(0, nextTs - message.timestamp)
+      const nextTs = rest[i + 1]?.timestamp ?? (streaming && isLast ? undefined : persistedAtOf(message))
+      const durationMs =
+        nextTs != null ? Math.max(0, nextTs - message.timestamp) : 0
       const blocks = consumeAssistant(process, message, splitTrailing && trailingIsAnswer, durationMs)
       if (!streaming && isLast && (trailingIsAnswer || lastToolCallIndex(message.content) < 0)) {
         if (blocks.length) answer = blocks
