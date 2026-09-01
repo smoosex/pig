@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
 import type { DisplayTurn } from '../ipc/api'
@@ -287,6 +287,22 @@ function FollowScroller({
 }
 
 const TURN_ALIGN = 12
+const SCROLL_END = 32
+
+function shouldAdjustOnItemResize(
+  item: { key: string | number | bigint; start: number; size: number },
+  delta: number,
+  instance: Virtualizer<HTMLDivElement, Element>,
+  pinGrow: boolean
+): boolean {
+  const scrollOffset = (instance.scrollOffset ?? 0) + instance.scrollAdjustments
+  if (!instance.itemSizeCache.has(item.key)) return item.start < scrollOffset
+  if (item.start + item.size <= scrollOffset && instance.scrollDirection !== 'backward') {
+    return true
+  }
+  if (delta <= 0) return false
+  return pinGrow && instance.isAtEnd(SCROLL_END)
+}
 
 function VirtualTurns({
   items,
@@ -307,10 +323,12 @@ function VirtualTurns({
     paddingStart: 16,
     paddingEnd: TURN_ALIGN,
     getItemKey: (index) => items[index]?.id ?? index,
-    anchorTo: 'end',
-    scrollEndThreshold: 32,
+    anchorTo: 'start',
+    scrollEndThreshold: SCROLL_END,
     directDomUpdates: true
   })
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) =>
+    shouldAdjustOnItemResize(item, delta, instance, isStreaming)
   const virtualItems = virtualizer.getVirtualItems()
 
   const jumpToTurn = (index: number) => {
