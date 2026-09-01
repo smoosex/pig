@@ -33,11 +33,19 @@ const disclosureRow =
 const disclosureButton =
   'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted/50'
 
-function VerbLabel({ text, failed, className }: { text: string; failed?: boolean; className?: string }) {
+function WaveText({ text }: { text: string }) {
+  return (
+    <span className="tool-wave" data-text={text}>
+      {text}
+    </span>
+  )
+}
+
+function VerbLabel({ text, failed, active }: { text: string; failed?: boolean; active?: boolean }) {
   return (
     <span className={cn('min-w-0 flex-1 truncate text-left', failed && 'text-destructive')}>
       <span className={cn(!failed && 'text-foreground')}>{text.slice(0, 2)}</span>
-      <span className={className}>{text.slice(2)}</span>
+      {active ? <WaveText text={text.slice(2)} /> : <span>{text.slice(2)}</span>}
     </span>
   )
 }
@@ -665,7 +673,7 @@ function OutlineThinking({
 function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
   return (
     <div className={cn(disclosureRow, 'pointer-events-none')}>
-      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} className={active ? 'text-shimmer' : undefined} />
+      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} active={active} />
     </div>
   )
 }
@@ -674,7 +682,7 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
     <div className={cn(disclosureRow, 'pointer-events-none')}>
-      <VerbLabel text={`执行 ${message.command}`} failed={failed} className={active ? 'text-shimmer' : undefined} />
+      <VerbLabel text={`执行 ${message.command}`} failed={failed} active={active} />
     </div>
   )
 }
@@ -701,11 +709,7 @@ function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean 
           const failed = row.steps.some((step) => !!step.result?.isError)
           return (
             <div key={row.steps[0].id} className={cn(disclosureRow, 'pointer-events-none')}>
-              <VerbLabel
-                text={toolClusterLabel(row.steps)}
-                failed={failed}
-                className={last ? 'text-shimmer' : undefined}
-              />
+              <VerbLabel text={toolClusterLabel(row.steps)} failed={failed} active={last} />
             </div>
           )
         }
@@ -716,11 +720,7 @@ function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean 
           const failed = row.messages.some((message) => message.cancelled || (message.exitCode ?? 0) !== 0)
           return (
             <div key={i} className={cn(disclosureRow, 'pointer-events-none')}>
-              <VerbLabel
-                text={`执行 ${row.messages.length} 个命令`}
-                failed={failed}
-                className={last ? 'text-shimmer' : undefined}
-              />
+              <VerbLabel text={`执行 ${row.messages.length} 个命令`} failed={failed} active={last} />
             </div>
           )
         }

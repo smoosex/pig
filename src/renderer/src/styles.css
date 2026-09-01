@@ -253,20 +253,41 @@
   }
 }
 
-@utility text-shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--muted-foreground) 0%,
-    var(--muted-foreground) 38%,
-    color-mix(in oklch, var(--muted-foreground) 70%, var(--foreground)) 50%,
-    var(--muted-foreground) 62%,
-    var(--muted-foreground) 100%
-  );
-  background-size: 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: text-shimmer 2.5s linear infinite;
+@utility tool-wave {
+  position: relative;
+  white-space: pre;
+
+  &::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    color: color-mix(in oklch, var(--muted-foreground) 35%, var(--foreground));
+    white-space: inherit;
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 35%,
+      black 43%,
+      black 57%,
+      transparent 65%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 35%,
+      black 43%,
+      black 57%,
+      transparent 65%,
+      transparent 100%
+    );
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 200% 100%;
+    mask-size: 200% 100%;
+    animation: tool-wave 1.8s linear infinite;
+  }
 }
 
 @keyframes caret-blink {
@@ -292,6 +313,20 @@
   }
 }
 
+@keyframes tool-wave {
+  0%,
+  45.01%,
+  100% {
+    -webkit-mask-position: 150% 0;
+    mask-position: 150% 0;
+  }
+
+  45% {
+    -webkit-mask-position: -50% 0;
+    mask-position: -50% 0;
+  }
+}
+
 @keyframes composer-breathe {
   0%,
   100% {
@@ -303,17 +338,6 @@
   }
 }
 
-@keyframes text-shimmer {
-  0%,
-  60.01%,
-  100% {
-    background-position: 100% 0;
-  }
-
-  60% {
-    background-position: 0% 0;
-  }
-}
 
 html,
 body,
