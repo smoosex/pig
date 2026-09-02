@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { ArrowUp, Box, RefreshCw, Square } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { ArrowUp, Box, RefreshCw, Square, X } from 'lucide-react'
 import {
   api,
   type SessionContextUsage,
@@ -30,6 +30,7 @@ import { Progress } from './ui/progress'
 import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: '关闭',
@@ -404,8 +405,54 @@ function ThinkingPicker({
   )
 }
 
+type PastedImage = {
+  id: string
+  mimeType: string
+  data: string
+  url: string
+}
+
+function clipboardImages(event: ClipboardEvent): File[] {
+  const data = event.clipboardData
+  if (!data) return []
+  if (data.files.length > 0) {
+    return [...data.files].filter((file) => file.type.startsWith('image/'))
+  }
+  const files: File[] = []
+  for (const item of data.items) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+    const file = item.getAsFile()
+    if (file) files.push(file)
+  }
+  return files
+}
+
+function readImage(file: File): Promise<PastedImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('Failed to read image'))
+        return
+      }
+      const comma = result.indexOf(',')
+      resolve({
+        id: crypto.randomUUID(),
+        mimeType: file.type || 'image/png',
+        data: comma === -1 ? result : result.slice(comma + 1),
+        url: URL.createObjectURL(file)
+      })
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export function Composer() {
   const [text, setText] = useState('')
+  const [images, setImages] = useState<PastedImage[]>([])
+  const [preview, setPreview] = useState<string | null>(null)
   const composing = useRef(false)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
@@ -427,22 +474,50 @@ export function Composer() {
     total: 0
   }
 
+  useEffect(() => {
+    return () => {
+      setPreview(null)
+      setImages((current) => {
+        for (const image of current) URL.revokeObjectURL(image.url)
+        return []
+      })
+    }
+  }, [activeSessionId])
+
   const send = useCallback(async () => {
     const trimmed = text.trim()
-    if (!trimmed || isStreaming || !activeSessionId) return
+    if ((!trimmed && images.length === 0) || isStreaming || !activeSessionId) return
     const prepared = await api.prepareSession(activeSessionId)
     if (prepared.created) await refreshCwd(prepared.cwd)
+    const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     setText('')
-    await api.prompt(activeSessionId, trimmed)
+    setPreview(null)
+    setImages((current) => {
+      for (const image of current) URL.revokeObjectURL(image.url)
+      return []
+    })
+    await api.prompt(activeSessionId, trimmed, payload.length > 0 ? payload : undefined)
     await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
-  }, [text, isStreaming, activeSessionId, refreshCwd])
+  }, [text, images, isStreaming, activeSessionId, refreshCwd])
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
-  const canSend = Boolean(text.trim() && activeSessionId && !isStreaming)
+  const canSend = Boolean((text.trim() || images.length > 0) && activeSessionId && !isStreaming)
+
+  const removeImage = (id: string) => {
+    setImages((current) => {
+      const next = current.filter((image) => image.id !== id)
+      const removed = current.find((image) => image.id === id)
+      if (removed) {
+        URL.revokeObjectURL(removed.url)
+        if (preview === removed.url) setPreview(null)
+      }
+      return next
+    })
+  }
 
   return (
     <div className={cn(chatColumn, 'pb-5')}>
@@ -473,7 +548,43 @@ export function Composer() {
             e.preventDefault()
             void send()
           }}
+          onPaste={(e) => {
+            const files = clipboardImages(e)
+            if (files.length === 0) return
+            if (!e.clipboardData?.getData('text/plain')) e.preventDefault()
+            void Promise.all(files.map(readImage)).then((next) => {
+              setImages((current) => [...current, ...next])
+            })
+          }}
         />
+        {images.length > 0 ? (
+          <div className="flex w-full flex-wrap justify-start gap-1.5 px-3.5 pb-1.5">
+            {images.map((image) => (
+              <div key={image.id} className="relative shrink-0">
+                <button
+                  type="button"
+                  className="block"
+                  aria-label="预览图片"
+                  onClick={() => setPreview(image.url)}
+                >
+                  <img
+                    src={image.url}
+                    alt=""
+                    className="h-10 max-w-16 cursor-pointer rounded-md object-cover"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="absolute top-0.5 right-0.5 flex size-3.5 items-center justify-center rounded-full bg-black/65 text-white"
+                  aria-label="移除图片"
+                  onClick={() => removeImage(image.id)}
+                >
+                  <X className="size-2" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <InputGroupAddon align="block-end" className="justify-between px-2.5 pb-2.5">
           <div className="flex min-w-0 items-center gap-1">
             <ModelPicker
@@ -521,6 +632,17 @@ export function Composer() {
           </div>
         </InputGroupAddon>
       </InputGroup>
+      <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null) }}>
+        <DialogContent
+          showCloseButton
+          className="w-fit max-w-[min(90vw,72rem)] border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[min(90vw,72rem)]"
+        >
+          <DialogTitle className="sr-only">图片预览</DialogTitle>
+          {preview ? (
+            <img src={preview} alt="" className="max-h-[85vh] max-w-full rounded-lg object-contain" />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

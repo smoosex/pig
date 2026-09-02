@@ -106,10 +106,31 @@ export function registerSessionIpc(): void {
     }
   )
 
-  ipcMain.handle('session:prompt', async (_event, sessionId: string, text: string) => {
-    const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
-    await ls.agentSession.prompt(text)
-  })
+  ipcMain.handle(
+    'session:prompt',
+    async (
+      _event,
+      sessionId: string,
+      text: string,
+      images?: { mimeType: string; data: string }[]
+    ) => {
+      const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
+      const attachments = (Array.isArray(images) ? images : [])
+        .filter(
+          (image) =>
+            typeof image?.mimeType === 'string' &&
+            image.mimeType.startsWith('image/') &&
+            typeof image?.data === 'string' &&
+            image.data.length > 0
+        )
+        .map((image) => ({
+          type: 'image' as const,
+          mimeType: image.mimeType,
+          data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
+        }))
+      await ls.agentSession.prompt(text, attachments.length > 0 ? { images: attachments } : undefined)
+    }
+  )
 
   ipcMain.handle('session:abort', async (_event, sessionId: string) => {
     const ls = getLive(sessionId)

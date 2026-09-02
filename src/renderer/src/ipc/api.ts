@@ -167,7 +167,11 @@ export interface SessionApi {
   closeSession: (sessionId: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
   deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
-  prompt: (sessionId: string, text: string) => Promise<void>
+  prompt: (
+    sessionId: string,
+    text: string,
+    images?: { mimeType: string; data: string }[]
+  ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurn[]>
