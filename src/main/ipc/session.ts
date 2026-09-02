@@ -53,7 +53,7 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:delete-chat', async (_event, cwd: string) => {
     if (!cwd || !isChatCwd(cwd)) throw new Error('Chat cwd is required')
-    closeSessionsForCwd(cwd)
+    await closeSessionsForCwd(cwd)
     await removeProjectDir(cwd)
     await removeChatWorkDir(cwd)
   })
@@ -87,12 +87,12 @@ export function registerSessionIpc(): void {
   })
 
   ipcMain.handle('session:close', async (_event, sessionId: string) => {
-    closeSession(sessionId)
+    await closeSession(sessionId)
   })
 
   ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
-    closeSessionsForCwd(cwd)
+    await closeSessionsForCwd(cwd)
     await removeProjectDir(cwd)
     await removeOpenedProject(cwd)
   })
@@ -101,7 +101,7 @@ export function registerSessionIpc(): void {
     'session:delete',
     async (_event, sessionId: string, path: string, cwd: string) => {
       if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
-      closeSession(sessionId)
+      await closeSession(sessionId)
       await removeSessionFile(path)
     }
   )

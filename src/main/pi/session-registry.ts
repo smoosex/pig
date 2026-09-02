@@ -157,10 +157,10 @@ async function materialize(session: PendingSession): Promise<LiveSession> {
   if (!sessionFile || !header) throw new Error('Pending session has no session file or header')
 
   await writeFile(sessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx' })
-  const persistedManager = SessionManager.open(sessionFile)
+  session.sessionManager.setSessionFile(sessionFile)
 
   try {
-    const liveSession = await build(persistedManager, session.cwd, session.win)
+    const liveSession = await build(session.sessionManager, session.cwd, session.win)
     await applyPendingControls(session, liveSession)
     pending.delete(session.sessionId)
     return liveSession
@@ -752,31 +752,72 @@ export function viewSessionBranch(sessionId: string, tipId: string): void {
   ls.agentSession.agent.state.messages = sm.buildSessionContext().messages
 }
 
-export function closeSession(sessionId: string): void {
+async function disposeLiveSession(session: LiveSession): Promise<void> {
+  session.unsubscribe()
+  try {
+    await session.agentSession.abort()
+  } catch {
+  }
+  try {
+    await session.agentSession.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
+  } catch {
+  }
+  session.agentSession.dispose()
+}
+
+export async function closeSession(sessionId: string): Promise<void> {
+  const preparation = preparing.get(sessionId)
+  if (preparation) {
+    pending.delete(sessionId)
+    try {
+      const prepared = await preparation
+      if (live.get(sessionId) === prepared) {
+        live.delete(sessionId)
+        await disposeLiveSession(prepared)
+      }
+    } catch {
+    }
+    return
+  }
+
   if (pending.delete(sessionId)) return
   const ls = live.get(sessionId)
   if (!ls) return
-  ls.unsubscribe()
-  ls.agentSession.dispose()
   live.delete(sessionId)
+  await disposeLiveSession(ls)
 }
 
-export function closeSessionsForCwd(cwd: string): void {
+export async function closeSessionsForCwd(cwd: string): Promise<void> {
   const target = resolve(cwd)
-  for (const session of [...pending.values()]) {
-    if (resolve(session.cwd) === target) closeSession(session.sessionId)
-  }
-  for (const ls of [...live.values()]) {
-    if (resolve(ls.cwd) === target) closeSession(ls.sessionId)
-  }
+  const sessionIds = new Set([
+    ...[...pending.values()]
+      .filter((session) => resolve(session.cwd) === target)
+      .map((session) => session.sessionId),
+    ...[...live.values()]
+      .filter((session) => resolve(session.cwd) === target)
+      .map((session) => session.sessionId)
+  ])
+  await Promise.all([...sessionIds].map((sessionId) => closeSession(sessionId)))
 }
 
-export function disposeAll(): void {
+export async function disposeAll(): Promise<void> {
+  const preparations = [...preparing.values()]
   pending.clear()
   preparing.clear()
-  for (const ls of live.values()) {
-    ls.unsubscribe()
-    ls.agentSession.dispose()
-  }
+  const sessions = [...live.values()]
   live.clear()
+  const disposed = new Set(sessions)
+  await Promise.all([
+    ...sessions.map(disposeLiveSession),
+    ...preparations.map(async (preparation) => {
+      try {
+        const session = await preparation
+        if (disposed.has(session)) return
+        disposed.add(session)
+        live.delete(session.sessionId)
+        await disposeLiveSession(session)
+      } catch {
+      }
+    })
+  ])
 }

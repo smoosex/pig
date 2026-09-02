@@ -399,7 +399,8 @@ function VirtualTurns({
     getItemKey: (index) => items[index]?.id ?? index,
     anchorTo: 'start',
     scrollEndThreshold: SCROLL_END,
-    directDomUpdates: true
+    directDomUpdates: true,
+    directDomUpdatesMode: 'position'
   })
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     shouldAdjustOnItemResize(item, instance)

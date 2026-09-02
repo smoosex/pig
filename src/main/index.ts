@@ -24,6 +24,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  disposeAll()
+let isDisposing = false
+
+app.on('before-quit', (event) => {
+  if (isDisposing) return
+  event.preventDefault()
+  isDisposing = true
+  void disposeAll()
+    .catch(() => {})
+    .finally(() => app.quit())
 })
