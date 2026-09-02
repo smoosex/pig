@@ -203,8 +203,6 @@
 @utility think-wave {
   display: inline-flex;
   gap: 1px;
-  font-size: 13px;
-  font-weight: 600;
 
   span {
     animation: think-wave 2.2s ease-in-out infinite;

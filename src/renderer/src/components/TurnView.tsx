@@ -29,7 +29,7 @@ import { Message, MessageContent } from './ui/message'
 const hideScroll = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap ${hideScroll}`
 const disclosureRow =
-  'flex h-7 w-full min-w-0 items-center justify-start gap-1.5 px-1 text-sm font-normal text-muted-foreground'
+  'flex h-7 w-full min-w-0 items-center justify-start gap-1.5 px-1 text-[0.8rem] font-normal text-muted-foreground'
 const disclosureButton =
   'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted/50'
 
@@ -595,8 +595,11 @@ function CustomProcess({ message }: { message: CustomMessage }) {
 function ThinkLabel() {
   return (
     <span className="think-wave">
-      <span>思</span>
-      <span>考</span>
+      {[...'思考中...'].map((char, i) => (
+        <span key={`${char}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
+          {char}
+        </span>
+      ))}
     </span>
   )
 }
@@ -688,47 +691,51 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
   )
 }
 
+function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
+  if (row.kind === 'thinking') {
+    if (last && row.durationMs <= 0) return <OutlineThinking durationMs={0} current />
+    return <ThinkingLine text={row.text} durationMs={row.durationMs} />
+  }
+  if (row.kind === 'tools') {
+    if (!last) return <ToolCluster steps={row.steps} />
+    const done = row.steps.filter((step) => step.result)
+    const live = row.steps.filter((step) => !step.result)
+    return (
+      <>
+        {done.length === 1 ? <ToolRow step={done[0]} /> : done.length > 1 ? <ToolCluster steps={done} /> : null}
+        {live.map((step, i) => (
+          <OutlineTool key={step.id} step={step} active={i === live.length - 1} />
+        ))}
+      </>
+    )
+  }
+  if (row.kind === 'bash') {
+    if (!last) return <BashCluster messages={row.messages} />
+    const past = row.messages.slice(0, -1)
+    const current = row.messages[row.messages.length - 1]
+    return (
+      <>
+        {past.length === 1 ? (
+          <BashRow message={past[0]} />
+        ) : past.length > 1 ? (
+          <BashCluster messages={past} />
+        ) : null}
+        {current ? <OutlineBash message={current} active /> : null}
+      </>
+    )
+  }
+  if (row.kind === 'custom') return <CustomProcess message={row.message} />
+  if (row.kind === 'summary') return <ProcessDisclosure title={row.title} text={row.text} />
+  return null
+}
+
 function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean }) {
   const rows = clusterWork(items)
   return (
     <div className="flex min-w-0 flex-col">
-      {rows.map((row, i) => {
-        const last = active && i === rows.length - 1
-        if (row.kind === 'thinking') {
-          return (
-            <OutlineThinking
-              key={i}
-              durationMs={row.durationMs}
-              current={last && row.durationMs <= 0}
-            />
-          )
-        }
-        if (row.kind === 'tools') {
-          if (row.steps.length === 1) {
-            return <OutlineTool key={row.steps[0].id} step={row.steps[0]} active={last} />
-          }
-          const failed = row.steps.some((step) => !!step.result?.isError)
-          return (
-            <div key={row.steps[0].id} className={cn(disclosureRow, 'pointer-events-none')}>
-              <VerbLabel text={toolClusterLabel(row.steps)} failed={failed} active={last} />
-            </div>
-          )
-        }
-        if (row.kind === 'bash') {
-          if (row.messages.length === 1) {
-            return <OutlineBash key={i} message={row.messages[0]} active={last} />
-          }
-          const failed = row.messages.some((message) => message.cancelled || (message.exitCode ?? 0) !== 0)
-          return (
-            <div key={i} className={cn(disclosureRow, 'pointer-events-none')}>
-              <VerbLabel text={`执行 ${row.messages.length} 个命令`} failed={failed} active={last} />
-            </div>
-          )
-        }
-        if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
-        if (row.kind === 'summary') return <ProcessDisclosure key={i} title={row.title} text={row.text} />
-        return null
-      })}
+      {rows.map((row, i) => (
+        <OutlineRow key={i} row={row} last={active && i === rows.length - 1} />
+      ))}
     </div>
   )
 }
@@ -740,14 +747,11 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
       <>
         {items.map((item, i) => {
           if (item.kind === 'thinking') {
-            return (
-              <OutlineThinking
-                key={i}
-                durationMs={item.durationMs}
-                current={active && i === items.length - 1 && item.durationMs <= 0}
-                stacked
-              />
-            )
+            const live = active && i === items.length - 1 && item.durationMs <= 0
+            if (live) {
+              return <OutlineThinking key={i} durationMs={0} current stacked />
+            }
+            return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
           if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
