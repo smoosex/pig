@@ -132,7 +132,6 @@ interface SessionsStore {
   renameTab: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
-  startStreamTimer: (sessionId: string) => void
   setThinkingDuration: (
     sessionId: string,
     messageTimestamp: number,
@@ -397,24 +396,15 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
           isStreaming: streaming,
-          streamStartedAt: streaming ? (rt.isStreaming ? rt.streamStartedAt : null) : null,
+          streamStartedAt: streaming
+            ? (rt.isStreaming ? rt.streamStartedAt : Date.now())
+            : null,
           streamElapsedMs: streaming
             ? null
             : rt.streamStartedAt != null
               ? Date.now() - rt.streamStartedAt
               : rt.streamElapsedMs,
           liveMessages: streaming ? [] : rt.liveMessages
-        })
-      }
-    }),
-
-  startStreamTimer: (sessionId) =>
-    set((s) => {
-      const rt = ensureRuntime(s.runtime, sessionId)
-      if (!rt.isStreaming || rt.streamStartedAt != null) return s
-      return {
-        runtime: patchRuntime(s.runtime, sessionId, {
-          streamStartedAt: Date.now()
         })
       }
     }),

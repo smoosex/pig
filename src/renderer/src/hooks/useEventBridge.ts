@@ -1,19 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { thinkingTimingKey } from '../chat/turns'
 import { api } from '../ipc/api'
-import { isPiMessage, type PiMessage, type PiSessionEvent } from '../pi/types'
+import { isPiMessage, type PiSessionEvent } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
 
 const HYDRATE_DELAY_MS = 320
-
-function hasAssistantOutput(message: PiMessage): boolean {
-  if (message.role !== 'assistant') return false
-  return message.content.some((block) => {
-    if (block.type === 'thinking') return block.thinking.length > 0
-    if (block.type === 'text') return block.text.length > 0
-    return true
-  })
-}
 
 function assistantStreamEvent(
   event: PiSessionEvent
@@ -34,7 +25,6 @@ function assistantStreamEvent(
 
 export function useEventBridge(): void {
   const setStreaming = useSessionsStore((s) => s.setStreaming)
-  const startStreamTimer = useSessionsStore((s) => s.startStreamTimer)
   const setThinkingDuration = useSessionsStore((s) => s.setThinkingDuration)
   const appendLiveMessage = useSessionsStore((s) => s.appendLiveMessage)
   const replaceLiveMessage = useSessionsStore((s) => s.replaceLiveMessage)
@@ -138,24 +128,17 @@ export function useEventBridge(): void {
           break
         }
         case 'message_start':
-          if (isPiMessage(event.message)) {
-            if (hasAssistantOutput(event.message)) startStreamTimer(sessionId)
-            appendLiveMessage(sessionId, event.message)
-          }
+          if (isPiMessage(event.message)) appendLiveMessage(sessionId, event.message)
           break
         case 'message_update':
           recordThinkingEvent(sessionId, event)
-          if (isPiMessage(event.message)) {
-            if (hasAssistantOutput(event.message)) startStreamTimer(sessionId)
-            replaceLiveMessage(sessionId, event.message)
-          }
+          if (isPiMessage(event.message)) replaceLiveMessage(sessionId, event.message)
           break
         case 'message_end':
           if (isPiMessage(event.message)) {
             if (event.message.role === 'assistant') {
               finishMessage(sessionId, event.message.timestamp, performance.now())
             }
-            if (hasAssistantOutput(event.message)) startStreamTimer(sessionId)
             replaceLiveMessage(sessionId, event.message)
           }
           break
@@ -202,7 +185,6 @@ export function useEventBridge(): void {
     }
   }, [
     setStreaming,
-    startStreamTimer,
     setThinkingDuration,
     appendLiveMessage,
     replaceLiveMessage,
