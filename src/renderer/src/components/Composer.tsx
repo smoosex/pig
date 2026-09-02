@@ -405,6 +405,7 @@ function ThinkingPicker({
 
 export function Composer() {
   const [text, setText] = useState('')
+  const composing = useRef(false)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const runtime = useSessionsStore((s) =>
@@ -454,7 +455,16 @@ export function Composer() {
           rows={3}
           disabled={!activeSessionId}
           onChange={(e) => setText(e.target.value)}
+          onCompositionStart={() => {
+            composing.current = true
+          }}
+          onCompositionEnd={() => {
+            requestAnimationFrame(() => {
+              composing.current = false
+            })
+          }}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || composing.current || e.keyCode === 229) return
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               void send()
