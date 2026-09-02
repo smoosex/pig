@@ -139,6 +139,7 @@ async function build(
     modelRuntime: await startModelRuntime()
   })
   const session = result.session
+  await session.bindExtensions({ mode: 'rpc' })
   const unsubscribe = bridgeEvents(session, session.sessionId, win)
   const ls: LiveSession = { sessionId: session.sessionId, cwd, agentSession: session, unsubscribe }
   live.set(session.sessionId, ls)
