@@ -327,6 +327,61 @@
   }
 }
 
+@keyframes squares-chase {
+  0% {
+    x: 1px;
+    y: 1px;
+  }
+
+  8.33%,
+  25% {
+    x: 13px;
+    y: 1px;
+  }
+
+  33.3%,
+  50% {
+    x: 13px;
+    y: 13px;
+  }
+
+  58.33%,
+  75% {
+    x: 1px;
+    y: 13px;
+  }
+
+  83.33%,
+  100% {
+    x: 1px;
+    y: 1px;
+  }
+}
+
+.squares-chase {
+  animation: squares-chase 2.4s linear infinite;
+}
+
+.squares-chase-2 {
+  animation-delay: -1.6s;
+}
+
+.squares-chase-3 {
+  animation-delay: -0.8s;
+}
+
+.close-spin {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: close-spin 0.75s linear infinite;
+}
+
+@keyframes close-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes composer-breathe {
   0%,
   100% {

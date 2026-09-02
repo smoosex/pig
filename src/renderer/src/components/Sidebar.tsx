@@ -14,6 +14,7 @@ import {
 } from './ui/dropdown-menu'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
+import { SquaresSpinner } from './RunningSpinners'
 
 const projectAvatarBg = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4', 'bg-chart-5'] as const
 
@@ -170,6 +171,7 @@ function ProjectList() {
 
 function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () => void }) {
   const openExisting = useSessionsStore((s) => s.openExisting)
+  const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   return (
     <div className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-background focus-within:bg-background">
       <Button
@@ -181,6 +183,7 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
       >
         <span className="min-w-0 truncate">{session.name || session.firstMessage || '(空会话)'}</span>
       </Button>
+      {streaming ? <SquaresSpinner /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -208,8 +211,6 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
 
 function ChatList() {
   const chats = useSessionsStore((s) => s.chats)
-  const openExisting = useSessionsStore((s) => s.openExisting)
-  const deleteChat = useSessionsStore((s) => s.deleteChat)
 
   if (chats.length === 0) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">点击 + 开始对话</p>
@@ -220,45 +221,57 @@ function ChatList() {
       {chats.map((chat) => {
         const session = chat.sessions[0]
         if (!session) return null
-        const title = chatTitle(chat)
-        return (
-          <div
-            key={chat.cwd}
-            className="group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 pr-1 transition-colors hover:bg-background focus-within:bg-background"
-          >
-            <Button
-              variant="ghost"
-              size="xs"
-              className="h-7 min-w-0 flex-1 justify-start rounded-md text-left text-xs font-normal !bg-transparent"
-              title={title}
-              onClick={() => void openExisting(session)}
-            >
-              <span className="min-w-0 truncate">{title}</span>
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="pointer-events-none opacity-0 transition-opacity group-hover/chat:pointer-events-auto group-hover/chat:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-                  aria-label={`对话 ${title} 更多操作`}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem variant="destructive" onSelect={() => void deleteChat(chat.cwd)}>
-                    <Trash2 data-icon="inline-start" />
-                    删除对话
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        )
+        return <ChatRow key={chat.cwd} session={session} title={chatTitle(chat)} cwd={chat.cwd} />
       })}
+    </div>
+  )
+}
+
+function ChatRow({
+  session,
+  title,
+  cwd
+}: {
+  session: SessionMeta
+  title: string
+  cwd: string
+}) {
+  const openExisting = useSessionsStore((s) => s.openExisting)
+  const deleteChat = useSessionsStore((s) => s.deleteChat)
+  const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
+  return (
+    <div className="group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 pr-1 transition-colors hover:bg-background focus-within:bg-background">
+      <Button
+        variant="ghost"
+        size="xs"
+        className="h-7 min-w-0 flex-1 justify-start rounded-md text-left text-xs font-normal !bg-transparent"
+        title={title}
+        onClick={() => void openExisting(session)}
+      >
+        <span className="min-w-0 truncate">{title}</span>
+      </Button>
+      {streaming ? <SquaresSpinner /> : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="pointer-events-none opacity-0 transition-opacity group-hover/chat:pointer-events-auto group-hover/chat:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
+            aria-label={`对话 ${title} 更多操作`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem variant="destructive" onSelect={() => void deleteChat(cwd)}>
+              <Trash2 data-icon="inline-start" />
+              删除对话
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
