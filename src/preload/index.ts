@@ -44,11 +44,33 @@ const api = {
   getSidebarPrefs: (): Promise<unknown> => ipcRenderer.invoke('system:get-sidebar-prefs'),
   setSidebarPrefs: (patch: unknown): Promise<unknown> =>
     ipcRenderer.invoke('system:set-sidebar-prefs', patch),
+  getSettings: (): Promise<unknown> => ipcRenderer.invoke('settings:get'),
+  setSendShortcut: (shortcut: string): Promise<unknown> =>
+    ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
+  setDefaultModelSetting: (provider: string, id: string): Promise<unknown> =>
+    ipcRenderer.invoke('settings:set-default-model', provider, id),
+  setDefaultThinkingSetting: (level: string): Promise<unknown> =>
+    ipcRenderer.invoke('settings:set-default-thinking', level),
+  listProviders: (): Promise<unknown> => ipcRenderer.invoke('settings:list-providers'),
+  loginProvider: (providerId: string, authType: string): Promise<unknown> =>
+    ipcRenderer.invoke('settings:login', providerId, authType),
+  logoutProvider: (providerId: string): Promise<unknown> =>
+    ipcRenderer.invoke('settings:logout', providerId),
+  replyAuthPrompt: (id: string, value: string | null): Promise<void> =>
+    ipcRenderer.invoke('settings:auth-reply', id, value),
+  cancelLogin: (): Promise<void> => ipcRenderer.invoke('settings:cancel-login'),
   onEvent: (listener: (event: unknown) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: unknown): void => listener(event)
     ipcRenderer.on('pi:event', handler)
     return () => {
       ipcRenderer.off('pi:event', handler)
+    }
+  },
+  onAuthEvent: (listener: (event: unknown) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: unknown): void => listener(event)
+    ipcRenderer.on('settings:auth-event', handler)
+    return () => {
+      ipcRenderer.off('settings:auth-event', handler)
     }
   }
 }

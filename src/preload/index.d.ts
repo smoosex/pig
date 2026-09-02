@@ -121,7 +121,17 @@ declare global {
       pickDirectory: () => Promise<string | null>
       getSidebarPrefs: () => Promise<SidebarPrefs>
       setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
+      getSettings: () => Promise<unknown>
+      setSendShortcut: (shortcut: string) => Promise<unknown>
+      setDefaultModelSetting: (provider: string, id: string) => Promise<unknown>
+      setDefaultThinkingSetting: (level: string) => Promise<unknown>
+      listProviders: () => Promise<unknown>
+      loginProvider: (providerId: string, authType: string) => Promise<unknown>
+      logoutProvider: (providerId: string) => Promise<unknown>
+      replyAuthPrompt: (id: string, value: string | null) => Promise<void>
+      cancelLogin: () => Promise<void>
       onEvent: (listener: (event: unknown) => void) => () => void
+      onAuthEvent: (listener: (event: unknown) => void) => () => void
     }
   }
 }

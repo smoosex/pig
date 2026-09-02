@@ -263,7 +263,7 @@ function ChatList() {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
@@ -314,7 +314,13 @@ export function Sidebar() {
         {chatsCollapsed ? null : <ChatList />}
       </ScrollArea>
       <div className="flex shrink-0 items-center gap-0.5 px-1 pb-2">
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="设置">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground"
+          aria-label="设置"
+          onClick={onOpenSettings}
+        >
           <Settings />
         </Button>
         <Button

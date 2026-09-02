@@ -105,6 +105,53 @@ export type PiEvent = {
   [key: string]: unknown
 }
 
+export type SendShortcut = 'enter' | 'shift-enter'
+
+export type ProviderAuthType = 'oauth' | 'api_key'
+
+export interface SettingsProvider {
+  id: string
+  name: string
+  oauth: { name: string; loginLabel?: string; subscription: boolean } | null
+  apiKey: { name: string; canLogin: boolean } | null
+  configured: boolean
+  using: ProviderAuthType | null
+  source?: string
+}
+
+export type SettingsAuthPrompt =
+  | { type: 'text' | 'secret' | 'manual_code'; message: string; placeholder?: string }
+  | {
+      type: 'select'
+      message: string
+      options: { id: string; label: string; description?: string }[]
+    }
+
+export type SettingsAuthNotify =
+  | { type: 'info'; message: string; links?: { url: string; label?: string }[] }
+  | { type: 'auth_url'; url: string; instructions?: string }
+  | { type: 'device_code'; userCode: string; verificationUri: string; expiresInSeconds?: number }
+  | { type: 'progress'; message: string }
+
+export type SettingsAuthEvent =
+  | { kind: 'prompt'; id: string; prompt: SettingsAuthPrompt }
+  | { kind: 'notify'; event: SettingsAuthNotify }
+
+export interface DefaultSessionSettings {
+  model: SessionModelInfo | null
+  thinkingLevel: ThinkingLevel | null
+  thinkingLevels: ThinkingLevel[]
+}
+
+export interface AppSettings {
+  sendShortcut: SendShortcut
+  defaultModel: SessionModelInfo | null
+  defaultThinkingLevel: ThinkingLevel | null
+  thinkingLevels: ThinkingLevel[]
+  models: SessionModelInfo[]
+  providers: SettingsProvider[]
+}
+
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
   listProject: (cwd: string) => Promise<ProjectGroup | null>
@@ -134,7 +181,17 @@ export interface SessionApi {
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
+  getSettings: () => Promise<AppSettings>
+  setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
+  setDefaultModelSetting: (provider: string, id: string) => Promise<DefaultSessionSettings>
+  setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<DefaultSessionSettings>
+  listProviders: () => Promise<SettingsProvider[]>
+  loginProvider: (providerId: string, authType: ProviderAuthType) => Promise<SettingsProvider[]>
+  logoutProvider: (providerId: string) => Promise<SettingsProvider[]>
+  replyAuthPrompt: (id: string, value: string | null) => Promise<void>
+  cancelLogin: () => Promise<void>
   onEvent: (listener: (event: unknown) => void) => () => void
+  onAuthEvent: (listener: (event: SettingsAuthEvent) => void) => () => void
 }
 
-export const api: SessionApi = window.api
+export const api: SessionApi = window.api as SessionApi

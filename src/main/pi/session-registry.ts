@@ -6,6 +6,7 @@ import {
   createAgentSession,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   type AgentSession
 } from '@earendil-works/pi-coding-agent'
 import { bridgeEvents } from './event-bridge'
@@ -114,6 +115,7 @@ const preparing = new Map<string, Promise<LiveSession>>()
 
 let modelRuntime: ModelRuntime | undefined
 let modelRuntimePromise: Promise<ModelRuntime> | undefined
+let settingsManager: SettingsManager | undefined
 
 export function startModelRuntime(): Promise<ModelRuntime> {
   if (!modelRuntimePromise) {
@@ -233,6 +235,91 @@ function findModel(provider: string, id: string): SessionModelInfo | null {
   return model ? toModelInfo(model) : null
 }
 
+function appSettings(): SettingsManager {
+  settingsManager ??= SettingsManager.create(process.cwd())
+  return settingsManager
+}
+
+function defaultModelFromSettings(): SessionModelInfo | null {
+  const settings = appSettings()
+  const provider = settings.getDefaultProvider()
+  const id = settings.getDefaultModel()
+  if (!provider || !id) return null
+  return findModel(provider, id)
+}
+
+export async function listAvailableModels(): Promise<SessionModelInfo[]> {
+  await startModelRuntime()
+  return availableModels()
+}
+
+export interface DefaultSessionSettings {
+  model: SessionModelInfo | null
+  thinkingLevel: SessionThinkingLevel | null
+  thinkingLevels: SessionThinkingLevel[]
+}
+
+function defaultThinkingFromSettings(
+  model: { provider: string; id: string } | null
+): SessionThinkingLevel | undefined {
+  const settings = appSettings()
+  if (model) {
+    const perModel = settings.getModelThinkingLevel(model.provider, model.id)
+    if (perModel) return perModel as SessionThinkingLevel
+  }
+  const global = settings.getDefaultThinkingLevel()
+  return global as SessionThinkingLevel | undefined
+}
+
+function defaultSessionSettings(model: SessionModelInfo | null): DefaultSessionSettings {
+  const picker = pickerThinkingLevels(thinkingLevelsFor(model))
+  const stored = defaultThinkingFromSettings(model)
+  const thinkingLevel =
+    stored && picker.includes(stored) ? stored : (picker[0] ?? null)
+  return { model, thinkingLevel, thinkingLevels: picker }
+}
+
+function persistDefaultThinking(
+  model: SessionModelInfo | null,
+  level: SessionThinkingLevel | null
+): void {
+  if (!level) return
+  const settings = appSettings()
+  settings.setDefaultThinkingLevel(level)
+  if (model) settings.setModelThinkingLevel(model.provider, model.id, level)
+}
+
+export async function getDefaultSessionSettings(): Promise<DefaultSessionSettings> {
+  await startModelRuntime()
+  await appSettings().reload()
+  return defaultSessionSettings(defaultModelFromSettings() ?? availableModels()[0] ?? null)
+}
+
+export async function setDefaultModel(provider: string, id: string): Promise<DefaultSessionSettings> {
+  await startModelRuntime()
+  const model = findModel(provider, id)
+  if (!model) throw new Error(`Model not found: ${provider}/${id}`)
+  const settings = appSettings()
+  settings.setDefaultModelAndProvider(provider, id)
+  const next = defaultSessionSettings(model)
+  persistDefaultThinking(next.model, next.thinkingLevel)
+  await settings.flush()
+  return next
+}
+
+export async function setDefaultThinking(level: SessionThinkingLevel): Promise<DefaultSessionSettings> {
+  await startModelRuntime()
+  if (!THINKING_LEVELS.includes(level) || HIDDEN_THINKING_LEVELS.has(level)) {
+    throw new Error(`Invalid thinking level: ${level}`)
+  }
+  const model = defaultModelFromSettings() ?? availableModels()[0] ?? null
+  const picker = pickerThinkingLevels(thinkingLevelsFor(model))
+  if (!picker.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
+  persistDefaultThinking(model, level)
+  await appSettings().flush()
+  return { model, thinkingLevel: level, thinkingLevels: picker }
+}
+
 function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStats {
   const tokens = { ...emptyTokens }
   for (const entry of sessionManager.getEntries()) {
@@ -279,13 +366,17 @@ export async function getSessionControls(sessionId: string): Promise<SessionCont
   const model =
     session.modelProvider && session.modelId
       ? findModel(session.modelProvider, session.modelId)
-      : (models[0] ?? null)
+      : (defaultModelFromSettings() ?? models[0] ?? null)
   const supported = thinkingLevelsFor(model)
+  const picker = pickerThinkingLevels(supported)
   return {
     model,
     models,
-    thinkingLevel: clampThinking(session.thinkingLevel, supported),
-    thinkingLevels: pickerThinkingLevels(supported),
+    thinkingLevel: clampThinking(
+      session.thinkingLevel ?? defaultThinkingFromSettings(model),
+      picker.length > 0 ? picker : supported
+    ),
+    thinkingLevels: picker,
     contextUsage: null,
     tokens: tokenStatsFromEntries(session.sessionManager)
   }
@@ -332,7 +423,7 @@ export async function setSessionThinking(
   const model =
     session.modelProvider && session.modelId
       ? { provider: session.modelProvider, id: session.modelId }
-      : (availableModels()[0] ?? null)
+      : (defaultModelFromSettings() ?? availableModels()[0] ?? null)
   const levels = pickerThinkingLevels(thinkingLevelsFor(model))
   if (!levels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
   session.thinkingLevel = level

@@ -9,6 +9,7 @@ import {
 } from '../ipc/api'
 import { chatColumn } from '../chat/layout'
 import { useSessionsStore } from '../stores/sessions'
+import { useSettingsStore } from '../stores/settings'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import {
@@ -406,6 +407,7 @@ function ThinkingPicker({
 export function Composer() {
   const [text, setText] = useState('')
   const composing = useRef(false)
+  const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const runtime = useSessionsStore((s) =>
@@ -465,10 +467,11 @@ export function Composer() {
           }}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing || composing.current || e.keyCode === 229) return
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void send()
-            }
+            if (e.key !== 'Enter') return
+            const sendNow = sendShortcut === 'enter' ? !e.shiftKey : e.shiftKey
+            if (!sendNow) return
+            e.preventDefault()
+            void send()
           }}
         />
         <InputGroupAddon align="block-end" className="justify-between px-2.5 pb-2.5">
