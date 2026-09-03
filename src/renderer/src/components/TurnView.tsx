@@ -1,4 +1,5 @@
 import { memo, useEffect, useState, type ReactNode } from 'react'
+import { ThinkingOrb } from 'thinking-orbs'
 import { useSessionsStore } from '../stores/sessions'
 import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type {
@@ -604,50 +605,33 @@ function ThinkLabel() {
   )
 }
 
-const waitBarsCss = `
-.wait-cell-a{animation:wait-cell-size 1.2s linear infinite,wait-cell-a 1.2s linear infinite}
-.wait-cell-b{animation:wait-cell-size 1.2s linear infinite,wait-cell-b 1.2s linear infinite;animation-delay:.1s}
-.wait-cell-c{animation:wait-cell-size 1.2s linear infinite,wait-cell-c 1.2s linear infinite;animation-delay:.1s}
-.wait-cell-d{animation:wait-cell-size 1.2s linear infinite,wait-cell-d 1.2s linear infinite;animation-delay:.2s}
-.wait-cell-e{animation:wait-cell-size 1.2s linear infinite,wait-cell-e 1.2s linear infinite;animation-delay:.2s}
-.wait-cell-f{animation:wait-cell-size 1.2s linear infinite,wait-cell-f 1.2s linear infinite;animation-delay:.2s}
-.wait-cell-g{animation:wait-cell-size 1.2s linear infinite,wait-cell-g 1.2s linear infinite;animation-delay:.3s}
-.wait-cell-h{animation:wait-cell-size 1.2s linear infinite,wait-cell-h 1.2s linear infinite;animation-delay:.3s}
-.wait-cell-i{animation:wait-cell-size 1.2s linear infinite,wait-cell-i 1.2s linear infinite;animation-delay:.4s}
-@keyframes wait-cell-size{0%,50%{width:7.33px;height:7.33px}25%{width:1.33px;height:1.33px}}
-@keyframes wait-cell-a{0%,50%{x:1px;y:1px}25%{x:4px;y:4px}}
-@keyframes wait-cell-b{0%,50%{x:8.33px;y:1px}25%{x:11.33px;y:4px}}
-@keyframes wait-cell-c{0%,50%{x:1px;y:8.33px}25%{x:4px;y:11.33px}}
-@keyframes wait-cell-d{0%,50%{x:15.66px;y:1px}25%{x:18.66px;y:4px}}
-@keyframes wait-cell-e{0%,50%{x:8.33px;y:8.33px}25%{x:11.33px;y:11.33px}}
-@keyframes wait-cell-f{0%,50%{x:1px;y:15.66px}25%{x:4px;y:18.66px}}
-@keyframes wait-cell-g{0%,50%{x:15.66px;y:8.33px}25%{x:18.66px;y:11.33px}}
-@keyframes wait-cell-h{0%,50%{x:8.33px;y:15.66px}25%{x:11.33px;y:18.66px}}
-@keyframes wait-cell-i{0%,50%{x:15.66px;y:15.66px}25%{x:18.66px;y:18.66px}}
-`
+const WAIT_LINES = [
+  '正在加班加点理解你的问题...',
+  '网速被乌龟侵占了，正在寻找兔子...',
+  '问题有点调皮，我先围着它转两圈...',
+  '正在把你的话从空气里捞出来...',
+  '神经元还在排队，马上就到...',
+  '先热热身，灵感正在路上堵车...'
+]
 
-function WaitBars() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4 shrink-0 fill-current" aria-hidden="true">
-      <style>{waitBarsCss}</style>
-      <rect className="wait-cell-a" x="1" y="1" width="7.33" height="7.33" />
-      <rect className="wait-cell-b" x="8.33" y="1" width="7.33" height="7.33" />
-      <rect className="wait-cell-c" x="1" y="8.33" width="7.33" height="7.33" />
-      <rect className="wait-cell-d" x="15.66" y="1" width="7.33" height="7.33" />
-      <rect className="wait-cell-e" x="8.33" y="8.33" width="7.33" height="7.33" />
-      <rect className="wait-cell-f" x="1" y="15.66" width="7.33" height="7.33" />
-      <rect className="wait-cell-g" x="15.66" y="8.33" width="7.33" height="7.33" />
-      <rect className="wait-cell-h" x="8.33" y="15.66" width="7.33" height="7.33" />
-      <rect className="wait-cell-i" x="15.66" y="15.66" width="7.33" height="7.33" />
-    </svg>
-  )
-}
-
-function WaitLabel() {
+function WaitLine() {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setIndex((current) => {
+        if (WAIT_LINES.length < 2) return current
+        let next = current
+        while (next === current) next = Math.floor(Math.random() * WAIT_LINES.length)
+        return next
+      })
+    }, 2800)
+    return () => window.clearInterval(id)
+  }, [])
+  const text = WAIT_LINES[index] ?? WAIT_LINES[0]
   return (
     <span className="think-wave">
-      {[...'正在理解用户问题......'].map((char, i) => (
-        <span key={`${char}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
+      {[...text].map((char, i) => (
+        <span key={`${index}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
           {char}
         </span>
       ))}
@@ -656,20 +640,40 @@ function WaitLabel() {
 }
 
 function OutlineThinking({
+  text,
   durationMs,
   current,
   stacked
 }: {
+  text?: string
   durationMs: number
   current?: boolean
   stacked?: boolean
 }) {
-  return (
+  const body = text ? stripThoughtHeading(text) : ''
+  const header = (
     <div className={cn(disclosureRow, 'pointer-events-none')}>
       {stacked ? <StackedIcons kinds={['thinking']} /> : null}
       <span className="min-w-0 flex-1 truncate text-left">
         {current ? <ThinkLabel /> : durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'}
       </span>
+    </div>
+  )
+  if (!current || !body) return header
+  const stream = (
+    <pre
+      className={cn(
+        'mt-0 font-mono text-xs leading-snug break-words whitespace-pre-wrap text-muted-foreground',
+        !stacked && 'ml-2.5 border-l border-border px-3 py-1'
+      )}
+    >
+      {body}
+    </pre>
+  )
+  return (
+    <div className="min-w-0">
+      {header}
+      {stacked ? <Rail>{stream}</Rail> : stream}
     </div>
   )
 }
@@ -693,7 +697,7 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
 
 function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
   if (row.kind === 'thinking') {
-    if (last && row.durationMs <= 0) return <OutlineThinking durationMs={0} current />
+    if (last && row.durationMs <= 0) return <OutlineThinking text={row.text} durationMs={0} current />
     return <ThinkingLine text={row.text} durationMs={row.durationMs} />
   }
   if (row.kind === 'tools') {
@@ -749,7 +753,7 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
           if (item.kind === 'thinking') {
             const live = active && i === items.length - 1 && item.durationMs <= 0
             if (live) {
-              return <OutlineThinking key={i} durationMs={0} current stacked />
+              return <OutlineThinking key={i} text={item.text} durationMs={0} current stacked />
             }
             return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
           }
@@ -778,9 +782,9 @@ function ProcessOutline({ items }: { items: ProcessItem[] }) {
   if (segments.length === 0) {
     return (
       <div className={cn(disclosureRow, 'pointer-events-none')}>
-        <WaitBars />
+        <ThinkingOrb state="shaping" size={20} theme="dark" className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left">
-          <WaitLabel />
+          <WaitLine />
         </span>
       </div>
     )
