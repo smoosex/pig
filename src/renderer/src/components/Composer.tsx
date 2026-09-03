@@ -489,6 +489,8 @@ export function Composer() {
     if ((!trimmed && images.length === 0) || isStreaming || !activeSessionId) return
     const prepared = await api.prepareSession(activeSessionId)
     if (prepared.created) await refreshCwd(prepared.cwd)
+    const title = trimmed.slice(0, 500) || (images.length > 0 ? '图片' : '')
+    if (title) useSessionsStore.getState().previewSessionTitle(activeSessionId, title)
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     setText('')
     setPreview(null)

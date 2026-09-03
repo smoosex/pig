@@ -21,6 +21,7 @@ export interface ProjectGroup {
 
 const PREFIX_BYTES = 64 * 1024
 const SCAN_CONCURRENCY = 32
+const IMAGE_PREVIEW = '图片'
 
 function sessionsRoot(): string {
   const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
@@ -58,9 +59,7 @@ async function readPrefix(filePath: string): Promise<string[]> {
     const buf = Buffer.allocUnsafe(PREFIX_BYTES)
     const { bytesRead } = await handle.read(buf, 0, PREFIX_BYTES, 0)
     const text = buf.subarray(0, bytesRead).toString('utf8')
-    const lines = text.split('\n')
-    if (bytesRead === PREFIX_BYTES && !text.endsWith('\n')) lines.pop()
-    return lines
+    return text.split('\n')
   } finally {
     await handle.close()
   }
@@ -75,6 +74,97 @@ function contentText(content: unknown): string {
     .join('')
 }
 
+function hasImage(content: unknown): boolean {
+  if (!Array.isArray(content)) return false
+  return content.some((block) => block?.type === 'image')
+}
+
+function readJsonString(source: string, quoteIndex: number): string {
+  let i = quoteIndex + 1
+  let out = ''
+  while (i < source.length) {
+    const ch = source[i]
+    if (ch === '"') return out
+    if (ch !== '\\') {
+      out += ch
+      i++
+      continue
+    }
+    if (i + 1 >= source.length) return out
+    const next = source[i + 1]
+    if (next === 'u' && i + 6 <= source.length) {
+      out += String.fromCharCode(Number.parseInt(source.slice(i + 2, i + 6), 16))
+      i += 6
+      continue
+    }
+    const escaped =
+      next === 'n' ? '\n' : next === 'r' ? '\r' : next === 't' ? '\t' : next === 'b' ? '\b' : next === 'f' ? '\f' : next
+    out += escaped
+    i += 2
+  }
+  return out
+}
+
+function truncatedText(line: string): string {
+  let from = 0
+  while (from < line.length) {
+    const key = line.indexOf('"text"', from)
+    if (key === -1) return ''
+    let i = key + 6
+    while (i < line.length && (line[i] === ' ' || line[i] === '\t')) i++
+    if (line[i] !== ':') {
+      from = key + 1
+      continue
+    }
+    i++
+    while (i < line.length && (line[i] === ' ' || line[i] === '\t')) i++
+    if (line[i] !== '"') {
+      from = key + 1
+      continue
+    }
+    const value = readJsonString(line, i).trim()
+    if (value) return value
+    from = key + 1
+  }
+  return ''
+}
+
+type ScanEntry = {
+  type?: string
+  id?: string
+  timestamp?: string
+  cwd?: string
+  name?: string
+  message?: { role?: string; content?: unknown }
+}
+
+function parseEntry(line: string): ScanEntry | null {
+  try {
+    return JSON.parse(line) as ScanEntry
+  } catch {
+    const type = line.match(/"type"\s*:\s*"([^"]+)"/)?.[1]
+    if (type === 'session_info') {
+      const quote = line.search(/"name"\s*:\s*"/)
+      if (quote === -1) return { type }
+      const start = line.indexOf('"', line.indexOf(':', quote))
+      return { type, name: start === -1 ? undefined : readJsonString(line, start).trim() || undefined }
+    }
+    if (type !== 'message') return type ? { type } : null
+    const role = line.match(/"role"\s*:\s*"([^"]+)"/)?.[1]
+    const text = truncatedText(line)
+    const content: Array<{ type: string; text?: string }> = []
+    if (text) content.push({ type: 'text', text })
+    if (/"type"\s*:\s*"image"/.test(line)) content.push({ type: 'image' })
+    return { type, message: { role, content } }
+  }
+}
+
+function previewText(content: unknown): string {
+  const text = contentText(content).trim()
+  if (text) return text.slice(0, 500)
+  return hasImage(content) ? IMAGE_PREVIEW : ''
+}
+
 async function scanFile(filePath: string): Promise<SessionMeta | null> {
   try {
     const [st, lines] = await Promise.all([stat(filePath), readPrefix(filePath)])
@@ -87,19 +177,8 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
 
     for (const line of lines) {
       if (!line.trim()) continue
-      let entry: {
-        type?: string
-        id?: string
-        timestamp?: string
-        cwd?: string
-        name?: string
-        message?: { role?: string; content?: unknown }
-      }
-      try {
-        entry = JSON.parse(line)
-      } catch {
-        continue
-      }
+      const entry = parseEntry(line)
+      if (!entry) continue
       if (!id && entry.type === 'session' && typeof entry.id === 'string') {
         id = entry.id
         cwd = typeof entry.cwd === 'string' ? entry.cwd : ''
@@ -116,8 +195,7 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
       if (entry.type !== 'message') continue
       messageCount++
       if (firstMessage || entry.message?.role !== 'user') continue
-      const text = contentText(entry.message.content).trim()
-      if (text) firstMessage = text.slice(0, 500)
+      firstMessage = previewText(entry.message.content)
     }
 
     if (!id) return null

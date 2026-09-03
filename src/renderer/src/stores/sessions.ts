@@ -71,6 +71,17 @@ function patchRuntime(
   }
 }
 
+function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string): ProjectGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    sessions: group.sessions.map((session) =>
+      session.id === sessionId && !session.name && !session.firstMessage
+        ? { ...session, firstMessage: title }
+        : session
+    )
+  }))
+}
+
 function patchTabsFromGroups(tabs: OpenTab[], groups: ProjectGroup[]): OpenTab[] {
   const metas = new Map(groups.flatMap((group) => group.sessions).map((meta) => [meta.id, meta]))
   return tabs.map((tab) => {
@@ -130,6 +141,7 @@ interface SessionsStore {
   closeTab: (sessionId: string) => void
   setActive: (sessionId: string) => void
   renameTab: (sessionId: string, title: string) => void
+  previewSessionTitle: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
   setThinkingDuration: (
@@ -388,6 +400,15 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   renameTab: (sessionId, title) =>
     set((s) => ({
       openTabs: s.openTabs.map((t) => (t.sessionId === sessionId ? { ...t, title } : t))
+    })),
+
+  previewSessionTitle: (sessionId, title) =>
+    set((s) => ({
+      openTabs: s.openTabs.map((t) =>
+        t.sessionId === sessionId && (t.title === 'New Session' || t.title === 'Session') ? { ...t, title } : t
+      ),
+      projects: fillEmptySessionTitle(s.projects, sessionId, title),
+      chats: fillEmptySessionTitle(s.chats, sessionId, title)
     })),
 
   setStreaming: (sessionId, streaming) =>
