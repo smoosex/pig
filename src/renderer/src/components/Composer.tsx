@@ -32,6 +32,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
+const EMPTY_MODELS: SessionModelInfo[] = []
+const EMPTY_LEVELS: ThinkingLevel[] = ['off']
+const EMPTY_TOKENS: SessionTokenStats = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  total: 0
+}
+
 const thinkingLabels: Record<ThinkingLevel, string> = {
   off: '关闭',
   minimal: '最低',
@@ -457,22 +467,27 @@ export function Composer() {
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
-  const runtime = useSessionsStore((s) =>
-    s.activeSessionId ? s.runtime[s.activeSessionId] : undefined
+  const isStreaming = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.isStreaming ?? false) : false
   )
-  const isStreaming = runtime?.isStreaming ?? false
-  const model = runtime?.model ?? null
-  const models = runtime?.models ?? []
-  const thinkingLevel = runtime?.thinkingLevel ?? 'off'
-  const thinkingLevels = runtime?.thinkingLevels ?? ['off']
-  const contextUsage = runtime?.contextUsage ?? null
-  const tokens = runtime?.tokens ?? {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    total: 0
-  }
+  const model = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.model ?? null) : null
+  )
+  const models = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS
+  )
+  const thinkingLevel = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.thinkingLevel ?? 'off') : 'off'
+  )
+  const thinkingLevels = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.thinkingLevels ?? EMPTY_LEVELS) : EMPTY_LEVELS
+  )
+  const contextUsage = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.contextUsage ?? null) : null
+  )
+  const tokens = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.tokens ?? EMPTY_TOKENS) : EMPTY_TOKENS
+  )
 
   useEffect(() => {
     return () => {

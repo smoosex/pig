@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useState, type ReactNode } from 'react'
 import { useSessionsStore } from '../stores/sessions'
 import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import type {
@@ -853,12 +853,12 @@ function useWorkedMs(turn: Turn): number {
   return Math.max(1000, turn.endedAt - turn.startedAt)
 }
 
-export function TurnView({
+export const TurnView = memo(function TurnView({
   turn,
   onNeedProcess
 }: {
   turn: Turn
-  onNeedProcess?: () => Promise<void>
+  onNeedProcess?: (turnId: string) => Promise<void>
 }) {
   const hasProcess = Boolean(turn.hasProcess) || turn.process.length > 0 || turn.streaming
   const [open, setOpen] = useState(turn.streaming)
@@ -886,10 +886,10 @@ export function TurnView({
       setOpen(false)
       return
     }
-    if (turn.process.length === 0 && onNeedProcess) {
+    if (turn.process.length === 0 && onNeedProcess && turn.id && !turn.id.startsWith('live-')) {
       setLoading(true)
       try {
-        await onNeedProcess()
+        await onNeedProcess(turn.id)
       } finally {
         setLoading(false)
       }
@@ -935,4 +935,4 @@ export function TurnView({
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
     </div>
   )
-}
+})
