@@ -12,6 +12,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from './ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from './ui/dialog'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
 import { SquaresSpinner } from './RunningSpinners'
@@ -54,6 +61,58 @@ function SectionHeader({
       </button>
       {action}
     </div>
+  )
+}
+
+function DeleteConfirmButton({
+  ariaLabel,
+  title,
+  description,
+  onConfirm
+}: {
+  ariaLabel: string
+  title: string
+  description: string
+  onConfirm: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-hover/chat:pointer-events-auto group-hover/chat:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:text-destructive !bg-transparent"
+        aria-label={ariaLabel}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen(true)
+        }}
+      >
+        <Trash2 />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setOpen(false)
+                onConfirm()
+              }}
+            >
+              删除
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -172,6 +231,7 @@ function ProjectList() {
 function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () => void }) {
   const openExisting = useSessionsStore((s) => s.openExisting)
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
+  const label = session.name || session.firstMessage || '空会话'
   return (
     <div className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-background focus-within:bg-background">
       <Button
@@ -183,28 +243,16 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
       >
         <span className="min-w-0 truncate">{session.name || session.firstMessage || '(空会话)'}</span>
       </Button>
-      {streaming ? <SquaresSpinner /> : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="pointer-events-none opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-            aria-label={`会话 ${session.name || session.firstMessage || '空会话'} 更多操作`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-              <Trash2 data-icon="inline-start" />
-              删除会话
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {streaming ? (
+        <SquaresSpinner />
+      ) : (
+        <DeleteConfirmButton
+          ariaLabel={`删除会话 ${label}`}
+          title="删除会话"
+          description={`确定删除「${label}」？删除后无法恢复。`}
+          onConfirm={onDelete}
+        />
+      )}
     </div>
   )
 }
@@ -250,28 +298,16 @@ function ChatRow({
       >
         <span className="min-w-0 truncate">{title}</span>
       </Button>
-      {streaming ? <SquaresSpinner /> : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="pointer-events-none opacity-0 transition-opacity group-hover/chat:pointer-events-auto group-hover/chat:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-            aria-label={`对话 ${title} 更多操作`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <MoreHorizontal />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuItem variant="destructive" onSelect={() => void deleteChat(cwd)}>
-              <Trash2 data-icon="inline-start" />
-              删除对话
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {streaming ? (
+        <SquaresSpinner />
+      ) : (
+        <DeleteConfirmButton
+          ariaLabel={`删除对话 ${title}`}
+          title="删除对话"
+          description={`确定删除「${title}」？删除后无法恢复。`}
+          onConfirm={() => void deleteChat(cwd)}
+        />
+      )}
     </div>
   )
 }

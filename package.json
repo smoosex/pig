@@ -26,6 +26,7 @@
     "@tanstack/react-virtual": "^3.14.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "ldrs": "^1.1.9",
     "lucide-react": "^1.34.0",
     "lxgw-wenkai-lite-webfont": "^1.7.0",
     "radix-ui": "^1.6.7",

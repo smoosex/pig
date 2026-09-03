@@ -1,16 +1,18 @@
+import { Helix } from 'ldrs/react'
+import 'ldrs/react/Helix.css'
 import { cn } from '../lib/utils'
 
 export function SquaresSpinner({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={cn('size-3.5 shrink-0 text-muted-foreground', className)}
+    <span
+      className={cn(
+        'flex size-6 shrink-0 items-center justify-center text-muted-foreground',
+        className
+      )}
       aria-hidden
     >
-      <rect className="squares-chase fill-current" x="1" y="1" rx="1" width="10" height="10" />
-      <rect className="squares-chase squares-chase-2 fill-current" x="1" y="1" rx="1" width="10" height="10" />
-      <rect className="squares-chase squares-chase-3 fill-current" x="1" y="1" rx="1" width="10" height="10" />
-    </svg>
+      <Helix size="14" speed="2.5" color="currentColor" />
+    </span>
   )
 }
 
