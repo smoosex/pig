@@ -1,5 +1,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { loadPigSettings, savePigSettings, type SendShortcut } from '../pig-settings'
+import {
+  loadPigSettings,
+  savePigSettings,
+  type Appearance,
+  type PaletteId,
+  type SendShortcut
+} from '../pig-settings'
 import {
   cancelProviderLogin,
   listProviders,
@@ -26,6 +32,9 @@ export function registerSettingsIpc(): void {
     ])
     return {
       sendShortcut: pig.sendShortcut,
+      appearance: pig.appearance,
+      lightTheme: pig.lightTheme,
+      darkTheme: pig.darkTheme,
       defaultModel: defaults.model,
       defaultThinkingLevel: defaults.thinkingLevel,
       thinkingLevels: defaults.thinkingLevels,
@@ -37,6 +46,16 @@ export function registerSettingsIpc(): void {
   ipcMain.handle('settings:set-send-shortcut', async (_event, shortcut: SendShortcut) => {
     return savePigSettings({ sendShortcut: shortcut })
   })
+
+  ipcMain.handle(
+    'settings:set-theme',
+    async (
+      _event,
+      patch: { appearance?: Appearance; lightTheme?: PaletteId; darkTheme?: PaletteId }
+    ) => {
+      return savePigSettings(patch ?? {})
+    }
+  )
 
   ipcMain.handle('settings:set-default-model', async (_event, provider: string, id: string) => {
     if (!provider || !id) throw new Error('Provider and model id are required')

@@ -5,13 +5,16 @@ import {
   type SendShortcut,
   type SessionModelInfo,
   type SettingsProvider,
+  type ThemePrefs,
   type ThinkingLevel
 } from '../ipc/api'
+import { applyDocumentTheme } from '../lib/theme'
 
 interface SettingsStore extends AppSettings {
   loaded: boolean
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
+  setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
   setDefaultModel: (provider: string, id: string) => Promise<void>
   setDefaultThinking: (level: ThinkingLevel) => Promise<void>
   setProviders: (providers: SettingsProvider[]) => void
@@ -19,6 +22,9 @@ interface SettingsStore extends AppSettings {
 
 const empty: AppSettings = {
   sendShortcut: 'enter',
+  appearance: 'system',
+  lightTheme: 'pig',
+  darkTheme: 'pig',
   defaultModel: null,
   defaultThinkingLevel: null,
   thinkingLevels: [],
@@ -40,18 +46,40 @@ function applyDefaults(
   }
 }
 
-export const useSettingsStore = create<SettingsStore>((set) => ({
+export const useSettingsStore = create<SettingsStore>((set, get) => ({
   ...empty,
   loaded: false,
 
   load: async () => {
     const settings = await api.getSettings()
+    applyDocumentTheme({
+      appearance: settings.appearance,
+      lightTheme: settings.lightTheme,
+      darkTheme: settings.darkTheme
+    })
     set({ ...settings, loaded: true })
   },
 
   setSendShortcut: async (shortcut) => {
     const next = await api.setSendShortcut(shortcut)
     set({ sendShortcut: next.sendShortcut })
+  },
+
+  setTheme: async (patch) => {
+    const current = get()
+    applyDocumentTheme({
+      appearance: current.appearance,
+      lightTheme: current.lightTheme,
+      darkTheme: current.darkTheme,
+      ...patch
+    })
+    const next = await api.setTheme(patch)
+    applyDocumentTheme(next)
+    set({
+      appearance: next.appearance,
+      lightTheme: next.lightTheme,
+      darkTheme: next.darkTheme
+    })
   },
 
   setDefaultModel: async (provider, id) => {

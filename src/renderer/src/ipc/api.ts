@@ -106,6 +106,8 @@ export type PiEvent = {
 }
 
 export type SendShortcut = 'enter' | 'shift-enter'
+export type Appearance = 'system' | 'light' | 'dark'
+export type PaletteId = 'pig' | 'everforest'
 
 export type ProviderAuthType = 'oauth' | 'api_key'
 
@@ -143,7 +145,13 @@ export interface DefaultSessionSettings {
   thinkingLevels: ThinkingLevel[]
 }
 
-export interface AppSettings {
+export interface ThemePrefs {
+  appearance: Appearance
+  lightTheme: PaletteId
+  darkTheme: PaletteId
+}
+
+export interface AppSettings extends ThemePrefs {
   sendShortcut: SendShortcut
   defaultModel: SessionModelInfo | null
   defaultThinkingLevel: ThinkingLevel | null
@@ -187,6 +195,7 @@ export interface SessionApi {
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   getSettings: () => Promise<AppSettings>
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
+  setTheme: (patch: Partial<ThemePrefs>) => Promise<ThemePrefs>
   setDefaultModelSetting: (provider: string, id: string) => Promise<DefaultSessionSettings>
   setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<DefaultSessionSettings>
   listProviders: () => Promise<SettingsProvider[]>

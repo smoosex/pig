@@ -44,7 +44,7 @@ function Tab({
     <div
       className={cn(
         'no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
-        active ? 'bg-background text-foreground' : 'text-muted-foreground'
+        active ? 'bg-card text-foreground' : 'text-muted-foreground'
       )}
       onClick={onSelect}
     >

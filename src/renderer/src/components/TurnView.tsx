@@ -350,7 +350,7 @@ function StackedIcons({ kinds }: { kinds: IconKind[] }) {
           <span
             key={`${kind}-${i}`}
             className={cn(
-              'relative flex size-5 items-center justify-center rounded-full border border-border bg-background',
+              'relative flex size-5 items-center justify-center rounded-full border border-border bg-card',
               i > 0 && '-ml-1.5'
             )}
             style={{ zIndex: i }}
@@ -782,7 +782,7 @@ function ProcessOutline({ items }: { items: ProcessItem[] }) {
   if (segments.length === 0) {
     return (
       <div className={cn(disclosureRow, 'pointer-events-none')}>
-        <ThinkingOrb state="shaping" size={20} theme="dark" className="shrink-0" />
+        <ThinkingOrb state="shaping" size={20} theme="auto" className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left">
           <WaitLine />
         </span>

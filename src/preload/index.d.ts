@@ -123,6 +123,7 @@ declare global {
       setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
       getSettings: () => Promise<unknown>
       setSendShortcut: (shortcut: string) => Promise<unknown>
+      setTheme: (patch: unknown) => Promise<unknown>
       setDefaultModelSetting: (provider: string, id: string) => Promise<unknown>
       setDefaultThinkingSetting: (level: string) => Promise<unknown>
       listProviders: () => Promise<unknown>

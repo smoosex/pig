@@ -297,7 +297,7 @@ function JumpToEnd({
       type="button"
       variant="secondary"
       size="icon-sm"
-      className="absolute inset-s-1/2 bottom-4 z-10 -translate-x-1/2 border-border bg-background"
+      className="absolute inset-s-1/2 bottom-4 z-10 -translate-x-1/2 border-border bg-card"
       aria-label="滚动到底部"
       onClick={() => {
         const scroller = viewportRef.current

@@ -47,6 +47,7 @@ const api = {
   getSettings: (): Promise<unknown> => ipcRenderer.invoke('settings:get'),
   setSendShortcut: (shortcut: string): Promise<unknown> =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
+  setTheme: (patch: unknown): Promise<unknown> => ipcRenderer.invoke('settings:set-theme', patch),
   setDefaultModelSetting: (provider: string, id: string): Promise<unknown> =>
     ipcRenderer.invoke('settings:set-default-model', provider, id),
   setDefaultThinkingSetting: (level: string): Promise<unknown> =>

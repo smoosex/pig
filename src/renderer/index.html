@@ -1,9 +1,28 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN" class="dark" data-palette="pig">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pig</title>
+    <script>
+      (function () {
+        try {
+          var t = JSON.parse(localStorage.getItem('pig.theme') || '{}')
+          var a = t.appearance === 'light' || t.appearance === 'dark' ? t.appearance : 'system'
+          var dark =
+            a === 'dark' || (a === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+          document.documentElement.dataset.palette = dark
+            ? t.darkTheme === 'everforest'
+              ? 'everforest'
+              : 'pig'
+            : t.lightTheme === 'everforest'
+              ? 'everforest'
+              : 'pig'
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

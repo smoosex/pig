@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ChevronLeft, KeyRound, Settings2 } from 'lucide-react'
+import { ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
 import {
   api,
+  type Appearance,
+  type PaletteId,
   type ProviderAuthType,
   type SendShortcut,
   type SessionModelInfo,
@@ -204,6 +206,81 @@ function GeneralPane() {
                 </SelectContent>
               </Select>
             )}
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+    </div>
+  )
+}
+
+function ThemePane() {
+  const appearance = useSettingsStore((s) => s.appearance)
+  const lightTheme = useSettingsStore((s) => s.lightTheme)
+  const darkTheme = useSettingsStore((s) => s.darkTheme)
+  const setTheme = useSettingsStore((s) => s.setTheme)
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div>
+        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          外观
+        </p>
+        <SettingsCard>
+          <SettingsRow title="外观" description="跟随系统，或固定浅色 / 暗色">
+            <Select
+              value={appearance}
+              onValueChange={(value) => void setTheme({ appearance: value as Appearance })}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectGroup>
+                  <SelectItem value="system">系统</SelectItem>
+                  <SelectItem value="light">浅色</SelectItem>
+                  <SelectItem value="dark">暗色</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          主题
+        </p>
+        <SettingsCard>
+          <SettingsRow title="浅色主题" description="浅色外观时使用的配色">
+            <Select
+              value={lightTheme}
+              onValueChange={(value) => void setTheme({ lightTheme: value as PaletteId })}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectGroup>
+                  <SelectItem value="pig">默认</SelectItem>
+                  <SelectItem value="everforest">Everforest</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+          <SettingsRow title="暗色主题" description="暗色外观时使用的配色">
+            <Select
+              value={darkTheme}
+              onValueChange={(value) => void setTheme({ darkTheme: value as PaletteId })}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectGroup>
+                  <SelectItem value="pig">默认</SelectItem>
+                  <SelectItem value="everforest">Everforest</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </SettingsRow>
         </SettingsCard>
       </div>
@@ -500,7 +577,7 @@ function notifyText(event: SettingsAuthNotify): string | null {
 }
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
-  const [section, setSection] = useState<'general' | 'providers'>('general')
+  const [section, setSection] = useState<'general' | 'theme' | 'providers'>('general')
   const load = useSettingsStore((s) => s.load)
 
   useEffect(() => {
@@ -541,6 +618,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         </Button>
         <Button
           type="button"
+          variant={section === 'theme' ? 'secondary' : 'ghost'}
+          className="justify-start"
+          onClick={() => setSection('theme')}
+        >
+          <Palette data-icon="inline-start" />
+          主题
+        </Button>
+        <Button
+          type="button"
           variant={section === 'providers' ? 'secondary' : 'ghost'}
           className="justify-start"
           onClick={() => setSection('providers')}
@@ -549,20 +635,35 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           供应商
         </Button>
       </nav>
-      <div className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-background">
+      <div className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-card">
         <ScrollArea className="h-full [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <div className="mx-auto flex max-w-3xl flex-col gap-8 px-8 py-8">
             <div className="flex items-start gap-2">
-              {section === 'general' ? <Settings2 className="mt-0.5" /> : <KeyRound className="mt-0.5" />}
+              {section === 'general' ? (
+                <Settings2 className="mt-0.5" />
+              ) : section === 'theme' ? (
+                <Palette className="mt-0.5" />
+              ) : (
+                <KeyRound className="mt-0.5" />
+              )}
               <div>
-                <h1 className="text-lg font-medium">{section === 'general' ? '通用' : '供应商'}</h1>
+                <h1 className="text-lg font-medium">
+                  {section === 'general' ? '通用' : section === 'theme' ? '主题' : '供应商'}
+                </h1>
                 <p className="text-sm text-muted-foreground">
-                  {section === 'general' ? '核心行为和快捷键' : '登录订阅账号，或保存 API 密钥'}
+                  {section === 'general'
+                    ? '核心行为和快捷键'
+                    : section === 'theme'
+                      ? '外观和配色'
+                      : '登录订阅账号，或保存 API 密钥'}
                 </p>
               </div>
             </div>
             <div className={section === 'general' ? 'contents' : 'hidden'}>
               <GeneralPane />
+            </div>
+            <div className={section === 'theme' ? 'contents' : 'hidden'}>
+              <ThemePane />
             </div>
             <div className={section === 'providers' ? 'contents' : 'hidden'}>
               <ProvidersPane />

@@ -11,7 +11,25 @@ import { ChatView } from './components/ChatView'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { useSettingsStore } from './stores/settings'
+import { applyDocumentTheme } from './lib/theme'
 import { cn } from './lib/utils'
+
+function ThemeSync() {
+  const appearance = useSettingsStore((s) => s.appearance)
+  const lightTheme = useSettingsStore((s) => s.lightTheme)
+  const darkTheme = useSettingsStore((s) => s.darkTheme)
+
+  useEffect(() => {
+    applyDocumentTheme({ appearance, lightTheme, darkTheme })
+    if (appearance !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => applyDocumentTheme({ appearance, lightTheme, darkTheme })
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [appearance, lightTheme, darkTheme])
+
+  return null
+}
 
 function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
@@ -51,7 +69,8 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-full flex-col bg-card">
+      <ThemeSync />
+      <div className="flex h-full flex-col bg-background">
         <div className="drag flex h-10 shrink-0 items-center">
           <div className={cn('flex h-full shrink-0 items-center pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />}
@@ -63,7 +82,7 @@ export default function App() {
           ) : (
             <>
               {sidebarOpen ? <Sidebar onOpenSettings={() => setSettingsOpen(true)} /> : null}
-              <div className="m-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background">
+              <div className="m-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
                   {activeSessionId ? <TabBar /> : <div className="flex-1" />}
                 </div>

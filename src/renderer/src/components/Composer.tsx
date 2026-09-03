@@ -540,7 +540,7 @@ export function Composer() {
     <div className={cn(chatColumn, 'pb-5')}>
       <InputGroup
         data-streaming={isStreaming || undefined}
-        className="composer-focus min-h-32 rounded-2xl bg-card has-disabled:bg-card has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-card dark:has-disabled:bg-card"
+        className="composer-focus min-h-32 rounded-2xl bg-input has-disabled:bg-input has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-input dark:has-disabled:bg-input"
       >
         <InputGroupTextarea
           className="min-h-16 px-3.5 pt-3 text-sm leading-snug"
