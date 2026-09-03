@@ -107,6 +107,16 @@ function addToolResult(process: ProcessItem[], result: ToolResultMessage): void 
   })
 }
 
+function persistedAtOf(message: PiMessage): number {
+  const value = (message as { persistedAt?: unknown }).persistedAt
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function thinkingFallbackMs(message: AssistantMessage): number {
+  const persist = persistedAtOf(message)
+  return persist > message.timestamp ? persist - message.timestamp : 0
+}
+
 function consumeAssistant(
   process: ProcessItem[],
   message: AssistantMessage,
@@ -115,15 +125,23 @@ function consumeAssistant(
 ): AnswerBlock[] {
   const answer: AnswerBlock[] = []
   const splitAt = splitTrailingText ? lastToolCallIndex(message.content) : -1
+  const fallbackMs = thinkingFallbackMs(message)
+  let usedFallback = false
 
   message.content.forEach((block, i) => {
     const toAnswer = splitTrailingText && i > splitAt
     if (block.type === 'thinking') {
       if (block.thinking) {
+        const measured = thinkingDurations[thinkingTimingKey(message.timestamp, i)] ?? 0
+        let durationMs = measured
+        if (durationMs <= 0 && !usedFallback && fallbackMs > 0) {
+          durationMs = fallbackMs
+          usedFallback = true
+        }
         process.push({
           kind: 'thinking',
           text: block.thinking,
-          durationMs: thinkingDurations[thinkingTimingKey(message.timestamp, i)] ?? 0
+          durationMs
         })
       }
       return

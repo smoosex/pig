@@ -87,30 +87,35 @@ export function useEventBridge(): void {
 
     const recordThinkingEvent = (sessionId: string, event: PiSessionEvent) => {
       if (event.type !== 'message_update' || !isPiMessage(event.message)) return
-      if (event.message.role !== 'assistant') return
+      if (event.message.role !== 'assistant' || !Array.isArray(event.message.content)) return
       const streamEvent = assistantStreamEvent(event)
-      if (!streamEvent) return
-      const key = timingKey(sessionId, event.message.timestamp, streamEvent.contentIndex)
       const now = performance.now()
+      const timestamp = event.message.timestamp
+      const content = event.message.content
 
-      if (streamEvent.type === 'thinking_start' || streamEvent.type === 'thinking_delta') {
-        if (!starts.has(key)) {
+      content.forEach((block, contentIndex) => {
+        if (block.type !== 'thinking') return
+        const key = timingKey(sessionId, timestamp, contentIndex)
+        const live =
+          streamEvent != null &&
+          streamEvent.contentIndex === contentIndex &&
+          (streamEvent.type === 'thinking_start' || streamEvent.type === 'thinking_delta')
+        if (!starts.has(key) && (live || Boolean(block.thinking))) {
           starts.set(key, {
             sessionId,
-            messageTimestamp: event.message.timestamp,
-            contentIndex: streamEvent.contentIndex,
+            messageTimestamp: timestamp,
+            contentIndex,
             startedAt: now
           })
         }
-        return
-      }
-
-      if (streamEvent.type === 'thinking_end') {
+        const closed = streamEvent?.type === 'thinking_end' && streamEvent.contentIndex === contentIndex
+        const followed = content.slice(contentIndex + 1).some((item) => item.type !== 'thinking')
+        if (!closed && !followed) return
         const entry = starts.get(key)
         if (!entry) return
         starts.delete(key)
         finish(entry, now)
-      }
+      })
     }
 
     const off = api.onEvent((raw) => {
