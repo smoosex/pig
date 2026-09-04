@@ -537,7 +537,7 @@ export function Composer() {
   }
 
   return (
-    <div className={cn(chatColumn, 'pb-5')}>
+    <div className={cn(chatColumn, 'pb-3.5')}>
       <div className="rounded-2xl shadow-md">
       <InputGroup
         data-streaming={isStreaming || undefined}

@@ -49,12 +49,12 @@ function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number)
   }
 }
 
-const MINIMAP_MIN = 8
-const MINIMAP_MAX = 24
+const MINIMAP_MIN = 6
+const MINIMAP_MAX = 18
 const MINIMAP_DOCK = 0.55
 const MINIMAP_REACH = 3
 const MINIMAP_BAR = 2
-const MINIMAP_GAP = 6
+const MINIMAP_GAP = 8
 const MINIMAP_PAD_Y = 8
 const MINIMAP_FADE = MINIMAP_PAD_Y + 4 * MINIMAP_BAR + 3 * MINIMAP_GAP
 
@@ -120,7 +120,7 @@ function TurnMinimap({
   return (
     <div
       ref={rootRef}
-      className="absolute top-1/2 right-3 z-10 flex max-h-3/4 min-w-9 -translate-y-1/2 cursor-pointer flex-col items-end gap-1.5 overflow-y-auto py-2 pl-10 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="absolute top-1/2 right-3 z-10 flex max-h-3/4 min-w-9 -translate-y-1/2 cursor-pointer flex-col items-end gap-2 overflow-y-auto py-2 pl-10 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       onScroll={(event) => {
         const el = event.currentTarget
@@ -149,14 +149,13 @@ function TurnMinimap({
           MINIMAP_MIN + Math.sqrt(lengths[index] / maxLen) * (MINIMAP_MAX - MINIMAP_MIN)
         const boost = dockBoost(index, hoverPos)
         return (
-          <Button
+          <button
             key={id}
             type="button"
-            variant="ghost"
             tabIndex={-1}
             aria-label="跳转到该轮对话"
             className={cn(
-              'pointer-events-none h-0.5 min-h-0 origin-right shrink-0 rounded-full p-0 hover:bg-transparent',
+              'pointer-events-none h-0.5 origin-right shrink-0 rounded-full transition-[width] duration-300 ease-out',
               index === hoveredIndex ? 'bg-foreground' : 'bg-border'
             )}
             style={{
