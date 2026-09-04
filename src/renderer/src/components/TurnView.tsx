@@ -24,6 +24,7 @@ import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Separator } from './ui/separator'
+import { ImagePreview } from './ImagePreview'
 import { MarkdownText } from './MarkdownText'
 import { Message, MessageContent } from './ui/message'
 
@@ -69,20 +70,37 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 function UserBubble({ message }: { message: UserMessage }) {
+  const images = userImages(message)
+  const text = userText(message)
+  const [preview, setPreview] = useState<string | null>(null)
   return (
     <Message align="end" className="mb-4" data-turn-user="">
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
-        <Bubble align="end" className="max-w-full">
-          <BubbleContent className="whitespace-pre-wrap">{userText(message)}</BubbleContent>
-        </Bubble>
-        {userImages(message).map((image, i) => (
-          <img
-            key={i}
-            className="my-1.5 block max-w-90 rounded-lg"
-            src={`data:${image.mimeType};base64,${image.data}`}
-            alt=""
-          />
-        ))}
+        {images.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {images.map((image, i) => {
+              const src = `data:${image.mimeType};base64,${image.data}`
+              return (
+                <Button
+                  key={i}
+                  type="button"
+                  variant="ghost"
+                  className="block h-auto rounded-md p-0 hover:bg-transparent"
+                  aria-label="预览图片"
+                  onClick={() => setPreview(src)}
+                >
+                  <img src={src} alt="" className="h-10 max-w-16 cursor-pointer rounded-md object-cover" />
+                </Button>
+              )
+            })}
+          </div>
+        ) : null}
+        {text ? (
+          <Bubble align="end" className="max-w-full">
+            <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+          </Bubble>
+        ) : null}
+        <ImagePreview src={preview} onClose={() => setPreview(null)} />
       </MessageContent>
     </Message>
   )

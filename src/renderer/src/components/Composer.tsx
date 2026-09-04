@@ -30,7 +30,7 @@ import { Progress } from './ui/progress'
 import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
-import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
+import { ImagePreview } from './ImagePreview'
 
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
@@ -654,17 +654,7 @@ export function Composer() {
         </InputGroupAddon>
       </InputGroup>
       </div>
-      <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null) }}>
-        <DialogContent
-          showCloseButton
-          className="w-fit max-w-[min(90vw,72rem)] border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[min(90vw,72rem)]"
-        >
-          <DialogTitle className="sr-only">图片预览</DialogTitle>
-          {preview ? (
-            <img src={preview} alt="" className="max-h-[85vh] max-w-full rounded-lg object-contain" />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ImagePreview src={preview} onClose={() => setPreview(null)} />
     </div>
   )
 }
