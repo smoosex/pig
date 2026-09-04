@@ -538,6 +538,7 @@ export function Composer() {
 
   return (
     <div className={cn(chatColumn, 'pb-5')}>
+      <div className="rounded-2xl shadow-md">
       <InputGroup
         data-streaming={isStreaming || undefined}
         className="composer-focus min-h-32 rounded-2xl bg-input has-disabled:bg-input has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-input dark:has-disabled:bg-input"
@@ -649,6 +650,7 @@ export function Composer() {
           </div>
         </InputGroupAddon>
       </InputGroup>
+      </div>
       <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null) }}>
         <DialogContent
           showCloseButton
