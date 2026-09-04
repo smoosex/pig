@@ -51,7 +51,7 @@ function SectionHeader({
     <div className={cn('sticky z-10 flex h-8 shrink-0 items-center gap-0.5 bg-background px-1', className)}>
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-xs text-muted-foreground hover:bg-card"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-xs text-muted-foreground hover:bg-muted"
         onClick={onToggle}
       >
         <ChevronRight
@@ -142,7 +142,7 @@ function ProjectList() {
               <div
                 role="button"
                 tabIndex={0}
-                className="group flex h-9 cursor-pointer items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-card"
+                className="group flex h-9 cursor-pointer items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-muted"
                 onKeyDown={(event) => {
                   if (event.target !== event.currentTarget) return
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -233,7 +233,7 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   const label = session.name || session.firstMessage || '空会话'
   return (
-    <div className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-card focus-within:bg-card">
+    <div className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-muted focus-within:bg-muted">
       <Button
         variant="ghost"
         size="xs"
@@ -288,7 +288,7 @@ function ChatRow({
   const deleteChat = useSessionsStore((s) => s.deleteChat)
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   return (
-    <div className="group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 pr-1 transition-colors hover:bg-card focus-within:bg-card">
+    <div className="group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 pr-1 transition-colors hover:bg-muted focus-within:bg-muted">
       <Button
         variant="ghost"
         size="xs"

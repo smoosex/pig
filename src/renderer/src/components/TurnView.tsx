@@ -32,7 +32,7 @@ const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-wo
 const disclosureRow =
   'flex h-7 w-full min-w-0 items-center justify-start gap-1.5 px-1 text-[0.8rem] font-normal text-muted-foreground'
 const disclosureButton =
-  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted/50'
+  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted'
 
 function WaveText({ text }: { text: string }) {
   return (

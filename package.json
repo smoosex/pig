@@ -22,7 +22,6 @@
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "@shadcn/react": "^0.3.0",
     "@tanstack/react-virtual": "^3.14.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
