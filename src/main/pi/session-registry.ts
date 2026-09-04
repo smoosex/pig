@@ -9,6 +9,8 @@ import {
   SettingsManager,
   type AgentSession
 } from '@earendil-works/pi-coding-agent'
+import { isChatCwd } from '../chats'
+import { createChatResourceLoader } from './chat-resources'
 import { bridgeEvents } from './event-bridge'
 
 export type SessionThinkingLevel =
@@ -133,10 +135,12 @@ async function build(
   cwd: string,
   win: BrowserWindow
 ): Promise<LiveSession> {
+  const resourceLoader = isChatCwd(cwd) ? await createChatResourceLoader(cwd) : undefined
   const result = await createAgentSession({
     cwd,
     sessionManager,
-    modelRuntime: await startModelRuntime()
+    modelRuntime: await startModelRuntime(),
+    ...(resourceLoader ? { resourceLoader } : {})
   })
   const session = result.session
   await session.bindExtensions({ mode: 'rpc' })
