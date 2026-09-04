@@ -48,19 +48,20 @@ function SectionHeader({
   className?: string
 }) {
   return (
-    <div className={cn('sticky z-10 flex h-8 shrink-0 items-center gap-0.5 bg-background px-1', className)}>
-      <Button
-        variant="ghost"
-        className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-1 text-xs font-normal text-muted-foreground"
-        onClick={onToggle}
-      >
-        <ChevronRight
-          data-icon="inline-start"
-          className={cn('size-2.5 shrink-0 transition-transform', !collapsed && 'rotate-90')}
-        />
-        <span className="truncate">{label}</span>
-      </Button>
-      {action}
+    <div className={cn('sticky z-10 shrink-0 bg-background px-1', className)}>
+      <div className="group/header flex h-8 items-center gap-0.5 rounded-md px-1 hover:bg-muted">
+        <Button
+          variant="ghost"
+          className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal text-muted-foreground !bg-transparent"
+          onClick={onToggle}
+        >
+          <ChevronRight
+            className={cn('size-2.5 shrink-0 transition-transform', !collapsed && 'rotate-90')}
+          />
+          <span className="truncate">{label}</span>
+        </Button>
+        {action}
+      </div>
     </div>
   )
 }
@@ -139,11 +140,12 @@ function ProjectList() {
             open={!isCollapsed}
             onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
           >
+            <div className="px-1">
             <div className="group flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-muted">
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-1 text-xs font-normal !bg-transparent"
+                  className="h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal !bg-transparent"
                 >
                   <Avatar className="size-5 rounded-sm after:rounded-sm">
                     <AvatarFallback
@@ -207,6 +209,7 @@ function ProjectList() {
                   <Plus />
                 </Button>
             </div>
+            </div>
             <CollapsibleContent>
               <div className="flex flex-col gap-0.5 pb-1">
                 {p.sessions.map((s) => (
@@ -223,14 +226,21 @@ function ProjectList() {
 
 function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () => void }) {
   const openExisting = useSessionsStore((s) => s.openExisting)
+  const active = useSessionsStore((s) => s.activeSessionId === session.id)
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   const label = session.name || session.firstMessage || '空会话'
   return (
-    <div className="group/session ml-6 pr-1 flex min-w-0 items-center gap-0.5 rounded-sm transition-colors hover:bg-muted focus-within:bg-muted">
+    <div className="ml-6 px-1">
+    <div
+      className={cn(
+        'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-muted',
+        active && 'bg-muted'
+      )}
+    >
       <Button
         variant="ghost"
         size="xs"
-        className="h-7 min-w-0 flex-1 justify-start rounded-md text-left text-xs font-normal !bg-transparent"
+        className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
         title={session.firstMessage}
         onClick={() => void openExisting(session)}
       >
@@ -246,6 +256,7 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
           onConfirm={onDelete}
         />
       )}
+    </div>
     </div>
   )
 }
@@ -279,13 +290,20 @@ function ChatRow({
 }) {
   const openExisting = useSessionsStore((s) => s.openExisting)
   const deleteChat = useSessionsStore((s) => s.deleteChat)
+  const active = useSessionsStore((s) => s.activeSessionId === session.id)
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   return (
-    <div className="group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 pr-1 transition-colors hover:bg-muted focus-within:bg-muted">
+    <div className="px-1">
+    <div
+      className={cn(
+        'group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-muted',
+        active && 'bg-muted'
+      )}
+    >
       <Button
         variant="ghost"
         size="xs"
-        className="h-7 min-w-0 flex-1 justify-start rounded-md text-left text-xs font-normal !bg-transparent"
+        className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
         title={title}
         onClick={() => void openExisting(session)}
       >
@@ -301,6 +319,7 @@ function ChatRow({
           onConfirm={() => void deleteChat(cwd)}
         />
       )}
+    </div>
     </div>
   )
 }
@@ -362,7 +381,7 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className="!bg-transparent"
+                className="pointer-events-none opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
                 aria-label="新建对话"
                 onClick={() => void newChat()}
               >
