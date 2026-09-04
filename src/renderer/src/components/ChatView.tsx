@@ -149,13 +149,14 @@ function TurnMinimap({
           MINIMAP_MIN + Math.sqrt(lengths[index] / maxLen) * (MINIMAP_MAX - MINIMAP_MIN)
         const boost = dockBoost(index, hoverPos)
         return (
-          <button
+          <Button
             key={id}
             type="button"
+            variant="ghost"
             tabIndex={-1}
             aria-label="跳转到该轮对话"
             className={cn(
-              'pointer-events-none h-0.5 origin-right shrink-0 rounded-full transition-[width] duration-300 ease-out',
+              'pointer-events-none h-0.5 min-h-0 origin-right shrink-0 rounded-full p-0 hover:bg-transparent',
               index === hoveredIndex ? 'bg-foreground' : 'bg-border'
             )}
             style={{

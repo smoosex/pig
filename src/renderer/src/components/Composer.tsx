@@ -579,9 +579,10 @@ export function Composer() {
           <div className="flex w-full flex-wrap justify-start gap-1.5 px-3.5 pb-1.5">
             {images.map((image) => (
               <div key={image.id} className="relative shrink-0">
-                <button
+                <Button
                   type="button"
-                  className="block"
+                  variant="ghost"
+                  className="block h-auto rounded-md p-0 hover:bg-transparent"
                   aria-label="预览图片"
                   onClick={() => setPreview(image.url)}
                 >
@@ -590,15 +591,17 @@ export function Composer() {
                     alt=""
                     className="h-10 max-w-16 cursor-pointer rounded-md object-cover"
                   />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="absolute top-0.5 right-0.5 flex size-3.5 items-center justify-center rounded-full bg-black/65 text-white"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="absolute top-0.5 right-0.5 size-3.5 rounded-full bg-black/65 p-0 text-white hover:bg-black/80 hover:text-white"
                   aria-label="移除图片"
                   onClick={() => removeImage(image.id)}
                 >
                   <X className="size-2" />
-                </button>
+                </Button>
               </div>
             ))}
           </div>

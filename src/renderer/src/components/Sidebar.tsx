@@ -49,16 +49,17 @@ function SectionHeader({
 }) {
   return (
     <div className={cn('sticky z-10 flex h-8 shrink-0 items-center gap-0.5 bg-background px-1', className)}>
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-xs text-muted-foreground hover:bg-muted"
+      <Button
+        variant="ghost"
+        className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-1 text-xs font-normal text-muted-foreground"
         onClick={onToggle}
       >
         <ChevronRight
+          data-icon="inline-start"
           className={cn('size-2.5 shrink-0 transition-transform', !collapsed && 'rotate-90')}
         />
         <span className="truncate">{label}</span>
-      </button>
+      </Button>
       {action}
     </div>
   )
@@ -138,20 +139,12 @@ function ProjectList() {
             open={!isCollapsed}
             onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
           >
-            <CollapsibleTrigger asChild>
-              <div
-                role="button"
-                tabIndex={0}
-                className="group flex h-9 cursor-pointer items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-muted"
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) return
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    event.currentTarget.click()
-                  }
-                }}
-              >
-                <div className="flex min-w-0 basis-0 flex-1 items-center gap-1.5 rounded-md px-1 text-sm font-normal">
+            <div className="group flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-muted">
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-1 text-xs font-normal !bg-transparent"
+                >
                   <Avatar className="size-5 rounded-sm after:rounded-sm">
                     <AvatarFallback
                       className={cn(
@@ -171,7 +164,8 @@ function ProjectList() {
                       !isCollapsed && 'rotate-90'
                     )}
                   />
-                </div>
+                </Button>
+              </CollapsibleTrigger>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -212,8 +206,7 @@ function ProjectList() {
                 >
                   <Plus />
                 </Button>
-              </div>
-            </CollapsibleTrigger>
+            </div>
             <CollapsibleContent>
               <div className="flex flex-col gap-0.5 pb-1">
                 {p.sessions.map((s) => (
@@ -328,39 +321,59 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <aside className="flex w-62 shrink-0 flex-col pl-2">
       <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
-        <SectionHeader
-          className="top-0"
-          label="项目"
-          collapsed={projectsCollapsed}
-          onToggle={() => {
-            const next = !projectsCollapsed
-            setProjectsCollapsed(next)
-            void api.setSidebarPrefs({ projectsCollapsed: next })
+        <Collapsible
+          open={!projectsCollapsed}
+          onOpenChange={(open) => {
+            setProjectsCollapsed(!open)
+            void api.setSidebarPrefs({ projectsCollapsed: !open })
           }}
-        />
-        {projectsCollapsed ? null : <ProjectList />}
-        <SectionHeader
-          className="top-8"
-          label="对话"
-          collapsed={chatsCollapsed}
-          onToggle={() => {
-            const next = !chatsCollapsed
-            setChatsCollapsed(next)
-            void api.setSidebarPrefs({ chatsCollapsed: next })
+        >
+          <SectionHeader
+            className="top-0"
+            label="项目"
+            collapsed={projectsCollapsed}
+            onToggle={() => {
+              const next = !projectsCollapsed
+              setProjectsCollapsed(next)
+              void api.setSidebarPrefs({ projectsCollapsed: next })
+            }}
+          />
+          <CollapsibleContent>
+            <ProjectList />
+          </CollapsibleContent>
+        </Collapsible>
+        <Collapsible
+          open={!chatsCollapsed}
+          onOpenChange={(open) => {
+            setChatsCollapsed(!open)
+            void api.setSidebarPrefs({ chatsCollapsed: !open })
           }}
-          action={
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="!bg-transparent"
-              aria-label="新建对话"
-              onClick={() => void newChat()}
-            >
-              <Plus />
-            </Button>
-          }
-        />
-        {chatsCollapsed ? null : <ChatList />}
+        >
+          <SectionHeader
+            className="top-8"
+            label="对话"
+            collapsed={chatsCollapsed}
+            onToggle={() => {
+              const next = !chatsCollapsed
+              setChatsCollapsed(next)
+              void api.setSidebarPrefs({ chatsCollapsed: next })
+            }}
+            action={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="!bg-transparent"
+                aria-label="新建对话"
+                onClick={() => void newChat()}
+              >
+                <Plus />
+              </Button>
+            }
+          />
+          <CollapsibleContent>
+            <ChatList />
+          </CollapsibleContent>
+        </Collapsible>
       </ScrollArea>
       <div className="flex shrink-0 items-center gap-0.5 px-1 pb-2">
         <Button

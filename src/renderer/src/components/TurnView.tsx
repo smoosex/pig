@@ -911,11 +911,12 @@ export const TurnView = memo(function TurnView({
           className="mb-3"
         >
           <CollapsibleTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               disabled={loading}
               className={cn(
-                'flex h-7 w-full items-center gap-3 bg-transparent px-0 text-xs font-normal text-muted-foreground',
+                'h-7 w-full justify-start gap-3 rounded-none px-0 text-xs font-normal text-muted-foreground hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
                 turn.streaming && 'pointer-events-none'
               )}
             >
@@ -925,7 +926,7 @@ export const TurnView = memo(function TurnView({
                 <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
               </span>
               <span className="h-px min-w-4 flex-1 bg-border" />
-            </button>
+            </Button>
           </CollapsibleTrigger>
           <CollapsibleContent className="duration-300">
             {liveOutline ? (

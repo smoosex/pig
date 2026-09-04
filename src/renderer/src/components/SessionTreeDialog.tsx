@@ -167,11 +167,12 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                       <ChevronRight className={cn(!collapsed && 'rotate-90')} />
                     </Button>
                   ) : null}
-                  <button
+                  <Button
                     ref={row.current ? currentRef : undefined}
                     type="button"
+                    variant="ghost"
                     className={cn(
-                      'min-w-0 flex-1 truncate px-1 py-0.5 text-left',
+                      'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal',
                       !row.current && kindClass(row.kind)
                     )}
                     onClick={() => {
@@ -181,7 +182,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                   >
                     {row.onPath ? '• ' : ''}
                     {row.text}
-                  </button>
+                  </Button>
                 </div>
               )
             })
