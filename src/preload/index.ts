@@ -34,6 +34,10 @@ const api = {
     ipcRenderer.invoke('session:view-branch', sessionId, tipId),
   getControls: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:get-controls', sessionId),
+  getCommands: (sessionId: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:get-commands', sessionId),
+  exportSession: (sessionId: string, outputPath?: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:export', sessionId, outputPath),
   setModel: (sessionId: string, provider: string, id: string): Promise<unknown> =>
     ipcRenderer.invoke('session:set-model', sessionId, provider, id),
   setThinking: (sessionId: string, level: string): Promise<unknown> =>

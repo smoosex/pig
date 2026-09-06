@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
-import { ArrowUp, Box, RefreshCw, Square, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
 import {
   api,
   type SessionContextUsage,
   type SessionModelInfo,
   type SessionTokenStats,
+  type SlashCommand,
   type ThinkingLevel
 } from '../ipc/api'
 import { chatColumn } from '../chat/layout'
@@ -20,6 +21,7 @@ import {
 } from './ui/input-group'
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
@@ -40,6 +42,33 @@ const EMPTY_TOKENS: SessionTokenStats = {
   cacheRead: 0,
   cacheWrite: 0,
   total: 0
+}
+
+const slashGroups = {
+  builtin: { order: 0, label: '内建' },
+  prompt: { order: 1, label: '模板' },
+  extension: { order: 2, label: '扩展' },
+  skill: { order: 3, label: 'Skills' }
+}
+
+function slashQuery(text: string): string | null {
+  if (!text.startsWith('/')) return null
+  if (text.includes('\n')) return null
+  const rest = text.slice(1)
+  if (/\s/.test(rest)) return null
+  return rest
+}
+
+function exportPathArg(text: string): string | undefined {
+  if (text === '/export') return undefined
+  if (!text.startsWith('/export ')) return undefined
+  const rest = text.slice(8).trim()
+  if (!rest) return undefined
+  const quote = rest[0]
+  if ((quote === '"' || quote === "'") && rest.endsWith(quote) && rest.length >= 2) {
+    return rest.slice(1, -1)
+  }
+  return rest
 }
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
@@ -463,7 +492,14 @@ export function Composer() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<PastedImage[]>([])
   const [preview, setPreview] = useState<string | null>(null)
+  const [commands, setCommands] = useState<SlashCommand[]>([])
+  const [slashIndex, setSlashIndex] = useState(0)
+  const selectedSlashRef = useRef<HTMLButtonElement>(null)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const composing = useRef(false)
+  const commandsFor = useRef<string | null>(null)
+  const composerBoxRef = useRef<HTMLDivElement>(null)
+  const [slashWidth, setSlashWidth] = useState(0)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
@@ -490,6 +526,9 @@ export function Composer() {
   )
 
   useEffect(() => {
+    commandsFor.current = null
+    setCommands([])
+    setSlashDismissed(false)
     return () => {
       setPreview(null)
       setImages((current) => {
@@ -499,9 +538,72 @@ export function Composer() {
     }
   }, [activeSessionId])
 
+  const query = slashQuery(text)
+
+  useEffect(() => {
+    setSlashDismissed(false)
+  }, [text])
+
+  useEffect(() => {
+    if (!activeSessionId || query === null) return
+    if (commandsFor.current === activeSessionId) return
+    const sessionId = activeSessionId
+    commandsFor.current = sessionId
+    void api.getCommands(sessionId).then(
+      (list) => {
+        if (commandsFor.current === sessionId) setCommands(list)
+      },
+      () => {
+        if (commandsFor.current === sessionId) {
+          commandsFor.current = null
+          setCommands([])
+        }
+      }
+    )
+  }, [activeSessionId, query])
+
+  const filtered = useMemo(() => {
+    if (query === null) return []
+    const q = query.toLowerCase()
+    return commands
+      .filter((command) => command.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const aHit = a.name.toLowerCase().startsWith(q) ? 0 : 1
+        const bHit = b.name.toLowerCase().startsWith(q) ? 0 : 1
+        return slashGroups[a.source].order - slashGroups[b.source].order || aHit - bHit || a.name.localeCompare(b.name)
+      })
+  }, [commands, query])
+
+  useEffect(() => {
+    setSlashIndex(0)
+  }, [query, commands])
+
+  const slashOpen = query !== null && !slashDismissed && filtered.length > 0
+
+  useEffect(() => {
+    if (!slashOpen) return
+    selectedSlashRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [slashIndex, slashOpen, filtered])
+
+  useLayoutEffect(() => {
+    if (!slashOpen) return
+    setSlashWidth(composerBoxRef.current?.offsetWidth ?? 0)
+  }, [slashOpen])
+
+  const applySlash = (command: SlashCommand) => {
+    setText(`/${command.name} `)
+    setSlashDismissed(true)
+  }
+
   const send = useCallback(async () => {
     const trimmed = text.trim()
     if ((!trimmed && images.length === 0) || isStreaming || !activeSessionId) return
+    if (trimmed === '/export' || trimmed.startsWith('/export ')) {
+      const result = await api.exportSession(activeSessionId, exportPathArg(trimmed))
+      if (!result) return
+      setText('')
+      return
+    }
     const prepared = await api.prepareSession(activeSessionId)
     if (prepared.created) await refreshCwd(prepared.cwd)
     const title = trimmed.slice(0, 500) || (images.length > 0 ? '图片' : '')
@@ -538,7 +640,14 @@ export function Composer() {
 
   return (
     <div className={cn(chatColumn, 'pb-3.5')}>
-      <div className="rounded-2xl shadow-md">
+      <Popover
+        open={slashOpen}
+        onOpenChange={(open) => {
+          if (!open) setSlashDismissed(true)
+        }}
+      >
+      <PopoverAnchor asChild>
+      <div ref={composerBoxRef} className="rounded-2xl shadow-md">
       <InputGroup
         data-streaming={isStreaming || undefined}
         className="composer-focus min-h-32 rounded-2xl bg-input has-disabled:bg-input has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-input dark:has-disabled:bg-input"
@@ -560,6 +669,33 @@ export function Composer() {
           }}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing || composing.current || e.keyCode === 229) return
+            if (slashOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setSlashIndex((index) => (index + 1) % filtered.length)
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setSlashIndex((index) => (index - 1 + filtered.length) % filtered.length)
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setSlashDismissed(true)
+                return
+              }
+              if (e.key === 'Tab') {
+                e.preventDefault()
+                applySlash(filtered[slashIndex] ?? filtered[0])
+                return
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                applySlash(filtered[slashIndex] ?? filtered[0])
+                return
+              }
+            }
             if (e.key !== 'Enter') return
             const sendNow = sendShortcut === 'enter' ? !e.shiftKey : e.shiftKey
             if (!sendNow) return
@@ -654,6 +790,45 @@ export function Composer() {
         </InputGroupAddon>
       </InputGroup>
       </div>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        side="top"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        className="max-w-none gap-0.5 rounded-2xl p-1.5"
+        style={slashWidth > 0 ? { width: slashWidth } : undefined}
+      >
+        <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {filtered.map((command, index) => (
+            <Fragment key={`${command.source}:${command.name}`}>
+            {index === 0 || filtered[index - 1].source !== command.source ? (
+              <div className="px-3 pt-2 pb-1 text-[10px] font-medium text-muted-foreground">
+                {slashGroups[command.source].label}
+              </div>
+            ) : null}
+            <Button
+              ref={index === slashIndex ? selectedSlashRef : undefined}
+              type="button"
+              variant="ghost"
+              className={cn(
+                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent',
+                index === slashIndex && 'bg-accent hover:bg-accent'
+              )}
+              onMouseEnter={() => setSlashIndex(index)}
+              onClick={() => applySlash(command)}
+            >
+              {command.source === 'skill' ? <BookOpen className="text-chart-4" /> : null}
+              <span className={cn('shrink-0 font-normal', index === slashIndex && 'font-medium', command.source === 'skill' && 'text-chart-4')}>/{command.name}</span>
+              {command.description ? (
+                <span className="min-w-0 truncate font-normal text-muted-foreground">{command.description}</span>
+              ) : null}
+            </Button>
+            </Fragment>
+          ))}
+        </div>
+      </PopoverContent>
+      </Popover>
       <ImagePreview src={preview} onClose={() => setPreview(null)} />
     </div>
   )

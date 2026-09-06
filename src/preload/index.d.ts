@@ -55,6 +55,14 @@ interface SessionControls {
   tokens: SessionTokenStats
 }
 
+type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
+
+interface SlashCommand {
+  name: string
+  description?: string
+  source: SlashCommandSource
+}
+
 interface SessionTreeGutter {
   position: number
   show: boolean
@@ -115,6 +123,8 @@ declare global {
       getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
       viewBranch: (sessionId: string, tipId: string) => Promise<void>
       getControls: (sessionId: string) => Promise<SessionControls>
+      getCommands: (sessionId: string) => Promise<SlashCommand[]>
+      exportSession: (sessionId: string, outputPath?: string) => Promise<{ path: string } | null>
       setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
       setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
       refreshModels: (sessionId: string) => Promise<SessionControls>

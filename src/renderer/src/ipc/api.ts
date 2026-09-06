@@ -61,6 +61,14 @@ export interface SessionControls {
   tokens: SessionTokenStats
 }
 
+export type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
+
+export interface SlashCommand {
+  name: string
+  description?: string
+  source: SlashCommandSource
+}
+
 export interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
@@ -187,6 +195,8 @@ export interface SessionApi {
   getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
   getControls: (sessionId: string) => Promise<SessionControls>
+  getCommands: (sessionId: string) => Promise<SlashCommand[]>
+  exportSession: (sessionId: string, outputPath?: string) => Promise<{ path: string } | null>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   refreshModels: (sessionId: string) => Promise<SessionControls>

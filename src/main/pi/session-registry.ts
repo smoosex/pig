@@ -470,6 +470,50 @@ export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
 }
 
+export type SessionSlashSource = 'builtin' | 'extension' | 'prompt' | 'skill'
+
+export interface SessionSlashCommand {
+  name: string
+  description?: string
+  source: SessionSlashSource
+}
+
+const BUILTIN_SLASH_COMMANDS: SessionSlashCommand[] = [
+  { name: 'export', description: '导出会话为 HTML 或 JSONL', source: 'builtin' }
+]
+
+export async function listSessionCommands(sessionId: string): Promise<SessionSlashCommand[]> {
+  const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
+  const session = ls.agentSession
+  const taken = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name))
+  const extensionCommands = session.extensionRunner.getRegisteredCommands().map((command) => ({
+    name: command.invocationName,
+    description: command.description,
+    source: 'extension' as const
+  }))
+  const templates = session.promptTemplates.map((template) => ({
+    name: template.name,
+    description: template.description,
+    source: 'prompt' as const
+  }))
+  const skills = session.resourceLoader.getSkills().skills.map((skill) => ({
+    name: `skill:${skill.name}`,
+    description: skill.description,
+    source: 'skill' as const
+  }))
+  return [
+    ...BUILTIN_SLASH_COMMANDS,
+    ...[...extensionCommands, ...templates, ...skills].filter((command) => !taken.has(command.name))
+  ]
+}
+
+export async function exportSession(sessionId: string, outputPath?: string): Promise<string> {
+  const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
+  const target = outputPath?.trim()
+  if (target?.endsWith('.jsonl')) return ls.agentSession.exportToJsonl(target)
+  return ls.agentSession.exportToHtml(target)
+}
+
 type TreeNode = {
   entry: {
     id: string

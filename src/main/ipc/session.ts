@@ -3,9 +3,11 @@ import {
   closeSession,
   closeSessionsForCwd,
   createPendingSession,
+  exportSession,
   getLive,
   getSessionControls,
   getSessionTree,
+  listSessionCommands,
   openSession,
   prepareSession,
   refreshSessionModels,
@@ -165,6 +167,34 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {
     return getSessionControls(sessionId)
   })
+
+  ipcMain.handle('session:get-commands', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    return listSessionCommands(sessionId)
+  })
+
+  ipcMain.handle(
+    'session:export',
+    async (event, sessionId: string, outputPath?: string) => {
+      if (!sessionId) throw new Error('Session id is required')
+      let target = typeof outputPath === 'string' ? outputPath.trim() : ''
+      if (!target) {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        if (!win) throw new Error('No window attached to sender')
+        const result = await dialog.showSaveDialog(win, {
+          title: '导出会话',
+          defaultPath: 'session.html',
+          filters: [
+            { name: 'HTML', extensions: ['html'] },
+            { name: 'JSONL', extensions: ['jsonl'] }
+          ]
+        })
+        if (result.canceled || !result.filePath) return null
+        target = result.filePath
+      }
+      return { path: await exportSession(sessionId, target) }
+    }
+  )
 
   ipcMain.handle(
     'session:set-model',
