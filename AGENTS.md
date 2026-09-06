@@ -53,3 +53,28 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 - Tailwind 写在组件 `className` 里。能用间距刻度就不要任意值：`--spacing` 是 `0.25rem`，`Npx / 4` 即类名（`px-[18px]` → `px-4.5`）。百分比用分数（`max-w-1/2`）。只有刻度表达不了、或 keyframes / `::after` 才用 `*.module.css` 或 `[…]`。
 - 中文引号字体是 LXGW WenKai Lite，其余 Geist Variable。
 - 不要擅自 `git commit`。
+
+## Theme Palette Rules
+
+### Structure
+
+- Store palettes in `src/renderer/src/themes/theme-<name>.css` using the shared variable names. Use `html[data-palette='<name>']` for light colors and `html.dark[data-palette='<name>']` for dark colors.
+- Palette files define colors only. Components consume semantic tokens, whose mappings belong in `styles.css`. Do not add theme-specific semantic overrides or temporary color-mixing patches to compensate for an incorrect palette.
+- Literal colors belong in palette selectors, not in a generic `.dark` semantic override.
+
+### Backgrounds and Grays
+
+- In light mode, `bg0` through `bg5` become progressively darker. In dark mode, they become progressively lighter. Adjacent levels should have subtle but distinguishable differences.
+- `bg_dim` is darker than `bg0` and represents a dimmed background; it is outside the main surface ladder.
+- `grey0` through `grey2` move progressively toward the foreground: darker in light mode, lighter in dark mode. Use `grey0` for borders, `grey2` for secondary text, and `fg` for body text.
+- Keep the shared semantic mapping: page background → `bg0`; card → `bg1`; popover, input, and muted → `bg2`; accent → `bg3`; secondary → `bg4`.
+- Menu hover and keyboard selection use `accent`, not `muted`, which shares the popover background color.
+
+### Accents and Readability
+
+- Preserve `red`, `yellow`, `green`, `blue`, `purple`, `aqua`, and `orange`, plus the shared tinted backgrounds (`bg_red`, `bg_yellow`, `bg_green`, `bg_blue`, `bg_purple`), `bg_visual`, and `statusline1` through `statusline3`.
+- Tinted backgrounds should be low-saturation, subtle surfaces. `bg_visual` may be stronger to distinguish a selection, but must preserve text readability.
+- `green` maps to `primary`; `blue` maps to `chart-4`. Check normal text, including button labels, against its actual background for at least 4.5:1 contrast. Large text and necessary non-text UI indicators require at least 3:1.
+- Decorative colors need not all meet text contrast requirements, but any color used for text must be checked against its actual background.
+- Validate both light and dark modes with body text, descriptions, buttons, inputs, popovers, and selection highlights. A visually pleasing swatch alone is not sufficient.
+

@@ -62,6 +62,17 @@ export default function App() {
   useEventBridge()
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key !== ',' || event.isComposing || event.keyCode === 229) return
+      event.preventDefault()
+      setSettingsOpen(true)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
+
+  useEffect(() => {
     void loadProjects()
     void loadChats()
     void loadSettings()

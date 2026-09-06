@@ -8,6 +8,7 @@ import {
   type SlashCommand,
   type ThinkingLevel
 } from '../ipc/api'
+import { useModelNavigation } from '../hooks/useModelNavigation'
 import { chatColumn } from '../chat/layout'
 import { useSessionsStore } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
@@ -261,9 +262,7 @@ function ModelPicker({
   const applyControls = useSessionsStore((s) => s.applyControls)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [hovered, setHovered] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const pointer = useRef({ x: 0, y: 0 })
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -273,16 +272,13 @@ function ModelPicker({
     )
   }, [models, query])
 
-  const syncHover = () => {
-    const node = document.elementFromPoint(pointer.current.x, pointer.current.y)?.closest('[data-model]')
-    setHovered(node instanceof HTMLElement ? (node.dataset.model ?? null) : null)
-  }
-
   const select = async (item: SessionModelInfo) => {
     if (!sessionId) return
     applyControls(sessionId, await api.setModel(sessionId, item.provider, item.id))
     setOpen(false)
   }
+
+  const navigation = useModelNavigation(filtered, open, (item) => { void select(item) })
 
   const refresh = async () => {
     if (!sessionId || refreshing) return
@@ -301,7 +297,6 @@ function ModelPicker({
         setOpen(next)
         if (!next) {
           setQuery('')
-          setHovered(null)
         }
       }}
     >
@@ -311,7 +306,7 @@ function ModelPicker({
           <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
         </InputGroupButton>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5">
+      <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5" onKeyDown={navigation.onKeyDown}>
         <div className="flex items-center gap-1">
           <Input
             autoFocus
@@ -333,12 +328,6 @@ function ModelPicker({
         </div>
         <div
           className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          onPointerMove={(e) => {
-            pointer.current = { x: e.clientX, y: e.clientY }
-            syncHover()
-          }}
-          onPointerLeave={() => setHovered(null)}
-          onScroll={syncHover}
         >
           {filtered.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -354,9 +343,12 @@ function ModelPicker({
                   type="button"
                   variant="ghost"
                   data-model={key}
+                  ref={navigation.index === index ? navigation.activeRef : undefined}
+                  onPointerMove={() => navigation.hover(index)}
+                  aria-current={selected || undefined}
                   className={cn(
-                    'h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-transparent',
-                    (selected || hovered === key) && 'bg-muted hover:bg-muted'
+                    'h-auto w-full items-baseline justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-accent dark:hover:bg-accent',
+                    navigation.index === index && 'bg-accent'
                   )}
                   onClick={() => void select(item)}
                 >
@@ -812,7 +804,7 @@ export function Composer() {
               type="button"
               variant="ghost"
               className={cn(
-                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent',
+                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent dark:hover:bg-accent',
                 index === slashIndex && 'bg-accent hover:bg-accent'
               )}
               onMouseEnter={() => setSlashIndex(index)}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
 import {
   api,
   type Appearance,
@@ -23,7 +23,9 @@ import {
   DialogHeader,
   DialogTitle
 } from '../ui/dialog'
+import { useModelNavigation } from '../../hooks/useModelNavigation'
 import { Input } from '../ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { ScrollArea } from '../ui/scroll-area'
 import {
   Select,
@@ -66,7 +68,7 @@ const thinkingLabels: Record<ThinkingLevel, string> = {
 
 function SettingsCard({ children }: { children: ReactNode }) {
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-xl ring-1 ring-foreground/10">
+    <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10 [&>*+*]:relative [&>*+*]:before:absolute [&>*+*]:before:inset-x-4 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border/50 [&>*+*]:before:content-['']">
       {children}
     </div>
   )
@@ -82,6 +84,7 @@ function DefaultModelPicker({
   onSelect: (model: SessionModelInfo) => void
 }) {
   const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return models
@@ -89,50 +92,55 @@ function DefaultModelPicker({
       `${item.name} ${item.providerName} ${item.provider} ${item.id}`.toLowerCase().includes(q)
     )
   }, [models, query])
+  const select = (item: SessionModelInfo) => { onSelect(item); setOpen(false); setQuery('') }
+  const navigation = useModelNavigation(filtered, open, select)
 
   return (
-    <Select
-      value={model ? modelKey(model) : ''}
-      onValueChange={(value) => {
-        const next = models.find((item) => modelKey(item) === value)
-        if (next) onSelect(next)
-      }}
-    >
-      <SelectTrigger size="sm" className="max-w-64">
-        <SelectValue placeholder="选择模型">
-          {model?.name ?? '选择模型'}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent align="end" position="popper" className="w-80">
-        <div className="p-1">
-          <Input
-            value={query}
-            placeholder="搜索模型"
-            className="h-7 md:text-xs"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-        </div>
-        <SelectGroup>
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery('') }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="max-w-64 font-normal">
+          <span className="truncate">{model?.name ?? '选择模型'}</span>
+          <ChevronDown data-icon="inline-end" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 gap-1 p-1.5" onKeyDown={navigation.onKeyDown}>
+        <Input
+          autoFocus
+          aria-label="搜索模型"
+          value={query}
+          placeholder="搜索模型"
+          className="h-7 shrink-0 md:text-xs"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="max-h-80 min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {filtered.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
               {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
             </p>
           ) : (
-            filtered.map((item) => (
-              <SelectItem key={modelKey(item)} value={modelKey(item)}>
-                <span className="flex min-w-0 flex-col">
-                  <span>{item.name}</span>
-                  <span className="text-xs text-muted-foreground">
+            filtered.map((item, index) => (
+              <Button
+                key={modelKey(item)}
+                type="button"
+                variant="ghost"
+                ref={navigation.index === index ? navigation.activeRef : undefined}
+                className={`h-auto w-full justify-start px-2 py-2 text-left font-normal hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent ${navigation.index === index ? 'bg-accent' : ''}`}
+                onPointerMove={() => navigation.hover(index)}
+                onClick={() => select(item)}
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{item.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">
                     {item.providerName} · {item.provider}/{item.id}
                   </span>
                 </span>
-              </SelectItem>
+                {model && modelKey(model) === modelKey(item) ? <Check /> : null}
+              </Button>
             ))
           )}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -586,8 +594,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (document.querySelector('[data-slot=dialog-content]')) return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      if (document.querySelector('[data-slot=dialog-content], [data-slot=popover-content][data-state=open], [data-slot=select-content][data-state=open], [data-slot=dropdown-menu-content][data-state=open]')) return
       event.preventDefault()
       onClose()
     }
@@ -610,7 +618,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <Button
           type="button"
           variant={section === 'general' ? 'secondary' : 'ghost'}
-          className="justify-start"
+          className="justify-start font-normal"
           onClick={() => setSection('general')}
         >
           <Settings2 data-icon="inline-start" />
@@ -619,7 +627,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <Button
           type="button"
           variant={section === 'theme' ? 'secondary' : 'ghost'}
-          className="justify-start"
+          className="justify-start font-normal"
           onClick={() => setSection('theme')}
         >
           <Palette data-icon="inline-start" />
@@ -628,7 +636,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <Button
           type="button"
           variant={section === 'providers' ? 'secondary' : 'ghost'}
-          className="justify-start"
+          className="justify-start font-normal"
           onClick={() => setSection('providers')}
         >
           <KeyRound data-icon="inline-start" />

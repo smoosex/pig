@@ -2,30 +2,30 @@ html[data-palette='pig'] {
   --fg: #1e1e24;
   --red: #a74435;
   --yellow: #a78535;
-  --green: #35a77c;
-  --blue: #3578a7;
+  --green: #217a59;
+  --blue: #2e6e9b;
   --purple: #a73581;
   --aqua: #35a79e;
   --orange: #a76a35;
-  --statusline1: #35a77c;
+  --statusline1: #217a59;
   --statusline2: #1e1e24;
   --statusline3: #a74435;
   --grey0: #c4c4ca;
   --grey1: #6d6d78;
   --grey2: #51515c;
   --bg_dim: #e1e1e5;
-  --bg0: #e9e9ec;
-  --bg1: #f3f3f4;
-  --bg2: #f8f8f9;
-  --bg3: #fbfbfb;
-  --bg4: #fdfdfd;
-  --bg5: #ffffff;
-  --bg_red: #e0d2d2;
-  --bg_yellow: #e0dbd2;
-  --bg_green: #d0e0dc;
-  --bg_blue: #d0d9e2;
-  --bg_purple: #e0d0dd;
-  --bg_visual: #dcc5d7;
+  --bg0: #ffffff;
+  --bg1: #f8f8f9;
+  --bg2: #f3f3f4;
+  --bg3: #e9e9ec;
+  --bg4: #e1e1e5;
+  --bg5: #d8d8de;
+  --bg_red: #f5e8e6;
+  --bg_yellow: #f5f0e3;
+  --bg_green: #e6f2ec;
+  --bg_blue: #e7eff5;
+  --bg_purple: #f3e7f0;
+  --bg_visual: #eadbea;
 }
 
 html.dark[data-palette='pig'] {
