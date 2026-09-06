@@ -3,6 +3,7 @@ import { FolderPlus, MessageSquarePlus, PanelLeft } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
 import { useEventBridge } from './hooks/useEventBridge'
 import { Button } from './components/ui/button'
+import { Kbd } from './components/ui/kbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
@@ -45,7 +46,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
           <PanelLeft />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>侧边栏</TooltipContent>
+      <TooltipContent>侧边栏 <Kbd className="bg-transparent!">⌘ E</Kbd></TooltipContent>
     </Tooltip>
   )
 }
@@ -63,14 +64,26 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      if (event.key !== ',' || event.isComposing || event.keyCode === 229) return
-      event.preventDefault()
-      setSettingsOpen(true)
+      if (!event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.isComposing || event.keyCode === 229) return
+      if (event.shiftKey) {
+        if (event.key.toLowerCase() === 'a') {
+          event.preventDefault()
+          if (!event.repeat) void openProject()
+        }
+        return
+      }
+      if (event.key.toLowerCase() === 'e') {
+        event.preventDefault()
+        setSidebarOpen((open) => !open)
+      } else if (event.key === ',') {
+        event.preventDefault()
+        setSettingsOpen(true)
+      }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [])
+  }, [openProject])
 
   useEffect(() => {
     void loadProjects()
@@ -92,7 +105,7 @@ export default function App() {
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
             <>
-              {sidebarOpen ? <Sidebar onOpenSettings={() => setSettingsOpen(true)} /> : null}
+              <Sidebar hidden={!sidebarOpen} onOpenSettings={() => setSettingsOpen(true)} />
               <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-card shadow-md">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">

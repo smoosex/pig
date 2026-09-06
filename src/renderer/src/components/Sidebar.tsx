@@ -4,6 +4,8 @@ import { useSessionsStore, type ProjectGroup, type SessionMeta } from '../stores
 import { api } from '../ipc/api'
 import { Avatar, AvatarFallback } from './ui/avatar'
 import { Button } from './ui/button'
+import { Kbd } from './ui/kbd'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
   DropdownMenu,
@@ -324,7 +326,7 @@ function ChatRow({
   )
 }
 
-export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function Sidebar({ onOpenSettings, hidden = false }: { onOpenSettings: () => void; hidden?: boolean }) {
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
@@ -338,8 +340,17 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
   }, [])
 
   return (
-    <aside className="flex w-62 shrink-0 flex-col pl-2">
+    <aside
+      inert={hidden}
+      aria-hidden={hidden}
+      className={cn(
+        'flex min-w-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        hidden ? 'w-0' : 'w-62'
+      )}
+    >
+      <div className="flex w-62 shrink-0 flex-col pl-2">
       <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
+        <div className="pt-1">
         <Collapsible
           open={!projectsCollapsed}
           onOpenChange={(open) => {
@@ -393,8 +404,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
             <ChatList />
           </CollapsibleContent>
         </Collapsible>
+        </div>
       </ScrollArea>
       <div className="flex shrink-0 items-center gap-0.5 px-1 pb-2">
+        <Tooltip>
+        <TooltipTrigger asChild>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -404,6 +418,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         >
           <Settings />
         </Button>
+        </TooltipTrigger>
+        <TooltipContent>设置 <Kbd className="bg-transparent!">⌘ ,</Kbd></TooltipContent>
+        </Tooltip>
+        <Tooltip>
+        <TooltipTrigger asChild>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -413,6 +432,10 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
         >
           <FolderPlus />
         </Button>
+        </TooltipTrigger>
+        <TooltipContent>添加项目 <Kbd className="bg-transparent!">⌘ ⇧ A</Kbd></TooltipContent>
+        </Tooltip>
+      </div>
       </div>
     </aside>
   )

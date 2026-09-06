@@ -384,21 +384,19 @@ function ThinkingPicker({
 }) {
   const applyControls = useSessionsStore((s) => s.applyControls)
   const [open, setOpen] = useState(false)
-  const [hovered, setHovered] = useState<string | null>(null)
 
   const select = async (level: ThinkingLevel) => {
     if (!sessionId) return
     applyControls(sessionId, await api.setThinking(sessionId, level))
     setOpen(false)
   }
+  const contentRef = useRef<HTMLDivElement>(null)
+  const navigation = useModelNavigation(thinkingLevels, open, (level) => { void select(level) })
 
   return (
     <Popover
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (!next) setHovered(null)
-      }}
+      onOpenChange={setOpen}
     >
       <PopoverTrigger asChild>
         <InputGroupButton className={toolbarBtn} disabled={disabled}>
@@ -406,7 +404,18 @@ function ThinkingPicker({
           {thinkingLabels[thinkingLevel]}
         </InputGroupButton>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-auto min-w-44 gap-0.5 rounded-2xl p-1.5">
+      <PopoverContent
+        ref={contentRef}
+        tabIndex={-1}
+        align="start"
+        side="top"
+        className="w-auto min-w-44 gap-0.5 rounded-2xl p-1.5"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          contentRef.current?.focus()
+        }}
+        onKeyDown={navigation.onKeyDown}
+      >
         <p className="px-3 py-1.5 text-xs text-muted-foreground">推理强度</p>
         {thinkingLevels.map((level, index) => {
           const selected = level === thinkingLevel
@@ -416,11 +425,11 @@ function ThinkingPicker({
               type="button"
               variant="ghost"
               className={cn(
-                'h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-transparent',
-                (selected || hovered === level) && 'bg-muted hover:bg-muted'
+                'h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-accent dark:hover:bg-accent',
+                navigation.index === index && 'bg-accent'
               )}
-              onPointerEnter={() => setHovered(level)}
-              onPointerLeave={() => setHovered(null)}
+              ref={navigation.index === index ? navigation.activeRef : undefined}
+              onPointerMove={() => navigation.hover(index)}
               onClick={() => void select(level)}
             >
               <span className="w-4 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
