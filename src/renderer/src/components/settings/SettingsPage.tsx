@@ -5,7 +5,6 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '../ui/dropdown-menu'
 import {
   api,
-  type Appearance,
   type PaletteId,
   type ProviderAuthType,
   type SendShortcut,
@@ -38,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { GooeyNav } from '../ui/gooey-nav'
 
 function SettingsRow({
   title,
@@ -225,6 +224,8 @@ function GeneralPane() {
   )
 }
 
+const APPEARANCES = ['system', 'light', 'dark'] as const
+
 function ThemePane() {
   const appearance = useSettingsStore((s) => s.appearance)
   const lightTheme = useSettingsStore((s) => s.lightTheme)
@@ -239,21 +240,17 @@ function ThemePane() {
         </p>
         <SettingsCard>
           <SettingsRow title="外观" description="跟随系统，或固定浅色 / 暗色">
-            <ToggleGroup
-              type="single"
-              variant="outline"
+            <GooeyNav
               size="sm"
-              spacing={0}
-              value={appearance}
-              onValueChange={(value) => {
-                if (!value) return
-                void setTheme({ appearance: value as Appearance })
+              aria-label="外观"
+              items={['系统', '浅色', '暗色']}
+              value={APPEARANCES.indexOf(appearance)}
+              onChange={(index) => {
+                const next = APPEARANCES[index]
+                if (!next) return
+                void setTheme({ appearance: next })
               }}
-            >
-              <ToggleGroupItem value="system">系统</ToggleGroupItem>
-              <ToggleGroupItem value="light">浅色</ToggleGroupItem>
-              <ToggleGroupItem value="dark">暗色</ToggleGroupItem>
-            </ToggleGroup>
+            />
           </SettingsRow>
         </SettingsCard>
       </div>
