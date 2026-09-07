@@ -50,8 +50,8 @@ function SectionHeader({
   className?: string
 }) {
   return (
-    <div className={cn('sticky z-10 shrink-0 bg-background px-1', className)}>
-      <div className="group/header flex h-8 items-center gap-0.5 rounded-md px-1 hover:bg-muted">
+    <div className={cn('sticky z-10 shrink-0 bg-sidebar px-1', className)}>
+      <div className="group/header flex h-8 items-center gap-0.5 rounded-md px-1 hover:bg-sidebar-accent">
         <Button
           variant="ghost"
           className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal text-muted-foreground !bg-transparent"
@@ -143,7 +143,7 @@ function ProjectList() {
             onOpenChange={(open) => setCollapsed((c) => ({ ...c, [p.cwd]: !open }))}
           >
             <div className="px-1">
-            <div className="group flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-muted">
+            <div className="group flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-sidebar-accent">
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
@@ -235,8 +235,8 @@ function SessionRow({ session, onDelete }: { session: SessionMeta; onDelete: () 
     <div className="ml-6 px-1">
     <div
       className={cn(
-        'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-muted',
-        active && 'bg-muted'
+        'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
+        active && 'bg-sidebar-accent'
       )}
     >
       <Button
@@ -298,8 +298,8 @@ function ChatRow({
     <div className="px-1">
     <div
       className={cn(
-        'group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-muted',
-        active && 'bg-muted'
+        'group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
+        active && 'bg-sidebar-accent'
       )}
     >
       <Button
@@ -344,7 +344,7 @@ export function Sidebar({ onOpenSettings, hidden = false }: { onOpenSettings: ()
       inert={hidden}
       aria-hidden={hidden}
       className={cn(
-        'flex min-w-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        'flex min-w-0 shrink-0 overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
         hidden ? 'w-0' : 'w-62'
       )}
     >

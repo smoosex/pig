@@ -34,6 +34,26 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chat-background: var(--chat-background);
+  --color-composer-background: var(--composer-background);
+  --color-user-message-background: var(--user-message-background);
+  --color-user-message-foreground: var(--user-message-foreground);
+  --color-link: var(--link);
+  --color-selection-background: var(--selection-background);
+  --color-selection-foreground: var(--selection-foreground);
+  --color-success: var(--success);
+  --color-success-background: var(--success-background);
+  --color-warning: var(--warning);
+  --color-warning-background: var(--warning-background);
+  --color-info: var(--info);
+  --color-info-background: var(--info-background);
+  --color-destructive-background: var(--destructive-background);
+  --color-code-background: var(--code-background);
+  --color-inline-code-background: var(--inline-code-background);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-border: var(--code-border);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -70,41 +90,6 @@
 }
 
 :root {
-  --background: var(--bg0);
-  --foreground: var(--fg);
-  --card: var(--bg1);
-  --card-foreground: var(--fg);
-  --popover: var(--bg2);
-  --popover-foreground: var(--fg);
-  --primary: var(--green);
-  --primary-foreground: var(--bg0);
-  --secondary: var(--bg4);
-  --secondary-foreground: var(--fg);
-  --muted: var(--bg2);
-  --muted-foreground: var(--grey2);
-  --accent: var(--bg3);
-  --accent-foreground: var(--fg);
-  --destructive: var(--red);
-  --destructive-foreground: var(--bg0);
-  --border: var(--grey0);
-  --input: var(--grey0);
-  --ring: var(--green);
-  --chart-1: var(--red);
-  --chart-2: var(--yellow);
-  --chart-3: var(--green);
-  --chart-4: var(--blue);
-  --chart-5: var(--purple);
-  --chart-6: var(--aqua);
-  --chart-7: var(--orange);
-  --dot-base: color-mix(in srgb, var(--grey1) 15%, transparent);
-  --sidebar: var(--bg0);
-  --sidebar-foreground: var(--fg);
-  --sidebar-primary: var(--green);
-  --sidebar-primary-foreground: var(--bg0);
-  --sidebar-accent: var(--bg3);
-  --sidebar-accent-foreground: var(--fg);
-  --sidebar-border: var(--grey0);
-  --sidebar-ring: var(--green);
 	--font-sans: 'Geist Variable', sans-serif;
 	--font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 	--font-mono: 'Geist Variable', monospace;
@@ -380,5 +365,10 @@ body {
 
   html {
     @apply font-sans;
+  }
+
+  ::selection {
+    background-color: var(--selection-background);
+    color: var(--selection-foreground);
   }
 }

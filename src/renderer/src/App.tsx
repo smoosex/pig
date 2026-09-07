@@ -106,7 +106,7 @@ export default function App() {
           ) : (
             <>
               <Sidebar hidden={!sidebarOpen} onOpenSettings={() => setSettingsOpen(true)} />
-              <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-card shadow-md">
+              <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
                   {activeSessionId ? <TabBar /> : <div className="flex-1" />}

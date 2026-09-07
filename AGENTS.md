@@ -48,7 +48,7 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 ## 注意事项
 
 - 能用 `components/ui` 里的 shadcn 组件就不要写原生标签：按钮、输入、选择、对话框等都走现成封装。图标用 `lucide-react`，不要手画 SVG。
-- 主题：`src/renderer/src/themes/` 里只放同名色板；`:root` 用 `var(--bg0)` 映射语义 token。切换靠 `html[data-palette]` + `.dark`，不要在 `.dark` 里写死 hex。
+- 主题：`src/renderer/src/themes/` 定义完整语义颜色；`styles.css` 只注册 Tailwind token，不绑定基础色板。切换靠 `html[data-palette]` + `.dark`，组件不要引用色板编号或写死颜色。
 - Composer：IME 组字时 Enter 不能发送。工作耗时那一行不要 hover / `aria-expanded` 高亮。
 - Tailwind 写在组件 `className` 里。能用间距刻度就不要任意值：`--spacing` 是 `0.25rem`，`Npx / 4` 即类名（`px-[18px]` → `px-4.5`）。百分比用分数（`max-w-1/2`）。只有刻度表达不了、或 keyframes / `::after` 才用 `*.module.css` 或 `[…]`。
 - 中文引号字体是 LXGW WenKai Lite，其余 Geist Variable。
@@ -59,22 +59,23 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 ### Structure
 
 - Store palettes in `src/renderer/src/themes/theme-<name>.css` using the shared variable names. Use `html[data-palette='<name>']` for light colors and `html.dark[data-palette='<name>']` for dark colors.
-- Palette files define colors only. Components consume semantic tokens, whose mappings belong in `styles.css`. Do not add theme-specific semantic overrides or temporary color-mixing patches to compensate for an incorrect palette.
-- Literal colors belong in palette selectors, not in a generic `.dark` semantic override.
+- Each light/dark palette selector defines the same complete semantic color contract. `styles.css` registers these variables as Tailwind colors; it must not impose palette-to-role mappings.
+- Components consume semantic tokens, never raw palette names such as `bg2`, `grey0`, or `green`. A theme may keep private base colors internally, but these are not a component API.
+- Literal theme colors belong in palette selectors, not in components or generic `.dark` overrides.
 
 ### Backgrounds and Grays
 
-- In light mode, `bg0` through `bg5` become progressively darker. In dark mode, they become progressively lighter. Adjacent levels should have subtle but distinguishable differences.
-- `bg_dim` is darker than `bg0` and represents a dimmed background; it is outside the main surface ladder.
-- `grey0` through `grey2` move progressively toward the foreground: darker in light mode, lighter in dark mode. Use `grey0` for borders, `grey2` for secondary text, and `fg` for body text.
-- Keep the shared semantic mapping: page background → `bg0`; card → `bg1`; popover, input, and muted → `bg2`; accent → `bg3`; secondary → `bg4`.
+- Use shadcn roles: `background`/`foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, their foreground pairs, `border`, `input`, `ring`, and `sidebar-*`.
+- Pig-specific surfaces are `chat-background`, `composer-background`, and `user-message-background`/`user-message-foreground`. Keep them independently configurable rather than coupling messages to primary buttons.
+- `input` follows shadcn usage: control borders and translucent fills. It is not the chat composer's background.
+- There is no mandatory lightness ordering between page, sidebar, card, and chat surfaces. Each theme chooses its own hierarchy; distinguish adjacent surfaces without sacrificing readability.
 - Menu hover and keyboard selection use `accent`, not `muted`, which shares the popover background color.
 
 ### Accents and Readability
 
-- Preserve `red`, `yellow`, `green`, `blue`, `purple`, `aqua`, and `orange`, plus the shared tinted backgrounds (`bg_red`, `bg_yellow`, `bg_green`, `bg_blue`, `bg_purple`), `bg_visual`, and `statusline1` through `statusline3`.
-- Tinted backgrounds should be low-saturation, subtle surfaces. `bg_visual` may be stronger to distinguish a selection, but must preserve text readability.
-- `green` maps to `primary`; `blue` maps to `chart-4`. Check normal text, including button labels, against its actual background for at least 4.5:1 contrast. Large text and necessary non-text UI indicators require at least 3:1.
+- Keep `link`, `selection-background`/`selection-foreground`, `success`, `warning`, `info`, `destructive-background`, status background pairs, and `chart-1` through `chart-7` independent of primary actions.
+- Code container colors are `code-background`, `code-foreground`, and `code-border`; syntax highlighting remains the responsibility of Shiki. `dot-base` controls decorative activity dots.
+- Status and selection backgrounds should be subtle but distinguishable. Check normal text, including button labels, against its actual background for at least 4.5:1 contrast. Large text and necessary non-text UI indicators require at least 3:1.
 - Decorative colors need not all meet text contrast requirements, but any color used for text must be checked against its actual background.
 - Validate both light and dark modes with body text, descriptions, buttons, inputs, popovers, and selection highlights. A visually pleasing swatch alone is not sufficient.
 

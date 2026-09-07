@@ -8,7 +8,7 @@ import { Separator } from './ui/separator'
 function CodeFence({ lang, code }: { lang: string; code: string }) {
   const html = useHighlightHtml(code, lang || 'plaintext')
   return (
-    <div className="my-2 max-h-80 overflow-auto rounded-lg border border-border bg-card font-mono text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="my-2 max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {html ? (
         <div
           className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"
@@ -24,7 +24,7 @@ function CodeFence({ lang, code }: { lang: string; code: string }) {
 const components: Components = {
   p: ({ children }) => <p className="mb-2 whitespace-pre-wrap last:mb-0">{children}</p>,
   a: ({ href, children }) => (
-    <a href={href} className="text-primary underline underline-offset-2" target="_blank" rel="noreferrer">
+    <a href={href} className="text-link underline underline-offset-2" target="_blank" rel="noreferrer">
       {children}
     </a>
   ),
@@ -50,7 +50,7 @@ const components: Components = {
     const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
     const text = String(children).replace(/\n$/, '')
     if (!lang && !text.includes('\n')) {
-      return <code className="rounded-sm bg-muted px-1 py-px font-mono text-xs">{children}</code>
+      return <code className="rounded-sm bg-inline-code-background px-1 py-px font-mono text-xs text-code-foreground">{children}</code>
     }
     return <CodeFence lang={lang ?? 'plaintext'} code={text} />
   }

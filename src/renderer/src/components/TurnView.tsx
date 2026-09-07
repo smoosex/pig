@@ -96,7 +96,7 @@ function UserBubble({ message }: { message: UserMessage }) {
           </div>
         ) : null}
         {text ? (
-          <Bubble align="end" className="max-w-full">
+          <Bubble align="end" className="max-w-full *:data-[slot=bubble-content]:bg-user-message-background *:data-[slot=bubble-content]:text-user-message-foreground">
             <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
           </Bubble>
         ) : null}
@@ -289,7 +289,7 @@ function hunkRows(oldText: string, newText: string): { type: 'ctx' | 'del' | 'ad
 
 function EditDiff({ edits }: { edits: { oldText: string; newText: string }[] }) {
   return (
-    <div className="max-h-80 overflow-auto rounded-lg border border-border bg-card font-mono text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {edits.map((edit, i) => (
         <div key={i}>
           <div className="px-3 py-1.5 text-muted-foreground">{`// — edit ${i + 1} —`}</div>
@@ -299,7 +299,7 @@ function EditDiff({ edits }: { edits: { oldText: string; newText: string }[] }) 
               className={cn(
                 'min-h-5 whitespace-pre px-3',
                 row.type === 'del' && 'bg-destructive/15 text-destructive',
-                row.type === 'add' && 'bg-primary/15 text-primary',
+                row.type === 'add' && 'bg-success/15 text-success',
                 row.type === 'ctx' && 'text-muted-foreground'
               )}
             >
@@ -325,7 +325,7 @@ function splitReadOutput(text: string): { code: string; notice?: string } {
 function CodePanel({ path, code, notice }: { path: string; code: string; notice?: string }) {
   const html = useHighlightHtml(code, langFromPath(path))
   return (
-    <div className="max-h-80 overflow-auto rounded-lg border border-border bg-card font-mono text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {html ? (
         <div
           className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"
