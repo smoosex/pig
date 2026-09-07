@@ -87,7 +87,7 @@
   --destructive: var(--red);
   --destructive-foreground: var(--bg0);
   --border: var(--grey0);
-  --input: var(--bg2);
+  --input: var(--grey0);
   --ring: var(--green);
   --chart-1: var(--red);
   --chart-2: var(--yellow);

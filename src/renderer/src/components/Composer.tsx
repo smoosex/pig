@@ -651,7 +651,7 @@ export function Composer() {
       <div ref={composerBoxRef} className="rounded-2xl shadow-md">
       <InputGroup
         data-streaming={isStreaming || undefined}
-        className="composer-focus min-h-32 rounded-2xl bg-input has-disabled:bg-input has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-input dark:has-disabled:bg-input"
+        className="composer-focus min-h-32 rounded-2xl bg-[var(--bg2)] has-disabled:bg-[var(--bg2)] has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-[var(--bg2)] dark:has-disabled:bg-[var(--bg2)]"
       >
         <InputGroupTextarea
           className="min-h-16 px-3.5 pt-3 text-sm leading-snug"
