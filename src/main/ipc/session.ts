@@ -98,16 +98,8 @@ export function registerSessionIpc(): void {
     await closeSession(sessionId)
   })
 
-  ipcMain.handle('session:delete-project', async (event, cwd: string) => {
+  ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
     const project = await requireOpenedProject(cwd)
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
-    const result = await dialog.showMessageBox(win, {
-      type: 'warning', message: '删除项目的全部会话？',
-      detail: `${project}\n将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree 和 Git 分支会保留。`,
-      buttons: ['删除会话并移除', '取消'], defaultId: 1, cancelId: 1
-    })
-    if (result.response !== 0) return false
     await worktrees.exclusive(project, async () => {
       const cwds = new Set([project, ...(await worktrees.discover(project)).map((w) => w.cwd)])
       await worktrees.withBlockedCwds([...cwds], async () => {

@@ -205,8 +205,8 @@ function WorktreeDeleteButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>删除「{branch}」？</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-sm">删除分支</DialogTitle>
+            <DialogDescription className="text-xs">
               将停止该目录的会话，删除工作目录、对应 Git 分支和 Pi 会话文件，无法撤销。
             </DialogDescription>
           </DialogHeader>
@@ -243,8 +243,8 @@ function WorktreeDeleteButton({
       <Dialog open={forceOpen} onOpenChange={setForceOpen}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>再次确认永久删除</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-sm">删除分支</DialogTitle>
+            <DialogDescription className="text-xs">
               {warnings.join('')}这些内容和对应会话将被永久删除。
             </DialogDescription>
           </DialogHeader>
@@ -290,8 +290,8 @@ function DeleteConfirmButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
+            <DialogTitle className="text-sm">{title}</DialogTitle>
+            <DialogDescription className="text-xs">{description}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -357,6 +357,7 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
   const unpinProject = useSessionsStore((s) => s.unpinProject)
   const [open, setOpen] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState<Record<string, boolean>>({})
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const { pending, error, runAction } = useProjectAction()
   const worktrees: WorktreeGroup[] = project.worktrees ?? [{
     cwd: project.cwd,
@@ -420,7 +421,7 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
                 <DropdownMenuItem
                   variant="destructive"
                   disabled={pending !== null}
-                  onSelect={() => void runAction('delete-project', () => deleteProject(project.cwd))}
+                  onSelect={() => setDeleteOpen(true)}
                 >
                   <Trash2 data-icon="inline-start" />
                   删除项目
@@ -445,8 +446,31 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
         {project.gitError && <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">{project.gitError}</p>}
         {error && <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">{error}</p>}
       </div>
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="text-sm">删除项目</DialogTitle>
+            <DialogDescription className="text-xs">
+              将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree 和 Git 分支会保留。会话删除后无法恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>取消</Button>
+            <Button
+              variant="destructive"
+              disabled={pending !== null}
+              onClick={() => {
+                setDeleteOpen(false)
+                void runAction('delete-project', () => deleteProject(project.cwd))
+              }}
+            >
+              删除会话并移除
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 pb-1">
+        <div className="flex flex-col gap-0.5 pt-0.5 pb-1">
           {worktrees.map((worktree) => (
             <WorktreeRow
               key={worktree.cwd}
@@ -551,7 +575,7 @@ function WorktreeRow({
         </div>
       </div>
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 pb-1">
+        <div className="flex flex-col gap-0.5 pt-0.5 pb-1">
           {worktree.sessions.map((session) => (
             <SessionRow
               key={session.id}
