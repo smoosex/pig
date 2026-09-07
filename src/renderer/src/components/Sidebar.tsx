@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from './ui/avatar'
 import { Button } from './ui/button'
 import { Kbd } from './ui/kbd'
 import { DeleteButton } from './ui/delete-button'
+import { HookSidebar } from './ui/hook-sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -541,19 +542,50 @@ function WorktreeRow({
         </div>
       </div>
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 pt-0.5 pb-1">
-          {worktree.sessions.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              pending={pending !== null}
-              onOpen={() => void runAction(`open:${session.id}`, () => openExisting(session))}
-              onDelete={() => void runAction(`delete-session:${session.id}`, () => deleteSession(session))}
-            />
-          ))}
-        </div>
+        <SessionList
+          sessions={worktree.sessions}
+          pending={pending !== null}
+          onOpen={(session) => void runAction(`open:${session.id}`, () => openExisting(session))}
+          onDelete={(session) => void runAction(`delete-session:${session.id}`, () => deleteSession(session))}
+        />
       </CollapsibleContent>
     </Collapsible>
+  )
+}
+
+function SessionList({
+  sessions,
+  pending,
+  onOpen,
+  onDelete
+}: {
+  sessions: SessionMeta[]
+  pending: boolean
+  onOpen: (session: SessionMeta) => void
+  onDelete: (session: SessionMeta) => void
+}) {
+  const activeIndex = useSessionsStore((s) => sessions.findIndex((session) => session.id === s.activeSessionId))
+
+  return (
+    <HookSidebar
+      items={sessions.map((session) => session.name || session.firstMessage || '空会话')}
+      value={activeIndex}
+      color="var(--primary)"
+      railLeft="1.5rem"
+      className="pt-0.5 pb-1"
+      renderItem={(_, index) => {
+        const session = sessions[index]
+        if (!session) return null
+        return (
+          <SessionRow
+            session={session}
+            pending={pending}
+            onOpen={() => onOpen(session)}
+            onDelete={() => onDelete(session)}
+          />
+        )
+      }}
+    />
   )
 }
 
@@ -567,7 +599,7 @@ function SessionRow({ session, pending, onOpen, onDelete }: {
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   const label = session.name || session.firstMessage || '空会话'
   return (
-    <div className="ml-6 px-1">
+    <div className="pl-9 pr-1">
     <div
       className={cn(
         'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
