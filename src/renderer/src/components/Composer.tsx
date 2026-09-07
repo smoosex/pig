@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { BorderBeam } from 'border-beam'
 import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
 import {
   api,
@@ -497,11 +498,13 @@ export function Composer() {
   const [slashIndex, setSlashIndex] = useState(0)
   const selectedSlashRef = useRef<HTMLButtonElement>(null)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  const [focused, setFocused] = useState(false)
   const composing = useRef(false)
   const commandsFor = useRef<string | null>(null)
   const composerBoxRef = useRef<HTMLDivElement>(null)
   const [slashWidth, setSlashWidth] = useState(0)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
+  const appearance = useSettingsStore((s) => s.appearance)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const isStreaming = useSessionsStore((s) =>
@@ -649,9 +652,21 @@ export function Composer() {
       >
       <PopoverAnchor asChild>
       <div ref={composerBoxRef} className="rounded-2xl shadow-md">
+      <BorderBeam
+        size="md"
+        colorVariant="colorful"
+        theme={appearance === 'system' ? 'auto' : appearance}
+        active={focused || isStreaming}
+        className="w-full"
+      >
       <InputGroup
-        data-streaming={isStreaming || undefined}
-        className="composer-focus min-h-32 rounded-2xl bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
+        className="min-h-32 overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
+        onFocus={() => setFocused(true)}
+        onBlur={(event) => {
+          const next = event.relatedTarget
+          if (next instanceof Node && event.currentTarget.contains(next)) return
+          setFocused(false)
+        }}
       >
         <InputGroupTextarea
           className="min-h-16 px-3.5 pt-3 text-sm leading-snug"
@@ -790,6 +805,7 @@ export function Composer() {
           </div>
         </InputGroupAddon>
       </InputGroup>
+      </BorderBeam>
       </div>
       </PopoverAnchor>
       <PopoverContent
