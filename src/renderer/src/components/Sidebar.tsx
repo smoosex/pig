@@ -5,6 +5,7 @@ import { api } from '../ipc/api'
 import { Avatar, AvatarFallback } from './ui/avatar'
 import { Button } from './ui/button'
 import { Kbd } from './ui/kbd'
+import { DeleteButton } from './ui/delete-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
@@ -260,8 +261,6 @@ function WorktreeDeleteButton({
 
 function DeleteConfirmButton({
   ariaLabel,
-  title,
-  description,
   onConfirm,
   disabled = false
 }: {
@@ -271,46 +270,13 @@ function DeleteConfirmButton({
   onConfirm: () => void
   disabled?: boolean
 }) {
-  const [open, setOpen] = useState(false)
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className="pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-hover/chat:pointer-events-auto group-hover/chat:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:text-destructive !bg-transparent"
-        aria-label={ariaLabel}
-        disabled={disabled}
-        onClick={(event) => {
-          event.stopPropagation()
-          setOpen(true)
-        }}
-      >
-        <Trash2 />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="text-sm">{title}</DialogTitle>
-            <DialogDescription className="text-xs">{description}</DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={disabled}
-              onClick={() => {
-                setOpen(false)
-                onConfirm()
-              }}
-            >
-              删除
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+    <DeleteButton
+      label={ariaLabel}
+      disabled={disabled}
+      onConfirm={onConfirm}
+      className="shrink-0 opacity-0 transition-opacity group-hover/session:opacity-100 group-hover/chat:opacity-100 focus-within:opacity-100 data-[state=open]:opacity-100"
+    />
   )
 }
 
