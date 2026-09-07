@@ -9,10 +9,39 @@ export interface SessionMeta {
   firstMessage: string
 }
 
+export interface WorktreeGroup {
+  cwd: string
+  branch: string
+  head?: string
+  isPrimary: boolean
+  locked: boolean
+  missing: boolean
+  managed: boolean
+  naming?: 'pending' | 'naming' | 'failed'
+  namingError?: string
+  sessions: SessionMeta[]
+}
+
+export interface WorktreeCreateInfo {
+  hasGit: boolean
+  hasHead: boolean
+}
+
+export interface WorktreeDeletionInfo {
+  cwd: string
+  branch: string
+  dirty: boolean
+  unmerged: boolean
+  missing: boolean
+}
+
 export interface ProjectGroup {
   cwd: string
   name: string
   sessions: SessionMeta[]
+  worktrees?: WorktreeGroup[]
+  hasGit?: boolean
+  gitError?: string
 }
 
 export interface SidebarPrefs {
@@ -181,7 +210,12 @@ export interface SessionApi {
   deleteChat: (cwd: string) => Promise<void>
   openSession: (path: string) => Promise<SessionRef>
   closeSession: (sessionId: string) => Promise<void>
-  deleteProject: (cwd: string) => Promise<void>
+  deleteProject: (cwd: string) => Promise<boolean>
+  createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>
+  worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
+  worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
+  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
+  onProjectsChanged: (listener: (projectCwd: string) => void) => () => void
   deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
   prompt: (
     sessionId: string,

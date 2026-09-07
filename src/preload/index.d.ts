@@ -9,10 +9,26 @@ interface SessionMeta {
   firstMessage: string
 }
 
+interface WorktreeGroup {
+  cwd: string
+  branch: string
+  head?: string
+  isPrimary: boolean
+  locked: boolean
+  missing: boolean
+  managed: boolean
+  naming?: 'pending' | 'naming' | 'failed'
+  namingError?: string
+  sessions: SessionMeta[]
+}
+
 interface ProjectGroup {
   cwd: string
   name: string
   sessions: SessionMeta[]
+  worktrees?: WorktreeGroup[]
+  hasGit?: boolean
+  gitError?: string
 }
 
 interface SidebarPrefs {
@@ -113,7 +129,18 @@ declare global {
       openSession: (path: string) => Promise<{ sessionId: string; cwd: string }>
       prepareSession: (sessionId: string) => Promise<{ sessionId: string; cwd: string; created: boolean }>
       closeSession: (sessionId: string) => Promise<void>
-      deleteProject: (cwd: string) => Promise<void>
+      deleteProject: (cwd: string) => Promise<boolean>
+      worktreeCreateInfo: (projectCwd: string) => Promise<{ hasGit: boolean; hasHead: boolean }>
+      createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>
+      worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<{
+        cwd: string
+        branch: string
+        dirty: boolean
+        unmerged: boolean
+        missing: boolean
+      }>
+      deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
+      onProjectsChanged: (listener: (projectCwd: string) => void) => () => void
       deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
       prompt: (sessionId: string, text: string, images?: { mimeType: string; data: string }[]) => Promise<void>
       abort: (sessionId: string) => Promise<void>

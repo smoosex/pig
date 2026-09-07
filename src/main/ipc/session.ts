@@ -5,6 +5,7 @@ import {
   createPendingSession,
   exportSession,
   getLive,
+  getDefaultSessionSettings,
   getSessionControls,
   getSessionTree,
   listSessionCommands,
@@ -17,8 +18,12 @@ import {
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
-import { listOpenedProjects, listProject, removeProjectDir, removeSessionFile } from '../pi/session-loader'
-import { addOpenedProject, listOpenedCwds, removeOpenedProject } from '../opened-projects'
+import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
+import { addOpenedProject, removeOpenedProject } from '../opened-projects'
+import { canonicalProject } from '../worktrees'
+import { loadOpenedWorktreeProjects, loadProjectForCwd, loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
+import { runBranchNamer } from '../pi/branch-namer'
+import { registerWorktreeIpc } from './worktrees'
 import {
   createChatDir,
   isChatCwd,
@@ -28,8 +33,9 @@ import {
 } from '../chats'
 
 export function registerSessionIpc(): void {
-  ipcMain.handle('session:list-projects', async () => listOpenedProjects(await listOpenedCwds()))
-  ipcMain.handle('session:list-project', async (_event, cwd: string) => listProject(cwd))
+  registerWorktreeIpc()
+  ipcMain.handle('session:list-projects', async () => loadOpenedWorktreeProjects())
+  ipcMain.handle('session:list-project', async (_event, cwd: string) => loadProjectForCwd(cwd))
 
   ipcMain.handle('session:open-project', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -38,8 +44,8 @@ export function registerSessionIpc(): void {
     if (result.canceled || result.filePaths.length === 0) return null
     const picked = result.filePaths[0]
     if (isChatCwd(picked) || isChatsRoot(picked)) return null
-    const cwd = await addOpenedProject(picked)
-    return listProject(cwd)
+    const cwd = await addOpenedProject(await canonicalProject(picked))
+    return loadWorktreeProject(cwd)
   })
 
   ipcMain.handle('session:list-chats', async () => listChats())
@@ -92,11 +98,27 @@ export function registerSessionIpc(): void {
     await closeSession(sessionId)
   })
 
-  ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
-    if (!cwd) throw new Error('Project cwd is required')
-    await closeSessionsForCwd(cwd)
-    await removeProjectDir(cwd)
-    await removeOpenedProject(cwd)
+  ipcMain.handle('session:delete-project', async (event, cwd: string) => {
+    const project = await requireOpenedProject(cwd)
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window attached to sender')
+    const result = await dialog.showMessageBox(win, {
+      type: 'warning', message: '删除项目的全部会话？',
+      detail: `${project}\n将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree 和 Git 分支会保留。`,
+      buttons: ['删除会话并移除', '取消'], defaultId: 1, cancelId: 1
+    })
+    if (result.response !== 0) return false
+    await worktrees.exclusive(project, async () => {
+      const cwds = new Set([project, ...(await worktrees.discover(project)).map((w) => w.cwd)])
+      await worktrees.withBlockedCwds([...cwds], async () => {
+        for (const path of cwds) {
+          await closeSessionsForCwd(path)
+          await removeProjectDir(path)
+        }
+        await removeOpenedProject(project)
+      })
+    })
+    return true
   })
 
   ipcMain.handle(
@@ -130,7 +152,19 @@ export function registerSessionIpc(): void {
           mimeType: image.mimeType,
           data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
         }))
-      await ls.agentSession.prompt(text, attachments.length > 0 ? { images: attachments } : undefined)
+      worktrees.assertAvailable(ls.cwd)
+      const unsubscribe = ls.agentSession.subscribe((event) => {
+        if (event.type !== 'message_start' || event.message.role !== 'user') return
+        void worktrees.nameOnFirstPrompt(ls.cwd, text.trim() || '用户仅发送了图片，未附文字。', async (task, signal) => {
+          const settings = await getDefaultSessionSettings()
+          return runBranchNamer(task, settings.model, signal)
+        }).catch((error) => console.error('Worktree naming failed:', error))
+      })
+      try {
+        await ls.agentSession.prompt(text, attachments.length > 0 ? { images: attachments } : undefined)
+      } finally {
+        unsubscribe()
+      }
     }
   )
 

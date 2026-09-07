@@ -1,4 +1,4 @@
-import { open, readdir, rm, stat } from 'node:fs/promises'
+import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 
@@ -303,5 +303,15 @@ export async function removeProjectDir(cwd: string): Promise<void> {
   const dir = resolve(sessionDirForCwd(cwd))
   const root = resolve(sessionsRoot()) + sep
   if (!dir.startsWith(root)) throw new Error(`Invalid project dir: ${dir}`)
-  await rm(dir, { recursive: true, force: true })
+  const target = resolve(cwd)
+  const sessions = await scanFiles(await listJsonlFiles(dir))
+  await Promise.all(sessions
+    .filter((session) => session.cwd && resolve(session.cwd) === target)
+    .map((session) => removeSessionFile(session.path)))
+  try {
+    await rmdir(dir)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT' && code !== 'ENOTEMPTY') throw error
+  }
 }

@@ -1,7 +1,8 @@
+import { statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { BrowserWindow } from 'electron'
-import { resolve } from 'node:path'
+import { normalizeWorktreePath as resolve } from '../worktrees'
 import {
   createAgentSession,
   ModelRuntime,
@@ -10,6 +11,7 @@ import {
   type AgentSession
 } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
+import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader } from './chat-resources'
 import { bridgeEvents } from './event-bridge'
 
@@ -114,6 +116,8 @@ export interface PendingSession {
 const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
 const preparing = new Map<string, Promise<LiveSession>>()
+const buildingCwds = new Map<string, string>()
+const openingPaths = new Map<string, Promise<LiveSession>>()
 
 let modelRuntime: ModelRuntime | undefined
 let modelRuntimePromise: Promise<ModelRuntime> | undefined
@@ -135,6 +139,7 @@ async function build(
   cwd: string,
   win: BrowserWindow
 ): Promise<LiveSession> {
+  worktrees.assertAvailable(cwd)
   const resourceLoader = isChatCwd(cwd) ? await createChatResourceLoader(cwd) : undefined
   const result = await createAgentSession({
     cwd,
@@ -143,7 +148,18 @@ async function build(
     ...(resourceLoader ? { resourceLoader } : {})
   })
   const session = result.session
-  await session.bindExtensions({ mode: 'rpc' })
+  try {
+    worktrees.assertAvailable(cwd)
+    await session.bindExtensions({ mode: 'rpc' })
+    worktrees.assertAvailable(cwd)
+  } catch (error) {
+    try {
+      await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
+    } finally {
+      session.dispose()
+    }
+    throw error
+  }
   const unsubscribe = bridgeEvents(session, session.sessionId, win)
   const ls: LiveSession = { sessionId: session.sessionId, cwd, agentSession: session, unsubscribe }
   live.set(session.sessionId, ls)
@@ -151,6 +167,8 @@ async function build(
 }
 
 export function createPendingSession(cwd: string, win: BrowserWindow): PendingSession {
+  worktrees.assertAvailable(cwd)
+  if (!statSync(cwd).isDirectory()) throw new Error('会话工作目录不存在')
   const sessionManager = SessionManager.create(cwd)
   const sessionId = sessionManager.getSessionId()
   const session = { sessionId, cwd, sessionManager, win }
@@ -159,6 +177,7 @@ export function createPendingSession(cwd: string, win: BrowserWindow): PendingSe
 }
 
 async function materialize(session: PendingSession): Promise<LiveSession> {
+  worktrees.assertAvailable(session.cwd)
   const sessionFile = session.sessionManager.getSessionFile()
   const header = session.sessionManager.getHeader()
   if (!sessionFile || !header) throw new Error('Pending session has no session file or header')
@@ -172,6 +191,11 @@ async function materialize(session: PendingSession): Promise<LiveSession> {
     pending.delete(session.sessionId)
     return liveSession
   } catch (error) {
+    const created = live.get(session.sessionId)
+    if (created) {
+      live.delete(session.sessionId)
+      await disposeLiveSession(created)
+    }
     await rm(sessionFile, { force: true })
     throw error
   }
@@ -442,7 +466,10 @@ export async function refreshSessionModels(sessionId: string): Promise<SessionCo
 
 export function prepareSession(sessionId: string): Promise<LiveSession> {
   const existing = live.get(sessionId)
-  if (existing) return Promise.resolve(existing)
+  if (existing) {
+    worktrees.assertAvailable(existing.cwd)
+    return Promise.resolve(existing)
+  }
 
   const running = preparing.get(sessionId)
   if (running) return running
@@ -452,18 +479,38 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
 
   const promise = materialize(session).finally(() => {
     preparing.delete(sessionId)
+    buildingCwds.delete(sessionId)
   })
   preparing.set(sessionId, promise)
+  buildingCwds.set(sessionId, session.cwd)
   return promise
 }
 
 export async function openSession(path: string, win: BrowserWindow): Promise<LiveSession> {
+  const target = resolve(path)
   for (const ls of live.values()) {
-    if (ls.agentSession.sessionFile === path) return ls
+    if (ls.agentSession.sessionFile && resolve(ls.agentSession.sessionFile) === target) {
+      worktrees.assertAvailable(ls.cwd)
+      return ls
+    }
   }
-  const sm = SessionManager.open(path)
+  const opening = openingPaths.get(target)
+  if (opening) return opening
+  const sm = SessionManager.open(target)
   const cwd = sm.getCwd() || process.cwd()
-  return build(sm, cwd, win)
+  worktrees.assertAvailable(cwd)
+  const sessionId = sm.getSessionId()
+  const existing = preparing.get(sessionId)
+  if (existing) return existing
+  const promise = build(sm, cwd, win).finally(() => {
+    preparing.delete(sessionId)
+    buildingCwds.delete(sessionId)
+    openingPaths.delete(target)
+  })
+  preparing.set(sessionId, promise)
+  buildingCwds.set(sessionId, cwd)
+  openingPaths.set(target, promise)
+  return promise
 }
 
 export function getLive(sessionId: string): LiveSession | undefined {
@@ -910,17 +957,12 @@ export async function closeSession(sessionId: string): Promise<void> {
   if (preparation) {
     pending.delete(sessionId)
     try {
-      const prepared = await preparation
-      if (live.get(sessionId) === prepared) {
-        live.delete(sessionId)
-        await disposeLiveSession(prepared)
-      }
+      await preparation
     } catch {
     }
-    return
   }
 
-  if (pending.delete(sessionId)) return
+  pending.delete(sessionId)
   const ls = live.get(sessionId)
   if (!ls) return
   live.delete(sessionId)
@@ -935,7 +977,10 @@ export async function closeSessionsForCwd(cwd: string): Promise<void> {
       .map((session) => session.sessionId),
     ...[...live.values()]
       .filter((session) => resolve(session.cwd) === target)
-      .map((session) => session.sessionId)
+      .map((session) => session.sessionId),
+    ...[...buildingCwds.entries()]
+      .filter(([, buildingCwd]) => resolve(buildingCwd) === target)
+      .map(([sessionId]) => sessionId)
   ])
   await Promise.all([...sessionIds].map((sessionId) => closeSession(sessionId)))
 }
@@ -944,6 +989,8 @@ export async function disposeAll(): Promise<void> {
   const preparations = [...preparing.values()]
   pending.clear()
   preparing.clear()
+  buildingCwds.clear()
+  openingPaths.clear()
   const sessions = [...live.values()]
   live.clear()
   const disposed = new Set(sessions)

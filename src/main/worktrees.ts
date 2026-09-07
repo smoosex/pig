@@ -1,0 +1,367 @@
+import { execFile } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, resolve as resolvePath } from 'node:path'
+import { promisify } from 'node:util'
+
+const exec = promisify(execFile)
+
+function resolve(path: string): string {
+  const absolute = resolvePath(path)
+  try {
+    return realpathSync.native(absolute)
+  } catch {
+    const parent = dirname(absolute)
+    return parent === absolute ? absolute : join(resolve(parent), basename(absolute))
+  }
+}
+
+export { resolve as normalizeWorktreePath }
+
+export interface GitWorktree {
+  cwd: string
+  branch: string
+  head?: string
+  detached?: boolean
+  isPrimary: boolean
+  locked: boolean
+  missing: boolean
+  managed: boolean
+  naming?: 'pending' | 'naming' | 'failed'
+  namingError?: string
+}
+
+interface WorktreeRecord {
+  projectCwd: string
+  cwd: string
+  initialBranch: string
+  branch: string
+  head?: string
+  detached?: boolean
+  naming?: 'pending' | 'naming' | 'failed'
+  namingError?: string
+  deleting?: boolean
+}
+
+export async function git(cwd: string, args: string[]): Promise<string> {
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('GIT_') && key !== 'GIT_TERMINAL_PROMPT') delete env[key]
+  }
+  try {
+    const { stdout } = await exec('git', ['-C', cwd, ...args], {
+      env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024
+    })
+    return stdout
+  } catch (error) {
+    const cause = error as Error & { stderr?: string; code?: string | number }
+    if (cause.code === 'ENOENT') throw new Error('未找到 Git，请先安装 Git')
+    throw new Error(cause.stderr?.trim() || cause.message)
+  }
+}
+
+export function parseWorktrees(output: string): GitWorktree[] {
+  const result: GitWorktree[] = []
+  let current: GitWorktree | undefined
+  for (const field of output.split('\0')) {
+    if (field.startsWith('worktree ')) {
+      current = {
+        cwd: resolve(field.slice(9)), branch: '', isPrimary: result.length === 0,
+        locked: false, missing: false, managed: false
+      }
+      result.push(current)
+    } else if (current) {
+      if (field.startsWith('branch refs/heads/')) current.branch = field.slice(18)
+      if (field.startsWith('HEAD ')) {
+        current.head = field.slice(5)
+        if (!current.branch) current.branch = `detached/${field.slice(5, 13)}`
+      }
+      if (field === 'detached') current.detached = true
+      if (field === 'locked' || field.startsWith('locked ')) current.locked = true
+      if (field === 'prunable' || field.startsWith('prunable ')) current.missing = true
+      if (field === 'bare') throw new Error('不支持裸 Git 仓库，请选择工作目录')
+    }
+  }
+  return result
+}
+
+export async function repositoryWorktrees(cwd: string): Promise<GitWorktree[]> {
+  const result = parseWorktrees(await git(cwd, ['worktree', 'list', '--porcelain', '-z']))
+  for (const item of result) {
+    item.cwd = await realpath(item.cwd).catch(() => item.cwd)
+    item.missing ||= !(await stat(item.cwd).then((s) => s.isDirectory()).catch(() => false))
+  }
+  return result
+}
+
+export async function isGitProject(cwd: string): Promise<boolean> {
+  try {
+    await git(cwd, ['rev-parse', '--git-dir'])
+    return true
+  } catch (error) {
+    if (String(error).includes('not a git repository')) return false
+    throw error
+  }
+}
+
+export async function canonicalProject(cwd: string): Promise<string> {
+  const path = await realpath(resolve(cwd))
+  if (!(await isGitProject(path))) return path
+  const worktrees = await repositoryWorktrees(path)
+  if (!worktrees[0]) throw new Error('无法识别项目工作目录')
+  return worktrees[0].cwd
+}
+
+export function validateBranchName(value: string): string {
+  const name = value.trim()
+  if (name.length > 80 || !/^(feat|fix|chore|docs|refactor|test|ci|perf|style|build)\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    throw new Error('命名模型未返回有效的 conventional 分支名')
+  }
+  return name
+}
+
+export class WorktreeService {
+  private locks = new Map<string, Promise<unknown>>()
+  private stateLock: Promise<unknown> = Promise.resolve()
+  private namingJobs = new Map<string, { controller: AbortController; done: Promise<void> }>()
+  private blocked = new Set<string>()
+  private stopped = false
+
+  constructor(
+    readonly root: string,
+    private readonly onChange: (projectCwd: string) => void = () => {}
+  ) {
+    this.root = resolve(root)
+  }
+
+  private async records(): Promise<WorktreeRecord[]> {
+    try {
+      const data = JSON.parse(await readFile(join(this.root, '.state.json'), 'utf8'))
+      if (data.version !== 1 || !Array.isArray(data.worktrees)) throw new Error('Invalid worktree state')
+      return data.worktrees
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+  }
+
+  private storageParent(project: string, records: WorktreeRecord[], name: string): string {
+    const existing = records.find((record) => record.projectCwd === project)
+    if (existing) return dirname(existing.cwd)
+    const preferred = join(this.root, name)
+    if (records.some((record) => record.projectCwd !== project && dirname(record.cwd) === preferred)) {
+      const hash = createHash('sha256').update(project).digest('hex').slice(0, 8)
+      return join(this.root, `${name}-${hash}`)
+    }
+    return preferred
+  }
+
+  private update(fn: (records: WorktreeRecord[]) => WorktreeRecord[]): Promise<void> {
+    const task = this.stateLock.then(async () => {
+      const records = fn(await this.records())
+      await mkdir(this.root, { recursive: true })
+      const target = join(this.root, '.state.json')
+      const temp = `${target}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temp, `${JSON.stringify({ version: 1, worktrees: records }, null, 2)}\n`, { mode: 0o600 })
+        await rename(temp, target)
+      } finally {
+        await rm(temp, { force: true })
+      }
+    })
+    this.stateLock = task.catch(() => {})
+    return task
+  }
+
+  exclusive<T>(projectCwd: string, fn: () => Promise<T>): Promise<T> {
+    const key = resolve(projectCwd)
+    const task = (this.locks.get(key) ?? Promise.resolve()).catch(() => {}).then(fn)
+    this.locks.set(key, task)
+    void task.finally(() => {
+      if (this.locks.get(key) === task) this.locks.delete(key)
+    }).catch(() => {})
+    return task
+  }
+
+  assertAvailable(cwd: string): void {
+    if (this.stopped || this.blocked.has(resolve(cwd))) throw new Error('Worktree 正在删除或应用正在退出')
+  }
+
+  async withBlockedCwds<T>(cwds: string[], fn: () => Promise<T>): Promise<T> {
+    const paths = cwds.map((cwd) => resolve(cwd))
+    for (const path of paths) this.assertAvailable(path)
+    for (const path of paths) {
+      this.blocked.add(path)
+      this.namingJobs.get(path)?.controller.abort()
+    }
+    try {
+      return await fn()
+    } finally {
+      for (const path of paths) this.blocked.delete(path)
+    }
+  }
+
+  async discover(projectCwd: string): Promise<GitWorktree[]> {
+    const cwd = resolve(projectCwd)
+    if (!(await isGitProject(cwd))) {
+      return [{ cwd, branch: basename(cwd), isPrimary: true, locked: false, missing: false, managed: false }]
+    }
+    const items = await repositoryWorktrees(cwd)
+    const records = (await this.records()).filter((r) => r.projectCwd === cwd)
+    for (const record of records) {
+      let item = items.find((w) => w.cwd === record.cwd)
+      if (!item && record.deleting) {
+        item = { cwd: record.cwd, branch: record.branch, head: record.head, detached: record.detached, isPrimary: false, locked: false, missing: true, managed: true }
+        items.push(item)
+      }
+      if (!item) continue
+      item.managed = true
+      if (record.deleting) {
+        item.namingError = '删除未完成，重试删除以清理分支和会话'
+      } else if (item.branch === record.initialBranch) {
+        item.naming = record.naming === 'naming' ? (this.namingJobs.has(item.cwd) ? 'naming' : 'failed') : record.naming
+        item.namingError = record.namingError || (record.naming === 'naming' && !this.namingJobs.has(item.cwd) ? '命名被中断，保留 UUID 分支' : undefined)
+      }
+    }
+    return items
+  }
+
+  async create(projectCwd: string): Promise<GitWorktree> {
+    return this.exclusive(projectCwd, async () => {
+      this.assertAvailable(projectCwd)
+      const project = await canonicalProject(projectCwd)
+      if (project !== resolve(projectCwd)) throw new Error('只能从原项目目录创建 Worktree')
+      if (!(await isGitProject(project))) throw new Error('请先初始化 Git')
+      const id = randomUUID()
+      const name = basename(project).replace(/[^\p{L}\p{N}._-]/gu, '-').replace(/^\.+/, '') || 'project'
+      const hasHead = await git(project, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
+      let cwd = ''
+      await this.update((records) => {
+        cwd = join(this.storageParent(project, records, name), id)
+        return [...records, { projectCwd: project, cwd, initialBranch: id, branch: id, naming: 'pending' }]
+      })
+      try {
+        await mkdir(dirname(cwd), { recursive: true })
+        const args = hasHead
+          ? ['worktree', 'add', '-b', id, cwd, 'HEAD']
+          : ['worktree', 'add', '--orphan', '-b', id, cwd]
+        await git(project, args)
+      } catch (error) {
+        await this.update((records) => records.filter((record) => record.cwd !== cwd))
+        await git(project, ['worktree', 'remove', '--force', cwd]).catch(() => {})
+        await rm(cwd, { recursive: true, force: true }).catch(() => {})
+        if (hasHead) await git(project, ['branch', '-D', id]).catch(() => {})
+        throw error
+      }
+      this.onChange(project)
+      return { cwd, branch: id, isPrimary: false, locked: false, missing: false, managed: true, naming: 'pending' }
+    })
+  }
+
+  async deletionInfo(projectCwd: string, cwd: string): Promise<{ worktree: GitWorktree; dirty: boolean; unmerged: boolean }> {
+    const items = await this.discover(projectCwd)
+    const worktree = items.find((item) => item.cwd === resolve(cwd))
+    if (!worktree || worktree.isPrimary || worktree.cwd === resolve(projectCwd)) throw new Error('不能删除原项目或未注册的 Worktree')
+    if (worktree.locked) throw new Error('Worktree 已锁定，请先在 Git 中解锁')
+    if (!worktree.detached && items.some((w) => w.cwd !== worktree.cwd && !w.detached && w.branch === worktree.branch)) throw new Error('该分支仍被其他 Worktree 使用，不能删除')
+    const dirty = !worktree.missing && (await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0
+    const ref = `refs/heads/${worktree.branch}`
+    const hasBranch = !worktree.detached && await git(projectCwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true).catch(() => false)
+    const head = worktree.head && !/^0+$/.test(worktree.head) ? worktree.head : hasBranch ? ref : undefined
+    const unmerged = Boolean(head) && !(await git(projectCwd, ['merge-base', '--is-ancestor', head!, 'HEAD']).then(() => true).catch(() => false))
+    return { worktree, dirty, unmerged }
+  }
+
+  async remove(projectCwd: string, cwd: string, force: boolean, close: () => Promise<void>, cleanSessions: () => Promise<void>): Promise<void> {
+    const path = resolve(cwd)
+    return this.exclusive(projectCwd, async () => {
+      this.assertAvailable(path)
+      const initial = await this.deletionInfo(projectCwd, path)
+      if (!force && (initial.dirty || initial.unmerged)) throw new Error('Worktree 存在未提交文件或未合并提交，请重新确认删除')
+      this.blocked.add(path)
+      this.namingJobs.get(path)?.controller.abort()
+      try {
+        await close()
+        const { worktree, dirty, unmerged } = await this.deletionInfo(projectCwd, path)
+        if (!force && (dirty || unmerged)) throw new Error('关闭会话后检测到新修改，请重新确认删除')
+        await this.update((records) => {
+          const record = records.find((r) => r.cwd === path)
+          const deletion = { branch: worktree.branch, head: worktree.head, detached: worktree.detached, deleting: true }
+          if (record) return records.map((r) => r === record ? { ...r, ...deletion } : r)
+          return [...records, { projectCwd, cwd: path, initialBranch: worktree.branch, ...deletion }]
+        })
+        const registered = (await repositoryWorktrees(projectCwd)).find((w) => w.cwd === path)
+        if (registered) await git(projectCwd, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+        const branch = worktree.branch
+        if (!worktree.detached && branch) {
+          const exists = await git(projectCwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true).catch(() => false)
+          if (exists) await git(projectCwd, ['branch', '-D', branch])
+        }
+        await cleanSessions()
+        await this.update((records) => records.filter((r) => r.cwd !== path))
+      } finally {
+        this.blocked.delete(path)
+        this.onChange(projectCwd)
+      }
+    })
+  }
+
+  nameOnFirstPrompt(cwd: string, text: string, generate: (text: string, signal: AbortSignal) => Promise<string>): Promise<void> {
+    const path = resolve(cwd)
+    if (this.stopped || this.blocked.has(path) || this.namingJobs.has(path)) return Promise.resolve()
+    const controller = new AbortController()
+    const done = this.name(path, text, generate, controller.signal).finally(() => {
+      this.namingJobs.delete(path)
+    })
+    this.namingJobs.set(path, { controller, done })
+    return done
+  }
+
+  private async name(cwd: string, text: string, generate: (text: string, signal: AbortSignal) => Promise<string>, signal: AbortSignal): Promise<void> {
+    const record = (await this.records()).find((r) => r.cwd === cwd && r.naming === 'pending' && !r.deleting)
+    if (!record || signal.aborted) return
+    try {
+      await this.exclusive(record.projectCwd, async () => {
+        this.assertAvailable(cwd)
+        signal.throwIfAborted()
+        const branch = (await git(cwd, ['symbolic-ref', '--short', 'HEAD'])).trim()
+        if (branch !== record.initialBranch) throw new Error('分支已手动切换或重命名，不再自动命名')
+        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, naming: 'naming', namingError: undefined } : r))
+      })
+      this.onChange(record.projectCwd)
+      const requested = validateBranchName(await generate(text.slice(0, 12_000), signal))
+      await this.exclusive(record.projectCwd, async () => {
+        signal.throwIfAborted()
+        this.assertAvailable(cwd)
+        const current = (await this.records()).find((r) => r.cwd === cwd && !r.deleting)
+        if (!current || (await git(cwd, ['symbolic-ref', '--short', 'HEAD'])).trim() !== record.initialBranch) return
+        const items = await repositoryWorktrees(record.projectCwd)
+        let branch = requested
+        const taken = async (name: string) => items.some((w) => w.branch === name) || await git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]).then(() => true).catch(() => false)
+        if (await taken(branch)) branch = `${requested}-${record.initialBranch.slice(0, 8)}`
+        if (await taken(branch)) throw new Error('生成的分支名已存在')
+        const hasHead = await git(cwd, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
+        if (hasHead) await git(cwd, ['branch', '-m', branch])
+        else await git(cwd, ['symbolic-ref', 'HEAD', `refs/heads/${branch}`])
+        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, branch, naming: undefined, namingError: undefined } : r))
+      })
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.update((records) => records.map((r) => r.cwd === cwd && !r.deleting
+          ? { ...r, naming: 'failed', namingError: error instanceof Error ? error.message : String(error) }
+          : r))
+      }
+    } finally {
+      this.onChange(record.projectCwd)
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    this.stopped = true
+    for (const job of this.namingJobs.values()) job.controller.abort()
+    await Promise.allSettled([...this.namingJobs.values()].map((job) => job.done))
+    await Promise.allSettled([...this.locks.values()])
+    await this.stateLock
+  }
+}

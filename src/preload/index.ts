@@ -16,7 +16,19 @@ const api = {
   prepareSession: (sessionId: string): Promise<{ sessionId: string; cwd: string; created: boolean }> =>
     ipcRenderer.invoke('session:prepare', sessionId),
   closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:close', sessionId),
-  deleteProject: (cwd: string): Promise<void> => ipcRenderer.invoke('session:delete-project', cwd),
+  deleteProject: (cwd: string): Promise<boolean> => ipcRenderer.invoke('session:delete-project', cwd),
+  worktreeCreateInfo: (projectCwd: string): Promise<unknown> => ipcRenderer.invoke('project:worktree-create-info', projectCwd),
+  createWorktree: (projectCwd: string, options?: { initGit?: boolean }): Promise<unknown> =>
+    ipcRenderer.invoke('project:create-worktree', projectCwd, options),
+  worktreeDeletionInfo: (projectCwd: string, cwd: string): Promise<unknown> =>
+    ipcRenderer.invoke('project:worktree-deletion-info', projectCwd, cwd),
+  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean): Promise<unknown> =>
+    ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd, force),
+  onProjectsChanged: (listener: (projectCwd: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, cwd: string) => listener(cwd)
+    ipcRenderer.on('projects:changed', handler)
+    return () => ipcRenderer.off('projects:changed', handler)
+  },
   deleteSession: (sessionId: string, path: string, cwd: string): Promise<void> =>
     ipcRenderer.invoke('session:delete', sessionId, path, cwd),
   prompt: (sessionId: string, text: string, images?: unknown): Promise<void> =>

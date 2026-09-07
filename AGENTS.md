@@ -18,7 +18,7 @@ bun run build:mac    # 或 build:win / build:linux
 
 ## 架构
 
-三进程，pi SDK 只跑在 main：
+三进程，会话 pi SDK 跑在 main；分支命名例外，使用无工具、不保存会话的短生命周期 utility process：
 
 ```
 renderer (React，沙箱)
@@ -43,7 +43,7 @@ src/
 
 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 
-Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PIG_DIR` 覆盖。pi 登录态读 `~/.pi/agent/auth.json`。
+Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PIG_DIR` 覆盖。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。
 
 ## 注意事项
 

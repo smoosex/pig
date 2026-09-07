@@ -3,6 +3,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
 import { disposeAll, startModelRuntime } from './pi/session-registry'
+import { worktrees } from './project-worktrees'
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('dev.pig.desktop')
@@ -30,7 +31,8 @@ app.on('before-quit', (event) => {
   if (isDisposing) return
   event.preventDefault()
   isDisposing = true
-  void disposeAll()
+  void worktrees.shutdown()
+    .then(() => disposeAll())
     .catch(() => {})
     .finally(() => app.quit())
 })

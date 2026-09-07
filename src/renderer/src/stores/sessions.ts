@@ -8,12 +8,13 @@ import {
   type SessionMeta,
   type SessionModelInfo,
   type SessionTokenStats,
-  type ThinkingLevel
+  type ThinkingLevel,
+  type WorktreeGroup
 } from '../ipc/api'
 import { buildTurn, thinkingTimingKey, type ProcessItem, type ThinkingDurations } from '../chat/turns'
 import { isPiMessage, type PiMessage } from '../pi/types'
 
-export type { ProjectGroup, SessionMeta }
+export type { ProjectGroup, SessionMeta, WorktreeGroup }
 
 interface RuntimeState {
   turns: DisplayTurn[]
@@ -71,15 +72,30 @@ function patchRuntime(
   }
 }
 
-function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string): ProjectGroup[] {
-  return groups.map((group) => ({
+function mapGroupSessions(
+  group: ProjectGroup,
+  update: (sessions: SessionMeta[]) => SessionMeta[]
+): ProjectGroup {
+  return {
     ...group,
-    sessions: group.sessions.map((session) =>
+    sessions: update(group.sessions),
+    ...(group.worktrees && {
+      worktrees: group.worktrees.map((worktree) => ({
+        ...worktree,
+        sessions: update(worktree.sessions)
+      }))
+    })
+  }
+}
+
+function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string): ProjectGroup[] {
+  return groups.map((group) =>
+    mapGroupSessions(group, (sessions) => sessions.map((session) =>
       session.id === sessionId && !session.name && !session.firstMessage
         ? { ...session, firstMessage: title }
         : session
-    )
-  }))
+    ))
+  )
 }
 
 function patchTabsFromGroups(tabs: OpenTab[], groups: ProjectGroup[]): OpenTab[] {
@@ -113,6 +129,27 @@ function upsertGroup(
   return next
 }
 
+function removeCwdSessions(
+  state: SessionsStore,
+  cwds: Set<string>,
+  sessions: SessionMeta[]
+): Pick<SessionsStore, 'openTabs' | 'runtime' | 'activeSessionId'> {
+  const deletedSessionIds = new Set([
+    ...sessions.filter((session) => cwds.has(session.cwd)).map((session) => session.id),
+    ...state.openTabs.filter((tab) => cwds.has(tab.cwd)).map((tab) => tab.sessionId)
+  ])
+  const openTabs = state.openTabs.filter((tab) => !deletedSessionIds.has(tab.sessionId))
+  const runtime = { ...state.runtime }
+  for (const sessionId of deletedSessionIds) delete runtime[sessionId]
+  return {
+    openTabs,
+    runtime,
+    activeSessionId: state.activeSessionId && deletedSessionIds.has(state.activeSessionId)
+      ? openTabs[openTabs.length - 1]?.sessionId ?? null
+      : state.activeSessionId
+  }
+}
+
 interface SessionsStore {
   projects: ProjectGroup[]
   chats: ProjectGroup[]
@@ -135,6 +172,8 @@ interface SessionsStore {
   openExisting: (meta: SessionMeta) => Promise<void>
   newSession: (cwd: string) => Promise<void>
   newChat: () => Promise<void>
+  createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
+  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<void>
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>
@@ -155,6 +194,8 @@ interface SessionsStore {
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 
+let projectMembershipVersion = 0
+
 export const useSessionsStore = create<SessionsStore>((set, get) => ({
   projects: [],
   chats: [],
@@ -163,7 +204,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   runtime: {},
 
   loadProjects: async () => {
+    const version = projectMembershipVersion
     const projects = await api.listProjects()
+    if (version !== projectMembershipVersion) return
     set((s) => ({
       projects,
       openTabs: patchTabsFromGroups(s.openTabs, projects)
@@ -181,6 +224,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   openProject: async () => {
     const project = await api.openProject()
     if (!project) return
+    projectMembershipVersion++
     set((s) => {
       const index = s.projects.findIndex((item) => item.cwd === project.cwd)
       const projects = [...s.projects]
@@ -192,6 +236,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
 
   unpinProject: async (cwd) => {
     await api.unpinProject(cwd)
+    projectMembershipVersion++
     set((s) => ({
       projects: s.projects.filter((project) => project.cwd !== cwd)
     }))
@@ -200,7 +245,11 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   refreshProject: async (cwd) => {
     const project = await api.listProject(cwd)
     set((s) => ({
-      projects: upsertGroup(s.projects, cwd, project, true),
+      projects: project
+        ? s.projects.some((item) => item.cwd === project.cwd)
+          ? upsertGroup(s.projects, project.cwd, project, true)
+          : s.projects
+        : s.projects.filter((item) => item.cwd !== cwd),
       openTabs: patchTabsFromGroups(s.openTabs, project ? [project] : [])
     }))
   },
@@ -310,25 +359,57 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     await get().loadControls(ref.sessionId)
   },
 
-  deleteProject: async (cwd) => {
-    await api.deleteProject(cwd)
+  createWorktree: async (projectCwd, options) => {
+    const result = await api.createWorktree(projectCwd, options)
+    if (!result) return null
+    projectMembershipVersion++
+    set((s) => ({
+      projects: s.projects.some((project) => project.cwd === result.project.cwd)
+        ? upsertGroup(s.projects, result.project.cwd, result.project, true)
+        : s.projects,
+      openTabs: patchTabsFromGroups(s.openTabs, [result.project])
+    }))
+    return result.cwd
+  },
+
+  deleteWorktree: async (projectCwd, cwd, force = false) => {
+    const project = get().projects.find((item) => item.cwd === projectCwd)
+    if (cwd === projectCwd || project?.worktrees?.some((worktree) => worktree.cwd === cwd && worktree.isPrimary)) {
+      throw new Error('不能删除原项目目录')
+    }
+    const result = await api.deleteWorktree(projectCwd, cwd, force)
+    if (!result) return
+    projectMembershipVersion++
     set((s) => {
-      const deletedSessionIds = new Set(
-        s.openTabs.filter((tab) => tab.cwd === cwd).map((tab) => tab.sessionId)
-      )
-      const openTabs = s.openTabs.filter((tab) => tab.cwd !== cwd)
-      const runtime = { ...s.runtime }
-      for (const sessionId of deletedSessionIds) delete runtime[sessionId]
-      const activeWasDeleted = s.activeSessionId
-        ? deletedSessionIds.has(s.activeSessionId)
-        : false
+      const current = s.projects.find((item) => item.cwd === projectCwd)
       return {
-        projects: s.projects.filter((project) => project.cwd !== cwd),
-        openTabs,
-        runtime,
-        activeSessionId: activeWasDeleted
-          ? openTabs[openTabs.length - 1]?.sessionId ?? null
-          : s.activeSessionId
+        ...removeCwdSessions(s, new Set([cwd]), [
+          ...(project?.sessions ?? []),
+          ...(current?.sessions ?? [])
+        ]),
+        projects: s.projects.some((item) => item.cwd === result.project.cwd)
+          ? upsertGroup(s.projects, result.project.cwd, result.project, true)
+          : s.projects
+      }
+    })
+  },
+
+  deleteProject: async (cwd) => {
+    const project = get().projects.find((item) => item.cwd === cwd)
+    if (!(await api.deleteProject(cwd))) return
+    projectMembershipVersion++
+    set((s) => {
+      const current = s.projects.find((item) => item.cwd === cwd)
+      const sessions = [...(project?.sessions ?? []), ...(current?.sessions ?? [])]
+      const cwds = new Set([
+        cwd,
+        ...(project?.worktrees ?? []).map((worktree) => worktree.cwd),
+        ...(current?.worktrees ?? []).map((worktree) => worktree.cwd),
+        ...sessions.map((session) => session.cwd)
+      ])
+      return {
+        projects: s.projects.filter((item) => item.cwd !== cwd),
+        ...removeCwdSessions(s, cwds, sessions)
       }
     })
   },
@@ -364,12 +445,9 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
       const runtime = { ...s.runtime }
       delete runtime[meta.id]
       const activeWasDeleted = s.activeSessionId === meta.id
-      const projects = s.projects
-        .map((project) =>
-          project.cwd === meta.cwd
-            ? { ...project, sessions: project.sessions.filter((session) => session.id !== meta.id) }
-            : project
-        )
+      const projects = s.projects.map((project) =>
+        mapGroupSessions(project, (sessions) => sessions.filter((session) => session.id !== meta.id))
+      )
       return {
         projects,
         openTabs,
