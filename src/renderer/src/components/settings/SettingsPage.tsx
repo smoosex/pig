@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Palette, Plus, Settings2 } from 'lucide-react'
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '../ui/empty'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator } from '../ui/command'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '../ui/dropdown-menu'
 import {
   api,
   type Appearance,
@@ -35,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 
 function SettingsRow({
   title,
@@ -170,7 +174,7 @@ function GeneralPane() {
               <SelectTrigger size="sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent align="end">
+              <SelectContent position="popper" align="end">
                 <SelectGroup>
                   <SelectItem value="enter">Enter</SelectItem>
                   <SelectItem value="shift-enter">Shift+Enter</SelectItem>
@@ -203,7 +207,7 @@ function GeneralPane() {
                 <SelectTrigger size="sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent position="popper" align="end">
                   <SelectGroup>
                     {thinkingLevels.map((level) => (
                       <SelectItem key={level} value={level}>
@@ -235,21 +239,21 @@ function ThemePane() {
         </p>
         <SettingsCard>
           <SettingsRow title="外观" description="跟随系统，或固定浅色 / 暗色">
-            <Select
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              spacing={0}
               value={appearance}
-              onValueChange={(value) => void setTheme({ appearance: value as Appearance })}
+              onValueChange={(value) => {
+                if (!value) return
+                void setTheme({ appearance: value as Appearance })
+              }}
             >
-              <SelectTrigger size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectGroup>
-                  <SelectItem value="system">系统</SelectItem>
-                  <SelectItem value="light">浅色</SelectItem>
-                  <SelectItem value="dark">暗色</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+              <ToggleGroupItem value="system">系统</ToggleGroupItem>
+              <ToggleGroupItem value="light">浅色</ToggleGroupItem>
+              <ToggleGroupItem value="dark">暗色</ToggleGroupItem>
+            </ToggleGroup>
           </SettingsRow>
         </SettingsCard>
       </div>
@@ -266,7 +270,7 @@ function ThemePane() {
               <SelectTrigger size="sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent align="end">
+              <SelectContent position="popper" align="end">
                 <SelectGroup>
                   <SelectItem value="pig">默认</SelectItem>
                   <SelectItem value="everforest">Everforest</SelectItem>
@@ -282,7 +286,7 @@ function ThemePane() {
               <SelectTrigger size="sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent align="end">
+              <SelectContent position="popper" align="end">
                 <SelectGroup>
                   <SelectItem value="pig">默认</SelectItem>
                   <SelectItem value="everforest">Everforest</SelectItem>
@@ -384,7 +388,7 @@ function AuthDialog({
               placeholder={prompt.placeholder}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
                   e.preventDefault()
                   onSubmit(value)
                 }
@@ -409,46 +413,6 @@ function AuthDialog({
   )
 }
 
-function ProviderRow({
-  provider,
-  method,
-  onLogin,
-  onLogout
-}: {
-  provider: SettingsProvider
-  method: ProviderAuthType
-  onLogin: (provider: SettingsProvider, method: ProviderAuthType) => void
-  onLogout: (provider: SettingsProvider) => void
-}) {
-  const active = provider.configured && provider.using === method
-  const canLogin = method === 'oauth' || Boolean(provider.apiKey?.canLogin)
-  const label = method === 'oauth' ? provider.oauth?.loginLabel || '登录' : '设置密钥'
-  return (
-    <SettingsRow
-      title={provider.name}
-      description={
-        method === 'oauth'
-          ? provider.oauth?.name ?? '订阅登录'
-          : provider.apiKey?.name ?? 'API 密钥'
-      }
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">{active ? sourceLabel(provider) : '未配置'}</span>
-        {active ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onLogout(provider)}>
-            {method === 'oauth' ? '退出' : '移除'}
-          </Button>
-        ) : canLogin ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onLogin(provider, method)}>
-            {label}
-          </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">环境变量</span>
-        )}
-      </div>
-    </SettingsRow>
-  )
-}
 
 function ProvidersPane() {
   const providers = useSettingsStore((s) => s.providers)
@@ -462,6 +426,17 @@ function ProvidersPane() {
   const [prompt, setPrompt] = useState<(SettingsAuthPrompt & { id: string }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [query, setQuery] = useState('')
+  const [chosen, setChosen] = useState<SettingsProvider | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const openAdd = () => {
+    setQuery('')
+    setChosen(null)
+    setAdding(true)
+  }
 
   useEffect(() => {
     return api.onAuthEvent((event: SettingsAuthEvent) => {
@@ -475,6 +450,8 @@ function ProvidersPane() {
   }, [])
 
   const startLogin = async (provider: SettingsProvider, method: ProviderAuthType) => {
+    setAdding(false)
+    setActionError(null)
     setLogin({ provider, method })
     setLines([])
     setPrompt(null)
@@ -507,55 +484,139 @@ function ProvidersPane() {
   }
 
   const logout = async (provider: SettingsProvider) => {
-    setProviders(await api.logoutProvider(provider.id))
-    await load()
+    setRemoving(provider.id)
+    setActionError(null)
+    try {
+      setProviders(await api.logoutProvider(provider.id))
+      await load()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRemoving(null)
+    }
   }
 
-  const oauth = providers.filter((provider) => provider.oauth)
-  const keys = providers.filter((provider) => provider.apiKey)
+  const configured = providers.filter((provider) => provider.configured)
+  const available = providers.filter((provider) => provider.oauth || provider.apiKey)
+  const locked = busy || removing !== null
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          订阅
-        </p>
-        <SettingsCard>
-          {oauth.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground">没有可登录的订阅供应商</p>
-          ) : (
-            oauth.map((provider) => (
-              <ProviderRow
-                key={`oauth-${provider.id}`}
-                provider={provider}
-                method="oauth"
-                onLogin={(item, method) => void startLogin(item, method)}
-                onLogout={(item) => void logout(item)}
-              />
-            ))
-          )}
-        </SettingsCard>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">已配置 {configured.length} 个供应商</p>
+        <Button size="sm" onClick={openAdd} disabled={locked}>
+          <Plus data-icon="inline-start" />添加供应商
+        </Button>
       </div>
-      <div>
-        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          API 密钥
-        </p>
+      {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}
+      {configured.length ? (
         <SettingsCard>
-          {keys.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground">没有可配置的密钥供应商</p>
-          ) : (
-            keys.map((provider) => (
-              <ProviderRow
-                key={`key-${provider.id}`}
-                provider={provider}
-                method="api_key"
-                onLogin={(item, method) => void startLogin(item, method)}
-                onLogout={(item) => void logout(item)}
-              />
-            ))
-          )}
+          {configured.map((provider) => (
+            <SettingsRow
+              key={provider.id}
+              title={provider.name}
+              description={provider.using === 'oauth' ? (provider.oauth?.subscription ? '订阅账号' : '账号授权') : 'API 密钥'}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">{sourceLabel(provider)}</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" disabled={locked}>
+                      {removing === provider.id ? '处理中…' : '管理'}<ChevronDown data-icon="inline-end" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuGroup>
+                      {provider.oauth ? (
+                        <DropdownMenuItem onSelect={() => void startLogin(provider, 'oauth')}>
+                          {provider.using === 'oauth' ? '重新登录' : '登录账号'}
+                        </DropdownMenuItem>
+                      ) : null}
+                      {provider.apiKey?.canLogin ? (
+                        <DropdownMenuItem onSelect={() => void startLogin(provider, 'api_key')}>
+                          {provider.using === 'api_key' ? '更新密钥' : '设置密钥'}
+                        </DropdownMenuItem>
+                      ) : null}
+                      {provider.using === 'oauth' || provider.source === 'stored' ? (
+                        <DropdownMenuItem variant="destructive" onSelect={() => void logout(provider)}>
+                          {provider.using === 'oauth' ? '退出登录' : '移除密钥'}
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem disabled>凭据由外部配置管理</DropdownMenuItem>
+                      )}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </SettingsRow>
+          ))}
         </SettingsCard>
-      </div>
+      ) : (
+        <Empty className="min-h-60 border">
+          <EmptyHeader>
+            <EmptyTitle>连接你的第一个供应商</EmptyTitle>
+            <EmptyDescription>登录订阅账号或添加 API 密钥，即可使用对应模型。</EmptyDescription>
+          </EmptyHeader>
+          <Button variant="outline" onClick={openAdd} disabled={locked}>添加供应商</Button>
+        </Empty>
+      )}
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{chosen ? chosen.name : '添加供应商'}</DialogTitle>
+            <DialogDescription>{chosen ? '选择连接方式，凭据将交由 pi 管理。' : '搜索供应商，登录账号或配置 API 密钥。'}</DialogDescription>
+          </DialogHeader>
+          {chosen ? (
+            <div className="flex flex-col gap-3">
+              <Button variant="ghost" size="sm" className="self-start" onClick={() => setChosen(null)}>
+                <ChevronLeft data-icon="inline-start" />返回供应商列表
+              </Button>
+              {chosen.oauth ? (
+                <Button variant="outline" className="h-auto justify-between py-3" onClick={() => void startLogin(chosen, 'oauth')}>
+                  <span>{chosen.oauth.subscription ? '订阅登录' : '账号登录'}</span><ChevronRight data-icon="inline-end" />
+                </Button>
+              ) : null}
+              {chosen.apiKey?.canLogin ? (
+                <Button variant="outline" className="h-auto justify-between py-3" onClick={() => void startLogin(chosen, 'api_key')}>
+                  <span>设置 API 密钥</span><ChevronRight data-icon="inline-end" />
+                </Button>
+              ) : chosen.apiKey ? (
+                <p className="text-sm text-muted-foreground">此供应商需要通过环境变量或外部凭据配置：{chosen.apiKey.name}</p>
+              ) : null}
+            </div>
+          ) : (
+            <Command
+              loop
+              onKeyDownCapture={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) event.stopPropagation()
+              }}
+            >
+              <CommandInput aria-label="搜索供应商" placeholder="搜索名称或 ID…" value={query} onValueChange={setQuery} />
+              <CommandList className="max-h-80">
+                <CommandEmpty>没有匹配的供应商，试试其他名称或关键词。</CommandEmpty>
+                {[
+                  { heading: '订阅登录', items: available.filter((provider) => provider.oauth) },
+                  { heading: 'API 密钥', items: available.filter((provider) => !provider.oauth && provider.apiKey) }
+                ].map(({ heading, items }, index) => (
+                  <Fragment key={heading}>
+                  {index > 0 ? <CommandSeparator /> : null}
+                  <CommandGroup heading={heading}>
+                    {items.map((provider) => (
+                      <CommandItem key={provider.id} value={provider.id} keywords={[provider.name]} className="py-3" onSelect={() => setChosen(provider)}>
+                        <span className="min-w-0 flex-1 truncate">{provider.name}</span>
+                        <span data-slot="command-shortcut" className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                          {provider.configured ? '已配置' : null}<ChevronRight />
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                  </Fragment>
+                ))}
+              </CommandList>
+            </Command>
+          )}
+        </DialogContent>
+      </Dialog>
       <AuthDialog
         open={login != null}
         title={login ? `${login.method === 'oauth' ? '登录' : '配置'} ${login.provider.name}` : '登录'}
