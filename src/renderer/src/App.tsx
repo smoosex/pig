@@ -78,7 +78,7 @@ export default function App() {
         setSidebarOpen((open) => !open)
       } else if (event.key === ',') {
         event.preventDefault()
-        setSettingsOpen(true)
+        if (!event.repeat) setSettingsOpen((open) => !open)
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
@@ -101,11 +101,10 @@ export default function App() {
           </div>
         </div>
         <div className="flex min-h-0 flex-1">
+          <Sidebar hidden={!sidebarOpen || settingsOpen} onOpenSettings={() => setSettingsOpen(true)} />
           {settingsOpen ? (
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
-            <>
-              <Sidebar hidden={!sidebarOpen} onOpenSettings={() => setSettingsOpen(true)} />
               <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
@@ -133,7 +132,6 @@ export default function App() {
                 )}
                 </div>
               </div>
-            </>
           )}
         </div>
       </div>
