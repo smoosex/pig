@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
-import { BorderBeam } from 'border-beam'
+import { BorderBeam } from '@smoose/border-beam'
 import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
 import {
   api,
@@ -505,11 +505,30 @@ export function Composer() {
   const [slashWidth, setSlashWidth] = useState(0)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const appearance = useSettingsStore((s) => s.appearance)
+  const lightTheme = useSettingsStore((s) => s.lightTheme)
+  const darkTheme = useSettingsStore((s) => s.darkTheme)
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const isStreaming = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.isStreaming ?? false) : false
   )
+  useEffect(() => {
+    if (appearance !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => setSystemDark(media.matches)
+    onChange()
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [appearance])
+  const currentTheme = appearance === 'dark'
+    ? darkTheme
+    : appearance === 'light'
+      ? lightTheme
+      : systemDark
+        ? darkTheme
+        : lightTheme
+  const borderBeamVariant = currentTheme === 'everforest' ? 'forest' : 'colorful'
   const model = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.model ?? null) : null
   )
@@ -654,7 +673,7 @@ export function Composer() {
       <div ref={composerBoxRef} className="rounded-2xl shadow-md">
       <BorderBeam
         size="md"
-        colorVariant="colorful"
+        colorVariant={borderBeamVariant}
         theme={appearance === 'system' ? 'auto' : appearance}
         active={focused || isStreaming}
         className="w-full"
