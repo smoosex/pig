@@ -4,7 +4,14 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
-import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
+import {
+  ArrowUp,
+  BookOpen,
+  Box,
+  RefreshCw,
+  Square,
+  X
+} from 'lucide-react'
 import {
   createPastedTextFilename,
   isLongPastedText,
@@ -16,6 +23,7 @@ import {
   api,
   type SessionContextUsage,
   type SessionModelInfo,
+  type PromptStreamingBehavior,
   type SessionTokenStats,
   type SlashCommand,
   type ThinkingLevel
@@ -46,6 +54,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
 import { ImagePreview } from './ImagePreview'
 import { PastedTextNode } from './PastedTextNode'
+import { FollowUpQueue } from './FollowUpQueue'
 
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
@@ -555,8 +564,12 @@ export function Composer() {
   const selectedSlashRef = useRef<HTMLButtonElement>(null)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [steerHintMounted, setSteerHintMounted] = useState(false)
+  const [steerHintLeaving, setSteerHintLeaving] = useState(false)
   const composing = useRef(false)
-  const sendRef = useRef<() => void>(() => undefined)
+  const sendRef = useRef<(behavior?: PromptStreamingBehavior) => void>(() => undefined)
+  const streamingRef = useRef(false)
+  const hasDraftRef = useRef(false)
   const applySlashRef = useRef<(command: SlashCommand) => void>(() => undefined)
   const slashStateRef = useRef({ open: false, filtered: [] as SlashCommand[], index: 0 })
   const commandsFor = useRef<string | null>(null)
@@ -617,6 +630,15 @@ export function Composer() {
             return true
           }
         }
+        if (
+          event.key === 'Tab' &&
+          !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
+          streamingRef.current && hasDraftRef.current
+        ) {
+          event.preventDefault()
+          sendRef.current('steer')
+          return true
+        }
         if (event.key !== 'Enter') return false
         const sendNow = sendShortcutRef.current === 'enter' ? !event.shiftKey : event.shiftKey
         if (!sendNow) return false
@@ -653,6 +675,10 @@ export function Composer() {
   const darkTheme = useSettingsStore((s) => s.darkTheme)
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const queuedEditText = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.queuedEditText ?? null) : null
+  )
+  const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)
   const refreshCwd = useSessionsStore((s) => s.refreshCwd)
   const isStreaming = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.isStreaming ?? false) : false
@@ -691,6 +717,10 @@ export function Composer() {
   const tokens = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.tokens ?? EMPTY_TOKENS) : EMPTY_TOKENS
   )
+  const serialized = serializeComposer(editor)
+  const hasDraft = Boolean(serialized.text.trim() || serialized.attachments.length > 0 || images.length > 0)
+  streamingRef.current = isStreaming
+  hasDraftRef.current = hasDraft
 
   useEffect(() => {
     commandsFor.current = null
@@ -710,6 +740,18 @@ export function Composer() {
   useEffect(() => {
     editor?.setEditable(Boolean(activeSessionId))
   }, [activeSessionId, editor])
+
+  useEffect(() => {
+    if (!editor || !activeSessionId || queuedEditText == null) return
+    const content = queuedEditText.split('\n').map((line) =>
+      line.length > 0
+        ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
+        : { type: 'paragraph' }
+    )
+    editor.commands.setContent({ type: 'doc', content })
+    clearQueuedEditText(activeSessionId)
+    editor.commands.focus()
+  }, [activeSessionId, clearQueuedEditText, editor, queuedEditText])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -771,6 +813,22 @@ export function Composer() {
   }, [query, commands])
 
   const slashOpen = query !== null && !slashDismissed && filtered.length > 0
+  const showSteerHint = isStreaming && hasDraft && !slashOpen
+
+  useEffect(() => {
+    if (showSteerHint) {
+      setSteerHintMounted(true)
+      setSteerHintLeaving(false)
+      return
+    }
+    if (!steerHintMounted) return
+    setSteerHintLeaving(true)
+    const timeout = window.setTimeout(() => {
+      setSteerHintMounted(false)
+      setSteerHintLeaving(false)
+    }, 180)
+    return () => window.clearTimeout(timeout)
+  }, [showSteerHint, steerHintMounted])
 
   useEffect(() => {
     slashStateRef.current = { open: slashOpen, filtered, index: slashIndex }
@@ -797,12 +855,11 @@ export function Composer() {
   }
   applySlashRef.current = applySlash
 
-  const send = useCallback(async () => {
-    const serialized = serializeComposer(editor)
+  const send = useCallback(async (streamingBehavior: PromptStreamingBehavior = 'followUp') => {
     const hasAttachments = serialized.attachments.length > 0
     const trimmed = serialized.text.trim()
-    if ((!trimmed && !hasAttachments && images.length === 0) || isStreaming || !activeSessionId) return
-    if ((trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
+    if ((!trimmed && !hasAttachments && images.length === 0) || !activeSessionId) return
+    if (!isStreaming && (trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
       const result = await api.exportSession(activeSessionId, exportPathArg(trimmed))
       if (!result) return
       editor?.commands.clearContent(false)
@@ -827,23 +884,19 @@ export function Composer() {
       activeSessionId,
       hasAttachments ? serialized.text : trimmed,
       payload.length > 0 ? payload : undefined,
-      hasAttachments ? serialized.attachments : undefined
+      hasAttachments ? serialized.attachments : undefined,
+      isStreaming ? streamingBehavior : undefined
     )
     await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
-  }, [editor, images, isStreaming, activeSessionId, refreshCwd])
-  sendRef.current = () => { void send() }
+  }, [editor, images, isStreaming, activeSessionId, refreshCwd, serialized])
+  sendRef.current = (behavior) => { void send(behavior) }
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
-  const serialized = serializeComposer(editor)
-  const canSend = Boolean(
-    (serialized.text.trim() || serialized.attachments.length > 0 || images.length > 0) &&
-    activeSessionId &&
-    !isStreaming
-  )
+  const canSend = Boolean(hasDraft && activeSessionId)
 
   const removeImage = (id: string) => {
     setImages((current) => {
@@ -858,7 +911,8 @@ export function Composer() {
   }
 
   return (
-    <div className={cn(chatColumn, 'pb-3.5')}>
+    <div className={cn(chatColumn, 'relative isolate shrink-0 pb-3.5')}>
+      <FollowUpQueue key={activeSessionId ?? 'none'} sessionId={activeSessionId} />
       <Popover
         open={slashOpen}
         onOpenChange={(open) => {
@@ -866,7 +920,16 @@ export function Composer() {
         }}
       >
       <PopoverAnchor asChild>
-      <div ref={composerBoxRef} className="rounded-2xl shadow-md">
+      <div ref={composerBoxRef} className="relative rounded-2xl shadow-md">
+      {steerHintMounted ? (
+        <div className={cn(
+          'pointer-events-none absolute right-3 bottom-full z-0 rounded-t-md bg-primary px-2 py-0.5 text-xs text-primary-foreground shadow-sm',
+          steerHintLeaving ? 'steer-hint-exit' : 'steer-hint-enter'
+        )}>
+          Tab 转为引导
+        </div>
+      ) : null}
+      <div className="relative z-10">
       <BorderBeam
         size="md"
         colorVariant={borderBeamVariant}
@@ -942,7 +1005,7 @@ export function Composer() {
               tokens={tokens}
               disabled={!activeSessionId}
             />
-            {isStreaming ? (
+            {isStreaming && !hasDraft ? (
               <InputGroupButton
                 size="icon-sm"
                 variant="secondary"
@@ -957,7 +1020,7 @@ export function Composer() {
                 size="icon-sm"
                 variant="default"
                 className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
-                aria-label="发送"
+                aria-label={isStreaming ? '跟进' : '发送'}
                 disabled={!canSend}
                 onClick={() => void send()}
               >
@@ -968,6 +1031,7 @@ export function Composer() {
         </InputGroupAddon>
       </InputGroup>
       </BorderBeam>
+      </div>
       </div>
       </PopoverAnchor>
       <PopoverContent

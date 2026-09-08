@@ -1,25 +1,32 @@
 import * as React from "react"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
+import { motion } from "motion/react"
 
 import { cn } from "@/lib/utils"
+
+const MotionViewport = motion.create(ScrollAreaPrimitive.Viewport)
 
 function ScrollArea({
   className,
   children,
+  layoutScroll = false,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & { layoutScroll?: boolean }) {
+  const Viewport = layoutScroll ? MotionViewport : ScrollAreaPrimitive.Viewport
+
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
       className={cn("relative", className)}
       {...props}
     >
-      <ScrollAreaPrimitive.Viewport
+      <Viewport
+        {...(layoutScroll ? { layoutScroll: true } : {})}
         data-slot="scroll-area-viewport"
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 [&>div]:!block [&>div]:!min-w-0 [&>div]:w-full"
       >
         {children}
-      </ScrollAreaPrimitive.Viewport>
+      </Viewport>
       <ScrollBar />
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>

@@ -37,8 +37,9 @@ const api = {
     sessionId: string,
     text: string,
     images?: unknown,
-    textAttachments?: unknown
-  ): Promise<void> => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments),
+    textAttachments?: unknown,
+    streamingBehavior?: unknown
+  ): Promise<void> => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior),
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),
   getMessages: (sessionId: string): Promise<unknown[]> =>
     ipcRenderer.invoke('session:get-messages', sessionId),
@@ -62,6 +63,8 @@ const api = {
     ipcRenderer.invoke('session:set-thinking', sessionId, level),
   refreshModels: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:refresh-models', sessionId),
+  followUpAction: (sessionId: string, index: number, action: string): Promise<unknown> =>
+    ipcRenderer.invoke('session:follow-up-action', sessionId, index, action),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('system:pick-directory'),
   getSidebarPrefs: (): Promise<unknown> => ipcRenderer.invoke('system:get-sidebar-prefs'),
   setSidebarPrefs: (patch: unknown): Promise<unknown> =>

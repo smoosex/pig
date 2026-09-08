@@ -13,7 +13,13 @@ import {
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
-import { bridgeEvents } from './event-bridge'
+import {
+  batchQueueUpdates,
+  bridgeEvents,
+  followUpMessagesForDisplay,
+  removePendingUserMessage,
+  updatePendingUserMessageMode
+} from './event-bridge'
 
 export type SessionThinkingLevel =
   | 'off'
@@ -54,7 +60,10 @@ export interface SessionControls {
   thinkingLevels: SessionThinkingLevel[]
   contextUsage: SessionContextUsage | null
   tokens: SessionTokenStats
+  followUpMessages: string[]
 }
+
+export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
 
 export interface SessionTreeGutter {
   position: number
@@ -388,7 +397,8 @@ export async function getSessionControls(sessionId: string): Promise<SessionCont
             percent: usage.percent
           }
         : null,
-      tokens: tokenStatsFromEntries(liveSession.agentSession.sessionManager)
+      tokens: tokenStatsFromEntries(liveSession.agentSession.sessionManager),
+      followUpMessages: followUpMessagesForDisplay(liveSession.agentSession)
     }
   }
 
@@ -409,8 +419,38 @@ export async function getSessionControls(sessionId: string): Promise<SessionCont
     ),
     thinkingLevels: picker,
     contextUsage: null,
-    tokens: tokenStatsFromEntries(session.sessionManager)
+    tokens: tokenStatsFromEntries(session.sessionManager),
+    followUpMessages: []
   }
+}
+
+export async function updateFollowUpMessage(
+  sessionId: string,
+  index: number,
+  action: FollowUpAction
+): Promise<string | null> {
+  if (!Number.isInteger(index) || index < 0) throw new Error('Invalid follow-up index')
+  if (action !== 'steer' && action !== 'edit' && action !== 'dismiss') {
+    throw new Error('Invalid follow-up action')
+  }
+  const liveSession = live.get(sessionId)
+  if (!liveSession) throw new Error('Session not found')
+  const queued = [...liveSession.agentSession.getFollowUpMessages()]
+  const target = queued[index]
+  if (target === undefined) throw new Error('Follow-up message is no longer queued')
+  if (action === 'steer') {
+    updatePendingUserMessageMode(liveSession.agentSession, 'followUp', index, 'steer')
+  } else {
+    removePendingUserMessage(liveSession.agentSession, 'followUp', index)
+  }
+  return batchQueueUpdates(liveSession.agentSession, async () => {
+    const { steering } = liveSession.agentSession.clearQueue()
+    const remaining = queued.filter((_message, queuedIndex) => queuedIndex !== index)
+    for (const message of steering) await liveSession.agentSession.steer(message)
+    if (action === 'steer') await liveSession.agentSession.steer(target)
+    for (const message of remaining) await liveSession.agentSession.followUp(message)
+    return action === 'edit' ? target : null
+  })
 }
 
 export async function setSessionModel(

@@ -96,7 +96,10 @@ export interface SessionControls {
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
   tokens: SessionTokenStats
+  followUpMessages: string[]
 }
+
+export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
 
 export type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
 
@@ -195,6 +198,8 @@ export type SettingsAuthEvent =
   | { kind: 'prompt'; id: string; prompt: SettingsAuthPrompt }
   | { kind: 'notify'; event: SettingsAuthNotify }
 
+export type PromptStreamingBehavior = 'steer' | 'followUp'
+
 export interface DefaultSessionSettings {
   model: SessionModelInfo | null
   thinkingLevel: ThinkingLevel | null
@@ -241,7 +246,8 @@ export interface SessionApi {
     sessionId: string,
     text: string,
     images?: { mimeType: string; data: string }[],
-    textAttachments?: PastedTextAttachmentInput[]
+    textAttachments?: PastedTextAttachmentInput[],
+    streamingBehavior?: PromptStreamingBehavior
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>
@@ -255,6 +261,7 @@ export interface SessionApi {
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   refreshModels: (sessionId: string) => Promise<SessionControls>
+  followUpAction: (sessionId: string, index: number, action: FollowUpAction) => Promise<string | null>
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>

@@ -32,6 +32,7 @@ export function useEventBridge(): void {
   const loadControls = useSessionsStore((s) => s.loadControls)
   const hydrateTurns = useSessionsStore((s) => s.hydrateTurns)
   const setThinkingLevel = useSessionsStore((s) => s.setThinkingLevel)
+  const setFollowUpMessages = useSessionsStore((s) => s.setFollowUpMessages)
   const hydrateDelay = useRef(new Map<string, number>())
   const thinkingStarts = useRef(
     new Map<
@@ -162,6 +163,11 @@ export function useEventBridge(): void {
           )
           break
         }
+        case 'queue_update':
+          if (Array.isArray(event.followUp) && event.followUp.every((item) => typeof item === 'string')) {
+            setFollowUpMessages(sessionId, [...event.followUp] as string[])
+          }
+          break
         case 'thinking_level_changed':
           if (
             event.level === 'off' ||
@@ -196,6 +202,7 @@ export function useEventBridge(): void {
     renameTab,
     loadControls,
     hydrateTurns,
-    setThinkingLevel
+    setThinkingLevel,
+    setFollowUpMessages
   ])
 }

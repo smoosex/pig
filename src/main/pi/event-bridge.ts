@@ -1,16 +1,99 @@
 import type { BrowserWindow } from 'electron'
-import type { AgentSession } from '@earendil-works/pi-coding-agent'
+import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
 const bridged = new WeakSet<AgentSession>()
-const pendingPastedText = new WeakMap<AgentSession, PastedTextDisplayMetadata>()
 
-export function setPendingPastedText(session: AgentSession, metadata: PastedTextDisplayMetadata): void {
-  pendingPastedText.set(session, metadata)
+interface QueueUpdateBatch {
+  depth: number
+  followUp: string[]
+  flush?: () => void
 }
 
-export function clearPendingPastedText(session: AgentSession): void {
-  pendingPastedText.delete(session)
+const queueUpdateBatches = new WeakMap<AgentSession, QueueUpdateBatch>()
+
+export function followUpMessagesForDisplay(session: AgentSession): string[] {
+  return [...(queueUpdateBatches.get(session)?.followUp ?? session.getFollowUpMessages())]
+}
+
+export async function batchQueueUpdates<T>(
+  session: AgentSession,
+  update: () => Promise<T>
+): Promise<T> {
+  const batch = queueUpdateBatches.get(session) ?? {
+    depth: 0,
+    followUp: [...session.getFollowUpMessages()]
+  }
+  batch.depth++
+  queueUpdateBatches.set(session, batch)
+  try {
+    return await update()
+  } finally {
+    batch.depth--
+    if (batch.depth === 0) {
+      queueUpdateBatches.delete(session)
+      batch.flush?.()
+    }
+  }
+}
+
+type PendingMessageMode = 'steer' | 'followUp'
+
+interface PendingUserMessage {
+  text: string
+  metadata?: PastedTextDisplayMetadata
+  mode?: PendingMessageMode
+  started: boolean
+  onStart: () => void
+}
+
+const pendingUserMessages = new WeakMap<AgentSession, PendingUserMessage[]>()
+
+export function queuePendingUserMessage(
+  session: AgentSession,
+  text: string,
+  metadata: PastedTextDisplayMetadata | undefined,
+  onStart: () => void,
+  mode?: PendingMessageMode
+): () => void {
+  const entry: PendingUserMessage = { text, metadata, mode, started: false, onStart }
+  const queue = pendingUserMessages.get(session) ?? []
+  queue.push(entry)
+  pendingUserMessages.set(session, queue)
+  return () => {
+    const current = pendingUserMessages.get(session)
+    if (!current) return
+    const index = current.indexOf(entry)
+    if (index < 0) return
+    current.splice(index, 1)
+    if (current.length === 0) pendingUserMessages.delete(session)
+  }
+}
+
+export function updatePendingUserMessageMode(
+  session: AgentSession,
+  mode: PendingMessageMode,
+  index: number,
+  nextMode: PendingMessageMode
+): void {
+  const queue = pendingUserMessages.get(session)
+  if (!queue) return
+  const pending = queue.filter((item) => !item.started && item.mode === mode)[index]
+  if (pending) pending.mode = nextMode
+}
+
+export function removePendingUserMessage(
+  session: AgentSession,
+  mode: PendingMessageMode,
+  index: number
+): void {
+  const queue = pendingUserMessages.get(session)
+  if (!queue) return
+  const pending = queue.filter((item) => !item.started && item.mode === mode)[index]
+  if (!pending) return
+  const pendingIndex = queue.indexOf(pending)
+  queue.splice(pendingIndex, 1)
+  if (queue.length === 0) pendingUserMessages.delete(session)
 }
 
 export function bridgeEvents(
@@ -21,22 +104,64 @@ export function bridgeEvents(
   if (bridged.has(session)) return () => {}
   bridged.add(session)
 
-  const unsubscribe = session.subscribe((event) => {
+  let subscribed = true
+  const forward = (event: AgentSessionEvent) => {
+    if (!subscribed) return
+    let metadata: PastedTextDisplayMetadata | undefined
+    const message = 'message' in event ? event.message : undefined
+    const queue = pendingUserMessages.get(session)
+    if (queue && message?.role === 'user') {
+      if (event.type === 'message_start') {
+        const messageText = typeof message.content === 'string'
+          ? message.content
+          : message.content
+            .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+            .map((block) => block.text)
+            .join('')
+        const pending =
+          queue.find((item) => !item.started && item.text === messageText) ??
+          queue.find((item) => !item.started)
+        if (pending) {
+          pending.started = true
+          pending.onStart()
+          metadata = pending.metadata
+        }
+      } else if (event.type === 'message_end') {
+        const index = queue.findIndex((item) => item.started)
+        if (index >= 0) {
+          metadata = queue[index].metadata
+          queue.splice(index, 1)
+          if (queue.length === 0) pendingUserMessages.delete(session)
+        }
+      }
+    }
     if (win.isDestroyed() || win.webContents.isDestroyed()) return
-    const metadata = pendingPastedText.get(session)
     const enriched =
       metadata &&
       (event.type === 'message_start' || event.type === 'message_end') &&
-      event.message?.role === 'user'
+      message?.role === 'user'
         ? {
             ...event,
             message: {
-              ...event.message,
+              ...message,
               pastedText: metadata
             }
           }
         : event
     win.webContents.send('pi:event', { sessionId, event: enriched })
+  }
+
+  const unsubscribe = session.subscribe((event) => {
+    const batch = event.type === 'queue_update' ? queueUpdateBatches.get(session) : undefined
+    if (batch) {
+      batch.flush = () => forward(event)
+      return
+    }
+    forward(event)
   })
-  return unsubscribe
+  return () => {
+    subscribed = false
+    unsubscribe()
+    bridged.delete(session)
+  }
 }

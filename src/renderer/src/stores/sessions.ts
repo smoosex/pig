@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   api,
   type DisplayTurn,
+  type FollowUpAction,
   type ProjectGroup,
   type SessionContextUsage,
   type SessionControls,
@@ -35,6 +36,8 @@ interface RuntimeState {
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
   tokens: SessionTokenStats
+  followUpMessages: string[]
+  queuedEditText: string | null
 }
 
 interface OpenTab {
@@ -69,7 +72,9 @@ const emptyRuntime = (): RuntimeState => ({
   thinkingLevel: 'off',
   thinkingLevels: ['off'],
   contextUsage: null,
-  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  followUpMessages: [],
+  queuedEditText: null
 })
 
 function ensureRuntime(runtime: Record<string, RuntimeState>, sessionId: string): RuntimeState {
@@ -191,6 +196,9 @@ interface SessionsStore {
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
+  setFollowUpMessages: (sessionId: string, messages: string[]) => void
+  queueFollowUpAction: (sessionId: string, index: number, action: FollowUpAction) => Promise<void>
+  clearQueuedEditText: (sessionId: string) => void
   setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
 
   openExisting: (meta: SessionMeta) => Promise<void>
@@ -405,6 +413,20 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
 
   setThinkingLevel: (sessionId, thinkingLevel) => {
     set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { thinkingLevel }) }))
+  },
+
+  setFollowUpMessages: (sessionId, messages) => {
+    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { followUpMessages: messages }) }))
+  },
+
+  queueFollowUpAction: async (sessionId, index, action) => {
+    const text = await api.followUpAction(sessionId, index, action)
+    if (action !== 'edit' || text == null) return
+    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { queuedEditText: text }) }))
+  },
+
+  clearQueuedEditText: (sessionId) => {
+    set((s) => ({ runtime: patchRuntime(s.runtime, sessionId, { queuedEditText: null }) }))
   },
 
   openExisting: async (meta) => {

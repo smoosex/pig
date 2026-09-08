@@ -69,6 +69,7 @@ interface SessionControls {
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
   tokens: SessionTokenStats
+  followUpMessages: string[]
 }
 
 type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
@@ -177,7 +178,8 @@ declare global {
         sessionId: string,
         text: string,
         images?: { mimeType: string; data: string }[],
-        textAttachments?: PastedTextAttachmentInput[]
+        textAttachments?: PastedTextAttachmentInput[],
+        streamingBehavior?: 'steer' | 'followUp'
       ) => Promise<void>
       abort: (sessionId: string) => Promise<void>
       getMessages: (sessionId: string) => Promise<unknown[]>
@@ -191,6 +193,7 @@ declare global {
       setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
       setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
       refreshModels: (sessionId: string) => Promise<SessionControls>
+      followUpAction: (sessionId: string, index: number, action: 'steer' | 'edit' | 'dismiss') => Promise<string | null>
       pickDirectory: () => Promise<string | null>
       getSidebarPrefs: () => Promise<SidebarPrefs>
       setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>

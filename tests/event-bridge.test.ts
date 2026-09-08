@@ -1,0 +1,165 @@
+import { describe, expect, test } from 'bun:test'
+import type { BrowserWindow } from 'electron'
+import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
+import {
+  batchQueueUpdates,
+  bridgeEvents,
+  followUpMessagesForDisplay
+} from '../src/main/pi/event-bridge'
+import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
+
+function fixture(initial: string[] = ['第一条', '第二条', '第三条']) {
+  let followUp = [...initial]
+  let steering = ['已有插话']
+  let destroyed = false
+  const listeners = new Set<(event: AgentSessionEvent) => void>()
+  const events: AgentSessionEvent[] = []
+  const emit = (event: AgentSessionEvent) => {
+    for (const listener of listeners) listener(event)
+  }
+  const emitQueue = () => emit({ type: 'queue_update', steering: [...steering], followUp: [...followUp] })
+  const session = {
+    subscribe(listener: (event: AgentSessionEvent) => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    getFollowUpMessages: () => followUp,
+    getSteeringMessages: () => steering,
+    clearQueue() {
+      const previous = { steering: [...steering], followUp: [...followUp] }
+      steering = []
+      followUp = []
+      emitQueue()
+      return previous
+    },
+    async steer(text: string) {
+      steering.push(text)
+      emitQueue()
+    },
+    async followUp(text: string) {
+      followUp.push(text)
+      emitQueue()
+    }
+  } as unknown as AgentSession
+  const win = {
+    isDestroyed: () => destroyed,
+    webContents: {
+      isDestroyed: () => destroyed,
+      send(_channel: string, payload: { event: AgentSessionEvent }) {
+        events.push(payload.event)
+      }
+    }
+  } as unknown as BrowserWindow
+  const unsubscribe = bridgeEvents(session, 'test-session', win)
+  return { session, events, emit, unsubscribe, destroy: () => { destroyed = true } }
+}
+
+describe('batched queue updates', () => {
+  for (const action of ['steer', 'dismiss', 'edit'] as const) {
+    for (const repeated of [false, true]) {
+      test(`${action} only removes its target row (${repeated ? 'duplicate' : 'unique'} text)`, async () => {
+        const messages = repeated ? ['again', 'again', 'again'] : ['第一条', '第二条', '第三条']
+        const { session, events } = fixture(messages)
+        const rawSnapshots: string[][] = []
+        session.subscribe((event) => {
+          if (event.type === 'queue_update') rawSnapshots.push(event.followUp)
+        })
+        let sequence = 0
+        const createId = () => String(++sequence)
+        const originalRows = reconcileFollowUpRows([], messages, createId)
+
+        await batchQueueUpdates(session, async () => {
+          const { steering } = session.clearQueue()
+          for (const text of steering) await session.steer(text)
+          if (action === 'steer') await session.steer(messages[1])
+          await session.followUp(messages[0])
+          await session.followUp(messages[2])
+        })
+
+        expect(rawSnapshots[0]).toEqual([])
+        expect(rawSnapshots.length).toBeGreaterThan(1)
+        expect(events).toEqual([{
+          type: 'queue_update',
+          steering: action === 'steer' ? ['已有插话', messages[1]] : ['已有插话'],
+          followUp: [messages[0], messages[2]]
+        }])
+        let rows = originalRows
+        const exitedIds: string[] = []
+        for (const event of events) {
+          if (event.type !== 'queue_update') continue
+          const next = reconcileFollowUpRows(rows, event.followUp, createId, originalRows[1].id)
+          exitedIds.push(...rows.filter((row) => !next.includes(row)).map((row) => row.id))
+          rows = next
+        }
+        expect(exitedIds).toEqual([originalRows[1].id])
+        expect(rows[0]).toBe(originalRows[0])
+        expect(rows[1]).toBe(originalRows[2])
+      })
+    }
+  }
+
+  test('controls keep the committed queue while reconstruction is in progress', async () => {
+    const { session } = fixture()
+    await batchQueueUpdates(session, async () => {
+      session.clearQueue()
+      expect(followUpMessagesForDisplay(session)).toEqual(['第一条', '第二条', '第三条'])
+      await session.followUp('第一条')
+      expect(followUpMessagesForDisplay(session)).toEqual(['第一条', '第二条', '第三条'])
+      const snapshot = followUpMessagesForDisplay(session)
+      snapshot.length = 0
+      expect(followUpMessagesForDisplay(session)).toHaveLength(3)
+    })
+    expect(followUpMessagesForDisplay(session)).toEqual(['第一条'])
+  })
+
+  test('normal delivery and non-queue events still publish immediately', async () => {
+    const { session, events, emit } = fixture()
+    emit({ type: 'queue_update', steering: [], followUp: ['第二条', '第三条'] })
+    expect(events).toHaveLength(1)
+    await batchQueueUpdates(session, async () => {
+      session.clearQueue()
+      emit({ type: 'agent_start' })
+      expect(events.map((event) => event.type)).toEqual(['queue_update', 'agent_start'])
+      await session.followUp('第三条')
+    })
+    expect(events.at(-1)).toMatchObject({ type: 'queue_update', followUp: ['第三条'] })
+  })
+
+  test('failed reconstruction publishes the actual queue and releases the batch', async () => {
+    const { session, events } = fixture()
+    await expect(batchQueueUpdates(session, async () => {
+      session.clearQueue()
+      await session.followUp('保留消息')
+      throw new Error('requeue failed')
+    })).rejects.toThrow('requeue failed')
+    expect(events).toEqual([{ type: 'queue_update', steering: [], followUp: ['保留消息'] }])
+    expect(followUpMessagesForDisplay(session)).toEqual(['保留消息'])
+    await session.followUp('新消息')
+    expect(events.at(-1)).toMatchObject({ followUp: ['保留消息', '新消息'] })
+  })
+
+  test('nested batches publish once and do not block another session', async () => {
+    const first = fixture()
+    const second = fixture([])
+    await batchQueueUpdates(first.session, async () => {
+      first.session.clearQueue()
+      await batchQueueUpdates(first.session, () => first.session.followUp('第一条'))
+      expect(first.events).toEqual([])
+      await second.session.followUp('另一个会话')
+      expect(second.events).toHaveLength(1)
+      await first.session.followUp('第二条')
+    })
+    expect(first.events).toEqual([{ type: 'queue_update', steering: [], followUp: ['第一条', '第二条'] }])
+  })
+
+  for (const cleanup of ['unsubscribe', 'destroy'] as const) {
+    test(`does not flush to a closed bridge after ${cleanup}`, async () => {
+      const state = fixture()
+      await batchQueueUpdates(state.session, async () => {
+        state.session.clearQueue()
+        state[cleanup]()
+      })
+      expect(state.events).toEqual([])
+    })
+  }
+})

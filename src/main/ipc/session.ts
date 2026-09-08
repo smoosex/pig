@@ -14,11 +14,12 @@ import {
   refreshSessionModels,
   setSessionModel,
   setSessionThinking,
+  updateFollowUpMessage,
   viewSessionBranch,
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
-import { clearPendingPastedText, setPendingPastedText } from '../pi/event-bridge'
+import { queuePendingUserMessage } from '../pi/event-bridge'
 import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
 import {
   composePromptText,
@@ -165,7 +166,8 @@ export function registerSessionIpc(): void {
       sessionId: string,
       text: string,
       images?: { mimeType: string; data: string }[],
-      rawTextAttachments?: unknown
+      rawTextAttachments?: unknown,
+      rawStreamingBehavior?: unknown
     ) => {
       const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
       const body = typeof text === 'string' ? text : ''
@@ -198,13 +200,14 @@ export function registerSessionIpc(): void {
           data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
         }))
       worktrees.assertAvailable(ls.cwd)
-      if (displayMetadata) setPendingPastedText(ls.agentSession, displayMetadata)
-      let metadataWritten = false
-      const unsubscribe = ls.agentSession.subscribe((event) => {
-        if (event.type !== 'message_start' || event.message.role !== 'user') return
-        if (metadata && !metadataWritten) {
+      const streamingBehavior =
+        ls.agentSession.isStreaming &&
+        (rawStreamingBehavior === 'steer' || rawStreamingBehavior === 'followUp')
+          ? rawStreamingBehavior
+          : undefined
+      const cancelPending = queuePendingUserMessage(ls.agentSession, modelText, displayMetadata, () => {
+        if (metadata) {
           ls.agentSession.sessionManager.appendCustomEntry(PASTED_TEXT_CUSTOM_TYPE, metadata)
-          metadataWritten = true
         }
         const namingText = inlineAttachments
           ? stripPastedTextAttachments(body, inlineAttachments)
@@ -217,15 +220,20 @@ export function registerSessionIpc(): void {
             return runBranchNamer(task, settings.model, signal)
           }
         ).catch((error) => console.error('Worktree naming failed:', error))
-      })
+      }, streamingBehavior)
       try {
         await ls.agentSession.prompt(
           modelText,
-          attachments.length > 0 ? { images: attachments } : undefined
+          attachments.length > 0 || streamingBehavior
+            ? {
+                ...(attachments.length > 0 ? { images: attachments } : {}),
+                ...(streamingBehavior ? { streamingBehavior } : {})
+              }
+            : undefined
         )
-      } finally {
-        unsubscribe()
-        clearPendingPastedText(ls.agentSession)
+      } catch (error) {
+        cancelPending()
+        throw error
       }
     }
   )
@@ -309,4 +317,11 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:refresh-models', async (_event, sessionId: string) => {
     return refreshSessionModels(sessionId)
   })
+
+  ipcMain.handle(
+    'session:follow-up-action',
+    async (_event, sessionId: string, index: number, action: 'steer' | 'edit' | 'dismiss') => {
+      return updateFollowUpMessage(sessionId, index, action)
+    }
+  )
 }
