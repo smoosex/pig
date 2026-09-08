@@ -208,6 +208,11 @@ export function ChatView() {
     () => (live.length === 0 ? historical : [...historical, ...live]),
     [historical, live]
   )
+  const scrollStates = useRef(new Map<string, ScrollState>())
+  const saveScrollState = useCallback((sessionId: string, state: ScrollState) => {
+    scrollStates.current.set(sessionId, state)
+  }, [])
+  const initialScrollState = activeSessionId ? scrollStates.current.get(activeSessionId) : undefined
 
   if (items.length === 0) {
     return (
@@ -238,12 +243,19 @@ export function ChatView() {
       items={items}
       sessionId={activeSessionId}
       isStreaming={isStreaming}
+      initialScrollState={initialScrollState}
+      onScrollStateChange={saveScrollState}
     />
   )
 }
 
 const TURN_ALIGN = 12
 const SCROLL_END = 32
+
+type ScrollState = {
+  scrollTop: number
+  following: boolean
+}
 
 function distanceFromEnd(el: HTMLDivElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop)
@@ -321,11 +333,15 @@ function shouldAdjustOnItemResize(
 function VirtualTurns({
   items,
   sessionId,
-  isStreaming
+  isStreaming,
+  initialScrollState,
+  onScrollStateChange
 }: {
   items: Turn[]
   sessionId: string | null
   isStreaming: boolean
+  initialScrollState?: ScrollState
+  onScrollStateChange: (sessionId: string, state: ScrollState) => void
 }) {
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const parentRef = useRef<HTMLDivElement>(null)
@@ -359,13 +375,64 @@ function VirtualTurns({
     shouldAdjustOnItemResize(item, instance)
   const virtualItems = virtualizer.getVirtualItems()
 
+  useLayoutEffect(() => {
+    const el = parentRef.current
+    if (!el) return
+    following.current = initialScrollState?.following ?? true
+    const restore = () => {
+      if (!el.isConnected) return
+      if (following.current) {
+        snapToEnd(el)
+      } else if (initialScrollState) {
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
+        el.scrollTop = Math.min(initialScrollState.scrollTop, maxScroll)
+      }
+      if (sessionId) {
+        onScrollStateChange(sessionId, {
+          scrollTop: el.scrollTop,
+          following: following.current
+        })
+      }
+    }
+    restore()
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      restore()
+      secondFrame = requestAnimationFrame(restore)
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [sessionId])
+
+  useLayoutEffect(() => {
+    return () => {
+      const el = parentRef.current
+      if (!el || !sessionId) return
+      onScrollStateChange(sessionId, {
+        scrollTop: el.scrollTop,
+        following: following.current || distanceFromEnd(el) <= SCROLL_END
+      })
+    }
+  }, [sessionId, onScrollStateChange])
+
   useEffect(() => {
     const el = parentRef.current
     if (!el) return
     const onScroll = () => {
-      if (!userIntent.current) return
-      userIntent.current = false
-      following.current = distanceFromEnd(el) <= SCROLL_END
+      if (userIntent.current) {
+        userIntent.current = false
+        following.current = distanceFromEnd(el) <= SCROLL_END
+      } else if (distanceFromEnd(el) <= SCROLL_END) {
+        following.current = true
+      }
+      if (sessionId) {
+        onScrollStateChange(sessionId, {
+          scrollTop: el.scrollTop,
+          following: following.current
+        })
+      }
     }
     const onUserInput = () => {
       userIntent.current = true
@@ -374,14 +441,16 @@ function VirtualTurns({
     el.addEventListener('scroll', onScroll, { passive: true })
     el.addEventListener('wheel', onUserInput, { passive: true })
     el.addEventListener('touchmove', onUserInput, { passive: true })
+    el.addEventListener('pointerdown', onUserInput)
     el.addEventListener('keydown', onUserInput)
     return () => {
       el.removeEventListener('scroll', onScroll)
       el.removeEventListener('wheel', onUserInput)
       el.removeEventListener('touchmove', onUserInput)
+      el.removeEventListener('pointerdown', onUserInput)
       el.removeEventListener('keydown', onUserInput)
     }
-  }, [isStreaming])
+  }, [isStreaming, sessionId, onScrollStateChange])
 
   useLayoutEffect(() => {
     const el = parentRef.current
