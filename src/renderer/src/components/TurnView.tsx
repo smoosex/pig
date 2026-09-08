@@ -1,4 +1,5 @@
 import { memo, useEffect, useState, type ReactNode } from 'react'
+import { formatPastedTextSize } from '../../../shared/pasted-text'
 import { ThinkingOrb } from 'thinking-orbs'
 import { useSessionsStore } from '../stores/sessions'
 import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
@@ -6,8 +7,8 @@ import type {
   BashExecutionMessage,
   CustomMessage,
   ImageContent,
-  TextContent,
-  UserMessage
+  PigUserMessage,
+  TextContent
 } from '../pi/types'
 import {
   formatElapsed,
@@ -26,6 +27,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import { Separator } from './ui/separator'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownText } from './MarkdownText'
+import { PastedTextPreview } from './PastedTextPreview'
 import { Message, MessageContent } from './ui/message'
 
 const hideScroll = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
@@ -52,7 +54,8 @@ function VerbLabel({ text, failed, active }: { text: string; failed?: boolean; a
   )
 }
 
-function userText(message: UserMessage): string {
+function userText(message: PigUserMessage): string {
+  if (message.pastedText) return message.pastedText.body
   if (typeof message.content === 'string') return message.content
   return message.content
     .filter((b): b is TextContent => b.type === 'text')
@@ -60,7 +63,7 @@ function userText(message: UserMessage): string {
     .join('')
 }
 
-function userImages(message: UserMessage): ImageContent[] {
+function userImages(message: PigUserMessage): ImageContent[] {
   if (typeof message.content === 'string') return []
   return message.content.filter((b): b is ImageContent => b.type === 'image')
 }
@@ -69,10 +72,12 @@ function Chevron({ open }: { open: boolean }) {
   return <ChevronRight className={cn('shrink-0 transition-transform duration-150', open && 'rotate-90')} />
 }
 
-function UserBubble({ message }: { message: UserMessage }) {
+function UserBubble({ message }: { message: PigUserMessage }) {
   const images = userImages(message)
   const text = userText(message)
+  const textAttachments = message.pastedText?.attachments ?? []
   const [preview, setPreview] = useState<string | null>(null)
+  const hasTextBubble = text.length > 0 || textAttachments.length > 0
   return (
     <Message align="end" className="mb-4" data-turn-user="">
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
@@ -95,9 +100,42 @@ function UserBubble({ message }: { message: UserMessage }) {
             })}
           </div>
         ) : null}
-        {text ? (
+        {hasTextBubble ? (
           <Bubble align="end" className="max-w-full *:data-[slot=bubble-content]:bg-user-message-background *:data-[slot=bubble-content]:text-user-message-foreground">
-            <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+            <BubbleContent
+              className={cn(
+                'flex max-w-full flex-col gap-2',
+                textAttachments.length > 0 && 'border-border'
+              )}
+            >
+              {textAttachments.map((attachment) => (
+                <PastedTextPreview
+                  key={attachment.id}
+                  text={attachment.text}
+                  byteSize={attachment.byteSize}
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full min-w-0 max-w-full justify-start gap-2 rounded-lg px-2.5 py-2 text-left font-normal whitespace-normal"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5 text-xs font-medium">
+                        <FileText data-icon="inline-start" />
+                        <span>Pasted text</span>
+                      </span>
+                      <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {attachment.text}
+                      </span>
+                      <span className="mt-1 block text-[10px] text-muted-foreground">
+                        UTF-8 {formatPastedTextSize(attachment.byteSize)}
+                      </span>
+                    </span>
+                  </Button>
+                </PastedTextPreview>
+              ))}
+              {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+            </BubbleContent>
           </Bubble>
         ) : null}
         <ImagePreview src={preview} onClose={() => setPreview(null)} />

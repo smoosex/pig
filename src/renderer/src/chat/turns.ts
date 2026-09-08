@@ -4,10 +4,10 @@ import type {
   CustomMessage,
   ImageContent,
   PiMessage,
+  PigUserMessage,
   TextContent,
   ToolCall,
-  ToolResultMessage,
-  UserMessage
+  ToolResultMessage
 } from '../pi/types'
 
 export interface ToolStep {
@@ -37,7 +37,7 @@ export type AnswerBlock =
 
 export interface Turn {
   id?: string
-  user?: UserMessage
+  user?: PigUserMessage
   process: ProcessItem[]
   answer: AnswerBlock[]
   errorMessage?: string
@@ -165,7 +165,7 @@ export function buildTurn(
   streaming: boolean,
   thinkingDurations: ThinkingDurations = {}
 ): Turn {
-  const user = chunk[0]?.role === 'user' ? (chunk[0] as UserMessage) : undefined
+  const user = chunk[0]?.role === 'user' ? (chunk[0] as PigUserMessage) : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
   let answer: AnswerBlock[] = []

@@ -1,0 +1,61 @@
+import { describe, expect, test } from 'bun:test'
+import {
+  composePromptText,
+  createPastedTextMetadata,
+  formatPastedTextSize,
+  isLongPastedText,
+  pastedTextFingerprint,
+  isPastedTextMetadata,
+  pastedTextLineCount,
+  utf8ByteLength
+} from '../src/shared/pasted-text'
+
+describe('pasted text attachments', () => {
+  test('uses strict character and line thresholds', () => {
+    expect(isLongPastedText('a'.repeat(2000))).toBe(false)
+    expect(isLongPastedText('a'.repeat(2001))).toBe(true)
+    expect(isLongPastedText('🙂'.repeat(2000))).toBe(false)
+    expect(isLongPastedText('🙂'.repeat(2001))).toBe(true)
+    expect(pastedTextLineCount(Array.from({ length: 20 }, () => 'x').join('\n'))).toBe(20)
+    expect(isLongPastedText(Array.from({ length: 20 }, () => 'x').join('\n'))).toBe(false)
+    expect(isLongPastedText(Array.from({ length: 21 }, () => 'x').join('\n'))).toBe(true)
+    expect(pastedTextLineCount('a\r\nb\r\nc')).toBe(3)
+  })
+
+  test('keeps body and attachment order in the model input', () => {
+    expect(composePromptText('正文', [
+      { id: 'one', text: '第一份' },
+      { id: 'two', text: '第二份' }
+    ])).toBe('正文\n\n第一份\n\n第二份')
+    expect(composePromptText('', [{ id: 'one', text: '只有附件' }])).toBe('只有附件')
+  })
+
+  test('calculates UTF-8 size and validates persisted metadata', () => {
+    const metadata = createPastedTextMetadata('正文', [
+      { id: 'one', text: '附件', byteSize: 6 }
+    ])
+    expect(metadata).toEqual({
+      version: 1,
+      bodyLength: 2,
+      contentLength: 6,
+      contentHash: pastedTextFingerprint('正文\n\n附件'),
+      attachments: [{ id: 'one', start: 4, end: 6, byteSize: 6 }]
+    })
+    expect(utf8ByteLength('中文')).toBe(6)
+    expect(formatPastedTextSize(2048)).toBe('2 KB')
+    expect(isPastedTextMetadata({
+      version: 1,
+      bodyLength: 2,
+      contentLength: 6,
+      contentHash: pastedTextFingerprint('正文\n\n附件'),
+      attachments: [{ id: 'one', start: 4, end: 6, byteSize: 6 }]
+    })).toBe(true)
+    expect(isPastedTextMetadata({
+      version: 1,
+      bodyLength: 2,
+      contentLength: 6,
+      contentHash: pastedTextFingerprint('正文\n\n附件'),
+      attachments: [{ id: '', start: 4, end: 6, byteSize: 6 }]
+    })).toBe(false)
+  })
+})

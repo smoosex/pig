@@ -33,8 +33,12 @@ const api = {
   },
   deleteSession: (sessionId: string, path: string, cwd: string): Promise<void> =>
     ipcRenderer.invoke('session:delete', sessionId, path, cwd),
-  prompt: (sessionId: string, text: string, images?: unknown): Promise<void> =>
-    ipcRenderer.invoke('session:prompt', sessionId, text, images),
+  prompt: (
+    sessionId: string,
+    text: string,
+    images?: unknown,
+    textAttachments?: unknown
+  ): Promise<void> => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments),
   abort: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:abort', sessionId),
   getMessages: (sessionId: string): Promise<unknown[]> =>
     ipcRenderer.invoke('session:get-messages', sessionId),

@@ -1,6 +1,12 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
-import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
+import { ArrowUp, BookOpen, Box, FileText, RefreshCw, Square, X } from 'lucide-react'
+import {
+  formatPastedTextSize,
+  isLongPastedText,
+  utf8ByteLength,
+  type PastedTextAttachment
+} from '../../../shared/pasted-text'
 import {
   api,
   type SessionContextUsage,
@@ -35,6 +41,7 @@ import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
 import { ImagePreview } from './ImagePreview'
+import { PastedTextPreview } from './PastedTextPreview'
 
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
@@ -493,6 +500,7 @@ function readImage(file: File): Promise<PastedImage> {
 export function Composer() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<PastedImage[]>([])
+  const [pastedTexts, setPastedTexts] = useState<PastedTextAttachment[]>([])
   const [preview, setPreview] = useState<string | null>(null)
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
@@ -552,6 +560,7 @@ export function Composer() {
     commandsFor.current = null
     setCommands([])
     setSlashDismissed(false)
+    setPastedTexts([])
     return () => {
       setPreview(null)
       setImages((current) => {
@@ -620,8 +629,8 @@ export function Composer() {
 
   const send = useCallback(async () => {
     const trimmed = text.trim()
-    if ((!trimmed && images.length === 0) || isStreaming || !activeSessionId) return
-    if (trimmed === '/export' || trimmed.startsWith('/export ')) {
+    if ((!trimmed && images.length === 0 && pastedTexts.length === 0) || isStreaming || !activeSessionId) return
+    if ((trimmed === '/export' || trimmed.startsWith('/export ')) && pastedTexts.length === 0) {
       const result = await api.exportSession(activeSessionId, exportPathArg(trimmed))
       if (!result) return
       setText('')
@@ -629,25 +638,40 @@ export function Composer() {
     }
     const prepared = await api.prepareSession(activeSessionId)
     if (prepared.created) await refreshCwd(prepared.cwd)
-    const title = trimmed.slice(0, 500) || (images.length > 0 ? '图片' : '')
+    const title = trimmed.slice(0, 500) || (pastedTexts.length > 0 ? 'Pasted text' : images.length > 0 ? '图片' : '')
     if (title) useSessionsStore.getState().previewSessionTitle(activeSessionId, title)
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
+    const textAttachments = pastedTexts.map(({ id, text: pastedText }) => ({ id, text: pastedText }))
     setText('')
+    setPastedTexts([])
     setPreview(null)
     setImages((current) => {
       for (const image of current) URL.revokeObjectURL(image.url)
       return []
     })
-    await api.prompt(activeSessionId, trimmed, payload.length > 0 ? payload : undefined)
+    await api.prompt(
+      activeSessionId,
+      trimmed,
+      payload.length > 0 ? payload : undefined,
+      textAttachments.length > 0 ? textAttachments : undefined
+    )
     await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
-  }, [text, images, isStreaming, activeSessionId, refreshCwd])
+  }, [text, images, pastedTexts, isStreaming, activeSessionId, refreshCwd])
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
-  const canSend = Boolean((text.trim() || images.length > 0) && activeSessionId && !isStreaming)
+  const canSend = Boolean(
+    (text.trim() || images.length > 0 || pastedTexts.length > 0) &&
+    activeSessionId &&
+    !isStreaming
+  )
+
+  const removePastedText = (id: string) => {
+    setPastedTexts((current) => current.filter((item) => item.id !== id))
+  }
 
   const removeImage = (id: string) => {
     setImages((current) => {
@@ -679,7 +703,7 @@ export function Composer() {
         className="w-full"
       >
       <InputGroup
-        className="min-h-32 overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
+        className="min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
         onFocus={() => setFocused(true)}
         onBlur={(event) => {
           const next = event.relatedTarget
@@ -687,8 +711,9 @@ export function Composer() {
           setFocused(false)
         }}
       >
+        <div className="min-h-0 w-full flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <InputGroupTextarea
-          className="min-h-16 px-3.5 pt-3 text-sm leading-snug"
+          className="min-h-16 flex-none px-3.5 pt-3 text-sm leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           value={text}
           placeholder={activeSessionId ? '输入一条消息...' : '请先选择会话'}
           rows={3}
@@ -738,9 +763,21 @@ export function Composer() {
             void send()
           }}
           onPaste={(e) => {
+            const pastedText = e.clipboardData?.getData('text/plain') ?? ''
             const files = clipboardImages(e)
+            if (isLongPastedText(pastedText)) {
+              e.preventDefault()
+              setPastedTexts((current) => [
+                ...current,
+                {
+                  id: crypto.randomUUID(),
+                  text: pastedText,
+                  byteSize: utf8ByteLength(pastedText)
+                }
+              ])
+            }
             if (files.length === 0) return
-            if (!e.clipboardData?.getData('text/plain')) e.preventDefault()
+            if (!pastedText) e.preventDefault()
             void Promise.all(files.map(readImage)).then((next) => {
               setImages((current) => [...current, ...next])
             })
@@ -777,7 +814,39 @@ export function Composer() {
             ))}
           </div>
         ) : null}
-        <InputGroupAddon align="block-end" className="justify-between px-2.5 pb-2.5">
+        {pastedTexts.length > 0 ? (
+          <div className="flex w-full flex-col gap-1 px-3.5 pb-1.5">
+            {pastedTexts.map((attachment) => (
+              <div key={attachment.id} className="flex min-w-0 items-center gap-1 rounded-lg border border-border bg-muted/30 px-2 py-1">
+                <PastedTextPreview text={attachment.text} byteSize={attachment.byteSize}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="min-w-0 flex-1 justify-start gap-2 px-0 text-left text-xs font-normal hover:bg-transparent"
+                  >
+                    <FileText data-icon="inline-start" />
+                    <span className="min-w-0 truncate">Pasted text</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      UTF-8 {formatPastedTextSize(attachment.byteSize)}
+                    </span>
+                  </Button>
+                </PastedTextPreview>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="shrink-0"
+                  aria-label="移除文本附件"
+                  onClick={() => removePastedText(attachment.id)}
+                >
+                  <X />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        </div>
+        <InputGroupAddon align="block-end" className="shrink-0 justify-between px-2.5 pb-2.5">
           <div className="flex min-w-0 items-center gap-1">
             <ModelPicker
               sessionId={activeSessionId}

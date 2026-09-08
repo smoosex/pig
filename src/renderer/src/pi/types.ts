@@ -1,3 +1,4 @@
+import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import type {
   AssistantMessage,
   ImageContent,
@@ -7,6 +8,10 @@ import type {
   ToolResultMessage,
   UserMessage
 } from '@earendil-works/pi-ai'
+
+export interface PigUserMessage extends UserMessage {
+  pastedText?: PastedTextDisplayMetadata
+}
 
 export type {
   AssistantMessage,
@@ -54,7 +59,7 @@ export interface CompactionSummaryMessage {
 }
 
 export type PiMessage =
-  | UserMessage
+  | PigUserMessage
   | AssistantMessage
   | ToolResultMessage
   | BashExecutionMessage

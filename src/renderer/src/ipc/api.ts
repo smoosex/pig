@@ -1,3 +1,7 @@
+import type { PastedTextAttachment, PastedTextAttachmentInput } from '../../../shared/pasted-text'
+
+export type { PastedTextAttachment, PastedTextAttachmentInput }
+
 export interface SessionMeta {
   path: string
   id: string
@@ -101,6 +105,7 @@ export interface SlashCommand {
 export interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
+  textAttachments: PastedTextAttachment[]
 }
 
 export type DisplayAnswer =
@@ -230,7 +235,8 @@ export interface SessionApi {
   prompt: (
     sessionId: string,
     text: string,
-    images?: { mimeType: string; data: string }[]
+    images?: { mimeType: string; data: string }[],
+    textAttachments?: PastedTextAttachmentInput[]
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getMessages: (sessionId: string) => Promise<unknown[]>

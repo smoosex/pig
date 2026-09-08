@@ -1,7 +1,17 @@
 import type { BrowserWindow } from 'electron'
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
+import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
 const bridged = new WeakSet<AgentSession>()
+const pendingPastedText = new WeakMap<AgentSession, PastedTextDisplayMetadata>()
+
+export function setPendingPastedText(session: AgentSession, metadata: PastedTextDisplayMetadata): void {
+  pendingPastedText.set(session, metadata)
+}
+
+export function clearPendingPastedText(session: AgentSession): void {
+  pendingPastedText.delete(session)
+}
 
 export function bridgeEvents(
   session: AgentSession,
@@ -13,7 +23,20 @@ export function bridgeEvents(
 
   const unsubscribe = session.subscribe((event) => {
     if (win.isDestroyed() || win.webContents.isDestroyed()) return
-    win.webContents.send('pi:event', { sessionId, event })
+    const metadata = pendingPastedText.get(session)
+    const enriched =
+      metadata &&
+      (event.type === 'message_start' || event.type === 'message_end') &&
+      event.message?.role === 'user'
+        ? {
+            ...event,
+            message: {
+              ...event.message,
+              pastedText: metadata
+            }
+          }
+        : event
+    win.webContents.send('pi:event', { sessionId, event: enriched })
   })
   return unsubscribe
 }

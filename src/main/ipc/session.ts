@@ -18,7 +18,17 @@ import {
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
+import { clearPendingPastedText, setPendingPastedText } from '../pi/event-bridge'
 import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
+import {
+  composePromptText,
+  createPastedTextMetadata,
+  PASTED_TEXT_CUSTOM_TYPE,
+  utf8ByteLength,
+  type PastedTextAttachment,
+  type PastedTextAttachmentInput,
+  type PastedTextDisplayMetadata
+} from '../../shared/pasted-text'
 import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
 import { canonicalProject } from '../worktrees'
 import { loadOpenedWorktreeProjects, loadProjectForCwd, loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
@@ -31,6 +41,20 @@ import {
   listChats,
   removeChatWorkDir
 } from '../chats'
+
+function normalizeTextAttachments(value: unknown): PastedTextAttachment[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): PastedTextAttachment[] => {
+    if (!item || typeof item !== 'object') return []
+    const input = item as Partial<PastedTextAttachmentInput>
+    if (typeof input.text !== 'string' || input.text.length === 0) return []
+    return [{
+      id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
+      text: input.text,
+      byteSize: utf8ByteLength(input.text)
+    }]
+  })
+}
 
 export function registerSessionIpc(): void {
   registerWorktreeIpc()
@@ -132,9 +156,19 @@ export function registerSessionIpc(): void {
       _event,
       sessionId: string,
       text: string,
-      images?: { mimeType: string; data: string }[]
+      images?: { mimeType: string; data: string }[],
+      rawTextAttachments?: unknown
     ) => {
       const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
+      const body = typeof text === 'string' ? text : ''
+      const textAttachments = normalizeTextAttachments(rawTextAttachments)
+      const modelText = composePromptText(body, textAttachments)
+      const metadata = textAttachments.length > 0
+        ? createPastedTextMetadata(body, textAttachments)
+        : undefined
+      const displayMetadata: PastedTextDisplayMetadata | undefined = textAttachments.length > 0
+        ? { body, attachments: textAttachments }
+        : undefined
       const attachments = (Array.isArray(images) ? images : [])
         .filter(
           (image) =>
@@ -149,17 +183,31 @@ export function registerSessionIpc(): void {
           data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
         }))
       worktrees.assertAvailable(ls.cwd)
+      if (displayMetadata) setPendingPastedText(ls.agentSession, displayMetadata)
+      let metadataWritten = false
       const unsubscribe = ls.agentSession.subscribe((event) => {
         if (event.type !== 'message_start' || event.message.role !== 'user') return
-        void worktrees.nameOnFirstPrompt(ls.cwd, text.trim() || '用户仅发送了图片，未附文字。', async (task, signal) => {
-          const settings = await getDefaultSessionSettings()
-          return runBranchNamer(task, settings.model, signal)
-        }).catch((error) => console.error('Worktree naming failed:', error))
+        if (metadata && !metadataWritten) {
+          ls.agentSession.sessionManager.appendCustomEntry(PASTED_TEXT_CUSTOM_TYPE, metadata)
+          metadataWritten = true
+        }
+        void worktrees.nameOnFirstPrompt(
+          ls.cwd,
+          body.trim() || (textAttachments.length > 0 ? 'Pasted text' : '用户仅发送了图片，未附文字。'),
+          async (task, signal) => {
+            const settings = await getDefaultSessionSettings()
+            return runBranchNamer(task, settings.model, signal)
+          }
+        ).catch((error) => console.error('Worktree naming failed:', error))
       })
       try {
-        await ls.agentSession.prompt(text, attachments.length > 0 ? { images: attachments } : undefined)
+        await ls.agentSession.prompt(
+          modelText,
+          attachments.length > 0 ? { images: attachments } : undefined
+        )
       } finally {
         unsubscribe()
+        clearPendingPastedText(ls.agentSession)
       }
     }
   )

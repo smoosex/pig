@@ -84,9 +84,21 @@ interface SessionTreeGutter {
   show: boolean
 }
 
+interface PastedTextAttachmentInput {
+  id: string
+  text: string
+}
+
+interface PastedTextAttachment {
+  id: string
+  text: string
+  byteSize: number
+}
+
 interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
+  textAttachments: PastedTextAttachment[]
 }
 
 interface DisplayTurn {
@@ -152,7 +164,12 @@ declare global {
       deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
       onProjectsChanged: (listener: (projectCwd: string) => void) => () => void
       deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
-      prompt: (sessionId: string, text: string, images?: { mimeType: string; data: string }[]) => Promise<void>
+      prompt: (
+        sessionId: string,
+        text: string,
+        images?: { mimeType: string; data: string }[],
+        textAttachments?: PastedTextAttachmentInput[]
+      ) => Promise<void>
       abort: (sessionId: string) => Promise<void>
       getMessages: (sessionId: string) => Promise<unknown[]>
       getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
+import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import { ArrowDown } from 'lucide-react'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
@@ -12,20 +13,24 @@ import { TurnView } from './TurnView'
 
 function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
   const user = display.user
-    ? display.user.images.length > 0
-      ? {
-          role: 'user' as const,
-          content: [
-            ...(display.user.text ? [{ type: 'text' as const, text: display.user.text }] : []),
-            ...display.user.images.map((image) => ({
-              type: 'image' as const,
-              mimeType: image.mimeType,
-              data: image.data
-            }))
-          ],
-          timestamp: display.startedAt
-        }
-      : { role: 'user' as const, content: display.user.text, timestamp: display.startedAt }
+    ? {
+        role: 'user' as const,
+        content: display.user.images.length > 0
+          ? [
+              ...(display.user.text ? [{ type: 'text' as const, text: display.user.text }] : []),
+              ...display.user.images.map((image) => ({
+                type: 'image' as const,
+                mimeType: image.mimeType,
+                data: image.data
+              }))
+            ]
+          : display.user.text,
+        timestamp: display.startedAt,
+        pastedText: {
+          body: display.user.text,
+          attachments: display.user.textAttachments
+        } satisfies PastedTextDisplayMetadata
+      }
     : undefined
 
   return {
