@@ -187,7 +187,7 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {
     if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
-    viewSessionBranch(sessionId, tipId)
+    return { leafId: viewSessionBranch(sessionId, tipId) }
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {

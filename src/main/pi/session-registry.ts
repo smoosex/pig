@@ -928,15 +928,17 @@ export function getSessionTree(sessionId: string): SessionTreeRow[] {
   }))
 }
 
-export function viewSessionBranch(sessionId: string, tipId: string): void {
+export function viewSessionBranch(sessionId: string, tipId: string): string | null {
   const ls = getLive(sessionId)
   if (!ls) throw new Error(`Session not found: ${sessionId}`)
   if (ls.agentSession.isStreaming) throw new Error('Session is streaming')
   const sm = ls.agentSession.sessionManager
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
-  if (sm.getLeafId() === tipId) return
-  sm.branch(tipId)
-  ls.agentSession.agent.state.messages = sm.buildSessionContext().messages
+  if (sm.getLeafId() !== tipId) {
+    sm.branch(tipId)
+    ls.agentSession.agent.state.messages = sm.buildSessionContext().messages
+  }
+  return sm.getLeafId()
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {

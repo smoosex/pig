@@ -42,7 +42,7 @@ const api = {
     ipcRenderer.invoke('session:get-turn-messages', sessionId, turnId),
   getSessionTree: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:get-tree', sessionId),
-  viewBranch: (sessionId: string, tipId: string): Promise<void> =>
+  viewBranch: (sessionId: string, tipId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:view-branch', sessionId, tipId),
   getControls: (sessionId: string): Promise<unknown> =>
     ipcRenderer.invoke('session:get-controls', sessionId),

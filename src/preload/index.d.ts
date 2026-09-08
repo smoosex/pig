@@ -99,6 +99,15 @@ interface DisplayTurn {
   hasProcess: boolean
 }
 
+interface DisplayTurnsResult {
+  leafId: string | null
+  turns: DisplayTurn[]
+}
+
+interface SessionBranchRef {
+  leafId: string | null
+}
+
 interface SessionTreeRow {
   id: string
   parentId: string | null
@@ -145,10 +154,10 @@ declare global {
       prompt: (sessionId: string, text: string, images?: { mimeType: string; data: string }[]) => Promise<void>
       abort: (sessionId: string) => Promise<void>
       getMessages: (sessionId: string) => Promise<unknown[]>
-      getDisplayTurns: (sessionId: string) => Promise<DisplayTurn[]>
+      getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
       getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
       getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
-      viewBranch: (sessionId: string, tipId: string) => Promise<void>
+      viewBranch: (sessionId: string, tipId: string) => Promise<SessionBranchRef>
       getControls: (sessionId: string) => Promise<SessionControls>
       getCommands: (sessionId: string) => Promise<SlashCommand[]>
       exportSession: (sessionId: string, outputPath?: string) => Promise<{ path: string } | null>

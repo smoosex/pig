@@ -18,6 +18,10 @@ export type { ProjectGroup, SessionMeta, WorktreeGroup }
 
 interface RuntimeState {
   turns: DisplayTurn[]
+  leafId: string | null
+  branchViewId: string
+  branchViews: Record<string, string>
+  branchRequest: number
   liveMessages: PiMessage[]
   processByTurnId: Record<string, ProcessItem[]>
   thinkingDurations: ThinkingDurations
@@ -40,8 +44,19 @@ interface OpenTab {
   meta?: SessionMeta
 }
 
+let branchViewSequence = 0
+
+function createBranchViewId(): string {
+  branchViewSequence += 1
+  return `branch-view-${branchViewSequence}`
+}
+
 const emptyRuntime = (): RuntimeState => ({
   turns: [],
+  leafId: null,
+  branchViewId: createBranchViewId(),
+  branchViews: {},
+  branchRequest: 0,
   liveMessages: [],
   processByTurnId: {},
   thinkingDurations: {},
@@ -163,7 +178,14 @@ interface SessionsStore {
   unpinProject: (cwd: string) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
   refreshCwd: (cwd: string) => Promise<void>
-  hydrateTurns: (sessionId: string) => Promise<void>
+  hydrateTurns: (
+    sessionId: string,
+    options?: {
+      expectedLeafId?: string | null
+      expectedBranchRequest?: number
+      branchViewId?: string
+    }
+  ) => Promise<boolean>
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
@@ -266,24 +288,47 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     await get().refreshProject(cwd)
   },
 
-  hydrateTurns: async (sessionId) => {
-    const turns = await api.getDisplayTurns(sessionId)
+  hydrateTurns: async (sessionId, options) => {
+    const result = await api.getDisplayTurns(sessionId)
+    const current = get().runtime[sessionId]
+    if (
+      (options?.expectedLeafId !== undefined && result.leafId !== options.expectedLeafId) ||
+      (options?.expectedBranchRequest != null && current?.branchRequest !== options.expectedBranchRequest)
+    ) {
+      return false
+    }
     set((s) => {
       const rt = ensureRuntime(s.runtime, sessionId)
+      const branchViewId = options?.branchViewId ?? rt.branchViewId
+      const branchViews = { ...rt.branchViews }
+      if (result.leafId) {
+        if (
+          options?.branchViewId === undefined &&
+          rt.leafId &&
+          rt.leafId !== result.leafId
+        ) {
+          delete branchViews[rt.leafId]
+        }
+        branchViews[result.leafId] = branchViewId
+      }
       const elapsedByTurnId = { ...rt.elapsedByTurnId }
-      const last = turns[turns.length - 1]
+      const last = result.turns[result.turns.length - 1]
       if (!rt.isStreaming && rt.streamElapsedMs != null && last) {
         elapsedByTurnId[last.id] = rt.streamElapsedMs
       }
       return {
         runtime: patchRuntime(s.runtime, sessionId, {
-          turns,
+          turns: result.turns,
+          leafId: result.leafId,
+          branchViewId,
+          branchViews,
           liveMessages: rt.isStreaming ? rt.liveMessages : [],
           processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
           elapsedByTurnId
         })
       }
     })
+    return true
   },
 
   loadTurnProcess: async (sessionId, turnId) => {
@@ -552,7 +597,25 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     }),
 
   viewBranch: async (sessionId, tipId) => {
-    await api.viewBranch(sessionId, tipId)
-    await Promise.all([get().hydrateTurns(sessionId), get().loadControls(sessionId)])
+    const current = get().runtime[sessionId]
+    if (!current) return
+    const branchRequest = current.branchRequest + 1
+    set((s) => ({
+      runtime: patchRuntime(s.runtime, sessionId, { branchRequest })
+    }))
+    const branch = await api.viewBranch(sessionId, tipId)
+    const latest = get().runtime[sessionId]
+    if (!latest || latest.branchRequest !== branchRequest) return
+    const branchViewId =
+      branch.leafId === latest.leafId
+        ? latest.branchViewId
+        : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
+    const hydrated = await get().hydrateTurns(sessionId, {
+      expectedLeafId: branch.leafId,
+      expectedBranchRequest: branchRequest,
+      branchViewId
+    })
+    if (!hydrated || get().runtime[sessionId]?.branchRequest !== branchRequest) return
+    await get().loadControls(sessionId)
   }
 }))

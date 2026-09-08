@@ -171,6 +171,9 @@ function TurnMinimap({
 
 export function ChatView() {
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const activeBranchViewId = useSessionsStore((s) =>
+    s.activeSessionId ? (s.runtime[s.activeSessionId]?.branchViewId ?? null) : null
+  )
   const turns = useSessionsStore((s) =>
     s.activeSessionId ? (s.runtime[s.activeSessionId]?.turns ?? []) : []
   )
@@ -209,10 +212,14 @@ export function ChatView() {
     [historical, live]
   )
   const scrollStates = useRef(new Map<string, ScrollState>())
-  const saveScrollState = useCallback((sessionId: string, state: ScrollState) => {
-    scrollStates.current.set(sessionId, state)
+  const scrollKey =
+    activeSessionId && activeBranchViewId
+      ? `${activeSessionId}\u0000${activeBranchViewId}`
+      : null
+  const saveScrollState = useCallback((key: string, state: ScrollState) => {
+    scrollStates.current.set(key, state)
   }, [])
-  const initialScrollState = activeSessionId ? scrollStates.current.get(activeSessionId) : undefined
+  const initialScrollState = scrollKey ? scrollStates.current.get(scrollKey) : undefined
 
   if (items.length === 0) {
     return (
@@ -239,9 +246,10 @@ export function ChatView() {
 
   return (
     <VirtualTurns
-      key={activeSessionId ?? 'none'}
+      key={scrollKey ?? 'none'}
       items={items}
       sessionId={activeSessionId}
+      scrollKey={scrollKey}
       isStreaming={isStreaming}
       initialScrollState={initialScrollState}
       onScrollStateChange={saveScrollState}
@@ -281,9 +289,11 @@ function followKey(turn: Turn | undefined): string {
 
 function JumpToEnd({
   viewportRef,
+  onJump,
   hidden
 }: {
   viewportRef: RefObject<HTMLDivElement | null>
+  onJump: () => void
   hidden?: boolean
 }) {
   const [show, setShow] = useState(false)
@@ -311,10 +321,7 @@ function JumpToEnd({
       size="icon-sm"
       className="absolute inset-s-1/2 bottom-4 z-10 -translate-x-1/2 border-border bg-card"
       aria-label="滚动到底部"
-      onClick={() => {
-        const scroller = viewportRef.current
-        if (scroller) snapToEnd(scroller)
-      }}
+      onClick={onJump}
     >
       <ArrowDown />
     </Button>
@@ -333,15 +340,17 @@ function shouldAdjustOnItemResize(
 function VirtualTurns({
   items,
   sessionId,
+  scrollKey,
   isStreaming,
   initialScrollState,
   onScrollStateChange
 }: {
   items: Turn[]
   sessionId: string | null
+  scrollKey: string | null
   isStreaming: boolean
   initialScrollState?: ScrollState
-  onScrollStateChange: (sessionId: string, state: ScrollState) => void
+  onScrollStateChange: (key: string, state: ScrollState) => void
 }) {
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const parentRef = useRef<HTMLDivElement>(null)
@@ -374,6 +383,13 @@ function VirtualTurns({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     shouldAdjustOnItemResize(item, instance)
   const virtualItems = virtualizer.getVirtualItems()
+  const scrollToEnd = useCallback(() => {
+    following.current = true
+    userIntent.current = false
+    virtualizer.scrollToEnd()
+    const el = parentRef.current
+    if (el) snapToEnd(el)
+  }, [virtualizer])
 
   useLayoutEffect(() => {
     const el = parentRef.current
@@ -382,13 +398,13 @@ function VirtualTurns({
     const restore = () => {
       if (!el.isConnected) return
       if (following.current) {
-        snapToEnd(el)
+        scrollToEnd()
       } else if (initialScrollState) {
         const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
         el.scrollTop = Math.min(initialScrollState.scrollTop, maxScroll)
       }
-      if (sessionId) {
-        onScrollStateChange(sessionId, {
+      if (scrollKey) {
+        onScrollStateChange(scrollKey, {
           scrollTop: el.scrollTop,
           following: following.current
         })
@@ -404,18 +420,18 @@ function VirtualTurns({
       cancelAnimationFrame(firstFrame)
       cancelAnimationFrame(secondFrame)
     }
-  }, [sessionId])
+  }, [scrollKey])
 
   useLayoutEffect(() => {
     return () => {
       const el = parentRef.current
-      if (!el || !sessionId) return
-      onScrollStateChange(sessionId, {
+      if (!el || !scrollKey) return
+      onScrollStateChange(scrollKey, {
         scrollTop: el.scrollTop,
         following: following.current || distanceFromEnd(el) <= SCROLL_END
       })
     }
-  }, [sessionId, onScrollStateChange])
+  }, [scrollKey, onScrollStateChange])
 
   useEffect(() => {
     const el = parentRef.current
@@ -427,8 +443,8 @@ function VirtualTurns({
       } else if (distanceFromEnd(el) <= SCROLL_END) {
         following.current = true
       }
-      if (sessionId) {
-        onScrollStateChange(sessionId, {
+      if (scrollKey) {
+        onScrollStateChange(scrollKey, {
           scrollTop: el.scrollTop,
           following: following.current
         })
@@ -450,7 +466,30 @@ function VirtualTurns({
       el.removeEventListener('pointerdown', onUserInput)
       el.removeEventListener('keydown', onUserInput)
     }
-  }, [isStreaming, sessionId, onScrollStateChange])
+  }, [isStreaming, scrollKey, onScrollStateChange])
+
+  useEffect(() => {
+    const el = parentRef.current
+    const content = el?.firstElementChild
+    if (!el || !content) return
+    let frame = 0
+    const keepAtEnd = () => {
+      if (!following.current || userIntent.current) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (!following.current || userIntent.current) return
+        scrollToEnd()
+      })
+    }
+    const observer = new ResizeObserver(keepAtEnd)
+    observer.observe(el)
+    observer.observe(content)
+    keepAtEnd()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [scrollToEnd])
 
   useLayoutEffect(() => {
     const el = parentRef.current
@@ -460,7 +499,7 @@ function VirtualTurns({
       following.current = true
       prevCount.current = items.length
       prevStreaming.current = isStreaming
-      snapToEnd(el)
+      scrollToEnd()
       return
     }
     if (isStreaming && !prevStreaming.current) following.current = true
@@ -469,8 +508,8 @@ function VirtualTurns({
     const grew = items.length > prevCount.current
     prevCount.current = items.length
     if (!following.current) return
-    if (isStreaming || grew || ended) snapToEnd(el)
-  }, [sessionId, isStreaming, items.length, streamKey])
+    if (isStreaming || grew || ended) scrollToEnd()
+  }, [sessionId, isStreaming, items.length, streamKey, scrollToEnd])
 
   const jumpToTurn = (index: number) => {
     const scroller = parentRef.current
@@ -532,7 +571,7 @@ function VirtualTurns({
           })}
         </div>
       </div>
-      <JumpToEnd viewportRef={parentRef} hidden={isStreaming} />
+      <JumpToEnd viewportRef={parentRef} onJump={scrollToEnd} hidden={isStreaming} />
       <TurnMinimap items={items} onJump={jumpToTurn} />
     </div>
   )

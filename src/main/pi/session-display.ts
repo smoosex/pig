@@ -20,6 +20,11 @@ export interface DisplayTurn {
   hasProcess: boolean
 }
 
+export interface DisplayTurnsResult {
+  leafId: string | null
+  turns: DisplayTurn[]
+}
+
 type PathMessage = { id: string; message: Record<string, unknown>; persistedAt: number }
 
 function isHidden(type: string): boolean {
@@ -231,11 +236,13 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
   return { user, answer, errorMessage, startedAt, endedAt, hasProcess }
 }
 
-export function getDisplayTurns(sessionId: string): DisplayTurn[] {
-  return groupPath(pathMessages(sessionId)).map((chunk) => ({
+export function getDisplayTurns(sessionId: string): DisplayTurnsResult {
+  const sessionManager = sessionManagerFor(sessionId)
+  const turns = groupPath(pathMessages(sessionId)).map((chunk) => ({
     id: chunk[0].id,
     ...summarizeChunk(chunk)
   }))
+  return { leafId: sessionManager.getLeafId(), turns }
 }
 
 export function getTurnMessages(sessionId: string, turnId: string): unknown[] {
