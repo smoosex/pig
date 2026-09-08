@@ -22,8 +22,12 @@ import { clearPendingPastedText, setPendingPastedText } from '../pi/event-bridge
 import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
 import {
   composePromptText,
+  createInlinePastedTextDisplayMetadata,
+  createInlinePastedTextMetadata,
   createPastedTextMetadata,
+  isInlinePastedTextAttachments,
   PASTED_TEXT_CUSTOM_TYPE,
+  stripPastedTextAttachments,
   utf8ByteLength,
   type PastedTextAttachment,
   type PastedTextAttachmentInput,
@@ -51,7 +55,11 @@ function normalizeTextAttachments(value: unknown): PastedTextAttachment[] {
     return [{
       id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
       text: input.text,
-      byteSize: utf8ByteLength(input.text)
+      byteSize: utf8ByteLength(input.text),
+      ...(typeof input.filename === 'string' && input.filename.length > 0 ? { filename: input.filename } : {}),
+      ...(Number.isInteger(input.start) && Number.isInteger(input.end)
+        ? { start: input.start, end: input.end }
+        : {})
     }]
   })
 }
@@ -162,12 +170,19 @@ export function registerSessionIpc(): void {
       const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
       const body = typeof text === 'string' ? text : ''
       const textAttachments = normalizeTextAttachments(rawTextAttachments)
-      const modelText = composePromptText(body, textAttachments)
+      const inlineAttachments = textAttachments.length > 0 && isInlinePastedTextAttachments(body, textAttachments)
+        ? textAttachments
+        : undefined
+      const modelText = inlineAttachments ? body : composePromptText(body, textAttachments)
       const metadata = textAttachments.length > 0
-        ? createPastedTextMetadata(body, textAttachments)
+        ? inlineAttachments
+          ? createInlinePastedTextMetadata(modelText, inlineAttachments)
+          : createPastedTextMetadata(body, textAttachments)
         : undefined
       const displayMetadata: PastedTextDisplayMetadata | undefined = textAttachments.length > 0
-        ? { body, attachments: textAttachments }
+        ? inlineAttachments
+          ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments)
+          : { body, attachments: textAttachments }
         : undefined
       const attachments = (Array.isArray(images) ? images : [])
         .filter(
@@ -191,9 +206,12 @@ export function registerSessionIpc(): void {
           ls.agentSession.sessionManager.appendCustomEntry(PASTED_TEXT_CUSTOM_TYPE, metadata)
           metadataWritten = true
         }
+        const namingText = inlineAttachments
+          ? stripPastedTextAttachments(body, inlineAttachments)
+          : body
         void worktrees.nameOnFirstPrompt(
           ls.cwd,
-          body.trim() || (textAttachments.length > 0 ? 'Pasted text' : '用户仅发送了图片，未附文字。'),
+          namingText.trim() || (textAttachments.length > 0 ? 'Pasted text' : '用户仅发送了图片，未附文字。'),
           async (task, signal) => {
             const settings = await getDefaultSessionSettings()
             return runBranchNamer(task, settings.model, signal)

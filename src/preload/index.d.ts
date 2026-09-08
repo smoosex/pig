@@ -87,18 +87,27 @@ interface SessionTreeGutter {
 interface PastedTextAttachmentInput {
   id: string
   text: string
+  filename?: string
+  byteSize?: number
+  start?: number
+  end?: number
 }
 
 interface PastedTextAttachment {
   id: string
   text: string
   byteSize: number
+  filename?: string
 }
 
 interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
   textAttachments: PastedTextAttachment[]
+  textSegments?: Array<
+    | { type: 'text'; text: string }
+    | { type: 'attachment'; attachment: PastedTextAttachment }
+  >
 }
 
 interface DisplayTurn {

@@ -1,11 +1,16 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
-import { ArrowUp, BookOpen, Box, FileText, RefreshCw, Square, X } from 'lucide-react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import type { Editor, JSONContent } from '@tiptap/core'
+import Placeholder from '@tiptap/extension-placeholder'
+import StarterKit from '@tiptap/starter-kit'
+import { ArrowUp, BookOpen, Box, RefreshCw, Square, X } from 'lucide-react'
 import {
-  formatPastedTextSize,
+  createPastedTextFilename,
   isLongPastedText,
+  stripPastedTextAttachments,
   utf8ByteLength,
-  type PastedTextAttachment
+  type PastedTextPromptAttachment
 } from '../../../shared/pasted-text'
 import {
   api,
@@ -24,8 +29,7 @@ import { Button } from './ui/button'
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea
+  InputGroupButton
 } from './ui/input-group'
 import {
   Popover,
@@ -41,7 +45,7 @@ import { Separator } from './ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { SessionTreeButton } from './SessionTreeDialog'
 import { ImagePreview } from './ImagePreview'
-import { PastedTextPreview } from './PastedTextPreview'
+import { PastedTextNode } from './PastedTextNode'
 
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
@@ -460,7 +464,7 @@ type PastedImage = {
   url: string
 }
 
-function clipboardImages(event: ClipboardEvent): File[] {
+function clipboardImages(event: Pick<ClipboardEvent, 'clipboardData'>): File[] {
   const data = event.clipboardData
   if (!data) return []
   if (data.files.length > 0) {
@@ -497,10 +501,54 @@ function readImage(file: File): Promise<PastedImage> {
   })
 }
 
+type SerializedComposer = {
+  text: string
+  attachments: PastedTextPromptAttachment[]
+}
+
+function serializeComposer(editor: Editor | null): SerializedComposer {
+  if (!editor) return { text: '', attachments: [] }
+  const json = editor.getJSON()
+  let text = ''
+  const attachments: PastedTextPromptAttachment[] = []
+
+  const append = (node: JSONContent) => {
+    if (node.type === 'text') {
+      text += node.text ?? ''
+      return
+    }
+    if (node.type === 'hardBreak') {
+      text += '\\n'
+      return
+    }
+    if (node.type === 'pastedText') {
+      const attrs = node.attrs ?? {}
+      const pastedText = String(attrs.text ?? '')
+      const start = text.length
+      text += pastedText
+      attachments.push({
+        id: String(attrs.id ?? crypto.randomUUID()),
+        text: pastedText,
+        byteSize: Number(attrs.byteSize) || utf8ByteLength(pastedText),
+        start,
+        end: text.length,
+        ...(attrs.filename ? { filename: String(attrs.filename) } : {})
+      })
+      return
+    }
+    for (const child of node.content ?? []) append(child)
+  }
+
+  for (const [index, node] of (json.content ?? []).entries()) {
+    if (index > 0) text += '\\n'
+    append(node)
+  }
+  return { text, attachments }
+}
+
 export function Composer() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<PastedImage[]>([])
-  const [pastedTexts, setPastedTexts] = useState<PastedTextAttachment[]>([])
   const [preview, setPreview] = useState<string | null>(null)
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
@@ -508,10 +556,98 @@ export function Composer() {
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [focused, setFocused] = useState(false)
   const composing = useRef(false)
+  const sendRef = useRef<() => void>(() => undefined)
+  const applySlashRef = useRef<(command: SlashCommand) => void>(() => undefined)
+  const slashStateRef = useRef({ open: false, filtered: [] as SlashCommand[], index: 0 })
   const commandsFor = useRef<string | null>(null)
   const composerBoxRef = useRef<HTMLDivElement>(null)
   const [slashWidth, setSlashWidth] = useState(0)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
+  const sendShortcutRef = useRef(sendShortcut)
+  sendShortcutRef.current = sendShortcut
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({ placeholder: '⌘L to focus chat' }),
+      PastedTextNode
+    ],
+    content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    onUpdate: ({ editor: nextEditor }) => setText(serializeComposer(nextEditor).text),
+    editorProps: {
+      attributes: {
+        'data-slot': 'input-group-control',
+        'aria-label': '消息',
+        'aria-multiline': 'true',
+        class: 'min-h-16 outline-none whitespace-pre-wrap break-words'
+      },
+      handleDOMEvents: {
+        compositionstart: () => {
+          composing.current = true
+          return false
+        },
+        compositionend: () => {
+          requestAnimationFrame(() => {
+            composing.current = false
+          })
+          return false
+        }
+      },
+      handleKeyDown: (_view, event) => {
+        if (event.isComposing || composing.current || event.keyCode === 229) return false
+        const slash = slashStateRef.current
+        if (slash.open) {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setSlashIndex((index) => (index + 1) % slash.filtered.length)
+            return true
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setSlashIndex((index) => (index - 1 + slash.filtered.length) % slash.filtered.length)
+            return true
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            setSlashDismissed(true)
+            return true
+          }
+          if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+            event.preventDefault()
+            applySlashRef.current(slash.filtered[slash.index] ?? slash.filtered[0])
+            return true
+          }
+        }
+        if (event.key !== 'Enter') return false
+        const sendNow = sendShortcutRef.current === 'enter' ? !event.shiftKey : event.shiftKey
+        if (!sendNow) return false
+        event.preventDefault()
+        sendRef.current()
+        return true
+      },
+      handlePaste: (view, event) => {
+        const pastedText = event.clipboardData?.getData('text/plain') ?? ''
+        const files = clipboardImages(event)
+        const longText = isLongPastedText(pastedText)
+        if (longText) {
+          event.preventDefault()
+          const node = view.state.schema.nodes.pastedText.create({
+            id: crypto.randomUUID(),
+            text: pastedText,
+            byteSize: utf8ByteLength(pastedText),
+            filename: createPastedTextFilename()
+          })
+          view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
+        }
+        if (files.length > 0) {
+          if (!pastedText) event.preventDefault()
+          void Promise.all(files.map(readImage)).then((next) => {
+            setImages((current) => [...current, ...next])
+          })
+        }
+        return longText || (!pastedText && files.length > 0)
+      }
+    }
+  })
   const appearance = useSettingsStore((s) => s.appearance)
   const lightTheme = useSettingsStore((s) => s.lightTheme)
   const darkTheme = useSettingsStore((s) => s.darkTheme)
@@ -560,7 +696,8 @@ export function Composer() {
     commandsFor.current = null
     setCommands([])
     setSlashDismissed(false)
-    setPastedTexts([])
+    editor?.commands.clearContent(true)
+    setText('')
     return () => {
       setPreview(null)
       setImages((current) => {
@@ -568,7 +705,30 @@ export function Composer() {
         return []
       })
     }
-  }, [activeSessionId])
+  }, [activeSessionId, editor])
+
+  useEffect(() => {
+    editor?.setEditable(Boolean(activeSessionId))
+  }, [activeSessionId, editor])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        !event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== 'l' ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.defaultPrevented
+      ) return
+      event.preventDefault()
+      if (!event.repeat) editor?.commands.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [editor])
 
   const query = slashQuery(text)
 
@@ -613,6 +773,10 @@ export function Composer() {
   const slashOpen = query !== null && !slashDismissed && filtered.length > 0
 
   useEffect(() => {
+    slashStateRef.current = { open: slashOpen, filtered, index: slashIndex }
+  }, [slashOpen, filtered, slashIndex])
+
+  useEffect(() => {
     if (!slashOpen) return
     selectedSlashRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [slashIndex, slashOpen, filtered])
@@ -623,27 +787,37 @@ export function Composer() {
   }, [slashOpen])
 
   const applySlash = (command: SlashCommand) => {
+    editor?.commands.setContent({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: `/${command.name} ` }] }]
+    }, { emitUpdate: false })
+    editor?.commands.focus('end')
     setText(`/${command.name} `)
     setSlashDismissed(true)
   }
+  applySlashRef.current = applySlash
 
   const send = useCallback(async () => {
-    const trimmed = text.trim()
-    if ((!trimmed && images.length === 0 && pastedTexts.length === 0) || isStreaming || !activeSessionId) return
-    if ((trimmed === '/export' || trimmed.startsWith('/export ')) && pastedTexts.length === 0) {
+    const serialized = serializeComposer(editor)
+    const hasAttachments = serialized.attachments.length > 0
+    const trimmed = serialized.text.trim()
+    if ((!trimmed && !hasAttachments && images.length === 0) || isStreaming || !activeSessionId) return
+    if ((trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
       const result = await api.exportSession(activeSessionId, exportPathArg(trimmed))
       if (!result) return
-      setText('')
+      editor?.commands.clearContent(false)
       return
     }
     const prepared = await api.prepareSession(activeSessionId)
     if (prepared.created) await refreshCwd(prepared.cwd)
-    const title = trimmed.slice(0, 500) || (pastedTexts.length > 0 ? 'Pasted text' : images.length > 0 ? '图片' : '')
+    const titleText = hasAttachments
+      ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim()
+      : trimmed
+    const title = titleText.slice(0, 500) || (hasAttachments ? 'Pasted text' : images.length > 0 ? '图片' : '')
     if (title) useSessionsStore.getState().previewSessionTitle(activeSessionId, title)
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
-    const textAttachments = pastedTexts.map(({ id, text: pastedText }) => ({ id, text: pastedText }))
+    editor?.commands.clearContent(false)
     setText('')
-    setPastedTexts([])
     setPreview(null)
     setImages((current) => {
       for (const image of current) URL.revokeObjectURL(image.url)
@@ -651,27 +825,25 @@ export function Composer() {
     })
     await api.prompt(
       activeSessionId,
-      trimmed,
+      hasAttachments ? serialized.text : trimmed,
       payload.length > 0 ? payload : undefined,
-      textAttachments.length > 0 ? textAttachments : undefined
+      hasAttachments ? serialized.attachments : undefined
     )
     await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
-  }, [text, images, pastedTexts, isStreaming, activeSessionId, refreshCwd])
+  }, [editor, images, isStreaming, activeSessionId, refreshCwd])
+  sendRef.current = () => { void send() }
 
   const abort = useCallback(async () => {
     if (!activeSessionId) return
     await api.abort(activeSessionId)
   }, [activeSessionId])
 
+  const serialized = serializeComposer(editor)
   const canSend = Boolean(
-    (text.trim() || images.length > 0 || pastedTexts.length > 0) &&
+    (serialized.text.trim() || serialized.attachments.length > 0 || images.length > 0) &&
     activeSessionId &&
     !isStreaming
   )
-
-  const removePastedText = (id: string) => {
-    setPastedTexts((current) => current.filter((item) => item.id !== id))
-  }
 
   const removeImage = (id: string) => {
     setImages((current) => {
@@ -712,76 +884,9 @@ export function Composer() {
         }}
       >
         <div className="min-h-0 w-full flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <InputGroupTextarea
-          className="min-h-16 flex-none px-3.5 pt-3 text-sm leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          value={text}
-          placeholder={activeSessionId ? '输入一条消息...' : '请先选择会话'}
-          rows={3}
-          disabled={!activeSessionId}
-          onChange={(e) => setText(e.target.value)}
-          onCompositionStart={() => {
-            composing.current = true
-          }}
-          onCompositionEnd={() => {
-            requestAnimationFrame(() => {
-              composing.current = false
-            })
-          }}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing || composing.current || e.keyCode === 229) return
-            if (slashOpen) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                setSlashIndex((index) => (index + 1) % filtered.length)
-                return
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                setSlashIndex((index) => (index - 1 + filtered.length) % filtered.length)
-                return
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                setSlashDismissed(true)
-                return
-              }
-              if (e.key === 'Tab') {
-                e.preventDefault()
-                applySlash(filtered[slashIndex] ?? filtered[0])
-                return
-              }
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                applySlash(filtered[slashIndex] ?? filtered[0])
-                return
-              }
-            }
-            if (e.key !== 'Enter') return
-            const sendNow = sendShortcut === 'enter' ? !e.shiftKey : e.shiftKey
-            if (!sendNow) return
-            e.preventDefault()
-            void send()
-          }}
-          onPaste={(e) => {
-            const pastedText = e.clipboardData?.getData('text/plain') ?? ''
-            const files = clipboardImages(e)
-            if (isLongPastedText(pastedText)) {
-              e.preventDefault()
-              setPastedTexts((current) => [
-                ...current,
-                {
-                  id: crypto.randomUUID(),
-                  text: pastedText,
-                  byteSize: utf8ByteLength(pastedText)
-                }
-              ])
-            }
-            if (files.length === 0) return
-            if (!pastedText) e.preventDefault()
-            void Promise.all(files.map(readImage)).then((next) => {
-              setImages((current) => [...current, ...next])
-            })
-          }}
+        <EditorContent
+          editor={editor}
+          className="min-h-16 w-full shrink-0 px-3.5 pt-3 text-sm leading-snug [&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden"
         />
         {images.length > 0 ? (
           <div className="flex w-full flex-wrap justify-start gap-1.5 px-3.5 pb-1.5">
@@ -809,37 +914,6 @@ export function Composer() {
                   onClick={() => removeImage(image.id)}
                 >
                   <X className="size-2" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {pastedTexts.length > 0 ? (
-          <div className="flex w-full flex-col gap-1 px-3.5 pb-1.5">
-            {pastedTexts.map((attachment) => (
-              <div key={attachment.id} className="flex min-w-0 items-center gap-1 rounded-lg border border-border bg-muted/30 px-2 py-1">
-                <PastedTextPreview text={attachment.text} byteSize={attachment.byteSize}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="min-w-0 flex-1 justify-start gap-2 px-0 text-left text-xs font-normal hover:bg-transparent"
-                  >
-                    <FileText data-icon="inline-start" />
-                    <span className="min-w-0 truncate">Pasted text</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      UTF-8 {formatPastedTextSize(attachment.byteSize)}
-                    </span>
-                  </Button>
-                </PastedTextPreview>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  className="shrink-0"
-                  aria-label="移除文本附件"
-                  onClick={() => removePastedText(attachment.id)}
-                >
-                  <X />
                 </Button>
               </div>
             ))}

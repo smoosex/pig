@@ -1,10 +1,13 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import {
+  createInlinePastedTextDisplayMetadata,
   isPastedTextMetadata,
   pastedTextFingerprint,
   PASTED_TEXT_CUSTOM_TYPE,
   type PastedTextAttachment,
-  type PastedTextMetadata
+  type PastedTextDisplaySegment,
+  type PastedTextMetadata,
+  type PastedTextPromptAttachment
 } from '../../shared/pasted-text'
 
 export type DisplayAnswer =
@@ -15,6 +18,7 @@ export interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
   textAttachments: PastedTextAttachment[]
+  textSegments?: PastedTextDisplaySegment[]
 }
 
 export interface DisplayTurn {
@@ -165,13 +169,31 @@ function displayUser(
     pastedTextFingerprint(text) === pastedText.contentHash &&
     pastedText.attachments.every((attachment) => attachment.end <= text.length)
   ) {
+    const attachments: PastedTextPromptAttachment[] = pastedText.attachments.map((attachment) => ({
+      id: attachment.id,
+      text: text.slice(attachment.start, attachment.end),
+      byteSize: attachment.byteSize,
+      start: attachment.start,
+      end: attachment.end,
+      ...(attachment.filename ? { filename: attachment.filename } : {})
+    }))
+    if (pastedText.version === 2) {
+      const display = createInlinePastedTextDisplayMetadata(text, attachments)
+      return {
+        text,
+        images,
+        textAttachments: display.attachments,
+        textSegments: display.segments
+      }
+    }
     return {
       text: text.slice(0, pastedText.bodyLength),
       images,
-      textAttachments: pastedText.attachments.map((attachment) => ({
-        id: attachment.id,
-        text: text.slice(attachment.start, attachment.end),
-        byteSize: attachment.byteSize
+      textAttachments: attachments.map(({ id, text: attachmentText, byteSize, filename }) => ({
+        id,
+        text: attachmentText,
+        byteSize,
+        ...(filename ? { filename } : {})
       }))
     }
   }

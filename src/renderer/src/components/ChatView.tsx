@@ -28,7 +28,8 @@ function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number)
         timestamp: display.startedAt,
         pastedText: {
           body: display.user.text,
-          attachments: display.user.textAttachments
+          attachments: display.user.textAttachments,
+          ...(display.user.textSegments ? { segments: display.user.textSegments } : {})
         } satisfies PastedTextDisplayMetadata
       }
     : undefined

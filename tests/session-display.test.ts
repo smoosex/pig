@@ -57,6 +57,42 @@ describe('session display pasted text metadata', () => {
     expect(turn.answer).toEqual([{ type: 'text', text: '回答' }])
   })
 
+  test('restores inline attachment segments from version 2 metadata', () => {
+    const content = '前文附件后文'
+    const entries = [
+      {
+        type: 'custom',
+        id: 'meta-v2',
+        parentId: null,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        customType: 'pig.pasted-text',
+        data: {
+          version: 2,
+          contentLength: content.length,
+          contentHash: pastedTextFingerprint(content),
+          attachments: [{ id: 'pasted-2', start: 2, end: 4, byteSize: 6, filename: 'pasted_text.txt' }]
+        }
+      },
+      {
+        type: 'message',
+        id: 'user-v2',
+        parentId: 'meta-v2',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: { role: 'user', content, timestamp: 1 }
+      }
+    ] as unknown as SessionEntry[]
+
+    const [turn] = displayTurnsFromEntries(entries)
+    expect(turn.user?.textSegments).toEqual([
+      { type: 'text', text: '前文' },
+      {
+        type: 'attachment',
+        attachment: { id: 'pasted-2', text: '附件', byteSize: 6, filename: 'pasted_text.txt' }
+      },
+      { type: 'text', text: '后文' }
+    ])
+  })
+
   test('does not infer attachments for old long messages', () => {
     const entries = [{
       type: 'message',

@@ -27,6 +27,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import { Separator } from './ui/separator'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownText } from './MarkdownText'
+import { PastedTextChip } from './PastedTextChip'
 import { PastedTextPreview } from './PastedTextPreview'
 import { Message, MessageContent } from './ui/message'
 
@@ -72,12 +73,36 @@ function Chevron({ open }: { open: boolean }) {
   return <ChevronRight className={cn('shrink-0 transition-transform duration-150', open && 'rotate-90')} />
 }
 
+function InlinePastedText({
+  segments
+}: {
+  segments: NonNullable<PigUserMessage['pastedText']>['segments']
+}) {
+  if (!segments) return null
+  return (
+    <div className="whitespace-pre-wrap break-words">
+      {segments.map((segment, index) =>
+        segment.type === 'text' ? (
+          <span key={index}>{segment.text}</span>
+        ) : (
+          <PastedTextChip
+            key={segment.attachment.id}
+            attachment={segment.attachment}
+            className="mx-0.5"
+          />
+        )
+      )}
+    </div>
+  )
+}
+
 function UserBubble({ message }: { message: PigUserMessage }) {
   const images = userImages(message)
   const text = userText(message)
   const textAttachments = message.pastedText?.attachments ?? []
+  const segments = message.pastedText?.segments
   const [preview, setPreview] = useState<string | null>(null)
-  const hasTextBubble = text.length > 0 || textAttachments.length > 0
+  const hasTextBubble = Boolean(segments) || text.length > 0 || textAttachments.length > 0
   return (
     <Message align="end" className="mb-4" data-turn-user="">
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
@@ -105,10 +130,11 @@ function UserBubble({ message }: { message: PigUserMessage }) {
             <BubbleContent
               className={cn(
                 'flex max-w-full flex-col gap-2',
-                textAttachments.length > 0 && 'border-border'
+                (segments || textAttachments.length > 0) && 'border-border'
               )}
             >
-              {textAttachments.map((attachment) => (
+              {segments ? <InlinePastedText segments={segments} /> : null}
+              {!segments ? textAttachments.map((attachment) => (
                 <PastedTextPreview
                   key={attachment.id}
                   text={attachment.text}
@@ -133,8 +159,8 @@ function UserBubble({ message }: { message: PigUserMessage }) {
                     </span>
                   </Button>
                 </PastedTextPreview>
-              ))}
-              {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+              )) : null}
+              {!segments && text ? <div className="whitespace-pre-wrap">{text}</div> : null}
             </BubbleContent>
           </Bubble>
         ) : null}

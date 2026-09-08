@@ -1,6 +1,10 @@
-import type { PastedTextAttachment, PastedTextAttachmentInput } from '../../../shared/pasted-text'
+import type {
+  PastedTextAttachment,
+  PastedTextAttachmentInput,
+  PastedTextDisplaySegment
+} from '../../../shared/pasted-text'
 
-export type { PastedTextAttachment, PastedTextAttachmentInput }
+export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment }
 
 export interface SessionMeta {
   path: string
@@ -106,6 +110,7 @@ export interface DisplayUser {
   text: string
   images: { mimeType: string; data: string }[]
   textAttachments: PastedTextAttachment[]
+  textSegments?: PastedTextDisplaySegment[]
 }
 
 export type DisplayAnswer =
