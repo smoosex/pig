@@ -1,5 +1,6 @@
 appId: dev.pig.desktop
 productName: Pig
+publish: null
 directories:
   buildResources: build
 files:
