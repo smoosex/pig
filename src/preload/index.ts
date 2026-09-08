@@ -7,6 +7,8 @@ const api = {
   isChatCwd: (cwd: string): Promise<boolean> => ipcRenderer.invoke('session:is-chat-cwd', cwd),
   openProject: (): Promise<unknown> => ipcRenderer.invoke('session:open-project'),
   unpinProject: (cwd: string): Promise<void> => ipcRenderer.invoke('session:unpin-project', cwd),
+  reorderProjects: (cwds: string[]): Promise<unknown> =>
+    ipcRenderer.invoke('session:reorder-projects', cwds),
   createChat: (): Promise<{ sessionId: string; cwd: string }> => ipcRenderer.invoke('session:create-chat'),
   deleteChat: (cwd: string): Promise<void> => ipcRenderer.invoke('session:delete-chat', cwd),
   createSession: (cwd: string): Promise<{ sessionId: string; cwd: string }> =>

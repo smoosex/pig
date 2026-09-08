@@ -171,11 +171,13 @@ interface SessionsStore {
   openTabs: OpenTab[]
   activeSessionId: string | null
   runtime: Record<string, RuntimeState>
+  isReorderingProjects: boolean
 
   loadProjects: () => Promise<void>
   loadChats: () => Promise<void>
   openProject: () => Promise<void>
   unpinProject: (cwd: string) => Promise<void>
+  reorderProjects: (cwds: string[]) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
   refreshCwd: (cwd: string) => Promise<void>
   hydrateTurns: (
@@ -217,6 +219,7 @@ interface SessionsStore {
 }
 
 let projectMembershipVersion = 0
+let projectOrderVersion = 0
 
 export const useSessionsStore = create<SessionsStore>((set, get) => ({
   projects: [],
@@ -224,11 +227,19 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
   openTabs: [],
   activeSessionId: null,
   runtime: {},
+  isReorderingProjects: false,
 
   loadProjects: async () => {
     const version = projectMembershipVersion
+    const orderVersion = projectOrderVersion
+    const savingOrder = get().isReorderingProjects
     const projects = await api.listProjects()
-    if (version !== projectMembershipVersion) return
+    if (
+      version !== projectMembershipVersion ||
+      orderVersion !== projectOrderVersion ||
+      savingOrder ||
+      get().isReorderingProjects
+    ) return
     set((s) => ({
       projects,
       openTabs: patchTabsFromGroups(s.openTabs, projects)
@@ -262,6 +273,43 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     set((s) => ({
       projects: s.projects.filter((project) => project.cwd !== cwd)
     }))
+  },
+
+  reorderProjects: async (cwds) => {
+    if (get().isReorderingProjects) throw new Error('项目排序正在保存')
+    const currentProjects = get().projects
+    if (
+      cwds.length !== currentProjects.length ||
+      cwds.some((cwd) => typeof cwd !== 'string') ||
+      new Set(cwds).size !== cwds.length
+    ) {
+      throw new Error('项目列表已变化，请重试')
+    }
+    const byCwd = new Map(currentProjects.map((project) => [project.cwd, project]))
+    if (cwds.some((cwd) => !byCwd.has(cwd))) throw new Error('项目列表已变化，请重试')
+    const nextProjects = cwds.map((cwd) => byCwd.get(cwd)!)
+    if (nextProjects.every((project, index) => project.cwd === currentProjects[index]?.cwd)) return
+
+    const previousProjects = currentProjects
+    const membershipVersion = projectMembershipVersion
+    const orderVersion = ++projectOrderVersion
+    set({ projects: nextProjects, isReorderingProjects: true })
+    try {
+      await api.reorderProjects(cwds)
+      if (projectOrderVersion === orderVersion) set({ isReorderingProjects: false })
+    } catch (error) {
+      if (projectOrderVersion === orderVersion) {
+        set((s) => ({
+          projects: projectMembershipVersion === membershipVersion ? previousProjects : s.projects,
+          isReorderingProjects: false
+        }))
+        try {
+          await get().loadProjects()
+        } catch {
+        }
+      }
+      throw error
+    }
   },
 
   refreshProject: async (cwd) => {

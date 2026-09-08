@@ -19,7 +19,7 @@ import {
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
 import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
-import { addOpenedProject, removeOpenedProject } from '../opened-projects'
+import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
 import { canonicalProject } from '../worktrees'
 import { loadOpenedWorktreeProjects, loadProjectForCwd, loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
 import { runBranchNamer } from '../pi/branch-namer'
@@ -69,6 +69,10 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
     await removeOpenedProject(cwd)
+  })
+
+  ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {
+    return reorderOpenedProjects(cwds)
   })
 
   ipcMain.handle('session:create', async (event, cwd: string) => {

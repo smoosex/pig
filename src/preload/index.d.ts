@@ -132,6 +132,7 @@ declare global {
       isChatCwd: (cwd: string) => Promise<boolean>
       openProject: () => Promise<ProjectGroup | null>
       unpinProject: (cwd: string) => Promise<void>
+      reorderProjects: (cwds: string[]) => Promise<string[]>
       createChat: () => Promise<{ sessionId: string; cwd: string }>
       deleteChat: (cwd: string) => Promise<void>
       createSession: (cwd: string) => Promise<{ sessionId: string; cwd: string }>

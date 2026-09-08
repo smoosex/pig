@@ -1,4 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  type DragEndEvent,
+  type DragStartEvent,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core'
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { AlertCircle, ChevronRight, FolderMinus, FolderPlus, GitBranch, LoaderCircle, LockKeyhole, MoreHorizontal, Plus, Settings, Trash2 } from 'lucide-react'
 import { useSessionsStore, type ProjectGroup, type SessionMeta, type WorktreeGroup } from '../stores/sessions'
 import { api } from '../ipc/api'
@@ -281,11 +293,38 @@ function DeleteConfirmButton({
   )
 }
 
+type DragClickGuard = { current: boolean }
+
+function ProjectDragPreview({ project, index }: { project: ProjectGroup; index: number }) {
+  return (
+    <div className="flex h-9 w-56 items-center gap-1.5 rounded-md bg-sidebar-accent px-1.5 shadow-md">
+      <Avatar className="size-5 rounded-sm after:rounded-sm">
+        <AvatarFallback
+          className={cn(
+            'rounded-sm text-xs font-normal text-primary-foreground',
+            projectAvatarBg[index % projectAvatarBg.length]
+          )}
+        >
+          {projectInitial(project.name)}
+        </AvatarFallback>
+      </Avatar>
+      <span className="min-w-0 truncate text-xs font-normal">{project.name}</span>
+    </div>
+  )
+}
+
 function ProjectList() {
   const projects = useSessionsStore((s) => s.projects)
+  const reorderProjects = useSessionsStore((s) => s.reorderProjects)
+  const isReorderingProjects = useSessionsStore((s) => s.isReorderingProjects)
   const refreshProject = useSessionsStore((s) => s.refreshProject)
   const loadProjects = useSessionsStore((s) => s.loadProjects)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const clickGuard = useRef(false)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  const activeProject = activeId ? projects.find((project) => project.cwd === activeId) : undefined
+  const activeIndex = activeProject ? projects.findIndex((project) => project.cwd === activeProject.cwd) : -1
 
   useEffect(() => {
     let disposed = false
@@ -306,18 +345,77 @@ function ProjectList() {
     }
   }, [refreshProject, loadProjects])
 
+  const clearDrag = () => {
+    setActiveId(null)
+    requestAnimationFrame(() => {
+      clickGuard.current = false
+    })
+  }
+
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    clickGuard.current = true
+    setActiveId(String(active.id))
+  }
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    clearDrag()
+    if (!over || active.id === over.id) return
+    const oldIndex = projects.findIndex((project) => project.cwd === active.id)
+    const newIndex = projects.findIndex((project) => project.cwd === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const nextProjects = arrayMove(projects, oldIndex, newIndex)
+    void reorderProjects(nextProjects.map((project) => project.cwd)).then(
+      () => setSyncError(null),
+      (error: unknown) => setSyncError(errorMessage(error))
+    )
+  }
+
+  const handleDragCancel = () => clearDrag()
+
   return (
-    <div className="flex flex-col gap-y-1 py-1">
-      {syncError && <p role="alert" className="px-2 py-1 text-xs break-words text-destructive">{syncError}</p>}
-      {projects.length === 0 && (
-        <p className="px-2 py-1 text-xs text-muted-foreground">添加项目即可开始</p>
-      )}
-      {projects.map((project, index) => <ProjectRow key={project.cwd} project={project} index={index} />)}
-    </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      autoScroll={{ threshold: { x: 0.15, y: 0.15 } }}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <SortableContext items={projects.map((project) => project.cwd)} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-col gap-y-1 py-1">
+          {syncError && <p role="alert" className="px-2 py-1 text-xs break-words text-destructive">{syncError}</p>}
+          {projects.length === 0 && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">添加项目即可开始</p>
+          )}
+          {projects.map((project, index) => (
+            <ProjectRow
+              key={project.cwd}
+              project={project}
+              index={index}
+              disabled={isReorderingProjects}
+              clickGuard={clickGuard}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {activeProject ? <ProjectDragPreview project={activeProject} index={activeIndex} /> : null}
+      </DragOverlay>
+    </DndContext>
   )
 }
 
-function ProjectRow({ project, index }: { project: ProjectGroup; index: number }) {
+function ProjectRow({
+  project,
+  index,
+  disabled,
+  clickGuard
+}: {
+  project: ProjectGroup
+  index: number
+  disabled: boolean
+  clickGuard: DragClickGuard
+}) {
   const createWorktree = useSessionsStore((s) => s.createWorktree)
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteProject = useSessionsStore((s) => s.deleteProject)
@@ -326,6 +424,15 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
   const [worktreeOpen, setWorktreeOpen] = useState<Record<string, boolean>>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { pending, error, runAction } = useProjectAction()
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: project.cwd, disabled })
   const worktrees: WorktreeGroup[] = project.worktrees ?? [{
     cwd: project.cwd,
     branch: project.name,
@@ -337,13 +444,27 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
   }]
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn('relative', isDragging && 'opacity-40')}
+    >
+      <Collapsible open={open} onOpenChange={setOpen}>
       <div className="px-1">
         <div className="group/project flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-sidebar-accent">
           <CollapsibleTrigger asChild>
             <Button
+              ref={setActivatorNodeRef}
+              {...attributes}
+              {...listeners}
               variant="ghost"
               className="h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal !bg-transparent"
+              onClick={(event) => {
+                if (clickGuard.current) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+              }}
             >
               <Avatar className="size-5 rounded-sm after:rounded-sm">
                 <AvatarFallback
@@ -451,7 +572,8 @@ function ProjectRow({ project, index }: { project: ProjectGroup; index: number }
           ))}
         </div>
       </CollapsibleContent>
-    </Collapsible>
+      </Collapsible>
+    </div>
   )
 }
 

@@ -32,21 +32,52 @@ async function write(projects: OpenedProject[]): Promise<void> {
   await writeFile(filePath(), `${JSON.stringify(body, null, 2)}\n`)
 }
 
+let mutationQueue: Promise<void> = Promise.resolve()
+
+function serialize<T>(operation: () => Promise<T>): Promise<T> {
+  const result = mutationQueue.then(operation, operation)
+  mutationQueue = result.then(() => undefined, () => undefined)
+  return result
+}
+
 export async function listOpenedCwds(): Promise<string[]> {
+  await mutationQueue
   return (await read()).map((item) => item.cwd)
 }
 
 export async function addOpenedProject(cwd: string): Promise<string> {
   const resolved = resolve(cwd)
-  const projects = await read()
-  if (!projects.some((item) => item.cwd === resolved)) {
-    projects.push({ cwd: resolved, openedAt: new Date().toISOString() })
-    await write(projects)
-  }
-  return resolved
+  return serialize(async () => {
+    const projects = await read()
+    if (!projects.some((item) => item.cwd === resolved)) {
+      projects.push({ cwd: resolved, openedAt: new Date().toISOString() })
+      await write(projects)
+    }
+    return resolved
+  })
 }
 
 export async function removeOpenedProject(cwd: string): Promise<void> {
   const resolved = resolve(cwd)
-  await write((await read()).filter((item) => item.cwd !== resolved))
+  await serialize(async () => {
+    await write((await read()).filter((item) => item.cwd !== resolved))
+  })
+}
+
+export async function reorderOpenedProjects(cwds: unknown): Promise<string[]> {
+  if (!Array.isArray(cwds)) throw new Error('项目顺序必须是数组')
+  const resolved = cwds.map((cwd) => {
+    if (typeof cwd !== 'string' || cwd.length === 0) throw new Error('项目标识无效')
+    return resolve(cwd)
+  })
+  if (new Set(resolved).size !== resolved.length) throw new Error('项目顺序包含重复项目')
+  return serialize(async () => {
+    const projects = await read()
+    if (resolved.length !== projects.length) throw new Error('项目列表已变化，请重试')
+    const byCwd = new Map(projects.map((project) => [project.cwd, project]))
+    if (resolved.some((cwd) => !byCwd.has(cwd))) throw new Error('项目列表已变化，请重试')
+    const ordered = resolved.map((cwd) => byCwd.get(cwd)!)
+    await write(ordered)
+    return ordered.map((project) => project.cwd)
+  })
 }
