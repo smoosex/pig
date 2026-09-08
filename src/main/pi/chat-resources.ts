@@ -18,6 +18,18 @@ function isInside(file: string, root: string): boolean {
   return target === base || target.startsWith(base + sep)
 }
 
+export async function createNoExtensionsResourceLoader(cwd: string): Promise<ResourceLoader> {
+  const agentDir = getAgentDir()
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager: SettingsManager.create(cwd, agentDir),
+    noExtensions: true
+  })
+  await loader.reload()
+  return loader
+}
+
 export async function createChatResourceLoader(cwd: string): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
   const userAgents = resolve(homedir(), '.agents')
@@ -25,6 +37,7 @@ export async function createChatResourceLoader(cwd: string): Promise<ResourceLoa
     cwd,
     agentDir,
     settingsManager: SettingsManager.create(cwd, agentDir),
+    noExtensions: true,
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),

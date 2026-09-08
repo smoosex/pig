@@ -12,7 +12,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
-import { createChatResourceLoader } from './chat-resources'
+import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
 import { bridgeEvents } from './event-bridge'
 
 export type SessionThinkingLevel =
@@ -140,7 +140,9 @@ async function build(
   win: BrowserWindow
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
-  const resourceLoader = isChatCwd(cwd) ? await createChatResourceLoader(cwd) : undefined
+  const resourceLoader = isChatCwd(cwd)
+    ? await createChatResourceLoader(cwd)
+    : await createNoExtensionsResourceLoader(cwd)
   const result = await createAgentSession({
     cwd,
     sessionManager,

@@ -86,8 +86,10 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
           return { getCwd: () => sessionCwd, getSessionId: () => sessionId }
         }
       },
-      SettingsManager: {},
-      DefaultResourceLoader: class {},
+      SettingsManager: { create: () => ({}) },
+      DefaultResourceLoader: class {
+        async reload() {}
+      },
       getAgentDir: () => join(root, 'agent')
     }))
 
