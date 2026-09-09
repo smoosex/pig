@@ -269,7 +269,7 @@ export function ChatView() {
     <MessageScrollerProvider
         key={scrollKey ?? 'none'}
         autoScroll
-        defaultScrollPosition={initialScrollState?.following ? 'end' : 'start'}
+        defaultScrollPosition={initialScrollState && !initialScrollState.following ? 'start' : 'end'}
       >
       <VirtualTurns
         items={items}
@@ -376,11 +376,7 @@ function VirtualTurns({
     if (restored.current) return
     restored.current = true
     const snapshot = initialScrollState
-    if (!snapshot) {
-      scroller.scrollToEnd({ behavior: 'smooth' })
-      return
-    }
-    if (snapshot.following) return
+    if (!snapshot || snapshot.following) return
     const viewport = viewportRef.current
     const measured = snapshot.anchor
       ? virtualizer.measurementsCache.find((item) => item.key === snapshot.anchor?.key)
