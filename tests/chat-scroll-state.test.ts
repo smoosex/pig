@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import type { VirtualItem } from '@tanstack/react-virtual'
 import {
   captureAnchor,
+  overflowPageOffset,
+  pinToTopOffset,
   pruneMeasurements,
   restoredScrollOffset,
   TURN_ALIGN,
@@ -31,6 +33,37 @@ test('turnScrollOffset pins the user bubble with a 12px gap or above the compose
       { top: 160, bottom: 190 }
     ),
     702
+  )
+})
+
+test('pinToTopOffset always pins to the top gap even when there is no room below', () => {
+  assert.equal(
+    pinToTopOffset(
+      { scrollTop: 700, scrollHeight: 1000, clientHeight: 200 },
+      { top: 0, bottom: 200 },
+      { top: 160, bottom: 190 }
+    ),
+    800
+  )
+  assert.equal(
+    pinToTopOffset(
+      { scrollTop: 0, scrollHeight: 400, clientHeight: 200 },
+      { top: 0, bottom: 200 },
+      { top: 12, bottom: 52 }
+    ),
+    0
+  )
+})
+
+test('overflowPageOffset pages the last visible line to the top gap', () => {
+  const viewport = { scrollTop: 40, scrollHeight: 2000, clientHeight: 200 }
+  assert.equal(
+    overflowPageOffset(viewport, { top: 0, bottom: 200 }, { top: 20, bottom: 180 }),
+    null
+  )
+  assert.equal(
+    overflowPageOffset(viewport, { top: 0, bottom: 200 }, { top: 20, bottom: 210 }),
+    40 + 200 - TURN_ALIGN
   )
 })
 

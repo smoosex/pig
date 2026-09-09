@@ -250,7 +250,32 @@ async function runFixture(name: string): Promise<void> {
         runtime: { ...store.runtime, s1: { ...store.runtime.s1, isStreaming: true } }
       }
       await render()
-      assert.ok(viewport().scrollTop > 48)
+      assert.equal(viewport().scrollTop, 48)
+      assert.equal(container.querySelector('[data-slot="message-scroller-button"]'), null)
+      const beforePin = writes.length
+      store = {
+        ...store,
+        runtime: {
+          ...store.runtime,
+          s1: {
+            ...store.runtime.s1,
+            isStreaming: true,
+            liveMessages: [{ role: 'user', content: 'hello', timestamp: 1 }]
+          }
+        }
+      }
+      await render()
+      assert.ok(writes.length > beforePin)
+      const afterPin = viewport().scrollTop
+      store = {
+        ...store,
+        runtime: {
+          ...store.runtime,
+          s1: { ...store.runtime.s1, turns: turns(12) }
+        }
+      }
+      await render()
+      assert.equal(viewport().scrollTop, afterPin)
       assert.equal(container.querySelector('[data-slot="message-scroller-button"]'), null)
     } else if (name === 'live-outside-virtualizer') {
       store = {
@@ -279,9 +304,8 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(container.querySelector('[data-historical-turn] [data-turn="t0"]') != null, true)
     } else if (name === 'pin-last-idle-turn') {
       await render()
-      assert.ok(container.querySelector('[data-pinned-turns] [data-turn="t7"]'))
-      assert.equal(container.querySelector('[data-historical-turn] [data-turn="t7"]'), null)
-      assert.equal(container.querySelectorAll('[data-historical-turn]').length, 7)
+      assert.ok(container.querySelector('[data-historical-turn] [data-turn="t7"]'))
+      assert.equal(container.querySelector('[data-pinned-turns]'), null)
     } else {
       assert.fail(`Unknown fixture: ${name}`)
     }
@@ -298,9 +322,9 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
   const fixtures = {
     'follow-and-pause': 'fold clicks pause follow so later growth does not jump to the end',
     'restore-branch': 'session remount restores the paused offset instead of snapping to the end',
-    'stream-resumes': 'starting a stream resumes follow and hides the jump button',
+    'stream-resumes': 'starting a stream pins the live turn and does not follow later growth',
     'live-outside-virtualizer': 'streaming turns stay in real DOM outside the virtualizer',
-    'pin-last-idle-turn': 'the latest finished turn stays pinned in real DOM'
+    'pin-last-idle-turn': 'idle turns stay in the virtualizer instead of a pinned overlay'
   }
   for (const [name, title] of Object.entries(fixtures)) {
     test(`chat view scroll: ${title}`, async () => {

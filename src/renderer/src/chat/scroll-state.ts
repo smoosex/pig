@@ -44,6 +44,20 @@ export function turnScrollOffset(viewport: ViewportSize, bounds: Bounds, target:
   )
 }
 
+export function pinToTopOffset(viewport: ViewportSize, bounds: Bounds, target: Bounds): number {
+  return clampOffset(viewport, viewport.scrollTop + target.top - bounds.top - TURN_ALIGN)
+}
+
+export function overflowPageOffset(
+  viewport: ViewportSize,
+  bounds: Bounds,
+  content: Bounds
+): number | null {
+  if (content.bottom <= bounds.bottom + 1) return null
+  const last = Math.min(content.bottom, bounds.bottom)
+  return clampOffset(viewport, viewport.scrollTop + last - bounds.top - TURN_ALIGN)
+}
+
 export function restoredScrollOffset(
   viewport: ViewportSize,
   bounds: Bounds,

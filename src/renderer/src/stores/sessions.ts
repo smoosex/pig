@@ -215,6 +215,8 @@ interface SessionsStore {
   previewSessionTitle: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
+  beginPrompt: (sessionId: string, message: PiMessage) => void
+  rollbackPrompt: (sessionId: string) => void
   setThinkingDuration: (
     sessionId: string,
     messageTimestamp: number,
@@ -618,10 +620,33 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
             : rt.streamStartedAt != null
               ? Date.now() - rt.streamStartedAt
               : rt.streamElapsedMs,
-          liveMessages: streaming ? [] : rt.liveMessages
+          liveMessages: streaming && !rt.isStreaming ? [] : rt.liveMessages
         })
       }
     }),
+
+  beginPrompt: (sessionId, message) =>
+    set((s) => {
+      const rt = ensureRuntime(s.runtime, sessionId)
+      return {
+        runtime: patchRuntime(s.runtime, sessionId, {
+          isStreaming: true,
+          streamStartedAt: rt.isStreaming ? rt.streamStartedAt : Date.now(),
+          streamElapsedMs: null,
+          liveMessages: [message]
+        })
+      }
+    }),
+
+  rollbackPrompt: (sessionId) =>
+    set((s) => ({
+      runtime: patchRuntime(s.runtime, sessionId, {
+        isStreaming: false,
+        streamStartedAt: null,
+        streamElapsedMs: null,
+        liveMessages: []
+      })
+    })),
 
   setThinkingDuration: (sessionId, messageTimestamp, contentIndex, durationMs) =>
     set((s) => {

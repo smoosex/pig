@@ -5,6 +5,8 @@ import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
 import {
   captureAnchor,
+  overflowPageOffset,
+  pinToTopOffset,
   pruneMeasurements,
   restoredScrollOffset,
   SCROLL_END,
@@ -326,19 +328,22 @@ function VirtualTurns({
   onScrollStateChange: (key: string, state: ScrollSnapshot) => void
 }) {
   const items = useMemo(() => [...historical, ...live], [historical, live])
-  const pinned = items.at(-1)
-  const virtualized = useMemo(
-    () => (pinned ? items.slice(0, -1) : items),
-    [items, pinned]
-  )
+  const pinned = live.at(-1)
+  const virtualized = historical
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const scroller = useMessageScroller()
   const viewportRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef<HTMLDivElement>(null)
   const jumpFrame = useRef(0)
+  const pinFrame = useRef(0)
+  const pageTimer = useRef(0)
+  const pinnedToTopFor = useRef<string | null>(null)
+  const streamPager = useRef<'off' | 'pinning' | 'ready' | 'paging' | 'left'>('off')
   const restored = useRef(false)
-  const prevStreaming = useRef(isStreaming)
+  const prevStreaming = useRef(false)
   const [pinnedSize, setPinnedSize] = useState(0)
+  const [viewH, setViewH] = useState(0)
+  const streamGap = isStreaming && live.length > 0 && viewH > 0 ? Math.max(0, viewH - TURN_ALIGN) : 0
   const itemKeys = useMemo(
     () => new Set(virtualized.map((item) => item.id ?? '').filter(Boolean)),
     [virtualized]
@@ -360,8 +365,10 @@ function VirtualTurns({
     getScrollElement: () => viewportRef.current,
     estimateSize: () => 160,
     overscan: 8,
-    paddingStart: virtualized.length === 0 ? 0 : 16,
-    paddingEnd: pinned ? pinnedSize : virtualized.length === 0 ? 0 : TURN_ALIGN,
+    paddingStart: virtualized.length === 0 ? TURN_ALIGN : 16,
+    paddingEnd: pinned
+      ? pinnedSize + streamGap
+      : virtualized.length === 0 ? 0 : TURN_ALIGN,
     getItemKey: (index) => virtualized[index]?.id ?? index,
     anchorTo: 'start',
     scrollEndThreshold: SCROLL_END,
@@ -372,8 +379,10 @@ function VirtualTurns({
       : undefined,
     initialMeasurementsCache: measurements.length > 0 ? measurements : undefined
   })
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    shouldAdjustOnItemResize(item, instance)
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    if (streamPager.current === 'pinning' || streamPager.current === 'paging') return false
+    return shouldAdjustOnItemResize(item, instance)
+  }
   const virtualItems = virtualizer.getVirtualItems()
 
   const persist = useCallback(() => {
@@ -414,9 +423,24 @@ function VirtualTurns({
   useLayoutEffect(() => {
     return () => {
       cancelAnimationFrame(jumpFrame.current)
+      cancelAnimationFrame(pinFrame.current)
+      window.clearTimeout(pageTimer.current)
       persistRef.current()
     }
   }, [scrollKey])
+
+  useLayoutEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const sync = () => {
+      const height = el.clientHeight
+      setViewH((prev) => (prev === height ? prev : height))
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     const el = pinnedRef.current
@@ -424,20 +448,87 @@ function VirtualTurns({
       setPinnedSize(0)
       return
     }
+    const pageIfOverflow = () => {
+      if (!isStreaming || streamPager.current !== 'ready') return
+      const viewport = viewportRef.current
+      if (!viewport) return
+      const offset = overflowPageOffset(
+        viewport,
+        viewport.getBoundingClientRect(),
+        el.getBoundingClientRect()
+      )
+      if (offset == null || Math.abs(offset - viewport.scrollTop) < 1) return
+      streamPager.current = 'paging'
+      scroller.scrollToOffset(offset, { behavior: 'smooth' })
+      const finish = () => {
+        window.clearTimeout(pageTimer.current)
+        viewport.removeEventListener('scrollend', finish)
+        if (streamPager.current !== 'paging') return
+        streamPager.current = 'ready'
+        pageIfOverflow()
+      }
+      viewport.addEventListener('scrollend', finish, { once: true })
+      pageTimer.current = window.setTimeout(finish, 450)
+    }
     const sync = () => {
       const height = el.offsetHeight
       setPinnedSize((prev) => (prev === height ? prev : height))
+      pageIfOverflow()
     }
     sync()
     const observer = new ResizeObserver(sync)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [pinned?.id])
+  }, [pinned?.id, isStreaming, scroller])
 
   useLayoutEffect(() => {
-    if (isStreaming && !prevStreaming.current) scroller.scrollToEnd({ behavior: 'smooth' })
+    if (isStreaming && !prevStreaming.current) {
+      scroller.pauseAutoScroll()
+      streamPager.current = 'pinning'
+    }
+    if (!isStreaming) {
+      streamPager.current = 'off'
+      pinnedToTopFor.current = null
+    }
     prevStreaming.current = isStreaming
   }, [isStreaming, scroller])
+
+  useLayoutEffect(() => {
+    if (!isStreaming || live.length === 0) return
+    if (streamPager.current === 'off' || streamPager.current === 'left') return
+    const id = pinned?.id
+    if (!id) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const place = (): boolean => {
+      if (streamPager.current === 'left') return true
+      const row = viewport.querySelector('[data-pinned-turn]')
+      const target = (row?.querySelector('[data-turn-user]') ?? row) as HTMLElement | null
+      if (!target) return false
+      const bounds = viewport.getBoundingClientRect()
+      const rect = target.getBoundingClientRect()
+      if (Math.abs(rect.top - bounds.top - TURN_ALIGN) <= 2) {
+        pinnedToTopFor.current = id
+        streamPager.current = 'ready'
+        return true
+      }
+      scroller.scrollToOffset(pinToTopOffset(viewport, bounds, rect), { behavior: 'auto' })
+      return false
+    }
+    if (place()) return
+    cancelAnimationFrame(pinFrame.current)
+    let tries = 0
+    const tick = () => {
+      if (place()) return
+      if (tries++ >= 30) {
+        pinnedToTopFor.current = id
+        streamPager.current = 'ready'
+        return
+      }
+      pinFrame.current = requestAnimationFrame(tick)
+    }
+    pinFrame.current = requestAnimationFrame(tick)
+  }, [isStreaming, live.length, pinned?.id, scroller, streamGap])
 
   const jumpToTurn = (index: number) => {
     const viewport = viewportRef.current
@@ -474,6 +565,16 @@ function VirtualTurns({
             scroller.pauseAutoScroll()
           }
         }}
+        onWheel={() => {
+          if (streamPager.current === 'ready' || streamPager.current === 'paging') {
+            streamPager.current = 'left'
+          }
+        }}
+        onTouchStart={() => {
+          if (streamPager.current === 'ready' || streamPager.current === 'paging') {
+            streamPager.current = 'left'
+          }
+        }}
       >
         <MessageScrollerContent className="relative gap-0">
           <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
@@ -496,7 +597,7 @@ function VirtualTurns({
                 ref={pinnedRef}
                 data-pinned-turns=""
                 className="absolute top-0 left-0 w-full px-8 pb-3"
-                style={{ transform: `translateY(${Math.max(0, virtualizer.getTotalSize() - pinnedSize)}px)` }}
+                style={{ transform: `translateY(${Math.max(0, virtualizer.getTotalSize() - pinnedSize - streamGap)}px)` }}
               >
                 <div data-index={virtualized.length} data-pinned-turn="">
                   <TurnView turn={pinned} onNeedProcess={onNeedProcess} />

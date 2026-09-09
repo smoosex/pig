@@ -134,7 +134,12 @@ export function useEventBridge(): void {
           break
         }
         case 'message_start':
-          if (isPiMessage(event.message)) appendLiveMessage(sessionId, event.message)
+          if (isPiMessage(event.message)) {
+            const live = useSessionsStore.getState().runtime[sessionId]?.liveMessages ?? []
+            const last = live[live.length - 1]
+            if (last && last.role === event.message.role) replaceLiveMessage(sessionId, event.message)
+            else appendLiveMessage(sessionId, event.message)
+          }
           break
         case 'message_update':
           recordThinkingEvent(sessionId, event)

@@ -13,12 +13,14 @@ import {
   X
 } from 'lucide-react'
 import {
+  createInlinePastedTextDisplayMetadata,
   createPastedTextFilename,
   isLongPastedText,
   stripPastedTextAttachments,
   utf8ByteLength,
   type PastedTextPromptAttachment
 } from '../../../shared/pasted-text'
+import type { PigUserMessage } from '../pi/types'
 import {
   api,
   type SessionContextUsage,
@@ -515,6 +517,30 @@ type SerializedComposer = {
   attachments: PastedTextPromptAttachment[]
 }
 
+function composerUserMessage(
+  text: string,
+  images: Array<{ mimeType: string; data: string }>,
+  attachments: PastedTextPromptAttachment[]
+): PigUserMessage {
+  const imageBlocks = images.map((image) => ({
+    type: 'image' as const,
+    mimeType: image.mimeType,
+    data: image.data
+  }))
+  const content =
+    imageBlocks.length > 0
+      ? [...(text ? [{ type: 'text' as const, text }] : []), ...imageBlocks]
+      : text
+  return {
+    role: 'user',
+    content,
+    timestamp: Date.now(),
+    ...(attachments.length > 0
+      ? { pastedText: createInlinePastedTextDisplayMetadata(text, attachments) }
+      : {})
+  }
+}
+
 function serializeComposer(editor: Editor | null): SerializedComposer {
   if (!editor) return { text: '', attachments: [] }
   const json = editor.getJSON()
@@ -865,14 +891,23 @@ export function Composer() {
       editor?.commands.clearContent(false)
       return
     }
-    const prepared = await api.prepareSession(activeSessionId)
-    if (prepared.created) await refreshCwd(prepared.cwd)
+    const sendingWhileStreaming = isStreaming
+    const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const titleText = hasAttachments
       ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim()
       : trimmed
     const title = titleText.slice(0, 500) || (hasAttachments ? 'Pasted text' : images.length > 0 ? '图片' : '')
+    if (!sendingWhileStreaming) {
+      useSessionsStore.getState().beginPrompt(
+        activeSessionId,
+        composerUserMessage(
+          hasAttachments ? serialized.text : trimmed,
+          payload,
+          hasAttachments ? serialized.attachments : []
+        )
+      )
+    }
     if (title) useSessionsStore.getState().previewSessionTitle(activeSessionId, title)
-    const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     editor?.commands.clearContent(false)
     setText('')
     setPreview(null)
@@ -880,14 +915,20 @@ export function Composer() {
       for (const image of current) URL.revokeObjectURL(image.url)
       return []
     })
-    await api.prompt(
-      activeSessionId,
-      hasAttachments ? serialized.text : trimmed,
-      payload.length > 0 ? payload : undefined,
-      hasAttachments ? serialized.attachments : undefined,
-      isStreaming ? streamingBehavior : undefined
-    )
-    await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
+    try {
+      const prepared = await api.prepareSession(activeSessionId)
+      if (prepared.created) await refreshCwd(prepared.cwd)
+      await api.prompt(
+        activeSessionId,
+        hasAttachments ? serialized.text : trimmed,
+        payload.length > 0 ? payload : undefined,
+        hasAttachments ? serialized.attachments : undefined,
+        sendingWhileStreaming ? streamingBehavior : undefined
+      )
+      await Promise.all([refreshCwd(prepared.cwd), useSessionsStore.getState().loadControls(activeSessionId)])
+    } catch {
+      if (!sendingWhileStreaming) useSessionsStore.getState().rollbackPrompt(activeSessionId)
+    }
   }, [editor, images, isStreaming, activeSessionId, refreshCwd, serialized])
   sendRef.current = (behavior) => { void send(behavior) }
 
