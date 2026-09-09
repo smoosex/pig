@@ -1,9 +1,17 @@
+import { useEffect, useId, useRef, useState } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import { Streamdown, preprocessLaTeX } from '@lobehub/streamdown'
 import { useHighlightHtml } from '../lib/highlight'
 import { cn } from '../lib/utils'
 import { Separator } from './ui/separator'
+import 'katex/dist/katex.min.css'
+
+const remarkPlugins = [remarkGfm, remarkMath]
+const rehypePlugins = [rehypeKatex]
 
 function CodeFence({ lang, code }: { lang: string; code: string }) {
   const html = useHighlightHtml(code, lang || 'plaintext')
@@ -18,6 +26,43 @@ function CodeFence({ lang, code }: { lang: string; code: string }) {
         <pre className="m-0 whitespace-pre p-3">{code}</pre>
       )}
     </div>
+  )
+}
+
+function MermaidBlock({ code }: { code: string }) {
+  const rawId = useId()
+  const ref = useRef<HTMLDivElement>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setFailed(false)
+    const id = `mermaid-${rawId.replace(/:/g, '')}`
+    const dark = document.documentElement.classList.contains('dark')
+    void import('mermaid').then(async ({ default: mermaid }) => {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: dark ? 'dark' : 'default'
+      })
+      try {
+        const { svg } = await mermaid.render(id, code)
+        if (!cancelled && ref.current) ref.current.innerHTML = svg
+      } catch {
+        if (!cancelled) setFailed(true)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [code, rawId])
+
+  if (failed) return <CodeFence lang="plaintext" code={code} />
+  return (
+    <div
+      ref={ref}
+      className="my-2 max-w-full overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    />
   )
 }
 
@@ -49,6 +94,7 @@ const components: Components = {
   code: ({ className, children }) => {
     const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
     const text = String(children).replace(/\n$/, '')
+    if (lang === 'mermaid') return <MermaidBlock code={text} />
     if (!lang && !text.includes('\n')) {
       return <code className="rounded-sm bg-inline-code-background px-1 py-px font-mono text-xs text-code-foreground">{children}</code>
     }
@@ -56,12 +102,33 @@ const components: Components = {
   }
 }
 
-export function MarkdownText({ text, className }: { text: string; className?: string }) {
+export function MarkdownText({
+  text,
+  className,
+  streaming = false
+}: {
+  text: string
+  className?: string
+  streaming?: boolean
+}) {
   return (
-    <div className={cn('min-w-0', className)}>
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
-      </Markdown>
+    <div className={cn('min-w-0 [&_.katex]:text-foreground', className)}>
+      {streaming ? (
+        <Streamdown
+          content={text}
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={components}
+          granularity="char"
+          smoothing="balanced"
+          latexGuard
+          preprocess={preprocessLaTeX}
+        />
+      ) : (
+        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+          {text}
+        </Markdown>
+      )}
     </div>
   )
 }

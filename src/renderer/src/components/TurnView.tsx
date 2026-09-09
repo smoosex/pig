@@ -857,7 +857,7 @@ function ProcessOutline({ items, streaming }: { items: ProcessItem[]; streaming:
     <div className="flex min-w-0 flex-col gap-2">
       {segments.map((segment, i) =>
         segment.kind === 'text' ? (
-          <MarkdownText key={i} className="px-1 text-sm" text={segment.text} />
+          <MarkdownText key={i} className="px-1 text-sm" text={segment.text} streaming={streaming} />
         ) : (
           <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} streaming={streaming} />
         )
