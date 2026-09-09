@@ -272,7 +272,8 @@ export function ChatView() {
         defaultScrollPosition={initialScrollState && !initialScrollState.following ? 'start' : 'end'}
       >
       <VirtualTurns
-        items={items}
+        historical={historical}
+        live={live}
         sessionId={activeSessionId}
         scrollKey={scrollKey}
         isStreaming={isStreaming}
@@ -308,29 +309,39 @@ function snapshotFrom(
 }
 
 function VirtualTurns({
-  items,
+  historical,
+  live,
   sessionId,
   scrollKey,
   isStreaming,
   initialScrollState,
   onScrollStateChange
 }: {
-  items: Turn[]
+  historical: Turn[]
+  live: Turn[]
   sessionId: string | null
   scrollKey: string | null
   isStreaming: boolean
   initialScrollState?: ScrollSnapshot
   onScrollStateChange: (key: string, state: ScrollSnapshot) => void
 }) {
+  const items = useMemo(() => [...historical, ...live], [historical, live])
+  const pinned = items.at(-1)
+  const virtualized = useMemo(
+    () => (pinned ? items.slice(0, -1) : items),
+    [items, pinned]
+  )
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const scroller = useMessageScroller()
   const viewportRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef<HTMLDivElement>(null)
   const jumpFrame = useRef(0)
   const restored = useRef(false)
   const prevStreaming = useRef(isStreaming)
+  const [pinnedSize, setPinnedSize] = useState(0)
   const itemKeys = useMemo(
-    () => new Set(items.map((item) => item.id ?? '').filter(Boolean)),
-    [items]
+    () => new Set(virtualized.map((item) => item.id ?? '').filter(Boolean)),
+    [virtualized]
   )
   const measurements = useMemo(() => {
     const cached = initialScrollState?.measurements ?? []
@@ -345,13 +356,13 @@ function VirtualTurns({
     [sessionId, loadTurnProcess, scroller]
   )
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: virtualized.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => 160,
     overscan: 8,
-    paddingStart: 16,
-    paddingEnd: TURN_ALIGN,
-    getItemKey: (index) => items[index]?.id ?? index,
+    paddingStart: virtualized.length === 0 ? 0 : 16,
+    paddingEnd: pinned ? pinnedSize : virtualized.length === 0 ? 0 : TURN_ALIGN,
+    getItemKey: (index) => virtualized[index]?.id ?? index,
     anchorTo: 'start',
     scrollEndThreshold: SCROLL_END,
     directDomUpdates: true,
@@ -408,6 +419,22 @@ function VirtualTurns({
   }, [scrollKey])
 
   useLayoutEffect(() => {
+    const el = pinnedRef.current
+    if (!el) {
+      setPinnedSize(0)
+      return
+    }
+    const sync = () => {
+      const height = el.offsetHeight
+      setPinnedSize((prev) => (prev === height ? prev : height))
+    }
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [pinned?.id])
+
+  useLayoutEffect(() => {
     if (isStreaming && !prevStreaming.current) scroller.scrollToEnd({ behavior: 'smooth' })
     prevStreaming.current = isStreaming
   }, [isStreaming, scroller])
@@ -425,6 +452,7 @@ function VirtualTurns({
       )
     }
     if (place()) return
+    if (index >= virtualized.length) return
     const measured = virtualizer.measurementsCache[index]
     if (measured) scroller.scrollToOffset(Math.max(0, measured.start - TURN_ALIGN))
     virtualizer.scrollToIndex(index, { align: 'start' })
@@ -450,11 +478,12 @@ function VirtualTurns({
         <MessageScrollerContent className="relative gap-0">
           <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
             {virtualItems.map((row) => {
-              const turn = items[row.index]
+              const turn = virtualized[row.index]
               return (
                 <div
                   key={row.key}
                   data-index={row.index}
+                  data-historical-turn=""
                   ref={virtualizer.measureElement}
                   className="absolute top-0 left-0 w-full px-8"
                 >
@@ -462,6 +491,18 @@ function VirtualTurns({
                 </div>
               )
             })}
+            {pinned ? (
+              <div
+                ref={pinnedRef}
+                data-pinned-turns=""
+                className="absolute top-0 left-0 w-full px-8 pb-3"
+                style={{ transform: `translateY(${Math.max(0, virtualizer.getTotalSize() - pinnedSize)}px)` }}
+              >
+                <div data-index={virtualized.length} data-pinned-turn="">
+                  <TurnView turn={pinned} onNeedProcess={onNeedProcess} />
+                </div>
+              </div>
+            ) : null}
           </div>
         </MessageScrollerContent>
       </MessageScrollerViewport>
