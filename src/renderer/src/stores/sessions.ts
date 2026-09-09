@@ -135,14 +135,17 @@ function upsertGroup(
   groups: ProjectGroup[],
   cwd: string,
   group: ProjectGroup | null,
-  keepEmpty: boolean
+  keepEmpty: boolean,
+  prepend = false
 ): ProjectGroup[] {
   const index = groups.findIndex((item) => item.cwd === cwd)
   const next = [...groups]
   const keep = group && (keepEmpty || group.sessions.length > 0)
   if (keep && group) {
-    if (index === -1) next.push(group)
-    else next[index] = group
+    if (index === -1) {
+      if (prepend) next.unshift(group)
+      else next.push(group)
+    } else next[index] = group
   } else if (index !== -1) {
     next.splice(index, 1)
   }
@@ -338,7 +341,7 @@ export const useSessionsStore = create<SessionsStore>((set, get) => ({
     if (await api.isChatCwd(cwd)) {
       const chat = await api.listProject(cwd)
       set((s) => ({
-        chats: upsertGroup(s.chats, cwd, chat, false),
+        chats: upsertGroup(s.chats, cwd, chat, false, true),
         openTabs: patchTabsFromGroups(s.openTabs, chat ? [chat] : [])
       }))
       return
