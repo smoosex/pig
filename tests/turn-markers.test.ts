@@ -1,0 +1,273 @@
+import { mock, test } from 'bun:test'
+import assert from 'node:assert/strict'
+import type { ProcessItem, ToolStep, Turn } from '../src/renderer/src/chat/turns'
+
+async function runFixture(name: string): Promise<void> {
+  const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  GlobalRegistrator.register({ url: 'http://localhost' })
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.defineProperty(window, 'api', { value: {}, configurable: true })
+  const { act, createElement } = await import('react')
+  mock.module('thinking-orbs', () => ({
+    ThinkingOrb: ({ size, state, theme, className }: Record<string, unknown>) =>
+      createElement('span', {
+        'data-testid': 'thinking-orb',
+        'data-size': size,
+        'data-state': state,
+        'data-theme': theme,
+        className
+      })
+  }))
+  const { createRoot } = await import('react-dom/client')
+  const { TurnView } = await import('../src/renderer/src/components/TurnView')
+  const style = document.createElement('style')
+  style.textContent = `
+    [data-slot="collapsible-content"] { animation-duration: 0.3s; }
+    [data-slot="collapsible-content"][data-state="open"] { animation-name: collapsible-down; }
+    [data-slot="collapsible-content"][data-state="closed"] { animation-name: collapsible-up; }
+  `
+  document.head.append(style)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const makeTurn = (patch: Partial<Turn> = {}): Turn => ({
+    id: 'marker-test',
+    process: [],
+    answer: [],
+    startedAt: 1_000,
+    endedAt: 4_000,
+    streaming: true,
+    ...patch
+  })
+  const render = async (turn: Turn, onNeedProcess?: (id: string) => Promise<void>) => {
+    await act(async () => { root.render(createElement(TurnView, { turn, onNeedProcess })) })
+  }
+  const separator = () => {
+    const button = container.querySelector<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')
+    assert.ok(button)
+    return button
+  }
+  const shimmerText = () => [...container.querySelectorAll('.shimmer')].map((el) => el.textContent)
+  const readTool = (id: string, done = false): ToolStep => ({
+    id,
+    name: 'read',
+    args: { path: `/project/${id}.ts` },
+    ...(done ? {
+      result: {
+        role: 'toolResult' as const,
+        toolCallId: id,
+        toolName: 'read',
+        content: [{ type: 'text' as const, text: 'file contents' }],
+        isError: false,
+        timestamp: 2_000
+      }
+    } : {})
+  })
+
+  try {
+    if (name === 'wait') {
+      let rotate: (() => void) | undefined
+      const setInterval = window.setInterval.bind(window)
+      window.setInterval = ((callback: () => void, delay: number) => {
+        if (delay === 2_800) rotate = callback
+        return setInterval(callback, delay)
+      }) as typeof window.setInterval
+      await render(makeTurn())
+      const [text] = shimmerText()
+      assert.equal(text, '正在加班加点理解你的问题...')
+      const label = container.querySelector('.shimmer')!
+      assert.equal(label.children.length, 0)
+      assert.equal(label.getAttribute('style'), null)
+      assert.ok(label.closest('[data-slot="marker-content"]'))
+      assert.ok(label.closest('[data-slot="marker"]')?.classList.contains('text-xs'))
+      const orb = container.querySelector('[data-testid="thinking-orb"]')!
+      assert.equal(orb.closest('.shimmer'), null)
+      assert.equal(orb.getAttribute('data-size'), '20')
+      assert.equal(orb.getAttribute('data-state'), 'shaping')
+      assert.equal(orb.getAttribute('data-theme'), 'auto')
+      assert.equal(separator().querySelector('.shimmer'), null)
+      assert.ok(rotate)
+      await act(async () => { rotate!() })
+      assert.notEqual(shimmerText()[0], text)
+      await render(makeTurn({ errorMessage: 'aborted' }))
+      assert.deepEqual(shimmerText(), [])
+    } else if (name === 'thinking') {
+      const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0 }]
+      await render(makeTurn({ process }))
+      assert.deepEqual(shimmerText(), ['思考中...'])
+      assert.equal(container.querySelector('.shimmer')!.children.length, 0)
+      assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
+      assert.equal(container.querySelector('pre')?.closest('.shimmer'), null)
+      assert.equal(container.querySelector('.shimmer svg'), null)
+      await render(makeTurn({ process: [{ ...process[0], durationMs: 1_000 } as ProcessItem] }))
+      assert.deepEqual(shimmerText(), [])
+      const thinking = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('已思考'))!
+      assert.ok(thinking)
+      await act(async () => { thinking.click() })
+      assert.equal(thinking.getAttribute('aria-expanded'), 'true')
+      assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
+    } else if (name === 'tools') {
+      const process: ProcessItem[] = [
+        { kind: 'tools', tools: [readTool('previous', true)] },
+        { kind: 'text', text: '继续检查' },
+        { kind: 'tools', tools: [readTool('done', true), readTool('pending'), readTool('current')] }
+      ]
+      await render(makeTurn({ process }))
+      assert.equal(shimmerText().length, 1)
+      assert.ok(shimmerText()[0]?.includes('current.ts'))
+      const shimmer = container.querySelector('.shimmer')!
+      assert.equal(shimmer.previousElementSibling?.textContent, '读取')
+      assert.equal(shimmer.previousElementSibling?.classList.contains('shimmer'), false)
+      assert.ok(shimmer.parentElement?.classList.contains('truncate'))
+      assert.ok(shimmer.closest('[data-slot="marker"]'))
+      for (const header of container.querySelectorAll('[data-slot="marker-content"]')) {
+        if (header.textContent === '正在使用工具') assert.equal(header.querySelector('.shimmer'), null)
+      }
+      await render(makeTurn({ process, errorMessage: 'request failed' }))
+      assert.deepEqual(shimmerText(), [])
+      assert.ok(container.textContent?.includes('current.ts'))
+    } else if (name === 'failure') {
+      const running: ProcessItem = {
+        kind: 'bash',
+        message: {
+          role: 'bashExecution',
+          command: 'echo done',
+          output: '',
+          exitCode: undefined,
+          cancelled: false,
+          truncated: false,
+          timestamp: 2_000
+        }
+      }
+      await render(makeTurn({ process: [running] }))
+      assert.equal(shimmerText().length, 1)
+      await render(makeTurn({ process: [{ ...running, message: { ...running.message, exitCode: 0 } }] }))
+      assert.deepEqual(shimmerText(), [])
+      for (const cancelled of [false, true]) {
+        const process: ProcessItem[] = [{
+          kind: 'bash',
+          message: {
+            role: 'bashExecution',
+            command: 'exit 1',
+            output: 'failed',
+            exitCode: cancelled ? undefined : 1,
+            cancelled,
+            truncated: false,
+            timestamp: 2_000
+          }
+        }]
+        await render(makeTurn({ process }))
+        assert.deepEqual(shimmerText(), [])
+        assert.ok(container.querySelector('[data-slot="marker"] .text-destructive'))
+      }
+    } else if (name === 'finish') {
+      const turn = makeTurn({ process: [{ kind: 'tools', tools: [readTool('current')] }] })
+      await render(turn)
+      const liveRow = container.querySelector('.shimmer')!.closest('[data-slot="marker"]')
+      const content = container.querySelector<HTMLElement>('[data-slot="collapsible-content"]')!
+      await act(async () => { await Bun.sleep(30) })
+      await render({ ...turn, streaming: false })
+      assert.equal(separator().getAttribute('aria-expanded'), 'false')
+      assert.ok(separator().textContent?.startsWith('工作耗时'))
+      assert.equal(content.getAttribute('data-state'), 'closed')
+      assert.ok(content.classList.contains('duration-300'))
+      assert.equal(liveRow?.isConnected, true)
+      assert.deepEqual(shimmerText(), [])
+      await render(turn)
+      await act(async () => { await Bun.sleep(350) })
+      assert.equal(separator().getAttribute('aria-expanded'), 'true')
+      assert.equal(shimmerText().length, 1)
+      await render({ ...turn, streaming: false })
+      await act(async () => { await Bun.sleep(350) })
+      assert.deepEqual(shimmerText(), [])
+      assert.equal(container.textContent?.includes('正在使用工具'), false)
+      await act(async () => { separator().click() })
+      assert.equal(separator().getAttribute('aria-expanded'), 'true')
+      assert.deepEqual(shimmerText(), [])
+    } else if (name === 'disclosure') {
+      let requested: string | undefined
+      let release!: () => void
+      const pending = new Promise<void>((resolve) => { release = resolve })
+      await render(makeTurn({ streaming: false, hasProcess: true }), async (id) => {
+        requested = id
+        await pending
+      })
+      const button = separator()
+      assert.equal(button.type, 'button')
+      assert.equal(button.tabIndex, 0)
+      assert.equal(button.children.length, 1)
+      assert.equal(container.querySelector('button button'), null)
+      assert.equal(button.getAttribute('aria-expanded'), 'false')
+      assert.equal(button.getAttribute('aria-controls'), null)
+      for (const name of ['text-xs', 'hover:bg-transparent', 'aria-expanded:bg-transparent']) {
+        assert.ok(button.classList.contains(name))
+      }
+      assert.equal(button.classList.contains('hover:bg-muted'), false)
+      assert.equal(button.classList.contains('aria-expanded:bg-muted'), false)
+      button.focus()
+      assert.equal(document.activeElement, button)
+      await act(async () => { button.click() })
+      assert.equal(requested, 'marker-test')
+      assert.equal(button.disabled, true)
+      assert.equal(button.getAttribute('aria-expanded'), 'false')
+      await act(async () => { release() })
+      assert.equal(button.disabled, false)
+      assert.equal(button.getAttribute('aria-expanded'), 'true')
+      const contentId = button.getAttribute('aria-controls')
+      assert.ok(contentId && document.getElementById(contentId))
+      await act(async () => { button.click() })
+      assert.equal(button.getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(shimmerText(), [])
+    } else {
+      assert.fail(`Unknown fixture: ${name}`)
+    }
+  } finally {
+    await act(async () => { root.unmount() })
+    await GlobalRegistrator.unregister()
+  }
+}
+
+if (process.argv[2] === '--marker-fixture') {
+  await runFixture(process.argv[3])
+} else {
+  const fixtures = {
+    wait: 'wait marker uses native shimmer without animating the orb or splitting characters',
+    thinking: 'thinking marker preserves the body and completed thinking remains expandable',
+    tools: 'only the current tool text shimmers while its action prefix stays static',
+    failure: 'completed, failed and cancelled commands stop shimmering',
+    finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
+    disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
+  }
+  for (const [name, title] of Object.entries(fixtures)) {
+    test(title, async () => {
+      const child = Bun.spawn([process.execPath, import.meta.path, '--marker-fixture', name], {
+        stdout: 'pipe',
+        stderr: 'pipe'
+      })
+      const timeout = setTimeout(() => child.kill(), 10_000)
+      try {
+        const [exitCode, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text()
+        ])
+        assert.equal(exitCode, 0, stderr || stdout)
+      } finally {
+        clearTimeout(timeout)
+        child.kill()
+      }
+    }, 15_000)
+  }
+
+  test('uses the installed shimmer defaults and removes custom animation definitions', async () => {
+    const [native, styles, view] = await Promise.all([
+      Bun.file(new URL('../node_modules/shadcn/dist/tailwind.css', import.meta.url)).text(),
+      Bun.file(new URL('../src/renderer/src/styles.css', import.meta.url)).text(),
+      Bun.file(new URL('../src/renderer/src/components/TurnView.tsx', import.meta.url)).text()
+    ])
+    assert.match(native, /animation: tw-shimmer var\(--shimmer-duration, 2s\) linear infinite/)
+    assert.match(native, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.shimmer\s*\{\s*animation: none/)
+    assert.doesNotMatch(styles + view, /think-wave|tool-wave|WaveText|ThinkLabel/)
+    assert.doesNotMatch(view, /--shimmer-|shimmer-(?:duration|color|angle|spread)-|animationDelay/)
+  })
+}

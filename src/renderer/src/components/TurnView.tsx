@@ -30,27 +30,19 @@ import { MarkdownText } from './MarkdownText'
 import { PastedTextChip } from './PastedTextChip'
 import { PastedTextPreview } from './PastedTextPreview'
 import { Message, MessageContent } from './ui/message'
+import { Marker, MarkerContent } from './ui/marker'
 
 const hideScroll = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap ${hideScroll}`
-const disclosureRow =
-  'flex h-7 w-full min-w-0 items-center justify-start gap-1.5 px-1 text-xs font-normal text-muted-foreground'
+const statusMarker = 'pointer-events-none h-7 min-w-0 gap-1.5 px-1 text-xs font-normal'
 const disclosureButton =
   'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 text-xs font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted'
-
-function WaveText({ text }: { text: string }) {
-  return (
-    <span className="tool-wave" data-text={text}>
-      {text}
-    </span>
-  )
-}
 
 function VerbLabel({ text, failed, active }: { text: string; failed?: boolean; active?: boolean }) {
   return (
     <span className={cn('min-w-0 flex-1 truncate text-left', failed && 'text-destructive')}>
       <span className={cn(!failed && 'text-foreground')}>{text.slice(0, 2)}</span>
-      {active ? <WaveText text={text.slice(2)} /> : <span>{text.slice(2)}</span>}
+      <span className={cn(active && !failed && 'shimmer')}>{text.slice(2)}</span>
     </span>
   )
 }
@@ -675,18 +667,6 @@ function CustomProcess({ message }: { message: CustomMessage }) {
   )
 }
 
-function ThinkLabel() {
-  return (
-    <span className="think-wave">
-      {[...'思考中...'].map((char, i) => (
-        <span key={`${char}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
-          {char}
-        </span>
-      ))}
-    </span>
-  )
-}
-
 const WAIT_LINES = [
   '正在加班加点理解你的问题...',
   '网速被乌龟侵占了，正在寻找兔子...',
@@ -696,9 +676,10 @@ const WAIT_LINES = [
   '先热热身，灵感正在路上堵车...'
 ]
 
-function WaitLine() {
+function WaitLine({ streaming }: { streaming: boolean }) {
   const [index, setIndex] = useState(0)
   useEffect(() => {
+    if (!streaming) return
     const id = window.setInterval(() => {
       setIndex((current) => {
         if (WAIT_LINES.length < 2) return current
@@ -708,38 +689,33 @@ function WaitLine() {
       })
     }, 2800)
     return () => window.clearInterval(id)
-  }, [])
-  const text = WAIT_LINES[index] ?? WAIT_LINES[0]
-  return (
-    <span className="think-wave">
-      {[...text].map((char, i) => (
-        <span key={`${index}-${i}`} style={{ animationDelay: `${i * 0.08}s` }}>
-          {char}
-        </span>
-      ))}
-    </span>
-  )
+  }, [streaming])
+  return <span className={cn(streaming && 'shimmer')}>{WAIT_LINES[index] ?? WAIT_LINES[0]}</span>
 }
 
 function OutlineThinking({
   text,
   durationMs,
   current,
-  stacked
+  stacked,
+  streaming
 }: {
   text?: string
   durationMs: number
   current?: boolean
   stacked?: boolean
+  streaming: boolean
 }) {
   const body = text ? stripThoughtHeading(text) : ''
   const header = (
-    <div className={cn(disclosureRow, 'pointer-events-none')}>
+    <Marker className={statusMarker}>
       {stacked ? <StackedIcons kinds={['thinking']} /> : null}
-      <span className="min-w-0 flex-1 truncate text-left">
-        {current ? <ThinkLabel /> : durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'}
-      </span>
-    </div>
+      <MarkerContent className="flex-1 truncate">
+        <span className={cn(current && streaming && 'shimmer')}>
+          {current ? '思考中...' : durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'}
+        </span>
+      </MarkerContent>
+    </Marker>
   )
   if (!current || !body) return header
   const stream = (
@@ -762,24 +738,30 @@ function OutlineThinking({
 
 function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
   return (
-    <div className={cn(disclosureRow, 'pointer-events-none')}>
-      <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} active={active} />
-    </div>
+    <Marker className={statusMarker}>
+      <MarkerContent className="flex min-w-0 flex-1">
+        <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} active={active} />
+      </MarkerContent>
+    </Marker>
   )
 }
 
 function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
-    <div className={cn(disclosureRow, 'pointer-events-none')}>
-      <VerbLabel text={`执行 ${message.command}`} failed={failed} active={active} />
-    </div>
+    <Marker className={statusMarker}>
+      <MarkerContent className="flex min-w-0 flex-1">
+        <VerbLabel text={`执行 ${message.command}`} failed={failed} active={active && message.exitCode === undefined} />
+      </MarkerContent>
+    </Marker>
   )
 }
 
-function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
+function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
   if (row.kind === 'thinking') {
-    if (last && row.durationMs <= 0) return <OutlineThinking text={row.text} durationMs={0} current />
+    if (last && row.durationMs <= 0) {
+      return <OutlineThinking text={row.text} durationMs={0} current streaming={streaming} />
+    }
     return <ThinkingLine text={row.text} durationMs={row.durationMs} />
   }
   if (row.kind === 'tools') {
@@ -790,7 +772,7 @@ function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
       <>
         {done.length === 1 ? <ToolRow step={done[0]} /> : done.length > 1 ? <ToolCluster steps={done} /> : null}
         {live.map((step, i) => (
-          <OutlineTool key={step.id} step={step} active={i === live.length - 1} />
+          <OutlineTool key={step.id} step={step} active={streaming && i === live.length - 1} />
         ))}
       </>
     )
@@ -806,7 +788,7 @@ function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
         ) : past.length > 1 ? (
           <BashCluster messages={past} />
         ) : null}
-        {current ? <OutlineBash message={current} active /> : null}
+        {current ? <OutlineBash message={current} active={streaming} /> : null}
       </>
     )
   }
@@ -815,18 +797,18 @@ function OutlineRow({ row, last }: { row: WorkRow; last: boolean }) {
   return null
 }
 
-function OutlineBody({ items, active }: { items: ProcessItem[]; active: boolean }) {
+function OutlineBody({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
   const rows = clusterWork(items)
   return (
     <div className="flex min-w-0 flex-col">
       {rows.map((row, i) => (
-        <OutlineRow key={i} row={row} last={active && i === rows.length - 1} />
+        <OutlineRow key={i} row={row} last={active && i === rows.length - 1} streaming={streaming} />
       ))}
     </div>
   )
 }
 
-function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean }) {
+function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
   const tools = countTools(items)
   if (tools === 0) {
     return (
@@ -835,7 +817,7 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
           if (item.kind === 'thinking') {
             const live = active && i === items.length - 1 && item.durationMs <= 0
             if (live) {
-              return <OutlineThinking key={i} text={item.text} durationMs={0} current stacked />
+              return <OutlineThinking key={i} text={item.text} durationMs={0} current stacked streaming={streaming} />
             }
             return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
           }
@@ -848,27 +830,27 @@ function OutlineGroup({ items, active }: { items: ProcessItem[]; active: boolean
   }
   return (
     <div className="min-w-0">
-      <div className={cn(disclosureRow, 'pointer-events-none')}>
+      <Marker className={statusMarker}>
         <StackedIcons kinds={iconKinds(items)} />
-        <span className="min-w-0 flex-1 truncate text-left">正在使用工具</span>
-      </div>
+        <MarkerContent className="flex-1 truncate">正在使用工具</MarkerContent>
+      </Marker>
       <Rail>
-        <OutlineBody items={items} active={active} />
+        <OutlineBody items={items} active={active} streaming={streaming} />
       </Rail>
     </div>
   )
 }
 
-function ProcessOutline({ items }: { items: ProcessItem[] }) {
+function ProcessOutline({ items, streaming }: { items: ProcessItem[]; streaming: boolean }) {
   const segments = processSegments(items)
   if (segments.length === 0) {
     return (
-      <div className={cn(disclosureRow, 'pointer-events-none')}>
+      <Marker className={statusMarker}>
         <ThinkingOrb state="shaping" size={20} theme="auto" className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left">
-          <WaitLine />
-        </span>
-      </div>
+        <MarkerContent className="flex-1 truncate">
+          <WaitLine streaming={streaming} />
+        </MarkerContent>
+      </Marker>
     )
   }
   return (
@@ -877,7 +859,7 @@ function ProcessOutline({ items }: { items: ProcessItem[] }) {
         segment.kind === 'text' ? (
           <MarkdownText key={i} className="px-1 text-sm" text={segment.text} />
         ) : (
-          <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} />
+          <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} streaming={streaming} />
         )
       )}
     </div>
@@ -992,27 +974,27 @@ export const TurnView = memo(function TurnView({
           onOpenChange={(next) => void toggleProcess(next)}
           className="mb-3"
         >
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={loading}
-              className={cn(
-                'h-7 w-full justify-start gap-3 rounded-none px-0 text-xs font-normal text-muted-foreground hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
-                turn.streaming && 'pointer-events-none'
-              )}
-            >
-              <span className="h-px min-w-4 flex-1 bg-border" />
-              <span className="flex shrink-0 items-center gap-1">
-                {label}
-                <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
-              </span>
-              <span className="h-px min-w-4 flex-1 bg-border" />
-            </Button>
-          </CollapsibleTrigger>
+          <Marker variant="separator" asChild>
+            <CollapsibleTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={loading}
+                className={cn(
+                  'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
+                  turn.streaming && 'pointer-events-none'
+                )}
+              >
+                <MarkerContent className="flex shrink-0 items-center gap-1">
+                  {label}
+                  <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
+                </MarkerContent>
+              </Button>
+            </CollapsibleTrigger>
+          </Marker>
           <CollapsibleContent className="duration-300">
             {liveOutline ? (
-              <ProcessOutline items={turn.process} />
+              <ProcessOutline items={turn.process} streaming={turn.streaming && !turn.errorMessage} />
             ) : (
               <ProcessList items={turn.process} />
             )}
