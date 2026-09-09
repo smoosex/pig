@@ -343,7 +343,7 @@ function VirtualTurns({
   const prevStreaming = useRef(false)
   const [pinnedSize, setPinnedSize] = useState(0)
   const [viewH, setViewH] = useState(0)
-  const streamGap = isStreaming && live.length > 0 && viewH > 0 ? Math.max(0, viewH - TURN_ALIGN) : 0
+  const streamGap = live.length > 0 && viewH > 0 ? Math.max(0, viewH - TURN_ALIGN) : 0
   const itemKeys = useMemo(
     () => new Set(virtualized.map((item) => item.id ?? '').filter(Boolean)),
     [virtualized]
@@ -365,7 +365,7 @@ function VirtualTurns({
     getScrollElement: () => viewportRef.current,
     estimateSize: () => 160,
     overscan: 8,
-    paddingStart: virtualized.length === 0 ? TURN_ALIGN : 16,
+    paddingStart: TURN_ALIGN,
     paddingEnd: pinned
       ? pinnedSize + streamGap
       : virtualized.length === 0 ? 0 : TURN_ALIGN,
@@ -486,7 +486,8 @@ function VirtualTurns({
       scroller.pauseAutoScroll()
       streamPager.current = 'pinning'
     }
-    if (!isStreaming) {
+    if (!isStreaming && prevStreaming.current) {
+      scroller.pauseAutoScroll()
       streamPager.current = 'off'
       pinnedToTopFor.current = null
     }
