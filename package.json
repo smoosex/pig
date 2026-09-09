@@ -25,6 +25,7 @@
     "@earendil-works/pi-coding-agent": "^0.84.3",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@shadcn/react": "0.3.1",
     "@smoose/border-beam": "^1.0.0",
     "@tanstack/react-virtual": "^3.14.10",
     "@tiptap/core": "^3.31.3",
@@ -71,5 +72,8 @@
     "electron-winstaller",
     "esbuild",
     "protobufjs"
-  ]
+  ],
+  "patchedDependencies": {
+    "@shadcn/react@0.3.1": "patches/@shadcn%2Freact@0.3.1.patch"
+  }
 }

@@ -1,14 +1,29 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
 import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
-import { ArrowDown } from 'lucide-react'
 import { groupTurns, type ProcessItem, type Turn } from '../chat/turns'
 import { chatColumn } from '../chat/layout'
+import {
+  captureAnchor,
+  pruneMeasurements,
+  restoredScrollOffset,
+  SCROLL_END,
+  TURN_ALIGN,
+  turnScrollOffset,
+  type ScrollSnapshot
+} from '../chat/scroll-state'
 import type { DisplayTurn } from '../ipc/api'
 import { useSessionsStore } from '../stores/sessions'
 import { cn } from '../lib/utils'
 import { Empty } from './ui/empty'
-import { Button } from './ui/button'
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller
+} from './ui/message-scroller'
 import { TurnView } from './TurnView'
 
 function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
@@ -217,12 +232,12 @@ export function ChatView() {
     () => (live.length === 0 ? historical : [...historical, ...live]),
     [historical, live]
   )
-  const scrollStates = useRef(new Map<string, ScrollState>())
+  const scrollStates = useRef(new Map<string, ScrollSnapshot>())
   const scrollKey =
     activeSessionId && activeBranchViewId
       ? `${activeSessionId}\u0000${activeBranchViewId}`
       : null
-  const saveScrollState = useCallback((key: string, state: ScrollState) => {
+  const saveScrollState = useCallback((key: string, state: ScrollSnapshot) => {
     scrollStates.current.set(key, state)
   }, [])
   const initialScrollState = scrollKey ? scrollStates.current.get(scrollKey) : undefined
@@ -251,86 +266,20 @@ export function ChatView() {
   }
 
   return (
-    <VirtualTurns
-      key={scrollKey ?? 'none'}
-      items={items}
-      sessionId={activeSessionId}
-      scrollKey={scrollKey}
-      isStreaming={isStreaming}
-      initialScrollState={initialScrollState}
-      onScrollStateChange={saveScrollState}
-    />
-  )
-}
-
-const TURN_ALIGN = 12
-const SCROLL_END = 32
-
-type ScrollState = {
-  scrollTop: number
-  following: boolean
-}
-
-function distanceFromEnd(el: HTMLDivElement): number {
-  return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop)
-}
-
-function snapToEnd(el: HTMLDivElement): void {
-  el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
-}
-
-function followKey(turn: Turn | undefined): string {
-  if (!turn) return ''
-  let n = 0
-  for (const item of turn.process) {
-    if (item.kind === 'text' || item.kind === 'thinking') n += item.text.length
-    else if (item.kind === 'tools') n += item.tools.length
-    else n += 1
-  }
-  for (const block of turn.answer) {
-    if (block.type === 'text') n += block.text.length
-  }
-  return `${turn.id}:${n}:${turn.streaming ? 1 : 0}`
-}
-
-function JumpToEnd({
-  viewportRef,
-  onJump,
-  hidden
-}: {
-  viewportRef: RefObject<HTMLDivElement | null>
-  onJump: () => void
-  hidden?: boolean
-}) {
-  const [show, setShow] = useState(false)
-
-  useEffect(() => {
-    const scroller = viewportRef.current
-    if (!scroller) return
-    const sync = () => setShow(distanceFromEnd(scroller) > SCROLL_END)
-    sync()
-    scroller.addEventListener('scroll', sync, { passive: true })
-    const observer = new ResizeObserver(sync)
-    observer.observe(scroller)
-    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
-    return () => {
-      scroller.removeEventListener('scroll', sync)
-      observer.disconnect()
-    }
-  }, [viewportRef])
-
-  if (hidden || !show) return null
-  return (
-    <Button
-      type="button"
-      variant="secondary"
-      size="icon-sm"
-      className="absolute inset-s-1/2 bottom-4 z-10 -translate-x-1/2 border-border bg-card"
-      aria-label="滚动到底部"
-      onClick={onJump}
-    >
-      <ArrowDown />
-    </Button>
+    <MessageScrollerProvider
+        key={scrollKey ?? 'none'}
+        autoScroll
+        defaultScrollPosition={initialScrollState?.following ? 'end' : 'start'}
+      >
+      <VirtualTurns
+        items={items}
+        sessionId={activeSessionId}
+        scrollKey={scrollKey}
+        isStreaming={isStreaming}
+        initialScrollState={initialScrollState}
+        onScrollStateChange={saveScrollState}
+      />
+    </MessageScrollerProvider>
   )
 }
 
@@ -341,6 +290,21 @@ function shouldAdjustOnItemResize(
   const scrollOffset = (instance.scrollOffset ?? 0) + instance.scrollAdjustments
   if (!instance.itemSizeCache.has(item.key)) return item.start < scrollOffset
   return item.start + item.size <= scrollOffset && instance.scrollDirection !== 'backward'
+}
+
+function snapshotFrom(
+  scroller: ReturnType<typeof useMessageScroller>,
+  viewport: HTMLDivElement | null,
+  virtualizer: Virtualizer<HTMLDivElement, Element>
+): ScrollSnapshot {
+  const state = scroller.getScrollState()
+  const measurements = virtualizer.takeSnapshot()
+  return {
+    ...state,
+    width: viewport?.clientWidth ?? 0,
+    measurements,
+    anchor: captureAnchor(measurements, state.scrollTop)
+  }
 }
 
 function VirtualTurns({
@@ -355,27 +319,34 @@ function VirtualTurns({
   sessionId: string | null
   scrollKey: string | null
   isStreaming: boolean
-  initialScrollState?: ScrollState
-  onScrollStateChange: (key: string, state: ScrollState) => void
+  initialScrollState?: ScrollSnapshot
+  onScrollStateChange: (key: string, state: ScrollSnapshot) => void
 }) {
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
-  const parentRef = useRef<HTMLDivElement>(null)
-  const following = useRef(true)
-  const userIntent = useRef(false)
-  const prevCount = useRef(items.length)
+  const scroller = useMessageScroller()
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const jumpFrame = useRef(0)
+  const restored = useRef(false)
   const prevStreaming = useRef(isStreaming)
-  const prevSession = useRef(sessionId)
+  const itemKeys = useMemo(
+    () => new Set(items.map((item) => item.id ?? '').filter(Boolean)),
+    [items]
+  )
+  const measurements = useMemo(() => {
+    const cached = initialScrollState?.measurements ?? []
+    return cached.length === 0 ? cached : pruneMeasurements(cached, itemKeys)
+  }, [initialScrollState, itemKeys])
   const onNeedProcess = useCallback(
     async (turnId: string) => {
+      scroller.pauseAutoScroll()
       if (!sessionId) return
       await loadTurnProcess(sessionId, turnId)
     },
-    [sessionId, loadTurnProcess]
+    [sessionId, loadTurnProcess, scroller]
   )
-  const streamKey = followKey(items[items.length - 1])
   const virtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => viewportRef.current,
     estimateSize: () => 160,
     overscan: 8,
     paddingStart: 16,
@@ -384,201 +355,122 @@ function VirtualTurns({
     anchorTo: 'start',
     scrollEndThreshold: SCROLL_END,
     directDomUpdates: true,
-    directDomUpdatesMode: 'position'
+    directDomUpdatesMode: 'position',
+    initialOffset: initialScrollState && !initialScrollState.following
+      ? initialScrollState.scrollTop
+      : undefined,
+    initialMeasurementsCache: measurements.length > 0 ? measurements : undefined
   })
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     shouldAdjustOnItemResize(item, instance)
   const virtualItems = virtualizer.getVirtualItems()
-  const scrollToEnd = useCallback(() => {
-    following.current = true
-    userIntent.current = false
-    virtualizer.scrollToEnd()
-    const el = parentRef.current
-    if (el) snapToEnd(el)
-  }, [virtualizer])
+
+  const persist = useCallback(() => {
+    if (!scrollKey) return
+    onScrollStateChange(scrollKey, snapshotFrom(scroller, viewportRef.current, virtualizer))
+  }, [onScrollStateChange, scrollKey, scroller, virtualizer])
+  const persistRef = useRef(persist)
+  persistRef.current = persist
 
   useLayoutEffect(() => {
-    const el = parentRef.current
-    if (!el) return
-    following.current = initialScrollState?.following ?? true
-    const restore = () => {
-      if (!el.isConnected) return
-      if (following.current) {
-        scrollToEnd()
-      } else if (initialScrollState) {
-        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight)
-        el.scrollTop = Math.min(initialScrollState.scrollTop, maxScroll)
-      }
-      if (scrollKey) {
-        onScrollStateChange(scrollKey, {
-          scrollTop: el.scrollTop,
-          following: following.current
-        })
-      }
+    if (restored.current) return
+    restored.current = true
+    const snapshot = initialScrollState
+    if (!snapshot) {
+      scroller.scrollToEnd({ behavior: 'smooth' })
+      return
     }
-    restore()
-    let secondFrame = 0
-    const firstFrame = requestAnimationFrame(() => {
-      restore()
-      secondFrame = requestAnimationFrame(restore)
-    })
+    if (snapshot.following) return
+    const viewport = viewportRef.current
+    const measured = snapshot.anchor
+      ? virtualizer.measurementsCache.find((item) => item.key === snapshot.anchor?.key)
+      : undefined
+    const row = measured && viewport
+      ? viewport.querySelector(`[data-index="${measured.index}"]`)
+      : null
+    const node = (row?.querySelector('[data-turn-user]') ?? row) as HTMLElement | null
+    if (viewport && node && snapshot.anchor) {
+      scroller.scrollToOffset(
+        restoredScrollOffset(
+          viewport,
+          viewport.getBoundingClientRect(),
+          node.getBoundingClientRect(),
+          snapshot.anchor.offset
+        ),
+        { behavior: 'smooth' }
+      )
+      return
+    }
+    scroller.scrollToOffset(snapshot.scrollTop, { behavior: 'smooth' })
+  }, [initialScrollState, scroller, virtualizer])
+
+  useLayoutEffect(() => {
     return () => {
-      cancelAnimationFrame(firstFrame)
-      cancelAnimationFrame(secondFrame)
+      cancelAnimationFrame(jumpFrame.current)
+      persistRef.current()
     }
   }, [scrollKey])
 
   useLayoutEffect(() => {
-    return () => {
-      const el = parentRef.current
-      if (!el || !scrollKey) return
-      onScrollStateChange(scrollKey, {
-        scrollTop: el.scrollTop,
-        following: following.current || distanceFromEnd(el) <= SCROLL_END
-      })
-    }
-  }, [scrollKey, onScrollStateChange])
-
-  useEffect(() => {
-    const el = parentRef.current
-    if (!el) return
-    const onScroll = () => {
-      if (userIntent.current) {
-        userIntent.current = false
-        following.current = distanceFromEnd(el) <= SCROLL_END
-      } else if (distanceFromEnd(el) <= SCROLL_END) {
-        following.current = true
-      }
-      if (scrollKey) {
-        onScrollStateChange(scrollKey, {
-          scrollTop: el.scrollTop,
-          following: following.current
-        })
-      }
-    }
-    const onUserInput = () => {
-      userIntent.current = true
-      if (isStreaming) following.current = false
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    el.addEventListener('wheel', onUserInput, { passive: true })
-    el.addEventListener('touchmove', onUserInput, { passive: true })
-    el.addEventListener('pointerdown', onUserInput)
-    el.addEventListener('keydown', onUserInput)
-    return () => {
-      el.removeEventListener('scroll', onScroll)
-      el.removeEventListener('wheel', onUserInput)
-      el.removeEventListener('touchmove', onUserInput)
-      el.removeEventListener('pointerdown', onUserInput)
-      el.removeEventListener('keydown', onUserInput)
-    }
-  }, [isStreaming, scrollKey, onScrollStateChange])
-
-  useEffect(() => {
-    const el = parentRef.current
-    const content = el?.firstElementChild
-    if (!el || !content) return
-    let frame = 0
-    const keepAtEnd = () => {
-      if (!following.current || userIntent.current) return
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        if (!following.current || userIntent.current) return
-        scrollToEnd()
-      })
-    }
-    const observer = new ResizeObserver(keepAtEnd)
-    observer.observe(el)
-    observer.observe(content)
-    keepAtEnd()
-    return () => {
-      cancelAnimationFrame(frame)
-      observer.disconnect()
-    }
-  }, [scrollToEnd])
-
-  useLayoutEffect(() => {
-    const el = parentRef.current
-    if (!el) return
-    if (prevSession.current !== sessionId) {
-      prevSession.current = sessionId
-      following.current = true
-      prevCount.current = items.length
-      prevStreaming.current = isStreaming
-      scrollToEnd()
-      return
-    }
-    if (isStreaming && !prevStreaming.current) following.current = true
-    const ended = !isStreaming && prevStreaming.current
+    if (isStreaming && !prevStreaming.current) scroller.scrollToEnd({ behavior: 'smooth' })
     prevStreaming.current = isStreaming
-    const grew = items.length > prevCount.current
-    prevCount.current = items.length
-    if (!following.current) return
-    if (isStreaming || grew || ended) scrollToEnd()
-  }, [sessionId, isStreaming, items.length, streamKey, scrollToEnd])
+  }, [isStreaming, scroller])
 
   const jumpToTurn = (index: number) => {
-    const scroller = parentRef.current
-    if (!scroller) return
-    scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -1 }))
-
+    const viewport = viewportRef.current
+    if (!viewport) return
+    scroller.pauseAutoScroll()
     const place = (): boolean => {
-      const row = scroller.querySelector(`[data-index="${index}"]`)
+      const row = viewport.querySelector(`[data-index="${index}"]`)
       const target = row?.querySelector('[data-turn-user]') ?? row
       if (!target) return false
-      const sRect = scroller.getBoundingClientRect()
-      const tRect = target.getBoundingClientRect()
-      const maxScroll = scroller.scrollHeight - scroller.clientHeight
-      const toTop = scroller.scrollTop + tRect.top - sRect.top - TURN_ALIGN
-      if (toTop <= maxScroll + 1) {
-        scroller.scrollTop = Math.max(0, toTop)
-      } else {
-        const toBottom = scroller.scrollTop + tRect.bottom - sRect.bottom + TURN_ALIGN
-        scroller.scrollTop = Math.max(0, Math.min(maxScroll, toBottom))
-      }
-      return true
+      return scroller.scrollToOffset(
+        turnScrollOffset(viewport, viewport.getBoundingClientRect(), target.getBoundingClientRect())
+      )
     }
-
     if (place()) return
-
     const measured = virtualizer.measurementsCache[index]
-    if (measured) {
-      const maxScroll = scroller.scrollHeight - scroller.clientHeight
-      scroller.scrollTop = Math.max(0, Math.min(maxScroll, measured.start - TURN_ALIGN))
-    }
-
+    if (measured) scroller.scrollToOffset(Math.max(0, measured.start - TURN_ALIGN))
+    virtualizer.scrollToIndex(index, { align: 'start' })
+    cancelAnimationFrame(jumpFrame.current)
     let tries = 0
     const tick = () => {
       if (place() || tries++ >= 30) return
-      requestAnimationFrame(tick)
+      jumpFrame.current = requestAnimationFrame(tick)
     }
-    requestAnimationFrame(tick)
+    jumpFrame.current = requestAnimationFrame(tick)
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
-      <div
-        ref={parentRef}
-        className="size-full min-h-0 min-w-0 overflow-y-auto overscroll-contain contain-content [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    <MessageScroller className="min-h-0 flex-1">
+      <MessageScrollerViewport
+        ref={viewportRef}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('[data-slot="collapsible-trigger"]')) {
+            scroller.pauseAutoScroll()
+          }
+        }}
       >
-        <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
-          {virtualItems.map((row) => {
-            const turn = items[row.index]
-            return (
-              <div
-                key={row.key}
-                data-index={row.index}
-                ref={virtualizer.measureElement}
-                className="absolute top-0 left-0 w-full px-8"
-              >
-                <TurnView turn={turn} onNeedProcess={onNeedProcess} />
-              </div>
-            )
-          })}
-        </div>
-      </div>
-      <JumpToEnd viewportRef={parentRef} onJump={scrollToEnd} hidden={isStreaming} />
+        <MessageScrollerContent className="relative gap-0">
+          <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
+            {virtualItems.map((row) => {
+              const turn = items[row.index]
+              return (
+                <div
+                  key={row.key}
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full px-8"
+                >
+                  <TurnView turn={turn} onNeedProcess={onNeedProcess} />
+                </div>
+              )
+            })}
+          </div>
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+      {isStreaming ? null : <MessageScrollerButton behavior="smooth" />}
       <TurnMinimap items={items} onJump={jumpToTurn} />
-    </div>
+    </MessageScroller>
   )
 }
