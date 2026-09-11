@@ -18,7 +18,8 @@ bun run build:mac    # 或 build:win / build:linux
 
 ## 架构
 
-三进程，会话 pi SDK 跑在 main；分支命名例外，使用无工具、不保存会话的短生命周期 utility process：
+main / preload / renderer 三层边界；preload 在 renderer 进程的隔离上下文中暴露白名单 API。
+会话 pi SDK 跑在 main；分支命名例外，使用无工具、不保存会话的短生命周期 utility process：
 
 ```
 renderer (React，沙箱)
@@ -28,18 +29,21 @@ main (Node，拥有 pi session)
 
 ```
 src/
+├── shared/         IPC 契约、跨进程数据结构
 ├── main/           窗口、IPC、pi session
-│   ├── pi/         session 工厂、事件桥、JSONL 读取
+│   ├── pi/         session 生命周期、模型设置、投影、事件桥、JSONL 读取
 │   └── ipc/        invoke / push
 ├── preload/        白名单 API
 └── renderer/src/
-    ├── stores/     zustand（sessions、settings）
-    ├── hooks/      pi 事件 → store
+    ├── stores/     zustand（sessions 按 catalog / tabs / conversation 分 slice）
+    ├── hooks/      React 生命周期绑定
     ├── ipc/        window.api 封装
-    ├── chat/       turn 聚合
-    ├── themes/     色板（只定义 --bg0、--fg 等）
-    └── components/ UI（shadcn 在 ui/）
+    ├── chat/       事件路由、思考计时、turn 聚合
+    ├── themes/     完整语义色板
+    └── components/ 按 composer / turn / sidebar / settings 分组；shadcn 在 ui/
 ```
+
+模块职责与修改入口见 [docs/architecture.md](docs/architecture.md)。
 
 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 
@@ -78,4 +82,3 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 - Status and selection backgrounds should be subtle but distinguishable. Check normal text, including button labels, against its actual background for at least 4.5:1 contrast. Large text and necessary non-text UI indicators require at least 3:1.
 - Decorative colors need not all meet text contrast requirements, but any color used for text must be checked against its actual background.
 - Validate both light and dark modes with body text, descriptions, buttons, inputs, popovers, and selection highlights. A visually pleasing swatch alone is not sufficient.
-

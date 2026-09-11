@@ -1,35 +1,15 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
+import type { DisplayAnswer, DisplayTurn, DisplayUser } from '../../shared/api'
 import {
   createInlinePastedTextDisplayMetadata,
   isPastedTextMetadata,
   pastedTextFingerprint,
   PASTED_TEXT_CUSTOM_TYPE,
-  type PastedTextAttachment,
-  type PastedTextDisplaySegment,
   type PastedTextMetadata,
   type PastedTextPromptAttachment
 } from '../../shared/pasted-text'
 
-export type DisplayAnswer =
-  | { type: 'text'; text: string }
-  | { type: 'image'; mimeType: string; data: string }
-
-export interface DisplayUser {
-  text: string
-  images: { mimeType: string; data: string }[]
-  textAttachments: PastedTextAttachment[]
-  textSegments?: PastedTextDisplaySegment[]
-}
-
-export interface DisplayTurn {
-  id: string
-  user?: DisplayUser
-  answer: DisplayAnswer[]
-  errorMessage?: string
-  startedAt: number
-  endedAt: number
-  hasProcess: boolean
-}
+export type { DisplayAnswer, DisplayTurn, DisplayUser } from '../../shared/api'
 
 type PathMessage = {
   id: string
@@ -58,8 +38,7 @@ function withTimestamp(message: Record<string, unknown>, fallback: number): Reco
   return { ...message, timestamp: fallback }
 }
 
-function pathMessages(entries: SessionEntry[]): PathMessage[] {
-  const items: PathMessage[] = []
+function* pathMessages(entries: SessionEntry[]): Generator<PathMessage> {
   let pendingPastedText: PastedTextMetadata | undefined
   for (const raw of entries) {
     const entry = raw as SessionEntry
@@ -72,14 +51,14 @@ function pathMessages(entries: SessionEntry[]): PathMessage[] {
       const message = withTimestamp(entry.message as unknown as Record<string, unknown>, fallback)
       const pastedText = message.role === 'user' ? pendingPastedText : undefined
       pendingPastedText = undefined
-      items.push({ id: entry.id, persistedAt: fallback, message, pastedText })
+      yield { id: entry.id, persistedAt: fallback, message, pastedText }
       continue
     }
     if (pendingPastedText) pendingPastedText = undefined
     if (isHidden(entry.type)) continue
     if (entry.type === 'custom_message') {
       if (entry.display === false) continue
-      items.push({
+      yield {
         id: entry.id,
         persistedAt: fallback,
         message: {
@@ -90,11 +69,11 @@ function pathMessages(entries: SessionEntry[]): PathMessage[] {
           details: entry.details,
           timestamp: fallback
         }
-      })
+      }
       continue
     }
     if (entry.type === 'compaction') {
-      items.push({
+      yield {
         id: entry.id,
         persistedAt: fallback,
         message: {
@@ -103,11 +82,11 @@ function pathMessages(entries: SessionEntry[]): PathMessage[] {
           tokensBefore: entry.tokensBefore,
           timestamp: fallback
         }
-      })
+      }
       continue
     }
     if (entry.type === 'branch_summary') {
-      items.push({
+      yield {
         id: entry.id,
         persistedAt: fallback,
         message: {
@@ -116,25 +95,22 @@ function pathMessages(entries: SessionEntry[]): PathMessage[] {
           fromId: entry.fromId,
           timestamp: fallback
         }
-      })
+      }
     }
   }
-  return items
 }
 
-function groupPath(items: PathMessage[]): PathMessage[][] {
-  const groups: PathMessage[][] = []
+function* groupPath(items: Iterable<PathMessage>): Generator<PathMessage[]> {
   let current: PathMessage[] = []
   for (const item of items) {
     if (item.message.role === 'user') {
-      if (current.length > 0) groups.push(current)
+      if (current.length > 0) yield current
       current = [item]
     } else {
       current.push(item)
     }
   }
-  if (current.length > 0) groups.push(current)
-  return groups
+  if (current.length > 0) yield current
 }
 
 function displayUser(
@@ -297,16 +273,18 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
 }
 
 export function displayTurnsFromEntries(entries: SessionEntry[]): DisplayTurn[] {
-  return groupPath(pathMessages(entries)).map((chunk) => ({
+  return Array.from(groupPath(pathMessages(entries)), (chunk) => ({
     id: chunk[0].id,
     ...summarizeChunk(chunk)
   }))
 }
 
 export function turnMessagesFromEntries(entries: SessionEntry[], turnId: string): unknown[] {
-  const chunk = groupPath(pathMessages(entries)).find(
-    (group) => group[0].id === turnId || group.some((item) => item.id === turnId)
-  )
-  if (!chunk) throw new Error(`Turn not found: ${turnId}`)
-  return chunk.map((item) => ({ ...item.message, persistedAt: item.persistedAt }))
+  // A disclosure needs one turn; stop projecting history at that turn's boundary.
+  for (const group of groupPath(pathMessages(entries))) {
+    if (group.some((item) => item.id === turnId)) {
+      return group.map((item) => ({ ...item.message, persistedAt: item.persistedAt }))
+    }
+  }
+  throw new Error(`Turn not found: ${turnId}`)
 }

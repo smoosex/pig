@@ -3,9 +3,21 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { pastedTextFingerprint } from '../src/shared/pasted-text'
 
 let displayTurnsFromEntries: typeof import('../src/main/pi/session-display-model')['displayTurnsFromEntries']
+let turnMessagesFromEntries: typeof import('../src/main/pi/session-display-model')['turnMessagesFromEntries']
 
 beforeAll(async () => {
-  ({ displayTurnsFromEntries } = await import('../src/main/pi/session-display-model'))
+  ({ displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model'))
+})
+
+test('loading one turn stops reading entries after its next user boundary', () => {
+  const entry = (id: string, role: string) => ({
+    type: 'message', id, parentId: null, timestamp: '2026-01-01T00:00:00.000Z',
+    message: { role, content: id, timestamp: 1 }
+  })
+  const later = entry('later-answer', 'assistant')
+  Object.defineProperty(later, 'message', { get: () => { throw new Error('Unrelated history was projected') } })
+  const entries = [entry('first', 'user'), entry('answer', 'assistant'), entry('second', 'user'), later] as unknown as SessionEntry[]
+  expect(turnMessagesFromEntries(entries, 'answer').map((message) => (message as { content: string }).content)).toEqual(['first', 'answer'])
 })
 
 describe('session display pasted text metadata', () => {

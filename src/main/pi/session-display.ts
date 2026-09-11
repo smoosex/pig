@@ -1,18 +1,8 @@
 import { sessionManagerFor } from './session-registry'
-import {
-  displayTurnsFromEntries,
-  turnMessagesFromEntries,
-  type DisplayAnswer,
-  type DisplayTurn,
-  type DisplayUser
-} from './session-display-model'
+import { displayTurnsFromEntries, turnMessagesFromEntries } from './session-display-model'
+import type { DisplayTurnsResult } from '../../shared/api'
 
-export type { DisplayAnswer, DisplayTurn, DisplayUser }
-
-export interface DisplayTurnsResult {
-  leafId: string | null
-  turns: DisplayTurn[]
-}
+export type { DisplayAnswer, DisplayTurn, DisplayUser, DisplayTurnsResult } from '../../shared/api'
 
 export { displayTurnsFromEntries }
 

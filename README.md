@@ -4,12 +4,13 @@ Desktop GUI for the [pi](https://pi.dev) coding agent, built with Electron + Rea
 
 ## Architecture
 
-Three Electron processes, one Node brain:
+Three layers: main, preload, and renderer. Preload runs in an isolated context
+inside the renderer process and exposes the permitted IPC methods.
 
 ```
 renderer (React, sandboxed browser)
    ↕  contextBridge white-listed API (preload)
-preload  (isolated bridge)
+preload  (isolated context in the renderer process)
    ↕  ipcMain.handle / webContents.send
 main     (Node, owns the pi SDK session)
 ```
@@ -23,19 +24,24 @@ The renderer is sandboxed (`nodeIntegration: false`, `contextIsolation: true`,
 
 ```
 src/
+├── shared/      Serializable IPC contracts and shared data helpers
 ├── main/        Node + pi SDK
 │   ├── index.ts        app entry, window creation
 │   ├── window.ts       BrowserWindow lifecycle
-│   ├── pi/             session factory + event bridge
+│   ├── pi/             lifecycle, model settings, projections, event bridge
 │   └── ipc/            invoke handlers + push channels
 ├── preload/     contextBridge API surface
 └── renderer/    React UI
     └── src/
-        ├── stores/     zustand
-        ├── hooks/      pi event → store bridge
+        ├── stores/     one Zustand session store, composed by responsibility
+        ├── chat/       Pi event routing and message → turn projections
+        ├── hooks/      React lifecycle adapters
         ├── ipc/        window.api wrapper
         └── components/ UI
 ```
+
+See [code navigation and module ownership](docs/architecture.md) for the detailed
+boundaries, data flow, and conventions.
 
 ## Develop
 
@@ -92,6 +98,6 @@ exit without calling an external model API.
 
 ## Authentication
 
-pi reads credentials from `~/.pi/agent/auth.json`. Run `pi /login` in a terminal
-once, or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` etc. Pig inherits whatever
-pi already has configured.
+Open **设置 → 供应商** in Pig to log in to a provider account or add an API key.
+Credentials are managed by pi in `~/.pi/agent/auth.json`. Pig also uses existing
+pi logins and environment variables such as `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`.

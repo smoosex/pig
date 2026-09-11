@@ -1,152 +1,92 @@
+/**
+ * Own pending sessions, live SDK sessions, and in-flight initialization.
+ *
+ * Publish sessions only after extensions and pending controls are ready.
+ * Closing a directory waits for its builds before the caller removes it.
+ */
 import { statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import type { BrowserWindow } from 'electron'
+import { createAgentSession, SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
+import type { FollowUpAction, ThinkingLevel } from '../../shared/api'
 import { normalizeWorktreePath as resolve } from '../worktrees'
-import {
-  createAgentSession,
-  ModelRuntime,
-  SessionManager,
-  SettingsManager,
-  type AgentSession
-} from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
+import { bridgeEvents } from './event-bridge'
+import { startModelRuntime } from './model-settings'
 import {
-  batchQueueUpdates,
-  bridgeEvents,
-  followUpMessagesForDisplay,
-  removePendingUserMessage,
-  updatePendingUserMessageMode
-} from './event-bridge'
+  applyPendingControls,
+  controlsFor,
+  setSessionModel as applyModel,
+  setSessionThinking as applyThinking,
+  refreshSessionModels as refreshModels
+} from './session-controls'
+import {
+  exportSession as exportAgentSession,
+  listSessionCommands as commandsFor,
+  updateFollowUpMessage as updateFollowUp
+} from './session-actions'
+import { sessionTreeRows } from './session-tree'
+import type { LiveSession, PendingSession, SessionState } from './session-state'
 
-export type SessionThinkingLevel =
-  | 'off'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max'
+export type { LiveSession, PendingSession } from './session-state'
+export type {
+  DefaultSessionSettings,
+  FollowUpAction,
+  SessionContextUsage,
+  SessionControls,
+  SessionModelInfo,
+  SessionTokenStats,
+  SessionTreeGutter,
+  SessionTreeRow,
+  SlashCommand as SessionSlashCommand,
+  SlashCommandSource as SessionSlashSource,
+  ThinkingLevel as SessionThinkingLevel
+} from '../../shared/api'
+export {
+  getDefaultSessionSettings,
+  listAvailableModels,
+  setDefaultModel,
+  setDefaultThinking,
+  startModelRuntime
+} from './model-settings'
 
-export interface SessionModelInfo {
-  id: string
-  name: string
-  provider: string
-  providerName: string
-  contextWindow: number
-  reasoning: boolean
-}
-
-export interface SessionContextUsage {
-  tokens: number | null
-  contextWindow: number
-  percent: number | null
-}
-
-export interface SessionTokenStats {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  total: number
-}
-
-export interface SessionControls {
-  model: SessionModelInfo | null
-  models: SessionModelInfo[]
-  thinkingLevel: SessionThinkingLevel
-  thinkingLevels: SessionThinkingLevel[]
-  contextUsage: SessionContextUsage | null
-  tokens: SessionTokenStats
-  followUpMessages: string[]
-}
-
-export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
-
-export interface SessionTreeGutter {
-  position: number
-  show: boolean
-}
-
-export interface SessionTreeRow {
-  id: string
-  parentId: string | null
-  indent: number
-  gutters: SessionTreeGutter[]
-  showConnector: boolean
-  isLast: boolean
-  isVirtualRootChild: boolean
-  foldable: boolean
-  onPath: boolean
-  current: boolean
-  kind: 'user' | 'assistant' | 'tool' | 'other'
-  text: string
-}
-
-const emptyTokens: SessionTokenStats = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  total: 0
-}
-
-const THINKING_LEVELS: SessionThinkingLevel[] = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max'
-]
-
-const HIDDEN_THINKING_LEVELS = new Set<SessionThinkingLevel>(['off', 'minimal'])
-
-export interface LiveSession {
-  sessionId: string
+interface Preparation {
   cwd: string
-  agentSession: AgentSession
-  unsubscribe: () => void
-}
-
-export interface PendingSession {
-  sessionId: string
-  cwd: string
-  sessionManager: SessionManager
-  win: BrowserWindow
-  modelProvider?: string
-  modelId?: string
-  thinkingLevel?: SessionThinkingLevel
+  promise: Promise<LiveSession>
 }
 
 const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
-const preparing = new Map<string, Promise<LiveSession>>()
-const buildingCwds = new Map<string, string>()
+const preparing = new Map<string, Preparation>()
+const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 const openingPaths = new Map<string, Promise<LiveSession>>()
 
-let modelRuntime: ModelRuntime | undefined
-let modelRuntimePromise: Promise<ModelRuntime> | undefined
-let settingsManager: SettingsManager | undefined
-
-export function startModelRuntime(): Promise<ModelRuntime> {
-  if (!modelRuntimePromise) {
-    modelRuntimePromise = ModelRuntime.create().then((runtime) => {
-      modelRuntime = runtime
-      void runtime.refresh()
-      return runtime
-    })
-  }
-  return modelRuntimePromise
+function trackPreparation(
+  sessionId: string,
+  cwd: string,
+  building: Promise<LiveSession>,
+  path?: string
+): Promise<LiveSession> {
+  const promise = building.then((session) => {
+    live.set(sessionId, session)
+    pending.delete(sessionId)
+    return session
+  }).finally(() => {
+    preparing.delete(sessionId)
+    if (path) openingPaths.delete(path)
+  })
+  preparing.set(sessionId, { cwd, promise })
+  if (path) openingPaths.set(path, promise)
+  return promise
 }
 
 async function build(
   sessionManager: SessionManager,
   cwd: string,
-  win: BrowserWindow
+  win: BrowserWindow,
+  configure?: (session: AgentSession) => Promise<void>
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
   const resourceLoader = isChatCwd(cwd)
@@ -159,22 +99,24 @@ async function build(
     ...(resourceLoader ? { resourceLoader } : {})
   })
   const session = result.session
+  const created: LiveSession = {
+    sessionId: session.sessionId,
+    cwd,
+    agentSession: session,
+    unsubscribe: () => {}
+  }
   try {
     worktrees.assertAvailable(cwd)
     await session.bindExtensions({ mode: 'rpc' })
     worktrees.assertAvailable(cwd)
+    await configure?.(session)
+    worktrees.assertAvailable(cwd)
+    created.unsubscribe = bridgeEvents(session, session.sessionId, win)
+    return created
   } catch (error) {
-    try {
-      await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
-    } finally {
-      session.dispose()
-    }
+    await disposeLiveSession(created)
     throw error
   }
-  const unsubscribe = bridgeEvents(session, session.sessionId, win)
-  const ls: LiveSession = { sessionId: session.sessionId, cwd, agentSession: session, unsubscribe }
-  live.set(session.sessionId, ls)
-  return ls
 }
 
 export function createPendingSession(cwd: string, win: BrowserWindow): PendingSession {
@@ -193,320 +135,21 @@ async function materialize(session: PendingSession): Promise<LiveSession> {
   const header = session.sessionManager.getHeader()
   if (!sessionFile || !header) throw new Error('Pending session has no session file or header')
 
+  // Drafts acquire a JSONL file only on first use; rollback must never remove an existing file.
   await writeFile(sessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx' })
-  session.sessionManager.setSessionFile(sessionFile)
-
   try {
-    const liveSession = await build(session.sessionManager, session.cwd, session.win)
-    await applyPendingControls(session, liveSession)
-    pending.delete(session.sessionId)
-    return liveSession
+    session.sessionManager.setSessionFile(sessionFile)
+    return await build(session.sessionManager, session.cwd, session.win, (created) =>
+      applyPendingControls(session, created)
+    )
   } catch (error) {
-    const created = live.get(session.sessionId)
-    if (created) {
-      live.delete(session.sessionId)
-      await disposeLiveSession(created)
-    }
     await rm(sessionFile, { force: true })
     throw error
   }
 }
 
-async function applyPendingControls(
-  session: PendingSession,
-  liveSession: LiveSession
-): Promise<void> {
-  if (session.modelProvider && session.modelId) {
-    const model = (await startModelRuntime()).getModel(session.modelProvider, session.modelId)
-    if (model) await liveSession.agentSession.setModel(model)
-  }
-  if (session.thinkingLevel) {
-    liveSession.agentSession.setThinkingLevel(session.thinkingLevel)
-  }
-}
-
-function toModelInfo(model: {
-  id: string
-  name: string
-  provider: string
-  contextWindow: number
-  reasoning: boolean
-}): SessionModelInfo {
-  return {
-    id: model.id,
-    name: model.name,
-    provider: model.provider,
-    providerName: modelRuntime?.getProvider(model.provider)?.name ?? model.provider,
-    contextWindow: model.contextWindow,
-    reasoning: model.reasoning
-  }
-}
-
-function availableModels(): SessionModelInfo[] {
-  return (modelRuntime?.getAvailableSnapshot() ?? []).map(toModelInfo)
-}
-
-function thinkingLevelsFor(model: { provider: string; id: string } | null): SessionThinkingLevel[] {
-  if (!model) return ['off']
-  const full = modelRuntime?.getModel(model.provider, model.id)
-  if (!full?.reasoning) return ['off']
-  return THINKING_LEVELS.filter((level) => {
-    const mapped = full.thinkingLevelMap?.[level]
-    if (mapped === null) return false
-    if (level === 'xhigh' || level === 'max') return mapped !== undefined
-    return true
-  })
-}
-
-function clampThinking(
-  level: SessionThinkingLevel | undefined,
-  levels: SessionThinkingLevel[]
-): SessionThinkingLevel {
-  if (level && levels.includes(level)) return level
-  return levels[0] ?? 'off'
-}
-
-function pickerThinkingLevels(levels: SessionThinkingLevel[]): SessionThinkingLevel[] {
-  return levels.filter((level) => !HIDDEN_THINKING_LEVELS.has(level))
-}
-
-function findModel(provider: string, id: string): SessionModelInfo | null {
-  const model = modelRuntime?.getModel(provider, id)
-  return model ? toModelInfo(model) : null
-}
-
-function appSettings(): SettingsManager {
-  settingsManager ??= SettingsManager.create(process.cwd())
-  return settingsManager
-}
-
-function defaultModelFromSettings(): SessionModelInfo | null {
-  const settings = appSettings()
-  const provider = settings.getDefaultProvider()
-  const id = settings.getDefaultModel()
-  if (!provider || !id) return null
-  return findModel(provider, id)
-}
-
-export async function listAvailableModels(): Promise<SessionModelInfo[]> {
-  await startModelRuntime()
-  return availableModels()
-}
-
-export interface DefaultSessionSettings {
-  model: SessionModelInfo | null
-  thinkingLevel: SessionThinkingLevel | null
-  thinkingLevels: SessionThinkingLevel[]
-}
-
-function defaultThinkingFromSettings(
-  model: { provider: string; id: string } | null
-): SessionThinkingLevel | undefined {
-  const settings = appSettings()
-  if (model) {
-    const perModel = settings.getModelThinkingLevel(model.provider, model.id)
-    if (perModel) return perModel as SessionThinkingLevel
-  }
-  const global = settings.getDefaultThinkingLevel()
-  return global as SessionThinkingLevel | undefined
-}
-
-function defaultSessionSettings(model: SessionModelInfo | null): DefaultSessionSettings {
-  const picker = pickerThinkingLevels(thinkingLevelsFor(model))
-  const stored = defaultThinkingFromSettings(model)
-  const thinkingLevel =
-    stored && picker.includes(stored) ? stored : (picker[0] ?? null)
-  return { model, thinkingLevel, thinkingLevels: picker }
-}
-
-function persistDefaultThinking(
-  model: SessionModelInfo | null,
-  level: SessionThinkingLevel | null
-): void {
-  if (!level) return
-  const settings = appSettings()
-  settings.setDefaultThinkingLevel(level)
-  if (model) settings.setModelThinkingLevel(model.provider, model.id, level)
-}
-
-export async function getDefaultSessionSettings(): Promise<DefaultSessionSettings> {
-  await startModelRuntime()
-  await appSettings().reload()
-  return defaultSessionSettings(defaultModelFromSettings() ?? availableModels()[0] ?? null)
-}
-
-export async function setDefaultModel(provider: string, id: string): Promise<DefaultSessionSettings> {
-  await startModelRuntime()
-  const model = findModel(provider, id)
-  if (!model) throw new Error(`Model not found: ${provider}/${id}`)
-  const settings = appSettings()
-  settings.setDefaultModelAndProvider(provider, id)
-  const next = defaultSessionSettings(model)
-  persistDefaultThinking(next.model, next.thinkingLevel)
-  await settings.flush()
-  return next
-}
-
-export async function setDefaultThinking(level: SessionThinkingLevel): Promise<DefaultSessionSettings> {
-  await startModelRuntime()
-  if (!THINKING_LEVELS.includes(level) || HIDDEN_THINKING_LEVELS.has(level)) {
-    throw new Error(`Invalid thinking level: ${level}`)
-  }
-  const model = defaultModelFromSettings() ?? availableModels()[0] ?? null
-  const picker = pickerThinkingLevels(thinkingLevelsFor(model))
-  if (!picker.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
-  persistDefaultThinking(model, level)
-  await appSettings().flush()
-  return { model, thinkingLevel: level, thinkingLevels: picker }
-}
-
-function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStats {
-  const tokens = { ...emptyTokens }
-  for (const entry of sessionManager.getEntries()) {
-    if (entry.type !== 'message' || entry.message.role !== 'assistant') continue
-    const usage = entry.message.usage
-    tokens.input += usage.input
-    tokens.output += usage.output
-    tokens.cacheRead += usage.cacheRead
-    tokens.cacheWrite += usage.cacheWrite
-  }
-  tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite
-  return tokens
-}
-
-export async function getSessionControls(sessionId: string): Promise<SessionControls> {
-  await startModelRuntime()
-  const models = availableModels()
-  const liveSession = live.get(sessionId)
-  if (liveSession) {
-    const model = liveSession.agentSession.model
-      ? toModelInfo(liveSession.agentSession.model)
-      : null
-    const usage = liveSession.agentSession.getContextUsage()
-    return {
-      model,
-      models,
-      thinkingLevel: liveSession.agentSession.thinkingLevel,
-      thinkingLevels: pickerThinkingLevels(
-        liveSession.agentSession.getAvailableThinkingLevels() as SessionThinkingLevel[]
-      ),
-      contextUsage: usage
-        ? {
-            tokens: usage.tokens,
-            contextWindow: usage.contextWindow,
-            percent: usage.percent
-          }
-        : null,
-      tokens: tokenStatsFromEntries(liveSession.agentSession.sessionManager),
-      followUpMessages: followUpMessagesForDisplay(liveSession.agentSession)
-    }
-  }
-
-  const session = pending.get(sessionId)
-  if (!session) throw new Error(`Session not found: ${sessionId}`)
-  const model =
-    session.modelProvider && session.modelId
-      ? findModel(session.modelProvider, session.modelId)
-      : (defaultModelFromSettings() ?? models[0] ?? null)
-  const supported = thinkingLevelsFor(model)
-  const picker = pickerThinkingLevels(supported)
-  return {
-    model,
-    models,
-    thinkingLevel: clampThinking(
-      session.thinkingLevel ?? defaultThinkingFromSettings(model),
-      picker.length > 0 ? picker : supported
-    ),
-    thinkingLevels: picker,
-    contextUsage: null,
-    tokens: tokenStatsFromEntries(session.sessionManager),
-    followUpMessages: []
-  }
-}
-
-export async function updateFollowUpMessage(
-  sessionId: string,
-  index: number,
-  action: FollowUpAction
-): Promise<string | null> {
-  if (!Number.isInteger(index) || index < 0) throw new Error('Invalid follow-up index')
-  if (action !== 'steer' && action !== 'edit' && action !== 'dismiss') {
-    throw new Error('Invalid follow-up action')
-  }
-  const liveSession = live.get(sessionId)
-  if (!liveSession) throw new Error('Session not found')
-  const queued = [...liveSession.agentSession.getFollowUpMessages()]
-  const target = queued[index]
-  if (target === undefined) throw new Error('Follow-up message is no longer queued')
-  if (action === 'steer') {
-    updatePendingUserMessageMode(liveSession.agentSession, 'followUp', index, 'steer')
-  } else {
-    removePendingUserMessage(liveSession.agentSession, 'followUp', index)
-  }
-  return batchQueueUpdates(liveSession.agentSession, async () => {
-    const { steering } = liveSession.agentSession.clearQueue()
-    const remaining = queued.filter((_message, queuedIndex) => queuedIndex !== index)
-    for (const message of steering) await liveSession.agentSession.steer(message)
-    if (action === 'steer') await liveSession.agentSession.steer(target)
-    for (const message of remaining) await liveSession.agentSession.followUp(message)
-    return action === 'edit' ? target : null
-  })
-}
-
-export async function setSessionModel(
-  sessionId: string,
-  provider: string,
-  id: string
-): Promise<SessionControls> {
-  const model = (await startModelRuntime()).getModel(provider, id)
-  if (!model) throw new Error(`Model not found: ${provider}/${id}`)
-
-  const liveSession = live.get(sessionId)
-  if (liveSession) {
-    await liveSession.agentSession.setModel(model)
-    return getSessionControls(sessionId)
-  }
-
-  const session = pending.get(sessionId)
-  if (!session) throw new Error(`Session not found: ${sessionId}`)
-  session.modelProvider = provider
-  session.modelId = id
-  session.thinkingLevel = clampThinking(session.thinkingLevel, thinkingLevelsFor({ provider, id }))
-  return getSessionControls(sessionId)
-}
-
-export async function setSessionThinking(
-  sessionId: string,
-  level: SessionThinkingLevel
-): Promise<SessionControls> {
-  if (!THINKING_LEVELS.includes(level) || HIDDEN_THINKING_LEVELS.has(level)) {
-    throw new Error(`Invalid thinking level: ${level}`)
-  }
-
-  const liveSession = live.get(sessionId)
-  if (liveSession) {
-    liveSession.agentSession.setThinkingLevel(level)
-    return getSessionControls(sessionId)
-  }
-
-  const session = pending.get(sessionId)
-  if (!session) throw new Error(`Session not found: ${sessionId}`)
-  const model =
-    session.modelProvider && session.modelId
-      ? { provider: session.modelProvider, id: session.modelId }
-      : (defaultModelFromSettings() ?? availableModels()[0] ?? null)
-  const levels = pickerThinkingLevels(thinkingLevelsFor(model))
-  if (!levels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
-  session.thinkingLevel = level
-  return getSessionControls(sessionId)
-}
-
-export async function refreshSessionModels(sessionId: string): Promise<SessionControls> {
-  await (await startModelRuntime()).refresh()
-  return getSessionControls(sessionId)
-}
-
 export function prepareSession(sessionId: string): Promise<LiveSession> {
+  if (closing.has(sessionId)) throw new Error(`Session is closing: ${sessionId}`)
   const existing = live.get(sessionId)
   if (existing) {
     worktrees.assertAvailable(existing.cwd)
@@ -514,24 +157,19 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
   }
 
   const running = preparing.get(sessionId)
-  if (running) return running
+  if (running) return running.promise
 
   const session = pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
-  const promise = materialize(session).finally(() => {
-    preparing.delete(sessionId)
-    buildingCwds.delete(sessionId)
-  })
-  preparing.set(sessionId, promise)
-  buildingCwds.set(sessionId, session.cwd)
-  return promise
+  return trackPreparation(sessionId, session.cwd, materialize(session))
 }
 
 export async function openSession(path: string, win: BrowserWindow): Promise<LiveSession> {
   const target = resolve(path)
   for (const ls of live.values()) {
     if (ls.agentSession.sessionFile && resolve(ls.agentSession.sessionFile) === target) {
+      if (closing.has(ls.sessionId)) throw new Error(`Session is closing: ${ls.sessionId}`)
       worktrees.assertAvailable(ls.cwd)
       return ls
     }
@@ -542,437 +180,23 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Liv
   const cwd = sm.getCwd() || process.cwd()
   worktrees.assertAvailable(cwd)
   const sessionId = sm.getSessionId()
+  if (closing.has(sessionId)) throw new Error(`Session is closing: ${sessionId}`)
   const existing = preparing.get(sessionId)
-  if (existing) return existing
-  const promise = build(sm, cwd, win).finally(() => {
-    preparing.delete(sessionId)
-    buildingCwds.delete(sessionId)
-    openingPaths.delete(target)
-  })
-  preparing.set(sessionId, promise)
-  buildingCwds.set(sessionId, cwd)
-  openingPaths.set(target, promise)
-  return promise
+  if (existing) return existing.promise
+  return trackPreparation(sessionId, cwd, build(sm, cwd, win), target)
 }
 
 export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
 }
 
-export type SessionSlashSource = 'builtin' | 'extension' | 'prompt' | 'skill'
-
-export interface SessionSlashCommand {
-  name: string
-  description?: string
-  source: SessionSlashSource
-}
-
-const BUILTIN_SLASH_COMMANDS: SessionSlashCommand[] = [
-  { name: 'export', description: '导出会话为 HTML 或 JSONL', source: 'builtin' }
-]
-
-export async function listSessionCommands(sessionId: string): Promise<SessionSlashCommand[]> {
-  const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
-  const session = ls.agentSession
-  const taken = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name))
-  const extensionCommands = session.extensionRunner.getRegisteredCommands().map((command) => ({
-    name: command.invocationName,
-    description: command.description,
-    source: 'extension' as const
-  }))
-  const templates = session.promptTemplates.map((template) => ({
-    name: template.name,
-    description: template.description,
-    source: 'prompt' as const
-  }))
-  const skills = session.resourceLoader.getSkills().skills.map((skill) => ({
-    name: `skill:${skill.name}`,
-    description: skill.description,
-    source: 'skill' as const
-  }))
-  return [
-    ...BUILTIN_SLASH_COMMANDS,
-    ...[...extensionCommands, ...templates, ...skills].filter((command) => !taken.has(command.name))
-  ]
-}
-
-export async function exportSession(sessionId: string, outputPath?: string): Promise<string> {
-  const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
-  const target = outputPath?.trim()
-  if (target?.endsWith('.jsonl')) return ls.agentSession.exportToJsonl(target)
-  return ls.agentSession.exportToHtml(target)
-}
-
-type TreeNode = {
-  entry: {
-    id: string
-    type: string
-    summary?: string
-    tokensBefore?: number
-    customType?: string
-    modelId?: string
-    thinkingLevel?: string
-    name?: string
-    message?: {
-      role?: string
-      content?: unknown
-      command?: string
-      toolCallId?: string
-      toolName?: string
-      stopReason?: string
-      errorMessage?: string
-    }
-  }
-  children: TreeNode[]
-}
-
-function isHiddenEntry(type: string): boolean {
-  return (
-    type === 'label' ||
-    type === 'custom' ||
-    type === 'model_change' ||
-    type === 'thinking_level_change' ||
-    type === 'session_info'
-  )
-}
-
-function oneLine(value: string, max = 120): string {
-  return value.replace(/[\n\t]/g, ' ').trim().slice(0, max)
-}
-
-function extractContent(content: unknown): string {
-  if (typeof content === 'string') return oneLine(content)
-  if (!Array.isArray(content)) return ''
-  let text = ''
-  for (const block of content) {
-    if (block?.type === 'text' && typeof block.text === 'string') text += block.text
-    if (text.length >= 120) break
-  }
-  return oneLine(text)
-}
-
-function hasTextContent(content: unknown): boolean {
-  if (typeof content === 'string') return content.trim().length > 0
-  if (!Array.isArray(content)) return false
-  for (const block of content) {
-    if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0) {
-      return true
-    }
-  }
-  return false
-}
-
-function hideInDefaultView(entry: TreeNode['entry'], current: boolean): boolean {
-  if (isHiddenEntry(entry.type)) return true
-  if (entry.type !== 'message' || entry.message?.role !== 'assistant' || current) return false
-  const stop = entry.message.stopReason
-  const isErrorOrAborted = Boolean(stop && stop !== 'stop' && stop !== 'toolUse')
-  return !hasTextContent(entry.message.content) && !isErrorOrAborted && !entry.message.errorMessage
-}
-
-function shortenPath(path: string): string {
-  const home = homedir()
-  return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path
-}
-
-function scalarPreview(args: Record<string, unknown>, max = 40): string {
-  const parts: string[] = []
-  for (const [key, value] of Object.entries(args)) {
-    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') continue
-    parts.push(`${key}:${String(value)}`)
-    if (parts.join(', ').length >= max) break
-  }
-  return oneLine(parts.join(', '), max)
-}
-
-function formatToolCall(name: string, args: Record<string, unknown>): string {
-  switch (name) {
-    case 'read':
-      return `[read: ${shortenPath(String(args.path || args.file_path || ''))}]`
-    case 'write':
-      return `[write: ${shortenPath(String(args.path || args.file_path || ''))}]`
-    case 'edit':
-      return `[edit: ${shortenPath(String(args.path || args.file_path || ''))}]`
-    case 'bash': {
-      const raw = String(args.command || '')
-      const cmd = oneLine(raw, 50)
-      return `[bash: ${cmd}${raw.length > 50 ? '...' : ''}]`
-    }
-    case 'ls':
-      return `[ls: ${shortenPath(String(args.path || '.'))}]`
-    case 'grep':
-    case 'ffgrep':
-      return `[${name}: ${oneLine(String(args.pattern || scalarPreview(args)), 40)}]`
-    case 'find':
-    case 'fffind':
-      return `[${name}: ${oneLine(String(args.pattern || ''), 40)}]`
-    default:
-      return `[${name}: ${scalarPreview(args)}]`
-  }
-}
-
-function collectToolCalls(entry: TreeNode['entry'], toolCalls: Map<string, { name: string; arguments: Record<string, unknown> }>): void {
-  if (entry.type !== 'message' || entry.message?.role !== 'assistant') return
-  const content = entry.message.content
-  if (!Array.isArray(content)) return
-  for (const block of content) {
-    if (block?.type === 'toolCall' && typeof block.id === 'string') {
-      toolCalls.set(block.id, {
-        name: String(block.name ?? 'tool'),
-        arguments: (block.arguments ?? {}) as Record<string, unknown>
-      })
-    }
-  }
-}
-
-function kindOf(entry: TreeNode['entry']): SessionTreeRow['kind'] {
-  const role = entry.message?.role
-  if (entry.type === 'message' && role === 'user') return 'user'
-  if (entry.type === 'message' && role === 'assistant') return 'assistant'
-  if (entry.type === 'message' && (role === 'toolResult' || role === 'bashExecution')) return 'tool'
-  return 'other'
-}
-
-function labelOf(
-  entry: TreeNode['entry'],
-  toolCalls: Map<string, { name: string; arguments: Record<string, unknown> }>
-): string {
-  if (entry.type === 'message') {
-    const role = entry.message?.role
-    if (role === 'user') return `user: ${extractContent(entry.message?.content)}`
-    if (role === 'assistant') {
-      const text = extractContent(entry.message?.content)
-      if (text) return `assistant: ${text}`
-      if (entry.message?.stopReason === 'aborted') return 'assistant: (aborted)'
-      if (entry.message?.errorMessage) return `assistant: ${oneLine(entry.message.errorMessage, 80)}`
-      return 'assistant: (no content)'
-    }
-    if (role === 'toolResult') {
-      const call = entry.message?.toolCallId ? toolCalls.get(entry.message.toolCallId) : undefined
-      return call ? formatToolCall(call.name, call.arguments) : `[${entry.message?.toolName ?? 'tool'}]`
-    }
-    if (role === 'bashExecution') return `[bash]: ${oneLine(entry.message?.command ?? '')}`
-    return `[${role ?? 'message'}]`
-  }
-  if (entry.type === 'custom_message') return `[${entry.customType ?? 'custom'}]: ${extractContent(entry.message?.content)}`
-  if (entry.type === 'compaction') {
-    const tokens = Math.round((entry.tokensBefore ?? 0) / 1000)
-    return `[compaction: ${tokens}k tokens]`
-  }
-  if (entry.type === 'branch_summary') return `[branch summary]: ${oneLine(entry.summary ?? '')}`
-  return `[${entry.type}]`
-}
-
-type VisibleNode = {
-  id: string
-  parentId: string | null
-  kind: SessionTreeRow['kind']
-  text: string
-  onPath: boolean
-  current: boolean
-  indent: number
-  gutters: SessionTreeGutter[]
-  showConnector: boolean
-  isLast: boolean
-  isVirtualRootChild: boolean
-  foldable: boolean
-}
-
-function containsActiveMap(roots: TreeNode[], leafId: string | null): Map<string, boolean> {
-  const containsActive = new Map<string, boolean>()
-  const all: TreeNode[] = []
-  const pre = [...roots]
-  while (pre.length > 0) {
-    const node = pre.pop()!
-    all.push(node)
-    const children = node.children ?? []
-    for (let i = children.length - 1; i >= 0; i--) pre.push(children[i])
-  }
-  for (let i = all.length - 1; i >= 0; i--) {
-    const node = all[i]
-    let has = leafId !== null && node.entry.id === leafId
-    for (const child of node.children ?? []) {
-      if (containsActive.get(child.entry.id)) has = true
-    }
-    containsActive.set(node.entry.id, has)
-  }
-  return containsActive
-}
-
-function prioritizeActive(children: TreeNode[], containsActive: Map<string, boolean>): TreeNode[] {
-  const onPath: TreeNode[] = []
-  const rest: TreeNode[] = []
-  for (const child of children) {
-    if (containsActive.get(child.entry.id)) onPath.push(child)
-    else rest.push(child)
-  }
-  return onPath.length ? [...onPath, ...rest] : children
-}
-
-function collectVisible(
-  roots: TreeNode[],
-  leafId: string | null,
-  pathSet: Set<string>
-): { visible: VisibleNode[]; parentOf: Map<string, string | null> } {
-  const containsActive = containsActiveMap(roots, leafId)
-  const parentOf = new Map<string, string | null>()
-  const visible: VisibleNode[] = []
-  const toolCalls = new Map<string, { name: string; arguments: Record<string, unknown> }>()
-  const stack: { node: TreeNode; parentId: string | null }[] = []
-  const orderedRoots = prioritizeActive(roots, containsActive)
-  for (let i = orderedRoots.length - 1; i >= 0; i--) {
-    stack.push({ node: orderedRoots[i], parentId: null })
-  }
-
-  while (stack.length > 0) {
-    const { node, parentId } = stack.pop()!
-    collectToolCalls(node.entry, toolCalls)
-    parentOf.set(node.entry.id, parentId)
-    const current = node.entry.id === leafId
-    if (!hideInDefaultView(node.entry, current)) {
-      visible.push({
-        id: node.entry.id,
-        parentId,
-        kind: kindOf(node.entry),
-        text: labelOf(node.entry, toolCalls),
-        onPath: pathSet.has(node.entry.id),
-        current,
-        indent: 0,
-        gutters: [],
-        showConnector: false,
-        isLast: true,
-        isVirtualRootChild: false,
-        foldable: false
-      })
-    }
-    const children = prioritizeActive(node.children ?? [], containsActive)
-    for (let i = children.length - 1; i >= 0; i--) {
-      stack.push({ node: children[i], parentId: node.entry.id })
-    }
-  }
-  return { visible, parentOf }
-}
-
-function layoutVisible(visible: VisibleNode[], parentOf: Map<string, string | null>): void {
-  if (visible.length === 0) return
-  const visibleIds = new Set(visible.map((node) => node.id))
-  const byId = new Map(visible.map((node) => [node.id, node]))
-  const visibleParent = new Map<string, string | null>()
-  const visibleChildren = new Map<string | null, string[]>()
-  visibleChildren.set(null, [])
-
-  const findVisibleAncestor = (id: string): string | null => {
-    let currentId = parentOf.get(id) ?? null
-    while (currentId) {
-      if (visibleIds.has(currentId)) return currentId
-      currentId = parentOf.get(currentId) ?? null
-    }
-    return null
-  }
-
-  for (const node of visible) {
-    const ancestorId = findVisibleAncestor(node.id)
-    visibleParent.set(node.id, ancestorId)
-    node.parentId = ancestorId
-    const list = visibleChildren.get(ancestorId) ?? []
-    list.push(node.id)
-    visibleChildren.set(ancestorId, list)
-  }
-
-  const rootIds = visibleChildren.get(null) ?? []
-  const multipleRoots = rootIds.length > 1
-  const stack: {
-    id: string
-    indent: number
-    justBranched: boolean
-    showConnector: boolean
-    isLast: boolean
-    gutters: SessionTreeGutter[]
-    isVirtualRootChild: boolean
-  }[] = []
-  for (let i = rootIds.length - 1; i >= 0; i--) {
-    stack.push({
-      id: rootIds[i],
-      indent: multipleRoots ? 1 : 0,
-      justBranched: multipleRoots,
-      showConnector: multipleRoots,
-      isLast: i === rootIds.length - 1,
-      gutters: [],
-      isVirtualRootChild: multipleRoots
-    })
-  }
-
-  while (stack.length > 0) {
-    const frame = stack.pop()!
-    const node = byId.get(frame.id)
-    if (!node) continue
-    node.indent = frame.indent
-    node.showConnector = frame.showConnector
-    node.isLast = frame.isLast
-    node.gutters = frame.gutters
-    node.isVirtualRootChild = frame.isVirtualRootChild
-    const children = visibleChildren.get(frame.id) ?? []
-    const multipleChildren = children.length > 1
-    const parentId = visibleParent.get(frame.id)
-    node.foldable =
-      children.length > 0 &&
-      (parentId == null || (visibleChildren.get(parentId)?.length ?? 0) > 1)
-    let childIndent = frame.indent
-    if (multipleChildren) childIndent = frame.indent + 1
-    else if (frame.justBranched && frame.indent > 0) childIndent = frame.indent + 1
-    const connectorDisplayed = frame.showConnector && !frame.isVirtualRootChild
-    const currentDisplayIndent = multipleRoots ? Math.max(0, frame.indent - 1) : frame.indent
-    const connectorPosition = Math.max(0, currentDisplayIndent - 1)
-    const childGutters = connectorDisplayed
-      ? [...frame.gutters, { position: connectorPosition, show: !frame.isLast }]
-      : frame.gutters
-    for (let i = children.length - 1; i >= 0; i--) {
-      stack.push({
-        id: children[i],
-        indent: childIndent,
-        justBranched: multipleChildren,
-        showConnector: multipleChildren,
-        isLast: i === children.length - 1,
-        gutters: childGutters,
-        isVirtualRootChild: false
-      })
-    }
-  }
-}
-
 export function sessionManagerFor(sessionId: string): SessionManager {
-  const liveSession = live.get(sessionId)
-  if (liveSession) return liveSession.agentSession.sessionManager
-  const pendingSession = pending.get(sessionId)
-  if (pendingSession) return pendingSession.sessionManager
-  throw new Error(`Session not found: ${sessionId}`)
-}
-
-export function getSessionTree(sessionId: string): SessionTreeRow[] {
-  const sm = sessionManagerFor(sessionId)
-  const leafId = sm.getLeafId()
-  const pathSet = new Set(sm.getBranch().map((entry) => entry.id))
-  const { visible, parentOf } = collectVisible(sm.getTree() as TreeNode[], leafId, pathSet)
-  layoutVisible(visible, parentOf)
-  return visible.map((node) => ({
-    id: node.id,
-    parentId: node.parentId,
-    indent: node.indent,
-    gutters: node.gutters,
-    showConnector: node.showConnector,
-    isLast: node.isLast,
-    isVirtualRootChild: node.isVirtualRootChild,
-    foldable: node.foldable,
-    onPath: node.onPath,
-    current: node.current,
-    kind: node.kind,
-    text: node.text
-  }))
+  const session = sessionState(sessionId)
+  return 'agentSession' in session ? session.agentSession.sessionManager : session.sessionManager
 }
 
 export function viewSessionBranch(sessionId: string, tipId: string): string | null {
-  const ls = getLive(sessionId)
-  if (!ls) throw new Error(`Session not found: ${sessionId}`)
+  const ls = requireLive(sessionId)
   if (ls.agentSession.isStreaming) throw new Error('Session is streaming')
   const sm = ls.agentSession.sessionManager
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
@@ -996,59 +220,90 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
   session.agentSession.dispose()
 }
 
-export async function closeSession(sessionId: string): Promise<void> {
+export function closeSession(sessionId: string): Promise<void> {
+  const existing = closing.get(sessionId)
+  if (existing) return existing.promise
   const preparation = preparing.get(sessionId)
-  if (preparation) {
-    pending.delete(sessionId)
-    try {
-      await preparation
-    } catch {
-    }
-  }
-
+  const session = live.get(sessionId) ?? pending.get(sessionId) ?? preparation
+  if (!session) return Promise.resolve()
   pending.delete(sessionId)
-  const ls = live.get(sessionId)
-  if (!ls) return
-  live.delete(sessionId)
-  await disposeLiveSession(ls)
+
+  // Share teardown as well as startup so directory deletion cannot overtake another close.
+  const promise = (async () => {
+    if (preparation) {
+      try {
+        await preparation.promise
+      } catch {
+      }
+    }
+    const created = live.get(sessionId)
+    if (!created) return
+    live.delete(sessionId)
+    await disposeLiveSession(created)
+  })().finally(() => closing.delete(sessionId))
+  closing.set(sessionId, { cwd: session.cwd, promise })
+  return promise
 }
 
 export async function closeSessionsForCwd(cwd: string): Promise<void> {
   const target = resolve(cwd)
-  const sessionIds = new Set([
-    ...[...pending.values()]
-      .filter((session) => resolve(session.cwd) === target)
-      .map((session) => session.sessionId),
-    ...[...live.values()]
-      .filter((session) => resolve(session.cwd) === target)
-      .map((session) => session.sessionId),
-    ...[...buildingCwds.entries()]
-      .filter(([, buildingCwd]) => resolve(buildingCwd) === target)
-      .map(([sessionId]) => sessionId)
-  ])
-  await Promise.all([...sessionIds].map((sessionId) => closeSession(sessionId)))
+  const sessionIds = new Set<string>()
+  for (const [id, session] of [...pending, ...live, ...preparing, ...closing]) {
+    if (resolve(session.cwd) === target) sessionIds.add(id)
+  }
+  await Promise.all([...sessionIds].map(closeSession))
 }
 
 export async function disposeAll(): Promise<void> {
-  const preparations = [...preparing.values()]
-  pending.clear()
-  preparing.clear()
-  buildingCwds.clear()
-  openingPaths.clear()
-  const sessions = [...live.values()]
-  live.clear()
-  const disposed = new Set(sessions)
-  await Promise.all([
-    ...sessions.map(disposeLiveSession),
-    ...preparations.map(async (preparation) => {
-      try {
-        const session = await preparation
-        if (disposed.has(session)) return
-        disposed.add(session)
-        live.delete(session.sessionId)
-        await disposeLiveSession(session)
-      } catch {
-      }
-    })
-  ])
+  const sessionIds = new Set([...pending.keys(), ...live.keys(), ...preparing.keys(), ...closing.keys()])
+  await Promise.all([...sessionIds].map(closeSession))
+}
+
+export function requireLive(sessionId: string): LiveSession {
+  const session = getLive(sessionId)
+  if (!session) throw new Error(`Session not found: ${sessionId}`)
+  return session
+}
+
+function sessionState(sessionId: string): SessionState {
+  const session = live.get(sessionId) ?? pending.get(sessionId)
+  if (!session) throw new Error(`Session not found: ${sessionId}`)
+  return session
+}
+
+export function getSessionControls(sessionId: string) {
+  return controlsFor(sessionState(sessionId))
+}
+
+export async function setSessionModel(sessionId: string, provider: string, id: string) {
+  // Once materialization starts, choices must target the session it publishes.
+  const preparation = preparing.get(sessionId)
+  if (preparation) await preparation.promise
+  return applyModel(sessionState(sessionId), provider, id)
+}
+
+export async function setSessionThinking(sessionId: string, level: ThinkingLevel) {
+  const preparation = preparing.get(sessionId)
+  if (preparation) await preparation.promise
+  return applyThinking(sessionState(sessionId), level)
+}
+
+export function refreshSessionModels(sessionId: string) {
+  return refreshModels(sessionState(sessionId))
+}
+
+export function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction) {
+  return updateFollowUp(requireLive(sessionId).agentSession, index, action)
+}
+
+export async function listSessionCommands(sessionId: string) {
+  return commandsFor((await prepareSession(sessionId)).agentSession)
+}
+
+export async function exportSession(sessionId: string, outputPath?: string): Promise<string> {
+  return exportAgentSession((await prepareSession(sessionId)).agentSession, outputPath)
+}
+
+export function getSessionTree(sessionId: string) {
+  return sessionTreeRows(sessionManagerFor(sessionId))
 }

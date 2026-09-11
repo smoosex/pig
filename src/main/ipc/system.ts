@@ -1,5 +1,6 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from '../sidebar-prefs'
+import { windowForEvent } from './window'
 
 export function registerSystemIpc(): void {
   ipcMain.handle('system:get-sidebar-prefs', async () => loadSidebarPrefs())
@@ -8,8 +9,7 @@ export function registerSystemIpc(): void {
   )
 
   ipcMain.handle('system:pick-directory', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
+    const win = windowForEvent(event)
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]

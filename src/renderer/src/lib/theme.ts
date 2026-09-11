@@ -1,11 +1,6 @@
-export type Appearance = 'system' | 'light' | 'dark'
-export type PaletteId = 'pig' | 'everforest'
+import type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 
-export interface ThemePrefs {
-  appearance: Appearance
-  lightTheme: PaletteId
-  darkTheme: PaletteId
-}
+export type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 
 export const defaultThemePrefs: ThemePrefs = {
   appearance: 'system',

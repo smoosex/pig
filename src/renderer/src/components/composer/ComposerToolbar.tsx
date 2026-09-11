@@ -1,0 +1,80 @@
+import { ArrowUp, Square } from 'lucide-react'
+import type { SessionModelInfo, SessionTokenStats, ThinkingLevel } from '../../ipc/api'
+import { useSessionsStore } from '../../stores/sessions'
+import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
+import { SessionTreeButton } from '../SessionTreeDialog'
+import { ContextUsageButton } from './ContextUsageButton'
+import { ModelPicker, ThinkingPicker } from './ModelControls'
+import { useModelControls } from './useModelControls'
+
+const EMPTY_MODELS: SessionModelInfo[] = []
+const EMPTY_LEVELS: ThinkingLevel[] = ['off']
+const EMPTY_TOKENS: SessionTokenStats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+
+function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
+  const usage = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.contextUsage ?? null) : null)
+  const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? EMPTY_TOKENS) : EMPTY_TOKENS)
+  return <ContextUsageButton usage={usage} tokens={tokens} disabled={!sessionId} />
+}
+
+export function ComposerToolbar({
+  sessionId,
+  isStreaming,
+  hasDraft,
+  onSend,
+  onAbort
+}: {
+  sessionId: string | null
+  isStreaming: boolean
+  hasDraft: boolean
+  onSend: () => Promise<void>
+  onAbort: () => Promise<void>
+}) {
+  const model = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
+  const models = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
+  const thinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
+  const thinkingLevels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevels ?? EMPTY_LEVELS) : EMPTY_LEVELS)
+  const actions = useModelControls(sessionId)
+
+  return (
+    <InputGroupAddon align="block-end" className="shrink-0 justify-between px-2.5 pb-2.5">
+      <div className="flex min-w-0 items-center gap-1">
+        <ModelPicker key={`model-${sessionId}`} sessionId={sessionId} model={model} models={models} actions={actions} disabled={!sessionId || actions.pending} />
+        <ThinkingPicker
+          sessionId={sessionId}
+          key={`thinking-${sessionId}`}
+          thinkingLevel={thinkingLevel}
+          thinkingLevels={thinkingLevels}
+          actions={actions}
+          disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
+        />
+        <SessionTreeButton disabled={!sessionId || isStreaming} />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <SessionContextUsage sessionId={sessionId} />
+        {isStreaming && !hasDraft ? (
+          <InputGroupButton
+            size="icon-sm"
+            variant="secondary"
+            className="size-7 rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
+            aria-label="暂停"
+            onClick={() => void onAbort()}
+          >
+            <Square />
+          </InputGroupButton>
+        ) : (
+          <InputGroupButton
+            size="icon-sm"
+            variant="default"
+            className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
+            aria-label={isStreaming ? '跟进' : '发送'}
+            disabled={!hasDraft || !sessionId}
+            onClick={() => void onSend()}
+          >
+            <ArrowUp />
+          </InputGroupButton>
+        )}
+      </div>
+    </InputGroupAddon>
+  )
+}

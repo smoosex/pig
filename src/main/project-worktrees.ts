@@ -2,17 +2,14 @@ import { BrowserWindow } from 'electron'
 import { resolve } from 'node:path'
 import { listOpenedCwds } from './opened-projects'
 import { pigPath } from './pig-dir'
-import { listProject, type ProjectGroup, type SessionMeta } from './pi/session-loader'
-import { isGitProject, WorktreeService, type GitWorktree } from './worktrees'
+import { listProject } from './pi/session-loader'
+import { isGitProject, WorktreeService } from './worktrees'
+import type { ProjectGroup, WorktreeGroup } from '../shared/api'
 
-export interface WorktreeGroup extends GitWorktree {
-  sessions: SessionMeta[]
-}
+export type { WorktreeGroup } from '../shared/api'
 
 export interface WorktreeProject extends ProjectGroup {
   worktrees: WorktreeGroup[]
-  hasGit?: boolean
-  gitError?: string
 }
 
 export const worktrees = new WorktreeService(pigPath('worktrees'), (projectCwd) => {

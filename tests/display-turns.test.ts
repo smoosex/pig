@@ -1,0 +1,46 @@
+import { describe, expect, test } from 'bun:test'
+import type { DisplayTurn } from '../src/shared/api'
+import type { ProcessItem } from '../src/renderer/src/chat/turns'
+import { toTurn } from '../src/renderer/src/chat/display-turns'
+
+const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
+  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], ...patch
+})
+
+describe('display turn projection', () => {
+  test('preserves pasted-text segments, cached process identity, and elapsed time', () => {
+    const attachment = { id: 'paste', text: '附件', byteSize: 6 }
+    const input = display({ user: {
+      text: '正文附件', images: [], textAttachments: [attachment],
+      textSegments: [{ type: 'text', text: '正文' }, { type: 'attachment', attachment }]
+    } })
+    const process: ProcessItem[] = []
+    const turn = toTurn(input, process, 1500)
+    expect(turn.user?.content).toBe('正文附件')
+    expect(turn.user?.timestamp).toBe(1000)
+    expect(turn.user?.pastedText?.segments).toBe(input.user?.textSegments)
+    expect(turn.user?.pastedText?.attachments).toBe(input.user?.textAttachments)
+    expect(turn.process).toBe(process)
+    expect(turn.workedMs).toBe(1500)
+    expect(turn.streaming).toBe(false)
+  })
+
+  test('maps image-only user prompts and mixed answer blocks without empty text', () => {
+    const image = { mimeType: 'image/png', data: 'AA==' }
+    const text = { type: 'text' as const, text: '答案' }
+    const turn = toTurn(display({
+      user: { text: '', images: [image], textAttachments: [] },
+      answer: [text, { type: 'image', ...image }]
+    }), [])
+    expect(turn.user?.content).toEqual([{ type: 'image', ...image }])
+    expect(turn.answer).toEqual([text, { type: 'image', image: { type: 'image', ...image } }])
+    expect(turn.answer[0]).toBe(text)
+  })
+
+  test('keeps assistant-only errors and history metadata intact', () => {
+    const turn = toTurn(display({ errorMessage: '模型失败', hasProcess: false }), [])
+    expect(turn.user).toBeUndefined()
+    expect(turn).toMatchObject({ id: 'turn', startedAt: 1000, endedAt: 2000, errorMessage: '模型失败', hasProcess: false })
+    expect(turn.workedMs).toBeUndefined()
+  })
+})

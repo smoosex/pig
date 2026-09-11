@@ -1,11 +1,10 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import {
   closeSession,
-  closeSessionsForCwd,
   createPendingSession,
   exportSession,
   getLive,
-  getDefaultSessionSettings,
+  requireLive,
   getSessionControls,
   getSessionTree,
   listSessionCommands,
@@ -19,98 +18,14 @@ import {
   type SessionThinkingLevel
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
-import { queuePendingUserMessage } from '../pi/event-bridge'
-import { removeProjectDir, removeSessionFile } from '../pi/session-loader'
-import {
-  composePromptText,
-  createInlinePastedTextDisplayMetadata,
-  createInlinePastedTextMetadata,
-  createPastedTextMetadata,
-  isInlinePastedTextAttachments,
-  PASTED_TEXT_CUSTOM_TYPE,
-  stripPastedTextAttachments,
-  utf8ByteLength,
-  type PastedTextAttachment,
-  type PastedTextAttachmentInput,
-  type PastedTextDisplayMetadata
-} from '../../shared/pasted-text'
-import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
-import { canonicalProject } from '../worktrees'
-import { loadOpenedWorktreeProjects, loadProjectForCwd, loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
-import { runBranchNamer } from '../pi/branch-namer'
-import { registerWorktreeIpc } from './worktrees'
-import {
-  createChatDir,
-  isChatCwd,
-  isChatsRoot,
-  listChats,
-  removeChatWorkDir
-} from '../chats'
-
-function normalizeTextAttachments(value: unknown): PastedTextAttachment[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item): PastedTextAttachment[] => {
-    if (!item || typeof item !== 'object') return []
-    const input = item as Partial<PastedTextAttachmentInput>
-    if (typeof input.text !== 'string' || input.text.length === 0) return []
-    return [{
-      id: typeof input.id === 'string' && input.id.length > 0 ? input.id : crypto.randomUUID(),
-      text: input.text,
-      byteSize: utf8ByteLength(input.text),
-      ...(typeof input.filename === 'string' && input.filename.length > 0 ? { filename: input.filename } : {}),
-      ...(Number.isInteger(input.start) && Number.isInteger(input.end)
-        ? { start: input.start, end: input.end }
-        : {})
-    }]
-  })
-}
+import { removeSessionFile } from '../pi/session-loader'
+import { isChatCwd, isChatsRoot } from '../chats'
+import { promptSession } from '../pi/session-prompt'
+import { windowForEvent } from './window'
 
 export function registerSessionIpc(): void {
-  registerWorktreeIpc()
-  ipcMain.handle('session:list-projects', async () => loadOpenedWorktreeProjects())
-  ipcMain.handle('session:list-project', async (_event, cwd: string) => loadProjectForCwd(cwd))
-
-  ipcMain.handle('session:open-project', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const picked = result.filePaths[0]
-    if (isChatCwd(picked) || isChatsRoot(picked)) return null
-    const cwd = await addOpenedProject(await canonicalProject(picked))
-    return loadWorktreeProject(cwd)
-  })
-
-  ipcMain.handle('session:list-chats', async () => listChats())
-  ipcMain.handle('session:is-chat-cwd', async (_event, cwd: string) => isChatCwd(cwd))
-
-  ipcMain.handle('session:create-chat', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
-    const cwd = await createChatDir()
-    const session = createPendingSession(cwd, win)
-    return { sessionId: session.sessionId, cwd: session.cwd }
-  })
-
-  ipcMain.handle('session:delete-chat', async (_event, cwd: string) => {
-    if (!cwd || !isChatCwd(cwd)) throw new Error('Chat cwd is required')
-    await closeSessionsForCwd(cwd)
-    await removeProjectDir(cwd)
-    await removeChatWorkDir(cwd)
-  })
-
-  ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
-    if (!cwd) throw new Error('Project cwd is required')
-    await removeOpenedProject(cwd)
-  })
-
-  ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {
-    return reorderOpenedProjects(cwds)
-  })
-
   ipcMain.handle('session:create', async (event, cwd: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
+    const win = windowForEvent(event)
     if (isChatCwd(cwd) || isChatsRoot(cwd)) {
       throw new Error('Chat directories allow only one session')
     }
@@ -119,8 +34,7 @@ export function registerSessionIpc(): void {
   })
 
   ipcMain.handle('session:open', async (event, path: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('No window attached to sender')
+    const win = windowForEvent(event)
     const ls = await openSession(path, win)
     return { sessionId: ls.sessionId, cwd: ls.cwd }
   })
@@ -135,21 +49,6 @@ export function registerSessionIpc(): void {
     await closeSession(sessionId)
   })
 
-  ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
-    const project = await requireOpenedProject(cwd)
-    await worktrees.exclusive(project, async () => {
-      const cwds = new Set([project, ...(await worktrees.discover(project)).map((w) => w.cwd)])
-      await worktrees.withBlockedCwds([...cwds], async () => {
-        for (const path of cwds) {
-          await closeSessionsForCwd(path)
-          await removeProjectDir(path)
-        }
-        await removeOpenedProject(project)
-      })
-    })
-    return true
-  })
-
   ipcMain.handle(
     'session:delete',
     async (_event, sessionId: string, path: string, cwd: string) => {
@@ -161,92 +60,18 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle(
     'session:prompt',
-    async (
-      _event,
-      sessionId: string,
-      text: string,
-      images?: { mimeType: string; data: string }[],
-      rawTextAttachments?: unknown,
-      rawStreamingBehavior?: unknown
-    ) => {
-      const ls = getLive(sessionId) ?? (await prepareSession(sessionId))
-      const body = typeof text === 'string' ? text : ''
-      const textAttachments = normalizeTextAttachments(rawTextAttachments)
-      const inlineAttachments = textAttachments.length > 0 && isInlinePastedTextAttachments(body, textAttachments)
-        ? textAttachments
-        : undefined
-      const modelText = inlineAttachments ? body : composePromptText(body, textAttachments)
-      const metadata = textAttachments.length > 0
-        ? inlineAttachments
-          ? createInlinePastedTextMetadata(modelText, inlineAttachments)
-          : createPastedTextMetadata(body, textAttachments)
-        : undefined
-      const displayMetadata: PastedTextDisplayMetadata | undefined = textAttachments.length > 0
-        ? inlineAttachments
-          ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments)
-          : { body, attachments: textAttachments }
-        : undefined
-      const attachments = (Array.isArray(images) ? images : [])
-        .filter(
-          (image) =>
-            typeof image?.mimeType === 'string' &&
-            image.mimeType.startsWith('image/') &&
-            typeof image?.data === 'string' &&
-            image.data.length > 0
-        )
-        .map((image) => ({
-          type: 'image' as const,
-          mimeType: image.mimeType,
-          data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
-        }))
-      worktrees.assertAvailable(ls.cwd)
-      const streamingBehavior =
-        ls.agentSession.isStreaming &&
-        (rawStreamingBehavior === 'steer' || rawStreamingBehavior === 'followUp')
-          ? rawStreamingBehavior
-          : undefined
-      const cancelPending = queuePendingUserMessage(ls.agentSession, modelText, displayMetadata, () => {
-        if (metadata) {
-          ls.agentSession.sessionManager.appendCustomEntry(PASTED_TEXT_CUSTOM_TYPE, metadata)
-        }
-        const namingText = inlineAttachments
-          ? stripPastedTextAttachments(body, inlineAttachments)
-          : body
-        void worktrees.nameOnFirstPrompt(
-          ls.cwd,
-          namingText.trim() || (textAttachments.length > 0 ? 'Pasted text' : '用户仅发送了图片，未附文字。'),
-          async (task, signal) => {
-            const settings = await getDefaultSessionSettings()
-            return runBranchNamer(task, settings.model, signal)
-          }
-        ).catch((error) => console.error('Worktree naming failed:', error))
-      }, streamingBehavior)
-      try {
-        await ls.agentSession.prompt(
-          modelText,
-          attachments.length > 0 || streamingBehavior
-            ? {
-                ...(attachments.length > 0 ? { images: attachments } : {}),
-                ...(streamingBehavior ? { streamingBehavior } : {})
-              }
-            : undefined
-        )
-      } catch (error) {
-        cancelPending()
-        throw error
-      }
+    async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown) => {
+      await promptSession(sessionId, { text, images, textAttachments, streamingBehavior })
     }
   )
 
   ipcMain.handle('session:abort', async (_event, sessionId: string) => {
-    const ls = getLive(sessionId)
-    if (!ls) throw new Error(`Session not found: ${sessionId}`)
+    const ls = requireLive(sessionId)
     await ls.agentSession.abort()
   })
 
   ipcMain.handle('session:get-messages', async (_event, sessionId: string) => {
-    const ls = getLive(sessionId)
-    if (!ls) throw new Error(`Session not found: ${sessionId}`)
+    const ls = requireLive(sessionId)
     return ls.agentSession.messages
   })
 
@@ -283,8 +108,7 @@ export function registerSessionIpc(): void {
       if (!sessionId) throw new Error('Session id is required')
       let target = typeof outputPath === 'string' ? outputPath.trim() : ''
       if (!target) {
-        const win = BrowserWindow.fromWebContents(event.sender)
-        if (!win) throw new Error('No window attached to sender')
+        const win = windowForEvent(event)
         const result = await dialog.showSaveDialog(win, {
           title: '导出会话',
           defaultPath: 'session.html',

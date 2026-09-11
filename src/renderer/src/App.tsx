@@ -105,8 +105,8 @@ export default function App() {
           {settingsOpen ? (
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
-              <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
+            <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
                   {activeSessionId ? <TabBar /> : <div className="flex-1" />}
                 </div>
@@ -130,8 +130,8 @@ export default function App() {
                     </div>
                   </Empty>
                 )}
-                </div>
               </div>
+            </div>
           )}
         </div>
       </div>

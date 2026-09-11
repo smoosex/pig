@@ -12,6 +12,7 @@ import { applyDocumentTheme } from '../lib/theme'
 
 interface SettingsStore extends AppSettings {
   loaded: boolean
+  error: string | null
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
@@ -32,13 +33,11 @@ const empty: AppSettings = {
   providers: []
 }
 
-function applyDefaults(
-  next: {
-    model: SessionModelInfo | null
-    thinkingLevel: ThinkingLevel | null
-    thinkingLevels: ThinkingLevel[]
-  }
-): Pick<AppSettings, 'defaultModel' | 'defaultThinkingLevel' | 'thinkingLevels'> {
+function applyDefaults(next: {
+  model: SessionModelInfo | null
+  thinkingLevel: ThinkingLevel | null
+  thinkingLevels: ThinkingLevel[]
+}): Pick<AppSettings, 'defaultModel' | 'defaultThinkingLevel' | 'thinkingLevels'> {
   return {
     defaultModel: next.model,
     defaultThinkingLevel: next.thinkingLevel,
@@ -46,52 +45,113 @@ function applyDefaults(
   }
 }
 
-export const useSettingsStore = create<SettingsStore>((set, get) => ({
-  ...empty,
-  loaded: false,
+export const useSettingsStore = create<SettingsStore>((set, get) => {
+  let confirmed = { ...empty }
+  let revision = 0
+  let writes = Promise.resolve()
+  let loading: Promise<void> | null = null
+  const pending: Partial<AppSettings>[] = []
 
-  load: async () => {
-    const settings = await api.getSettings()
-    applyDocumentTheme({
-      appearance: settings.appearance,
-      lightTheme: settings.lightTheme,
-      darkTheme: settings.darkTheme
-    })
-    set({ ...settings, loaded: true })
-  },
-
-  setSendShortcut: async (shortcut) => {
-    const next = await api.setSendShortcut(shortcut)
-    set({ sendShortcut: next.sendShortcut })
-  },
-
-  setTheme: async (patch) => {
+  const publish = () => {
+    const next = Object.assign({}, confirmed, ...pending) as AppSettings
     const current = get()
-    applyDocumentTheme({
-      appearance: current.appearance,
-      lightTheme: current.lightTheme,
-      darkTheme: current.darkTheme,
-      ...patch
+    if (
+      !current.loaded ||
+      current.appearance !== next.appearance ||
+      current.lightTheme !== next.lightTheme ||
+      current.darkTheme !== next.darkTheme
+    ) {
+      applyDocumentTheme(next)
+    }
+    set(next)
+  }
+
+  /**
+   * Theme and shortcut writes share Pig's settings file; model defaults use Pi.
+   * Commit changes in order and keep pending UI patches above confirmed values,
+   * including when an earlier save fails.
+   */
+  const save = (
+    optimistic: Partial<AppSettings>,
+    write: () => Promise<Partial<AppSettings>>
+  ): Promise<void> => {
+    revision += 1
+    pending.push(optimistic)
+    set({ error: null })
+    publish()
+    writes = writes.then(async () => {
+      try {
+        confirmed = { ...confirmed, ...(await write()) }
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : String(error) })
+      } finally {
+        pending.shift()
+        publish()
+      }
     })
-    const next = await api.setTheme(patch)
-    applyDocumentTheme(next)
-    set({
-      appearance: next.appearance,
-      lightTheme: next.lightTheme,
-      darkTheme: next.darkTheme
-    })
-  },
+    return writes
+  }
 
-  setDefaultModel: async (provider, id) => {
-    set(applyDefaults(await api.setDefaultModelSetting(provider, id)))
-  },
+  const load = (): Promise<void> => {
+    if (loading) return loading
+    loading = (async () => {
+      try {
+        while (true) {
+          const pendingWrites = writes
+          await pendingWrites
+          if (pendingWrites !== writes) continue
+          const requestedRevision = revision
+          const settings = await api.getSettings()
+          if (requestedRevision !== revision) continue
+          confirmed = settings
+          publish()
+          set({ loaded: true, error: null })
+          return
+        }
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : String(error) })
+      } finally {
+        loading = null
+      }
+    })()
+    return loading
+  }
 
-  setDefaultThinking: async (level) => {
-    set(applyDefaults(await api.setDefaultThinkingSetting(level)))
-  },
+  return {
+    ...empty,
+    loaded: false,
+    error: null,
+    load,
 
-  setProviders: (providers) => set({ providers })
-}))
+    setSendShortcut: (shortcut) =>
+      save({ sendShortcut: shortcut }, async () => {
+        const next = await api.setSendShortcut(shortcut)
+        return { sendShortcut: next.sendShortcut }
+      }),
+
+    setTheme: (patch) =>
+      save(patch, async () => {
+        const next = await api.setTheme(patch)
+        return {
+          appearance: next.appearance,
+          lightTheme: next.lightTheme,
+          darkTheme: next.darkTheme
+        }
+      }),
+
+    setDefaultModel: (provider, id) =>
+      save({}, async () => applyDefaults(await api.setDefaultModelSetting(provider, id))),
+
+    setDefaultThinking: (level) =>
+      save({}, async () => applyDefaults(await api.setDefaultThinkingSetting(level))),
+
+    setProviders: (providers) => {
+      revision += 1
+      confirmed = { ...confirmed, providers }
+      publish()
+    }
+  }
+})
 
 export function modelKey(model: Pick<SessionModelInfo, 'provider' | 'id'>): string {
   return `${model.provider}/${model.id}`

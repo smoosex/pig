@@ -1,11 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pigDir, pigPath } from './pig-dir'
+import type { SidebarPrefs } from '../shared/api'
 
-export interface SidebarPrefs {
-  projectsCollapsed: boolean
-  chatsCollapsed: boolean
-  split: number
-}
+export type { SidebarPrefs } from '../shared/api'
 
 const defaults: SidebarPrefs = {
   projectsCollapsed: false,

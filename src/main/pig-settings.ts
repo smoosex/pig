@@ -1,15 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { pigDir, pigPath } from './pig-dir'
+import { dirname } from 'node:path'
+import { pigPath } from './pig-dir'
+import type { Appearance, PaletteId, SendShortcut, ThemePrefs } from '../shared/api'
 
-export type SendShortcut = 'enter' | 'shift-enter'
-export type Appearance = 'system' | 'light' | 'dark'
-export type PaletteId = 'pig' | 'everforest'
+export type { Appearance, PaletteId, SendShortcut } from '../shared/api'
 
-export interface PigSettings {
+export interface PigSettings extends ThemePrefs {
   sendShortcut: SendShortcut
-  appearance: Appearance
-  lightTheme: PaletteId
-  darkTheme: PaletteId
 }
 
 const defaults: PigSettings = {
@@ -44,19 +41,32 @@ function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
   }
 }
 
-export async function loadPigSettings(): Promise<PigSettings> {
+async function readSettings(path: string): Promise<PigSettings> {
   try {
-    const data = JSON.parse(await readFile(filePath(), 'utf8')) as Partial<PigSettings>
+    const data = JSON.parse(await readFile(path, 'utf8')) as Partial<PigSettings>
     return normalize(data)
   } catch {
     return { ...defaults }
   }
 }
 
-export async function savePigSettings(patch: Partial<PigSettings>): Promise<PigSettings> {
-  const current = await loadPigSettings()
-  const next = normalize({ ...current, ...patch })
-  await mkdir(pigDir(), { recursive: true })
-  await writeFile(filePath(), `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
-  return next
+let mutationQueue: Promise<void> = Promise.resolve()
+
+export async function loadPigSettings(): Promise<PigSettings> {
+  await mutationQueue
+  return readSettings(filePath())
+}
+
+export function savePigSettings(patch: Partial<PigSettings>): Promise<PigSettings> {
+  const path = filePath()
+  // Independent controls share this file, so serialize the entire read/merge/write.
+  const result = mutationQueue.then(async () => {
+    const current = await readSettings(path)
+    const next = normalize({ ...current, ...patch })
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
+    return next
+  })
+  mutationQueue = result.then(() => undefined, () => undefined)
+  return result
 }

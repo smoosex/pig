@@ -181,7 +181,8 @@ async function runFixture(name: string): Promise<void> {
     await command(() => { viewport(id).dispatchEvent(new Event('scroll')) })
   }
   const state = (top: number, following: boolean, id = 'a') => {
-    assert.deepEqual(api(id).getScrollState(), { scrollTop: top, following })
+    const actual = api(id).getScrollState()
+    assert.deepEqual({ scrollTop: actual.scrollTop, following: actual.following }, { scrollTop: top, following })
   }
   const noWrites = async (callback: () => Promise<void>) => {
     const count = writes.length
@@ -360,6 +361,154 @@ async function runFixture(name: string): Promise<void> {
       state(0, false)
       await command(() => { assert.equal(api().scrollToEnd({ behavior: 'auto' }), true) })
       state(400, true)
+    } else if (name === 'explicit-anchor') {
+      let session = makeSession()
+      await render([session])
+      await command(() => { api().scrollToOffset(50) })
+      session = { ...session, rows: [...session.rows, { id: 'live', height: 20 }] }
+      await render([session])
+      state(50, false)
+      await command(() => {
+        assert.equal(api().scrollToMessage('live', { anchor: true, behavior: 'auto' }), true)
+      })
+      state(300, false)
+      assert.equal(spacer().style.height, '80px')
+      for (const height of [40, 80]) {
+        session = { ...session, rows: [...rows(), { id: 'live', height }] }
+        await render([session])
+        await resize()
+        state(300, false)
+        assert.equal(spacer().style.height, `${100 - height}px`)
+      }
+      for (const height of [120, 200]) {
+        session = { ...session, rows: [...rows(), { id: 'live', height }] }
+        await render([session])
+        await resize()
+        state(200 + height, true)
+        assert.equal(spacer().hidden, true)
+      }
+      await command(() => { api().scrollToMessage('m1', { behavior: 'auto' }) })
+      state(100, false)
+      await noWrites(async () => {
+        session = { ...session, rows: [...rows(), { id: 'live', height: 260 }] }
+        await render([session])
+        await resize()
+        state(100, false)
+      })
+    } else if (name === 'anchor-state') {
+      let session = makeSession({ rows: [...rows(), { id: 'live', height: 20 }] })
+      await render([session])
+      assert.equal(api().getScrollState().anchoredMessageId, null)
+      await command(() => { api().scrollToMessage('live', { anchor: true }) })
+      assert.equal(api().getScrollState().anchoredMessageId, 'live')
+      await command(() => { api().pauseAutoScroll() })
+      assert.equal(api().getScrollState().anchoredMessageId, null)
+      await command(() => { api().scrollToMessage('live', { anchor: true }) })
+      session = { ...session, rows: [...rows(), { id: 'live', height: 60 }] }
+      await render([session])
+      await resize()
+      assert.equal(api().getScrollState().anchoredMessageId, 'live')
+      session = { ...session, rows: [...rows(), { id: 'live', height: 160 }] }
+      await render([session])
+      await resize()
+      assert.equal(api().getScrollState().anchoredMessageId, null)
+      state(360, true)
+      await command(() => { api().scrollToMessage('live', { anchor: true }) })
+      assert.equal(api().getScrollState().anchoredMessageId, 'live')
+      await render([{ ...session, rows: rows() }])
+      assert.equal(api().getScrollState().anchoredMessageId, null)
+    } else if (name === 'anchored-intent') {
+      for (const event of [
+        new WheelEvent('wheel', { bubbles: true, deltaY: -10 }),
+        new Event('touchmove', { bubbles: true }),
+        new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' })
+      ]) {
+        let session = makeSession({ rows: [...rows(), { id: 'live', height: 20 }] })
+        await render([session])
+        await command(() => { api().scrollToOffset(0) })
+        await command(() => { api().scrollToMessage('live', { anchor: true }) })
+        state(300, false)
+        assert.equal(api().getScrollState().anchoredMessageId, 'live')
+        await command(() => { viewport().dispatchEvent(event) })
+        assert.equal(api().getScrollState().anchoredMessageId, null)
+        await userScroll(200)
+        await noWrites(async () => {
+          session = { ...session, rows: [...rows(), { id: 'live', height: 60 }] }
+          await render([session])
+          await resize()
+          state(200, false)
+        })
+        await command(() => { container.querySelector<HTMLButtonElement>('[data-end-button]')!.click() })
+        state(260, true)
+        assert.equal(spacer().hidden, true)
+        session = { ...session, rows: [...rows(), { id: 'live', height: 140 }] }
+        await render([session])
+        await resize()
+        state(340, true)
+      }
+    } else if (name === 'pending-anchor') {
+      let session = makeSession({ rows: [] })
+      await render([session])
+      await command(() => {
+        api().pauseAutoScroll()
+        assert.equal(api().scrollToMessage('future', { anchor: true }), true)
+      })
+      session = { ...session, rows: [...rows(), { id: 'future', height: 20 }] }
+      await render([session])
+      state(300, false)
+      assert.equal(spacer().style.height, '80px')
+      session = { ...session, rows: [...rows(), { id: 'future', height: 200 }] }
+      await render([session])
+      await resize()
+      state(400, true)
+      assert.equal(spacer().hidden, true)
+    } else if (name === 'pending-intent') {
+      for (const [index, event] of [
+        new WheelEvent('wheel', { bubbles: true, deltaY: -10 }),
+        new Event('touchmove', { bubbles: true }),
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Home' })
+      ].entries()) {
+        const id = `pending-${index}`
+        let session = makeSession({ id, rows: [] })
+        await render([session])
+        await command(() => {
+          assert.equal(api(id).scrollToMessage('future', { anchor: true }), true)
+        })
+        session = { ...session, rows: rows() }
+        await render([session])
+        await command(() => { viewport(id).dispatchEvent(event) })
+        await userScroll(100, id)
+        await noWrites(async () => {
+          session = { ...session, rows: [...rows(), { id: 'future', height: 20 }] }
+          await render([session])
+          await resize(id)
+          state(100, false, id)
+        })
+      }
+    } else if (name === 'pending-frame-intent') {
+      for (const [index, event] of [
+        new WheelEvent('wheel', { bubbles: true, deltaY: -10 }),
+        new Event('touchmove', { bubbles: true }),
+        new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' })
+      ].entries()) {
+        const id = `pending-frame-${index}`
+        const session = makeSession({ id, rows: [], autoScroll: false })
+        await render([session])
+        await command(() => {
+          assert.equal(api(id).scrollToMessage('future', { anchor: true }), true)
+        })
+        await noWrites(async () => {
+          await render([{
+            ...session,
+            rows: [...rows(), { id: 'future', height: 20 }],
+            // Refs have registered the target, but its queued jump has not run yet.
+            onLayout: () => { viewport(id).dispatchEvent(event) }
+          }], false)
+          await settle()
+          await resize(id)
+          state(0, false, id)
+        })
+      }
     } else if (name === 'invalid') {
       const session = makeSession()
       await render([session])
@@ -446,6 +595,12 @@ if (process.argv[2] === '--message-scroller-fixture') {
     'empty-paused': 'pause cancels a pending message and suppresses the first-nonempty fallback',
     'pending-frame': 'pause cancels an already scheduled message-jump animation frame',
     anchor: 'pause leaves anchor spacer untouched, offset clears it, and existing commands still work',
+    'explicit-anchor': 'explicit anchoring overrides pause and hands growing content back to native bottom-follow',
+    'anchor-state': 'scroll snapshots expose only a connected native anchor until pause, bottom-follow or removal',
+    'anchored-intent': 'wheel, touch and scrolling keys release explicit anchoring; the button restores following',
+    'pending-anchor': 'an explicit pending anchor keeps its growth behavior when the message mounts',
+    'pending-intent': 'user scroll intent cancels a pending anchored message jump before its target mounts',
+    'pending-frame-intent': 'user scroll intent also cancels an already registered target and its queued jump',
     invalid: 'invalid offsets and absent viewports reject without changing scroll state',
     'cleanup-isolation': 'providers isolate session state and unmount cancels observers, frames and timers'
   }

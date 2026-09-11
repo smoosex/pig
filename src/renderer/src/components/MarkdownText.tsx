@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -6,6 +6,8 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Streamdown, preprocessLaTeX } from '@lobehub/streamdown'
 import { useHighlightHtml } from '../lib/highlight'
+import { renderMermaid } from '../lib/mermaid-renderer'
+import { useDarkMode } from '../lib/useDarkMode'
 import { cn } from '../lib/utils'
 import { Separator } from './ui/separator'
 import 'katex/dist/katex.min.css'
@@ -30,38 +32,23 @@ function CodeFence({ lang, code }: { lang: string; code: string }) {
 }
 
 function MermaidBlock({ code }: { code: string }) {
-  const rawId = useId()
-  const ref = useRef<HTMLDivElement>(null)
-  const [failed, setFailed] = useState(false)
+  const dark = useDarkMode()
+  const [result, setResult] = useState<{ code: string; dark: boolean; svg: string | null }>()
 
   useEffect(() => {
-    let cancelled = false
-    setFailed(false)
-    const id = `mermaid-${rawId.replace(/:/g, '')}`
-    const dark = document.documentElement.classList.contains('dark')
-    void import('mermaid').then(async ({ default: mermaid }) => {
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        theme: dark ? 'dark' : 'default'
-      })
-      try {
-        const { svg } = await mermaid.render(id, code)
-        if (!cancelled && ref.current) ref.current.innerHTML = svg
-      } catch {
-        if (!cancelled) setFailed(true)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [code, rawId])
+    const controller = new AbortController()
+    void renderMermaid(code, dark, controller.signal).then(
+      (svg) => { if (!controller.signal.aborted) setResult({ code, dark, svg }) },
+      () => { if (!controller.signal.aborted) setResult({ code, dark, svg: null }) }
+    )
+    return () => controller.abort()
+  }, [code, dark])
 
-  if (failed) return <CodeFence lang="plaintext" code={code} />
+  if (result?.code !== code || result.dark !== dark || !result.svg) return <CodeFence lang="plaintext" code={code} />
   return (
     <div
-      ref={ref}
       className="my-2 max-w-full overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      dangerouslySetInnerHTML={{ __html: result.svg }}
     />
   )
 }
@@ -102,7 +89,7 @@ const components: Components = {
   }
 }
 
-export function MarkdownText({
+export const MarkdownText = memo(function MarkdownText({
   text,
   className,
   streaming = false
@@ -131,4 +118,4 @@ export function MarkdownText({
       )}
     </div>
   )
-}
+})

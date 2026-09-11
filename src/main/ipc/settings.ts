@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
+import { windowForEvent } from './window'
 import {
   loadPigSettings,
   savePigSettings,
@@ -20,7 +21,7 @@ import {
   setDefaultModel,
   setDefaultThinking,
   type SessionThinkingLevel
-} from '../pi/session-registry'
+} from '../pi/model-settings'
 
 export function registerSettingsIpc(): void {
   ipcMain.handle('settings:get', async () => {
@@ -73,8 +74,7 @@ export function registerSettingsIpc(): void {
     'settings:login',
     async (event, providerId: string, authType: ProviderAuthType) => {
       if (!providerId) throw new Error('Provider id is required')
-      const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) throw new Error('No window attached to sender')
+      const win = windowForEvent(event)
       await loginProvider(win, providerId, authType)
       return listProviders()
     }

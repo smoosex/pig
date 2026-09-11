@@ -101,8 +101,12 @@ describe('worktree discovery and lifecycle', () => {
     await mkdir(other, { recursive: true })
     await git(other, ['init', '-b', 'main'])
     const [a, b] = await Promise.all([service.create(project), service.create(other)])
-    expect(basename(dirname(a.cwd))).toBe('project-with-spaces')
-    expect(basename(dirname(b.cwd))).not.toBe(basename(dirname(a.cwd)))
+    // Git preflight can finish in either order; the first allocator owns the plain name.
+    const parents = [a, b].map((tree) => basename(dirname(tree.cwd))).sort()
+    expect(parents[0]).toBe('project-with-spaces')
+    expect(parents[1]).toMatch(/^project-with-spaces-[0-9a-f]{8}$/)
+    expect(await canonicalProject(a.cwd)).toBe(project)
+    expect(await canonicalProject(b.cwd)).toBe(other)
   })
 
   test('empty repository supports an orphan worktree without making a commit', async () => {

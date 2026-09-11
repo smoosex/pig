@@ -1,23 +1,9 @@
 import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
+import type { ProjectGroup, SessionMeta } from '../../shared/api'
 
-export interface SessionMeta {
-  path: string
-  id: string
-  cwd: string
-  name?: string
-  created: string
-  modified: string
-  messageCount: number
-  firstMessage: string
-}
-
-export interface ProjectGroup {
-  cwd: string
-  name: string
-  sessions: SessionMeta[]
-}
+export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
 const PREFIX_BYTES = 64 * 1024
 const SCAN_CONCURRENCY = 32

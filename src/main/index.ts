@@ -2,7 +2,8 @@ import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
-import { disposeAll, startModelRuntime } from './pi/session-registry'
+import { disposeAll } from './pi/session-registry'
+import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
 
 app.whenReady().then(() => {
@@ -12,7 +13,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  void startModelRuntime()
+  void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
   createMainWindow()
 
@@ -32,7 +33,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   isDisposing = true
   void worktrees.shutdown()
-    .then(() => disposeAll())
+    .finally(() => disposeAll())
     .catch(() => {})
     .finally(() => app.quit())
 })

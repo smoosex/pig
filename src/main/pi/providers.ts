@@ -1,43 +1,36 @@
 import { randomUUID } from 'node:crypto'
 import { shell, type BrowserWindow } from 'electron'
-import { startModelRuntime } from './session-registry'
+import { startModelRuntime } from './model-settings'
 
-export type ProviderAuthType = 'oauth' | 'api_key'
+import type {
+  ProviderAuthType,
+  SettingsAuthEvent,
+  SettingsAuthNotify,
+  SettingsAuthPrompt,
+  SettingsProvider
+} from '../../shared/api'
 
-export interface SettingsProvider {
-  id: string
-  name: string
-  oauth: { name: string; loginLabel?: string; subscription: boolean } | null
-  apiKey: { name: string; canLogin: boolean } | null
-  configured: boolean
-  using: ProviderAuthType | null
-  source?: string
-}
-
-export type SettingsAuthPrompt =
-  | { type: 'text' | 'secret' | 'manual_code'; message: string; placeholder?: string }
-  | {
-      type: 'select'
-      message: string
-      options: { id: string; label: string; description?: string }[]
-    }
-
-export type SettingsAuthNotify =
-  | { type: 'info'; message: string; links?: { url: string; label?: string }[] }
-  | { type: 'auth_url'; url: string; instructions?: string }
-  | { type: 'device_code'; userCode: string; verificationUri: string; expiresInSeconds?: number }
-  | { type: 'progress'; message: string }
-
-export type SettingsAuthEvent =
-  | { kind: 'prompt'; id: string; prompt: SettingsAuthPrompt }
-  | { kind: 'notify'; event: SettingsAuthNotify }
+export type {
+  ProviderAuthType,
+  SettingsAuthEvent,
+  SettingsAuthNotify,
+  SettingsAuthPrompt,
+  SettingsProvider
+} from '../../shared/api'
 
 let loginAbort: AbortController | null = null
-const promptWaiters = new Map<string, { resolve: (value: string) => void; reject: (error: Error) => void }>()
+const promptWaiters = new Map<string, {
+  owner: AbortController
+  resolve: (value: string) => void
+  reject: (error: Error) => void
+}>()
 
-function clearPrompts(error: Error): void {
-  for (const waiter of promptWaiters.values()) waiter.reject(error)
-  promptWaiters.clear()
+function clearPrompts(owner: AbortController, error: Error): void {
+  for (const [id, waiter] of promptWaiters) {
+    if (waiter.owner !== owner) continue
+    promptWaiters.delete(id)
+    waiter.reject(error)
+  }
 }
 
 export async function listProviders(): Promise<SettingsProvider[]> {
@@ -161,43 +154,50 @@ export async function loginProvider(
   abort.signal.addEventListener(
     'abort',
     () => {
-      clearPrompts(cancelled)
+      clearPrompts(abort, cancelled)
     },
     { once: true }
   )
 
   const send = (event: SettingsAuthEvent) => {
-    if (!win.isDestroyed()) win.webContents.send('settings:auth-event', event)
+    if (abort.signal.aborted || loginAbort !== abort) return
+    if (win.isDestroyed() || win.webContents.isDestroyed()) {
+      abort.abort()
+      return
+    }
+    win.webContents.send('settings:auth-event', event)
   }
 
   try {
     const runtime = await startModelRuntime()
+    abort.signal.throwIfAborted()
     await runtime.login(providerId, authType, {
       signal: abort.signal,
       prompt: (prompt) => {
         abort.signal.throwIfAborted()
         const id = randomUUID()
-        send({ kind: 'prompt', id, prompt: serializePrompt(prompt) })
         return new Promise<string>((resolve, reject) => {
-          promptWaiters.set(id, { resolve, reject })
+          promptWaiters.set(id, { owner: abort, resolve, reject })
+          send({ kind: 'prompt', id, prompt: serializePrompt(prompt) })
         })
       },
       notify: (event) => {
+        if (abort.signal.aborted || loginAbort !== abort) return
         const payload = serializeNotify(event)
         if (!payload) return
-        if (payload.type === 'auth_url') void shell.openExternal(payload.url)
-        if (payload.type === 'device_code') void shell.openExternal(payload.verificationUri)
+        const url = payload.type === 'auth_url' ? payload.url : payload.type === 'device_code' ? payload.verificationUri : undefined
+        if (url) void shell.openExternal(url).catch((error) => console.error('Could not open login URL:', error))
         send({ kind: 'notify', event: payload })
       }
     })
     abort.signal.throwIfAborted()
-    await runtime.refresh({ providers: [providerId], signal: AbortSignal.timeout(15_000) })
+    await runtime.refresh({ providers: [providerId], signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) })
   } catch (error) {
     if (abort.signal.aborted) throw cancelled
     throw error
   } finally {
     if (loginAbort === abort) loginAbort = null
-    clearPrompts(cancelled)
+    clearPrompts(abort, cancelled)
   }
 }
 
