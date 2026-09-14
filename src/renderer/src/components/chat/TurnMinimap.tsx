@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Turn } from '../../chat/turns'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { renderKeyForTurn, type Turn } from '../../chat/turns'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 
@@ -9,6 +10,8 @@ const DOCK_SCALE = 0.55
 const DOCK_REACH = 3
 const BAR_HEIGHT = 2
 const GAP = 8
+const ITEM_SIZE = BAR_HEIGHT + GAP
+const OVERSCAN = 8
 const PADDING_Y = 8
 const FADE = PADDING_Y + 4 * BAR_HEIGHT + 3 * GAP
 
@@ -25,7 +28,7 @@ function describeTurn(turn: Turn, index: number) {
   const text = user.find((value) => value.length > 0) ?? answer.find((value) => value.length > 0)
   const preview = text?.slice(0, 160).replace(/\s+/g, ' ').trim().slice(0, 60)
   return {
-    id: turn.id ?? String(index),
+    id: renderKeyForTurn(turn, index),
     length,
     label: `第 ${index + 1} 轮${preview ? `：${preview}` : turn.user ? '：图片消息' : '对话'}`
   }
@@ -37,10 +40,17 @@ function dockBoost(index: number, position: number | null): number {
   return distance >= DOCK_REACH ? 0 : Math.cos((distance / DOCK_REACH) * (Math.PI / 2))
 }
 
-export function TurnMinimap({ items, onJump }: { items: Turn[]; onJump: (index: number) => void }) {
+export const TurnMinimap = memo(function TurnMinimap({
+  items,
+  onJump
+}: {
+  items: Turn[]
+  onJump: (index: number) => void
+}) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [hoverPos, setHoverPos] = useState<number | null>(null)
   const [focusIndex, setFocusIndex] = useState(0)
+  const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null)
   const [focused, setFocused] = useState(false)
   const [overflow, setOverflow] = useState({ top: false, bottom: false })
   const { rows, maxLength } = useMemo(() => {
@@ -52,6 +62,14 @@ export function TurnMinimap({ items, onJump }: { items: Turn[]; onJump: (index: 
     })
     return { rows, maxLength }
   }, [items])
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => rootRef.current,
+    getItemKey: (index) => rows[index]?.id ?? index,
+    estimateSize: () => ITEM_SIZE,
+    overscan: OVERSCAN
+  })
+  const virtualRows = virtualizer.getVirtualItems()
 
   function syncOverflow(element: HTMLDivElement): void {
     const top = element.scrollTop > 1
@@ -69,21 +87,32 @@ export function TurnMinimap({ items, onJump }: { items: Turn[]; onJump: (index: 
     return () => observer.disconnect()
   }, [items.length])
 
+  useLayoutEffect(() => {
+    if (pendingFocusIndex == null) return
+    const target = rootRef.current?.querySelector<HTMLButtonElement>(`[data-turn-index="${pendingFocusIndex}"]`)
+    if (!target) return
+    target.focus()
+    setPendingFocusIndex(null)
+  }, [pendingFocusIndex, virtualRows])
+
   if (items.length === 0) return null
   const activeIndex = Math.min(focusIndex, items.length - 1)
+  const tabbableIndex = virtualRows.some((row) => row.index === activeIndex)
+    ? activeIndex
+    : virtualRows[0]?.index ?? activeIndex
   const position = hoverPos ?? (focused ? activeIndex : null)
   const hoveredIndex = position == null ? -1 : Math.min(items.length - 1, Math.max(0, Math.round(position)))
   const mask = `linear-gradient(to bottom, ${overflow.top ? 'transparent' : 'black'} 0, black ${FADE}px, black calc(100% - ${FADE}px), ${overflow.bottom ? 'transparent' : 'black'} 100%)`
   const pointerPosition = (element: HTMLDivElement, clientY: number) =>
     (clientY - element.getBoundingClientRect().top + element.scrollTop - PADDING_Y - BAR_HEIGHT / 2) /
-    (BAR_HEIGHT + GAP)
+    ITEM_SIZE
 
   return (
     <div
       ref={rootRef}
       role="navigation"
       aria-label="对话轮次导航"
-      className="absolute top-1/2 right-3 z-10 flex max-h-3/4 min-w-9 -translate-y-1/2 cursor-pointer flex-col items-end gap-2 overflow-y-auto py-2 pl-10 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="absolute top-1/2 right-3 z-10 w-16 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto py-2 pl-10 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       onScroll={(event) => syncOverflow(event.currentTarget)}
       onPointerMove={(event) => setHoverPos(pointerPosition(event.currentTarget, event.clientY))}
@@ -105,29 +134,44 @@ export function TurnMinimap({ items, onJump }: { items: Turn[]; onJump: (index: 
         event.preventDefault()
         event.stopPropagation()
         setFocused(true)
-        rootRef.current?.querySelector<HTMLButtonElement>(`[data-turn-index="${next}"]`)?.focus()
+        setFocusIndex(next)
+        setPendingFocusIndex(next)
+        virtualizer.scrollToIndex(next, { align: 'auto' })
       }}
     >
-      {rows.map((row, index) => {
-        const width = MIN_WIDTH + Math.sqrt(row.length / maxLength) * (MAX_WIDTH - MIN_WIDTH)
-        return (
-          <Button
-            key={row.id}
-            type="button"
-            variant="link"
-            tabIndex={index === activeIndex ? 0 : -1}
-            aria-label={row.label}
-            data-turn-index={index}
-            className={cn(
-              'h-0.5 origin-right shrink-0 rounded-full border-0 p-0 transition-[width] duration-300 ease-out active:translate-y-0',
-              index === hoveredIndex ? 'bg-foreground' : 'bg-border'
-            )}
-            style={{ width: position == null ? MIN_WIDTH : width, transform: `scaleX(${1 + DOCK_SCALE * dockBoost(index, position)})` }}
-            onFocus={(event) => { setFocusIndex(index); setFocused(event.currentTarget.matches(':focus-visible')) }}
-            onClick={(event) => { event.stopPropagation(); onJump(index) }}
-          />
-        )
-      })}
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        {virtualRows.map((virtualRow) => {
+          const index = virtualRow.index
+          const row = rows[index]
+          const width = MIN_WIDTH + Math.sqrt(row.length / maxLength) * (MAX_WIDTH - MIN_WIDTH)
+          return (
+            <div
+              key={virtualRow.key}
+              className="absolute top-0 left-0 flex w-full justify-end"
+              style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <Button
+                type="button"
+                variant="link"
+                tabIndex={index === tabbableIndex ? 0 : -1}
+                aria-label={row.label}
+                data-turn-index={index}
+                className={cn(
+                  'h-0.5 origin-right shrink-0 rounded-full border-0 p-0 transition-[width] duration-300 ease-out active:translate-y-0',
+                  index === hoveredIndex ? 'bg-foreground' : 'bg-border'
+                )}
+                style={{ width: position == null ? MIN_WIDTH : width, transform: `scaleX(${1 + DOCK_SCALE * dockBoost(index, position)})` }}
+                onFocus={(event) => {
+                  setPendingFocusIndex(null)
+                  setFocusIndex(index)
+                  setFocused(event.currentTarget.matches(':focus-visible'))
+                }}
+                onClick={(event) => { event.stopPropagation(); onJump(index) }}
+              />
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
-}
+})

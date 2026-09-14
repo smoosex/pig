@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { DisplayTurn } from '../src/shared/api'
-import type { ProcessItem } from '../src/renderer/src/chat/turns'
+import { renderKeyForUser, type ProcessItem } from '../src/renderer/src/chat/turns'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
@@ -8,6 +8,27 @@ const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
 })
 
 describe('display turn projection', () => {
+  test('preserves live render keys across text normalization and image projection', () => {
+    const image = { type: 'image' as const, mimeType: 'image/png', data: 'AA==' }
+    for (const content of [
+      'hello',
+      [{ type: 'text' as const, text: 'hello' }],
+      [{ type: 'text' as const, text: 'he' }, { type: 'text' as const, text: 'llo' }],
+      [{ type: 'text' as const, text: 'hello' }, image],
+      [{ type: 'text' as const, text: '' }, image]
+    ]) {
+      const text = typeof content === 'string'
+        ? content
+        : content.filter((block) => block.type === 'text').map((block) => block.text).join('')
+      const images = typeof content === 'string' ? [] : content.filter((block) => block.type === 'image')
+      const persisted = toTurn(display({
+        userTimestamp: 42,
+        user: { text, images, textAttachments: [] }
+      }), [])
+      expect(persisted.renderKey).toBe(renderKeyForUser({ timestamp: 42, content }))
+    }
+  })
+
   test('preserves pasted-text segments, cached process identity, and elapsed time', () => {
     const attachment = { id: 'paste', text: '附件', byteSize: 6 }
     const input = display({ user: {

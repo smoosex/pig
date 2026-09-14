@@ -1,6 +1,6 @@
 import type { DisplayTurn } from '../../../shared/api'
 import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
-import type { ProcessItem, Turn } from './turns'
+import { renderKeyForUser, type ProcessItem, type Turn } from './turns'
 
 /** Rebuild a renderable turn from the persisted DTO without changing Pi message semantics. */
 export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
@@ -17,7 +17,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
               }))
             ]
           : display.user.text,
-        timestamp: display.startedAt,
+        timestamp: display.userTimestamp ?? display.startedAt,
         pastedText: {
           body: display.user.text,
           attachments: display.user.textAttachments,
@@ -43,6 +43,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     endedAt: display.endedAt,
     streaming: false,
     hasProcess: display.hasProcess,
-    workedMs
+    workedMs,
+    renderKey: user ? renderKeyForUser(user) : `turn:${display.id}`
   }
 }

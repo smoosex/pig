@@ -8,9 +8,20 @@ async function fixture(): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   class ResizeObserverStub {
     observe() {}
+    unobserve() {}
     disconnect() {}
   }
   Object.assign(globalThis, { ResizeObserver: ResizeObserverStub })
+  // The minimap virtualizes inside a scrollable navigation box; give it a measurable height.
+  const navigationHeight = (element: HTMLElement) => element.getAttribute('role') === 'navigation' ? 100 : 0
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+    configurable: true,
+    get() { return navigationHeight(this) }
+  })
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get() { return 120 }
+  })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { TurnMinimap } = await import('../src/renderer/src/components/chat/TurnMinimap')

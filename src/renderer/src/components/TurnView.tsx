@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { formatElapsed, type Turn } from '../chat/turns'
+import { formatElapsed, renderKeyForTurn, type Turn } from '../chat/turns'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
@@ -29,12 +29,14 @@ export const TurnView = memo(function TurnView({
   const [loadError, setLoadError] = useState<string | null>(null)
   const request = useRef(0)
 
+  const identity = renderKeyForTurn(turn, turn.startedAt)
+
   useEffect(() => {
     request.current++
     setLoading(false)
     setLoadError(null)
     return () => { request.current++ }
-  }, [turn.id, turn.streaming])
+  }, [identity, turn.streaming])
 
   useEffect(() => {
     if (turn.streaming) {
@@ -45,7 +47,7 @@ export const TurnView = memo(function TurnView({
     setOpen(false)
     const id = window.setTimeout(() => setLiveOutline(false), 300)
     return () => window.clearTimeout(id)
-  }, [turn.id, turn.streaming])
+  }, [identity, turn.streaming])
 
   async function toggleProcess(next: boolean): Promise<void> {
     if (turn.streaming) return
@@ -54,7 +56,7 @@ export const TurnView = memo(function TurnView({
       setOpen(false)
       return
     }
-    if (turn.process.length === 0 && onNeedProcess && turn.id && !turn.id.startsWith('live-')) {
+    if (turn.process.length === 0 && onNeedProcess && turn.id && !turn.id.startsWith('live:')) {
       const token = ++request.current
       setLoading(true)
       setLoadError(null)

@@ -83,7 +83,7 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
       SessionManager: {
         open: () => {
           openCalls++
-          return { getCwd: () => sessionCwd, getSessionId: () => sessionId }
+          return { getCwd: () => sessionCwd, getSessionId: () => sessionId, getLeafId: () => null, getBranch: () => [] }
         }
       },
       SettingsManager: { create: () => ({}) },
@@ -97,7 +97,9 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
     const sessions = registry
     const win = {} as Parameters<typeof sessions.openSession>[1]
     const opening = observe(sessions.openSession(sessionFile, win))
-    operations.push(opening)
+    // The preview resolves immediately; the SDK build continues in the background.
+    const preparing = observe(sessions.prepareSession(sessionId))
+    operations.push(opening, preparing)
     await started.promise
     const duplicate = observe(sessions.openSession(join(sessionCwd, 'session.jsonl'), win))
     operations.push(duplicate)
@@ -121,12 +123,14 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
     assert.throws(() => sessions.createPendingSession(sessionCwd, win), /Worktree 正在删除/)
 
     release.resolve()
-    const [first, second, deletion] = await Promise.all([opening, duplicate, deleting])
+    const [first, second, preparation, deletion] = await Promise.all([opening, duplicate, preparing, deleting])
     assert.equal(deletion.status, 'fulfilled', JSON.stringify(deletion))
     for (const result of [first, second]) {
-      assert.equal(result.status, 'rejected', 'an opening session must not outlive deletion')
-      if (result.status === 'rejected') assert.match(String(result.error), /Worktree 正在删除/)
+      assert.equal(result.status, 'fulfilled', 'opening only returns the stored projection')
+      if (result.status === 'fulfilled') assert.equal(result.value.sessionId, sessionId)
     }
+    assert.equal(preparation.status, 'rejected', 'an opening session must not outlive deletion')
+    if (preparation.status === 'rejected') assert.match(String(preparation.error), /Worktree 正在删除/)
     assert.equal(closed, true)
     assert.equal(removed, true)
     assert.equal(disposeCalls, 1)

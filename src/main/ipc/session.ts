@@ -3,9 +3,8 @@ import {
   closeSession,
   createPendingSession,
   exportSession,
-  getLive,
-  requireLive,
   getSessionControls,
+  isPendingDraft,
   getSessionTree,
   listSessionCommands,
   openSession,
@@ -35,12 +34,11 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:open', async (event, path: string) => {
     const win = windowForEvent(event)
-    const ls = await openSession(path, win)
-    return { sessionId: ls.sessionId, cwd: ls.cwd }
+    return openSession(path, win)
   })
 
   ipcMain.handle('session:prepare', async (_event, sessionId: string) => {
-    const created = !getLive(sessionId)
+    const created = isPendingDraft(sessionId)
     const session = await prepareSession(sessionId)
     return { sessionId: session.sessionId, cwd: session.cwd, created }
   })
@@ -66,12 +64,12 @@ export function registerSessionIpc(): void {
   )
 
   ipcMain.handle('session:abort', async (_event, sessionId: string) => {
-    const ls = requireLive(sessionId)
+    const ls = await prepareSession(sessionId)
     await ls.agentSession.abort()
   })
 
   ipcMain.handle('session:get-messages', async (_event, sessionId: string) => {
-    const ls = requireLive(sessionId)
+    const ls = await prepareSession(sessionId)
     return ls.agentSession.messages
   })
 
@@ -90,7 +88,7 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {
     if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
-    return { leafId: viewSessionBranch(sessionId, tipId) }
+    return { leafId: await viewSessionBranch(sessionId, tipId) }
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {

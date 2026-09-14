@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toTurn } from '../chat/display-turns'
 import { groupTurns } from '../chat/turns'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
@@ -13,34 +13,62 @@ const emptyMessages: RuntimeState['liveMessages'] = []
 const emptyProcess: RuntimeState['processByTurnId'] = {}
 const emptyDurations: Record<string, number> = {}
 const MAX_SCROLL_SNAPSHOTS = 32
+const MAX_RETAINED_PANES = 3
 
-/** Projects the active conversation; scroll state is isolated by session and branch. */
-export function ChatView() {
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
-  const activeBranchViewId = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.branchViewId ?? null) : null
-  )
-  const turns = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.turns ?? emptyTurns) : emptyTurns
-  )
-  const liveMessages = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.liveMessages ?? emptyMessages) : emptyMessages
-  )
-  const processByTurnId = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.processByTurnId ?? emptyProcess) : emptyProcess
-  )
-  const thinkingDurations = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.thinkingDurations ?? emptyDurations) : emptyDurations
-  )
-  const elapsedByTurnId = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.elapsedByTurnId ?? emptyDurations) : emptyDurations
-  )
-  const streamElapsedMs = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamElapsedMs ?? null) : null
-  )
-  const isStreaming = useSessionsStore((s) =>
-    s.activeSessionId ? (s.runtime[s.activeSessionId]?.isStreaming ?? false) : false
-  )
+type SnapshotCache = Map<string, ScrollSnapshot>
+
+function sameIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+/** Keep the active pane and the two most recently visited panes mounted. */
+function useRetainedSessionIds(openTabs: { sessionId: string }[], activeSessionId: string | null): string[] {
+  const openIds = useMemo(() => new Set(openTabs.map((tab) => tab.sessionId)), [openTabs])
+  const [recentIds, setRecentIds] = useState<string[]>([])
+
+  useEffect(() => {
+    setRecentIds((previous) => {
+      const next = previous.filter((id) => openIds.has(id))
+      if (activeSessionId && openIds.has(activeSessionId)) {
+        const existing = next.indexOf(activeSessionId)
+        if (existing !== -1) next.splice(existing, 1)
+        next.unshift(activeSessionId)
+      }
+      const limited = next.slice(0, MAX_RETAINED_PANES)
+      return sameIds(previous, limited) ? previous : limited
+    })
+  }, [activeSessionId, openIds])
+
+  return useMemo(() => {
+    const retained = recentIds.filter((id) => openIds.has(id))
+    if (activeSessionId && openIds.has(activeSessionId) && !retained.includes(activeSessionId)) {
+      retained.unshift(activeSessionId)
+    }
+    return retained.slice(0, MAX_RETAINED_PANES)
+  }, [activeSessionId, openIds, recentIds])
+}
+
+/** A session-owned conversation tree; switching tabs only changes Activity visibility. */
+const SessionChatPane = memo(function SessionChatPane({
+  sessionId,
+  active,
+  snapshots,
+  forceInitialBottom
+}: {
+  sessionId: string
+  active: boolean
+  snapshots: SnapshotCache
+  forceInitialBottom: boolean
+}) {
+  const branchViewId = useSessionsStore((s) => s.runtime[sessionId]?.branchViewId ?? null)
+  const turns = useSessionsStore((s) => s.runtime[sessionId]?.turns ?? emptyTurns)
+  const liveMessages = useSessionsStore((s) => s.runtime[sessionId]?.liveMessages ?? emptyMessages)
+  const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
+  const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
+  const elapsedByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.elapsedByTurnId ?? emptyDurations)
+  const streamElapsedMs = useSessionsStore((s) => s.runtime[sessionId]?.streamElapsedMs ?? null)
+  const isStreaming = useSessionsStore((s) => s.runtime[sessionId]?.isStreaming ?? false)
+
   const historical = useMemo(
     () => turns.map((turn) => toTurn(turn, processByTurnId[turn.id] ?? [], elapsedByTurnId[turn.id])),
     [turns, processByTurnId, elapsedByTurnId]
@@ -50,55 +78,97 @@ export function ChatView() {
     const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations)
     return grouped.map((turn, index) => ({
       ...turn,
-      id: `live-${turns.length + index}`,
+      id: turn.id ?? `live:${turn.renderKey ?? index}`,
       workedMs: index === grouped.length - 1 ? streamElapsedMs ?? undefined : undefined
     }))
-  }, [liveMessages, isStreaming, thinkingDurations, streamElapsedMs, turns.length])
+  }, [liveMessages, isStreaming, thinkingDurations, streamElapsedMs])
 
-  const snapshots = useRef(new Map<string, ScrollSnapshot>())
-  const scrollKey = activeSessionId && activeBranchViewId
-    ? `${activeSessionId}\u0000${activeBranchViewId}`
-    : null
+  const scrollKey = branchViewId ? `${sessionId}\u0000${branchViewId}` : null
   const saveScrollState = useCallback((state: ScrollSnapshot) => {
     if (!scrollKey) return
-    const cache = snapshots.current
-    cache.delete(scrollKey)
-    cache.set(scrollKey, state)
-    // Each snapshot includes row measurements; bound abandoned branch history.
-    if (cache.size > MAX_SCROLL_SNAPSHOTS) cache.delete(cache.keys().next().value!)
-  }, [scrollKey])
-  const initialScrollState = scrollKey ? snapshots.current.get(scrollKey) : undefined
-
-  if (historical.length === 0 && live.length === 0) {
-    return (
-      <Empty className="min-h-0 flex-1 gap-6">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true" className="size-12 text-primary">
-          <path fill="currentColor" fillRule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
-          <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
-        </svg>
-        <p className="max-w-xl font-wenkai text-xl text-foreground">
-          昨天是段历史，明天是个谜团，而今天是天赐的礼物
-        </p>
-      </Empty>
-    )
-  }
+    snapshots.delete(scrollKey)
+    snapshots.set(scrollKey, state)
+    // Bound abandoned branch history.
+    if (snapshots.size > MAX_SCROLL_SNAPSHOTS) snapshots.delete(snapshots.keys().next().value!)
+  }, [scrollKey, snapshots])
+  const initialScrollState = !forceInitialBottom && scrollKey ? snapshots.get(scrollKey) : undefined
+  // Captured once: MessageScroller re-applies a changed default and would move a live pane.
+  const defaultScrollPosition = useRef<'start' | 'end'>(
+    initialScrollState && !initialScrollState.following ? 'start' : 'end'
+  ).current
 
   return (
-    <MessageScrollerProvider
-      key={scrollKey ?? 'none'}
-      autoScroll
-      scrollMargin={TURN_ALIGN}
-      scrollPreviousItemPeek={0}
-      scrollEdgeThreshold={SCROLL_END}
-      defaultScrollPosition={initialScrollState && !initialScrollState.following ? 'start' : 'end'}
-    >
-      <ConversationViewport
-        historical={historical}
-        live={live}
-        sessionId={activeSessionId}
-        initialScrollState={initialScrollState}
-        onSave={saveScrollState}
-      />
-    </MessageScrollerProvider>
+    <div className="absolute inset-0 flex min-h-0 flex-col">
+      {historical.length === 0 && live.length === 0 ? (
+        <Empty className="min-h-0 flex-1 gap-6">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true" className="size-12 text-primary">
+            <path fill="currentColor" fillRule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
+            <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
+          </svg>
+          <p className="max-w-xl font-wenkai text-xl text-foreground">
+            昨天是段历史，明天是个谜团，而今天是天赐的礼物
+          </p>
+        </Empty>
+      ) : (
+        <MessageScrollerProvider
+          key={branchViewId ?? 'none'}
+          autoScroll={active}
+          scrollMargin={TURN_ALIGN}
+          scrollPreviousItemPeek={0}
+          scrollEdgeThreshold={SCROLL_END}
+          defaultScrollPosition={defaultScrollPosition}
+        >
+          <ConversationViewport
+            active={active}
+            historical={historical}
+            live={live}
+            sessionId={sessionId}
+            initialScrollState={initialScrollState}
+            onSave={saveScrollState}
+          />
+        </MessageScrollerProvider>
+      )}
+    </div>
+  )
+})
+
+/** Projects open conversations while retaining a bounded set of mounted panes. */
+export function ChatView() {
+  const openTabs = useSessionsStore((s) => s.openTabs)
+  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const retainedSessionIds = useRetainedSessionIds(openTabs, activeSessionId)
+  const snapshots = useRef<SnapshotCache>(new Map()).current
+  const openIds = useMemo(() => new Set(openTabs.map((tab) => tab.sessionId)), [openTabs])
+  const previousOpenIds = useRef<Set<string>>(new Set())
+  const newlyOpenedIds = new Set([...openIds].filter((id) => !previousOpenIds.current.has(id)))
+
+  useLayoutEffect(() => {
+    for (const sessionId of openIds) {
+      if (previousOpenIds.current.has(sessionId)) continue
+      const prefix = `${sessionId}\u0000`
+      for (const key of snapshots.keys()) {
+        if (key.startsWith(prefix)) snapshots.delete(key)
+      }
+    }
+    previousOpenIds.current = openIds
+  }, [openIds, snapshots])
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      {retainedSessionIds.map((sessionId) => (
+        <Activity
+          key={sessionId}
+          name={`session-${sessionId}`}
+          mode={sessionId === activeSessionId ? 'visible' : 'hidden'}
+        >
+          <SessionChatPane
+            sessionId={sessionId}
+            active={sessionId === activeSessionId}
+            snapshots={snapshots}
+             forceInitialBottom={newlyOpenedIds.has(sessionId)}
+          />
+        </Activity>
+      ))}
+    </div>
   )
 }

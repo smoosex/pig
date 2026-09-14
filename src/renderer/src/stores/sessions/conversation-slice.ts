@@ -53,7 +53,7 @@ export const createConversationSlice: SessionSlice<
       const request = {}
       historyRequests.set(initial.instanceId, request)
       try {
-        const result = await api.getDisplayTurns(sessionId)
+        const result = options?.display ?? await api.getDisplayTurns(sessionId)
         const current = currentInstance(sessionId, initial)
         if (
           !current ||

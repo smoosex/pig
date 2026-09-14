@@ -8,7 +8,7 @@ import { statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { createAgentSession, SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
-import type { FollowUpAction, ThinkingLevel } from '../../shared/api'
+import type { DisplayTurnsResult, FollowUpAction, ThinkingLevel } from '../../shared/api'
 import { normalizeWorktreePath as resolve } from '../worktrees'
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
@@ -28,6 +28,7 @@ import {
   updateFollowUpMessage as updateFollowUp
 } from './session-actions'
 import { sessionTreeRows } from './session-tree'
+import { displayTurnsFromEntries } from './session-display-model'
 import type { LiveSession, PendingSession, SessionState } from './session-state'
 
 export type { LiveSession, PendingSession } from './session-state'
@@ -57,11 +58,25 @@ interface Preparation {
   promise: Promise<LiveSession>
 }
 
+export interface OpenSessionPreview {
+  sessionId: string
+  cwd: string
+  display: DisplayTurnsResult
+}
+
 const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
-const openingPaths = new Map<string, Promise<LiveSession>>()
+const openingPaths = new Map<string, Promise<OpenSessionPreview>>()
+
+function defer<T>(factory: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    setImmediate(() => {
+      void factory().then(resolve, reject)
+    })
+  })
+}
 
 function trackPreparation(
   sessionId: string,
@@ -78,7 +93,6 @@ function trackPreparation(
     if (path) openingPaths.delete(path)
   })
   preparing.set(sessionId, { cwd, promise })
-  if (path) openingPaths.set(path, promise)
   return promise
 }
 
@@ -124,7 +138,7 @@ export function createPendingSession(cwd: string, win: BrowserWindow): PendingSe
   if (!statSync(cwd).isDirectory()) throw new Error('会话工作目录不存在')
   const sessionManager = SessionManager.create(cwd)
   const sessionId = sessionManager.getSessionId()
-  const session = { sessionId, cwd, sessionManager, win }
+  const session = { sessionId, cwd, sessionManager, win, needsMaterialize: true }
   pending.set(sessionId, session)
   return session
 }
@@ -162,32 +176,73 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
   const session = pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
-  return trackPreparation(sessionId, session.cwd, materialize(session))
+  const building = session.needsMaterialize === false
+    ? build(session.sessionManager, session.cwd, session.win)
+    : materialize(session)
+  return trackPreparation(sessionId, session.cwd, building)
 }
 
-export async function openSession(path: string, win: BrowserWindow): Promise<LiveSession> {
+function previewFor(sessionManager: SessionManager, sessionId: string, cwd: string): OpenSessionPreview {
+  return {
+    sessionId,
+    cwd,
+    display: {
+      leafId: sessionManager.getLeafId(),
+      turns: displayTurnsFromEntries(sessionManager.getBranch())
+    }
+  }
+}
+
+export async function openSession(path: string, win: BrowserWindow): Promise<OpenSessionPreview> {
   const target = resolve(path)
   for (const ls of live.values()) {
     if (ls.agentSession.sessionFile && resolve(ls.agentSession.sessionFile) === target) {
       if (closing.has(ls.sessionId)) throw new Error(`Session is closing: ${ls.sessionId}`)
       worktrees.assertAvailable(ls.cwd)
-      return ls
+      return previewFor(ls.agentSession.sessionManager, ls.sessionId, ls.cwd)
     }
   }
   const opening = openingPaths.get(target)
   if (opening) return opening
+
+  // SessionManager.open is still the one synchronous read of the JSONL file.
+  // Return its display projection before resources/extensions/AgentSession setup.
   const sm = SessionManager.open(target)
   const cwd = sm.getCwd() || process.cwd()
   worktrees.assertAvailable(cwd)
   const sessionId = sm.getSessionId()
   if (closing.has(sessionId)) throw new Error(`Session is closing: ${sessionId}`)
   const existing = preparing.get(sessionId)
-  if (existing) return existing.promise
-  return trackPreparation(sessionId, cwd, build(sm, cwd, win), target)
+  if (existing) {
+    const preview = previewFor(sm, sessionId, cwd)
+    const result = Promise.resolve(preview)
+    openingPaths.set(target, result)
+    return result
+  }
+
+  pending.set(sessionId, {
+    sessionId,
+    cwd,
+    sessionManager: sm,
+    win,
+    needsMaterialize: false
+  })
+  const preview = previewFor(sm, sessionId, cwd)
+  const preparation = trackPreparation(sessionId, cwd, defer(() => build(sm, cwd, win)), target)
+  void preparation.catch((error) => {
+    console.error(`Failed to prepare opened session ${sessionId}:`, error)
+  })
+  const result = Promise.resolve(preview)
+  openingPaths.set(target, result)
+  return result
 }
 
 export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
+}
+
+export function isPendingDraft(sessionId: string): boolean {
+  return pending.get(sessionId)?.needsMaterialize === true
 }
 
 export function sessionManagerFor(sessionId: string): SessionManager {
@@ -195,8 +250,8 @@ export function sessionManagerFor(sessionId: string): SessionManager {
   return 'agentSession' in session ? session.agentSession.sessionManager : session.sessionManager
 }
 
-export function viewSessionBranch(sessionId: string, tipId: string): string | null {
-  const ls = requireLive(sessionId)
+export async function viewSessionBranch(sessionId: string, tipId: string): Promise<string | null> {
+  const ls = await prepareSession(sessionId)
   if (ls.agentSession.isStreaming) throw new Error('Session is streaming')
   const sm = ls.agentSession.sessionManager
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
@@ -292,8 +347,9 @@ export function refreshSessionModels(sessionId: string) {
   return refreshModels(sessionState(sessionId))
 }
 
-export function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction) {
-  return updateFollowUp(requireLive(sessionId).agentSession, index, action)
+export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction) {
+  const session = await prepareSession(sessionId)
+  return updateFollowUp(session.agentSession, index, action)
 }
 
 export async function listSessionCommands(sessionId: string) {

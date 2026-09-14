@@ -269,7 +269,15 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
     timeOf(rest[0]?.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
   const endedAt = chunk[chunk.length - 1]?.persistedAt ?? startedAt
 
-  return { user, answer, errorMessage, startedAt, endedAt, hasProcess }
+  return {
+    user,
+    userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
+    answer,
+    errorMessage,
+    startedAt,
+    endedAt,
+    hasProcess
+  }
 }
 
 export function displayTurnsFromEntries(entries: SessionEntry[]): DisplayTurn[] {

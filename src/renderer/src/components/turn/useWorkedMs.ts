@@ -7,7 +7,7 @@ export function useWorkedMs(turn: Turn): number {
     turn.streaming && s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamStartedAt ?? null) : null
   )
   const streamElapsedMs = useSessionsStore((s) =>
-    !turn.streaming && turn.workedMs == null && turn.id?.startsWith('live-') && s.activeSessionId
+    !turn.streaming && turn.workedMs == null && turn.id?.startsWith('live:') && s.activeSessionId
       ? (s.runtime[s.activeSessionId]?.streamElapsedMs ?? null)
       : null
   )
@@ -22,6 +22,6 @@ export function useWorkedMs(turn: Turn): number {
 
   if (turn.streaming) return streamStartedAt != null ? Math.max(0, now - streamStartedAt) : 0
   if (turn.workedMs != null) return turn.workedMs
-  if (turn.id?.startsWith('live-') && streamElapsedMs != null) return streamElapsedMs
+  if (turn.id?.startsWith('live:') && streamElapsedMs != null) return streamElapsedMs
   return Math.max(1000, turn.endedAt - turn.startedAt)
 }

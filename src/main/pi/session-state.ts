@@ -14,6 +14,8 @@ export interface PendingSession {
   cwd: string
   sessionManager: SessionManager
   win: BrowserWindow
+  /** Existing JSONL sessions already have a file; drafts need materialization first. */
+  needsMaterialize?: boolean
   modelProvider?: string
   modelId?: string
   thinkingLevel?: ThinkingLevel

@@ -1,5 +1,5 @@
 /** Tab lifecycle and titles; catalog deletion also removes the corresponding tabs. */
-import { api, type SessionRef } from '../../ipc/api'
+import { api, type OpenSessionRef } from '../../ipc/api'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
 import type { OpenTab, SessionSlice } from './types'
@@ -15,7 +15,7 @@ export const createTabsSlice: SessionSlice<
   | 'renameTab'
   | 'previewSessionTitle'
 > = (set, get) => {
-  const opening = new Map<string, Promise<SessionRef>>()
+  const opening = new Map<string, Promise<OpenSessionRef>>()
   const closing = new Map<string, Promise<void>>()
   let selectionVersion = 0
 
@@ -63,7 +63,11 @@ export const createTabsSlice: SessionSlice<
           title: meta.name || meta.firstMessage || 'Session',
           meta
         }, selection)
-        if (added) await Promise.all([get().hydrateTurns(ref.sessionId), get().loadControls(ref.sessionId)])
+        if (added) {
+          await get().hydrateTurns(ref.sessionId, { display: ref.display })
+          await api.prepareSession(ref.sessionId)
+          await get().loadControls(ref.sessionId)
+        }
       } finally {
         if (opening.get(meta.path) === request) opening.delete(meta.path)
       }

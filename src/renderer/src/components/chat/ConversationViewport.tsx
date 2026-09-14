@@ -10,7 +10,8 @@ import {
   MessageScrollerButton,
   MessageScrollerContent,
   MessageScrollerItem,
-  MessageScrollerViewport
+  MessageScrollerViewport,
+  useMessageScroller
 } from '../ui/message-scroller'
 import { TurnMinimap } from './TurnMinimap'
 import { useConversationScroll } from './useConversationScroll'
@@ -18,25 +19,28 @@ import { useConversationScroll } from './useConversationScroll'
 const measuredItem = '[content-visibility:visible] [contain-intrinsic-size:none]'
 
 export function ConversationViewport({
+  active,
   historical,
   live,
   sessionId,
   initialScrollState,
   onSave
 }: {
+  active: boolean
   historical: Turn[]
   live: Turn[]
-  sessionId: string | null
+  sessionId: string
   initialScrollState?: ScrollSnapshot
   onSave: (state: ScrollSnapshot) => void
 }) {
   const items = useMemo(() => [...historical, ...live], [historical, live])
+  const scroller = useMessageScroller()
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
-  const { viewportRef, virtualizer, scroller, jumpToTurn } = useConversationScroll({
-    historical, live, initialScrollState, onSave
+  const { viewportRef, visibleTurns, hasMoreAbove, onScroll, registerTurn, jumpToTurn } = useConversationScroll({
+    active, historical, live, initialScrollState, onSave
   })
   const onNeedProcess = useCallback(async (turnId: string) => {
-    if (sessionId) await loadTurnProcess(sessionId, turnId)
+    await loadTurnProcess(sessionId, turnId)
   }, [sessionId, loadTurnProcess])
 
   return (
@@ -44,6 +48,7 @@ export function ConversationViewport({
       <MessageScrollerViewport
         ref={viewportRef}
         preserveScrollOnPrepend={false}
+        onScroll={onScroll}
         onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest('[data-slot="collapsible-trigger"]')) {
             scroller.pauseAutoScroll()
@@ -51,29 +56,19 @@ export function ConversationViewport({
         }}
       >
         <MessageScrollerContent className="gap-0">
-          <MessageScrollerItem className={measuredItem} data-history-turns="">
-            <div ref={virtualizer.containerRef} className={cn(chatColumn, 'relative')}>
-              {virtualizer.getVirtualItems().map((row) => (
-                <MessageScrollerItem
-                  key={row.key}
-                  messageId={historical[row.index].id}
-                  data-index={row.index}
-                  data-historical-turn=""
-                  ref={virtualizer.measureElement}
-                  className={cn(measuredItem, 'absolute top-0 left-0 w-full px-8')}
-                >
-                  <TurnView turn={historical[row.index]} onNeedProcess={onNeedProcess} />
-                </MessageScrollerItem>
-              ))}
+          {hasMoreAbove ? (
+            <div className={cn(chatColumn, 'py-3 text-center text-xs text-muted-foreground/60')}>
+              向上滚动加载更早消息
             </div>
-          </MessageScrollerItem>
-          {live.map((turn, index) => (
+          ) : null}
+          {visibleTurns.map(({ turn, index, key }) => (
             <MessageScrollerItem
-              key={turn.id}
-              messageId={turn.id}
-              data-index={historical.length + index}
-              data-live-turn=""
-              className={cn(chatColumn, measuredItem)}
+              key={key}
+              messageId={key}
+              ref={(element) => registerTurn(key, element)}
+              data-turn-key={key}
+              data-turn-index={index}
+              className={cn(measuredItem, chatColumn)}
             >
               <TurnView turn={turn} onNeedProcess={onNeedProcess} />
             </MessageScrollerItem>

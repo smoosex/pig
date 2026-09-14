@@ -46,6 +46,8 @@ export interface Turn {
   streaming: boolean
   hasProcess?: boolean
   workedMs?: number
+  /** Stable UI identity shared by the live and persisted versions of a turn. */
+  renderKey?: string
 }
 
 function lastToolCallIndex(content: AssistantMessage['content']): number {
@@ -53,6 +55,35 @@ function lastToolCallIndex(content: AssistantMessage['content']): number {
     if (content[i].type === 'toolCall') return i
   }
   return -1
+}
+
+function hashText(value: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+export function renderKeyForUser(user: Pick<PigUserMessage, 'timestamp' | 'content'>): string {
+  const text = typeof user.content === 'string'
+    ? user.content
+    : user.content.filter((block) => block.type === 'text').map((block) => block.text).join('')
+  const imageCount = typeof user.content === 'string'
+    ? 0
+    : user.content.filter((block) => block.type === 'image').length
+  return `user:${user.timestamp}:${hashText(JSON.stringify([text.slice(0, 256), imageCount]))}`
+}
+
+export function renderKeyForMessages(messages: PiMessage[], fallback: number): string {
+  const user = messages.find((message): message is PigUserMessage => message.role === 'user')
+  return user ? renderKeyForUser(user) : `turn:${messages[0]?.timestamp ?? fallback}`
+}
+
+/** Identity shared by the live and persisted versions of one turn. */
+export function renderKeyForTurn(turn: Pick<Turn, 'renderKey' | 'id'>, fallback: number | string): string {
+  return turn.renderKey ?? turn.id ?? `turn:${fallback}`
 }
 
 function pushText(process: ProcessItem[], text: string): void {
@@ -163,7 +194,8 @@ function consumeAssistant(
 export function buildTurn(
   chunk: PiMessage[],
   streaming: boolean,
-  thinkingDurations: ThinkingDurations = {}
+  thinkingDurations: ThinkingDurations = {},
+  renderKey?: string
 ): Turn {
   const user = chunk[0]?.role === 'user' ? (chunk[0] as PigUserMessage) : undefined
   const rest = user ? chunk.slice(1) : chunk
@@ -233,7 +265,8 @@ export function buildTurn(
     startedAt,
     endedAt,
     streaming,
-    hasProcess: process.length > 0 || streaming
+    hasProcess: process.length > 0 || streaming,
+    ...(renderKey ? { renderKey } : {})
   }
 }
 
@@ -254,7 +287,12 @@ export function groupTurns(
   }
   if (current.length) chunks.push(current)
   return chunks.map((chunk, i) =>
-    buildTurn(chunk, streaming && i === chunks.length - 1, thinkingDurations)
+    buildTurn(
+      chunk,
+      streaming && i === chunks.length - 1,
+      thinkingDurations,
+      renderKeyForMessages(chunk, i)
+    )
   )
 }
 

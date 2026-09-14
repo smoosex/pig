@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type {
   DisplayTurn,
+  DisplayTurnsResult,
   FollowUpAction,
   ProjectGroup,
   SessionControls,
@@ -57,6 +58,7 @@ export interface SessionsStore {
       expectedLeafId?: string | null
       expectedBranchRequest?: number
       branchViewId?: string
+      display?: DisplayTurnsResult
     }
   ) => Promise<boolean>
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>

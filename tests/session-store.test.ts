@@ -1,6 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { DisplayTurnsResult, ProjectGroup, SessionControls, SessionMeta } from '../src/shared/api'
+import type { DisplayTurnsResult, OpenSessionRef, ProjectGroup, SessionControls, SessionMeta } from '../src/shared/api'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -30,7 +30,11 @@ async function runFixture(name: string): Promise<void> {
   let processCalls = 0
   const api = {
     createSession: async () => ({ sessionId: meta.id, cwd: meta.cwd }),
-    openSession: async () => { openCalls++; return { sessionId: meta.id, cwd: meta.cwd } },
+    openSession: async (): Promise<OpenSessionRef> => {
+      openCalls++
+      return { sessionId: meta.id, cwd: meta.cwd, display: await api.getDisplayTurns() }
+    },
+    prepareSession: async () => ({ sessionId: meta.id, cwd: meta.cwd }),
     closeSession: async () => {},
     getControls: async () => controls(),
     getDisplayTurns: async () => history('current'),
@@ -48,7 +52,25 @@ async function runFixture(name: string): Promise<void> {
   const runtime = () => state().runtime[meta.id]
   await state().newSession(meta.cwd)
 
-  if (name === 'closed') {
+  if (name === 'open-failure') {
+    state().closeTab(meta.id)
+    const preparation = deferred<{ sessionId: string; cwd: string }>()
+    const started = deferred<void>()
+    api.prepareSession = () => { started.resolve(); return preparation.promise }
+    const opening = state().openExisting(meta)
+    const failure = new Error('preparation failed')
+    const rejected = assert.rejects(opening, (error) => error === failure)
+    await started.promise
+    assert.equal(runtime().turns[0].id, 'current')
+    preparation.reject(failure)
+    await rejected
+  } else if (name === 'open-controls-failure') {
+    state().closeTab(meta.id)
+    const failure = new Error('controls failed')
+    api.getControls = async () => { throw failure }
+    await assert.rejects(state().openExisting(meta), (error) => error === failure)
+    assert.equal(runtime().turns[0].id, 'current')
+  } else if (name === 'closed') {
     const response = deferred<DisplayTurnsResult>()
     api.getDisplayTurns = () => response.promise
     const pending = state().hydrateTurns(meta.id)
@@ -119,12 +141,12 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime().tokens.input, 100)
   } else if (name === 'duplicate-open') {
     state().closeTab(meta.id)
-    const response = deferred<{ sessionId: string; cwd: string }>()
+    const response = deferred<OpenSessionRef>()
     api.openSession = () => { openCalls++; return response.promise }
     const first = state().openExisting(meta)
     const second = state().openExisting(meta)
     await Promise.resolve()
-    response.resolve({ sessionId: meta.id, cwd: meta.cwd })
+    response.resolve({ sessionId: meta.id, cwd: meta.cwd, display: history('current') })
     await Promise.all([first, second])
     assert.equal(openCalls, 1)
     assert.equal(state().openTabs.length, 1)
@@ -152,19 +174,16 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime(), undefined)
   } else if (name === 'reopen-during-hydration') {
     state().closeTab(meta.id)
-    const initialHistory = deferred<DisplayTurnsResult>()
-    api.getDisplayTurns = () => initialHistory.promise
-    const added = deferred<void>()
-    const off = store.subscribe((current) => {
-      if (current.openTabs.length) added.resolve()
-    })
+    const preparation = deferred<{ sessionId: string; cwd: string }>()
+    const started = deferred<void>()
+    api.prepareSession = () => { started.resolve(); return preparation.promise }
     const first = state().openExisting(meta)
-    await added.promise
-    off()
+    await started.promise
     const closed = deferred<void>()
     api.closeSession = () => closed.promise
     state().closeTab(meta.id)
     api.getDisplayTurns = async () => history('reopened')
+    api.prepareSession = async () => ({ sessionId: meta.id, cwd: meta.cwd })
     const second = state().openExisting(meta)
     await Promise.resolve()
     await Promise.resolve()
@@ -172,7 +191,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(openCalls, 1)
     closed.resolve()
     await second
-    initialHistory.resolve(history('stale'))
+    preparation.resolve({ sessionId: meta.id, cwd: meta.cwd })
     await first
     assert.equal(openCalls, 2)
     assert.equal(runtime().turns[0].id, 'reopened')
@@ -200,11 +219,11 @@ async function runFixture(name: string): Promise<void> {
     state().rollbackPrompt(meta.id)
     assert.deepEqual(runtime().liveMessages.map((message) => message.timestamp), [1, 11])
   } else if (name === 'selection-order') {
-    const response = deferred<{ sessionId: string; cwd: string }>()
+    const response = deferred<OpenSessionRef>()
     api.openSession = () => response.promise
     const opening = state().openExisting({ ...meta, id: 'other', path: '/other.jsonl' })
     state().setActive(meta.id)
-    response.resolve({ sessionId: 'other', cwd: '/other' })
+    response.resolve({ sessionId: 'other', cwd: '/other', display: history('other') })
     await opening
     assert.equal(state().activeSessionId, meta.id)
     assert.equal(state().openTabs.length, 2)
@@ -245,6 +264,8 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'open-failure': 'preview is visible before preparation finishes and initialization errors propagate',
+    'open-controls-failure': 'control loading errors propagate from opening',
     closed: 'late requests and events do not recreate a closed session',
     reopened: 'old responses cannot overwrite a reopened instance of the same session',
     'history-order': 'only the latest history request can commit',
@@ -252,7 +273,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'controls-order': 'stale controls preserve new choices and queue events',
     'duplicate-open': 'concurrent opens share one SDK request and one tab',
     'close-reopen': 'reopening waits for the previous SDK instance to close',
-    'reopen-during-hydration': 'closing during initial hydration cannot reuse an already opened SDK reference',
+    'reopen-during-hydration': 'closing during preparation cannot reuse an already opened SDK reference',
     'process-dedup': 'process requests are shared and cannot recreate a closed session',
     'message-identity': 'tool results with the same timestamp retain separate identities',
     'consecutive-prompts': 'sending before history refresh preserves completed live messages',

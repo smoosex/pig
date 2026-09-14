@@ -68,6 +68,10 @@ export interface SessionRef {
   created?: boolean
 }
 
+export interface OpenSessionRef extends SessionRef {
+  display: DisplayTurnsResult
+}
+
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface SessionModelInfo {
@@ -127,6 +131,8 @@ export type DisplayAnswer =
 export interface DisplayTurn {
   id: string
   user?: DisplayUser
+  /** Original user-message timestamp used to preserve the live Turn DOM key. */
+  userTimestamp?: number
   answer: DisplayAnswer[]
   errorMessage?: string
   startedAt: number
@@ -237,7 +243,7 @@ export interface SessionApi {
   createSession: (cwd: string) => Promise<SessionRef>
   createChat: () => Promise<SessionRef>
   deleteChat: (cwd: string) => Promise<void>
-  openSession: (path: string) => Promise<SessionRef>
+  openSession: (path: string) => Promise<OpenSessionRef>
   closeSession: (sessionId: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<boolean>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>
