@@ -137,6 +137,10 @@ function pendingControls(
   }
 }
 
+/**
+ * Lifetime spend of the whole session file, not of the current branch: abandoned branches and
+ * entries before a compaction are counted too, which is what the usage popover reports.
+ */
 function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStats {
   const tokens = { ...emptyTokens }
   for (const entry of sessionManager.getEntries()) {
