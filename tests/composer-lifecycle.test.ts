@@ -60,7 +60,7 @@ async function runFixture(name: string): Promise<void> {
         onload: (() => void) | null = null
         onerror: (() => void) | null = null
         readAsDataURL() { reads.push(this) }
-        finish() { this.result = 'data:image/png;base64,image'; this.onload?.() }
+        finish(result = 'data:image/png;base64,image') { this.result = result; this.onload?.() }
         fail() { this.error = new Error('read failed'); this.onerror?.() }
       }
       Object.assign(globalThis, { FileReader: FakeFileReader })
@@ -92,6 +92,14 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(state.images.length, 0)
       assert.equal(state.error, null)
       assert.ok(revoked.includes(activeUrl))
+      assert.equal(revoked.length, 3)
+
+      // A zero-byte file reads as an empty payload; it has to surface as a failure instead of a
+      // thumbnail that can never render, and it must not leak a preview URL.
+      const empty = state.add([file()])
+      await act(async () => { reads[4].finish('data:image/png;base64,'); await empty })
+      assert.equal(state.images.length, 0)
+      assert.equal(state.error, '有图片读取失败，请重新粘贴。')
       assert.equal(revoked.length, 3)
     }
   } finally {

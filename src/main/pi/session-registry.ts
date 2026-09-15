@@ -230,9 +230,21 @@ export function isPendingDraft(sessionId: string): boolean {
   return pending.get(sessionId)?.needsMaterialize === true
 }
 
-export function sessionManagerFor(sessionId: string): SessionManager {
-  const session = sessionState(sessionId)
+/** The session manager of a live or pending session, or undefined when it is not registered. */
+export function findSessionManager(sessionId: string): SessionManager | undefined {
+  const session = live.get(sessionId) ?? pending.get(sessionId)
+  if (!session) return undefined
   return 'agentSession' in session ? session.agentSession.sessionManager : session.sessionManager
+}
+
+/**
+ * The manager is the persisted view of a session, so it exists before the SDK build does; callers
+ * that only read it do not need to prepare anything.
+ */
+export function sessionManagerFor(sessionId: string): SessionManager {
+  const sessionManager = findSessionManager(sessionId)
+  if (!sessionManager) throw new Error(`Session not found: ${sessionId}`)
+  return sessionManager
 }
 
 export async function viewSessionBranch(sessionId: string, tipId: string): Promise<string | null> {

@@ -117,16 +117,22 @@ export interface SlashCommand {
   source: SlashCommandSource
 }
 
+/** An image block a turn refers to; the bytes stay in main behind a pig-image URL. */
+export interface DisplayImage {
+  mimeType: string
+  url: string
+}
+
 export interface DisplayUser {
   text: string
-  images: { mimeType: string; data: string }[]
+  images: DisplayImage[]
   textAttachments: PastedTextAttachment[]
   textSegments?: PastedTextDisplaySegment[]
 }
 
 export type DisplayAnswer =
   | { type: 'text'; text: string }
-  | { type: 'image'; mimeType: string; data: string }
+  | ({ type: 'image' } & DisplayImage)
 
 export interface DisplayTurn {
   id: string

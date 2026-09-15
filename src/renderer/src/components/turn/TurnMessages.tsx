@@ -1,8 +1,8 @@
 import { memo, useState } from 'react'
 import { FileText } from 'lucide-react'
 import { formatPastedTextSize } from '../../../../shared/pasted-text'
-import type { ImageContent, PigUserMessage, TextContent } from '../../pi/types'
-import type { AnswerBlock } from '../../chat/turns'
+import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/types'
+import { turnImageSrc, type AnswerBlock } from '../../chat/turns'
 import { cn } from '../../lib/utils'
 import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
@@ -21,9 +21,9 @@ function userText(message: PigUserMessage): string {
     .join('')
 }
 
-function userImages(message: PigUserMessage): ImageContent[] {
+function userImages(message: PigUserMessage): PigImageContent[] {
   if (typeof message.content === 'string') return []
-  return message.content.filter((b): b is ImageContent => b.type === 'image')
+  return message.content.filter((b): b is PigImageContent => b.type === 'image')
 }
 
 function InlinePastedText({
@@ -50,7 +50,10 @@ function InlinePastedText({
 }
 
 export const UserBubble = memo(function UserBubble({ message }: { message: PigUserMessage }) {
-  const images = userImages(message)
+  const images = userImages(message).flatMap((image, i) => {
+    const src = turnImageSrc(image)
+    return src ? [{ key: i, src }] : []
+  })
   const text = userText(message)
   const textAttachments = message.pastedText?.attachments ?? []
   const segments = message.pastedText?.segments
@@ -61,18 +64,23 @@ export const UserBubble = memo(function UserBubble({ message }: { message: PigUs
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
         {images.length > 0 ? (
           <div className="flex flex-wrap justify-end gap-1.5">
-            {images.map((image, i) => {
-              const src = `data:${image.mimeType};base64,${image.data}`
+            {images.map(({ key, src }) => {
               return (
                 <Button
-                  key={i}
+                  key={key}
                   type="button"
                   variant="ghost"
                   className="block h-auto rounded-md p-0 hover:bg-transparent"
                   aria-label="预览图片"
                   onClick={() => setPreview(src)}
                 >
-                  <img src={src} alt="" className="h-10 max-w-16 cursor-pointer rounded-md object-cover" />
+                  <img
+                    src={src}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-10 max-w-16 cursor-pointer rounded-md object-cover"
+                  />
                 </Button>
               )
             })}
@@ -128,18 +136,21 @@ export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: A
   return (
     <Message align="start" className="mb-4">
       <MessageContent className="w-fit max-w-9/10 gap-1.5 px-1">
-        {blocks.map((block, i) =>
-          block.type === 'text' ? (
-            <MarkdownText key={i} text={block.text} />
-          ) : (
+        {blocks.map((block, i) => {
+          if (block.type === 'text') return <MarkdownText key={i} text={block.text} />
+          const src = turnImageSrc(block.image)
+          if (!src) return null
+          return (
             <img
               key={i}
               className="my-1.5 block max-w-90 rounded-lg"
-              src={`data:${block.image.mimeType};base64,${block.image.data}`}
+              src={src}
+              loading="lazy"
+              decoding="async"
               alt=""
             />
           )
-        )}
+        })}
         {errorMessage ? <div className="mt-1.5 text-xs text-destructive">{errorMessage}</div> : null}
       </MessageContent>
     </Message>

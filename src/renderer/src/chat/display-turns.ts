@@ -1,18 +1,17 @@
 import type { DisplayTurn, DisplayUser } from '../../../shared/api'
 import { composePromptText, type PastedTextDisplayMetadata } from '../../../shared/pasted-text'
+import type { PigImageContent } from '../pi/types'
 import { renderKeyForUser, type ProcessItem, type Turn } from './turns'
 
 /** The persisted text a live prompt used before inline pasted-text metadata existed. */
-function renderKeyContent(user: DisplayUser): string | Array<
-  { type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string }
-> {
+function renderKeyContent(user: DisplayUser): string | Array<{ type: 'text'; text: string } | PigImageContent> {
   const text = user.textSegments || user.textAttachments.length === 0
     ? user.text
     : composePromptText(user.text, user.textAttachments)
   if (user.images.length === 0) return text
   return [
     ...(text ? [{ type: 'text' as const, text }] : []),
-    ...user.images.map((image) => ({ type: 'image' as const, mimeType: image.mimeType, data: image.data }))
+    ...user.images.map((image) => ({ type: 'image' as const, mimeType: image.mimeType, url: image.url }))
   ]
 }
 
@@ -27,7 +26,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
               ...display.user.images.map((image) => ({
                 type: 'image' as const,
                 mimeType: image.mimeType,
-                data: image.data
+                url: image.url
               }))
             ]
           : display.user.text,
@@ -49,7 +48,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
         ? block
         : {
             type: 'image' as const,
-            image: { type: 'image', mimeType: block.mimeType, data: block.data }
+            image: { type: 'image' as const, mimeType: block.mimeType, url: block.url }
           }
     ),
     errorMessage: display.errorMessage,

@@ -14,6 +14,14 @@ import {
   type PastedTextAttachmentInput,
   type PastedTextDisplayMetadata
 } from '../../shared/pasted-text'
+import { isImagePayload } from '../../shared/session-images'
+
+/** A `data:` URL puts the payload after its comma; the session file always stores raw base64. */
+function stripDataUrl(data: string): string {
+  if (!data.startsWith('data:')) return data
+  const comma = data.indexOf(',')
+  return comma === -1 ? '' : data.slice(comma + 1)
+}
 
 export interface SessionPromptInput {
   text: unknown
@@ -57,19 +65,15 @@ export function normalizeSessionPrompt(input: SessionPromptInput) {
       ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments)
       : { body, attachments: textAttachments }
     : undefined
-  const attachments = (Array.isArray(input.images) ? input.images : [])
-    .filter(
-      (image) =>
-        typeof image?.mimeType === 'string' &&
-        image.mimeType.startsWith('image/') &&
-        typeof image?.data === 'string' &&
-        image.data.length > 0
-    )
-    .map((image) => ({
-      type: 'image' as const,
-      mimeType: image.mimeType,
-      data: image.data.includes(',') ? image.data.slice(image.data.indexOf(',') + 1) : image.data
-    }))
+  const attachments = (Array.isArray(input.images) ? input.images : []).flatMap((image) => {
+    const { mimeType, data } = (image ?? {}) as { mimeType?: unknown; data?: unknown }
+    if (typeof data !== 'string') return []
+    // The payload is validated as it will be stored, so nothing the reader cannot decode is written.
+    const payload = { mimeType, data: stripDataUrl(data) }
+    return isImagePayload(payload)
+      ? [{ type: 'image' as const, mimeType: payload.mimeType, data: payload.data }]
+      : []
+  })
 
   const namingText = inlineAttachments ? stripPastedTextAttachments(body, inlineAttachments) : body
   return {

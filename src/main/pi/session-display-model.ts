@@ -1,5 +1,12 @@
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
-import type { DisplayAnswer, DisplayTurn, DisplayTurnsResult, DisplayUser } from '../../shared/api'
+import type {
+  DisplayAnswer,
+  DisplayImage,
+  DisplayTurn,
+  DisplayTurnsResult,
+  DisplayUser
+} from '../../shared/api'
+import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '../../shared/session-images'
 import {
   createInlinePastedTextDisplayMetadata,
   isPastedTextMetadata,
@@ -115,6 +122,8 @@ function* groupPath(items: Iterable<PathMessage>): Generator<PathMessage[]> {
 
 function displayUser(
   message: Record<string, unknown>,
+  sessionId: string,
+  entryId: string,
   pastedText?: PastedTextMetadata
 ): DisplayUser | undefined {
   if (message.role !== 'user') return undefined
@@ -129,15 +138,10 @@ function displayUser(
         .join('')
       : ''
   if (Array.isArray(content)) {
-    for (const block of content) {
-      if (
-        block?.type === 'image' &&
-        typeof block.mimeType === 'string' &&
-        typeof block.data === 'string'
-      ) {
-        images.push({ mimeType: block.mimeType, data: block.data })
-      }
-    }
+    content.forEach((block, index) => {
+      const image = isImageBlock(block) ? displayImage(sessionId, entryId, index, block) : null
+      if (image) images.push(image)
+    })
   }
   if (
     pastedText &&
@@ -184,39 +188,52 @@ function lastToolCallIndex(content: unknown): number {
   return -1
 }
 
-function asAnswer(block: {
-  type?: string
-  text?: string
-  mimeType?: string
-  data?: string
-}): DisplayAnswer | null {
-  if (block.type === 'text' && block.text) return { type: 'text', text: block.text }
-  if (block.type === 'image' && block.mimeType && block.data) {
-    return { type: 'image', mimeType: block.mimeType, data: block.data }
-  }
-  return null
+function asAnswer(
+  block: Record<string, unknown>,
+  sessionId: string,
+  entryId: string,
+  index: number
+): DisplayAnswer | null {
+  if (block.type === 'text' && block.text) return { type: 'text', text: block.text as string }
+  const image = isImageBlock(block) ? displayImage(sessionId, entryId, index, block) : null
+  return image ? { type: 'image', ...image } : null
 }
 
-function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
-  const messages = chunk.map((item) => item.message)
+/**
+ * The URL the protocol will answer with, paired with the type it will serve: content-type
+ * parameters are dropped there, so the display has to report the same type.
+ */
+function displayImage(
+  sessionId: string,
+  entryId: string,
+  index: number,
+  block: ImageBlock
+): DisplayImage | null {
+  const mimeType = imageMimeType(block.mimeType)
+  return mimeType ? { mimeType, url: sessionImageUrl(sessionId, entryId, index) } : null
+}
+
+function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTurn, 'id'> {
   const userEntry = chunk[0]
-  const userMsg = messages[0]?.role === 'user' ? messages[0] : undefined
-  const rest = userMsg ? messages.slice(1) : messages
-  const user = userMsg ? displayUser(userMsg, userEntry.pastedText) : undefined
+  const userMsg = userEntry.message.role === 'user' ? userEntry.message : undefined
+  const rest = userMsg ? chunk.slice(1) : chunk
+  const user = userMsg ? displayUser(userMsg, sessionId, userEntry.id, userEntry.pastedText) : undefined
 
   let lastAssistant = -1
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i].role === 'assistant') lastAssistant = i
+    if (rest[i].message.role === 'assistant') lastAssistant = i
   }
 
   let hasProcess = false
   let answer: DisplayAnswer[] = []
   let errorMessage: string | undefined
 
-  rest.forEach((message, i) => {
+  rest.forEach((entry, i) => {
+    const message = entry.message
     if (message.role === 'assistant') {
       const isLast = i === lastAssistant
-      const trailingIsAnswer = isLast && rest.slice(i + 1).every((item) => item.role !== 'toolResult')
+      const trailingIsAnswer =
+        isLast && rest.slice(i + 1).every((item) => item.message.role !== 'toolResult')
       const splitAt = lastToolCallIndex(message.content)
       const splitTrailing = isLast && splitAt >= 0
       const content = Array.isArray(message.content) ? message.content : []
@@ -233,7 +250,7 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
           hasProcess = true
           return
         }
-        const item = asAnswer(block)
+        const item = asAnswer(block, sessionId, entry.id, index)
         if (!item) return
         if (toAnswer) blocks.push(item)
         else pulled.push(item)
@@ -266,7 +283,7 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
   const timeOf = (value: unknown): number | undefined =>
     typeof value === 'number' && Number.isFinite(value) ? value : undefined
   const startedAt =
-    timeOf(rest[0]?.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
+    timeOf(rest[0]?.message.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
   const endedAt = chunk[chunk.length - 1]?.persistedAt ?? startedAt
 
   return {
@@ -280,10 +297,10 @@ function summarizeChunk(chunk: PathMessage[]): Omit<DisplayTurn, 'id'> {
   }
 }
 
-export function displayTurnsFromEntries(entries: SessionEntry[]): DisplayTurn[] {
+export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry[]): DisplayTurn[] {
   return Array.from(groupPath(pathMessages(entries)), (chunk) => ({
     id: chunk[0].id,
-    ...summarizeChunk(chunk)
+    ...summarizeChunk(chunk, sessionId)
   }))
 }
 
@@ -291,7 +308,7 @@ export function displayTurnsFromEntries(entries: SessionEntry[]): DisplayTurn[] 
 export function displayResultFor(sessionManager: SessionManager): DisplayTurnsResult {
   return {
     leafId: sessionManager.getLeafId(),
-    turns: displayTurnsFromEntries(sessionManager.getBranch())
+    turns: displayTurnsFromEntries(sessionManager.getSessionId(), sessionManager.getBranch())
   }
 }
 
@@ -299,8 +316,15 @@ export function turnMessagesFromEntries(entries: SessionEntry[], turnId: string)
   // A disclosure needs one turn; stop projecting history at that turn's boundary.
   for (const group of groupPath(pathMessages(entries))) {
     if (group.some((item) => item.id === turnId)) {
-      return group.map((item) => ({ ...item.message, persistedAt: item.persistedAt }))
+      return group.map((item) => withoutImages({ ...item.message, persistedAt: item.persistedAt }))
     }
   }
   throw new Error(`Turn not found: ${turnId}`)
+}
+
+/** The process panel renders text only, so image bytes never travel with a disclosure. */
+function withoutImages(message: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(message.content)) return message
+  const content = message.content.filter((block) => !isImageBlock(block))
+  return content.length === message.content.length ? message : { ...message, content }
 }

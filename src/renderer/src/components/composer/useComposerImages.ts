@@ -29,10 +29,17 @@ function readImage(file: File): Promise<PastedImage> {
         return
       }
       const comma = reader.result.indexOf(',')
+      const data = comma === -1 ? reader.result : reader.result.slice(comma + 1)
+      // A zero-byte file decodes to nothing; accepting it would only produce a thumbnail that
+      // never renders and an image the prompt path drops without saying so.
+      if (data.length === 0) {
+        reject(new Error('Empty image file'))
+        return
+      }
       resolve({
         id: crypto.randomUUID(),
         mimeType: file.type || 'image/png',
-        data: comma === -1 ? reader.result : reader.result.slice(comma + 1),
+        data,
         url: URL.createObjectURL(file)
       })
     }

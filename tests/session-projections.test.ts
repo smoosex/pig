@@ -34,6 +34,23 @@ describe('prompt input projection', () => {
     expect(prompt.images).toEqual([{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' }])
     expect(prompt.namingText).toBe('正文')
   })
+
+  test('keeps the image types the reader can serve and drops what it cannot', () => {
+    const prompt = normalizeSessionPrompt({
+      text: '看图',
+      images: [
+        { mimeType: 'image/svg+xml;charset=utf-8', data: 'QUJD' },
+        { mimeType: 'image/png', data: 'data:image/png;base64,' },
+        { mimeType: 'application/octet-stream', data: 'QUJD' },
+        // A data URL whose payload is not base64 would become a URL that always 404s.
+        { mimeType: 'image/png', data: 'data:image/svg+xml,%3Csvg%3E' },
+        { mimeType: 'image/png', data: 'QUJDQ' }
+      ]
+    })
+    expect(prompt.images).toEqual([
+      { type: 'image', mimeType: 'image/svg+xml;charset=utf-8', data: 'QUJD' }
+    ])
+  })
 })
 
 describe('session tree projection', () => {

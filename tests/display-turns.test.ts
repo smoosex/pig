@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { composePromptText } from '../src/shared/pasted-text'
 import type { DisplayTurn } from '../src/shared/api'
-import { renderKeyForUser, type ProcessItem } from '../src/renderer/src/chat/turns'
+import { renderKeyForUser, turnImageSrc, type ProcessItem } from '../src/renderer/src/chat/turns'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
@@ -11,6 +11,8 @@ const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
 describe('display turn projection', () => {
   test('preserves live render keys across text normalization and image projection', () => {
     const image = { type: 'image' as const, mimeType: 'image/png', data: 'AA==' }
+    // Persisted turns carry the URL; the key only has to count the image either way.
+    const persistedImage = { mimeType: 'image/png', url: 'pig-image://session/s/turn/1' }
     for (const content of [
       'hello',
       [{ type: 'text' as const, text: 'hello' }],
@@ -21,7 +23,9 @@ describe('display turn projection', () => {
       const text = typeof content === 'string'
         ? content
         : content.filter((block) => block.type === 'text').map((block) => block.text).join('')
-      const images = typeof content === 'string' ? [] : content.filter((block) => block.type === 'image')
+      const images = typeof content === 'string'
+        ? []
+        : content.filter((block) => block.type === 'image').map(() => persistedImage)
       const persisted = toTurn(display({
         userTimestamp: 42,
         user: { text, images, textAttachments: [] }
@@ -58,7 +62,7 @@ describe('display turn projection', () => {
   })
 
   test('maps image-only user prompts and mixed answer blocks without empty text', () => {
-    const image = { mimeType: 'image/png', data: 'AA==' }
+    const image = { mimeType: 'image/png', url: 'pig-image://session/s/turn/1' }
     const text = { type: 'text' as const, text: '答案' }
     const turn = toTurn(display({
       user: { text: '', images: [image], textAttachments: [] },
@@ -67,6 +71,14 @@ describe('display turn projection', () => {
     expect(turn.user?.content).toEqual([{ type: 'image', ...image }])
     expect(turn.answer).toEqual([text, { type: 'image', image: { type: 'image', ...image } }])
     expect(turn.answer[0]).toBe(text)
+  })
+
+  test('renders persisted images through their URL and unsaved ones from their bytes', () => {
+    expect(turnImageSrc({ type: 'image', mimeType: 'image/png', url: 'pig-image://session/s/turn/1' }))
+      .toBe('pig-image://session/s/turn/1')
+    expect(turnImageSrc({ type: 'image', mimeType: 'image/png', data: 'AA==' }))
+      .toBe('data:image/png;base64,AA==')
+    expect(turnImageSrc({ type: 'image', mimeType: 'image/png' })).toBeUndefined()
   })
 
   test('keeps assistant-only errors and history metadata intact', () => {

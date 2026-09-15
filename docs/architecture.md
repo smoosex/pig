@@ -8,8 +8,10 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 | 位置 | 职责 |
 | --- | --- |
 | `src/shared/api.ts` | 跨进程 DTO 与 `SessionApi`，不依赖 Electron 或 React |
+| `src/shared/session-images.ts` | `pig-image` URL 的形状与解析；renderer 只把 url 当不透明字符串 |
 | `src/preload/index.ts` | IPC 白名单，用共享契约检查暴露的接口 |
 | `src/main/ipc/` | 接收请求、解析窗口、调用业务模块、返回 DTO |
+| `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节 |
 | `src/renderer/src/ipc/api.ts` | renderer 的接口入口，复用共享类型 |
 
 新增跨进程字段时先改共享契约，再改 main 的生产端和 renderer 的消费端。
@@ -26,8 +28,15 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 不呈现全局默认值。
 
 `session-display` / `session-display-model` 从 JSONL 生成轻量的对话轮次，
-过程详情按需读取。`event-bridge` 发布正在运行的 Pi 事件及队列状态。
-这些模块不依赖 React，也不维护另一套聊天记录。
+过程详情按需读取。轮次里的图片只带 `pig-image://session/<sessionId>/<entryId>/<blockIndex>`
+URL，base64 字节由 `session-image-protocol` 在真正渲染时按需返回，所以长会话的轮次载荷
+不会随历史图片增长；未落盘的实时消息仍然内联 base64。写入端与读取端共用
+`shared/session-images` 的判据（`isImagePayload` / `imageBlockPayload`）：`prompt-input` 用它决定
+能落盘什么，读取端用它决定能返回什么，所以写入端接受的东西一定能取回（content-type 参数会被
+归一化掉）。投影只做结构判定（type / mime / 非空），不扫 base64：这个会话的图片 base64
+有 61MB，全量扫一遍要 180ms，而投影本身只要 4ms，所以字节由读取端在真正取图时判定，被拒绝的
+块表现为缺图。`event-bridge` 发布正在运行的 Pi 事件及队列状态。这些模块不依赖
+React，也不维护另一套聊天记录。
 
 `worktrees.ts` 负责 Git 工作目录的串行变更、命名和删除保护；
 `project-worktrees.ts` 负责项目与工作目录的组合查询。分支命名继续使用

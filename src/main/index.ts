@@ -5,6 +5,10 @@ import { registerIpc } from './ipc'
 import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
+import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
+
+// The renderer loads persisted images through this scheme, so it must be granted before ready.
+registerSessionImageScheme()
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('dev.pig.desktop')
@@ -13,6 +17,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  handleSessionImages()
   void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
   createMainWindow()

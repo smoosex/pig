@@ -2,8 +2,8 @@ import type {
   AssistantMessage,
   BashExecutionMessage,
   CustomMessage,
-  ImageContent,
   PiMessage,
+  PigImageContent,
   PigUserMessage,
   TextContent,
   ToolCall,
@@ -33,7 +33,13 @@ export type ProcessItem =
 
 export type AnswerBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; image: ImageContent }
+  | { type: 'image'; image: PigImageContent }
+
+/** Persisted images resolve through the pig-image scheme; unsaved ones still carry bytes inline. */
+export function turnImageSrc(image: PigImageContent): string | undefined {
+  if (image.url) return image.url
+  return image.data ? `data:${image.mimeType};base64,${image.data}` : undefined
+}
 
 export interface Turn {
   id?: string
