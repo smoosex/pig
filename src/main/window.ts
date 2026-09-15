@@ -3,8 +3,12 @@ import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { is } from '@electron-toolkit/utils'
+import { createAppUrlCheck, installNavigationGuard } from './app-url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+/** External links belong in the user's browser; anything else would run outside the app's UI. */
+const EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:']
 
 function resolvePreload(): string {
   const preloadDir = join(__dirname, '../preload')
@@ -16,6 +20,9 @@ function resolvePreload(): string {
 }
 
 export function createMainWindow(): BrowserWindow {
+  const rendererHtml = join(__dirname, '../renderer/index.html')
+  const devServer = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+  const isAppUrl = createAppUrlCheck({ devServer, rendererHtml })
   const mainWindow = new BrowserWindow({
     width: 1100,
     height: 760,
@@ -36,15 +43,19 @@ export function createMainWindow(): BrowserWindow {
   mainWindow.on('page-title-updated', (event) => event.preventDefault())
   mainWindow.on('ready-to-show', () => mainWindow.show())
 
+  // The preload bridge is attached to whatever document this window shows, so navigation is limited
+  // to the app itself.
+  installNavigationGuard(mainWindow.webContents, isAppUrl)
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url)
+    if (EXTERNAL_PROTOCOLS.includes(new URL(details.url).protocol)) void shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (devServer) {
+    void mainWindow.loadURL(devServer)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(rendererHtml)
   }
 
   return mainWindow

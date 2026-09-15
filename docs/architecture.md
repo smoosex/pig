@@ -12,6 +12,7 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 | `src/preload/index.ts` | IPC 白名单，用共享契约检查暴露的接口 |
 | `src/main/ipc/` | 接收请求、解析窗口、调用业务模块、返回 DTO |
 | `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节 |
+| `src/main/app-url.ts` | 窗口只允许停在自己的 UI 上（含重定向） |
 | `src/renderer/src/ipc/api.ts` | renderer 的接口入口，复用共享类型 |
 
 新增跨进程字段时先改共享契约，再改 main 的生产端和 renderer 的消费端。
@@ -35,7 +36,8 @@ URL，base64 字节由 `session-image-protocol` 在真正渲染时按需返回�
 能落盘什么，读取端用它决定能返回什么，所以写入端接受的东西一定能取回（content-type 参数会被
 归一化掉）。投影只做结构判定（type / mime / 非空），不扫 base64：这个会话的图片 base64
 有 61MB，全量扫一遍要 180ms，而投影本身只要 4ms，所以字节由读取端在真正取图时判定，被拒绝的
-块表现为缺图。`event-bridge` 发布正在运行的 Pi 事件及队列状态。这些模块不依赖
+块表现为缺图。窗口导航由 `app-url` 限制在自己 UI（dev server 或打包入口）之内，因为 preload 桥
+会附着到窗口里的任何文档上。`event-bridge` 发布正在运行的 Pi 事件及队列状态。这些模块不依赖
 React，也不维护另一套聊天记录。
 
 `worktrees.ts` 负责 Git 工作目录的串行变更、命名和删除保护；
