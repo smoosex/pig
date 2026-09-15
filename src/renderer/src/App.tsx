@@ -14,6 +14,7 @@ import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
+import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
 
 function ThemeSync() {
@@ -29,6 +30,15 @@ function ThemeSync() {
     media.addEventListener('change', onChange)
     return () => media.removeEventListener('change', onChange)
   }, [appearance, lightTheme, darkTheme])
+
+  return null
+}
+
+function HighlighterWarmup() {
+  useEffect(() => {
+    const idle = requestIdleCallback(() => prewarmHighlighter(), { timeout: 3000 })
+    return () => cancelIdleCallback(idle)
+  }, [])
 
   return null
 }
@@ -96,6 +106,7 @@ export default function App() {
   return (
     <TooltipProvider>
       <ThemeSync />
+      <HighlighterWarmup />
       <div className="flex h-full flex-col bg-background">
         <div className="drag flex h-10 shrink-0 items-center">
           <div className={cn('flex h-full shrink-0 items-center pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>

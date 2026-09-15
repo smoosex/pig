@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -16,9 +16,13 @@ const remarkPlugins = [remarkGfm, remarkMath]
 const rehypePlugins = [rehypeKatex]
 
 function CodeFence({ lang, code }: { lang: string; code: string }) {
-  const html = useHighlightHtml(code, lang || 'plaintext')
+  const ref = useRef<HTMLDivElement>(null)
+  const html = useHighlightHtml(code, lang || 'plaintext', ref)
   return (
-    <div className="my-2 max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      ref={ref}
+      className="my-2 max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {html ? (
         <div
           className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"

@@ -15,10 +15,14 @@ async function fixture(scenario: string): Promise<void> {
     let creations = 0
     let loads = 0
     let renders = 0
+    const engines: unknown[] = []
     const loaded = new Set<string>()
     mock.module('shiki', () => ({
       bundledLanguages: { python: {}, typescript: {} },
-      createJavaScriptRegexEngine: () => ({}),
+      createOnigurumaEngine: (wasm: unknown) => {
+        engines.push(wasm)
+        return {}
+      },
       createHighlighter: async () => {
         creations++
         if (creations === 1) throw new Error('Highlighter initialization failed')
@@ -49,10 +53,12 @@ async function fixture(scenario: string): Promise<void> {
     assert.equal(renders, 2)
     assert.equal(await highlightHtml('first', 'python', 'github-light'), 'github-light:python:first')
     assert.equal(await highlightHtml('unknown', 'not-a-language'), 'github-dark:plaintext:unknown')
-    for (let i = 0; i < 70; i++) await highlightHtml(String(i), 'plaintext')
+    assert.equal(engines.length, 2, 'the retry rebuilds the engine')
+    assert.equal(typeof engines[0], 'function', 'highlighting runs on the WASM engine, not the JS one')
+    for (let i = 0; i < 205; i++) await highlightHtml(String(i), 'plaintext')
     const before = renders
     await highlightHtml('first', 'python')
-    assert.equal(renders, before + 1)
+    assert.equal(renders, before + 1, 'the cache evicts entries past its cap')
     return
   }
 
@@ -94,7 +100,7 @@ async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  const { act, createElement } = await import('react')
+  const { act, createElement, useRef } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const container = document.createElement('div')
   document.body.append(container)
@@ -196,7 +202,7 @@ async function fixture(scenario: string): Promise<void> {
     } else if (scenario === 'highlight-fallback') {
       mock.module('shiki', () => ({
         bundledLanguages: {},
-        createJavaScriptRegexEngine: () => ({}),
+        createOnigurumaEngine: () => ({}),
         createHighlighter: async () => { throw new Error('Unavailable grammar engine') }
       }))
       const { useHighlightHtml } = await import('../src/renderer/src/lib/highlight')
@@ -213,6 +219,101 @@ async function fixture(scenario: string): Promise<void> {
         await new Promise<void>((resolve) => setImmediate(resolve))
       })
       assert.equal(container.textContent, 'fallback code')
+    } else if (scenario === 'highlight-viewport') {
+      const rendered: string[] = []
+      mock.module('shiki', () => ({
+        bundledLanguages: { typescript: {} },
+        createOnigurumaEngine: () => ({}),
+        createHighlighter: async () => ({
+          getLoadedLanguages: () => ['plaintext'],
+          loadLanguage: async () => {},
+          codeToHtml: (code: string) => { rendered.push(code); return `hl-${code}` }
+        })
+      }))
+      mock.module('shiki/wasm', () => ({ default: () => ({}) }))
+      const frames: FrameRequestCallback[] = []
+      globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length }
+      globalThis.cancelAnimationFrame = () => {}
+      async function flush() {
+        for (let pass = 0; pass < 4; pass++) {
+          for (const frame of frames.splice(0)) frame(0)
+          await new Promise<void>((resolve) => setImmediate(resolve))
+        }
+      }
+      const observers: FakeObserver[] = []
+      class FakeObserver {
+        targets = new Set<Element>()
+        callback: IntersectionObserverCallback
+        options?: IntersectionObserverInit
+        constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+          this.callback = callback
+          this.options = options
+          observers.push(this)
+        }
+        observe(target: Element) { this.targets.add(target) }
+        unobserve(target: Element) { this.targets.delete(target) }
+        disconnect() { this.targets.clear() }
+        takeRecords(): IntersectionObserverEntry[] { return [] }
+        enter(...elements: Element[]) {
+          this.callback(elements.map((target) => ({ target, isIntersecting: true }) as IntersectionObserverEntry), this as unknown as IntersectionObserver)
+        }
+      }
+      globalThis.IntersectionObserver = FakeObserver as unknown as typeof IntersectionObserver
+      const { useHighlightHtml } = await import('../src/renderer/src/lib/highlight')
+      function Block({ n }: { n: number }) {
+        const ref = useRef<HTMLDivElement>(null)
+        const html = useHighlightHtml(`block-${n}`, 'plaintext', ref)
+        return createElement('pre', { ref }, html ?? `plain-${n}`)
+      }
+      function Probe() {
+        return createElement('div', null, [0, 1, 2, 3].map((n) => createElement(Block, { key: n, n })))
+      }
+      await act(async () => { root.render(createElement(Probe)) })
+      await act(flush)
+      const blocks = [...container.querySelectorAll('pre')]
+      assert.equal(rendered.length, 0, 'nothing highlights before the observer reports visibility')
+      assert.deepEqual(blocks.map((el) => el.textContent), ['plain-0', 'plain-1', 'plain-2', 'plain-3'])
+      assert.equal(observers.length, 1, 'one observer serves every block')
+      assert.equal(observers[0]!.options?.rootMargin, '600px 0px')
+      const observer = observers[0]!
+      assert.equal(observer.targets.size, 4)
+      await act(async () => { observer.enter(blocks[1]!, blocks[3]!) })
+      await act(flush)
+      assert.deepEqual(blocks.map((el) => el.textContent), ['plain-0', 'hl-block-1', 'plain-2', 'hl-block-3'])
+      assert.equal(rendered.length, 2)
+      assert.equal(observer.targets.size, 2, 'highlighted blocks stop being observed')
+      await act(async () => { observer.enter(blocks[0]!) })
+      await act(flush)
+      assert.equal(blocks[0]!.textContent, 'hl-block-0')
+      assert.equal(rendered.length, 3)
+    } else if (scenario === 'highlight-no-observer') {
+      const rendered: string[] = []
+      mock.module('shiki', () => ({
+        bundledLanguages: { typescript: {} },
+        createOnigurumaEngine: () => ({}),
+        createHighlighter: async () => ({
+          getLoadedLanguages: () => ['plaintext'],
+          loadLanguage: async () => {},
+          codeToHtml: (code: string) => { rendered.push(code); return `hl-${code}` }
+        })
+      }))
+      globalThis.IntersectionObserver = undefined as unknown as typeof IntersectionObserver
+      mock.module('shiki/wasm', () => ({ default: () => ({}) }))
+      const frames: FrameRequestCallback[] = []
+      globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length }
+      globalThis.cancelAnimationFrame = () => {}
+      const { useHighlightHtml } = await import('../src/renderer/src/lib/highlight')
+      function Block() {
+        const ref = useRef<HTMLDivElement>(null)
+        const html = useHighlightHtml('block-0', 'plaintext', ref)
+        return createElement('pre', { ref }, html ?? 'plain-0')
+      }
+      await act(async () => { root.render(createElement(Block)) })
+      for (let pass = 0; pass < 4; pass++) {
+        await act(async () => { for (const frame of frames.splice(0)) frame(0); await new Promise<void>((resolve) => setImmediate(resolve)) })
+      }
+      assert.equal(container.textContent, 'hl-block-0', 'without an observer every block still highlights')
+      assert.deepEqual(rendered, ['block-0'])
     } else {
       assert.fail(`Unknown scenario: ${scenario}`)
     }
@@ -226,7 +327,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--rendering-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['highlight', 'mermaid', 'model-controls', 'worked-label', 'turn-timer', 'turn-process', 'highlight-fallback']) {
+  for (const scenario of ['highlight', 'mermaid', 'model-controls', 'worked-label', 'turn-timer', 'turn-process', 'highlight-fallback', 'highlight-viewport', 'highlight-no-observer']) {
     test(`rendering lifecycle: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--rendering-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

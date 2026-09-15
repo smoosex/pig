@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { BashExecutionMessage } from '../../pi/types'
 import { resultText, toolStepLabel, type ToolStep } from '../../chat/turns'
 import { langFromPath, useHighlightHtml } from '../../lib/highlight'
@@ -38,9 +38,13 @@ function EditDiff({ edits }: { edits: { oldText: string; newText: string }[] }) 
 }
 
 function CodePanel({ path, code, notice }: { path: string; code: string; notice?: string }) {
-  const html = useHighlightHtml(code, langFromPath(path))
+  const ref = useRef<HTMLDivElement>(null)
+  const html = useHighlightHtml(code, langFromPath(path), ref)
   return (
-    <div className="max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      ref={ref}
+      className="max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {html ? (
         <div
           className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"

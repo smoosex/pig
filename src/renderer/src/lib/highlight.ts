@@ -1,27 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import {
   createHighlighter,
-  createJavaScriptRegexEngine,
+  createOnigurumaEngine,
   bundledLanguages,
   type BundledLanguage,
   type Highlighter
 } from 'shiki'
 import { useDarkMode } from './useDarkMode'
 
-const engine = createJavaScriptRegexEngine({ forgiving: true })
-
 let ready: Promise<Highlighter> | undefined
 
+// The WASM engine is several times faster than the JS regex engine on real sessions and carries its
+// own chunk, so it is only paid for once highlighting is actually wanted.
 function highlighter(): Promise<Highlighter> {
-  ready ??= createHighlighter({
-    engine,
-    themes: ['github-dark', 'github-light'],
-    langs: ['plaintext', 'typescript', 'tsx', 'javascript', 'jsx', 'json']
-  }).catch((error) => {
-    ready = undefined
-    throw error
-  })
+  ready ??= import('shiki/wasm')
+    .then(({ default: wasm }) =>
+      createHighlighter({
+        engine: createOnigurumaEngine(wasm),
+        themes: ['github-dark', 'github-light'],
+        langs: ['plaintext', 'typescript', 'tsx', 'javascript', 'jsx', 'json']
+      })
+    )
+    .catch((error) => {
+      ready = undefined
+      throw error
+    })
   return ready
+}
+
+/** Engine startup and grammar compiles would otherwise happen while the first transcript paints. */
+export function prewarmHighlighter(): void {
+  void highlighter().catch((error) => console.warn('shiki highlighter warm-up failed:', error))
 }
 
 const EXT: Record<string, string> = {
@@ -76,8 +85,8 @@ export function langFromPath(path: string): string {
 }
 
 type HighlightTheme = 'github-dark' | 'github-light'
-const MAX_CACHE_CHARS = 1_000_000
-const MAX_CACHE_ENTRIES = 64
+const MAX_CACHE_CHARS = 4_000_000
+const MAX_CACHE_ENTRIES = 200
 const cache = new Map<string, string>()
 const pending = new Map<string, Promise<string>>()
 const loadingLanguages = new Map<string, Promise<void>>()
@@ -130,10 +139,50 @@ export function highlightHtml(code: string, lang: string, theme: HighlightTheme 
   return promise
 }
 
-export function useHighlightHtml(code: string, lang: string): string | undefined {
+function useInView(ref?: RefObject<Element | null>): boolean {
+  const [visible, setVisible] = useState(!ref || typeof IntersectionObserver === 'undefined')
+  useEffect(() => {
+    const element = ref?.current
+    if (!ref || !element || typeof IntersectionObserver === 'undefined') {
+      setVisible(true)
+      return
+    }
+    const observer = sharedObserver()
+    watchers.set(element, () => setVisible(true))
+    observer.observe(element)
+    return () => {
+      watchers.delete(element)
+      observer.unobserve(element)
+    }
+  }, [ref])
+  return visible
+}
+
+// Mounted turns can hold hundreds of code blocks while only a couple of them are on screen, so
+// highlighting waits until a block is close to the viewport and then never undoes itself.
+const VIEWPORT_MARGIN = '600px 0px'
+const watchers = new WeakMap<Element, () => void>()
+let visibility: IntersectionObserver | undefined
+
+function sharedObserver(): IntersectionObserver {
+  visibility ??= new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      const notify = watchers.get(entry.target)
+      watchers.delete(entry.target)
+      visibility?.unobserve(entry.target)
+      notify?.()
+    }
+  }, { rootMargin: VIEWPORT_MARGIN })
+  return visibility
+}
+
+export function useHighlightHtml(code: string, lang: string, ref?: RefObject<Element | null>): string | undefined {
   const theme = useDarkMode() ? 'github-dark' : 'github-light'
+  const visible = useInView(ref)
   const [result, setResult] = useState<{ code: string; lang: string; theme: HighlightTheme; html: string }>()
   useEffect(() => {
+    if (!visible) return
     let cancelled = false
     const frame = requestAnimationFrame(() => {
       void highlightHtml(code, lang, theme).then(
@@ -145,6 +194,6 @@ export function useHighlightHtml(code: string, lang: string): string | undefined
       cancelled = true
       cancelAnimationFrame(frame)
     }
-  }, [code, lang, theme])
+  }, [code, lang, theme, visible])
   return result?.code === code && result.lang === lang && result.theme === theme ? result.html : undefined
 }
