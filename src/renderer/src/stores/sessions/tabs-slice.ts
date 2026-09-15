@@ -64,8 +64,8 @@ export const createTabsSlice: SessionSlice<
           meta
         }, selection)
         if (added) {
+          // The SDK build waits for the first interaction; opening only needs the persisted projection.
           await get().hydrateTurns(ref.sessionId, { display: ref.display })
-          await api.prepareSession(ref.sessionId)
           await get().loadControls(ref.sessionId)
         }
       } finally {

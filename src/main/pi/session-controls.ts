@@ -42,6 +42,25 @@ export async function applyPendingControls(
   }
 }
 
+/**
+ * Controls a pending session can already report: explicit choices win, otherwise an opened session
+ * falls back to the model and thinking level its JSONL recorded, never to the global default.
+ */
+function persistedControls(session: PendingSession): {
+  model: SessionControls['model']
+  thinkingLevel?: SessionThinkingLevel
+} {
+  // Until the build restores the real session, an opened session reports what its JSONL recorded.
+  const context = session.sessionManager.buildSessionContext()
+  const choseThinking = session.sessionManager
+    .getBranch()
+    .some((entry) => entry.type === 'thinking_level_change')
+  return {
+    model: context.model ? findModel(context.model.provider, context.model.modelId) : null,
+    thinkingLevel: choseThinking ? (context.thinkingLevel as SessionThinkingLevel) : undefined
+  }
+}
+
 function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStats {
   const tokens = { ...emptyTokens }
   for (const entry of sessionManager.getEntries()) {
@@ -83,17 +102,22 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
     }
   }
 
+  const persisted = persistedControls(session)
   const model =
-    session.modelProvider && session.modelId
+    (session.modelProvider && session.modelId
       ? findModel(session.modelProvider, session.modelId)
-      : (defaultModelFromSettings() ?? models[0] ?? null)
+      : null) ??
+    persisted.model ??
+    defaultModelFromSettings() ??
+    models[0] ??
+    null
   const supported = thinkingLevelsFor(model)
   const picker = pickerThinkingLevels(supported)
   return {
     model,
     models,
     thinkingLevel: clampThinking(
-      session.thinkingLevel ?? defaultThinkingFromSettings(model),
+      session.thinkingLevel ?? persisted.thinkingLevel ?? defaultThinkingFromSettings(model),
       picker.length > 0 ? picker : supported
     ),
     thinkingLevels: picker,

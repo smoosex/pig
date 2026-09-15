@@ -102,13 +102,14 @@ async function fixture(name: string): Promise<void> {
 
   if (name === 'controls') {
     const model = { id: 'reasoner', provider: 'test', name: 'Reasoner', reasoning: true, contextWindow: 1000 }
+    const recorded = { id: 'recorder', provider: 'test', name: 'Recorder', reasoning: true, contextWindow: 500 }
     let available = true
     mock.module('@earendil-works/pi-coding-agent', () => ({
       ModelRuntime: { create: async () => ({
         refresh: async () => {},
-        getModel: () => available ? model : undefined,
+        getModel: (_provider: string, id: string) => available ? [model, recorded].find((entry) => entry.id === id) : undefined,
         getProvider: () => ({ name: 'Test' }),
-        getAvailableSnapshot: () => available ? [model] : []
+        getAvailableSnapshot: () => available ? [model, recorded] : []
       }) },
       SettingsManager: { create: () => ({
         getDefaultProvider: () => 'test', getDefaultModel: () => 'reasoner',
@@ -117,7 +118,12 @@ async function fixture(name: string): Promise<void> {
     }))
     const controls = await import('../src/main/pi/session-controls')
     const pending = {
-      sessionId: 'draft', cwd: '/tmp', sessionManager: { getEntries: () => [] }, win: {}
+      sessionId: 'draft', cwd: '/tmp', win: {},
+      sessionManager: {
+        getEntries: () => [],
+        getBranch: () => [],
+        buildSessionContext: () => ({ messages: [], thinkingLevel: 'off', model: null })
+      }
     } as unknown as import('../src/main/pi/session-state').PendingSession
     const selected = await controls.setSessionModel(pending, 'test', 'reasoner')
     assert.equal(selected.thinkingLevel, 'high')
@@ -133,6 +139,24 @@ async function fixture(name: string): Promise<void> {
     await assert.rejects(controls.setSessionThinking({ sessionId: 'live', cwd: '/tmp', agentSession: session, unsubscribe() {} }, 'max'), /not supported/)
     available = false
     await assert.rejects(controls.applyPendingControls(pending, session), /Model not found/)
+
+    available = true
+    const opened = (entries: unknown[]) => ({
+      sessionId: 'opened', cwd: '/tmp', win: {}, needsMaterialize: false,
+      sessionManager: {
+        getEntries: () => [],
+        getBranch: () => entries,
+        buildSessionContext: () => ({
+          messages: [{ role: 'user' }], thinkingLevel: 'off', model: { provider: 'test', modelId: 'recorder' }
+        })
+      }
+    }) as unknown as import('../src/main/pi/session-state').PendingSession
+    const restored = await controls.controlsFor(opened([{ type: 'model_change', provider: 'test', modelId: 'recorder' }, { type: 'thinking_level_change', thinkingLevel: 'low' }]))
+    assert.equal(restored.model?.id, 'recorder', 'an opened session must not advertise the global default model')
+    assert.equal(restored.thinkingLevel, 'low')
+    const fallback = await controls.controlsFor(opened([{ type: 'model_change', provider: 'test', modelId: 'recorder' }]))
+    assert.equal(fallback.model?.id, 'recorder')
+    assert.equal(fallback.thinkingLevel, 'high', 'without a recorded change the settings default wins over the file default')
     return
   }
 

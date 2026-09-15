@@ -1,5 +1,5 @@
-import type { SessionEntry } from '@earendil-works/pi-coding-agent'
-import type { DisplayAnswer, DisplayTurn, DisplayUser } from '../../shared/api'
+import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
+import type { DisplayAnswer, DisplayTurn, DisplayTurnsResult, DisplayUser } from '../../shared/api'
 import {
   createInlinePastedTextDisplayMetadata,
   isPastedTextMetadata,
@@ -285,6 +285,14 @@ export function displayTurnsFromEntries(entries: SessionEntry[]): DisplayTurn[] 
     id: chunk[0].id,
     ...summarizeChunk(chunk)
   }))
+}
+
+/** The persisted projection shared by the display IPC and the open-session preview. */
+export function displayResultFor(sessionManager: SessionManager): DisplayTurnsResult {
+  return {
+    leafId: sessionManager.getLeafId(),
+    turns: displayTurnsFromEntries(sessionManager.getBranch())
+  }
 }
 
 export function turnMessagesFromEntries(entries: SessionEntry[], turnId: string): unknown[] {

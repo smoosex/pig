@@ -68,11 +68,6 @@ export function registerSessionIpc(): void {
     await ls.agentSession.abort()
   })
 
-  ipcMain.handle('session:get-messages', async (_event, sessionId: string) => {
-    const ls = await prepareSession(sessionId)
-    return ls.agentSession.messages
-  })
-
   ipcMain.handle('session:get-display-turns', async (_event, sessionId: string) => {
     return getDisplayTurns(sessionId)
   })

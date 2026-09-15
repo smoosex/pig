@@ -28,7 +28,7 @@ import {
   updateFollowUpMessage as updateFollowUp
 } from './session-actions'
 import { sessionTreeRows } from './session-tree'
-import { displayTurnsFromEntries } from './session-display-model'
+import { displayResultFor } from './session-display-model'
 import type { LiveSession, PendingSession, SessionState } from './session-state'
 
 export type { LiveSession, PendingSession } from './session-state'
@@ -70,19 +70,10 @@ const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 const openingPaths = new Map<string, Promise<OpenSessionPreview>>()
 
-function defer<T>(factory: () => Promise<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    setImmediate(() => {
-      void factory().then(resolve, reject)
-    })
-  })
-}
-
 function trackPreparation(
   sessionId: string,
   cwd: string,
-  building: Promise<LiveSession>,
-  path?: string
+  building: Promise<LiveSession>
 ): Promise<LiveSession> {
   const promise = building.then((session) => {
     live.set(sessionId, session)
@@ -90,7 +81,6 @@ function trackPreparation(
     return session
   }).finally(() => {
     preparing.delete(sessionId)
-    if (path) openingPaths.delete(path)
   })
   preparing.set(sessionId, { cwd, promise })
   return promise
@@ -186,10 +176,7 @@ function previewFor(sessionManager: SessionManager, sessionId: string, cwd: stri
   return {
     sessionId,
     cwd,
-    display: {
-      leafId: sessionManager.getLeafId(),
-      turns: displayTurnsFromEntries(sessionManager.getBranch())
-    }
+    display: displayResultFor(sessionManager)
   }
 }
 
@@ -205,8 +192,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
   const opening = openingPaths.get(target)
   if (opening) return opening
 
-  // SessionManager.open is still the one synchronous read of the JSONL file.
-  // Return its display projection before resources/extensions/AgentSession setup.
+  // The one synchronous JSONL read; everything the SDK needs waits for the first interaction.
   const sm = SessionManager.open(target)
   const cwd = sm.getCwd() || process.cwd()
   worktrees.assertAvailable(cwd)
@@ -217,6 +203,11 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
     const preview = previewFor(sm, sessionId, cwd)
     const result = Promise.resolve(preview)
     openingPaths.set(target, result)
+    const cleanup = () => {
+      if (openingPaths.get(target) === result) openingPaths.delete(target)
+    }
+    // The build owns this path until it settles; a stale preview must not outlive it.
+    void existing.promise.then(cleanup, cleanup)
     return result
   }
 
@@ -227,14 +218,8 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
     win,
     needsMaterialize: false
   })
-  const preview = previewFor(sm, sessionId, cwd)
-  const preparation = trackPreparation(sessionId, cwd, defer(() => build(sm, cwd, win)), target)
-  void preparation.catch((error) => {
-    console.error(`Failed to prepare opened session ${sessionId}:`, error)
-  })
-  const result = Promise.resolve(preview)
-  openingPaths.set(target, result)
-  return result
+  // Opening only reads the JSONL; the SDK build waits for the first interaction that needs it.
+  return previewFor(sm, sessionId, cwd)
 }
 
 export function getLive(sessionId: string): LiveSession | undefined {
@@ -312,12 +297,6 @@ export async function closeSessionsForCwd(cwd: string): Promise<void> {
 export async function disposeAll(): Promise<void> {
   const sessionIds = new Set([...pending.keys(), ...live.keys(), ...preparing.keys(), ...closing.keys()])
   await Promise.all([...sessionIds].map(closeSession))
-}
-
-export function requireLive(sessionId: string): LiveSession {
-  const session = getLive(sessionId)
-  if (!session) throw new Error(`Session not found: ${sessionId}`)
-  return session
 }
 
 function sessionState(sessionId: string): SessionState {

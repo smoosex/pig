@@ -43,8 +43,6 @@ const api: SessionApi = {
     streamingBehavior?: Parameters<SessionApi['prompt']>[4]
   ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior),
   abort: (sessionId: string) => ipcRenderer.invoke('session:abort', sessionId),
-  getMessages: (sessionId: string) =>
-    ipcRenderer.invoke('session:get-messages', sessionId),
   getDisplayTurns: (sessionId: string) =>
     ipcRenderer.invoke('session:get-display-turns', sessionId),
   getTurnMessages: (sessionId: string, turnId: string) =>

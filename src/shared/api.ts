@@ -260,7 +260,6 @@ export interface SessionApi {
     streamingBehavior?: PromptStreamingBehavior
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
-  getMessages: (sessionId: string) => Promise<unknown[]>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
   getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>

@@ -18,9 +18,12 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 ## Main：会话与工作目录
 
 `pi/session-registry.ts` 负责 pending / preparing / live 会话的生命周期。
-会话必须完成扩展绑定和待应用的模型设置后才能发布为 live；关闭目录时先等待
-正在初始化的会话，再释放资源。模型设置、controls 投影、树投影、提示词处理
-分别位于 `model-settings`、`session-controls`、`session-tree`、`session-prompt`。
+打开会话只读 JSONL 并返回投影；SDK 构建推迟到第一次真正需要 agentSession 的交互
+（发送提示词、斜杠命令、切换分支、导出）。会话必须完成扩展绑定和待应用的模型设置后
+才能发布为 live；关闭目录时先等待正在初始化的会话，再释放资源。模型设置、controls 投影、
+树投影、提示词处理分别位于 `model-settings`、`session-controls`、`session-tree`、
+`session-prompt`。pending 会话的 controls 从 JSONL 记录的模型与思考等级回退，
+不呈现全局默认值。
 
 `session-display` / `session-display-model` 从 JSONL 生成轻量的对话轮次，
 过程详情按需读取。`event-bridge` 发布正在运行的 Pi 事件及队列状态。

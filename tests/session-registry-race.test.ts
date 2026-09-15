@@ -97,14 +97,14 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
     const sessions = registry
     const win = {} as Parameters<typeof sessions.openSession>[1]
     const opening = observe(sessions.openSession(sessionFile, win))
-    // The preview resolves immediately; the SDK build continues in the background.
+    // Opening only reads the JSONL projection; prepareSession owns the SDK build.
     const preparing = observe(sessions.prepareSession(sessionId))
     operations.push(opening, preparing)
     await started.promise
     const duplicate = observe(sessions.openSession(join(sessionCwd, 'session.jsonl'), win))
     operations.push(duplicate)
     assert.equal(createCalls, 1)
-    assert.equal(openCalls, 1)
+    assert.equal(openCalls, 2, 'a duplicate open re-reads the file but must not start a second build')
 
     const deleting = observe(service.withBlockedCwds([cwd], async () => {
       await sessions.closeSessionsForCwd(cwd)
@@ -152,9 +152,137 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
   }
 }
 
-if (process.argv[2] === '--race-fixture') {
+async function reproduceReopen(): Promise<void> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-session-reopen-')))
+  const cwd = join(root, 'worktree')
+  const service = new WorktreeService(join(root, 'state'))
+  const started = deferred()
+  const release = deferred()
+  const operations: Promise<unknown>[] = []
+  let registry: typeof import('../src/main/pi/session-registry') | undefined
+  let openCalls = 0
+  let buildCalls = 0
+
+  try {
+    await mkdir(cwd)
+    process.env.PIG_DIR = join(root, 'pig')
+    const sessionId = 'draft-session'
+    const sessionFile = join(cwd, 'draft.jsonl')
+    const header = { id: sessionId }
+    const session = {
+      sessionId,
+      sessionFile,
+      bindExtensions: async () => {},
+      subscribe: () => () => {},
+      dispose: () => {},
+      abort: async () => {},
+      extensionRunner: { emit: async () => {} }
+    }
+    const manager = {
+      getCwd: () => cwd,
+      getSessionId: () => sessionId,
+      getLeafId: () => null,
+      getBranch: () => [],
+      getSessionFile: () => sessionFile,
+      getHeader: () => header,
+      setSessionFile: () => {}
+    }
+
+    mock.module('electron', () => ({
+      app: { isPackaged: false },
+      BrowserWindow: { getAllWindows: () => [] }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))
+    mock.module('@earendil-works/pi-coding-agent', () => ({
+      createAgentSession: async () => {
+        buildCalls++
+        if (buildCalls === 1) {
+          started.resolve()
+          await release.promise
+        }
+        return { session }
+      },
+      ModelRuntime: { create: async () => ({ refresh: async () => {} }) },
+      SessionManager: {
+        create: () => manager,
+        open: () => {
+          openCalls++
+          return manager
+        }
+      },
+      SettingsManager: { create: () => ({}) },
+      DefaultResourceLoader: class {
+        async reload() {}
+      },
+      getAgentDir: () => join(root, 'agent')
+    }))
+
+    registry = await import('../src/main/pi/session-registry')
+    const sessions = registry
+    const win = {} as Parameters<typeof sessions.openSession>[1]
+
+    const draft = sessions.createPendingSession(cwd, win)
+    const preparing = observe(sessions.prepareSession(draft.sessionId))
+    operations.push(preparing)
+    await started.promise
+
+    // The draft JSONL exists while its build is still in flight.
+    const opening = observe(sessions.openSession(sessionFile, win))
+    operations.push(opening)
+    assert.equal(openCalls, 1)
+    assert.equal(buildCalls, 1)
+
+    release.resolve()
+    assert.equal((await preparing).status, 'fulfilled')
+    assert.equal((await opening).status, 'fulfilled')
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
+    await sessions.closeSession(sessionId)
+    assert.equal(sessions.getLive(sessionId), undefined)
+
+    // The cached preview must not outlive the first build; reopening starts a fresh preparation.
+    const reopened = await sessions.openSession(sessionFile, win)
+    assert.equal(reopened.sessionId, sessionId)
+    assert.equal(openCalls, 2, 'reopening must read the JSONL again instead of using a stale preview')
+    const preparedAgain = observe(sessions.prepareSession(sessionId))
+    operations.push(preparedAgain)
+    const settled = await preparedAgain
+    assert.equal(settled.status, 'fulfilled', JSON.stringify(settled))
+    assert.equal(buildCalls, 2)
+  } finally {
+    release.resolve()
+    await Promise.allSettled(operations)
+    try {
+      await registry?.disposeAll()
+      await service.shutdown()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }
+}
+
+if (process.argv[2] === '--reopen-fixture') {
+  await reproduceReopen()
+} else if (process.argv[2] === '--race-fixture') {
   await reproduce(process.argv[3], process.argv[4] === 'alias')
 } else {
+  test('reopening a path whose preparation was in flight does not serve a stale preview', async () => {
+    const child = Bun.spawn([process.execPath, import.meta.path, '--reopen-fixture'], {
+      stdout: 'pipe',
+      stderr: 'pipe'
+    })
+    const timeout = setTimeout(() => child.kill(), 5_000)
+    try {
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
+      ])
+      assert.equal(exitCode, 0, stderr || stdout)
+    } finally {
+      clearTimeout(timeout)
+      child.kill()
+    }
+  }, 10_000)
+
   for (const stage of ['create', 'bind']) {
     for (const pathKind of ['direct', 'alias']) {
       test(`deletion waits for ${stage} during openSession (${pathKind} cwd)`, async () => {
