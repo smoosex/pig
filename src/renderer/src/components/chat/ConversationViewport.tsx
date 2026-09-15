@@ -33,10 +33,11 @@ export function ConversationViewport({
   initialScrollState?: ScrollSnapshot
   onSave: (state: ScrollSnapshot) => void
 }) {
-  const items = useMemo(() => [...historical, ...live], [historical, live])
+  // The minimap only needs a stable identity per turn set; live text growth must not rebuild every row.
+  const items = useMemo(() => [...historical, ...live], [historical, live.length])
   const scroller = useMessageScroller()
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
-  const { viewportRef, visibleTurns, hasMoreAbove, onScroll, registerTurn, jumpToTurn } = useConversationScroll({
+  const { viewportRef, contentRef, visibleTurns, hasMoreAbove, hasMoreBelow, onScroll, registerTurn, jumpToTurn } = useConversationScroll({
     active, historical, live, initialScrollState, onSave
   })
   const onNeedProcess = useCallback(async (turnId: string) => {
@@ -55,7 +56,7 @@ export function ConversationViewport({
           }
         }}
       >
-        <MessageScrollerContent className="gap-0">
+        <MessageScrollerContent ref={contentRef} className="gap-0">
           {hasMoreAbove ? (
             <div className={cn(chatColumn, 'py-3 text-center text-xs text-muted-foreground/60')}>
               向上滚动加载更早消息
@@ -73,6 +74,11 @@ export function ConversationViewport({
               <TurnView turn={turn} onNeedProcess={onNeedProcess} />
             </MessageScrollerItem>
           ))}
+          {hasMoreBelow ? (
+            <div className={cn(chatColumn, 'py-3 text-center text-xs text-muted-foreground/60')}>
+              向下滚动加载更晚消息
+            </div>
+          ) : null}
         </MessageScrollerContent>
       </MessageScrollerViewport>
       <MessageScrollerButton behavior="smooth" />

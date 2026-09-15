@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { composePromptText } from '../src/shared/pasted-text'
 import type { DisplayTurn } from '../src/shared/api'
 import { renderKeyForUser, type ProcessItem } from '../src/renderer/src/chat/turns'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
@@ -44,6 +45,16 @@ describe('display turn projection', () => {
     expect(turn.process).toBe(process)
     expect(turn.workedMs).toBe(1500)
     expect(turn.streaming).toBe(false)
+  })
+
+  test('preserves the legacy v1 pasted-text render key from the composed prompt', () => {
+    const attachment = { id: 'paste', text: '附件', byteSize: 6 }
+    const composed = composePromptText('正文', [attachment])
+    const turn = toTurn(display({
+      userTimestamp: 42,
+      user: { text: '正文', images: [], textAttachments: [attachment] }
+    }), [])
+    expect(turn.renderKey).toBe(renderKeyForUser({ timestamp: 42, content: composed }))
   })
 
   test('maps image-only user prompts and mixed answer blocks without empty text', () => {

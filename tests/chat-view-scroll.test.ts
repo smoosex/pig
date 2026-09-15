@@ -445,8 +445,21 @@ async function runFixture(name: string): Promise<void> {
       await settle()
       assert.equal(rows().length, 40, 'scrolling to the top loads one page')
       assert.ok(row(1960), 'the older page is mounted')
+      assert.ok(row(1999), 'the newest tail stays inside the window')
       near(viewport().scrollTop, 20 * ROW_HEIGHT, 'paging inserts exactly one page above')
       assert.equal(rowOffset(anchored.index), anchored.offset, 'paging keeps the same turn under the reader')
+      await act(async () => { input('wheel', viewport()); viewport().scrollTop = 0 })
+      const secondAnchor = topRow()
+      await settle()
+      assert.equal(rows().length, 40, 'later pages keep the mounted window bounded')
+      assert.ok(row(1940), 'the next older page is mounted')
+      assert.equal(row(1999), null, 'the newest tail leaves the window once it is out of range')
+      assert.equal(rowOffset(secondAnchor.index), secondAnchor.offset, 'later pages keep the reader anchored')
+      const windowBottom = viewport().scrollHeight - viewport().clientHeight - 80
+      await act(async () => { input('wheel', viewport()); viewport().scrollTop = windowBottom })
+      await settle()
+      assert.equal(rows().length, 40, 'scrolling back down pages the window forward')
+      assert.ok(row(1999), 'paging down returns the newest tail')
       await switchTo('s2')
       await switchTo('s1')
       assert.equal(rows().length, 40, 'the reader keeps the loaded page after switching back')
@@ -460,11 +473,25 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { button.click() })
       await settle()
       assert.ok(row(30), 'navigation mounts the older page')
+      assert.equal(row(79), null, 'the jump does not mount the newest tail')
       near(row(30)!.getBoundingClientRect().top, VIEWPORT_TOP + TURN_ALIGN, 'the target aligns at the top')
       assert.equal(bottomButton().dataset.active, 'true')
       await act(async () => { bottomButton().click() })
       await settle()
+      assert.ok(row(79), 'the bottom control returns to the newest tail')
       atEnd()
+    } else if (name === 'resize-history') {
+      change({ turns: turns(80) })
+      await render()
+      const paused = await leaveEnd(1000)
+      const anchored = topRow()
+      const above = row(anchored.index - 2)
+      assert.ok(above?.dataset.turnKey, 'an above-viewport history row must be mounted')
+      heights.set(above.dataset.turnKey, ROW_HEIGHT + 120)
+      change({ turns: [...store.runtime.s1.turns] })
+      await render()
+      near(viewport().scrollTop, paused + 120, 'an above-viewport growth pushes the viewport down')
+      assert.deepEqual(topRow(), anchored, 'the reading row keeps its offset')
     } else if (name === 'switch-unmount-cleanup') {
       await render()
       const idle = viewport()
@@ -505,6 +532,7 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'release-key': 'keyboard input releases following until the bottom control resumes it',
     'paused-live-across-tabs': 'a paused live turn keeps its position across tabs',
     'archive-identity': 'archiving reuses the live row and a later prompt follows again',
+    'resize-history': 'an above-viewport size change keeps a paused reader in place',
     paging: 'long histories mount one page and paging keeps the reading position',
     'minimap-jump': 'minimap navigation mounts and aligns an older turn',
     'switch-unmount-cleanup': 'hidden panes stay quiet and unmount cancels detached work'

@@ -1,6 +1,20 @@
-import type { DisplayTurn } from '../../../shared/api'
-import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
+import type { DisplayTurn, DisplayUser } from '../../../shared/api'
+import { composePromptText, type PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import { renderKeyForUser, type ProcessItem, type Turn } from './turns'
+
+/** The persisted text a live prompt used before inline pasted-text metadata existed. */
+function renderKeyContent(user: DisplayUser): string | Array<
+  { type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string }
+> {
+  const text = user.textSegments || user.textAttachments.length === 0
+    ? user.text
+    : composePromptText(user.text, user.textAttachments)
+  if (user.images.length === 0) return text
+  return [
+    ...(text ? [{ type: 'text' as const, text }] : []),
+    ...user.images.map((image) => ({ type: 'image' as const, mimeType: image.mimeType, data: image.data }))
+  ]
+}
 
 /** Rebuild a renderable turn from the persisted DTO without changing Pi message semantics. */
 export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
@@ -44,6 +58,8 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     streaming: false,
     hasProcess: display.hasProcess,
     workedMs,
-    renderKey: user ? renderKeyForUser(user) : `turn:${display.id}`
+    renderKey: user && display.user
+      ? renderKeyForUser({ timestamp: user.timestamp, content: renderKeyContent(display.user) })
+      : `turn:${display.id}`
   }
 }
