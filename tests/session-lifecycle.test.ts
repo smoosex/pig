@@ -63,7 +63,9 @@ async function fixture(scenario: string): Promise<void> {
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
     mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
       createAgentSession: async () => ({ session }),
       ModelRuntime: { create: async () => ({ refresh: async () => {}, getModel: () => ({ id: 'test' }) }) },
       SessionManager: { create: () => manager, open: () => manager },

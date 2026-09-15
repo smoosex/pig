@@ -1,9 +1,22 @@
 /**
  * Translate SDK state into renderer controls and apply model choices.
- * Pending sessions store choices only; materialization applies them before publication.
+ * Unbuilt sessions project their JSONL; materialization applies the stored choices before publication.
  */
-import type { AgentSession, SessionManager } from '@earendil-works/pi-coding-agent'
-import type { SessionControls, SessionTokenStats, ThinkingLevel as SessionThinkingLevel } from '../../shared/api'
+import {
+  calculateContextTokens,
+  estimateTokens,
+  getLatestCompactionEntry,
+  type AgentSession,
+  type SessionContext,
+  type SessionEntry,
+  type SessionManager
+} from '@earendil-works/pi-coding-agent'
+import type {
+  SessionContextUsage,
+  SessionControls,
+  SessionTokenStats,
+  ThinkingLevel as SessionThinkingLevel
+} from '../../shared/api'
 import type { PendingSession, SessionState } from './session-state'
 import { followUpMessagesForDisplay } from './event-bridge'
 import {
@@ -42,22 +55,85 @@ export async function applyPendingControls(
   }
 }
 
+type ContextMessage = SessionContext['messages'][number]
+
+// Aborted, failed, and all-zero usages carry no context size; mirrors the SDK's own filter.
+function assistantUsage(message: ContextMessage) {
+  if (message.role !== 'assistant') return undefined
+  if (message.stopReason === 'aborted' || message.stopReason === 'error') return undefined
+  if (!message.usage || calculateContextTokens(message.usage) <= 0) return undefined
+  return message.usage
+}
+
+function estimateContextTokens(messages: SessionContext['messages']): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const usage = assistantUsage(messages[i])
+    if (!usage) continue
+    let trailing = 0
+    for (let j = i + 1; j < messages.length; j++) trailing += estimateTokens(messages[j])
+    return calculateContextTokens(usage) + trailing
+  }
+  return messages.reduce((total, message) => total + estimateTokens(message), 0)
+}
+
 /**
- * Controls a pending session can already report: explicit choices win, otherwise an opened session
- * falls back to the model and thinking level its JSONL recorded, never to the global default.
+ * What AgentSession.getContextUsage reports, for a session that is not built yet: the last reported
+ * usage plus the estimated messages after it, and unknown until an assistant replies past the last
+ * compaction.
  */
-function persistedControls(session: PendingSession): {
-  model: SessionControls['model']
-  thinkingLevel?: SessionThinkingLevel
-} {
-  // Until the build restores the real session, an opened session reports what its JSONL recorded.
+function persistedContextUsage(
+  model: SessionControls['model'],
+  messages: SessionContext['messages'],
+  branch: SessionEntry[]
+): SessionContextUsage | null {
+  const contextWindow = model?.contextWindow ?? 0
+  if (contextWindow <= 0) return null
+  const compaction = getLatestCompactionEntry(branch)
+  if (compaction) {
+    const after = branch.slice(branch.lastIndexOf(compaction) + 1)
+    if (!after.some((entry) => entry.type === 'message' && assistantUsage(entry.message))) {
+      return { tokens: null, contextWindow, percent: null }
+    }
+  }
+  const tokens = estimateContextTokens(messages)
+  return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+}
+
+/**
+ * Every control an unbuilt session can already report from its JSONL: explicit choices win, otherwise
+ * an opened session reports the model, thinking level, and context usage its branch recorded, never
+ * the global defaults.
+ */
+function pendingControls(
+  session: PendingSession,
+  models: SessionControls['models']
+): SessionControls {
   const context = session.sessionManager.buildSessionContext()
-  const choseThinking = session.sessionManager
-    .getBranch()
-    .some((entry) => entry.type === 'thinking_level_change')
+  const branch = session.sessionManager.getBranch()
+  const model =
+    (session.modelProvider && session.modelId
+      ? findModel(session.modelProvider, session.modelId)
+      : null) ??
+    (context.model ? findModel(context.model.provider, context.model.modelId) : null) ??
+    defaultModelFromSettings() ??
+    models[0] ??
+    null
+  const supported = thinkingLevelsFor(model)
+  const picker = pickerThinkingLevels(supported)
+  const recorded = branch.some((entry) => entry.type === 'thinking_level_change')
+    ? (context.thinkingLevel as SessionThinkingLevel)
+    : undefined
   return {
-    model: context.model ? findModel(context.model.provider, context.model.modelId) : null,
-    thinkingLevel: choseThinking ? (context.thinkingLevel as SessionThinkingLevel) : undefined
+    model,
+    models,
+    thinkingLevel: clampThinking(
+      session.thinkingLevel ?? recorded ?? defaultThinkingFromSettings(model),
+      picker.length > 0 ? picker : supported
+    ),
+    thinkingLevels: picker,
+    contextUsage: persistedContextUsage(model, context.messages, branch),
+    tokens: tokenStatsFromEntries(session.sessionManager),
+    followUpMessages: []
   }
 }
 
@@ -102,29 +178,7 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
     }
   }
 
-  const persisted = persistedControls(session)
-  const model =
-    (session.modelProvider && session.modelId
-      ? findModel(session.modelProvider, session.modelId)
-      : null) ??
-    persisted.model ??
-    defaultModelFromSettings() ??
-    models[0] ??
-    null
-  const supported = thinkingLevelsFor(model)
-  const picker = pickerThinkingLevels(supported)
-  return {
-    model,
-    models,
-    thinkingLevel: clampThinking(
-      session.thinkingLevel ?? persisted.thinkingLevel ?? defaultThinkingFromSettings(model),
-      picker.length > 0 ? picker : supported
-    ),
-    thinkingLevels: picker,
-    contextUsage: null,
-    tokens: tokenStatsFromEntries(session.sessionManager),
-    followUpMessages: []
-  }
+  return pendingControls(session, models)
 }
 
 export async function setSessionModel(

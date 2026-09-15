@@ -104,7 +104,9 @@ async function fixture(name: string): Promise<void> {
     const model = { id: 'reasoner', provider: 'test', name: 'Reasoner', reasoning: true, contextWindow: 1000 }
     const recorded = { id: 'recorder', provider: 'test', name: 'Recorder', reasoning: true, contextWindow: 500 }
     let available = true
+    const sdk = await import('@earendil-works/pi-coding-agent')
     mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
       ModelRuntime: { create: async () => ({
         refresh: async () => {},
         getModel: (_provider: string, id: string) => available ? [model, recorded].find((entry) => entry.id === id) : undefined,
@@ -127,6 +129,7 @@ async function fixture(name: string): Promise<void> {
     } as unknown as import('../src/main/pi/session-state').PendingSession
     const selected = await controls.setSessionModel(pending, 'test', 'reasoner')
     assert.equal(selected.thinkingLevel, 'high')
+    assert.equal(selected.contextUsage?.contextWindow, 1000)
     assert.equal(pending.thinkingLevel, selected.thinkingLevel)
     let applied: string | undefined
     const session = {
@@ -141,20 +144,40 @@ async function fixture(name: string): Promise<void> {
     await assert.rejects(controls.applyPendingControls(pending, session), /Model not found/)
 
     available = true
-    const opened = (entries: unknown[]) => ({
+    const opened = (branch: unknown[], messages: unknown[] = []) => ({
       sessionId: 'opened', cwd: '/tmp', win: {}, needsMaterialize: false,
       sessionManager: {
         getEntries: () => [],
-        getBranch: () => entries,
+        getBranch: () => branch,
         buildSessionContext: () => ({
-          messages: [{ role: 'user' }], thinkingLevel: 'off', model: { provider: 'test', modelId: 'recorder' }
+          messages, thinkingLevel: 'off', model: { provider: 'test', modelId: 'recorder' }
         })
       }
     }) as unknown as import('../src/main/pi/session-state').PendingSession
-    const restored = await controls.controlsFor(opened([{ type: 'model_change', provider: 'test', modelId: 'recorder' }, { type: 'thinking_level_change', thinkingLevel: 'low' }]))
+    const recordedModel = [{ type: 'model_change', provider: 'test', modelId: 'recorder' }]
+    const asked = { role: 'user', content: 'x'.repeat(400), timestamp: 0 }
+    const answered = {
+      role: 'assistant', content: [], stopReason: 'stop', timestamp: 1,
+      usage: { input: 40, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }
+    }
+    const restored = await controls.controlsFor(opened([...recordedModel, { type: 'thinking_level_change', thinkingLevel: 'low' }], [asked, answered]))
     assert.equal(restored.model?.id, 'recorder', 'an opened session must not advertise the global default model')
     assert.equal(restored.thinkingLevel, 'low')
-    const fallback = await controls.controlsFor(opened([{ type: 'model_change', provider: 'test', modelId: 'recorder' }]))
+    assert.equal(restored.contextUsage?.tokens, 60, 'the recorded assistant usage is the context size')
+    assert.equal(restored.contextUsage?.contextWindow, 500)
+    assert.equal(restored.contextUsage?.percent, 12)
+    const trailing = await controls.controlsFor(opened(recordedModel, [asked, answered, { role: 'user', content: 'y'.repeat(40), timestamp: 2 }]))
+    assert.equal(trailing.contextUsage?.tokens, 70, 'messages after the usage are estimated')
+    const unreported = await controls.controlsFor(opened(recordedModel, [asked]))
+    assert.equal(unreported.contextUsage?.tokens, 100, 'without any usage the messages themselves are estimated')
+    const compacted = await controls.controlsFor(opened([
+      { type: 'compaction', summary: 's', firstKeptEntryId: 'a', tokensBefore: 1 },
+      { type: 'message', message: asked }
+    ], [asked]))
+    assert.equal(compacted.contextUsage?.tokens, null, 'a compaction without a new reply has an unknown size')
+    assert.equal(compacted.contextUsage?.percent, null)
+    assert.equal(compacted.contextUsage?.contextWindow, 500)
+    const fallback = await controls.controlsFor(opened(recordedModel))
     assert.equal(fallback.model?.id, 'recorder')
     assert.equal(fallback.thinkingLevel, 'high', 'without a recorded change the settings default wins over the file default')
     return

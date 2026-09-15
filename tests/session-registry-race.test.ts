@@ -70,7 +70,9 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
     mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
       createAgentSession: async () => {
         createCalls++
         if (stage === 'create') {
@@ -193,7 +195,9 @@ async function reproduceReopen(): Promise<void> {
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
     mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
       createAgentSession: async () => {
         buildCalls++
         if (buildCalls === 1) {

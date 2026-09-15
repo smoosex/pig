@@ -22,7 +22,7 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 （发送提示词、斜杠命令、切换分支、导出）。会话必须完成扩展绑定和待应用的模型设置后
 才能发布为 live；关闭目录时先等待正在初始化的会话，再释放资源。模型设置、controls 投影、
 树投影、提示词处理分别位于 `model-settings`、`session-controls`、`session-tree`、
-`session-prompt`。pending 会话的 controls 从 JSONL 记录的模型与思考等级回退，
+`session-prompt`。pending 会话的 controls 从 JSONL 记录里回退出模型、思考等级与上下文用量，
 不呈现全局默认值。
 
 `session-display` / `session-display-model` 从 JSONL 生成轻量的对话轮次，
