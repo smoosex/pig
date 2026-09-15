@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { SessionManager } from '@earendil-works/pi-coding-agent'
+import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { normalizeSessionPrompt } from '../src/main/pi/prompt-input'
 import { sessionTreeRows } from '../src/main/pi/session-tree'
+import type { SessionSource } from '../src/main/pi/session-source'
 
 describe('prompt input projection', () => {
   test('inline attachments are sent once and excluded from branch naming', () => {
@@ -55,42 +56,38 @@ describe('prompt input projection', () => {
 
 describe('session tree projection', () => {
   test('collapses bookkeeping ancestry while keeping tool calls and active branch order', () => {
-    const tree = [{
-      entry: { id: 'user', type: 'message', message: { role: 'user', content: '问题' } },
-      children: [
-        {
-          entry: { id: 'alternate', type: 'message', message: { role: 'assistant', content: '另一个答案' } },
-          children: []
-        },
-        {
-          entry: { id: 'meta', type: 'custom' },
-          children: [{
-            entry: {
-              id: 'call',
-              type: 'message',
-              message: {
-                role: 'assistant',
-                content: [{ type: 'toolCall', id: 'read-call', name: 'read', arguments: { path: 'src/main.ts' } }]
-              }
-            },
-            children: [{
-              entry: { id: 'result', type: 'message', message: { role: 'toolResult', toolCallId: 'read-call' } },
-              children: []
-            }]
-          }]
+    const entries = [
+      { id: 'user', parentId: null, type: 'message', message: { role: 'user', content: '问题' } },
+      { id: 'alternate', parentId: 'user', type: 'message', message: { role: 'assistant', content: '另一个答案' } },
+      { id: 'meta', parentId: 'user', type: 'custom' },
+      {
+        id: 'call',
+        parentId: 'meta',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: 'read-call', name: 'read', arguments: { path: 'src/main.ts' } }]
         }
-      ]
-    }]
-    const before = JSON.stringify(tree)
-    const manager = {
-      getTree: () => tree,
-      getLeafId: () => 'result',
-      getBranch: () => ['user', 'meta', 'call', 'result'].map((id) => ({ id }))
-    } as unknown as SessionManager
-    const rows = sessionTreeRows(manager)
+      },
+      { id: 'result', parentId: 'call', type: 'message', message: { role: 'toolResult', toolCallId: 'read-call' } }
+    ] as unknown as SessionEntry[]
+    const source: SessionSource = {
+      sessionId: 'session-1',
+      leafId: () => 'result',
+      entries: () => entries,
+      treeEntries: () => entries,
+      branch: () => ['user', 'meta', 'call', 'result'].map((id) => ({ id }) as SessionEntry),
+      branchIds: () => ['user', 'meta', 'call', 'result']
+    } as SessionSource
+    const rows = sessionTreeRows(source)
+    // Parsing the branch only to learn which entries are on it would make the tree as expensive as
+    // the projection it deliberately avoids; the ids come from the index instead.
+    expect(() => sessionTreeRows({
+      ...source,
+      branch: () => { throw new Error('branch() must not be called to collect ids') }
+    })).not.toThrow()
     expect(rows.map((row) => row.id)).toEqual(['user', 'result', 'alternate'])
     expect(rows[1]).toMatchObject({ parentId: 'user', text: '[read: src/main.ts]', onPath: true, current: true })
     expect(rows[2]).toMatchObject({ parentId: 'user', onPath: false, current: false })
-    expect(JSON.stringify(tree)).toBe(before)
   })
 })

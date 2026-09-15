@@ -7,7 +7,8 @@ import { Progress } from '../ui/progress'
 import { Separator } from '../ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
-function formatTokens(value: number): string {
+function formatTokens(value: number | null): string {
+  if (value == null) return '–'
   if (value < 1000) return String(value)
   if (value < 1_000_000) {
     const scaled = value / 1000
@@ -37,10 +38,14 @@ function StatRow({
 export function ContextUsageButton({
   usage,
   tokens,
+  error,
+  onOpen,
   disabled
 }: {
   usage: SessionContextUsage | null
-  tokens: SessionTokenStats
+  tokens: SessionTokenStats | null
+  error?: string | null
+  onOpen: () => void
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -50,7 +55,13 @@ export function ContextUsageButton({
   const hover = '上下文用量'
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) onOpen()
+      }}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
@@ -77,17 +88,23 @@ export function ContextUsageButton({
             </span>
           </div>
           <Progress value={percent ?? 0} />
+          {error ? (
+            <p role="alert" className="text-xs text-destructive">统计加载失败：{error}</p>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <StatRow label="快照" value={percent == null ? '–' : `${Math.round(percent)}%`} />
-            <StatRow label="输入" value={formatTokens(tokens.input)} />
-            <StatRow label="缓存读取" value={formatTokens(tokens.cacheRead)} />
-            <StatRow label="缓存写入" value={formatTokens(tokens.cacheWrite)} />
-            <StatRow label="输出" value={formatTokens(tokens.output)} />
+            <StatRow label="输入" value={formatTokens(tokens?.input ?? null)} />
+            <StatRow label="缓存读取" value={formatTokens(tokens?.cacheRead ?? null)} />
+            <StatRow label="缓存写入" value={formatTokens(tokens?.cacheWrite ?? null)} />
+            <StatRow label="输出" value={formatTokens(tokens?.output ?? null)} />
           </div>
           <Separator />
           <div className="flex flex-col gap-1.5">
-            <StatRow label="总输入输出" value={formatTokens(tokens.total)} muted={false} />
-            <StatRow label="有效输入" value={formatTokens(tokens.input + tokens.cacheRead)} />
+            <StatRow label="总输入输出" value={formatTokens(tokens?.total ?? null)} muted={false} />
+            <StatRow
+              label="有效输入"
+              value={formatTokens(tokens ? tokens.input + tokens.cacheRead : null)}
+            />
           </div>
         </div>
       </PopoverContent>

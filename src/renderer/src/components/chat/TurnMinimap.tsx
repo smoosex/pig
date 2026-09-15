@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { renderKeyForTurn, type Turn } from '../../chat/turns'
+import type { MinimapItem } from '../../chat/minimap'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 
@@ -15,25 +15,6 @@ const OVERSCAN = 8
 const PADDING_Y = 8
 const FADE = PADDING_Y + 4 * BAR_HEIGHT + 3 * GAP
 
-function userText(user: Turn['user']): string[] {
-  if (!user) return []
-  if (typeof user.content === 'string') return [user.content]
-  return user.content.flatMap((block) => block.type === 'text' ? [block.text] : [])
-}
-
-function describeTurn(turn: Turn, index: number) {
-  const user = userText(turn.user)
-  const answer = turn.answer.flatMap((block) => block.type === 'text' ? [block.text] : [])
-  const length = [...user, ...answer].reduce((sum, text) => sum + text.length, 0)
-  const text = user.find((value) => value.length > 0) ?? answer.find((value) => value.length > 0)
-  const preview = text?.slice(0, 160).replace(/\s+/g, ' ').trim().slice(0, 60)
-  return {
-    id: renderKeyForTurn(turn, index),
-    length,
-    label: `第 ${index + 1} 轮${preview ? `：${preview}` : turn.user ? '：图片消息' : '对话'}`
-  }
-}
-
 function dockBoost(index: number, position: number | null): number {
   if (position == null) return 0
   const distance = Math.abs(index - position)
@@ -44,7 +25,7 @@ export const TurnMinimap = memo(function TurnMinimap({
   items,
   onJump
 }: {
-  items: Turn[]
+  items: MinimapItem[]
   onJump: (index: number) => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -55,10 +36,9 @@ export const TurnMinimap = memo(function TurnMinimap({
   const [overflow, setOverflow] = useState({ top: false, bottom: false })
   const { rows, maxLength } = useMemo(() => {
     let maxLength = 1
-    const rows = items.map((turn, index) => {
-      const row = describeTurn(turn, index)
-      maxLength = Math.max(maxLength, row.length)
-      return row
+    const rows = items.map((item) => {
+      maxLength = Math.max(maxLength, item.length)
+      return item
     })
     return { rows, maxLength }
   }, [items])
@@ -122,7 +102,8 @@ export const TurnMinimap = memo(function TurnMinimap({
       }}
       onClick={(event) => {
         const index = Math.round(pointerPosition(event.currentTarget, event.clientY))
-        if (index >= 0 && index < items.length) onJump(index)
+        const item = items[index]
+        if (item) onJump(item.turn)
       }}
       onKeyDown={(event) => {
         let next = activeIndex
@@ -166,7 +147,7 @@ export const TurnMinimap = memo(function TurnMinimap({
                   setFocusIndex(index)
                   setFocused(event.currentTarget.matches(':focus-visible'))
                 }}
-                onClick={(event) => { event.stopPropagation(); onJump(index) }}
+                onClick={(event) => { event.stopPropagation(); onJump(row.turn) }}
               />
             </div>
           )

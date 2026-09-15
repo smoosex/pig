@@ -6,7 +6,10 @@ import type {
   ProjectGroup,
   SessionControls,
   SessionMeta,
-  ThinkingLevel
+  SessionTokenStats,
+  SessionWindowMessage,
+  ThinkingLevel,
+  TurnSummary
 } from '../../ipc/api'
 import type { ProcessItem, ThinkingDurations } from '../../chat/turns'
 import type { PiMessage } from '../../pi/types'
@@ -14,7 +17,21 @@ import type { PiMessage } from '../../pi/types'
 export interface RuntimeState extends SessionControls {
   instanceId: number
   controlsRevision: number
+  /** The loaded window of the branch: `turns[0]` is the branch turn `turnStart`. */
   turns: DisplayTurn[]
+  turnStart: number
+  /** One weight per turn of the branch, for the minimap rows that are not loaded yet. */
+  turnSummary: TurnSummary[]
+  /** A page of older turns is on its way. */
+  turnLoading: boolean
+  /** Turns exist above the window, but the branch index that counts them is still being built. */
+  turnPending: boolean
+  /** Why the turns above the window could not be loaded, if they could not be. */
+  turnError: string | null
+  /** Whole-file lifetime spend, fetched only while the usage popover is open. */
+  tokens: SessionTokenStats | null
+  tokensLoading: boolean
+  tokensError: string | null
   leafId: string | null
   branchViewId: string
   branchViews: Record<string, string>
@@ -59,9 +76,15 @@ export interface SessionsStore {
       expectedBranchRequest?: number
       branchViewId?: string
       display?: DisplayTurnsResult
+      /** A refresh of the same branch keeps the history the reader already paged in. */
+      keepOlderTurns?: boolean
     }
   ) => Promise<boolean>
   loadTurnProcess: (sessionId: string, turnId: string) => Promise<void>
+  /** Loads the turns above the loaded window; `target` is the oldest turn the caller needs. */
+  loadOlderTurns: (sessionId: string, target?: number) => Promise<void>
+  loadTokenStats: (sessionId: string) => Promise<void>
+  applySessionWindow: (update: SessionWindowMessage) => void
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
   setFollowUpMessages: (sessionId: string, messages: string[]) => void

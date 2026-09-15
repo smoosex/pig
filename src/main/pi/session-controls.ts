@@ -3,13 +3,14 @@
  * Unbuilt sessions project their JSONL; materialization applies the stored choices before publication.
  */
 import {
+  buildSessionContext,
   calculateContextTokens,
   estimateTokens,
   getLatestCompactionEntry,
+  sessionEntryToContextMessages,
   type AgentSession,
   type SessionContext,
-  type SessionEntry,
-  type SessionManager
+  type SessionEntry
 } from '@earendil-works/pi-coding-agent'
 import type {
   SessionContextUsage,
@@ -17,7 +18,9 @@ import type {
   SessionTokenStats,
   ThinkingLevel as SessionThinkingLevel
 } from '../../shared/api'
-import type { PendingSession, SessionState } from './session-state'
+import type { MemorySession, PendingSession, SessionFileSession, SessionState } from './session-state'
+import { readEntryById, readRows, readRowsStrict, type SessionFileEntry, type SessionFileIndex } from './session-jsonl'
+import { sessionIndex } from './session-source'
 import { followUpMessagesForDisplay } from './event-bridge'
 import {
   availableModels,
@@ -105,19 +108,12 @@ function persistedContextUsage(
  * the global defaults.
  */
 function pendingControls(
-  session: PendingSession,
+  session: MemorySession,
   models: SessionControls['models']
 ): SessionControls {
   const context = session.sessionManager.buildSessionContext()
   const branch = session.sessionManager.getBranch()
-  const model =
-    (session.modelProvider && session.modelId
-      ? findModel(session.modelProvider, session.modelId)
-      : null) ??
-    (context.model ? findModel(context.model.provider, context.model.modelId) : null) ??
-    defaultModelFromSettings() ??
-    models[0] ??
-    null
+  const model = resolveModel(session, context.model, models)
   const supported = thinkingLevelsFor(model)
   const picker = pickerThinkingLevels(supported)
   const recorded = branch.some((entry) => entry.type === 'thinking_level_change')
@@ -132,7 +128,134 @@ function pendingControls(
     ),
     thinkingLevels: picker,
     contextUsage: persistedContextUsage(model, context.messages, branch),
-    tokens: tokenStatsFromEntries(session.sessionManager),
+    followUpMessages: []
+  }
+}
+
+function resolveModel(
+  session: PendingSession,
+  recorded: { provider: string; modelId: string } | null,
+  models: SessionControls['models']
+): SessionControls['model'] {
+  return (
+    (session.modelProvider && session.modelId
+      ? findModel(session.modelProvider, session.modelId)
+      : null) ??
+    (recorded ? findModel(recorded.provider, recorded.modelId) : null) ??
+    defaultModelFromSettings() ??
+    models[0] ??
+    null
+  )
+}
+
+/** The last row of the branch a predicate accepts, or null. */
+function lastRowOf(rows: SessionFileEntry[], accept: (row: SessionFileEntry) => boolean): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]!
+    if (accept(row)) return i
+  }
+  return -1
+}
+
+const isAssistantRow = (row: SessionFileEntry) => row.type === 'message' && row.role === 'assistant'
+
+/** A file session with its index ready: every file read goes through this. */
+type IndexedFile = { path: string; index: SessionFileIndex }
+
+/**
+ * What `getSessionContextSettings` reads out of the branch, for a session with no manager: the model
+ * and thinking level come from the last entry that set them, and only those lines are read.
+ *
+ * Exported for tests: it mirrors SDK internals and has to keep matching them.
+ */
+export function fileSettings(file: IndexedFile): {
+  model: { provider: string; modelId: string } | null
+  thinkingLevel: SessionThinkingLevel | undefined
+} {
+  const rows = file.index.branch
+  const thinking = lastRowOf(rows, (row) => row.type === 'thinking_level_change')
+  const thinkingEntry = thinking >= 0 ? readEntryById(file.index, rows[thinking]!.id) : undefined
+  const modelAt = lastRowOf(rows, (row) => row.type === 'model_change')
+  const modelEntry = modelAt >= 0 ? readEntryById(file.index, rows[modelAt]!.id) : undefined
+  const chosen = Math.max(modelAt, lastRowOf(rows, isAssistantRow))
+  const assistant = chosen >= 0 ? readEntryById(file.index, rows[chosen]!.id) : undefined
+  const model =
+    assistant?.type === 'message' && assistant.message.role === 'assistant'
+      ? { provider: assistant.message.provider, modelId: assistant.message.model }
+      : modelEntry?.type === 'model_change'
+        ? { provider: modelEntry.provider, modelId: modelEntry.modelId }
+        : null
+  return {
+    model,
+    thinkingLevel:
+      thinkingEntry?.type === 'thinking_level_change'
+        ? (thinkingEntry.thinkingLevel as SessionThinkingLevel)
+        : undefined
+  }
+}
+
+/**
+ * `AgentSession.getContextUsage` for a session with no manager: the last reported usage after the last
+ * compaction plus the estimated messages after it, unknown when nothing usable follows a compaction.
+ *
+ * The backwards walk to that usage is what keeps this cheap: every other message in the branch is
+ * never read, because the estimate only needs the messages behind the usage.
+ */
+export function fileContextUsage(
+  file: IndexedFile,
+  model: SessionControls['model']
+): SessionContextUsage | null {
+  const contextWindow = model?.contextWindow ?? 0
+  if (contextWindow <= 0) return null
+  const rows = file.index.branch
+  const compactionAt = lastRowOf(rows, (row) => row.type === 'compaction')
+  let usage: ReturnType<typeof assistantUsage> = undefined
+  let usageAt = -1
+  for (let i = rows.length - 1; i > compactionAt; i--) {
+    if (!isAssistantRow(rows[i]!)) continue
+    const entry = readEntryById(file.index, rows[i]!.id)
+    const found = entry?.type === 'message' ? assistantUsage(entry.message) : undefined
+    if (found) {
+      usage = found
+      usageAt = i
+      break
+    }
+  }
+  if (!usage) {
+    if (compactionAt >= 0) return { tokens: null, contextWindow, percent: null }
+    // Nothing usable to start from: the SDK estimates every message of the context instead.
+    const entries = readRows(file.path, rows)
+    const byId = new Map(entries.map((entry) => [entry.id, entry]))
+    const messages = buildSessionContext(entries, file.index.leafId, byId).messages
+    const tokens = messages.reduce((total, message) => total + estimateTokens(message), 0)
+    return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+  }
+  let tokens = calculateContextTokens(usage)
+  for (const entry of readRows(file.path, rows.slice(usageAt + 1))) {
+    for (const message of sessionEntryToContextMessages(entry)) tokens += estimateTokens(message)
+  }
+  return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+}
+
+function fileControls(
+  session: SessionFileSession,
+  models: SessionControls['models'],
+  index: SessionFileIndex
+): SessionControls {
+  const file: IndexedFile = { path: session.path, index }
+  const settings = fileSettings(file)
+  const model = resolveModel(session, settings.model, models)
+  const supported = thinkingLevelsFor(model)
+  const picker = pickerThinkingLevels(supported)
+  return {
+    model,
+    models,
+    thinkingLevel: clampThinking(
+      session.thinkingLevel ?? settings.thinkingLevel ?? defaultThinkingFromSettings(model),
+      picker.length > 0 ? picker : supported
+    ),
+    thinkingLevels: picker,
+    contextUsage: fileContextUsage(file, model),
     followUpMessages: []
   }
 }
@@ -141,9 +264,9 @@ function pendingControls(
  * Lifetime spend of the whole session file, not of the current branch: abandoned branches and
  * entries before a compaction are counted too, which is what the usage popover reports.
  */
-function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStats {
+function tokenStatsFromEntries(entries: SessionEntry[]): SessionTokenStats {
   const tokens = { ...emptyTokens }
-  for (const entry of sessionManager.getEntries()) {
+  for (const entry of entries) {
     if (entry.type !== 'message' || entry.message.role !== 'assistant') continue
     const usage = entry.message.usage
     tokens.input += usage.input
@@ -153,6 +276,28 @@ function tokenStatsFromEntries(sessionManager: SessionManager): SessionTokenStat
   }
   tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite
   return tokens
+}
+
+/**
+ * Whole-file lifetime spend, only on request: reading every assistant line costs about 250ms on
+ * the largest session, and the popover that shows it is opened rarely. A pending file pays it once.
+ */
+export async function tokenStatsFor(session: SessionState): Promise<SessionTokenStats> {
+  if ('agentSession' in session) {
+    return tokenStatsFromEntries(session.agentSession.sessionManager.getEntries())
+  }
+  if (session.kind !== 'file') {
+    return tokenStatsFromEntries(session.sessionManager.getEntries())
+  }
+  return fileTokenStats({ path: session.path, index: await sessionIndex(session) }, session)
+}
+
+function fileTokenStats(file: IndexedFile, session: SessionFileSession): SessionTokenStats {
+  if (!session.tokens) {
+    const rows = file.index.entries.filter(isAssistantRow)
+    session.tokens = tokenStatsFromEntries(readRowsStrict(file.path, rows))
+  }
+  return session.tokens
 }
 
 export async function controlsFor(session: SessionState): Promise<SessionControls> {
@@ -177,12 +322,13 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
             percent: usage.percent
           }
         : null,
-      tokens: tokenStatsFromEntries(session.agentSession.sessionManager),
       followUpMessages: followUpMessagesForDisplay(session.agentSession)
     }
   }
 
-  return pendingControls(session, models)
+  if (session.kind !== 'file') return pendingControls(session, models)
+  // Waiting here is the point of the split: the picker and the ring appear when the index exists.
+  return fileControls(session, models, await sessionIndex(session))
 }
 
 export async function setSessionModel(

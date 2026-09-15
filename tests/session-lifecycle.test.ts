@@ -22,6 +22,7 @@ async function fixture(scenario: string): Promise<void> {
   const sessionId = 'draft-session'
   const sessionFile = join(cwd, 'session.jsonl')
   const header = { type: 'session', version: 3, id: sessionId, cwd }
+  let createCalls = 0
   let modelCalls = 0
   let subscribeCalls = 0
   let disposeCalls = 0
@@ -68,7 +69,7 @@ async function fixture(scenario: string): Promise<void> {
       ...sdk,
       createAgentSession: async () => ({ session }),
       ModelRuntime: { create: async () => ({ refresh: async () => {}, getModel: () => ({ id: 'test' }) }) },
-      SessionManager: { create: () => manager, open: () => manager },
+      SessionManager: { create: () => { createCalls++; return manager }, open: () => manager },
       SettingsManager: { create: () => ({}) },
       DefaultResourceLoader: class { async reload() {} },
       getAgentDir: () => join(cwd, 'agent')
@@ -137,9 +138,10 @@ async function fixture(scenario: string): Promise<void> {
       assert.match(String(settled.error), /Model configuration failed/)
       assert.equal(await stat(sessionFile).catch(() => null), null)
       assert.equal(disposeCalls, 1)
-      assert.equal(sessions.sessionManagerFor(sessionId), manager)
+      assert.equal(sessions.isPendingDraft(sessionId), true)
       await sessions.prepareSession(sessionId)
       assert.equal(modelCalls, 2)
+      assert.equal(createCalls, 1)
     } else {
       assert.ok('value' in settled)
       assert.equal(sessions.getLive(sessionId), settled.value)

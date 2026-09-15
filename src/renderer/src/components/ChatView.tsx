@@ -9,6 +9,7 @@ import { Empty } from './ui/empty'
 import { MessageScrollerProvider } from './ui/message-scroller'
 
 const emptyTurns: RuntimeState['turns'] = []
+const emptySummary: RuntimeState['turnSummary'] = []
 const emptyMessages: RuntimeState['liveMessages'] = []
 const emptyProcess: RuntimeState['processByTurnId'] = {}
 const emptyDurations: Record<string, number> = {}
@@ -62,6 +63,11 @@ const SessionChatPane = memo(function SessionChatPane({
 }) {
   const branchViewId = useSessionsStore((s) => s.runtime[sessionId]?.branchViewId ?? null)
   const turns = useSessionsStore((s) => s.runtime[sessionId]?.turns ?? emptyTurns)
+  const turnStart = useSessionsStore((s) => s.runtime[sessionId]?.turnStart ?? 0)
+  const turnSummary = useSessionsStore((s) => s.runtime[sessionId]?.turnSummary ?? emptySummary)
+  const turnPending = useSessionsStore((s) => s.runtime[sessionId]?.turnPending ?? false)
+  const turnLoading = useSessionsStore((s) => s.runtime[sessionId]?.turnLoading ?? false)
+  const turnError = useSessionsStore((s) => s.runtime[sessionId]?.turnError ?? null)
   const liveMessages = useSessionsStore((s) => s.runtime[sessionId]?.liveMessages ?? emptyMessages)
   const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
   const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
@@ -123,6 +129,11 @@ const SessionChatPane = memo(function SessionChatPane({
             historical={historical}
             live={live}
             sessionId={sessionId}
+            windowStart={turnStart}
+            indexPending={turnPending}
+            loadingOlder={turnLoading}
+            loadError={turnError}
+            summary={turnSummary}
             initialScrollState={initialScrollState}
             onSave={saveScrollState}
           />

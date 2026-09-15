@@ -13,6 +13,11 @@ export const emptyRuntime = (): RuntimeState => ({
   instanceId: ++runtimeSequence,
   controlsRevision: 0,
   turns: [],
+  turnStart: 0,
+  turnSummary: [],
+  turnLoading: false,
+  turnPending: false,
+  turnError: null,
   leafId: null,
   branchViewId: createBranchViewId(),
   branchViews: {},
@@ -30,7 +35,9 @@ export const emptyRuntime = (): RuntimeState => ({
   thinkingLevel: 'off',
   thinkingLevels: ['off'],
   contextUsage: null,
-  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  tokens: null,
+  tokensLoading: false,
+  tokensError: null,
   followUpMessages: [],
   queuedEditText: null
 })

@@ -30,7 +30,9 @@ async function fixture(name: string): Promise<void> {
       extensionRunner: { emit: async () => {} }
     }
     mock.module('electron', () => ({ app: { isPackaged: false } }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
     mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
       createAgentSession: async () => ({ session }),
       SessionManager: { create: () => manager }
     }))
@@ -42,7 +44,8 @@ async function fixture(name: string): Promise<void> {
       applyPendingControls: async () => { started.resolve(); await release.promise },
       setSessionModel: async (state: object) => { applied.push({ kind: 'model', live: 'agentSession' in state }) },
       setSessionThinking: async (state: object) => { applied.push({ kind: 'thinking', live: 'agentSession' in state }) },
-      controlsFor() {}, refreshSessionModels() {}
+      controlsFor() {}, refreshSessionModels() {},
+      tokenStatsFor: () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 })
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
       createChatResourceLoader: async () => undefined, createNoExtensionsResourceLoader: async () => undefined

@@ -127,7 +127,7 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
     const results = await Promise.allSettled([
       useSessionsStore.getState().refreshCwd(cwd),
       useSessionsStore.getState().loadControls(sessionId),
-      ...(consumedCommand ? [useSessionsStore.getState().hydrateTurns(sessionId)] : [])
+      ...(consumedCommand ? [useSessionsStore.getState().hydrateTurns(sessionId, { keepOlderTurns: true })] : [])
     ])
     const failed = results.find((result) => result.status === 'rejected')
     if (isCurrent() && failed?.status === 'rejected') report(sessionId, failed.reason)

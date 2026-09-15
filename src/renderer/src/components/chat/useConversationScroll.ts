@@ -8,6 +8,8 @@ const LOAD_MORE_TURNS = 20
 /** History mounts one slide at a time instead of the whole suffix down to the newest turn. */
 const WINDOW_TURNS = INITIAL_TURNS * 2
 const EDGE_LOAD_THRESHOLD = 100
+/** A restore pages in steps that each cover up to 200 turns; this stops a pathological window. */
+const MAX_RESTORE_PAGES = 32
 
 type VisibleTurn = {
   turn: Turn
@@ -18,6 +20,16 @@ type VisibleTurn = {
 type TurnAnchor = {
   key: string
   offset: number
+  /** Position in the branch, when the row that carried it knew it. */
+  index?: number
+}
+
+/** The window position of a saved anchor, by render key or entry id; -1 when it is not loaded. */
+function indexOfAnchor(turns: Turn[], anchor: { key: string } | null): number {
+  if (!anchor) return -1
+  return turns.findIndex(
+    (turn, index) => renderKeyForTurn(turn, index) === anchor.key || turn.id === anchor.key
+  )
 }
 
 /** History paging and reading positions; MessageScroller owns every scroll write. */
@@ -25,12 +37,22 @@ export function useConversationScroll({
   active,
   historical,
   live,
+  windowStart = 0,
+  windowPending = false,
+  hasMoreHistory = false,
+  onLoadOlder,
   initialScrollState,
   onSave
 }: {
   active: boolean
   historical: Turn[]
   live: Turn[]
+  /** Index of `historical[0]` in the branch, so a prepended page can keep the reading position. */
+  windowStart?: number
+  /** The window's offset is still provisional, so a row's branch index cannot be trusted yet. */
+  windowPending?: boolean
+  hasMoreHistory?: boolean
+  onLoadOlder?: (target?: number) => void
   initialScrollState?: ScrollSnapshot
   onSave: (state: ScrollSnapshot) => void
 }) {
@@ -42,11 +64,14 @@ export function useConversationScroll({
   const pendingRestore = useRef<ScrollSnapshot | null>(null)
   const previousLiveCount = useRef(live.length)
   const windowChanging = useRef(false)
+  const lastScrollTop = useRef<number | null>(null)
   const pendingWindow = useRef<TurnAnchor | null>(null)
+  const restorePages = useRef(0)
   const stableAnchor = useRef<TurnAnchor | null>(null)
   const [historyStart, setHistoryStart] = useState(() => Math.max(0, historical.length - INITIAL_TURNS))
   const [jumpRequest, setJumpRequest] = useState<{ index: number; token: number } | null>(null)
   const jumpToken = useRef(0)
+  const loadedStart = useRef(windowStart)
 
   const allTurns = useMemo(() => [...historical, ...live], [historical, live])
   const visibleStart = Math.min(historyStart, Math.max(0, historical.length - INITIAL_TURNS))
@@ -64,19 +89,36 @@ export function useConversationScroll({
     }))
   ], [historical, live, visibleEnd, visibleStart])
 
-  const measureAnchor = useCallback((): TurnAnchor | null => {
+  // Measured from the rendered rows, not from the turn list: a page can arrive while the list is
+  // already longer than what is on screen, and the reading row is whichever one is painted.
+  const measureRow = useCallback((): { element: HTMLElement; key: string; offset: number; index?: number } | null => {
     const viewport = viewportRef.current
-    if (!viewport) return null
+    const content = contentRef.current
+    if (!viewport || !content) return null
     const viewportRect = viewport.getBoundingClientRect()
     const bound = viewportRect.top + TURN_ALIGN
-    for (const { key } of visibleTurns) {
-      const element = turnRefs.current.get(key)
-      if (!element) continue
+    for (const element of content.querySelectorAll<HTMLElement>('[data-turn-key]')) {
+      if (!element.isConnected) continue
       const rect = element.getBoundingClientRect()
-      if (rect.bottom > bound) return { key, offset: rect.top - viewportRect.top }
+      if (rect.bottom <= bound) continue
+      const key = element.dataset.turnKey
+      const turnIndex = Number(element.dataset.turnIndex)
+      if (key) {
+        return {
+          element,
+          key,
+          offset: rect.top - viewportRect.top,
+          ...(Number.isFinite(turnIndex) ? { index: turnIndex } : {})
+        }
+      }
     }
     return null
-  }, [visibleTurns])
+  }, [])
+
+  const measureAnchor = useCallback((): TurnAnchor | null => {
+    const row = measureRow()
+    return row ? { key: row.key, offset: row.offset, ...(row.index === undefined ? {} : { index: row.index }) } : null
+  }, [measureRow])
 
   const reanchor = useCallback(() => {
     const anchor = stableAnchor.current
@@ -98,9 +140,11 @@ export function useConversationScroll({
     latest.current = {
       scrollTop: viewport.scrollTop,
       following: scroller.getScrollState().following,
-      anchor
+      // A provisional window labels its rows with positions it cannot back yet, so a snapshot taken
+      // then keeps only the row identity: the offset is recovered when the window settles.
+      anchor: anchor && !windowPending ? anchor : anchor && { key: anchor.key, offset: anchor.offset }
     }
-  }, [measureAnchor, scroller])
+  }, [measureAnchor, scroller, windowPending])
 
   // Rows enter and leave offscreen, so the reading row is re-anchored after the commit.
   const changeWindow = useCallback((next: number) => {
@@ -113,6 +157,8 @@ export function useConversationScroll({
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     capture()
     const viewport = event.currentTarget
+    const previousScrollTop = lastScrollTop.current
+    lastScrollTop.current = viewport.scrollTop
     if (windowChanging.current) return
     if (scroller.getScrollState().following) {
       // A follower always tracks the newest turns, even after the window was trimmed.
@@ -122,6 +168,10 @@ export function useConversationScroll({
     if (viewport.scrollTop <= EDGE_LOAD_THRESHOLD) {
       const next = Math.max(0, visibleStart - LOAD_MORE_TURNS)
       if (next !== visibleStart) changeWindow(next)
+      // Only a reader moving up asks for older turns; sitting near the top must not chain-load.
+      else if (hasMoreHistory && (previousScrollTop == null || viewport.scrollTop < previousScrollTop)) {
+        onLoadOlder?.()
+      }
       return
     }
     if (
@@ -130,7 +180,15 @@ export function useConversationScroll({
     ) {
       changeWindow(visibleStart + LOAD_MORE_TURNS)
     }
-  }, [capture, changeWindow, historical.length, scroller, visibleEnd, visibleStart])
+  }, [capture, changeWindow, hasMoreHistory, historical.length, onLoadOlder, scroller, visibleEnd, visibleStart])
+
+  // Older turns are prepended: the mounted slide has to shift with them, and the reading position
+  // has to survive the resize, which the compensation below takes care of.
+  useLayoutEffect(() => {
+    const prepended = loadedStart.current - windowStart
+    loadedStart.current = windowStart
+    if (prepended > 0) setHistoryStart((start) => start + prepended)
+  }, [windowStart])
 
   useLayoutEffect(() => {
     if (!windowChanging.current) return
@@ -156,6 +214,7 @@ export function useConversationScroll({
   useLayoutEffect(() => {
     // Effects run only while the pane is visible, so this is also the reactivation hook.
     pendingRestore.current = latest.current ?? { scrollTop: 0, following: true, anchor: null }
+    restorePages.current = 0
     return () => { pendingRestore.current = null }
   }, [])
 
@@ -183,9 +242,21 @@ export function useConversationScroll({
       return
     }
     const anchor = pending.anchor
-    const targetIndex = anchor
-      ? allTurns.findIndex((turn, index) => renderKeyForTurn(turn, index) === anchor.key || turn.id === anchor.key)
-      : -1
+    const targetIndex = indexOfAnchor(allTurns, anchor)
+    if (
+      anchor &&
+      targetIndex < 0 &&
+      anchor.index !== undefined &&
+      anchor.index < windowStart &&
+      onLoadOlder &&
+      restorePages.current < MAX_RESTORE_PAGES
+    ) {
+      restorePages.current += 1
+      // The branch came back with its tail only, and the saved turn is above it: page the window that
+      // holds the reading position before aligning, and keep the request pending until it lands.
+      onLoadOlder(anchor.index)
+      return
+    }
     if (
       targetIndex >= 0 &&
       targetIndex < historical.length &&
@@ -203,7 +274,7 @@ export function useConversationScroll({
     }
     const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top
     scroller.scrollToOffset(viewport.scrollTop + offset - anchor.offset)
-  }, [active, allTurns, changeWindow, historical.length, scroller, visibleEnd, visibleStart])
+  }, [active, allTurns, changeWindow, historical.length, onLoadOlder, scroller, visibleEnd, visibleStart, windowStart])
 
   useLayoutEffect(() => {
     // A paused reader keeps the mounted window; only a follower tracks the end of history.
@@ -230,6 +301,12 @@ export function useConversationScroll({
     }
   }, [allTurns, changeWindow, historical.length, jumpRequest, scroller, visibleEnd, visibleStart])
 
+  /** Mounts the slide of already loaded turns above the window, keeping the reading row in place. */
+  const loadEarlier = useCallback(() => {
+    const next = Math.max(0, visibleStart - LOAD_MORE_TURNS)
+    if (next !== visibleStart) changeWindow(next)
+  }, [changeWindow, visibleStart])
+
   const registerTurn = useCallback((key: string, element: HTMLDivElement | null) => {
     if (element) turnRefs.current.set(key, element)
     else turnRefs.current.delete(key)
@@ -250,6 +327,7 @@ export function useConversationScroll({
     viewportRef,
     contentRef,
     visibleTurns,
+    loadEarlier,
     hasMoreAbove: visibleStart > 0,
     hasMoreBelow: visibleEnd < historical.length,
     onScroll,

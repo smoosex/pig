@@ -1,15 +1,26 @@
-import { sessionManagerFor } from './session-registry'
-import { displayResultFor, displayTurnsFromEntries, turnMessagesFromEntries } from './session-display-model'
+import { withSource } from './session-registry'
+import { displayWindow, turnWindow } from './session-source'
 import type { DisplayTurnsResult } from '../../shared/api'
 
 export type { DisplayAnswer, DisplayTurn, DisplayUser, DisplayTurnsResult } from '../../shared/api'
 
-export { displayTurnsFromEntries }
+export { displayTurnsFromEntries } from './session-display-model'
 
-export function getDisplayTurns(sessionId: string): DisplayTurnsResult {
-  return displayResultFor(sessionManagerFor(sessionId))
+/** The tail of the branch, plus the turn weights the minimap needs for the turns it does not hold. */
+export async function getDisplayTurns(sessionId: string): Promise<DisplayTurnsResult> {
+  return withSource(sessionId, displayWindow)
 }
 
-export function getTurnMessages(sessionId: string, turnId: string): unknown[] {
-  return turnMessagesFromEntries(sessionManagerFor(sessionId).getBranch(), turnId)
+/** Older turns for a reader who scrolled past the loaded window. */
+export async function getTurnWindow(
+  sessionId: string,
+  start: number,
+  count: number
+): Promise<DisplayTurnsResult> {
+  return withSource(sessionId, (source) => turnWindow(source, start, count))
+}
+
+/** One turn's process disclosure: read without projecting the rest of the branch. */
+export async function getTurnMessages(sessionId: string, turnId: string): Promise<unknown[]> {
+  return withSource(sessionId, (source) => source.turnMessages(turnId))
 }

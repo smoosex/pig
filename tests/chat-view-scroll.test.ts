@@ -172,6 +172,9 @@ async function runFixture(name: string): Promise<void> {
   type Runtime = {
     branchViewId: string
     turns: DisplayTurn[]
+    turnStart: number
+    turnPending: boolean
+    turnSummary: never[]
     liveMessages: Array<{ role: string; content: unknown; timestamp: number }>
     processByTurnId: Record<string, never>
     thinkingDurations: Record<string, never>
@@ -180,15 +183,26 @@ async function runFixture(name: string): Promise<void> {
     isStreaming: boolean
   }
   const runtime = (branchViewId: string, count: number): Runtime => ({
-    branchViewId, turns: turns(count), liveMessages: [], processByTurnId: {}, thinkingDurations: {},
+    branchViewId, turns: turns(count), turnStart: 0, turnPending: false, turnSummary: [],
+    liveMessages: [], processByTurnId: {}, thinkingDurations: {},
     elapsedByTurnId: {}, streamElapsedMs: null, isStreaming: false
   })
   let store = {
     activeSessionId: 's1',
     openTabs: [{ sessionId: 's1' }, { sessionId: 's2' }],
     runtime: { s1: runtime('v1', 24), s2: runtime('v2', 12) },
-    loadTurnProcess: async () => {}
+    loadTurnProcess: async () => {},
+    loadOlderTurns: async (_sessionId: string, target?: number) => {
+      const runtime = store.runtime.s1
+      if (runtime.turnStart === 0) return
+      // Bounded the way the store pages: a far target is fetched in steps, not in one read.
+      const wanted = Math.min(target ?? runtime.turnStart - 40, runtime.turnStart - 1)
+      const from = Math.max(0, wanted, runtime.turnStart - 200)
+      preloaded.push(from)
+      change({ turns: [...turns(runtime.turnStart).slice(from, runtime.turnStart), ...runtime.turns], turnStart: from })
+    }
   }
+  const preloaded: number[] = []
   // Zustand-like subscriptions: memoized panes only re-render when their selectors change.
   const listeners = new Set<() => void>()
   const notify = () => act(() => { for (const listener of [...listeners]) listener() })
@@ -198,12 +212,15 @@ async function runFixture(name: string): Promise<void> {
   }
   const heights = new Map<string, number>()
   mock.module('../src/renderer/src/stores/sessions', () => ({
-    useSessionsStore: (select: (state: typeof store) => unknown) =>
-      useSyncExternalStore(
-        (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-        () => select(store),
-        () => select(store)
-      )
+    useSessionsStore: Object.assign(
+      (select: (state: typeof store) => unknown) =>
+        useSyncExternalStore(
+          (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+          () => select(store),
+          () => select(store)
+        ),
+      { getState: () => store }
+    )
   }))
   mock.module('../src/renderer/src/components/TurnView', () => ({
     TurnView: ({ turn, onNeedProcess }: {
@@ -301,6 +318,8 @@ async function runFixture(name: string): Promise<void> {
     const rect = hit.getBoundingClientRect()
     return { index: Number(hit.dataset.turnIndex), offset: rect.top - VIEWPORT_TOP }
   }
+  const pendingButton = () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+    .find((button) => button.textContent === '加载更早消息')
   const foldFirstVisibleHistory = async () => {
     const trigger = rows().find((item) => {
       const rect = item.getBoundingClientRect()
@@ -480,6 +499,174 @@ async function runFixture(name: string): Promise<void> {
       await settle()
       assert.ok(row(79), 'the bottom control returns to the newest tail')
       atEnd()
+    } else if (name === 'far-jump') {
+      // A live session keeps the whole minimap, but its window only holds the newest turns.
+      const total = 2000
+      const start = total - 60
+      change({
+        turns: turns(total).slice(start),
+        turnStart: start,
+        turnSummary: turns(total).map((turn) => ({ id: turn.id, bytes: 12, hasImages: false })) as never
+      })
+      await render()
+      atEnd()
+      const target = container.querySelector<HTMLButtonElement>('[role="navigation"] [data-turn-index="100"]')
+      assert.ok(target, 'a turn far above the window still has a minimap bar')
+      await act(async () => { target.click() })
+      for (let round = 0; round < 6 && !row(100); round += 1) await settle()
+      assert.ok(preloaded.length > 1, `a far jump pages instead of pulling the whole gap: ${preloaded.join(', ')}`)
+      assert.ok(
+        preloaded.every((value, index) => index === 0 || preloaded[index - 1]! - value <= 200),
+        `every page stays bounded: ${preloaded.join(', ')}`
+      )
+      assert.ok(row(100), 'the wanted turn is mounted once its page arrived')
+      near(row(100)!.getBoundingClientRect().top, VIEWPORT_TOP + TURN_ALIGN, 'the target aligns at the top')
+    } else if (name === 'pending-window-status') {
+      // The first paint of a long session is a provisional tail: its offset is unknown, so there is
+      // nothing to load yet and the hint must not pretend to be a working control.
+      change({ turnPending: true, turnStart: 0, turns: turns(60) })
+      await render()
+      assert.equal(pendingButton(), undefined, 'a provisional window offers no button')
+      const status = [...container.querySelectorAll('div')]
+        .find((element) => element.textContent === '正在统计更早轮次…')
+      assert.ok(status, 'the reader is told why nothing can be loaded yet')
+      change({ turnPending: false, turnStart: 140, turns: turns(60) })
+      await render()
+      assert.ok(pendingButton(), 'once the window knows its offset the control is back')
+    } else if (name === 'return-to-branch-window') {
+      // The reader walks up an old branch, leaves it, and comes back: the branch returns its tail
+      // only, so the saved reading row has to page the window that holds it back in.
+      change({
+        turns: turns(200),
+        turnStart: 0,
+        turnSummary: turns(200).map((turn) => ({ id: turn.id, bytes: 12, hasImages: false })) as never
+      })
+      await render()
+      atEnd()
+      const bar = container.querySelector<HTMLButtonElement>('[role="navigation"] [data-turn-index="40"]')
+      assert.ok(bar, 'the minimap knows every turn of the branch')
+      await act(async () => { bar.click() })
+      await settle()
+      assert.ok(row(40), 'the jump mounts the older row')
+      const anchored = topRow()
+      assert.ok(anchored.index < 60, `the reader must sit in the older part: index=${anchored.index}`)
+      change({ branchViewId: 'v3', turns: turns(32), turnStart: 0 })
+      await render()
+      atEnd()
+      const before = preloaded.length
+      // Coming back hands over the branch's tail, which does not hold the saved row.
+      change({ branchViewId: 'v1', turns: turns(200).slice(140), turnStart: 140 })
+      await render()
+      const asked = preloaded.slice(before)
+      assert.ok(asked.length > 0, 'the saved position must ask for the turns that hold it')
+      assert.ok(Math.min(...asked) <= anchored.index, `paging starts where the row is: ${asked}`)
+      assert.ok(store.runtime.s1.turnStart <= anchored.index, 'the loaded window reaches the saved row')
+      const restored = topRow()
+      assert.equal(restored.index, anchored.index, 'the saved row is the reading row again')
+      near(restored.offset, anchored.offset, 'at its saved offset')
+    } else if (name === 'window-without-summary') {
+      // A live session over the window size: the minimap holds only the loaded turns, at their own index.
+      const total = 2000
+      const start = total - 60
+      change({ turns: turns(total).slice(start), turnStart: start, turnSummary: [] })
+      await render()
+      atEnd()
+      const first = container.querySelectorAll<HTMLButtonElement>('[role="navigation"] button')[0]
+      assert.ok(first, 'the loaded window still gets bars')
+      assert.match(first.getAttribute('aria-label') ?? '', /第 1941 轮/)
+      await act(async () => { first.click() })
+      await settle()
+      assert.ok(!preloaded.includes(0), 'the bar must not ask for the branch start: ' + preloaded.join(', '))
+      assert.ok(row(1940), 'the first bar jumps to its own turn, not to the first turn')
+      assert.equal(topRow().index, 1940)
+    } else if (name === 'remote-history') {
+      // A tail window of a 2000-turn history: everything above it is still on disk.
+      const total = 2000
+      const start = total - 60
+      change({
+        turns: turns(total).slice(start),
+        turnStart: start,
+        turnSummary: turns(total).map((turn) => ({ id: turn.id, bytes: 12, hasImages: false })) as never
+      })
+      await render()
+      atEnd()
+      assert.equal(rows().length, 20, 'only the tail of the loaded window mounts')
+      const older = container.querySelector<HTMLButtonElement>('[data-turn-index="1930"]')
+      assert.ok(older, 'a turn that was never loaded still gets a minimap bar')
+      assert.match(older.getAttribute('aria-label') ?? '', /第 1931 轮/, 'the bar is labelled from the summary')
+      await act(async () => { older.click() })
+      await settle()
+      assert.equal(preloaded[0], 1930, 'the jump fetches the missing range it needs')
+      assert.ok(row(1930), 'the fetched page mounts')
+      assert.equal(rows()[0]?.dataset.turnIndex, '1930', 'the fetched turn is the top row')
+      assert.ok(rowOffset(1930) <= ROW_HEIGHT, `the fetched turn sits at the fold: ${rowOffset(1930)}`)
+      const beforePrepend = preloaded.length
+      let anchored = topRow()
+      for (let round = 0; round < 5 && preloaded.length === beforePrepend; round += 1) {
+        await act(async () => { input('wheel', viewport()); viewport().scrollTop = 0 })
+        anchored = topRow()
+        await settle()
+      }
+      assert.ok(preloaded.length > beforePrepend, 'reaching the top of the window loads the page above it')
+      assert.ok(
+        preloaded.slice(1).every((value, index) => value === preloaded[index]! - 40),
+        `older pages walk upwards: ${preloaded.join(', ')}`
+      )
+      assert.equal(rows().length, 40, 'the mounted window stays bounded')
+      assert.ok(store.runtime.s1.turnStart < 1930, 'the window grew above the turn the reader is on')
+      assert.equal(rowOffset(anchored.index), anchored.offset, 'loading above keeps the reading row and its offset')
+      const settled = preloaded.length
+      const scrolled = viewport().scrollTop
+      await act(async () => { input('wheel', viewport()); viewport().scrollTop = scrolled + 30 })
+      await settle()
+      assert.equal(preloaded.length, settled, 'reading downwards does not fetch older turns')
+    } else if (name === 'page-above-reachable') {
+      const total = 2000
+      const start = 1850
+      change({
+        turns: turns(total).slice(start),
+        turnStart: start,
+        turnSummary: turns(total).map((turn) => ({ id: turn.id, bytes: 12, hasImages: false })) as never
+      })
+      await render()
+      atEnd()
+      // The reader pages up locally until the window cannot move any further, and ends at the very
+      // top of the scroll range.
+      for (let round = 0; round < 6; round += 1) {
+        await act(async () => { input('wheel', viewport()); viewport().scrollTop = 0 })
+        await settle()
+      }
+      await act(async () => { viewport().scrollTop = 0 })
+      const parked = store.runtime.s1.turnStart
+      const anchored = topRow()
+      assert.equal(viewport().scrollTop, 0, 'the reader sits at the very top')
+      // A page lands while they are still there: there is no scroll event left to page it in, so
+      // the hint is what mounts it.
+      await act(async () => { await store.loadOlderTurns('s1') })
+      await settle()
+      assert.ok(store.runtime.s1.turnStart < parked, 'a page landed above the loaded window')
+      assert.deepEqual(topRow(), anchored, 'the landing itself keeps the reading row in place')
+      const hint = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === '加载更早消息')
+      assert.ok(hint, 'the hint is a control, not just a promise')
+      await act(async () => { hint.click() })
+      await settle()
+      const first = Number(rows()[0]?.dataset.turnIndex)
+      assert.ok(
+        Number.isFinite(first) && first <= anchored.index - 20,
+        `the hint mounts the page that landed: first=${first}, before=${anchored.index}`
+      )
+      assert.deepEqual(topRow(), anchored, 'mounting it above keeps the reading row in place')
+      assert.ok(viewport().scrollTop > 0, 'the page above leaves room to keep scrolling')
+      const reached = Number(rows()[0]?.dataset.turnIndex)
+      for (let round = 0; round < 4; round += 1) {
+        await act(async () => {
+          input('wheel', viewport())
+          viewport().scrollTop = Math.max(0, viewport().scrollTop - 400)
+        })
+        await settle()
+      }
+      assert.ok(Number(rows()[0]?.dataset.turnIndex) < reached, 'scrolling up keeps mounting older turns')
     } else if (name === 'resize-history') {
       change({ turns: turns(80) })
       await render()
@@ -535,6 +722,11 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'resize-history': 'an above-viewport size change keeps a paused reader in place',
     paging: 'long histories mount one page and paging keeps the reading position',
     'minimap-jump': 'minimap navigation mounts and aligns an older turn',
+    'far-jump': 'a far minimap jump pages the window instead of reading the whole gap',
+    'window-without-summary': 'a windowed minimap jumps by the branch turn behind each bar',
+    'return-to-branch-window': 'returning to a branch pages back to the saved reading row',
+    'pending-window-status': 'a provisional window shows why it cannot load yet',
+    'remote-history': 'a windowed history loads older turns on demand and keeps the reading position',
     'switch-unmount-cleanup': 'hidden panes stay quiet and unmount cancels detached work'
   }
   for (const [name, title] of Object.entries(fixtures)) {

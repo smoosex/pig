@@ -1,5 +1,5 @@
 import { ArrowUp, Square } from 'lucide-react'
-import type { SessionModelInfo, SessionTokenStats, ThinkingLevel } from '../../ipc/api'
+import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
@@ -9,12 +9,20 @@ import { useModelControls } from './useModelControls'
 
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
-const EMPTY_TOKENS: SessionTokenStats = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
-
 function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
   const usage = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.contextUsage ?? null) : null)
-  const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? EMPTY_TOKENS) : EMPTY_TOKENS)
-  return <ContextUsageButton usage={usage} tokens={tokens} disabled={!sessionId} />
+  const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? null) : null)
+  const tokensError = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokensError ?? null) : null)
+  const loadTokenStats = useSessionsStore((s) => s.loadTokenStats)
+  return (
+    <ContextUsageButton
+      usage={usage}
+      tokens={tokens}
+      error={tokensError}
+      onOpen={() => { if (sessionId) void loadTokenStats(sessionId) }}
+      disabled={!sessionId}
+    />
+  )
 }
 
 export function ComposerToolbar({

@@ -114,7 +114,7 @@ export function subscribeSessionEvents(): () => void {
             delays.delete(sessionId)
             const latest = useSessionsStore.getState().runtime[sessionId]
             if (latest?.instanceId === current.instanceId && !latest.isStreaming) {
-              void hydrateTurns(sessionId).catch(reportError('refresh session history'))
+              void hydrateTurns(sessionId, { keepOlderTurns: true }).catch(reportError('refresh session history'))
             }
           }, HYDRATE_DELAY_MS)
         )

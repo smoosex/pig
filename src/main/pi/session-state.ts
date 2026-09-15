@@ -1,6 +1,7 @@
-import type { AgentSession, SessionManager } from '@earendil-works/pi-coding-agent'
+import type { AgentSession, SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import type { BrowserWindow } from 'electron'
-import type { ThinkingLevel } from '../../shared/api'
+import type { SessionTokenStats, SessionTreeRow, ThinkingLevel } from '../../shared/api'
+import type { SessionFileIndex } from './session-jsonl'
 
 export interface LiveSession {
   sessionId: string
@@ -9,16 +10,42 @@ export interface LiveSession {
   unsubscribe: () => void
 }
 
-export interface PendingSession {
+interface PendingBase {
   sessionId: string
   cwd: string
-  sessionManager: SessionManager
   win: BrowserWindow
-  /** Existing JSONL sessions already have a file; drafts need materialization first. */
-  needsMaterialize?: boolean
   modelProvider?: string
   modelId?: string
   thinkingLevel?: ThinkingLevel
 }
 
+/** Entries live in an in-memory manager: a draft, or a file this reader cannot index. */
+export interface MemorySession extends PendingBase {
+  kind: 'memory'
+  sessionManager: SessionManager
+  /** Drafts own no file until their first interaction; an opened file is persisted already. */
+  needsMaterialize: boolean
+}
+
+/** An opened JSONL session read through the byte index; the SDK build waits for the first interaction. */
+export interface SessionFileSession extends PendingBase {
+  kind: 'file'
+  path: string
+  /**
+   * The branch index, built after the first paint rather than before it: opening reads only the
+   * tail, and everything that needs every line waits for this one promise.
+   */
+  index: SessionFileIndex | null
+  indexing: Promise<SessionFileIndex> | null
+  /** The tail entries, so an image in the first painted window resolves before the index exists. */
+  tailById: Map<string, SessionEntry> | null
+  /** Turns that tail window held: the branch index uses it to place the window it already handed out. */
+  tailTurns: number
+  /** Read once on demand: nothing writes to a file before the pending phase ends. */
+  tokens?: SessionTokenStats
+  /** The tree of this file, read at most once while the session is pending: the file cannot change. */
+  treeRows?: SessionTreeRow[]
+}
+
+export type PendingSession = MemorySession | SessionFileSession
 export type SessionState = LiveSession | PendingSession

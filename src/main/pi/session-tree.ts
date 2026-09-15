@@ -3,8 +3,9 @@
  * Hidden bookkeeping entries remain in the SDK tree; only their visual ancestry is collapsed.
  */
 import { homedir } from 'node:os'
-import type { SessionManager } from '@earendil-works/pi-coding-agent'
+import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { SessionTreeGutter, SessionTreeRow } from '../../shared/api'
+import type { SessionSource } from './session-source'
 
 type TreeNode = {
   entry: {
@@ -343,10 +344,24 @@ function layoutVisible(visible: VisibleNode[], parentOf: Map<string, string | nu
   }
 }
 
-export function sessionTreeRows(sm: SessionManager): SessionTreeRow[] {
-  const leafId = sm.getLeafId()
-  const pathSet = new Set(sm.getBranch().map((entry) => entry.id))
-  const { visible, parentOf } = collectVisible(sm.getTree() as TreeNode[], leafId, pathSet)
+/** The children structure the SDK builds from the same entries, orphans landing as roots. */
+function treeOf(entries: SessionEntry[]): TreeNode[] {
+  const nodes = new Map<string, TreeNode>()
+  const roots: TreeNode[] = []
+  for (const entry of entries) nodes.set(entry.id, { entry, children: [] })
+  for (const entry of entries) {
+    const node = nodes.get(entry.id)!
+    const parent = entry.parentId === null ? undefined : nodes.get(entry.parentId)
+    if (entry.parentId === null || entry.parentId === entry.id || !parent) roots.push(node)
+    else parent.children.push(node)
+  }
+  return roots
+}
+
+export function sessionTreeRows(source: SessionSource): SessionTreeRow[] {
+  const leafId = source.leafId()
+  const pathSet = new Set(source.branchIds())
+  const { visible, parentOf } = collectVisible(treeOf(source.treeEntries()), leafId, pathSet)
   layoutVisible(visible, parentOf)
   return visible.map((node) => ({
     id: node.id,

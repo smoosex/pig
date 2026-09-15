@@ -1,9 +1,8 @@
-import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
+import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type {
   DisplayAnswer,
   DisplayImage,
   DisplayTurn,
-  DisplayTurnsResult,
   DisplayUser
 } from '../../shared/api'
 import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '../../shared/session-images'
@@ -25,7 +24,11 @@ type PathMessage = {
   pastedText?: PastedTextMetadata
 }
 
-function isHidden(type: string): boolean {
+/**
+ * Entry types the projection never shows. The byte reader shares this list: turn boundaries must
+ * count the same rows the projection groups, or a window's turn arithmetic drifts from its turns.
+ */
+export function isHiddenEntryType(type: string): boolean {
   return (
     type === 'label' ||
     type === 'custom' ||
@@ -62,7 +65,7 @@ function* pathMessages(entries: SessionEntry[]): Generator<PathMessage> {
       continue
     }
     if (pendingPastedText) pendingPastedText = undefined
-    if (isHidden(entry.type)) continue
+    if (isHiddenEntryType(entry.type)) continue
     if (entry.type === 'custom_message') {
       if (entry.display === false) continue
       yield {
@@ -302,14 +305,6 @@ export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry
     id: chunk[0].id,
     ...summarizeChunk(chunk, sessionId)
   }))
-}
-
-/** The persisted projection shared by the display IPC and the open-session preview. */
-export function displayResultFor(sessionManager: SessionManager): DisplayTurnsResult {
-  return {
-    leafId: sessionManager.getLeafId(),
-    turns: displayTurnsFromEntries(sessionManager.getSessionId(), sessionManager.getBranch())
-  }
 }
 
 export function turnMessagesFromEntries(entries: SessionEntry[], turnId: string): unknown[] {

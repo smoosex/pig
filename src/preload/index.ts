@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { SessionApi, SettingsAuthEvent } from '../shared/api'
+import type { SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -45,6 +45,8 @@ const api: SessionApi = {
   abort: (sessionId: string) => ipcRenderer.invoke('session:abort', sessionId),
   getDisplayTurns: (sessionId: string) =>
     ipcRenderer.invoke('session:get-display-turns', sessionId),
+  getTurnWindow: (sessionId: string, start: number, count: number) =>
+    ipcRenderer.invoke('session:get-turn-window', sessionId, start, count),
   getTurnMessages: (sessionId: string, turnId: string) =>
     ipcRenderer.invoke('session:get-turn-messages', sessionId, turnId),
   getSessionTree: (sessionId: string) =>
@@ -53,6 +55,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:view-branch', sessionId, tipId),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
+  getTokenStats: (sessionId: string) =>
+    ipcRenderer.invoke('session:get-token-stats', sessionId),
   getCommands: (sessionId: string) =>
     ipcRenderer.invoke('session:get-commands', sessionId),
   exportSession: (sessionId: string, outputPath?: string) =>
@@ -90,6 +94,13 @@ const api: SessionApi = {
     ipcRenderer.on('pi:event', handler)
     return () => {
       ipcRenderer.off('pi:event', handler)
+    }
+  },
+  onSessionWindow: (listener: (update: SessionWindowMessage) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, update: SessionWindowMessage): void => listener(update)
+    ipcRenderer.on('session:window', handler)
+    return () => {
+      ipcRenderer.off('session:window', handler)
     }
   },
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void): (() => void) => {

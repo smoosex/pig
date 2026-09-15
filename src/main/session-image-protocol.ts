@@ -7,7 +7,7 @@
 import { protocol } from 'electron'
 import { SESSION_IMAGE_SCHEME } from '../shared/session-images'
 import { sessionImageResponse } from './pi/session-images'
-import { findSessionManager } from './pi/session-registry'
+import { sessionEntryLookup } from './pi/session-registry'
 
 /** Call before app ready; the privileges cannot be granted afterwards. */
 export function registerSessionImageScheme(): void {
@@ -20,5 +20,7 @@ export function registerSessionImageScheme(): void {
 }
 
 export function handleSessionImages(): void {
-  protocol.handle(SESSION_IMAGE_SCHEME, (request) => sessionImageResponse(request.url, findSessionManager))
+  protocol.handle(SESSION_IMAGE_SCHEME, (request) =>
+    sessionImageResponse(request.url, sessionEntryLookup)
+  )
 }

@@ -177,7 +177,11 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                     )}
                     onClick={() => {
                       if (!activeSessionId) return
-                      void viewBranch(activeSessionId, row.id).then(() => setOpen(false))
+                      viewBranch(activeSessionId, row.id).then(
+                        () => setOpen(false),
+                        (reason: unknown) =>
+                          setError(reason instanceof Error ? reason.message : String(reason))
+                      )
                     }}
                   >
                     {row.onPath ? '• ' : ''}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { FolderPlus, MessageSquarePlus, PanelLeft } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
 import { useEventBridge } from './hooks/useEventBridge'
+import { useSessionWindows } from './hooks/useSessionWindows'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
@@ -61,6 +62,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   useEventBridge()
+  useSessionWindows()
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

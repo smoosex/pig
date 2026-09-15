@@ -9,10 +9,18 @@ import { isPiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
 
+/** Turns fetched when the reader scrolls above the loaded window. */
+const PAGE_TURNS = 40
+/** One request never reads more than this, so a far jump pages instead of blocking on the whole gap. */
+const MAX_PAGE_TURNS = 200
+
 export const createConversationSlice: SessionSlice<
   | 'runtime'
   | 'hydrateTurns'
   | 'loadTurnProcess'
+  | 'loadOlderTurns'
+  | 'loadTokenStats'
+  | 'applySessionWindow'
   | 'loadControls'
   | 'applyControls'
   | 'setFollowUpMessages'
@@ -30,11 +38,15 @@ export const createConversationSlice: SessionSlice<
   const historyRequests = new Map<number, object>()
   const controlRequests = new Map<number, object>()
   const processRequests = new Map<string, Promise<void>>()
+  const olderRequests = new Map<string, Promise<void>>()
 
   const currentInstance = (sessionId: string, expected: RuntimeState) => {
     const current = get().runtime[sessionId]
     return current?.instanceId === expected.instanceId ? current : undefined
   }
+
+  const describeError = (error: unknown) =>
+    error instanceof Error ? error.message : String(error)
 
   const update = (
     sessionId: string,
@@ -79,8 +91,21 @@ export const createConversationSlice: SessionSlice<
           if (!rt.isStreaming && rt.streamElapsedMs != null && last) {
             elapsedByTurnId[last.id] = rt.streamElapsedMs
           }
+          // A refresh of the same branch replaces the window with the tail. A reader who paged up
+          // still holds turns the fetch no longer covers, and dropping them would lose their place.
+          const heldTurns =
+            options?.keepOlderTurns === true &&
+            rt.turnStart < result.startIndex &&
+            rt.turnStart + rt.turns.length >= result.startIndex
+              ? rt.turns.slice(0, result.startIndex - rt.turnStart)
+              : null
           return {
-            turns: result.turns,
+            turns: heldTurns ? [...heldTurns, ...result.turns] : result.turns,
+            turnStart: heldTurns ? rt.turnStart : result.startIndex,
+            turnPending: result.indexPending === true,
+            turnLoading: false,
+            turnError: null,
+            turnSummary: result.summary ?? [],
             leafId: result.leafId,
             branchViewId,
             branchViews,
@@ -93,6 +118,108 @@ export const createConversationSlice: SessionSlice<
         return true
       } finally {
         if (historyRequests.get(initial.instanceId) === request) historyRequests.delete(initial.instanceId)
+      }
+    },
+
+    loadOlderTurns: async (sessionId, target) => {
+      const initial = get().runtime[sessionId]
+      if (!initial || initial.turnStart === 0) return
+      const key = `${sessionId}:${initial.instanceId}`
+      const running = olderRequests.get(key)
+      if (running) {
+        // A page is already on its way: its callers only need to know when it landed.
+        await running
+        return
+      }
+      const wanted = Math.min(target ?? initial.turnStart - PAGE_TURNS, initial.turnStart - 1)
+      const from = Math.max(0, wanted, initial.turnStart - MAX_PAGE_TURNS)
+      update(sessionId, { turnLoading: true })
+      const request = (async () => {
+        let result
+        try {
+          result = await api.getTurnWindow(sessionId, from, initial.turnStart - from)
+        } catch (error) {
+          // The reader asked for these turns: the failure has to reach the view, not a console.
+          update(sessionId, (rt) =>
+            rt.instanceId === initial.instanceId ? { turnError: describeError(error) } : {}
+          )
+          return
+        }
+        update(sessionId, (rt) => {
+          // A window that moved underneath the response wins: new turns, another branch, or a
+          // reopened session all make these turns somebody else's history.
+          if (
+            rt.instanceId !== initial.instanceId ||
+            rt.branchRequest !== initial.branchRequest ||
+            rt.turnStart !== initial.turnStart
+          ) return {}
+          return {
+            turns: [...result.turns, ...rt.turns],
+            turnStart: result.startIndex,
+            turnPending: false,
+            turnError: null
+          }
+        })
+      })()
+      olderRequests.set(key, request)
+      try {
+        await request
+      } finally {
+        if (olderRequests.get(key) === request) olderRequests.delete(key)
+        // Only this instance waits on the page; a reopened session must not inherit the flag.
+        if (get().runtime[sessionId]?.instanceId === initial.instanceId) {
+          update(sessionId, { turnLoading: false })
+        }
+      }
+    },
+
+    applySessionWindow: (next) => {
+      const runtime = get().runtime[next.sessionId]
+      if (!runtime) return
+      if ('error' in next) {
+        // The index failed after first paint: stop promising older turns and say what happened.
+        update(next.sessionId, (rt) => (
+          rt.leafId === runtime.leafId ? { turnPending: false, turnError: next.error } : {}
+        ))
+        return
+      }
+      if (runtime.leafId !== next.leafId) {
+        // The file moved while the index was building: the held window is another branch's tail, so
+        // refetch it instead of relabelling it (and never leave the provisional window pending).
+        void get().hydrateTurns(next.sessionId).catch((error: unknown) => {
+          // This branch means the file moved under the index: if the refetch fails, the provisional
+          // window must stop promising older turns and say why, like any other failed read.
+          update(next.sessionId, (rt) => (
+            rt.leafId === runtime.leafId ? { turnPending: false, turnError: describeError(error) } : {}
+          ))
+        })
+        return
+      }
+      update(next.sessionId, (rt) => {
+        // A window the reader already moved is not ours to set any more.
+        if (rt.leafId !== next.leafId || rt.turnStart !== 0) return {}
+        return {
+          turnStart: next.startIndex,
+          turnPending: false,
+          turnError: null,
+          turnSummary: next.summary ?? rt.turnSummary
+        }
+      })
+    },
+
+    loadTokenStats: async (sessionId) => {
+      const initial = get().runtime[sessionId]
+      if (!initial || initial.tokensLoading) return
+      update(sessionId, { tokensLoading: true, tokensError: null })
+      try {
+        const tokens = await api.getTokenStats(sessionId)
+        update(sessionId, (rt) => (rt.instanceId === initial.instanceId ? { tokens } : {}))
+      } catch (error) {
+        update(sessionId, (rt) =>
+          rt.instanceId === initial.instanceId ? { tokensError: describeError(error) } : {}
+        )
+      } finally {
+        update(sessionId, { tokensLoading: false })
       }
     },
 
@@ -225,7 +352,8 @@ export const createConversationSlice: SessionSlice<
       const hydrated = await get().hydrateTurns(sessionId, {
         expectedLeafId: branch.leafId,
         expectedBranchRequest: branchRequest,
-        branchViewId
+        branchViewId,
+        display: branch
       })
       if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
       await get().loadControls(sessionId)

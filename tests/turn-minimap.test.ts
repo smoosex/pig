@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { Turn } from '../src/renderer/src/chat/turns'
+import { summaryMinimapItem, turnMinimapItem } from '../src/renderer/src/chat/minimap'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -28,21 +29,28 @@ async function fixture(): Promise<void> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const items: Turn[] = [
+  const turns: Turn[] = [
     { user: { role: 'user', content: '第一条问题', timestamp: 0 } },
     { user: { role: 'user', content: [{ type: 'image', mimeType: 'image/png', data: 'AA==' }], timestamp: 0 } },
     { answer: [{ type: 'text', text: '模型的回复' }] }
   ].map((item, index) => ({
     id: String(index), process: [], answer: [], startedAt: 0, endedAt: 1, streaming: false, ...item
   }))
+  // A row the renderer never loaded keeps its bar through the summary alone.
+  const items = [
+    ...turns.map((turn, index) => turnMinimapItem(turn, index)),
+    summaryMinimapItem({ id: 'older', bytes: 20, hasImages: true }, 3)
+  ]
   const jumps: number[] = []
   try {
     await act(async () => { root.render(createElement(TurnMinimap, { items, onJump: (index) => jumps.push(index) })) })
     const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')]
-    assert.equal(buttons.length, 3)
+    assert.equal(buttons.length, 4)
     assert.equal(buttons[0].getAttribute('aria-label'), '第 1 轮：第一条问题')
     assert.equal(buttons[1].getAttribute('aria-label'), '第 2 轮：图片消息')
     assert.equal(buttons[2].getAttribute('aria-label'), '第 3 轮：模型的回复')
+    // A row that was never loaded still gets a bar, labelled from the summary alone.
+    assert.equal(buttons[3].getAttribute('aria-label'), '第 4 轮：图片消息')
     assert.equal(buttons.filter((button) => button.tabIndex === 0).length, 1)
     await act(async () => {
       buttons[0].focus()
@@ -53,10 +61,10 @@ async function fixture(): Promise<void> {
     await act(async () => { buttons[1].click() })
     assert.deepEqual(jumps, [1])
     await act(async () => { buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    assert.equal(document.activeElement, buttons[3])
+    await act(async () => { buttons[3].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) })
     assert.equal(document.activeElement, buttons[2])
-    await act(async () => { buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) })
-    assert.equal(document.activeElement, buttons[1])
-    await act(async () => { buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+    await act(async () => { buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
     assert.equal(document.activeElement, buttons[0])
     await act(async () => { buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) })
     assert.equal(document.activeElement, buttons[0])

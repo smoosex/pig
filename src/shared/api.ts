@@ -103,7 +103,6 @@ export interface SessionControls {
   thinkingLevel: ThinkingLevel
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
-  tokens: SessionTokenStats
   followUpMessages: string[]
 }
 
@@ -146,14 +145,51 @@ export interface DisplayTurn {
   hasProcess: boolean
 }
 
+/**
+ * One minimap row for a turn the renderer has not loaded: a weight and nothing else.
+ * `bytes` is the turn's user line clamped, so a screenshot turn does not flatten the scale.
+ */
+export interface TurnSummary {
+  id: string
+  bytes: number
+  hasImages: boolean
+}
+
 export interface DisplayTurnsResult {
   leafId: string | null
   turns: DisplayTurn[]
+  /** Where `turns[0]` sits in the branch's full turn list. */
+  startIndex: number
+  /** Turns in the whole branch: the window can grow until `startIndex` reaches zero. */
+  totalTurns: number
+  /** Weights for every turn of the branch, oldest first. Omitted by window paging. */
+  summary?: TurnSummary[]
+  /**
+   * Set when turns remain above the window but their count is still unknown: opening shows the tail
+   * before the branch index exists, and `session:window` corrects `startIndex` and `totalTurns`.
+   */
+  indexPending?: boolean
 }
 
-export interface SessionBranchRef {
+/** Pushed once a pending session's branch index exists, replacing provisional window counts. */
+export interface SessionWindowUpdate {
+  sessionId: string
   leafId: string | null
+  startIndex: number
+  totalTurns: number
+  summary?: TurnSummary[]
 }
+
+/** Pushed instead of a window when the background index cannot be built for this session. */
+export interface SessionWindowFailure {
+  sessionId: string
+  error: string
+}
+
+export type SessionWindowMessage = SessionWindowUpdate | SessionWindowFailure
+
+/** Switching a branch answers with the new window, so the renderer needs no second round trip. */
+export type SessionBranchRef = DisplayTurnsResult
 
 export interface SessionTreeGutter {
   position: number
@@ -267,10 +303,12 @@ export interface SessionApi {
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
+  getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
   getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
   viewBranch: (sessionId: string, tipId: string) => Promise<SessionBranchRef>
   getControls: (sessionId: string) => Promise<SessionControls>
+  getTokenStats: (sessionId: string) => Promise<SessionTokenStats>
   getCommands: (sessionId: string) => Promise<SlashCommand[]>
   exportSession: (sessionId: string, outputPath?: string) => Promise<{ path: string } | null>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
@@ -291,5 +329,6 @@ export interface SessionApi {
   replyAuthPrompt: (id: string, value: string | null) => Promise<void>
   cancelLogin: () => Promise<void>
   onEvent: (listener: (event: unknown) => void) => () => void
+  onSessionWindow: (listener: (update: SessionWindowMessage) => void) => () => void
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void) => () => void
 }

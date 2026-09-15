@@ -11,9 +11,11 @@ function deferred<T>() {
 
 const controls = (input = 0): SessionControls => ({
   model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
-  contextUsage: null, tokens: { input, output: 0, cacheRead: 0, cacheWrite: 0, total: input },
+  contextUsage: null,
   followUpMessages: []
 })
+
+const tokenStats = (input: number) => ({ input, output: 1, cacheRead: 2, cacheWrite: 0, total: input + 3 })
 
 const history = (id: string): DisplayTurnsResult => ({
   leafId: id,
@@ -29,6 +31,7 @@ async function runFixture(name: string): Promise<void> {
   let openCalls = 0
   let prepareCalls = 0
   let processCalls = 0
+  let tokenCalls = 0
   const api = {
     createSession: async () => ({ sessionId: meta.id, cwd: meta.cwd }),
     openSession: async (): Promise<OpenSessionRef> => {
@@ -40,6 +43,8 @@ async function runFixture(name: string): Promise<void> {
     getControls: async () => controls(),
     getDisplayTurns: async () => history('current'),
     getTurnMessages: async (): Promise<unknown[]> => { processCalls++; return [] },
+    getTurnWindow: async (): Promise<DisplayTurnsResult> => history('older'),
+    getTokenStats: async () => { tokenCalls++; return tokenStats(7) },
     listChats: async (): Promise<ProjectGroup[]> => [],
     listProjects: async (): Promise<ProjectGroup[]> => [],
     listProject: async (): Promise<ProjectGroup | null> => null,
@@ -93,7 +98,25 @@ async function runFixture(name: string): Promise<void> {
     await Promise.all([pending, pendingControls])
     assert.notEqual(runtime().instanceId, oldInstance)
     assert.equal(runtime().turns[0].id, 'new')
-    assert.equal(runtime().tokens.input, 42)
+    assert.equal(runtime().contextUsage, null)
+  } else if (name === 'token-stats') {
+    // The whole-file spend is only requested while the usage popover is open.
+    assert.equal(runtime().tokens, null)
+    assert.equal(tokenCalls, 0)
+    const response = deferred<ReturnType<typeof tokenStats>>()
+    api.getTokenStats = () => { tokenCalls++; return response.promise }
+    const pending = state().loadTokenStats(meta.id)
+    await state().loadTokenStats(meta.id)
+    assert.equal(tokenCalls, 1, 'a second open while the first is loading does not duplicate the read')
+    response.resolve(tokenStats(11))
+    await pending
+    assert.equal(runtime().tokens?.total, 14)
+    assert.equal(runtime().tokensLoading, false)
+    state().closeTab(meta.id)
+    api.getTokenStats = async () => { tokenCalls++; return tokenStats(3) }
+    const closing = state().loadTokenStats(meta.id)
+    await closing
+    assert.equal(runtime(), undefined, 'a closed session is not written back')
   } else if (name === 'history-order') {
     const first = deferred<DisplayTurnsResult>()
     const second = deferred<DisplayTurnsResult>()
@@ -124,7 +147,6 @@ async function runFixture(name: string): Promise<void> {
     response.resolve(controls(1))
     await pending
     assert.equal(runtime().thinkingLevel, 'high')
-    assert.equal(runtime().tokens.input, 42)
 
     const next = deferred<SessionControls>()
     api.getControls = () => next.promise
@@ -133,7 +155,6 @@ async function runFixture(name: string): Promise<void> {
     next.resolve(controls(100))
     await reloading
     assert.deepEqual(runtime().followUpMessages, ['new queue'])
-    assert.equal(runtime().tokens.input, 100)
   } else if (name === 'duplicate-open') {
     state().closeTab(meta.id)
     const response = deferred<OpenSessionRef>()
@@ -192,6 +213,157 @@ async function runFixture(name: string): Promise<void> {
     await first
     assert.equal(openCalls, 2)
     assert.equal(runtime().turns[0].id, 'reopened')
+  } else if (
+    name.startsWith('older-turns-') ||
+    name === 'refresh-keeps-window' ||
+    name === 'load-failures-reported' ||
+    name === 'window-update-stale' ||
+    name === 'stale-window-failure' ||
+    name === 'summary-cleared'
+  ) {
+    const window = (leafId: string, startIndex: number, totalTurns: number, id: string): DisplayTurnsResult => ({
+      leafId,
+      startIndex,
+      totalTurns,
+      turns: [{ id, answer: [{ type: 'text', text: id }], startedAt: 1, endedAt: 2, hasProcess: true }]
+    })
+    const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    if (name === 'older-turns-guard') {
+      api.getDisplayTurns = async () => window('A', 40, 200, 'A40')
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnStart, 40)
+      const page = deferred<DisplayTurnsResult>()
+      api.getTurnWindow = () => page.promise
+      const loading = state().loadOlderTurns(meta.id)
+      // The reader switches branch while the page is on its way, onto one that starts at the same turn.
+      api.viewBranch = async (_id: string, tip: string) => window(tip, 40, 300, 'B40')
+      await state().viewBranch(meta.id, 'branch-b')
+      assert.equal(runtime().turnStart, 40)
+      page.resolve(window('A', 0, 200, 'A0'))
+      await loading
+      assert.deepEqual(runtime().turns.map((turn) => turn.id), ['B40'], 'another branch\'s page is not spliced in')
+      assert.equal(runtime().turnLoading, false)
+    } else if (name === 'older-turns-shared') {
+      api.getDisplayTurns = async () => window('A', 40, 200, 'A40')
+      await state().hydrateTurns(meta.id)
+      const page = deferred<DisplayTurnsResult>()
+      let calls = 0
+      api.getTurnWindow = () => { calls++; return page.promise }
+      const first = state().loadOlderTurns(meta.id)
+      let secondSettled = false
+      const second = state().loadOlderTurns(meta.id, 20).then(() => { secondSettled = true })
+      await settle()
+      assert.equal(calls, 1, 'a page already on its way is shared, not restarted')
+      assert.equal(secondSettled, false, 'a second reader waits for that page instead of returning at once')
+      page.resolve(window('A', 0, 200, 'A0'))
+      await Promise.all([first, second])
+      assert.equal(secondSettled, true)
+      assert.equal(runtime().turnStart, 0)
+    } else if (name === 'older-turns-bound') {
+      api.getDisplayTurns = async () => window('A', 1769, 1769, 'newest')
+      await state().hydrateTurns(meta.id)
+      const requests: number[][] = []
+      api.getTurnWindow = async (_id: string, from: number, count: number) => {
+        requests.push([from, count])
+        return window('A', from, 1769, `A${from}`)
+      }
+      // A jump into the far past pages: one request never pulls the whole gap.
+      await state().loadOlderTurns(meta.id, 0)
+      assert.deepEqual(requests, [[1769 - 200, 200]])
+      assert.equal(runtime().turnStart, 1569)
+    } else if (name === 'refresh-keeps-window') {
+      const held = (startIndex: number, count: number): DisplayTurnsResult => ({
+        leafId: 'A',
+        startIndex,
+        totalTurns: 1000,
+        turns: Array.from({ length: count }, (_, offset) => ({
+          id: `A${startIndex + offset}`,
+          answer: [{ type: 'text', text: '' }],
+          startedAt: 1,
+          endedAt: 2,
+          hasProcess: false
+        }))
+      })
+      api.getDisplayTurns = async () => held(900, 100)
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnStart, 900)
+      // A finished answer refreshes the same branch: the tail moved, the paged-in prefix must stay.
+      api.getDisplayTurns = async () => held(940, 60)
+      await state().hydrateTurns(meta.id, { keepOlderTurns: true })
+      assert.equal(runtime().turnStart, 900, 'the history the reader paged in stays loaded')
+      assert.equal(runtime().turns.length, 100, 'the fresh tail is spliced onto the held prefix')
+      assert.equal(runtime().turns[40]?.id, 'A940', 'the tail starts exactly where the prefix ends')
+      assert.equal(runtime().turns[99]?.id, 'A999')
+      // A different branch replaces the window instead of keeping a prefix that may not be its own.
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnStart, 940)
+      assert.equal(runtime().turns.length, 60)
+    } else if (name === 'load-failures-reported') {
+      api.getDisplayTurns = async () => ({
+        ...window('A', 0, 2, 'tail'),
+        indexPending: true
+      })
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnPending, true)
+      state().applySessionWindow({ sessionId: meta.id, error: 'Session file is not valid' })
+      assert.equal(runtime().turnPending, false, 'a failed index stops promising older turns')
+      assert.equal(runtime().turnError, 'Session file is not valid')
+
+      api.getDisplayTurns = async () => window('A', 1769, 1769, 'newest')
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnError, null, 'a fresh window clears the previous failure')
+      api.getTurnWindow = async () => { throw new Error('Session not found: s1') }
+      await state().loadOlderTurns(meta.id)
+      assert.equal(runtime().turnError, 'Session not found: s1', 'a page that cannot be read says so')
+      assert.equal(runtime().turnLoading, false)
+      api.getTurnWindow = async (_id, from, count) => window('A', from, 1769, `A${from}`)
+      await state().loadOlderTurns(meta.id)
+      assert.equal(runtime().turnError, null, 'a page that arrives clears it again')
+
+      api.getTokenStats = async () => { throw new Error('Session not found: s1') }
+      await state().loadTokenStats(meta.id)
+      assert.equal(runtime().tokensError, 'Session not found: s1')
+      assert.equal(runtime().tokensLoading, false)
+      api.getTokenStats = async () => ({ input: 1, output: 2, cacheRead: 3, cacheWrite: 0, total: 6 })
+      await state().loadTokenStats(meta.id)
+      assert.equal(runtime().tokensError, null)
+      assert.equal(runtime().tokens?.total, 6)
+    } else if (name === 'stale-window-failure') {
+      api.getDisplayTurns = async () => window('A', 0, 3, 'tail')
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().leafId, 'A')
+      // The file moved while the index was building, and the refetch for the new branch fails too.
+      api.getDisplayTurns = async () => { throw new Error('session file is gone') }
+      state().applySessionWindow({ sessionId: meta.id, leafId: 'B', startIndex: 5, totalTurns: 9, summary: [] })
+      await settle()
+      assert.equal(runtime().turnPending, false, 'the window stops claiming turns it cannot load')
+      assert.match(String(runtime().turnError), /session file is gone/)
+      api.getDisplayTurns = async () => window('B', 0, 5, 'fresh')
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnError, null, 'a window that arrives clears the failure again')
+    } else if (name === 'window-update-stale') {
+      api.getDisplayTurns = async () => window('A', 0, 3, 'tail')
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().leafId, 'A')
+      let refetches = 0
+      api.getDisplayTurns = async () => { refetches++; return window('B', 0, 5, 'fresh') }
+      state().applySessionWindow({ sessionId: meta.id, leafId: 'B', startIndex: 0, totalTurns: 5, summary: [] })
+      await settle()
+      assert.equal(refetches, 1, 'a push for another branch refetches the tail instead of being dropped')
+      assert.equal(runtime().leafId, 'B')
+      assert.equal(runtime().turns[0]?.id, 'fresh')
+      assert.equal(runtime().turnPending, false, 'the provisional window does not stay pending')
+    } else {
+      api.getDisplayTurns = async () => ({
+        ...window('A', 0, 2, 'one'),
+        summary: [{ id: 'u0', bytes: 5, hasImages: false }]
+      })
+      await state().hydrateTurns(meta.id)
+      assert.equal(runtime().turnSummary.length, 1)
+      await state().hydrateTurns(meta.id, { display: window('A', 0, 2, 'one'), expectedLeafId: 'A' })
+      assert.deepEqual(runtime().turnSummary, [], 'a window without weights clears the ones of the branch before it')
+    }
   } else if (name === 'message-identity') {
     const result = (id: string) => ({
       role: 'toolResult' as const, toolCallId: id, toolName: 'read',
@@ -263,6 +435,7 @@ if (process.argv[2] === '--session-store-fixture') {
   const cases = {
     'open-lazy': 'opening renders the persisted projection without preparing',
     'open-controls-failure': 'control loading errors propagate from opening',
+    'token-stats': 'usage stats load on demand and never outlive their session',
     closed: 'late requests and events do not recreate a closed session',
     reopened: 'old responses cannot overwrite a reopened instance of the same session',
     'history-order': 'only the latest history request can commit',
@@ -272,6 +445,14 @@ if (process.argv[2] === '--session-store-fixture') {
     'close-reopen': 'reopening waits for the previous SDK instance to close',
     'reopen-during-open': 'closing during opening cannot reuse an already opened SDK reference',
     'process-dedup': 'process requests are shared and cannot recreate a closed session',
+    'older-turns-guard': 'a page that arrives after a branch switch cannot splice into it',
+    'older-turns-shared': 'two readers share the page that is already on its way',
+    'older-turns-bound': 'a jump into the far past pages instead of reading the whole gap',
+    'refresh-keeps-window': 'a refresh keeps the history the reader already paged in',
+    'load-failures-reported': 'a page, an index or the token stats that fail reach the view',
+    'window-update-stale': 'an index update for another branch refetches the window',
+    'stale-window-failure': 'a refetch that fails for a moved window reports instead of staying pending',
+    'summary-cleared': 'a window without weights clears an older branch summary',
     'message-identity': 'tool results with the same timestamp retain separate identities',
     'consecutive-prompts': 'sending before history refresh preserves completed live messages',
     'selection-order': 'a delayed open does not override a later tab selection',

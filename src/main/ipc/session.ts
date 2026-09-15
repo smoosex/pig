@@ -4,6 +4,7 @@ import {
   createPendingSession,
   exportSession,
   getSessionControls,
+  getSessionTokenStats,
   isPendingDraft,
   getSessionTree,
   listSessionCommands,
@@ -16,7 +17,7 @@ import {
   viewSessionBranch,
   type SessionThinkingLevel
 } from '../pi/session-registry'
-import { getDisplayTurns, getTurnMessages } from '../pi/session-display'
+import { getDisplayTurns, getTurnMessages, getTurnWindow } from '../pi/session-display'
 import { removeSessionFile } from '../pi/session-loader'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { promptSession } from '../pi/session-prompt'
@@ -72,6 +73,13 @@ export function registerSessionIpc(): void {
     return getDisplayTurns(sessionId)
   })
 
+  ipcMain.handle(
+    'session:get-turn-window',
+    async (_event, sessionId: string, start: number, count: number) => {
+      return getTurnWindow(sessionId, start, count)
+    }
+  )
+
   ipcMain.handle('session:get-turn-messages', async (_event, sessionId: string, turnId: string) => {
     if (!sessionId || !turnId) throw new Error('Session id and turn id are required')
     return getTurnMessages(sessionId, turnId)
@@ -83,11 +91,17 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {
     if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
-    return { leafId: await viewSessionBranch(sessionId, tipId) }
+    await viewSessionBranch(sessionId, tipId)
+    return getDisplayTurns(sessionId)
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {
     return getSessionControls(sessionId)
+  })
+
+  ipcMain.handle('session:get-token-stats', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    return getSessionTokenStats(sessionId)
   })
 
   ipcMain.handle('session:get-commands', async (_event, sessionId: string) => {
