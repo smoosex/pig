@@ -52,6 +52,9 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   callbacks.current = options
 
   const editor = useEditor({
+    // ProseMirror joins blocks with a blank line when it writes text/plain to the clipboard, which
+    // would add one newline per paragraph on the way back in. The draft's own form is a single '\n'.
+    coreExtensionOptions: { clipboardTextSerializer: { blockSeparator: '\n' } },
     extensions: [
       // The composer is a plain-text field: every node and mark that could render or carry
       // formatting is off, so neither input rules nor a stray HTML path can add any.

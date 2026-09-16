@@ -81,6 +81,14 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(attachment.byteSize, new TextEncoder().encode(attachment.text).byteLength)
       await act(async () => { state.clear() })
 
+      // What the editor writes to the clipboard has to read back as the same draft: ProseMirror's
+      // default block separator is a blank line, which would add one newline per paragraph.
+      await act(async () => { state.replaceText('一\n二\n三') })
+      await act(async () => { editor.commands.selectAll() })
+      const copied = editor.view.serializeForClipboard(editor.view.state.selection.content()).text
+      assert.equal(copied, '一\n二\n三')
+      assert.equal((await paste(copied)).text, '一\n二\n三')
+
       await act(async () => { state.replaceText('编辑\n队列') })
       assert.equal(state.getDraft().text, '编辑\n队列')
       await act(async () => {
@@ -152,7 +160,7 @@ if (process.argv[2] === '--composer-fixture') {
   await runFixture(process.argv[3])
 } else {
   for (const [name, title] of Object.entries({
-    editor: 'IME confirmation never forwards Enter, and clipboard line endings reach the draft as LF',
+    editor: 'IME confirmation never forwards Enter, and the clipboard round-trips the draft line for line',
     images: 'pending image reads cannot escape their session or cleared draft'
   })) {
     test(`composer lifecycle: ${title}`, async () => {
