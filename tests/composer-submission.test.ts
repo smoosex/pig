@@ -17,6 +17,7 @@ async function fixture(scenario: string): Promise<void> {
   const { mock } = await import('bun:test')
   const prepared = deferred()
   let promptCalls = 0
+  let abortCalls = 0
   let rollbackCalls = 0
   let exportCalls = 0
   let hydrationCalls = 0
@@ -48,7 +49,10 @@ async function fixture(scenario: string): Promise<void> {
       if (scenario === 'accepted-error') throw new Error('Run failed after acknowledgement')
     },
     exportSession: async () => { exportCalls++; await prepared.promise; throw new Error('Export failed') },
-    abort: async () => { throw new Error('Abort failed') }
+    abort: async () => {
+      abortCalls++
+      if (scenario !== 'stopped') throw new Error('Abort failed')
+    }
   } })
   const { useComposerEditor } = await import('../src/renderer/src/components/composer/useComposerEditor')
   const { useComposerImages } = await import('../src/renderer/src/components/composer/useComposerImages')
@@ -88,6 +92,7 @@ async function fixture(scenario: string): Promise<void> {
       if (scenario === 'duplicate-images' || scenario === 'export') duplicate = state.send()
     })
     if (scenario === 'newer-draft') await act(async () => { editor.replaceText('新输入') })
+    if (scenario === 'stopped') await act(async () => { await state.abort() })
     if (scenario === 'switch') await render('two')
     if (scenario === 'reopened') store.runtime.one.instanceId++
     await act(async () => {
@@ -118,6 +123,17 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(rollbackCalls, 0)
       assert.equal(editor.getDraft().text, '')
       assert.equal(state.canRestore, false)
+    } else if (scenario === 'stopped') {
+      assert.equal(abortCalls, 1)
+      assert.equal(promptCalls, 0)
+      assert.equal(rollbackCalls, 1)
+      assert.equal(store.runtime.one.isStreaming, false)
+      assert.equal(store.runtime.one.liveMessages.length, 0)
+      assert.equal(state.error, undefined)
+      assert.equal(state.canRestore, false)
+      assert.equal(editor.getDraft().text, '原文附件')
+      assert.equal(editor.getDraft().attachments.length, 1)
+      assert.equal(images.images.length, 1)
     } else if (scenario === 'export') {
       assert.equal(exportCalls, 1)
       assert.equal(editor.getDraft().text, '/export')
@@ -146,7 +162,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only']) {
+  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

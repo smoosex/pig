@@ -24,7 +24,13 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [failedDrafts, setFailedDrafts] = useState<Record<string, FailedDraft[]>>({})
   const exporting = useRef(new Set<string>())
+  // A stop bumps the session's epoch so a send still waiting on preparation can tell it was called off.
+  const stopEpochs = useRef(new Map<string, number>())
   const recoverable = sessionId ? failedDrafts[sessionId] : undefined
+
+  function stopEpoch(target: string): number {
+    return stopEpochs.current.get(target) ?? 0
+  }
 
   function report(target: string, cause: unknown): void {
     setErrors((current) => ({ ...current, [target]: cause instanceof Error ? cause.message : String(cause) }))
@@ -89,10 +95,17 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
     document.clear()
     attachments.clear()
 
+    const startedAt = stopEpoch(sessionId)
     let cwd: string
     try {
       const prepared = await api.prepareSession(sessionId)
       if (!isCurrent()) return
+      if (stopEpoch(sessionId) !== startedAt) {
+        // Nothing reached Pi, so the draft goes back to the composer instead of staying lost.
+        if (!streaming) useSessionsStore.getState().rollbackPrompt(sessionId)
+        setFailedDrafts((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), saved] }))
+        return
+      }
       cwd = prepared.cwd
       if (prepared.created) {
         void useSessionsStore.getState().refreshCwd(cwd).catch((error) => {
@@ -135,6 +148,7 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
 
   async function abort(): Promise<void> {
     if (!sessionId) return
+    stopEpochs.current.set(sessionId, stopEpoch(sessionId) + 1)
     try {
       await api.abort(sessionId)
     } catch (error) {
