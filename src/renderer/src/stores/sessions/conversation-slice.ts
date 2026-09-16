@@ -23,6 +23,7 @@ export const createConversationSlice: SessionSlice<
   | 'applySessionWindow'
   | 'loadControls'
   | 'applyControls'
+  | 'setControlsStatus'
   | 'setFollowUpMessages'
   | 'queueFollowUpAction'
   | 'clearQueuedEditText'
@@ -313,6 +314,8 @@ export const createConversationSlice: SessionSlice<
       ...controls,
       controlsRevision: rt.controlsRevision + 1
     })),
+
+    setControlsStatus: (sessionId, status) => update(sessionId, status),
 
     setThinkingLevel: (sessionId, thinkingLevel) => update(sessionId, { thinkingLevel }),
     setFollowUpMessages: (sessionId, followUpMessages) => update(sessionId, { followUpMessages }),

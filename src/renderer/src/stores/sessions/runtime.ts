@@ -12,6 +12,8 @@ export function createBranchViewId(): string {
 export const emptyRuntime = (): RuntimeState => ({
   instanceId: ++runtimeSequence,
   controlsRevision: 0,
+  controlsPending: false,
+  controlsError: null,
   turns: [],
   turnStart: 0,
   turnSummary: [],

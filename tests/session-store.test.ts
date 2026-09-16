@@ -74,11 +74,14 @@ async function runFixture(name: string): Promise<void> {
     const response = deferred<DisplayTurnsResult>()
     api.getDisplayTurns = () => response.promise
     const pending = state().hydrateTurns(meta.id)
+    state().setControlsStatus(meta.id, { controlsPending: true, controlsError: 'Model failed' })
     state().closeTab(meta.id)
     response.resolve(history('stale'))
     assert.equal(await pending, false)
     state().setStreaming(meta.id, true)
     state().setThinkingLevel(meta.id, 'high')
+    // The toolbar status lives in the runtime, so closing the tab takes it away for good.
+    state().setControlsStatus(meta.id, { controlsPending: false, controlsError: null })
     assert.equal(runtime(), undefined)
     assert.equal(state().openTabs.length, 0)
   } else if (name === 'reopened') {

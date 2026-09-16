@@ -107,13 +107,17 @@ async function fixture(scenario: string): Promise<void> {
   const root = createRoot(container)
   try {
     if (scenario === 'model-controls') {
+      const { create } = await import('zustand')
       let applied = 0
       let calls = 0
-      const store = {
-        runtime: { one: { instanceId: 1 } },
-        applyControls: () => { applied++ }
-      }
-      mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: { getState: () => store } }))
+      const store = create(() => ({
+        runtime: { one: { instanceId: 1, controlsPending: false, controlsError: null as string | null } },
+        applyControls: () => { applied++ },
+        setControlsStatus: (id: string, status: Record<string, unknown>) => store.setState((state) => ({
+          runtime: { ...state.runtime, [id]: { ...state.runtime[id], ...status } }
+        }))
+      }))
+      mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: store }))
       const { useModelControls } = await import('../src/renderer/src/components/composer/useModelControls')
       let state!: ReturnType<typeof useModelControls>
       function Probe() { state = useModelControls('one'); return null }
@@ -131,12 +135,15 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(state.error, 'Model failed')
       const replaced = deferred<any>()
       await act(async () => { running = state.run(() => replaced.promise) })
-      store.runtime.one.instanceId++
+      // A closed and reopened session is a new instance with fresh flags of its own.
+      store.setState({ runtime: { one: { instanceId: 2, controlsPending: false, controlsError: null } } })
       await act(async () => { replaced.resolve({}); await running })
       assert.equal(applied, 0)
       assert.equal(state.pending, false)
       await act(async () => { assert.equal(await state.run(async () => ({} as any)), true) })
       assert.equal(applied, 1)
+      assert.equal(state.pending, false)
+      assert.equal(state.error, null)
     } else if (scenario === 'worked-label') {
       const { create } = await import('zustand')
       const store = create(() => ({ activeSessionId: 'one', runtime: { one: { streamStartedAt: 100, streamElapsedMs: 500 } } }))

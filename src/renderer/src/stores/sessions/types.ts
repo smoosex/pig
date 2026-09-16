@@ -17,6 +17,10 @@ import type { PiMessage } from '../../pi/types'
 export interface RuntimeState extends SessionControls {
   instanceId: number
   controlsRevision: number
+  /** A toolbar mutation (model, thinking level, model list) is on its way. */
+  controlsPending: boolean
+  /** Why the last toolbar mutation failed, if it did. */
+  controlsError: string | null
   /** The loaded window of the branch: `turns[0]` is the branch turn `turnStart`. */
   turns: DisplayTurn[]
   turnStart: number
@@ -93,6 +97,10 @@ export interface SessionsStore {
   applySessionWindow: (update: SessionWindowMessage) => void
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
+  setControlsStatus: (
+    sessionId: string,
+    status: Partial<Pick<RuntimeState, 'controlsPending' | 'controlsError'>>
+  ) => void
   setFollowUpMessages: (sessionId: string, messages: string[]) => void
   queueFollowUpAction: (sessionId: string, index: number, action: FollowUpAction) => Promise<void>
   clearQueuedEditText: (sessionId: string) => void
