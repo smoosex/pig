@@ -89,6 +89,35 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(copied, '一\n二\n三')
       assert.equal((await paste(copied)).text, '一\n二\n三')
 
+      // A drop lands where the pointer was, not where the caret was, so the caret has to follow the
+      // dropped text; otherwise the next character is typed back at the old cursor position.
+      await act(async () => { state.clear() })
+      await act(async () => { state.replaceText('一\n二') })
+      await act(async () => { editor.commands.setTextSelection(1) })
+      editor.view.posAtCoords = () => ({ pos: 5, inside: 5 })
+      const dropped = {
+        dataTransfer: { getData: (type: string) => (type === 'text/plain' ? '拖\n入' : ''), files: [] },
+        clientX: 0,
+        clientY: 0,
+        preventDefault: () => {}
+      } as unknown as DragEvent
+      await act(async () => { props.handleDOMEvents!.drop!.call(undefined, editor.view, dropped) })
+      assert.equal(state.getDraft().text, '一\n二拖\n入')
+      await act(async () => { editor.view.dispatch(editor.view.state.tr.insertText('尾')) })
+      assert.equal(state.getDraft().text, '一\n二拖\n入尾')
+
+      // Below the last line the pointer reports a document position: the slice is wrapped in its own
+      // paragraph, so the caret needs a textblock to land in instead of the document boundary.
+      await act(async () => { state.clear() })
+      await act(async () => { state.replaceText('一\n二') })
+      await act(async () => { editor.commands.setTextSelection(1) })
+      editor.view.posAtCoords = () => ({ pos: 6, inside: -1 })
+      await act(async () => { props.handleDOMEvents!.drop!.call(undefined, editor.view, dropped) })
+      assert.equal(state.getDraft().text, '一\n二\n拖\n入')
+      assert.equal(editor.view.state.selection.$from.parent.type.name, 'paragraph')
+      await act(async () => { editor.view.dispatch(editor.view.state.tr.insertText('尾')) })
+      assert.equal(state.getDraft().text, '一\n二\n拖\n入尾')
+
       await act(async () => { state.replaceText('编辑\n队列') })
       assert.equal(state.getDraft().text, '编辑\n队列')
       await act(async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor } from '@tiptap/react'
-import type { JSONContent } from '@tiptap/core'
+import { selectionToInsertionEnd, type JSONContent } from '@tiptap/core'
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -38,8 +38,16 @@ function insertPastedText(view: EditorView, text: string, at?: number): void {
       })))
     : plainTextSlice(schema, normalized)
   const { tr } = view.state
-  const next = at == null ? tr.replaceSelection(slice) : tr.replace(at, at, slice)
-  view.dispatch(next.scrollIntoView())
+  if (at == null) {
+    view.dispatch(tr.replaceSelection(slice).scrollIntoView())
+    return
+  }
+  // A drop lands where the pointer was, not where the caret was, so the caret has to follow the
+  // inserted content: mapping alone leaves it behind and the focus() below would light it up there.
+  const startLength = tr.steps.length
+  tr.replace(at, at, slice)
+  selectionToInsertionEnd(tr, startLength, -1)
+  view.dispatch(tr.scrollIntoView())
 }
 
 /** Keeps Tiptap, clipboard input, and IME handling behind one editor boundary. */
