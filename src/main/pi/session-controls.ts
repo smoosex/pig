@@ -372,14 +372,11 @@ export async function setSessionThinking(
     return controlsFor(session)
   }
 
-  const model =
-    session.modelProvider && session.modelId
-      ? { provider: session.modelProvider, id: session.modelId }
-      : (defaultModelFromSettings() ?? availableModels()[0] ?? null)
-  const levels = pickerThinkingLevels(thinkingLevelsFor(model))
-  if (!levels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
+  // Same source as the picker: an opened session answers for the model its branch recorded.
+  const current = await controlsFor(session)
+  if (!current.thinkingLevels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
   session.thinkingLevel = level
-  return controlsFor(session)
+  return { ...current, thinkingLevel: level }
 }
 
 export async function refreshSessionModels(session: SessionState): Promise<SessionControls> {
