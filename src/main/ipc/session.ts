@@ -23,6 +23,9 @@ import { isChatCwd, isChatsRoot } from '../chats'
 import { promptSession } from '../pi/session-prompt'
 import { windowForEvent } from './window'
 
+/** One window request never reads more than this, however the caller phrases it. */
+const MAX_WINDOW_TURNS = 200
+
 export function registerSessionIpc(): void {
   ipcMain.handle('session:create', async (event, cwd: string) => {
     const win = windowForEvent(event)
@@ -76,7 +79,9 @@ export function registerSessionIpc(): void {
   ipcMain.handle(
     'session:get-turn-window',
     async (_event, sessionId: string, start: number, count: number) => {
-      return getTurnWindow(sessionId, start, count)
+      if (!Number.isInteger(start) || start < 0) throw new Error('Turn window start must be a non-negative integer')
+      if (!Number.isFinite(count)) throw new Error('Turn window count must be a number')
+      return getTurnWindow(sessionId, start, Math.min(Math.max(1, Math.trunc(count)), MAX_WINDOW_TURNS))
     }
   )
 

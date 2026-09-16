@@ -65,7 +65,7 @@ const SessionChatPane = memo(function SessionChatPane({
   const turns = useSessionsStore((s) => s.runtime[sessionId]?.turns ?? emptyTurns)
   const turnStart = useSessionsStore((s) => s.runtime[sessionId]?.turnStart ?? 0)
   const turnSummary = useSessionsStore((s) => s.runtime[sessionId]?.turnSummary ?? emptySummary)
-  const turnPending = useSessionsStore((s) => s.runtime[sessionId]?.turnPending ?? false)
+  const turnIndexTrusted = useSessionsStore((s) => s.runtime[sessionId]?.turnIndexTrusted ?? true)
   const turnLoading = useSessionsStore((s) => s.runtime[sessionId]?.turnLoading ?? false)
   const turnError = useSessionsStore((s) => s.runtime[sessionId]?.turnError ?? null)
   const liveMessages = useSessionsStore((s) => s.runtime[sessionId]?.liveMessages ?? emptyMessages)
@@ -105,7 +105,7 @@ const SessionChatPane = memo(function SessionChatPane({
 
   return (
     <div className="absolute inset-0 flex min-h-0 flex-col">
-      {historical.length === 0 && live.length === 0 ? (
+      {historical.length === 0 && live.length === 0 && turnStart === 0 && turnIndexTrusted && !turnError ? (
         <Empty className="min-h-0 flex-1 gap-6">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true" className="size-12 text-primary">
             <path fill="currentColor" fillRule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
@@ -130,7 +130,7 @@ const SessionChatPane = memo(function SessionChatPane({
             live={live}
             sessionId={sessionId}
             windowStart={turnStart}
-            indexPending={turnPending}
+            indexTrusted={turnIndexTrusted}
             loadingOlder={turnLoading}
             loadError={turnError}
             summary={turnSummary}

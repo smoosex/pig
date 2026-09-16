@@ -41,10 +41,16 @@ export interface SessionFileSession extends PendingBase {
   tailById: Map<string, SessionEntry> | null
   /** Turns that tail window held: the branch index uses it to place the window it already handed out. */
   tailTurns: number
+  /** Scans that were started for this file, so a file that keeps failing is not scanned on every read. */
+  indexAttempts?: number
+  /** A scan is queued for this file but has not started yet. */
+  indexScheduled?: boolean
   /** Read once on demand: nothing writes to a file before the pending phase ends. */
   tokens?: SessionTokenStats
   /** The tree of this file, read at most once while the session is pending: the file cannot change. */
   treeRows?: SessionTreeRow[]
+  /** The tree read that is on its way, so concurrent callers share one build. */
+  treeRowsRequest?: Promise<SessionTreeRow[]> | null
 }
 
 export type PendingSession = MemorySession | SessionFileSession

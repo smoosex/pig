@@ -93,8 +93,11 @@ export const createConversationSlice: SessionSlice<
           }
           // A refresh of the same branch replaces the window with the tail. A reader who paged up
           // still holds turns the fetch no longer covers, and dropping them would lose their place.
+          // Only a window whose offset is already authoritative can be spliced: a provisional tail
+          // is numbered from 0 by convention, so keeping its prefix would duplicate turns.
           const heldTurns =
             options?.keepOlderTurns === true &&
+            rt.turnIndexTrusted &&
             rt.turnStart < result.startIndex &&
             rt.turnStart + rt.turns.length >= result.startIndex
               ? rt.turns.slice(0, result.startIndex - rt.turnStart)
@@ -103,6 +106,7 @@ export const createConversationSlice: SessionSlice<
             turns: heldTurns ? [...heldTurns, ...result.turns] : result.turns,
             turnStart: heldTurns ? rt.turnStart : result.startIndex,
             turnPending: result.indexPending === true,
+            turnIndexTrusted: result.indexPending !== true,
             turnLoading: false,
             turnError: null,
             turnSummary: result.summary ?? [],
@@ -123,25 +127,53 @@ export const createConversationSlice: SessionSlice<
 
     loadOlderTurns: async (sessionId, target) => {
       const initial = get().runtime[sessionId]
-      if (!initial || initial.turnStart === 0) return
+      if (!initial) return
+      if (!initial.turnIndexTrusted) {
+        // The held window is the provisional tail, so its offset is a promise rather than a number:
+        // nothing above it can be paged. The authoritative window is the only answer, and it is also
+        // the escape route for an index whose push was lost or failed.
+        try {
+          await get().hydrateTurns(sessionId)
+        } catch (error) {
+          // Callers are `void` and the view must hear about it instead of the console.
+          update(sessionId, (rt) =>
+            rt.instanceId === initial.instanceId && !rt.turnError
+              ? { turnError: describeError(error), turnLoading: false }
+              : null
+          )
+        }
+        return
+      }
+      if (initial.turnStart === 0) return
       const key = `${sessionId}:${initial.instanceId}`
       const running = olderRequests.get(key)
       if (running) {
-        // A page is already on its way: its callers only need to know when it landed.
+        // A page is already on its way: this caller waits for it instead of restarting it.
         await running
-        return
+        const joined = get().runtime[sessionId]
+        // The page it waited for may have been the last one nobody else would have asked for, so a
+        // window that moved is continued below; one that did not is a dead end and stops here.
+        if (
+          !joined ||
+          joined.instanceId !== initial.instanceId ||
+          joined.turnStart === 0 ||
+          joined.turnStart >= initial.turnStart
+        ) return
       }
-      const wanted = Math.min(target ?? initial.turnStart - PAGE_TURNS, initial.turnStart - 1)
-      const from = Math.max(0, wanted, initial.turnStart - MAX_PAGE_TURNS)
+      const current = get().runtime[sessionId]
+      if (!current || current.instanceId !== initial.instanceId || current.turnStart === 0) return
+      const wanted = Math.min(target ?? current.turnStart - PAGE_TURNS, current.turnStart - 1)
+      const from = Math.max(0, wanted, current.turnStart - MAX_PAGE_TURNS)
       update(sessionId, { turnLoading: true })
       const request = (async () => {
         let result
         try {
-          result = await api.getTurnWindow(sessionId, from, initial.turnStart - from)
+          result = await api.getTurnWindow(sessionId, from, current.turnStart - from)
         } catch (error) {
           // The reader asked for these turns: the failure has to reach the view, not a console.
+          // No change means no new runtime object: this response belongs to a window that moved on.
           update(sessionId, (rt) =>
-            rt.instanceId === initial.instanceId ? { turnError: describeError(error) } : {}
+            rt.instanceId === current.instanceId ? { turnError: describeError(error) } : null
           )
           return
         }
@@ -149,14 +181,15 @@ export const createConversationSlice: SessionSlice<
           // A window that moved underneath the response wins: new turns, another branch, or a
           // reopened session all make these turns somebody else's history.
           if (
-            rt.instanceId !== initial.instanceId ||
-            rt.branchRequest !== initial.branchRequest ||
-            rt.turnStart !== initial.turnStart
-          ) return {}
+            rt.instanceId !== current.instanceId ||
+            rt.branchRequest !== current.branchRequest ||
+            rt.turnStart !== current.turnStart
+          ) return null
           return {
             turns: [...result.turns, ...rt.turns],
             turnStart: result.startIndex,
             turnPending: false,
+            turnIndexTrusted: true,
             turnError: null
           }
         })
@@ -167,9 +200,9 @@ export const createConversationSlice: SessionSlice<
       } finally {
         if (olderRequests.get(key) === request) olderRequests.delete(key)
         // Only this instance waits on the page; a reopened session must not inherit the flag.
-        if (get().runtime[sessionId]?.instanceId === initial.instanceId) {
-          update(sessionId, { turnLoading: false })
-        }
+        update(sessionId, (rt) =>
+          rt.instanceId === current.instanceId && rt.turnLoading ? { turnLoading: false } : null
+        )
       }
     },
 
@@ -179,7 +212,7 @@ export const createConversationSlice: SessionSlice<
       if ('error' in next) {
         // The index failed after first paint: stop promising older turns and say what happened.
         update(next.sessionId, (rt) => (
-          rt.leafId === runtime.leafId ? { turnPending: false, turnError: next.error } : {}
+          rt.leafId === runtime.leafId ? { turnPending: false, turnError: next.error } : null
         ))
         return
       }
@@ -190,17 +223,18 @@ export const createConversationSlice: SessionSlice<
           // This branch means the file moved under the index: if the refetch fails, the provisional
           // window must stop promising older turns and say why, like any other failed read.
           update(next.sessionId, (rt) => (
-            rt.leafId === runtime.leafId ? { turnPending: false, turnError: describeError(error) } : {}
+            rt.leafId === runtime.leafId ? { turnPending: false, turnError: describeError(error) } : null
           ))
         })
         return
       }
       update(next.sessionId, (rt) => {
         // A window the reader already moved is not ours to set any more.
-        if (rt.leafId !== next.leafId || rt.turnStart !== 0) return {}
+        if (rt.leafId !== next.leafId || rt.turnStart !== 0) return null
         return {
           turnStart: next.startIndex,
           turnPending: false,
+          turnIndexTrusted: true,
           turnError: null,
           turnSummary: next.summary ?? rt.turnSummary
         }
@@ -213,13 +247,17 @@ export const createConversationSlice: SessionSlice<
       update(sessionId, { tokensLoading: true, tokensError: null })
       try {
         const tokens = await api.getTokenStats(sessionId)
-        update(sessionId, (rt) => (rt.instanceId === initial.instanceId ? { tokens } : {}))
+        update(sessionId, (rt) => (rt.instanceId === initial.instanceId ? { tokens } : null))
       } catch (error) {
         update(sessionId, (rt) =>
-          rt.instanceId === initial.instanceId ? { tokensError: describeError(error) } : {}
+          rt.instanceId === initial.instanceId ? { tokensError: describeError(error) } : null
         )
       } finally {
-        update(sessionId, { tokensLoading: false })
+        // A read that belongs to a replaced instance must not touch the new one, and clearing a flag
+        // that was never set is not a change to re-render for either.
+        update(sessionId, (rt) =>
+          rt.instanceId === initial.instanceId && rt.tokensLoading ? { tokensLoading: false } : null
+        )
       }
     },
 

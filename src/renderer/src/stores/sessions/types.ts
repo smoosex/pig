@@ -26,6 +26,12 @@ export interface RuntimeState extends SessionControls {
   turnLoading: boolean
   /** Turns exist above the window, but the branch index that counts them is still being built. */
   turnPending: boolean
+  /**
+   * Whether `turnStart` is the branch's own numbering rather than the provisional tail's 0. Only an
+   * authoritative read (hydrate, window push, page) sets it, and `turnPending` alone cannot stand in
+   * for it: an index failure clears `turnPending` while the window keeps its provisional numbering.
+   */
+  turnIndexTrusted: boolean
   /** Why the turns above the window could not be loaded, if they could not be. */
   turnError: string | null
   /** Whole-file lifetime spend, fetched only while the usage popover is open. */

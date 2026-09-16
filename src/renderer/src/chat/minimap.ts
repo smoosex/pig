@@ -17,7 +17,7 @@ function preview(text: string | undefined): string {
   return text?.slice(0, 160).replace(/\s+/g, ' ').trim().slice(0, 60) ?? ''
 }
 
-export function turnMinimapItem(turn: Turn, index: number): MinimapItem {
+export function turnMinimapItem(turn: Turn, index: number, weight?: number): MinimapItem {
   const content = turn.user?.content
   const user = typeof content === 'string'
     ? [content]
@@ -28,7 +28,9 @@ export function turnMinimapItem(turn: Turn, index: number): MinimapItem {
   return {
     id: renderKeyForTurn(turn, index),
     label,
-    length: [...user, ...answer].reduce((sum, value) => sum + value.length, 0),
+    // A loaded turn is measured like the branch summary measures it, so the bar does not jump
+    // between metric when the window pages in. Live turns have no summary row and use text length.
+    length: weight ?? [...user, ...answer].reduce((sum, value) => sum + value.length, 0),
     turn: index
   }
 }

@@ -193,6 +193,7 @@ async function runFixture(name: string): Promise<void> {
     runtime: { s1: runtime('v1', 24), s2: runtime('v2', 12) },
     loadTurnProcess: async () => {},
     loadOlderTurns: async (_sessionId: string, target?: number) => {
+      olderCalls.push(target)
       const runtime = store.runtime.s1
       if (runtime.turnStart === 0) return
       // Bounded the way the store pages: a far target is fetched in steps, not in one read.
@@ -203,6 +204,7 @@ async function runFixture(name: string): Promise<void> {
     }
   }
   const preloaded: number[] = []
+  const olderCalls: Array<number | undefined> = []
   // Zustand-like subscriptions: memoized panes only re-render when their selectors change.
   const listeners = new Set<() => void>()
   const notify = () => act(() => { for (const listener of [...listeners]) listener() })
@@ -521,16 +523,32 @@ async function runFixture(name: string): Promise<void> {
       )
       assert.ok(row(100), 'the wanted turn is mounted once its page arrived')
       near(row(100)!.getBoundingClientRect().top, VIEWPORT_TOP + TURN_ALIGN, 'the target aligns at the top')
+    } else if (name === 'empty-window-error') {
+      // An empty window with a failure behind it must not fall back to the chat's empty state: the
+      // reader would have no hint that older turns exist and nothing to click.
+      change({ turns: [], turnStart: 0, turnPending: false, turnIndexTrusted: false, turnError: 'index died' })
+      await render()
+      const alert = container.querySelector('[role="alert"]')
+      assert.ok(alert, 'the failure is visible instead of an empty chat')
+      assert.match(alert.textContent ?? '', /更早的消息加载失败/)
+      const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === '重试')
+      assert.ok(retry, 'the failure offers a retry')
+      await act(async () => { retry.click() })
+      assert.deepEqual(olderCalls, [undefined], 'the retry asks the store for the window again')
     } else if (name === 'pending-window-status') {
       // The first paint of a long session is a provisional tail: its offset is unknown, so there is
-      // nothing to load yet and the hint must not pretend to be a working control.
-      change({ turnPending: true, turnStart: 0, turns: turns(60) })
+      // nothing to page — but the reader still needs a way to ask for the authoritative window.
+      change({ turnPending: true, turnIndexTrusted: false, turnStart: 0, turns: turns(60) })
       await render()
-      assert.equal(pendingButton(), undefined, 'a provisional window offers no button')
-      const status = [...container.querySelectorAll('div')]
-        .find((element) => element.textContent === '正在统计更早轮次…')
-      assert.ok(status, 'the reader is told why nothing can be loaded yet')
-      change({ turnPending: false, turnStart: 140, turns: turns(60) })
+      assert.equal(pendingButton(), undefined, 'a provisional window cannot page the branch')
+      const retry = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.includes('正在统计更早轮次'))
+      assert.ok(retry, 'the reader is told why nothing can be paged, and can ask again')
+      assert.equal(olderCalls.length, 0, 'nothing is requested before the reader asks')
+      await act(async () => { retry.click() })
+      assert.deepEqual(olderCalls, [undefined], 'the retry asks for a window, not for a page')
+      change({ turnPending: false, turnIndexTrusted: true, turnStart: 140, turns: turns(60) })
       await render()
       assert.ok(pendingButton(), 'once the window knows its offset the control is back')
     } else if (name === 'return-to-branch-window') {
@@ -725,7 +743,8 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'far-jump': 'a far minimap jump pages the window instead of reading the whole gap',
     'window-without-summary': 'a windowed minimap jumps by the branch turn behind each bar',
     'return-to-branch-window': 'returning to a branch pages back to the saved reading row',
-    'pending-window-status': 'a provisional window shows why it cannot load yet',
+    'pending-window-status': 'a provisional window asks for its window instead of pretending to page',
+    'empty-window-error': 'an empty window with a failed read still shows the failure',
     'remote-history': 'a windowed history loads older turns on demand and keeps the reading position',
     'switch-unmount-cleanup': 'hidden panes stay quiet and unmount cancels detached work'
   }

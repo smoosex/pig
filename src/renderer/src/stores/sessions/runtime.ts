@@ -17,6 +17,8 @@ export const emptyRuntime = (): RuntimeState => ({
   turnSummary: [],
   turnLoading: false,
   turnPending: false,
+  // An empty window has nothing to mislabel: only a provisional tail can lower this.
+  turnIndexTrusted: true,
   turnError: null,
   leafId: null,
   branchViewId: createBranchViewId(),

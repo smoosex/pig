@@ -45,6 +45,36 @@ async function writeSession(
   await writeFile(file, `${lines.join('\n')}\n`)
 }
 
+/** A session whose mid-file row passes the probe but no parser can read: only the SDK can judge it. */
+function corruptSessionText(id: string, cwd: string, corrupt: string): string {
+  return `${[
+    JSON.stringify({ type: 'session', version: 3, id, cwd, timestamp: '2026-01-01T00:00:00.000Z' }),
+    JSON.stringify({ type: 'message', id: 'u0', parentId: null, timestamp: '2026-01-01T00:00:01.000Z', message: { role: 'user', content: 'q0' } }),
+    JSON.stringify({
+      type: 'message', id: 'a0', parentId: 'u0', timestamp: '2026-01-01T00:00:02.000Z',
+      message: {
+        role: 'assistant', provider: 'test', model: 'recorder', stopReason: 'stop',
+        content: [{ type: 'text', text: 'first' }],
+        usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 }
+      }
+    }),
+    corrupt,
+    JSON.stringify({ type: 'message', id: 'u1', parentId: 'm1', timestamp: '2026-01-01T00:00:04.000Z', message: { role: 'user', content: 'q1' } }),
+    JSON.stringify({
+      type: 'message', id: 'a1', parentId: 'u1', timestamp: '2026-01-01T00:00:05.000Z',
+      message: {
+        role: 'assistant', provider: 'test', model: 'recorder', stopReason: 'stop',
+        content: [{ type: 'text', text: 'second' }],
+        usage: { input: 20, output: 3, cacheRead: 0, cacheWrite: 0 }
+      }
+    })
+  ].join('\n')}\n`
+}
+
+/** A trailing comma: the probe only sees a well-shaped line that ends in `}`. */
+const CORRUPT_MODEL_CHANGE =
+  '{"type":"model_change","id":"m1","parentId":"a0","timestamp":"2026-01-01T00:00:03.000Z","provider":"test","modelId":"reasoner",}'
+
 /** Let the deferred index task run: it is scheduled behind the IPC reply, not inline. */
 async function settleIndex(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve))
@@ -63,9 +93,66 @@ async function runFixture(): Promise<void> {
     process.env.PIG_DIR = join(root, 'pig')
     await writeSession(file, cwd)
 
-    mock.module('electron', () => ({ app: { isPackaged: false } }))
+    // The IPC layer is exercised through the handlers it registers, so the validation guards can be
+    // tested where they run rather than through a copy of them.
+    const handlers = new Map<string, (...args: never[]) => unknown>()
+    mock.module('electron', () => ({
+      app: { isPackaged: false },
+      ipcMain: { handle: (channel: string, handler: (...args: never[]) => unknown) => { handlers.set(channel, handler) } },
+      dialog: {},
+      BrowserWindow: { fromWebContents: () => ({}) },
+      // The branch namer forks a worker process; no handler under test reaches it.
+      utilityProcess: {}
+    }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({
       worktrees: { assertAvailable() {} }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
+      createChatResourceLoader: async () => undefined,
+      createNoExtensionsResourceLoader: async () => undefined
+    }))
+    // Bun rebinds the module's exports when a mock is registered, so the real function has to be
+    // captured as a value before the mock replaces it.
+    const realTreeRows = (await import('../src/main/pi/session-tree')).sessionTreeRows
+    let treeBuilds = 0
+    mock.module(fileURLToPath(new URL('../src/main/pi/session-tree.ts', import.meta.url)), () => ({
+      sessionTreeRows: (...args: Parameters<typeof realTreeRows>) => {
+        treeBuilds += 1
+        return realTreeRows(...args)
+      }
+    }))
+    // The model runtime is faked so the controls read has a deterministic picker; the session file
+    // readers stay real, because that is what these cases are about.
+    const models = [
+      { id: 'reasoner', provider: 'test', name: 'Reasoner', reasoning: true, contextWindow: 1000 },
+      { id: 'recorder', provider: 'test', name: 'Recorder', reasoning: true, contextWindow: 500 },
+      { id: 'plain', provider: 'test', name: 'Plain', reasoning: false, contextWindow: 200 }
+    ]
+    const sdk = await import('@earendil-works/pi-coding-agent')
+    mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
+      ModelRuntime: { create: async () => ({
+        refresh: async () => {},
+        getModel: (provider: string, id: string) => models.find((model) => model.provider === provider && model.id === id),
+        getProvider: () => ({ name: 'Test' }),
+        getAvailableSnapshot: () => models
+      }) },
+      SettingsManager: { create: () => ({
+        getDefaultProvider: () => 'test',
+        getDefaultModel: () => 'plain',
+        getModelThinkingLevel: () => 'medium',
+        getDefaultThinkingLevel: () => 'low'
+      }) },
+      createAgentSession: async () => ({
+        session: {
+          sessionId: 'guard-session',
+          subscribe: () => () => {},
+          bindExtensions: async () => {},
+          abort: async () => {},
+          dispose() {},
+          extensionRunner: { emit: async () => {} }
+        }
+      })
     }))
     const pushes: Array<{ channel: string; update: Record<string, unknown> }> = []
     const win = {
@@ -160,6 +247,129 @@ async function runFixture(): Promise<void> {
     assert.equal(smallUpdate.startIndex, 0, 'a window that holds every turn keeps its first turn')
     assert.equal(smallUpdate.totalTurns, 100)
 
+    // The controls read is the picker's only source, and it reads the same rows the index does: a
+    // row the probe accepted but the parser refuses must degrade to the SDK instead of rejecting.
+    const controlsDir = join(root, 'controls')
+    const controlsFile = join(controlsDir, 'session.jsonl')
+    const controlsId = 'controls-session'
+    await mkdir(controlsDir, { recursive: true })
+    await writeFile(controlsFile, corruptSessionText(controlsId, cwd, CORRUPT_MODEL_CHANGE))
+    const controlsMark = pushes.length
+    assert.equal((await registry.openSession(controlsFile, win)).sessionId, controlsId)
+    await settleIndex()
+    const controlsUpdate = pushes[controlsMark]!.update as { error?: string; totalTurns: number }
+    assert.equal(controlsUpdate.error, undefined, 'the index accepted a line it cannot parse')
+    assert.equal(controlsUpdate.totalTurns, 2, 'the index counts the row a parser drops')
+    const controls = await registry.getSessionControls(controlsId)
+    assert.equal(controls.model?.id, 'recorder', 'the SDK answers for the file the index disagreed with')
+    assert.ok(controls.thinkingLevels.length > 0, 'the picker is filled instead of left at defaults')
+
+    // Lightbox images read the same file: a row no parser can read is an absent image, not a
+    // rejected protocol request that renders as a broken picture.
+    const imageDir = join(root, 'image')
+    const imageFile = join(imageDir, 'session.jsonl')
+    const imageId = 'image-session'
+    await mkdir(imageDir, { recursive: true })
+    await writeFile(imageFile, corruptSessionText(imageId, cwd, CORRUPT_MODEL_CHANGE))
+    assert.equal((await registry.openSession(imageFile, win)).sessionId, imageId)
+    await settleIndex()
+    assert.equal((await registry.sessionEntryLookup(imageId, 'a0'))?.id, 'a0', 'a readable entry still resolves')
+    assert.equal(await registry.sessionEntryLookup(imageId, 'm1'), undefined,
+      'the unrelated row is an absent image, and the read does not throw')
+
+    // A choice made while the file was still readable has to survive the fallback that a later read
+    // triggers: the replacement session carries it, so the picker does not silently reset.
+    const carryDir = join(root, 'carry')
+    const carryFile = join(carryDir, 'session.jsonl')
+    const carryId = 'carry-session'
+    await mkdir(carryDir, { recursive: true })
+    await writeFile(carryFile, `${[
+      JSON.stringify({ type: 'session', version: 3, id: carryId, cwd, timestamp: '2026-01-01T00:00:00.000Z' }),
+      JSON.stringify({ type: 'message', id: 'u0', parentId: null, timestamp: '2026-01-01T00:00:01.000Z', message: { role: 'user', content: 'q0' } }),
+      JSON.stringify({
+        type: 'message', id: 'a0', parentId: 'u0', timestamp: '2026-01-01T00:00:02.000Z',
+        message: { role: 'assistant', provider: 'test', model: 'recorder', stopReason: 'stop', content: [{ type: 'text', text: 'first' }], usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 } }
+      }),
+      '{"type":"message","id":"u1","parentId":"a0","timestamp":"2026-01-01T00:00:03.000Z","message":{"role":"user","content":"q1",}}',
+      JSON.stringify({
+        type: 'message', id: 'a1', parentId: 'u1', timestamp: '2026-01-01T00:00:04.000Z',
+        message: { role: 'assistant', provider: 'test', model: 'recorder', stopReason: 'stop', content: [{ type: 'text', text: 'second' }], usage: { input: 20, output: 3, cacheRead: 0, cacheWrite: 0 } }
+      })
+    ].join('\n')}\n`)
+    assert.equal((await registry.openSession(carryFile, win)).sessionId, carryId)
+    await settleIndex()
+    // Controls only read the last model/thinking/assistant rows, so this pick succeeds untouched.
+    assert.equal((await registry.setSessionModel(carryId, 'test', 'reasoner')).model?.id, 'reasoner')
+    // Reading the tree walks every branch row, finds the corrupt one, and falls back to the SDK.
+    await registry.getSessionTree(carryId)
+    assert.equal((await registry.getSessionControls(carryId)).model?.id, 'reasoner',
+      'the model the user picked before the fallback is not replaced by the file default')
+
+    // The prompt path can promote a pending file session before its deferred scan runs: the scan has
+    // nobody left to answer, and its file-index window must not overwrite the live session's view.
+    const guardDir = join(root, 'guard')
+    const guardFile = join(guardDir, 'session.jsonl')
+    await mkdir(guardDir, { recursive: true })
+    await writeFile(guardFile, `${[
+      JSON.stringify({ type: 'session', version: 3, id: 'guard-session', cwd, timestamp: '2026-01-01T00:00:00.000Z' }),
+      JSON.stringify({ type: 'message', id: 'u0', parentId: null, timestamp: '2026-01-01T00:00:01.000Z', message: { role: 'user', content: 'q0' } }),
+      '{"type":"message","id":"a0","parentId":"u0","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"x",}],}}',
+      JSON.stringify({ type: 'message', id: 'u1', parentId: 'u0', timestamp: '2026-01-01T00:00:03.000Z', message: { role: 'user', content: 'q1' } })
+    ].join('\n')}\n`)
+    const guardMark = pushes.length
+    assert.equal((await registry.openSession(guardFile, win)).sessionId, 'guard-session')
+    await registry.prepareSession('guard-session')
+    // The SDK owns the file now, and the queued scan has to stand down rather than read anything:
+    // removing the file is how the test tells "did not scan" apart from "scanned and stayed quiet".
+    await rm(guardFile, { force: true })
+    const guardErrors: unknown[][] = []
+    const originalGuardError = console.error
+    console.error = (...args: unknown[]) => { guardErrors.push(args) }
+    try {
+      await settleIndex()
+    } finally {
+      console.error = originalGuardError
+    }
+    assert.deepEqual(guardErrors, [], 'a promoted session is not scanned by the index it no longer needs')
+    assert.deepEqual(pushes.slice(guardMark), [], 'a promoted session is not answered by a file index')
+
+    // Two readers of the same pending file share one tree build: the index cannot change while it is
+    // pending, so a second walk would only duplicate work.
+    treeBuilds = 0
+    const [treeA, treeB] = await Promise.all([
+      registry.getSessionTree('tail-session'),
+      registry.getSessionTree('tail-session')
+    ])
+    assert.equal(treeBuilds, 1, 'concurrent tree reads build the tree once')
+    assert.ok(treeA.length > 0)
+    assert.deepEqual(treeA.map((row) => row.id), treeB.map((row) => row.id))
+    assert.equal(treeBuilds, 1, 'a cached tree is not rebuilt')
+
+    // A window request is the one read with numeric arguments: a NaN start must not reach the reader
+    // (it would make the renderer's own offset NaN and paging would silently stop), and a fat count
+    // must not turn into one huge read.
+    const ipcDir = join(root, 'ipc')
+    const ipcFile = join(ipcDir, 'session.jsonl')
+    await mkdir(ipcDir, { recursive: true })
+    await writeSession(ipcFile, cwd, 'ipc-session', 260, 0)
+    assert.equal((await registry.openSession(ipcFile, win)).sessionId, 'ipc-session')
+    await settleIndex()
+    const { registerSessionIpc } = await import('../src/main/ipc/session')
+    registerSessionIpc()
+    const turnWindow = handlers.get('session:get-turn-window')!
+    assert.ok(turnWindow, 'the window handler is registered')
+    await assert.rejects(turnWindow({}, 'ipc-session', Number.NaN, 10), /non-negative integer/)
+    await assert.rejects(turnWindow({}, 'ipc-session', -1, 10), /non-negative integer/)
+    await assert.rejects(turnWindow({}, 'ipc-session', 1.5, 10), /non-negative integer/)
+    await assert.rejects(turnWindow({}, 'ipc-session', 0, Number.NaN), /must be a number/)
+    const clamped = (await turnWindow({}, 'ipc-session', 0, 5000)) as { turns: unknown[]; startIndex: number }
+    assert.equal(clamped.startIndex, 0)
+    assert.equal(clamped.turns.length, 200, 'one request never reads more than the page cap')
+    const tiny = (await turnWindow({}, 'ipc-session', 0, 0)) as { turns: unknown[] }
+    assert.equal(tiny.turns.length, 1, 'a count below one still reads one turn')
+    const tail = (await turnWindow({}, 'ipc-session', 1000, 5)) as { turns: unknown[] }
+    assert.equal(tail.turns.length, 0, 'a start beyond the branch is an empty window, not an error')
+
     // A session file that stops being one before the deferred index runs must surface as a reported
     // failure instead of escaping as an unhandled rejection: the reader refuses it and the SDK
     // fallback throws on it.
@@ -193,6 +403,18 @@ async function runFixture(): Promise<void> {
       console.error = previousError
       globalThis.setImmediate = immediate
     }
+
+    // A failed scan is not a verdict on the file: reopening it asks for the index again, so a reader
+    // who reopens a session whose first scan died is not left with a provisional window forever.
+    await writeSession(doomed, cwd, 'doomed-session', 80, 0)
+    const retriedPreview = await registry.openSession(doomed, win)
+    assert.equal(retriedPreview.sessionId, 'doomed-session')
+    assert.equal(retriedPreview.display.turns.length, 80, 'the tail answers again while the index is rebuilt')
+    const retryMark = pushes.length
+    await settleIndex()
+    const retried = pushes[retryMark]!.update as { error?: string; totalTurns: number }
+    assert.equal(retried.error, undefined, 'the second scan reports the index instead of another failure')
+    assert.equal(retried.totalTurns, 80)
   } finally {
     if (previous === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previous

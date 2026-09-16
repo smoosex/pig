@@ -7,10 +7,11 @@
 import { statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
-import { createAgentSession, SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
+import { createAgentSession, SessionManager, type AgentSession, type SessionEntry } from '@earendil-works/pi-coding-agent'
 import type {
   DisplayTurnsResult,
   FollowUpAction,
+  SessionControls,
   SessionTokenStats,
   SessionWindowMessage,
   ThinkingLevel
@@ -264,6 +265,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
   if (opened) {
     // A file whose index is still building answers with its tail rather than waiting for the index.
     if ('path' in opened && !opened.index) {
+      scheduleIndex(opened)
       return { sessionId, cwd, display: openTail(sessionId, opened.path).display }
     }
     return previewFor(await sourceFor(opened), cwd)
@@ -283,13 +285,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
   }
   pending.set(sessionId, session)
   // The index only needs to exist before the next read that wants the whole branch, not before paint.
-  setImmediate(() => {
-    void warmIndex(session).catch((error: unknown) => {
-      console.error('Failed to index session:', error)
-      // The renderer is waiting on this index: without an answer it keeps promising older turns.
-      sendWindow(session, { error: errorMessage(error) })
-    })
-  })
+  scheduleIndex(session)
   return { sessionId, cwd, display: tail.display }
 }
 
@@ -299,6 +295,8 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
  * reader refuses falls back to the SDK manager, which is what a session without an index needs.
  */
 async function warmIndex(session: SessionFileSession): Promise<void> {
+  // A session that was promoted to live has nobody left to answer, and its window is already stale.
+  if (pending.get(session.sessionId) !== session) return
   let index
   try {
     index = await sessionIndex(session)
@@ -310,6 +308,25 @@ async function warmIndex(session: SessionFileSession): Promise<void> {
   if (pending.get(session.sessionId) !== session) return
   session.tailById = null
   sendWindow(session, windowUpdate(fileSource(index), session.tailTurns))
+}
+
+/** Scans per file, so a file that keeps failing is not rescanned by every reopen. */
+const MAX_INDEX_ATTEMPTS = 2
+
+/** A failed scan is not a verdict on the file, so an open without an index asks for it again. */
+function scheduleIndex(session: SessionFileSession): void {
+  if (session.index || session.indexing || session.indexScheduled) return
+  if ((session.indexAttempts ?? 0) >= MAX_INDEX_ATTEMPTS) return
+  session.indexAttempts = (session.indexAttempts ?? 0) + 1
+  session.indexScheduled = true
+  setImmediate(() => {
+    session.indexScheduled = false
+    void warmIndex(session).catch((error: unknown) => {
+      console.error('Failed to index session:', error)
+      // The renderer is waiting on this index: without an answer it keeps promising older turns.
+      sendWindow(session, { error: errorMessage(error) })
+    })
+  })
 }
 
 /**
@@ -324,7 +341,11 @@ function downgradeFileSession(session: SessionFileSession): SessionManager | nul
     cwd: session.cwd,
     win: session.win,
     sessionManager: SessionManager.open(session.path),
-    needsMaterialize: false
+    needsMaterialize: false,
+    // A retried read must not lose the model the user just picked for this session.
+    ...(session.modelProvider === undefined ? {} : { modelProvider: session.modelProvider }),
+    ...(session.modelId === undefined ? {} : { modelId: session.modelId }),
+    ...(session.thinkingLevel === undefined ? {} : { thinkingLevel: session.thinkingLevel })
   }
   pending.set(session.sessionId, replacement)
   // Whatever the renderer holds was described by the index that just disagreed with the file, so it
@@ -347,6 +368,11 @@ async function retryAfterIndexFallback<T>(sessionId: string, read: () => T | Pro
     if (!session || session.kind !== 'file' || !downgradeFileSession(session)) throw error
     return await read()
   }
+}
+
+/** Controls come from the same last rows the reader indexes, so they retry like every other read. */
+function readControls(sessionId: string): Promise<SessionControls> {
+  return retryAfterIndexFallback(sessionId, () => controlsFor(sessionState(sessionId)))
 }
 
 /** The same retry for the readers that work off a `SessionSource`. */
@@ -385,25 +411,20 @@ export function sessionSourceFor(sessionId: string): Promise<SessionSource> {
   return sourceFor(sessionState(sessionId))
 }
 
-/** Enough of a session to answer one `pig-image` request, or undefined when it is not registered. */
-export function sessionEntryLookup(
-  sessionId: string
-): { getEntry(entryId: string): ReturnType<SessionSource['entryById']> } | undefined {
-  const session = live.get(sessionId) ?? pending.get(sessionId)
-  if (!session) return undefined
-  if ('agentSession' in session) {
-    return { getEntry: (entryId) => session.agentSession.sessionManager.getEntry(entryId) }
-  }
-  if (session.kind === 'memory') {
-    return { getEntry: (entryId) => session.sessionManager.getEntry(entryId) }
-  }
-  // The tail is answered from memory: the images of the first painted window must not wait for the
-  // index, and a 404 here would stick in the renderer's cache for an image that does exist.
-  return {
-    getEntry: (entryId) =>
-      session.tailById?.get(entryId) ??
-      (session.index ? readEntryById(session.index, entryId) : undefined)
-  }
+/** One `pig-image` entry, read through the same degradation path as every other session read. */
+export function sessionEntryLookup(sessionId: string, entryId: string): Promise<SessionEntry | undefined> {
+  return retryAfterIndexFallback(sessionId, async () => {
+    const session = live.get(sessionId) ?? pending.get(sessionId)
+    // A session that is gone is an absent image, not a failure: the renderer answers 404 either way.
+    if (!session) return undefined
+    if ('agentSession' in session) return session.agentSession.sessionManager.getEntry(entryId)
+    if (session.kind === 'memory') return session.sessionManager.getEntry(entryId)
+    // The tail is answered from memory: the images of the first painted window must not wait for the
+    // index, and a 404 here would stick in the renderer's cache for an image that does exist.
+    const tail = session.tailById?.get(entryId)
+    if (tail) return tail
+    return readEntryById(await sessionIndex(session), entryId)
+  })
 }
 
 export async function viewSessionBranch(sessionId: string, tipId: string): Promise<string | null> {
@@ -477,7 +498,7 @@ function sessionState(sessionId: string): SessionState {
 }
 
 export function getSessionControls(sessionId: string) {
-  return controlsFor(sessionState(sessionId))
+  return readControls(sessionId)
 }
 
 export function getSessionTokenStats(sessionId: string): Promise<SessionTokenStats> {
@@ -488,17 +509,17 @@ export async function setSessionModel(sessionId: string, provider: string, id: s
   // Once materialization starts, choices must target the session it publishes.
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
-  return applyModel(sessionState(sessionId), provider, id)
+  return retryAfterIndexFallback(sessionId, () => applyModel(sessionState(sessionId), provider, id))
 }
 
 export async function setSessionThinking(sessionId: string, level: ThinkingLevel) {
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
-  return applyThinking(sessionState(sessionId), level)
+  return retryAfterIndexFallback(sessionId, () => applyThinking(sessionState(sessionId), level))
 }
 
 export function refreshSessionModels(sessionId: string) {
-  return refreshModels(sessionState(sessionId))
+  return retryAfterIndexFallback(sessionId, () => refreshModels(sessionState(sessionId)))
 }
 
 export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction) {
@@ -519,8 +540,19 @@ export async function getSessionTree(sessionId: string) {
     const session = sessionState(sessionId)
     // Reopening the dialog must not read the file again: the index is immutable while it is pending.
     if (!('agentSession' in session) && session.kind === 'file') {
-      session.treeRows ??= sessionTreeRows(fileSource(await sessionIndex(session)))
-      return session.treeRows
+      const cached = session.treeRows
+      if (cached) return cached
+      // Concurrent callers share one build instead of walking the branch once each.
+      const request = session.treeRowsRequest ??= (async () => {
+        const rows = sessionTreeRows(fileSource(await sessionIndex(session)))
+        session.treeRows = rows
+        return rows
+      })()
+      try {
+        return await request
+      } finally {
+        if (session.treeRowsRequest === request) session.treeRowsRequest = null
+      }
     }
     return sessionTreeRows(await sourceFor(session))
   })

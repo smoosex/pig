@@ -160,6 +160,8 @@ function useInView(ref?: RefObject<Element | null>): boolean {
 
 // Mounted turns can hold hundreds of code blocks while only a couple of them are on screen, so
 // highlighting waits until a block is close to the viewport and then never undoes itself.
+// The blocks live in a nested scroller (MessageScrollerViewport): rootMargin alone is measured
+// against the viewport and cannot see past that clip, so the margin has to come from scrollMargin.
 const VIEWPORT_MARGIN = '600px 0px'
 const watchers = new WeakMap<Element, () => void>()
 let visibility: IntersectionObserver | undefined
@@ -173,7 +175,7 @@ function sharedObserver(): IntersectionObserver {
       visibility?.unobserve(entry.target)
       notify?.()
     }
-  }, { rootMargin: VIEWPORT_MARGIN })
+  }, { rootMargin: VIEWPORT_MARGIN, scrollMargin: VIEWPORT_MARGIN })
   return visibility
 }
 

@@ -275,6 +275,9 @@ async function fixture(scenario: string): Promise<void> {
       assert.deepEqual(blocks.map((el) => el.textContent), ['plain-0', 'plain-1', 'plain-2', 'plain-3'])
       assert.equal(observers.length, 1, 'one observer serves every block')
       assert.equal(observers[0]!.options?.rootMargin, '600px 0px')
+      // The blocks sit in a nested scroller, so the margin that matters is the scroll margin: a
+      // rootMargin alone is clipped by the scrollport before it can prefetch anything.
+      assert.equal(observers[0]!.options?.scrollMargin, '600px 0px')
       const observer = observers[0]!
       assert.equal(observer.targets.size, 4)
       await act(async () => { observer.enter(blocks[1]!, blocks[3]!) })

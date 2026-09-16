@@ -7,9 +7,9 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import {
   imageBlockPayload,
-  parseSessionImageUrl,
-  type SessionImageTarget
+  parseSessionImageUrl
 } from '../../shared/session-images'
+import { UnsupportedSessionFile } from './session-jsonl'
 
 export interface SessionImage {
   data: Buffer
@@ -42,14 +42,23 @@ export function sessionImageFromEntry(
   return data.length > 0 ? { data, mimeType: payload.mimeType } : null
 }
 
-/** Enough of a session manager to answer one image request. */
-export type SessionEntryLookup = (sessionId: string) =>
-  | { getEntry(entryId: string): SessionEntry | undefined }
-  | undefined
+export interface SessionEntryLookup {
+  (sessionId: string, entryId: string): Promise<SessionEntry | undefined>
+}
 
-export function sessionImageResponse(url: string, lookup: SessionEntryLookup): Response {
+export async function sessionImageResponse(url: string, lookup: SessionEntryLookup): Promise<Response> {
   const target = parseSessionImageUrl(url)
-  const image = target ? readSessionImage(target, lookup) : null
+  if (!target) return new Response(null, { status: 404 })
+  let entry: SessionEntry | undefined
+  try {
+    entry = await lookup(target.sessionId, target.entryId)
+  } catch (error) {
+    // A file this reader cannot vouch for is an image it cannot serve: the entry is as good as gone.
+    // Anything else is a bug and is left for Electron to report.
+    if (error instanceof UnsupportedSessionFile) return new Response(null, { status: 404 })
+    throw error
+  }
+  const image = sessionImageFromEntry(entry, target.index)
   if (!image) return new Response(null, { status: 404 })
   return new Response(new Uint8Array(image.data), {
     headers: {
@@ -58,15 +67,4 @@ export function sessionImageResponse(url: string, lookup: SessionEntryLookup): R
       'cache-control': 'private, max-age=31536000, immutable'
     }
   })
-}
-
-/**
- * A rendered turn can outlive the session it came from (closed tab, deleted worktree), which the
- * lookup reports as absent. Anything else it throws is a bug and is left for Electron to report.
- */
-function readSessionImage(
-  { sessionId, entryId, index }: SessionImageTarget,
-  lookup: SessionEntryLookup
-): SessionImage | null {
-  return sessionImageFromEntry(lookup(sessionId)?.getEntry(entryId), index)
 }

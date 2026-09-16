@@ -100,25 +100,36 @@ test('the protocol answers an image request with the decoded bytes', async () =>
     timestamp: '2026-01-01T00:00:00.000Z',
     message: {
       role: 'user',
-      content: [{ type: 'image', mimeType: 'image/png', data: Buffer.from('bytes').toString('base64') }],
+      content: [
+        { type: 'image', mimeType: 'image/jpeg', data: Buffer.from('first').toString('base64') },
+        { type: 'image', mimeType: 'image/png', data: Buffer.from('bytes').toString('base64') }
+      ],
       timestamp: 1
     }
   } as unknown as SessionEntry
-  const lookup = (sessionId: string) => ({
-    getEntry: (entryId: string) => (sessionId === 's1' && entryId === 'entry-9' ? entry : undefined)
-  })
+  const asks: Array<[string, string]> = []
+  const lookup = async (sessionId: string, entryId: string) => {
+    asks.push([sessionId, entryId])
+    return entryId === 'entry-9' ? entry : undefined
+  }
 
-  const response = sessionImageResponse(sessionImageUrl('s1', 'entry-9', 0), lookup)
+  const response = await sessionImageResponse(sessionImageUrl('s1', 'entry-9', 1), lookup)
   expect(response.status).toBe(200)
   expect(response.headers.get('content-type')).toBe('image/png')
   expect(response.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
+  // The exact bytes of the requested block, not just "some response".
   expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('bytes')
+  expect(asks).toEqual([['s1', 'entry-9']])
+
+  const other = await sessionImageResponse(sessionImageUrl('s1', 'entry-9', 0), lookup)
+  expect(other.headers.get('content-type')).toBe('image/jpeg')
+  expect(Buffer.from(await other.arrayBuffer()).toString()).toBe('first')
 })
 
-test('the protocol answers 404 when the session is gone', async () => {
-  const missing = () => ({ getEntry: () => undefined })
+test('the protocol answers 404 when the session or the entry is gone', async () => {
+  const missing = async () => undefined
   const cases = [
-    [sessionImageUrl('s1', 'entry-9', 0), () => undefined],
+    [sessionImageUrl('s1', 'entry-9', 0), async () => undefined],
     [sessionImageUrl('s1', 'entry-9', 0), missing],
     [sessionImageUrl('s1', 'entry-9', 7), missing],
     ['pig-image://session/%E0%A4/0/0', missing],
@@ -127,17 +138,29 @@ test('the protocol answers 404 when the session is gone', async () => {
   ] as const
 
   for (const [url, lookup] of cases) {
-    const response = sessionImageResponse(url, lookup)
+    const response = await sessionImageResponse(url, lookup)
     expect(response.status).toBe(404)
     expect(await response.text()).toBe('')
   }
 })
 
-test('an unexpected lookup failure is not swallowed into a 404', () => {
-  const broken = () => {
+test('a file this reader cannot vouch for is a missing image, not a failed request', async () => {
+  const unsupported = async () => {
+    const { UnsupportedSessionFile } = await import('../src/main/pi/session-jsonl')
+    throw new UnsupportedSessionFile('session.jsonl')
+  }
+  const response = await sessionImageResponse(sessionImageUrl('s1', 'entry-9', 0), unsupported)
+  expect(response.status).toBe(404)
+  expect(await response.text()).toBe('')
+})
+
+test('an unexpected lookup failure is not swallowed into a 404', async () => {
+  const broken = async () => {
     throw new Error('Session index is corrupt')
   }
-  expect(() => sessionImageResponse(sessionImageUrl('s1', 'e1', 0), broken)).toThrow('Session index is corrupt')
+  await expect(sessionImageResponse(sessionImageUrl('s1', 'e1', 0), broken)).rejects.toThrow(
+    'Session index is corrupt'
+  )
 })
 
 test('the image criterion is one rule for writing and reading', () => {
