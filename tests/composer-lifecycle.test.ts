@@ -42,6 +42,45 @@ async function runFixture(name: string): Promise<void> {
       frames.clear()
       assert.equal(keyDown({ key: 'Enter' }), true)
       assert.equal(forwarded, 1)
+
+      // Windows clipboards hand over CRLF and some clipboard sources only CR. The paste path is our
+      // own, so nothing normalizes it for us: every \r that survives lands in the prompt.
+      const paste = async (text: string) => {
+        let prevented = false
+        const event = {
+          clipboardData: {
+            getData: (type: string) => (type === 'text/plain' ? text : ''),
+            files: [],
+            items: []
+          },
+          preventDefault: () => { prevented = true }
+        } as unknown as ClipboardEvent
+        let handled = false
+        await act(async () => {
+          handled = Boolean(props.handlePaste!.call(undefined, editor.view, event))
+        })
+        assert.equal(handled, true)
+        assert.equal(prevented, true)
+        return state.getDraft()
+      }
+
+      await act(async () => { state.clear() })
+      assert.equal((await paste('a\r\nb\r\nc')).text, 'a\nb\nc')
+      await act(async () => { state.clear() })
+      assert.equal((await paste('a\rb\rc')).text, 'a\nb\nc')
+
+      // Past the line threshold the paste becomes a chip, whose stored text and byte size must be
+      // measured on the same LF version the prompt receives.
+      await act(async () => { state.clear() })
+      const long = Array.from({ length: 22 }, (_, index) => `line${index}`).join('\r\n')
+      const chipped = await paste(long)
+      assert.equal(chipped.text, long.replace(/\r\n/g, '\n'))
+      assert.equal(chipped.attachments.length, 1)
+      const attachment = chipped.attachments[0]
+      assert.equal(chipped.text.slice(attachment.start, attachment.end), attachment.text)
+      assert.equal(attachment.byteSize, new TextEncoder().encode(attachment.text).byteLength)
+      await act(async () => { state.clear() })
+
       await act(async () => { state.replaceText('编辑\n队列') })
       assert.equal(state.getDraft().text, '编辑\n队列')
       await act(async () => {
@@ -113,7 +152,7 @@ if (process.argv[2] === '--composer-fixture') {
   await runFixture(process.argv[3])
 } else {
   for (const [name, title] of Object.entries({
-    editor: 'IME confirmation never forwards Enter and clearing updates the draft immediately',
+    editor: 'IME confirmation never forwards Enter, and clipboard line endings reach the draft as LF',
     images: 'pending image reads cannot escape their session or cleared draft'
   })) {
     test(`composer lifecycle: ${title}`, async () => {

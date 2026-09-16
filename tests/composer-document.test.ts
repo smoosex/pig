@@ -9,6 +9,11 @@ describe('composer document protocol', () => {
     expect(serializeComposerDocument(textToComposerDocument(text))).toEqual({ text, attachments: [] })
   })
 
+  test('round-trips clipboard line endings as LF', () => {
+    expect(serializeComposerDocument(textToComposerDocument('a\r\nb\rc')).text).toBe('a\nb\nc')
+    expect(serializeComposerDocument(textToComposerDocument('a\r\n\r\nb\n')).text).toBe('a\n\nb\n')
+  })
+
   test('serializes hard breaks as newlines before assigning pasted-text offsets', () => {
     const document = {
       type: 'doc',

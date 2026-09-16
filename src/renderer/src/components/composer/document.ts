@@ -4,7 +4,7 @@
  * serialization must add real newlines before calculating the next range.
  */
 import type { JSONContent } from '@tiptap/core'
-import { createInlinePastedTextDisplayMetadata, utf8ByteLength, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
+import { createInlinePastedTextDisplayMetadata, normalizeNewlines, utf8ByteLength, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
 import type { PigUserMessage } from '../../pi/types'
 
 export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [] }
@@ -12,7 +12,7 @@ export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [] }
 export function textToComposerDocument(text: string): JSONContent {
   return {
     type: 'doc',
-    content: text.split('\n').map((line) =>
+    content: normalizeNewlines(text).split('\n').map((line) =>
       line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' }
     )
   }

@@ -6,6 +6,7 @@ import {
   createPastedTextMetadata,
   formatPastedTextSize,
   isLongPastedText,
+  normalizeNewlines,
   pastedTextFingerprint,
   isPastedTextMetadata,
   isInlinePastedTextAttachments,
@@ -24,6 +25,14 @@ describe('pasted text attachments', () => {
     expect(isLongPastedText(Array.from({ length: 20 }, () => 'x').join('\n'))).toBe(false)
     expect(isLongPastedText(Array.from({ length: 21 }, () => 'x').join('\n'))).toBe(true)
     expect(pastedTextLineCount('a\r\nb\r\nc')).toBe(3)
+  })
+
+  test('normalizes clipboard line endings before counting or storing them', () => {
+    expect(normalizeNewlines('a\r\nb\rc')).toBe('a\nb\nc')
+    expect(normalizeNewlines('a\r\n\r\nb')).toBe('a\n\nb')
+    expect(normalizeNewlines('a\n')).toBe('a\n')
+    expect(pastedTextLineCount('a\rb\rc')).toBe(3)
+    expect(isLongPastedText(Array.from({ length: 21 }, () => 'x').join('\r'))).toBe(true)
   })
 
   test('keeps body and attachment order in the model input', () => {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor } from '@tiptap/react'
 import type { JSONContent } from '@tiptap/core'
+import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
-import { createPastedTextFilename, isLongPastedText, utf8ByteLength } from '../../../../shared/pasted-text'
+import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
@@ -12,6 +14,32 @@ interface ComposerEditorOptions {
   sessionId: string | null
   onKeyDown: (event: KeyboardEvent) => boolean
   onPasteImages: (files: File[]) => Promise<void>
+}
+
+/** Newlines become hard breaks so blank lines survive; the only deliberate transform is CRLF → LF. */
+function plainTextSlice(schema: Schema, text: string): Slice {
+  const content: ProseMirrorNode[] = []
+  text.split('\n').forEach((line, index) => {
+    if (index > 0) content.push(schema.nodes.hardBreak.create())
+    if (line) content.push(schema.text(line))
+  })
+  return new Slice(Fragment.fromArray(content), 0, 0)
+}
+
+function insertPastedText(view: EditorView, text: string, at?: number): void {
+  const { schema } = view.state
+  const normalized = normalizeNewlines(text)
+  const slice = isLongPastedText(normalized)
+    ? Slice.maxOpen(Fragment.from(schema.nodes.pastedText.create({
+        id: crypto.randomUUID(),
+        text: normalized,
+        byteSize: utf8ByteLength(normalized),
+        filename: createPastedTextFilename()
+      })))
+    : plainTextSlice(schema, normalized)
+  const { tr } = view.state
+  const next = at == null ? tr.replaceSelection(slice) : tr.replace(at, at, slice)
+  view.dispatch(next.scrollIntoView())
 }
 
 /** Keeps Tiptap, clipboard input, and IME handling behind one editor boundary. */
@@ -24,7 +52,28 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   callbacks.current = options
 
   const editor = useEditor({
-    extensions: [StarterKit, Placeholder.configure({ placeholder: '⌘L to focus chat' }), PastedTextNode],
+    extensions: [
+      // The composer is a plain-text field: every node and mark that could render or carry
+      // formatting is off, so neither input rules nor a stray HTML path can add any.
+      StarterKit.configure({
+        blockquote: false,
+        bold: false,
+        bulletList: false,
+        code: false,
+        codeBlock: false,
+        heading: false,
+        horizontalRule: false,
+        italic: false,
+        link: false,
+        listItem: false,
+        listKeymap: false,
+        orderedList: false,
+        strike: false,
+        underline: false
+      }),
+      Placeholder.configure({ placeholder: '⌘L to focus chat' }),
+      PastedTextNode
+    ],
     content: textToComposerDocument(''),
     onUpdate: ({ editor: nextEditor }) => {
       const next = serializeComposerDocument(nextEditor.getJSON())
@@ -51,6 +100,17 @@ export function useComposerEditor(options: ComposerEditorOptions) {
             compositionFrame.current = null
           })
           return false
+        },
+        drop: (view, event) => {
+          if (view.dragging) return false
+          const drag = event as DragEvent
+          const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
+          if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
+          const at = view.posAtCoords({ left: drag.clientX, top: drag.clientY })?.pos ?? view.state.selection.from
+          event.preventDefault()
+          insertPastedText(view, dropped, at)
+          view.focus()
+          return true
         }
       },
       handleKeyDown: (_view, event) => {
@@ -58,24 +118,22 @@ export function useComposerEditor(options: ComposerEditorOptions) {
         return callbacks.current.onKeyDown(event)
       },
       handlePaste: (view, event) => {
-        const pastedText = event.clipboardData?.getData('text/plain') ?? ''
+        const data = event.clipboardData
+        const pastedText = data?.getData('text/plain') ?? ''
+        const markup = Boolean(data?.getData('text/html'))
         const files = clipboardImages(event)
-        const longText = isLongPastedText(pastedText)
-        if (longText) {
+        if (pastedText) {
           event.preventDefault()
-          const node = view.state.schema.nodes.pastedText.create({
-            id: crypto.randomUUID(),
-            text: pastedText,
-            byteSize: utf8ByteLength(pastedText),
-            filename: createPastedTextFilename()
-          })
-          view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView())
+          insertPastedText(view, pastedText)
+        } else if (markup) {
+          // Markup with no text behind it (styled wrappers, images): nothing worth importing.
+          event.preventDefault()
         }
         if (files.length > 0) {
           if (!pastedText) event.preventDefault()
           void callbacks.current.onPasteImages(files)
         }
-        return longText || (!pastedText && files.length > 0)
+        return Boolean(pastedText || markup || files.length > 0)
       }
     }
   })

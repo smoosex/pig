@@ -59,7 +59,12 @@ export interface PastedTextDisplayMetadata {
 }
 
 export function pastedTextLineCount(text: string): number {
-  return text.split(/\r\n|\r|\n/).length
+  return normalizeNewlines(text).split('\n').length
+}
+
+/** Clipboard text arrives with CRLF or a lone CR; the editor and the prompt protocol only hold LF. */
+export function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n?/g, '\n')
 }
 
 export function isLongPastedText(text: string): boolean {
