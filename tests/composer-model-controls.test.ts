@@ -67,19 +67,60 @@ async function fixture(scenario: string): Promise<void> {
   try {
     await act(async () => { root.render(createElement(Probe)) })
 
+    if (scenario === 'mounted-twice') {
+      // Two toolbar mounts share one in-flight mutation through the runtime flag.
+      let first!: ReturnType<typeof useModelControls>
+      let second!: ReturnType<typeof useModelControls>
+      function Pair() { first = useModelControls('a'); second = useModelControls('a'); return null }
+      await act(async () => { root.render(createElement(Pair)) })
+      const slow = deferred<never>()
+      let acceptedFirst!: Promise<boolean>
+      await act(async () => { acceptedFirst = first.run(() => slow.promise) })
+      assert.equal(second.pending, true, 'the second mount sees the mutation in flight')
+      await act(async () => {
+        assert.equal(
+          await second.run(() => Promise.resolve(controls('other') as never)),
+          false,
+          'the second mount cannot start a mutation of its own'
+        )
+      })
+      await act(async () => {
+        slow.resolve(controls('new') as never)
+        assert.equal(await acceptedFirst, true)
+      })
+      assert.equal(runtime().a?.model?.id, 'new-model')
+      assert.equal(second.pending, false)
+      return
+    }
+
     if (scenario === 'replaced') {
       const stale = deferred<never>()
-      let accepted!: Promise<boolean>
-      await act(async () => { accepted = actions.run(() => stale.promise) })
+      let acceptedStale!: Promise<boolean>
+      await act(async () => { acceptedStale = actions.run(() => stale.promise) })
       // Closing and reopening the same session id builds a new runtime instance.
       await act(async () => {
         useSessionsStore.setState((state) => ({
           runtime: { ...state.runtime, a: { ...emptyRuntime(), model: model('reopened') } }
         }))
       })
-      await act(async () => { stale.resolve(controls('new') as never); await accepted })
-      assert.equal(runtime().a?.model?.id, 'reopened-model', 'a reply for a closed instance is dropped')
-      assert.equal(actions.pending, false, 'a dropped reply leaves no spinner behind')
+      assert.equal(actions.pending, false, 'the reopened instance starts without the old flags')
+
+      // The reopened instance takes a mutation of its own, which the old reply must not release.
+      const fresh = deferred<never>()
+      let acceptedFresh!: Promise<boolean>
+      await act(async () => { acceptedFresh = actions.run(() => fresh.promise) })
+      assert.equal(actions.pending, true)
+      await act(async () => {
+        stale.resolve(controls('stale') as never)
+        assert.equal(await acceptedStale, false, 'the reply of the replaced instance is dropped')
+      })
+      assert.equal(actions.pending, true, 'a dropped reply cannot release the new instance')
+      await act(async () => {
+        fresh.resolve(controls('new') as never)
+        assert.equal(await acceptedFresh, true)
+      })
+      assert.equal(runtime().a?.model?.id, 'new-model', 'the new instance lands its own controls')
+      assert.equal(actions.pending, false, 'the new instance releases itself')
       return
     }
 
@@ -125,7 +166,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--model-controls-fixture') {
   await fixture(process.argv[3] ?? 'switched')
 } else {
-  for (const scenario of ['switched', 'replaced']) {
+  for (const scenario of ['switched', 'replaced', 'mounted-twice']) {
     test(`model controls survive a ${scenario} session`, async () => {
       const child = Bun.spawn(
         [process.execPath, import.meta.path, '--model-controls-fixture', scenario],
