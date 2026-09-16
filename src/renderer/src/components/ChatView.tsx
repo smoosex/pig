@@ -129,6 +129,7 @@ const SessionChatPane = memo(function SessionChatPane({
             historical={historical}
             live={live}
             sessionId={sessionId}
+            branchViewId={branchViewId ?? 'unresolved'}
             windowStart={turnStart}
             indexTrusted={turnIndexTrusted}
             loadingOlder={turnLoading}

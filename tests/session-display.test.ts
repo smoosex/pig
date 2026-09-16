@@ -4,9 +4,14 @@ import { pastedTextFingerprint } from '../src/shared/pasted-text'
 
 let displayTurnsFromEntries: typeof import('../src/main/pi/session-display-model')['displayTurnsFromEntries']
 let turnMessagesFromEntries: typeof import('../src/main/pi/session-display-model')['turnMessagesFromEntries']
+let turnMessagesByIdFromEntries: typeof import('../src/main/pi/session-display-model')['turnMessagesByIdFromEntries']
 
 beforeAll(async () => {
-  ({ displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model'))
+  ({
+    displayTurnsFromEntries,
+    turnMessagesFromEntries,
+    turnMessagesByIdFromEntries
+  } = await import('../src/main/pi/session-display-model'))
 })
 
 test('loading one turn stops reading entries after its next user boundary', () => {
@@ -18,6 +23,17 @@ test('loading one turn stops reading entries after its next user boundary', () =
   Object.defineProperty(later, 'message', { get: () => { throw new Error('Unrelated history was projected') } })
   const entries = [entry('first', 'user'), entry('answer', 'assistant'), entry('second', 'user'), later] as unknown as SessionEntry[]
   expect(turnMessagesFromEntries(entries, 'answer').map((message) => (message as { content: string }).content)).toEqual(['first', 'answer'])
+})
+
+test('the turn message index accepts every entry id in a turn', () => {
+  const entry = (id: string, role: string) => ({
+    type: 'message', id, parentId: null, timestamp: '2026-01-01T00:00:00.000Z',
+    message: { role, content: id, timestamp: 1 }
+  })
+  const entries = [entry('first', 'user'), entry('answer', 'assistant')] as unknown as SessionEntry[]
+  const indexed = turnMessagesByIdFromEntries(entries)
+  expect(indexed.get('answer')).toBe(indexed.get('first'))
+  expect(indexed.get('answer')?.map((message) => (message as { content: string }).content)).toEqual(['first', 'answer'])
 })
 
 test('loading one turn ships no image bytes for the process panel', () => {

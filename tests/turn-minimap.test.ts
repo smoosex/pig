@@ -23,9 +23,15 @@ async function fixture(): Promise<void> {
     configurable: true,
     get() { return 120 }
   })
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    const height = Number.parseFloat(this.style.height) || navigationHeight(this)
+    const top = this.parentElement?.getAttribute('role') === 'navigation' ? 8 : 0
+    return new DOMRect(0, top, 120, height)
+  }
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { TurnMinimap } = await import('../src/renderer/src/components/chat/TurnMinimap')
+  const { MessageScrollerProvider } = await import('../src/renderer/src/components/ui/message-scroller')
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -42,8 +48,27 @@ async function fixture(): Promise<void> {
     summaryMinimapItem({ id: 'older', bytes: 20, hasImages: true }, 3)
   ]
   const jumps: number[] = []
+  const renderMinimap = (nextItems: typeof items) => createElement(
+    MessageScrollerProvider,
+    null,
+    createElement(TurnMinimap, {
+      items: nextItems,
+      sessionId: 's1',
+      branchViewId: 'b1',
+      indexTrusted: false,
+      loadedPreview: () => ({
+        question: '预览问题',
+        answer: '预览回答',
+        hasQuestionImage: false,
+        hasAnswerImage: false,
+        streaming: false,
+        error: false
+      }),
+      onJump: (index) => jumps.push(index)
+    })
+  )
   try {
-    await act(async () => { root.render(createElement(TurnMinimap, { items, onJump: (index) => jumps.push(index) })) })
+    await act(async () => { root.render(renderMinimap(items)) })
     const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')]
     assert.equal(buttons.length, 4)
     assert.equal(buttons[0].getAttribute('aria-label'), '第 1 轮：第一条问题')
@@ -72,9 +97,9 @@ async function fixture(): Promise<void> {
     await act(async () => { navigation.dispatchEvent(new MouseEvent('click', { clientY: 29, bubbles: true })) })
     assert.deepEqual(jumps, [1, 2])
     await act(async () => { buttons[2].focus() })
-    await act(async () => { root.render(createElement(TurnMinimap, { items: items.slice(0, 1), onJump: (index) => jumps.push(index) })) })
+    await act(async () => { root.render(renderMinimap(items.slice(0, 1))) })
     assert.equal(container.querySelector<HTMLButtonElement>('button')?.tabIndex, 0)
-    await act(async () => { root.render(createElement(TurnMinimap, { items: [], onJump: (index) => jumps.push(index) })) })
+    await act(async () => { root.render(renderMinimap([])) })
     assert.equal(container.childElementCount, 0)
   } finally {
     await act(async () => { root.unmount() })

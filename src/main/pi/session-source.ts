@@ -22,7 +22,11 @@ import {
 } from './session-jsonl'
 import type { SessionEntry as SdkEntry } from '@earendil-works/pi-coding-agent'
 import type { SessionFileSession } from './session-state'
-import { displayTurnsFromEntries, turnMessagesFromEntries } from './session-display-model'
+import {
+  displayTurnsFromEntries,
+  turnMessagesByIdFromEntries,
+  turnMessagesFromEntries
+} from './session-display-model'
 import type { DisplayTurn, DisplayTurnsResult, SessionWindowUpdate, TurnSummary } from '../../shared/api'
 
 /** Turns a freshly opened session starts with: the tail is what a reader looks at first. */
@@ -167,35 +171,47 @@ function summaryOfTurn(turn: DisplayTurn, entry: unknown): TurnSummary {
   }
 }
 
+const managerSources = new WeakMap<SessionManager, { leafId: string | null; source: SessionSource }>()
+
 export function managerSource(sessionManager: SessionManager): SessionSource {
-  // One projection per source: counts and content come from the same list, so a window can never
-  // disagree with itself about where a turn begins or how many turns the branch has.
+  const leafId = sessionManager.getLeafId()
+  const cached = managerSources.get(sessionManager)
+  if (cached?.leafId === leafId) return cached.source
+
+  const branch = sessionManager.getBranch()
   let projection: DisplayTurn[] | null = null
   const turns = () => {
-    projection ??= displayTurnsFromEntries(sessionManager.getSessionId(), sessionManager.getBranch())
+    projection ??= displayTurnsFromEntries(sessionManager.getSessionId(), branch)
     return projection
   }
-  // A turn's id is the id of the entry that opened it, which is the line the weights are measured on.
   let entriesById: Map<string, unknown> | null = null
   let summaryCache: TurnSummary[] | null = null
   const summaries = (): TurnSummary[] => {
-    entriesById ??= new Map(sessionManager.getBranch().map((entry) => [entry.id, entry as unknown]))
+    entriesById ??= new Map(branch.map((entry) => [entry.id, entry as unknown]))
     summaryCache ??= turns().map((turn) => summaryOfTurn(turn, entriesById!.get(turn.id)))
     return summaryCache
   }
-  return {
+  let messagesByTurnId: Map<string, unknown[]> | null = null
+  const source: SessionSource = {
     sessionId: sessionManager.getSessionId(),
-    leafId: () => sessionManager.getLeafId(),
-    branch: () => sessionManager.getBranch(),
-    branchIds: () => sessionManager.getBranch().map((entry) => entry.id),
+    leafId: () => leafId,
+    branch: () => branch,
+    branchIds: () => branch.map((entry) => entry.id),
     entries: () => sessionManager.getEntries(),
     treeEntries: () => sessionManager.getEntries(),
     entryById: (id) => sessionManager.getEntry(id),
     turnCount: () => turns().length,
     turnWindow: (from, count) => turns().slice(from, from + count),
     turnSummaries: summaries,
-    turnMessages: (turnId) => turnMessagesFromEntries(sessionManager.getBranch(), turnId)
+    turnMessages: (turnId) => {
+      messagesByTurnId ??= turnMessagesByIdFromEntries(branch)
+      const messages = messagesByTurnId.get(turnId)
+      if (!messages) throw new Error(`Turn not found: ${turnId}`)
+      return messages
+    }
   }
+  managerSources.set(sessionManager, { leafId, source })
+  return source
 }
 
 export function fileSource(index: SessionFileIndex): SessionSource {

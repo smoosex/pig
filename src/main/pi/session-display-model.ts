@@ -307,12 +307,23 @@ export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry
   }))
 }
 
+function messagesOfGroup(group: PathMessage[]): unknown[] {
+  return group.map((item) => withoutImages({ ...item.message, persistedAt: item.persistedAt }))
+}
+
+export function turnMessagesByIdFromEntries(entries: SessionEntry[]): Map<string, unknown[]> {
+  const messagesById = new Map<string, unknown[]>()
+  for (const group of groupPath(pathMessages(entries))) {
+    const messages = messagesOfGroup(group)
+    for (const item of group) messagesById.set(item.id, messages)
+  }
+  return messagesById
+}
+
 export function turnMessagesFromEntries(entries: SessionEntry[], turnId: string): unknown[] {
   // A disclosure needs one turn; stop projecting history at that turn's boundary.
   for (const group of groupPath(pathMessages(entries))) {
-    if (group.some((item) => item.id === turnId)) {
-      return group.map((item) => withoutImages({ ...item.message, persistedAt: item.persistedAt }))
-    }
+    if (group.some((item) => item.id === turnId)) return messagesOfGroup(group)
   }
   throw new Error(`Turn not found: ${turnId}`)
 }

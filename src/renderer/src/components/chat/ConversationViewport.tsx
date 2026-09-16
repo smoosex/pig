@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from 'react'
 import { chatColumn } from '../../chat/layout'
-import { summaryMinimapItem, turnMinimapItem, type MinimapItem } from '../../chat/minimap'
+import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
 import type { ScrollSnapshot } from '../../chat/scroll-state'
 import type { TurnSummary } from '../../ipc/api'
 import type { Turn } from '../../chat/turns'
@@ -28,6 +28,7 @@ export function ConversationViewport({
   historical,
   live,
   sessionId,
+  branchViewId,
   windowStart,
   indexTrusted,
   loadingOlder,
@@ -40,6 +41,7 @@ export function ConversationViewport({
   historical: Turn[]
   live: Turn[]
   sessionId: string
+  branchViewId: string
   /** Index of `historical[0]` in the branch: everything below it is still on disk. */
   windowStart: number
   /** Opening shows the tail before the branch index exists, so `windowStart` is not real yet. */
@@ -91,7 +93,17 @@ export function ConversationViewport({
   const onNeedProcess = useCallback(async (turnId: string) => {
     await loadTurnProcess(sessionId, turnId)
   }, [sessionId, loadTurnProcess])
-  // TurnMinimap is memoized: a fresh arrow here would re-render every row on every parent render.
+  const previewTurns = useRef({ historical, live, windowStart })
+  previewTurns.current = { historical, live, windowStart }
+  const loadedPreview = useCallback((turnIndex: number, turnId: string): MinimapPreview | undefined => {
+    const current = previewTurns.current
+    const historicalIndex = turnIndex - current.windowStart
+    const turn = historicalIndex >= 0 && historicalIndex < current.historical.length
+      ? current.historical[historicalIndex]
+      : current.live[historicalIndex - current.historical.length]
+    return turn?.id === turnId ? turnMinimapPreview(turn) : undefined
+  }, [])
+  // TurnMinimap is memoized: fresh callbacks here would re-render every row on every parent render.
   const onJump = useCallback((turn: number) => { void jumpToTurnIndex(turn) }, [jumpToTurnIndex])
 
   return (
@@ -176,7 +188,14 @@ export function ConversationViewport({
         </MessageScrollerContent>
       </MessageScrollerViewport>
       <MessageScrollerButton behavior="smooth" />
-      <TurnMinimap items={items} onJump={onJump} />
+      <TurnMinimap
+        items={items}
+        sessionId={sessionId}
+        branchViewId={branchViewId}
+        indexTrusted={indexTrusted}
+        loadedPreview={loadedPreview}
+        onJump={onJump}
+      />
     </MessageScroller>
   )
 }
