@@ -168,7 +168,10 @@ export function createPendingSession(cwd: string, win: BrowserWindow): PendingSe
   return session
 }
 
-async function materialize(session: MemorySession): Promise<LiveSession> {
+async function materialize(
+  session: MemorySession,
+  configure: (created: AgentSession) => Promise<void>
+): Promise<LiveSession> {
   worktrees.assertAvailable(session.cwd)
   const sessionFile = session.sessionManager.getSessionFile()
   const header = session.sessionManager.getHeader()
@@ -178,9 +181,7 @@ async function materialize(session: MemorySession): Promise<LiveSession> {
   await writeFile(sessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx' })
   try {
     session.sessionManager.setSessionFile(sessionFile)
-    return await build(session.sessionManager, session.cwd, session.win, (created) =>
-      applyPendingControls(session, created)
-    )
+    return await build(session.sessionManager, session.cwd, session.win, configure)
   } catch (error) {
     await rm(sessionFile, { force: true })
     throw error
@@ -201,12 +202,15 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
   const session = pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
 
+  // Every pending-to-live path applies the choices made before the first send: the SDK restores the
+  // model and thinking level the session file recorded when the build gets no explicit ones.
+  const configure = (created: AgentSession) => applyPendingControls(session, created)
   const building =
     session.kind === 'file'
-      ? build(SessionManager.open(session.path), session.cwd, session.win)
+      ? build(SessionManager.open(session.path), session.cwd, session.win, configure)
       : session.needsMaterialize
-        ? materialize(session)
-        : build(session.sessionManager, session.cwd, session.win)
+        ? materialize(session, configure)
+        : build(session.sessionManager, session.cwd, session.win, configure)
   return trackPreparation(sessionId, session.cwd, building)
 }
 
