@@ -35,11 +35,12 @@ async function fixture(): Promise<void> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const turns: Turn[] = [
+  const rows: Partial<Turn>[] = [
     { user: { role: 'user', content: '第一条问题', timestamp: 0 } },
     { user: { role: 'user', content: [{ type: 'image', mimeType: 'image/png', data: 'AA==' }], timestamp: 0 } },
     { answer: [{ type: 'text', text: '模型的回复' }] }
-  ].map((item, index) => ({
+  ]
+  const turns: Turn[] = rows.map((item, index) => ({
     id: String(index), process: [], answer: [], startedAt: 0, endedAt: 1, streaming: false, ...item
   }))
   // A row the renderer never loaded keeps its bar through the summary alone.

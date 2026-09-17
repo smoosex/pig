@@ -94,9 +94,9 @@ async function runFixture(name: string): Promise<void> {
       set(value: number) { applyScroll(this, value, false) }
     }
   })
-  HTMLElement.prototype.scrollTo = function (options: ScrollToOptions | number, y?: number) {
-    applyScroll(this, typeof options === 'number' ? y ?? 0 : options.top ?? currentTop(this), true,
-      typeof options === 'number' ? undefined : options.behavior)
+  HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number, y?: number) {
+    applyScroll(this, typeof options === 'number' ? y ?? 0 : options?.top ?? currentTop(this), true,
+      typeof options === 'number' ? undefined : options?.behavior)
   }
   HTMLElement.prototype.getBoundingClientRect = function () {
     const viewport = viewportOf(this)
@@ -147,6 +147,8 @@ async function runFixture(name: string): Promise<void> {
       assert.fail('Scroller did not settle: unexpected persistent frame loop')
     })
   }
+  // createElement, unlike JSX, has no allowance for unknown data-* props on a typed component.
+  const withData = (props: Record<string, unknown>) => props as never
   const render = async (sessions: Session[], flush = true) => {
     await act(async () => {
       root.render(sessions.map((session) => h(Primitive.Provider, {
@@ -154,15 +156,15 @@ async function runFixture(name: string): Promise<void> {
         autoScroll: session.autoScroll,
         defaultScrollPosition: session.defaultScrollPosition ?? 'end',
         scrollPreviousItemPeek: 0
-      }, h(Probe, { session }), session.viewport === false ? null : h(Primitive.Root, { 'data-session': session.id },
-        h(Primitive.Viewport, { 'data-viewport': session.id },
-          h(Primitive.Content, { 'data-content': session.id }, session.rows.map((row) => h(Primitive.Item, {
+      }, h(Probe, { session }), session.viewport === false ? null : h(Primitive.Root, withData({ 'data-session': session.id }),
+        h(Primitive.Viewport, withData({ 'data-viewport': session.id }),
+          h(Primitive.Content, withData({ 'data-content': session.id }), session.rows.map((row) => h(Primitive.Item, withData({
             key: row.id,
             messageId: row.id,
             scrollAnchor: row.anchor,
             'data-height': row.height
-          }, row.id)))
-        ), h(Primitive.Button, { 'data-end-button': session.id, behavior: 'auto' })
+          }), row.id)))
+        ), h(Primitive.Button, withData({ 'data-end-button': session.id, behavior: 'auto' }))
       ))))
     })
     if (flush) await settle()

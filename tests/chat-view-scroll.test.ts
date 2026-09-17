@@ -124,8 +124,8 @@ async function runFixture(name: string): Promise<void> {
       }
     }
   })
-  HTMLElement.prototype.scrollTo = function (options: ScrollToOptions | number, y?: number) {
-    this.scrollTop = typeof options === 'number' ? y ?? 0 : options.top ?? 0
+  HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number, y?: number) {
+    this.scrollTop = typeof options === 'number' ? y ?? 0 : options?.top ?? 0
   }
   HTMLElement.prototype.getBoundingClientRect = function () {
     return new DOMRect(0, topOf(this), VIEWPORT_WIDTH, heightOf(this))
@@ -174,6 +174,8 @@ async function runFixture(name: string): Promise<void> {
     turns: DisplayTurn[]
     turnStart: number
     turnPending: boolean
+    turnIndexTrusted: boolean
+    turnError: string | null
     turnSummary: never[]
     liveMessages: Array<{ role: string; content: unknown; timestamp: number }>
     processByTurnId: Record<string, never>
@@ -183,7 +185,8 @@ async function runFixture(name: string): Promise<void> {
     isStreaming: boolean
   }
   const runtime = (branchViewId: string, count: number): Runtime => ({
-    branchViewId, turns: turns(count), turnStart: 0, turnPending: false, turnSummary: [],
+    branchViewId, turns: turns(count), turnStart: 0, turnPending: false, turnIndexTrusted: true,
+    turnError: null, turnSummary: [],
     liveMessages: [], processByTurnId: {}, thinkingDurations: {},
     elapsedByTurnId: {}, streamElapsedMs: null, isStreaming: false
   })

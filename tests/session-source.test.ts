@@ -313,10 +313,11 @@ test('one process disclosure reads one turn instead of the branch', async () => 
       const turnId = `u${turn}`
       const fromTurn = source.turnMessages(turnId) as Array<{ role: string; content: unknown }>
       expect(fromTurn.map((item) => item.role)).toEqual(['user', 'assistant', 'toolResult'])
-      expect(fromTurn).toEqual(turnMessagesFromEntries(branch, turnId))
+      expect(fromTurn as unknown[]).toEqual(turnMessagesFromEntries(branch, turnId))
     }
     // A disclosure never ships image bytes the panel cannot render.
-    expect(source.turnMessages('u1')[0]?.content).toEqual([{ type: 'text', text: '看图' }])
+    const disclosure = source.turnMessages('u1') as Array<{ content: unknown }>
+    expect(disclosure[0]?.content).toEqual([{ type: 'text', text: '看图' }])
     expect(() => source.turnMessages('missing')).toThrow('Turn not found: missing')
   })
 })

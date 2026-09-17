@@ -57,7 +57,7 @@ async function runFixture(name: string): Promise<void> {
         } as unknown as ClipboardEvent
         let handled = false
         await act(async () => {
-          handled = Boolean(props.handlePaste!.call(undefined, editor.view, event))
+          handled = Boolean(props.handlePaste!.call(undefined, editor.view, event, editor.state.selection.content()))
         })
         assert.equal(handled, true)
         assert.equal(prevented, true)

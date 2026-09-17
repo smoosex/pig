@@ -60,7 +60,7 @@ describe('batched queue updates', () => {
       test(`${action} only removes its target row (${repeated ? 'duplicate' : 'unique'} text)`, async () => {
         const messages = repeated ? ['again', 'again', 'again'] : ['第一条', '第二条', '第三条']
         const { session, events } = fixture(messages)
-        const rawSnapshots: string[][] = []
+        const rawSnapshots: Array<readonly string[]> = []
         session.subscribe((event) => {
           if (event.type === 'queue_update') rawSnapshots.push(event.followUp)
         })

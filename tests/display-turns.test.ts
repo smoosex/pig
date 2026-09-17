@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { composePromptText } from '../src/shared/pasted-text'
 import type { DisplayTurn } from '../src/shared/api'
 import { renderKeyForUser, turnImageSrc, type ProcessItem } from '../src/renderer/src/chat/turns'
+import type { PigImageContent } from '../src/renderer/src/pi/types'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
@@ -78,7 +79,7 @@ describe('display turn projection', () => {
       .toBe('pig-image://session/s/turn/1')
     expect(turnImageSrc({ type: 'image', mimeType: 'image/png', data: 'AA==' }))
       .toBe('data:image/png;base64,AA==')
-    expect(turnImageSrc({ type: 'image', mimeType: 'image/png' })).toBeUndefined()
+    expect(turnImageSrc({ type: 'image', mimeType: 'image/png' } as PigImageContent)).toBeUndefined()
   })
 
   test('keeps assistant-only errors and history metadata intact', () => {

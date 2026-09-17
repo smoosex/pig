@@ -6,8 +6,9 @@ directories:
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!tests/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.test.json}'
   - '!{.env,.env.*}'
   - '!{bun.lock,bun.lockb}'
 asarUnpack:

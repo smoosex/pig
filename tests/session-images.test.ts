@@ -147,7 +147,7 @@ test('the protocol answers 404 when the session or the entry is gone', async () 
 test('a file this reader cannot vouch for is a missing image, not a failed request', async () => {
   const unsupported = async () => {
     const { UnsupportedSessionFile } = await import('../src/main/pi/session-jsonl')
-    throw new UnsupportedSessionFile('session.jsonl')
+    throw new UnsupportedSessionFile('session.jsonl', 'unknown version')
   }
   const response = await sessionImageResponse(sessionImageUrl('s1', 'entry-9', 0), unsupported)
   expect(response.status).toBe(404)

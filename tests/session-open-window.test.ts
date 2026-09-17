@@ -95,10 +95,10 @@ async function runFixture(): Promise<void> {
 
     // The IPC layer is exercised through the handlers it registers, so the validation guards can be
     // tested where they run rather than through a copy of them.
-    const handlers = new Map<string, (...args: never[]) => unknown>()
+    const handlers = new Map<string, (...args: any[]) => any>()
     mock.module('electron', () => ({
       app: { isPackaged: false },
-      ipcMain: { handle: (channel: string, handler: (...args: never[]) => unknown) => { handlers.set(channel, handler) } },
+      ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => { handlers.set(channel, handler) } },
       dialog: {},
       BrowserWindow: { fromWebContents: () => ({}) },
       // The branch namer forks a worker process; no handler under test reaches it.
@@ -170,7 +170,7 @@ async function runFixture(): Promise<void> {
     assert.equal(preview.display.startIndex, 0)
     assert.equal(preview.display.turns.length, 60, 'the tail window is what the first paint shows')
     assert.equal(preview.display.summary, undefined, 'the third place stays provisional too')
-    assert.deepEqual(pushes, [], 'nothing is pushed before the index exists')
+    assert.equal(pushes.length, 0, 'nothing is pushed before the index exists')
 
     // The index is built after the reply; its window replaces the provisional counts.
     await settleIndex()
@@ -386,7 +386,7 @@ async function runFixture(): Promise<void> {
       immediate(() => {
         writeFileSync(doomed, 'not a session anymore\n')
         callback(...args)
-      })) as typeof globalThis.setImmediate
+      })) as unknown as typeof globalThis.setImmediate
     console.error = (...args: unknown[]) => { reported.push(args) }
     const beforeDoomed = pushes.length
     try {

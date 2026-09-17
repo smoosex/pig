@@ -134,9 +134,11 @@ UI 按功能组合：`components/composer/` 管理文档、附件、命令和发
 能由函数名表达的动作不重复写成注释。
 
 ```bash
-bun run typecheck
+bun run typecheck   # node、web、tests 三个 tsconfig 项目
 bun test
 bun run build
 ```
 
 单元测试覆盖纯投影、并发时序及模拟 DOM 下的组件行为；不需要调用真实模型。
+tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型推导），改跨进程
+数据结构时 typecheck 会连同 fixtures 一起报错。
