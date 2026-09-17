@@ -17,8 +17,8 @@ export interface SessionMeta {
   name?: string
   created: string
   modified: string
-  messageCount: number
-  turnCount: number
+  /** Size of the session file on disk, as scanned. */
+  size: number
   firstMessage: string
 }
 

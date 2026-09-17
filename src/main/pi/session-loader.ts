@@ -159,8 +159,6 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
     let created = st.birthtime.toISOString()
     let name: string | undefined
     let firstMessage = ''
-    let messageCount = 0
-    let turnCount = 0
 
     for (const line of lines) {
       if (!line.trim()) continue
@@ -180,9 +178,7 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
         continue
       }
       if (entry.type !== 'message') continue
-      messageCount++
       if (entry.message?.role !== 'user') continue
-      turnCount++
       if (!firstMessage) firstMessage = previewText(entry.message.content)
     }
 
@@ -194,8 +190,7 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
       name,
       created,
       modified: st.mtime.toISOString(),
-      messageCount,
-      turnCount,
+      size: st.size,
       firstMessage
     }
   } catch {

@@ -5,7 +5,7 @@ import { relativeTime } from '../lib/relative-time'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
-import { SessionTurnDots } from './SessionTurnDots'
+import { SessionSizeDots } from './SessionSizeDots'
 
 function sessionTitle(session: SessionMeta): string {
   return session.name || session.firstMessage || '空会话'
@@ -72,7 +72,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
                 <span className="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
                   {relativeTime(session.modified)}
                 </span>
-                <SessionTurnDots turnCount={session.turnCount} />
+                <SessionSizeDots size={session.size} />
               </span>
             </Button>
           ))}

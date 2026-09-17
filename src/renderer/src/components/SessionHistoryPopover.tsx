@@ -5,7 +5,7 @@ import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { SquaresSpinner } from './RunningSpinners'
-import { SessionTurnDots } from './SessionTurnDots'
+import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
 
 const emptySessions: SessionMeta[] = []
@@ -117,8 +117,8 @@ function HistoryRow({
           >
             {relativeTime(session.modified)}
           </span>
-          <SessionTurnDots
-            turnCount={session.turnCount}
+          <SessionSizeDots
+            size={session.size}
             className={
               streaming || pending === session.id
                 ? 'opacity-0 transition-opacity'

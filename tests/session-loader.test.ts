@@ -21,7 +21,7 @@ test('project cleanup preserves colliding cwd sessions and removes only an empty
       JSON.stringify({ type: 'message', message: { role, content } }) + '\n'
     await writeFile(first, header('first', firstCwd) + message('user', 'one') + message('assistant', 'answer') + message('user', 'two'))
     await writeFile(second, header('second', secondCwd))
-    expect((await listProject(firstCwd))?.sessions[0]?.turnCount).toBe(2)
+    expect((await listProject(firstCwd))?.sessions[0]?.size).toBe((await stat(first)).size)
     await removeProjectDir(firstCwd)
     expect(await stat(first).catch(() => null)).toBeNull()
     expect(JSON.parse(await readFile(second, 'utf8')).cwd).toBe(secondCwd)
