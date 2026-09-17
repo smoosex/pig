@@ -43,11 +43,49 @@ src/
     └── components/ 按 composer / turn / sidebar / settings 分组；shadcn 在 ui/
 ```
 
-模块职责与修改入口见 [docs/architecture.md](docs/architecture.md)。
-
 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 
 Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PIG_DIR` 覆盖。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。
+
+## 进程与接口
+
+| 位置                                 | 职责                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------- |
+| `src/shared/api.ts`                  | 跨进程 DTO 与 `SessionApi`，不依赖 Electron 或 React                    |
+| `src/shared/session-images.ts`       | `pig-image` URL 的形状与解析；renderer 只把 url 当不透明字符串          |
+| `src/preload/index.ts`               | IPC 白名单，用共享契约检查暴露的接口                                    |
+| `src/main/ipc/`                      | 接收请求、解析窗口、调用业务模块、返回 DTO                              |
+| `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节                              |
+| `src/main/app-url.ts`                | 窗口只允许停在自己的 UI 上（含重定向）                                  |
+| `src/main/open-project-sessions.ts`  | 按 Worktree 持久化已打开会话及活动标签；与进程中的 session 生命周期分离 |
+| `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |
+| `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |
+| `src/renderer/src/ipc/api.ts`        | renderer 的接口入口，复用共享类型                                       |
+| `src/renderer/src/lib/highlight.ts`  | Shiki 高亮（WASM 引擎、按可见性触发、LRU 缓存）                         |
+
+新增跨进程字段时先改共享契约，再改 main 的生产端和 renderer 的消费端。
+不要在 preload 声明、renderer 或 main 各复制一份接口。
+
+`patches/@shadcn%2Freact@0.3.1.patch` 为固定版本的组件补充显式暂停、偏移恢复、
+状态读取及显式消息锚定。修改它时同步更新 `tests/message-scroller.test.ts`，
+不要在业务组件外另建一套自动滚动状态机。
+
+## 注释与验证
+
+参考 [Pi AgentSession](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts)
+和 [Agent](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent.ts)
+的做法，模块开头交代职责，复杂逻辑说明生命周期、数据归属或时序约束。
+能由函数名表达的动作不重复写成注释。
+
+```bash
+bun run typecheck   # node、web、tests 三个 tsconfig 项目
+bun test
+bun run build
+```
+
+单元测试覆盖纯投影、并发时序及模拟 DOM 下的组件行为；不需要调用真实模型。
+tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型推导），改跨进程
+数据结构时 typecheck 会连同 fixtures 一起报错。
 
 ## 注意事项
 
