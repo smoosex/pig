@@ -3,11 +3,13 @@ import { api, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
 import { newSessionId } from '../../lib/session-id'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
+import {
+  EMPTY_SESSION_TITLE,
+  isPlaceholderSessionTitle,
+  NEW_CHAT_TITLE,
+  sessionTitle
+} from './session-title'
 import type { OpenTab, SessionsStore, SessionSlice, TabKind } from './types'
-
-function titleFor(meta: SessionMeta): string {
-  return meta.name || meta.firstMessage || 'Session'
-}
 
 /** Drops a draft slot, but only while `cwd` still points at `sessionId`. */
 function dropDraftSlot(
@@ -225,7 +227,7 @@ export const createTabsSlice: SessionSlice<
             return meta ? [{
               sessionId: id,
               cwd: workspace.cwd,
-              title: titleFor(meta),
+              title: sessionTitle(meta),
               kind: 'project' as const,
               loadState: 'cold' as const,
               meta
@@ -360,7 +362,7 @@ export const createTabsSlice: SessionSlice<
         await get().promoteProjectDraft(meta.cwd, meta.id)
         set((state) => ({
           openTabs: state.openTabs.map((tab) => tab.sessionId === meta.id
-            ? { ...tab, title: titleFor(meta), meta }
+            ? { ...tab, title: sessionTitle(meta), meta }
             : tab)
         }))
         return
@@ -370,7 +372,7 @@ export const createTabsSlice: SessionSlice<
       const added = addReadyTab({
         sessionId: ref.sessionId,
         cwd: ref.cwd,
-        title: titleFor(meta),
+        title: sessionTitle(meta, kind),
         kind,
         loadState: 'ready',
         meta
@@ -466,7 +468,7 @@ export const createTabsSlice: SessionSlice<
       addReadyTab({
         sessionId,
         cwd,
-        title: 'New Session',
+        title: EMPTY_SESSION_TITLE,
         kind: 'project',
         loadState: 'ready'
       }, selection)
@@ -490,7 +492,7 @@ export const createTabsSlice: SessionSlice<
       const added = addReadyTab({
         sessionId: ref.sessionId,
         cwd: ref.cwd,
-        title: 'New Session',
+        title: EMPTY_SESSION_TITLE,
         kind: 'project',
         loadState: 'ready'
       }, selection)
@@ -511,7 +513,7 @@ export const createTabsSlice: SessionSlice<
       if (addReadyTab({
         sessionId: ref.sessionId,
         cwd: ref.cwd,
-        title: 'New Session',
+        title: NEW_CHAT_TITLE,
         kind: 'chat',
         loadState: 'ready'
       }, selection)) {
@@ -569,7 +571,7 @@ export const createTabsSlice: SessionSlice<
 
     previewSessionTitle: (sessionId, title) => set((state) => ({
       openTabs: state.openTabs.map((tab) =>
-        tab.sessionId === sessionId && (tab.title === 'New Session' || tab.title === 'Session')
+        tab.sessionId === sessionId && isPlaceholderSessionTitle(tab.title)
           ? { ...tab, title }
           : tab
       ),

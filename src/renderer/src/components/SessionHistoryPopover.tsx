@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { History } from 'lucide-react'
 import { relativeTime } from '../lib/relative-time'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
+import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { SquaresSpinner } from './RunningSpinners'
@@ -9,10 +10,6 @@ import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
 
 const emptySessions: SessionMeta[] = []
-
-function sessionTitle(session: SessionMeta): string {
-  return session.name || session.firstMessage || '空会话'
-}
 
 export function SessionHistoryPopover({ cwd }: { cwd: string }) {
   const sessions = useSessionsStore((state) => {

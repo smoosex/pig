@@ -3,13 +3,10 @@ import { ArrowBigUpDash, LoaderCircle } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { relativeTime } from '../lib/relative-time'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
+import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
 import { SessionSizeDots } from './SessionSizeDots'
-
-function sessionTitle(session: SessionMeta): string {
-  return session.name || session.firstMessage || '空会话'
-}
 
 export function ProjectSessionHome({ cwd }: { cwd: string }) {
   const projects = useSessionsStore((state) => state.projects)

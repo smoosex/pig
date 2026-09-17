@@ -89,7 +89,7 @@ async function runFixture(name: string): Promise<void> {
   const runtime = () => state().runtime[meta.id]
 
   if (name === 'workspace-restore-lazy') {
-    const first = { ...meta, id: 'first', path: '/project/first.jsonl', firstMessage: 'First' }
+    const first = { ...meta, id: 'first', path: '/project/first.jsonl', firstMessage: '' }
     const second = { ...meta, id: 'second', path: '/project/second.jsonl', firstMessage: 'Second' }
     const other = { ...meta, id: 'other', path: '/other/other.jsonl', cwd: '/other', firstMessage: 'Other' }
     const projectCatalog: ProjectGroup[] = [{
@@ -141,6 +141,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().currentProjectCwd, '/project')
     assert.equal(state().activeSessionId, 'second')
     assert.equal(state().openTabs.find((tab) => tab.sessionId === 'first')?.loadState, 'cold')
+    assert.equal(state().openTabs.find((tab) => tab.sessionId === 'first')?.title, '空会话')
     assert.ok(state().runtime.second)
     assert.equal(state().runtime.first, undefined)
     assert.equal(state().runtime.other, undefined)
@@ -288,6 +289,9 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(promoteCalls, 1)
     assert.equal(state().activeSessionId, nextDraftId)
     assert.equal(state().openTabs[0]?.sessionId, nextDraftId)
+    assert.equal(state().openTabs[0]?.title, '空会话')
+    state().previewSessionTitle(nextDraftId, 'First prompt')
+    assert.equal(state().openTabs[0]?.title, 'First prompt')
     assert.ok(state().runtime[nextDraftId])
     state().releaseProjectDraft(meta.cwd)
     assert.equal(discardCalls, 1)
@@ -470,6 +474,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
     assert.equal(state().activeSessionId, draftId)
     assert.equal(state().openTabs[0]?.meta, materialized)
+    assert.equal(state().openTabs[0]?.title, '空会话')
     assert.ok(state().runtime[draftId])
     state().releaseProjectDraft(meta.cwd)
     await Bun.sleep(0)
