@@ -1,10 +1,12 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type {
+  DisplayTurn,
   DisplayTurnsResult,
   OpenProjectSessionsState,
   OpenSessionRef,
   ProjectGroup,
+  SessionApi,
   SessionControls,
   SessionMeta
 } from '../src/shared/api'
@@ -16,7 +18,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-const controls = (input = 0): SessionControls => ({
+const controls = (_input = 0): SessionControls => ({
   model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
   contextUsage: null,
   followUpMessages: []
@@ -26,12 +28,14 @@ const tokenStats = (input: number) => ({ input, output: 1, cacheRead: 2, cacheWr
 
 const history = (id: string): DisplayTurnsResult => ({
   leafId: id,
+  startIndex: 0,
+  totalTurns: 1,
   turns: [{ id, answer: [{ type: 'text', text: id }], startedAt: 1, endedAt: 2, hasProcess: true }]
 })
 
 const meta: SessionMeta = {
   id: 'session', path: '/project/session.jsonl', cwd: '/project',
-  created: '', modified: '', firstMessage: '', messageCount: 1, turnCount: 1
+  created: '', modified: '', firstMessage: '', size: 1
 }
 
 async function runFixture(name: string): Promise<void> {
@@ -41,14 +45,20 @@ async function runFixture(name: string): Promise<void> {
   let tokenCalls = 0
   let promoteCalls = 0
   let discardCalls = 0
+  const createdIds: string[] = []
   let persistedOpenProjectSessions: OpenProjectSessionsState = { currentCwd: null, workspaces: [] }
-  const api = {
-    createSession: async () => ({ sessionId: meta.id, cwd: meta.cwd }),
+  const api: SessionApi = {
+    // Main answers with the session it made. This mock keeps one fixed id for every fixture and only
+    // records the id the renderer hands over, which the draft cases below assert on.
+    createSession: async (_cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      return { sessionId: meta.id, cwd: meta.cwd }
+    },
     promoteSession: async () => { promoteCalls++ },
     discardDraftSession: async () => { discardCalls++ },
     openSession: async (): Promise<OpenSessionRef> => {
       openCalls++
-      return { sessionId: meta.id, cwd: meta.cwd, display: await api.getDisplayTurns() }
+      return { sessionId: meta.id, cwd: meta.cwd, display: await api.getDisplayTurns(meta.id) }
     },
     prepareSession: async () => { prepareCalls++; return { sessionId: meta.id, cwd: meta.cwd } },
     closeSession: async () => {},
@@ -69,7 +79,7 @@ async function runFixture(name: string): Promise<void> {
     isChatCwd: async () => true,
     deleteChat: async () => {},
     viewBranch: async (_id: string, tip: string) => ({ leafId: tip })
-  }
+  } as unknown as SessionApi
   Object.assign(globalThis, { window: { api } })
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
   const state = () => store.getState()
@@ -180,48 +190,219 @@ async function runFixture(name: string): Promise<void> {
   if (name === 'project-draft-lifecycle') {
     state().acquireProjectDraft(meta.cwd)
     state().acquireProjectDraft(meta.cwd)
-    await Bun.sleep(0)
     const draftId = state().draftSessionByCwd[meta.cwd]
-    assert.equal(draftId, meta.id)
+    assert.ok(draftId, 'the draft owns a session id before the create resolves')
+    assert.equal(draftId, createdIds[0], 'main receives the id the home already uses')
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId)
     assert.equal(state().activeSessionId, null)
     assert.equal(state().openTabs.length, 0)
-    assert.equal(runtime()?.controlsRevision, 1)
+    assert.equal(state().runtime[draftId]?.controlsRevision, 1)
 
     state().releaseProjectDraft(meta.cwd)
-    assert.equal(state().draftSessionByCwd[meta.cwd], meta.id)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId)
     assert.equal(discardCalls, 0)
     state().releaseProjectDraft(meta.cwd)
     await Bun.sleep(0)
     assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
-    assert.equal(runtime(), undefined)
+    assert.equal(state().runtime[draftId], undefined)
     assert.equal(discardCalls, 1)
 
     state().acquireProjectDraft(meta.cwd)
+    const nextDraftId = state().draftSessionByCwd[meta.cwd]
+    assert.ok(nextDraftId)
     await Bun.sleep(0)
-    assert.equal(await state().promoteProjectDraft(meta.cwd, meta.id), true)
+    assert.equal(await state().promoteProjectDraft(meta.cwd, nextDraftId), true)
     assert.equal(promoteCalls, 1)
-    assert.equal(state().activeSessionId, meta.id)
-    assert.equal(state().openTabs[0]?.sessionId, meta.id)
-    assert.ok(runtime())
+    assert.equal(state().activeSessionId, nextDraftId)
+    assert.equal(state().openTabs[0]?.sessionId, nextDraftId)
+    assert.ok(state().runtime[nextDraftId])
     state().releaseProjectDraft(meta.cwd)
     assert.equal(discardCalls, 1)
     return
   }
 
-  if (name === 'open-project-draft') {
+  if (name === 'project-draft-id-first') {
+    const gate = deferred<void>()
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      await gate.promise
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]
+    assert.match(draftId ?? '', /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    assert.ok(state().runtime[draftId!], 'the slot runtime exists before the session does')
+    state().releaseProjectDraft(meta.cwd)
+    state().acquireProjectDraft(meta.cwd)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 're-leasing keeps the same slot')
+    gate.resolve()
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId)
+    assert.equal(createdIds.at(-1), draftId)
+    assert.equal(discardCalls, 0)
+    assert.equal(state().runtime[draftId!]?.controlsRevision, 1)
+    return
+  }
+
+  if (name === 'project-draft-promoted-while-creating') {
+    const gate = deferred<void>()
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      await gate.promise
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    // The promote waits for the session to exist rather than racing the create.
+    const promoting = state().promoteProjectDraft(meta.cwd, draftId)
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 'the slot stays until main answers')
+    assert.equal(state().openTabs.length, 0)
+    gate.resolve()
+    assert.equal(await promoting, true)
+    assert.equal(state().activeSessionId, draftId)
+    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    state().releaseProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    assert.equal(discardCalls, 0, 'a promote during the round trip must not discard the session')
+    assert.ok(state().runtime[draftId], 'the promoted tab keeps its runtime')
+    assert.equal(state().runtime[draftId]?.controlsRevision, 1)
+    return
+  }
+
+  if (name === 'project-draft-abandoned-while-creating') {
+    const gate = deferred<void>()
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      await gate.promise
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    state().releaseProjectDraft(meta.cwd)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 'an in-flight create keeps its slot')
+    assert.equal(discardCalls, 0)
+    gate.resolve()
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
+    assert.equal(state().runtime[draftId], undefined)
+    assert.equal(discardCalls, 1)
+    return
+  }
+
+  if (name === 'project-draft-abandoned-create-failure') {
+    const gate = deferred<void>()
+    api.createSession = async () => {
+      await gate.promise
+      throw new Error('create failed')
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    state().releaseProjectDraft(meta.cwd)
+    gate.resolve()
+    await Bun.sleep(0)
+    // Nobody is on the home any more, so there is nothing to keep the dead slot for.
+    assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
+    assert.equal(state().runtime[draftId], undefined)
+    assert.equal(state().draftSessionErrorByCwd[meta.cwd], undefined)
+    assert.equal(discardCalls, 1, 'a session main may have half-made is discarded once')
+    // Coming back mints a fresh one instead of resurrecting the failed id.
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const nextId = state().draftSessionByCwd[meta.cwd]
+    assert.ok(nextId && nextId !== draftId, 'the returned home starts a new session')
+    assert.equal(createdIds.at(-1), nextId)
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionErrorByCwd[meta.cwd], undefined)
+    assert.equal(state().runtime[nextId]?.controlsRevision, 1)
+    return
+  }
+
+  if (name === 'project-draft-promote-without-lease') {
+    const gate = deferred<void>()
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      await gate.promise
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    // The reader sends and leaves the home before main answers: the promote still owns the draft.
+    const promoting = state().promoteProjectDraft(meta.cwd, draftId)
+    state().releaseProjectDraft(meta.cwd)
+    gate.resolve()
+    assert.equal(await promoting, true, 'the create must not sweep the session a promote is waiting for')
+    assert.equal(state().activeSessionId, draftId)
+    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    assert.equal(discardCalls, 0)
+    assert.ok(state().runtime[draftId])
+    return
+  }
+
+  if (name === 'project-draft-create-failure') {
+    api.createSession = async () => { throw new Error('create failed') }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]
+    assert.ok(draftId, 'a failed create keeps the slot so the home keeps its text')
+    assert.ok(state().runtime[draftId], 'the home stays editable while the session is missing')
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionErrorByCwd[meta.cwd], 'create failed')
+    // The next acquire retries with the same id instead of throwing the slot away.
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
     state().acquireProjectDraft(meta.cwd)
     await Bun.sleep(0)
-    await state().openExisting(meta, 'project')
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId)
+    assert.equal(state().draftSessionErrorByCwd[meta.cwd], undefined, 'a healed create clears the failure')
+    assert.equal(createdIds.at(-1), draftId)
+    assert.equal(discardCalls, 0)
+    return
+  }
+
+  if (name === 'project-draft-promote-retry') {
+    api.createSession = async () => { throw new Error('create failed') }
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    await Bun.sleep(0)
+    api.createSession = async (cwd: string, sessionId?: string) => {
+      createdIds.push(sessionId ?? meta.id)
+      return { sessionId: sessionId ?? meta.id, cwd }
+    }
+    // Neither call can reach a session main does not have; both have to leave the slot standing.
+    api.promoteSession = async () => { throw new Error('draft is gone') }
+    await assert.rejects(state().promoteProjectDraft(meta.cwd, draftId), /draft is gone/)
+    assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 'a failed promote puts the slot back')
+    api.promoteSession = async () => { promoteCalls++ }
+    assert.equal(await state().promoteProjectDraft(meta.cwd, draftId), true)
+    assert.equal(createdIds.at(-1), draftId, 'the retry creates the session main never had')
+    assert.equal(state().activeSessionId, draftId)
+    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    assert.equal(state().draftSessionErrorByCwd[meta.cwd], undefined)
+    return
+  }
+
+  if (name === 'open-project-draft') {
+    state().acquireProjectDraft(meta.cwd)
+    const draftId = state().draftSessionByCwd[meta.cwd]!
+    const materialized = { ...meta, id: draftId, path: `/project/${draftId}.jsonl` }
+    await Bun.sleep(0)
+    await state().openExisting(materialized, 'project')
     assert.equal(promoteCalls, 1)
     assert.equal(openCalls, 0)
     assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
-    assert.equal(state().activeSessionId, meta.id)
-    assert.equal(state().openTabs[0]?.meta, meta)
-    assert.ok(runtime())
+    assert.equal(state().activeSessionId, draftId)
+    assert.equal(state().openTabs[0]?.meta, materialized)
+    assert.ok(state().runtime[draftId])
     state().releaseProjectDraft(meta.cwd)
     await Bun.sleep(0)
     assert.equal(discardCalls, 0)
-    assert.ok(runtime())
+    assert.ok(state().runtime[draftId])
     return
   }
 
@@ -307,7 +488,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime(), reopened, 'a stale token response does not replace the runtime')
     assert.equal(runtime().tokens, null)
   } else if (name === 'placeholder-not-spliced') {
-    const list = (from: number, count: number) => Array.from({ length: count }, (_, offset) => ({
+    const list = (from: number, count: number): DisplayTurn[] => Array.from({ length: count }, (_, offset) => ({
       id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], startedAt: 1, endedAt: 2, hasProcess: true
     }))
     // The first paint of a long file: 60 turns of the tail with a provisional offset of 0.
@@ -328,7 +509,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime().turnStart, 40, 'the window takes the authoritative offset')
     assert.equal(runtime().turnIndexTrusted, true)
   } else if (name === 'placeholder-self-heals') {
-    const list = (from: number, count: number) => Array.from({ length: count }, (_, offset) => ({
+    const list = (from: number, count: number): DisplayTurn[] => Array.from({ length: count }, (_, offset) => ({
       id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], startedAt: 1, endedAt: 2, hasProcess: true
     }))
     api.getDisplayTurns = async () => ({ leafId: 'A', startIndex: 0, totalTurns: 100, indexPending: true, turns: list(40, 60) })
@@ -598,7 +779,7 @@ async function runFixture(name: string): Promise<void> {
       await state().loadOlderTurns(meta.id)
       assert.equal(runtime().turnError, 'Session not found: s1', 'a page that cannot be read says so')
       assert.equal(runtime().turnLoading, false)
-      api.getTurnWindow = async (_id, from, count) => window('A', from, 1769, `A${from}`)
+      api.getTurnWindow = async (_id, from, _count) => window('A', from, 1769, `A${from}`)
       await state().loadOlderTurns(meta.id)
       assert.equal(runtime().turnError, null, 'a page that arrives clears it again')
 
@@ -717,6 +898,13 @@ if (process.argv[2] === '--session-store-fixture') {
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
+    'project-draft-id-first': 'the home owns its session id before the create resolves',
+    'project-draft-promoted-while-creating': 'a promote during the create round trip keeps the session',
+    'project-draft-abandoned-while-creating': 'an abandoned in-flight draft is discarded once it exists',
+    'project-draft-abandoned-create-failure': 'a create that fails for nobody leaves no slot behind',
+    'project-draft-promote-without-lease': 'a promote outlives the create it waited for',
+    'project-draft-create-failure': 'a failed create keeps the slot and heals on the next acquire',
+    'project-draft-promote-retry': 'a failed promote keeps the slot and heals on the next promote',
     'open-project-draft': 'opening a materialized project draft promotes it before leaving the home view',
     'open-lazy': 'opening renders the persisted projection without preparing',
     'open-controls-failure': 'control loading errors propagate from opening',

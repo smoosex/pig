@@ -30,12 +30,12 @@ import { windowForEvent } from './window'
 const MAX_WINDOW_TURNS = 200
 
 export function registerSessionIpc(): void {
-  ipcMain.handle('session:create', async (event, cwd: string) => {
+  ipcMain.handle('session:create', async (event, cwd: string, sessionId?: string) => {
     const win = windowForEvent(event)
     if (isChatCwd(cwd) || isChatsRoot(cwd)) {
       throw new Error('Chat directories allow only one session')
     }
-    const session = createPendingSession(cwd, win)
+    const session = createPendingSession(cwd, win, { id: sessionId })
     return { sessionId: session.sessionId, cwd: session.cwd }
   })
 

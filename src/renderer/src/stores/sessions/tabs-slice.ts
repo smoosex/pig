@@ -1,11 +1,27 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
 import { api, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
+import { newSessionId } from '../../lib/session-id'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
-import type { OpenTab, SessionSlice, TabKind } from './types'
+import type { OpenTab, SessionsStore, SessionSlice, TabKind } from './types'
 
 function titleFor(meta: SessionMeta): string {
   return meta.name || meta.firstMessage || 'Session'
+}
+
+/** Drops a draft slot, but only while `cwd` still points at `sessionId`. */
+function dropDraftSlot(
+  cwd: string,
+  sessionId: string
+): (state: SessionsStore) => Partial<Pick<SessionsStore, 'draftSessionByCwd' | 'runtime'>> {
+  return (state) => {
+    if (state.draftSessionByCwd[cwd] !== sessionId) return {}
+    const draftSessionByCwd = { ...state.draftSessionByCwd }
+    const runtime = { ...state.runtime }
+    delete draftSessionByCwd[cwd]
+    delete runtime[sessionId]
+    return { draftSessionByCwd, runtime }
+  }
 }
 
 export const createTabsSlice: SessionSlice<
@@ -36,11 +52,69 @@ export const createTabsSlice: SessionSlice<
   const closing = new Map<string, Promise<void>>()
   const draftCreation = new Map<string, Promise<void>>()
   const draftLeases = new Map<string, number>()
+  /** A cwd whose create failed while its slot stayed: the next attempt has to create it again. */
+  const draftRetry = new Set<string>()
+  /** A promote waiting on the create on its way holds the slot for that moment. */
+  const draftPromotions = new Set<string>()
   let initializeRequest: Promise<void> | null = null
   let selectionVersion = 0
   let persistenceVersion = 0
 
   const describeError = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+  /**
+   * Creates the session a draft slot already owns. The slot is written before this runs, so the home
+   * composer keeps whatever the reader typed whichever way the create goes: a failure leaves the slot
+   * and flags a retry instead of throwing the draft away.
+   */
+  function createDraftSession(cwd: string, sessionId: string): Promise<void> {
+    const request = (async () => {
+      try {
+        await api.createSession(cwd, sessionId)
+        // A promote during the round trip hands the session to the tab; only a draft nobody is
+        // waiting for any more is worth discarding.
+        if (
+          get().draftSessionByCwd[cwd] === sessionId &&
+          (draftLeases.get(cwd) ?? 0) === 0 &&
+          !draftPromotions.has(cwd)
+        ) {
+          set(dropDraftSlot(cwd, sessionId))
+          await api.discardDraftSession(sessionId)
+          return
+        }
+        set((state) => ({
+          draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined }
+        }))
+        if (!get().runtime[sessionId]) return
+        try {
+          await get().loadControls(sessionId)
+        } catch (error) {
+          get().setControlsStatus(sessionId, { controlsError: describeError(error) })
+        }
+      } catch (error) {
+        if (get().draftSessionByCwd[cwd] !== sessionId) return
+        // Nobody is holding this draft any more: a slot left behind would keep a session main never
+        // made alive for good, and there is no composer left to report the failure to.
+        if ((draftLeases.get(cwd) ?? 0) === 0) {
+          draftRetry.delete(cwd)
+          set((state) => ({
+            ...dropDraftSlot(cwd, sessionId)(state),
+            draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined }
+          }))
+          void api.discardDraftSession(sessionId).catch(() => {})
+          return
+        }
+        draftRetry.add(cwd)
+        set((state) => ({
+          draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: describeError(error) }
+        }))
+      }
+    })().finally(() => {
+      if (draftCreation.get(cwd) === request) draftCreation.delete(cwd)
+    })
+    draftCreation.set(cwd, request)
+    return request
+  }
 
   function persistSelection(cwd: string, sessionId: string | null): void {
     const request = ++persistenceVersion
@@ -304,37 +378,19 @@ export const createTabsSlice: SessionSlice<
 
     acquireProjectDraft: (cwd) => {
       draftLeases.set(cwd, (draftLeases.get(cwd) ?? 0) + 1)
-      if (get().draftSessionByCwd[cwd] || draftCreation.has(cwd)) return
+      if (draftCreation.has(cwd)) return
+      const existing = get().draftSessionByCwd[cwd]
+      const retry = draftRetry.delete(cwd)
+      if (existing && !retry) return
+      // The id is minted before the round trip: the home composer holds one slot from its first
+      // render until the draft becomes a tab, so nothing has to be carried over in between.
+      const sessionId = existing ?? newSessionId()
       set((state) => ({
-        draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined }
+        draftSessionByCwd: { ...state.draftSessionByCwd, [cwd]: sessionId },
+        draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined },
+        runtime: { ...state.runtime, [sessionId]: state.runtime[sessionId] ?? emptyRuntime() }
       }))
-      const request = (async () => {
-        try {
-          const ref = await api.createSession(cwd)
-          if ((draftLeases.get(cwd) ?? 0) === 0) {
-            await api.discardDraftSession(ref.sessionId)
-            return
-          }
-          set((state) => ({
-            draftSessionByCwd: { ...state.draftSessionByCwd, [cwd]: ref.sessionId },
-            runtime: { ...state.runtime, [ref.sessionId]: emptyRuntime() }
-          }))
-          try {
-            await get().loadControls(ref.sessionId)
-          } catch (error) {
-            get().setControlsStatus(ref.sessionId, { controlsError: describeError(error) })
-          }
-        } catch (error) {
-          if ((draftLeases.get(cwd) ?? 0) > 0) {
-            set((state) => ({
-              draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: describeError(error) }
-            }))
-          }
-        }
-      })().finally(() => {
-        if (draftCreation.get(cwd) === request) draftCreation.delete(cwd)
-      })
-      draftCreation.set(cwd, request)
+      void createDraftSession(cwd, sessionId)
     },
 
     releaseProjectDraft: (cwd) => {
@@ -344,23 +400,39 @@ export const createTabsSlice: SessionSlice<
         return
       }
       draftLeases.delete(cwd)
+      draftRetry.delete(cwd)
+      // An in-flight create settles its own slot: the session does not exist in main yet, and the
+      // id is already public, so a discard here would race with whoever takes the draft next.
+      if (draftCreation.has(cwd)) return
       const sessionId = get().draftSessionByCwd[cwd]
       if (!sessionId) return
-      set((state) => {
-        const draftSessionByCwd = { ...state.draftSessionByCwd }
-        const draftSessionErrorByCwd = { ...state.draftSessionErrorByCwd }
-        const runtime = { ...state.runtime }
-        delete draftSessionByCwd[cwd]
-        delete draftSessionErrorByCwd[cwd]
-        delete runtime[sessionId]
-        return { draftSessionByCwd, draftSessionErrorByCwd, runtime }
-      })
+      set((state) => ({
+        ...dropDraftSlot(cwd, sessionId)(state),
+        draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined }
+      }))
       void api.discardDraftSession(sessionId).catch((error: unknown) => {
         set({ workspaceError: describeError(error) })
       })
     },
 
     promoteProjectDraft: async (cwd, sessionId) => {
+      if (get().draftSessionByCwd[cwd] !== sessionId) return false
+      // The session may not exist in main yet: wait for the create on its way, and try once more if
+      // the last one failed, which the slot survived so the composer keeps its text.
+      const creating = draftCreation.get(cwd)
+      if (creating) {
+        draftPromotions.add(cwd)
+        try {
+          await creating
+        } finally {
+          draftPromotions.delete(cwd)
+        }
+      }
+      if (draftRetry.has(cwd)) {
+        draftRetry.delete(cwd)
+        await createDraftSession(cwd, sessionId)
+        if (draftRetry.has(cwd)) return false
+      }
       if (get().draftSessionByCwd[cwd] !== sessionId) return false
       const selection = ++selectionVersion
       set((state) => {
@@ -372,6 +444,7 @@ export const createTabsSlice: SessionSlice<
         await api.promoteSession(sessionId)
       } catch (error) {
         if ((draftLeases.get(cwd) ?? 0) > 0 && get().runtime[sessionId]) {
+          draftRetry.add(cwd)
           set((state) => ({
             draftSessionByCwd: { ...state.draftSessionByCwd, [cwd]: sessionId }
           }))
@@ -402,7 +475,7 @@ export const createTabsSlice: SessionSlice<
         return await get().promoteProjectDraft(cwd, draftSessionId) ? draftSessionId : null
       }
       const selection = ++selectionVersion
-      const ref = await api.createSession(cwd)
+      const ref = await api.createSession(cwd, newSessionId())
       try {
         await api.promoteSession(ref.sessionId)
       } catch (error) {

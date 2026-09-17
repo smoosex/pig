@@ -294,7 +294,7 @@ export interface SessionApi {
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<string[]>
   prepareSession: (sessionId: string) => Promise<SessionRef>
-  createSession: (cwd: string) => Promise<SessionRef>
+  createSession: (cwd: string, sessionId?: string) => Promise<SessionRef>
   promoteSession: (sessionId: string) => Promise<void>
   discardDraftSession: (sessionId: string) => Promise<void>
   createChat: () => Promise<SessionRef>

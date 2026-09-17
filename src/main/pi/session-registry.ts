@@ -155,11 +155,11 @@ async function build(
 export function createPendingSession(
   cwd: string,
   win: BrowserWindow,
-  options: { draft?: boolean } = {}
+  options: { draft?: boolean; id?: string } = {}
 ): PendingSession {
   worktrees.assertAvailable(cwd)
   if (!statSync(cwd).isDirectory()) throw new Error('会话工作目录不存在')
-  const sessionManager = SessionManager.create(cwd)
+  const sessionManager = SessionManager.create(cwd, undefined, options.id ? { id: options.id } : undefined)
   const sessionId = sessionManager.getSessionId()
   const session: MemorySession = {
     kind: 'memory',

@@ -13,8 +13,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:reorder-projects', cwds),
   createChat: () => ipcRenderer.invoke('session:create-chat'),
   deleteChat: (cwd: string) => ipcRenderer.invoke('session:delete-chat', cwd),
-  createSession: (cwd: string) =>
-    ipcRenderer.invoke('session:create', cwd),
+  createSession: (cwd: string, sessionId?: string) =>
+    ipcRenderer.invoke('session:create', cwd, sessionId),
   promoteSession: (sessionId: string) => ipcRenderer.invoke('session:promote', sessionId),
   discardDraftSession: (sessionId: string) => ipcRenderer.invoke('session:discard-draft', sessionId),
   openSession: (path: string) =>

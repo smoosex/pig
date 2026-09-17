@@ -15,7 +15,9 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
-  const draftKey = activeSessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
+  // The home composer and the tab it becomes are the same session, so the slot key is that
+  // session's id on both sides; keying the home by cwd alone would clear the editor on promote.
+  const draftKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
   const attachments = useComposerImages(draftKey)
   const document = useComposerEditor({ sessionId: draftKey, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
