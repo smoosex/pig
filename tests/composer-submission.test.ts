@@ -21,9 +21,10 @@ async function fixture(scenario: string): Promise<void> {
   let rollbackCalls = 0
   let exportCalls = 0
   let hydrationCalls = 0
+  let promoteCalls = 0
   const runtime = () => ({ instanceId: 1, pendingUserMessage: false, isStreaming: false, liveMessages: [] as unknown[] })
   const store = {
-    activeSessionId: 'one',
+    activeSessionId: scenario === 'draft-create' ? null as string | null : 'one' as string | null,
     runtime: { one: runtime(), two: runtime() },
     beginPrompt(id: 'one' | 'two', message: unknown) {
       Object.assign(this.runtime[id], { isStreaming: true, pendingUserMessage: true, liveMessages: [message] })
@@ -33,6 +34,11 @@ async function fixture(scenario: string): Promise<void> {
       Object.assign(this.runtime[id], { isStreaming: false, pendingUserMessage: false, liveMessages: [] })
     },
     previewSessionTitle() {},
+    promoteProjectDraft: async () => {
+      promoteCalls++
+      store.activeSessionId = 'one'
+      return true
+    },
     refreshCwd: async () => { if (scenario === 'refresh') throw new Error('Refresh failed') },
     hydrateTurns: async () => { hydrationCalls++; return true },
     loadControls: async () => {}
@@ -60,22 +66,29 @@ async function fixture(scenario: string): Promise<void> {
   let state!: ReturnType<typeof useComposerSubmission>
   let editor!: ReturnType<typeof useComposerEditor>
   let images!: ReturnType<typeof useComposerImages>
-  function Probe({ sessionId }: { sessionId: string }) {
-    images = useComposerImages(sessionId)
-    editor = useComposerEditor({ sessionId, onKeyDown: () => false, onPasteImages: images.add })
-    state = useComposerSubmission({ sessionId, document: editor, attachments: images })
+  function Probe({ sessionId, draft = false }: { sessionId: string | null; draft?: boolean }) {
+    const draftKey = draft ? 'draft:/project' : sessionId
+    images = useComposerImages(draftKey)
+    editor = useComposerEditor({ sessionId: draftKey, onKeyDown: () => false, onPasteImages: images.add })
+    state = useComposerSubmission({
+      sessionId,
+      draftCwd: draft ? '/project' : undefined,
+      isDraftSession: draft,
+      document: editor,
+      attachments: images
+    })
     return null
   }
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const render = async (sessionId: 'one' | 'two') => {
-    store.activeSessionId = sessionId
-    await act(async () => { root.render(createElement(Probe, { sessionId })) })
+  const render = async (sessionId: 'one' | 'two' | null, draft = false) => {
+    store.activeSessionId = draft ? null : sessionId
+    await act(async () => { root.render(createElement(Probe, { sessionId, draft })) })
   }
 
   try {
-    await render('one')
+    await render('one', scenario.startsWith('draft-'))
     await act(async () => {
       if (scenario !== 'duplicate-images') {
         editor.restore({ type: 'doc', content: [{ type: 'paragraph', content: [
@@ -92,11 +105,12 @@ async function fixture(scenario: string): Promise<void> {
       if (scenario === 'duplicate-images' || scenario === 'export') duplicate = state.send()
     })
     if (scenario === 'newer-draft') await act(async () => { editor.replaceText('新输入') })
+    if (scenario === 'draft-failure') await render('one')
     if (scenario === 'stopped') await act(async () => { await state.abort() })
     if (scenario === 'switch') await render('two')
     if (scenario === 'reopened') store.runtime.one.instanceId++
     await act(async () => {
-      if (['newer-draft', 'switch', 'reopened'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
+      if (['newer-draft', 'switch', 'reopened', 'draft-failure'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
       else prepared.resolve()
       await sending
       await duplicate
@@ -138,6 +152,18 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(exportCalls, 1)
       assert.equal(editor.getDraft().text, '/export')
       assert.match(state.error ?? '', /Export failed/)
+    } else if (scenario === 'draft-create') {
+      assert.equal(promoteCalls, 1)
+      assert.equal(promptCalls, 1)
+      assert.equal(editor.getDraft().text, '')
+      assert.equal(state.error, undefined)
+    } else if (scenario === 'draft-failure') {
+      assert.equal(promoteCalls, 1)
+      assert.equal(promptCalls, 0)
+      assert.equal(editor.getDraft().text, '原文附件')
+      assert.equal(editor.getDraft().attachments.length, 1)
+      assert.equal(images.images.length, 1)
+      assert.match(state.error ?? '', /Prepare failed/)
     } else if (scenario === 'command-only') {
       assert.equal(promptCalls, 1)
       assert.equal(rollbackCalls, 1)
@@ -162,7 +188,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped']) {
+  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped', 'draft-create', 'draft-failure']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

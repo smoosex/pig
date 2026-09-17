@@ -57,10 +57,16 @@ export interface RuntimeState extends SessionControls {
   queuedEditText: string | null
 }
 
+export type TabKind = 'project' | 'chat'
+export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
+
 export interface OpenTab {
   sessionId: string
   cwd: string
   title: string
+  kind: TabKind
+  loadState: TabLoadState
+  loadError?: string
   meta?: SessionMeta
 }
 
@@ -69,6 +75,13 @@ export interface SessionsStore {
   chats: ProjectGroup[]
   openTabs: OpenTab[]
   activeSessionId: string | null
+  currentProjectCwd: string | null
+  activeSessionByCwd: Record<string, string | null>
+  draftSessionByCwd: Record<string, string | undefined>
+  draftSessionErrorByCwd: Record<string, string | undefined>
+  workspaceRestoreReady: boolean
+  workspaceRestoreError: string | null
+  workspaceError: string | null
   runtime: Record<string, RuntimeState>
   isReorderingProjects: boolean
 
@@ -106,8 +119,14 @@ export interface SessionsStore {
   clearQueuedEditText: (sessionId: string) => void
   setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
 
-  openExisting: (meta: SessionMeta) => Promise<void>
-  newSession: (cwd: string) => Promise<void>
+  initializeProjectWorkspaces: () => Promise<void>
+  selectProjectCwd: (cwd: string) => Promise<void>
+  activateTab: (sessionId: string) => Promise<void>
+  openExisting: (meta: SessionMeta, kind?: TabKind) => Promise<void>
+  acquireProjectDraft: (cwd: string) => void
+  releaseProjectDraft: (cwd: string) => void
+  promoteProjectDraft: (cwd: string, sessionId: string) => Promise<boolean>
+  newSession: (cwd: string) => Promise<string | null>
   newChat: () => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<void>

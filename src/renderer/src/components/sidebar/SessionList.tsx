@@ -1,64 +1,37 @@
-import { useSessionsStore, type SessionMeta } from '../../stores/sessions'
+import { CircleAlert, LoaderCircle, X } from 'lucide-react'
+import { useSessionsStore, type OpenTab } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { HookSidebar } from '../ui/hook-sidebar'
 import { SquaresSpinner } from '../RunningSpinners'
-import { SessionDeleteButton } from './SessionDeleteButton'
 
-export function SessionList({
-  sessions,
-  pending,
-  onOpen,
-  onDelete
-}: {
-  sessions: SessionMeta[]
-  pending: boolean
-  onOpen: (session: SessionMeta) => void
-  onDelete: (session: SessionMeta) => void
-}) {
-  const activeIndex = useSessionsStore((s) =>
-    sessions.findIndex((session) => session.id === s.activeSessionId)
+export function SessionList({ sessions }: { sessions: OpenTab[] }) {
+  const activeIndex = useSessionsStore((state) =>
+    sessions.findIndex((session) => session.sessionId === state.activeSessionId)
   )
 
   return (
     <HookSidebar
-      items={sessions.map((session) => session.name || session.firstMessage || '空会话')}
+      items={sessions.map((session) => session.title)}
       value={activeIndex}
       color="var(--primary)"
       railLeft="1.5rem"
       className="pt-0.5 pb-1"
       renderItem={(_, index) => {
         const session = sessions[index]
-        if (!session) return null
-        return (
-          <SessionRow
-            session={session}
-            pending={pending}
-            onOpen={() => onOpen(session)}
-            onDelete={() => onDelete(session)}
-          />
-        )
+        return session ? <SessionRow session={session} /> : null
       }}
     />
   )
 }
 
-function SessionRow({
-  session,
-  pending,
-  onOpen,
-  onDelete
-}: {
-  session: SessionMeta
-  pending: boolean
-  onOpen: () => void
-  onDelete: () => void
-}) {
-  const active = useSessionsStore((s) => s.activeSessionId === session.id)
-  const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
-  const label = session.name || session.firstMessage || '空会话'
+function SessionRow({ session }: { session: OpenTab }) {
+  const active = useSessionsStore((state) => state.activeSessionId === session.sessionId)
+  const streaming = useSessionsStore((state) => state.runtime[session.sessionId]?.isStreaming ?? false)
+  const activateTab = useSessionsStore((state) => state.activateTab)
+  const closeTab = useSessionsStore((state) => state.closeTab)
   return (
-    <div className="pl-9 pr-1">
+    <div className="pr-1 pl-9">
       <div
         className={cn(
           'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
@@ -69,23 +42,24 @@ function SessionRow({
           variant="ghost"
           size="xs"
           className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
-          title={session.firstMessage}
-          disabled={pending}
-          onClick={onOpen}
+          title={session.loadError || session.title}
+          onClick={() => void activateTab(session.sessionId)}
         >
-          <span className="min-w-0 truncate">
-            {session.name || session.firstMessage || '(空会话)'}
-          </span>
+          <span className="min-w-0 truncate">{session.title}</span>
         </Button>
-        {streaming ? (
-          <SquaresSpinner />
-        ) : (
-          <SessionDeleteButton
-            ariaLabel={`删除会话 ${label}`}
-            disabled={pending}
-            onConfirm={onDelete}
-          />
-        )}
+        {streaming ? <SquaresSpinner /> : null}
+        {session.loadState === 'opening' ? <LoaderCircle className="animate-spin" /> : null}
+        {session.loadState === 'error' ? <CircleAlert className="text-destructive" /> : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="pointer-events-none shrink-0 opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+          aria-label={`关闭 ${session.title}`}
+          onClick={() => closeTab(session.sessionId)}
+        >
+          <X />
+        </Button>
       </div>
     </div>
   )

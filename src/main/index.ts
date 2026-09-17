@@ -6,6 +6,7 @@ import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
+import { flushOpenProjectSessions } from './open-project-sessions'
 
 // The renderer loads persisted images through this scheme, so it must be granted before ready.
 registerSessionImageScheme()
@@ -37,8 +38,8 @@ app.on('before-quit', (event) => {
   if (isDisposing) return
   event.preventDefault()
   isDisposing = true
-  void worktrees.shutdown()
-    .finally(() => disposeAll())
+  void Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions()])
+    .then(() => disposeAll())
     .catch(() => {})
     .finally(() => app.quit())
 })

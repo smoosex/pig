@@ -5,6 +5,7 @@ import { loadWorktreeProject, requireOpenedProject, worktrees } from '../project
 import { git, isGitProject } from '../worktrees'
 import { closeSessionsForCwd } from '../pi/session-registry'
 import { removeProjectDir } from '../pi/session-loader'
+import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 
 async function createInfo(project: string): Promise<{ hasGit: boolean; hasHead: boolean }> {
   const hasGit = await isGitProject(project)
@@ -50,6 +51,7 @@ export function registerWorktreeIpc(): void {
     const info = await worktrees.deletionInfo(project, cwd)
     await worktrees.remove(project, cwd, Boolean(force),
       () => closeSessionsForCwd(cwd), () => removeProjectDir(cwd))
+    await removeOpenProjectWorkspaces([info.worktree.cwd])
     return { cwd: info.worktree.cwd, project: await loadWorktreeProject(project) }
   })
 }

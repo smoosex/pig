@@ -77,8 +77,19 @@ async function fixture(scenario: string): Promise<void> {
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
     const win = {} as Parameters<typeof sessions.createPendingSession>[1]
-    const draft = sessions.createPendingSession(cwd, win)
+    const draft = sessions.createPendingSession(cwd, win, {
+      draft: scenario !== 'persistent'
+    })
     assert.equal(await stat(sessionFile).catch(() => null), null)
+
+    if (scenario === 'discard-pending') {
+      await sessions.discardDraftSession(sessionId)
+      assert.equal(await stat(sessionFile).catch(() => null), null)
+      assert.equal(sessions.isPendingDraft(sessionId), false)
+      return
+    }
+
+    if (scenario === 'promoted') sessions.promoteDraftSession(sessionId)
 
     if (scenario === 'existing-file') {
       await writeFile(sessionFile, 'existing session data\n')
@@ -149,6 +160,36 @@ async function fixture(scenario: string): Promise<void> {
     }
     assert.equal(subscribeCalls, 1)
     assert.equal(await readFile(sessionFile, 'utf8'), `${JSON.stringify(header)}\n`)
+    if (scenario === 'discard-materialized') {
+      await sessions.discardDraftSession(sessionId)
+      assert.equal(await stat(sessionFile).catch(() => null), null)
+      assert.equal(sessions.getLive(sessionId), undefined)
+    } else if (scenario === 'directory-draft') {
+      await sessions.closeSessionsForCwd(cwd)
+      assert.equal(await stat(sessionFile).catch(() => null), null)
+      assert.equal(sessions.isPendingDraft(sessionId), false)
+    } else if (scenario === 'close-reopen') {
+      const message = {
+        type: 'message',
+        id: 'message-1',
+        parentId: null,
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: { role: 'user', content: 'keep me' }
+      }
+      await writeFile(sessionFile, `${JSON.stringify(message)}\n`, { flag: 'a' })
+      await sessions.closeSession(sessionId)
+      assert.equal(sessions.isPendingDraft(sessionId), false)
+      await sessions.openSession(sessionFile, win)
+      await sessions.disposeAll()
+      assert.match(await readFile(sessionFile, 'utf8'), /message-1/)
+    } else if (scenario === 'promoted') {
+      await sessions.disposeAll()
+      assert.equal(await readFile(sessionFile, 'utf8'), `${JSON.stringify(header)}\n`)
+    } else if (scenario === 'persistent') {
+      await writeFile(sessionFile, `${JSON.stringify({ type: 'message', id: 'message-1' })}\n`, { flag: 'a' })
+      await sessions.disposeAll()
+      assert.match(await readFile(sessionFile, 'utf8'), /message-1/)
+    }
   } finally {
     configured.resolve()
     aborted.resolve()
@@ -166,7 +207,13 @@ if (process.argv[2] === '--lifecycle-fixture') {
     retry: 'failed pending controls dispose the SDK session and allow a clean retry',
     close: 'concurrent close and directory cleanup await the same teardown',
     delete: 'directory deletion waits for pending controls and prevents publication',
-    'existing-file': 'materialization never overwrites or removes an existing session file'
+    'existing-file': 'materialization never overwrites or removes an existing session file',
+    'discard-pending': 'discarding an unused draft creates no session file',
+    'discard-materialized': 'discarding a materialized draft removes its empty session file',
+    'directory-draft': 'closing a directory discards its materialized draft',
+    'close-reopen': 'closing a draft clears its identity before the same file is reopened',
+    promoted: 'promoting a draft preserves its session file during shutdown',
+    persistent: 'a persistent pending session preserves its messages during shutdown'
   }
   for (const [scenario, name] of Object.entries(scenarios)) {
     test(name, async () => {

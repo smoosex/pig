@@ -11,6 +11,7 @@ import {
   worktrees
 } from '../project-worktrees'
 import { createChatDir, isChatCwd, isChatsRoot, listChats, removeChatWorkDir } from '../chats'
+import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 import { registerWorktreeIpc } from './worktrees'
 import { windowForEvent } from './window'
 
@@ -35,7 +36,7 @@ export function registerProjectIpc(): void {
   ipcMain.handle('session:create-chat', async (event) => {
     const win = windowForEvent(event)
     const cwd = await createChatDir()
-    const session = createPendingSession(cwd, win)
+    const session = createPendingSession(cwd, win, { draft: false })
     return { sessionId: session.sessionId, cwd: session.cwd }
   })
 
@@ -48,7 +49,11 @@ export function registerProjectIpc(): void {
 
   ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
     if (!cwd) throw new Error('Project cwd is required')
-    await removeOpenedProject(cwd)
+    const project = await requireOpenedProject(cwd)
+    const cwds = new Set([project, ...(await worktrees.discover(project)).map((item) => item.cwd)])
+    await Promise.all([...cwds].map(closeSessionsForCwd))
+    await removeOpenProjectWorkspaces(cwds)
+    await removeOpenedProject(project)
   })
 
   ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {
@@ -64,6 +69,7 @@ export function registerProjectIpc(): void {
           await closeSessionsForCwd(path)
           await removeProjectDir(path)
         }
+        await removeOpenProjectWorkspaces(cwds)
         await removeOpenedProject(project)
       })
     })

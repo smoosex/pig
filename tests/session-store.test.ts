@@ -1,6 +1,13 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { DisplayTurnsResult, OpenSessionRef, ProjectGroup, SessionControls, SessionMeta } from '../src/shared/api'
+import type {
+  DisplayTurnsResult,
+  OpenProjectSessionsState,
+  OpenSessionRef,
+  ProjectGroup,
+  SessionControls,
+  SessionMeta
+} from '../src/shared/api'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -24,7 +31,7 @@ const history = (id: string): DisplayTurnsResult => ({
 
 const meta: SessionMeta = {
   id: 'session', path: '/project/session.jsonl', cwd: '/project',
-  created: '', modified: '', firstMessage: '', messageCount: 1
+  created: '', modified: '', firstMessage: '', messageCount: 1, turnCount: 1
 }
 
 async function runFixture(name: string): Promise<void> {
@@ -32,8 +39,13 @@ async function runFixture(name: string): Promise<void> {
   let prepareCalls = 0
   let processCalls = 0
   let tokenCalls = 0
+  let promoteCalls = 0
+  let discardCalls = 0
+  let persistedOpenProjectSessions: OpenProjectSessionsState = { currentCwd: null, workspaces: [] }
   const api = {
     createSession: async () => ({ sessionId: meta.id, cwd: meta.cwd }),
+    promoteSession: async () => { promoteCalls++ },
+    discardDraftSession: async () => { discardCalls++ },
     openSession: async (): Promise<OpenSessionRef> => {
       openCalls++
       return { sessionId: meta.id, cwd: meta.cwd, display: await api.getDisplayTurns() }
@@ -45,6 +57,12 @@ async function runFixture(name: string): Promise<void> {
     getTurnMessages: async (): Promise<unknown[]> => { processCalls++; return [] },
     getTurnWindow: async (): Promise<DisplayTurnsResult> => history('older'),
     getTokenStats: async () => { tokenCalls++; return tokenStats(7) },
+    getOpenProjectSessions: async () => persistedOpenProjectSessions,
+    selectOpenProjectWorkspace: async (cwd: string, sessionId: string | null) => {
+      persistedOpenProjectSessions.currentCwd = cwd
+      const workspace = persistedOpenProjectSessions.workspaces.find((item) => item.cwd === cwd)
+      if (workspace) workspace.activeSessionId = sessionId
+    },
     listChats: async (): Promise<ProjectGroup[]> => [],
     listProjects: async (): Promise<ProjectGroup[]> => [],
     listProject: async (): Promise<ProjectGroup | null> => null,
@@ -56,6 +74,157 @@ async function runFixture(name: string): Promise<void> {
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
   const state = () => store.getState()
   const runtime = () => state().runtime[meta.id]
+
+  if (name === 'workspace-restore-lazy') {
+    const first = { ...meta, id: 'first', path: '/project/first.jsonl', firstMessage: 'First' }
+    const second = { ...meta, id: 'second', path: '/project/second.jsonl', firstMessage: 'Second' }
+    const other = { ...meta, id: 'other', path: '/other/other.jsonl', cwd: '/other', firstMessage: 'Other' }
+    const projectCatalog: ProjectGroup[] = [{
+      cwd: '/project',
+      name: 'project',
+      sessions: [first, second, other],
+      worktrees: [
+        { cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [first, second] },
+        { cwd: '/other', branch: 'other', isPrimary: false, locked: false, missing: false, managed: true, sessions: [other] }
+      ]
+    }]
+    const firstProjectScan = deferred<ProjectGroup[]>()
+    const competingProjectScan = deferred<ProjectGroup[]>()
+    let projectScans = 0
+    api.listProjects = () => ++projectScans === 1
+      ? firstProjectScan.promise
+      : competingProjectScan.promise
+    persistedOpenProjectSessions = {
+      currentCwd: '/project',
+      workspaces: [
+        { cwd: '/project', sessionIds: ['first', 'missing', 'second'], activeSessionId: 'second' },
+        { cwd: '/other', sessionIds: ['other'], activeSessionId: 'other' },
+        { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable' }
+      ]
+    }
+    api.openSession = async (path: string) => {
+      openCalls++
+      const selected = [first, second, other].find((item) => item.path === path)!
+      return { sessionId: selected.id, cwd: selected.cwd, display: history(selected.id) }
+    }
+
+    const initialization = state().initializeProjectWorkspaces()
+    const competingLoad = state().loadProjects()
+    firstProjectScan.resolve(projectCatalog)
+    await Promise.resolve()
+    competingProjectScan.resolve(projectCatalog)
+    await Promise.all([initialization, competingLoad])
+    assert.equal(projectScans, 2, 'the fixture reproduces competing startup scans')
+    assert.equal(openCalls, 1, 'only the selected workspace active tab is opened')
+    assert.deepEqual(
+      persistedOpenProjectSessions.workspaces.map((workspace) => [workspace.cwd, workspace.sessionIds]),
+      [
+        ['/project', ['first', 'missing', 'second']],
+        ['/other', ['other']],
+        ['/temporarily-unavailable', ['unavailable']]
+      ],
+      'startup must not erase entries missing from one scan'
+    )
+    assert.equal(state().currentProjectCwd, '/project')
+    assert.equal(state().activeSessionId, 'second')
+    assert.equal(state().openTabs.find((tab) => tab.sessionId === 'first')?.loadState, 'cold')
+    assert.ok(state().runtime.second)
+    assert.equal(state().runtime.first, undefined)
+    assert.equal(state().runtime.other, undefined)
+
+    await state().selectProjectCwd('/other')
+    assert.equal(openCalls, 2)
+    assert.equal(state().currentProjectCwd, '/other')
+    assert.equal(state().activeSessionId, 'other')
+    assert.ok(state().runtime.other)
+    return
+  }
+
+  if (name === 'workspace-restore-retry') {
+    const first = { ...meta, id: 'first', path: '/project/first.jsonl', firstMessage: 'First' }
+    const catalog: ProjectGroup[] = [{
+      cwd: '/project',
+      name: 'project',
+      sessions: [first],
+      worktrees: [{
+        cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false,
+        managed: false, sessions: [first]
+      }]
+    }]
+    let scans = 0
+    api.listProjects = async () => {
+      if (++scans === 1) throw new Error('scan failed')
+      return catalog
+    }
+    api.getOpenProjectSessions = async () => ({
+      currentCwd: '/project',
+      workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first' }]
+    })
+    api.openSession = async () => ({ sessionId: 'first', cwd: '/project', display: history('first') })
+
+    await state().initializeProjectWorkspaces()
+    assert.equal(state().workspaceRestoreReady, false, 'a failed restore stays retryable')
+    assert.equal(state().workspaceRestoreError, 'scan failed')
+    assert.equal(state().openTabs.length, 0)
+
+    await state().initializeProjectWorkspaces()
+    assert.equal(scans, 2, 'the retry scans again')
+    assert.equal(state().workspaceRestoreReady, true)
+    assert.equal(state().workspaceRestoreError, null)
+    assert.equal(state().currentProjectCwd, '/project')
+    assert.equal(state().activeSessionId, 'first')
+    assert.equal(state().openTabs[0]?.loadState, 'ready')
+    return
+  }
+
+  if (name === 'project-draft-lifecycle') {
+    state().acquireProjectDraft(meta.cwd)
+    state().acquireProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    const draftId = state().draftSessionByCwd[meta.cwd]
+    assert.equal(draftId, meta.id)
+    assert.equal(state().activeSessionId, null)
+    assert.equal(state().openTabs.length, 0)
+    assert.equal(runtime()?.controlsRevision, 1)
+
+    state().releaseProjectDraft(meta.cwd)
+    assert.equal(state().draftSessionByCwd[meta.cwd], meta.id)
+    assert.equal(discardCalls, 0)
+    state().releaseProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
+    assert.equal(runtime(), undefined)
+    assert.equal(discardCalls, 1)
+
+    state().acquireProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    assert.equal(await state().promoteProjectDraft(meta.cwd, meta.id), true)
+    assert.equal(promoteCalls, 1)
+    assert.equal(state().activeSessionId, meta.id)
+    assert.equal(state().openTabs[0]?.sessionId, meta.id)
+    assert.ok(runtime())
+    state().releaseProjectDraft(meta.cwd)
+    assert.equal(discardCalls, 1)
+    return
+  }
+
+  if (name === 'open-project-draft') {
+    state().acquireProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    await state().openExisting(meta, 'project')
+    assert.equal(promoteCalls, 1)
+    assert.equal(openCalls, 0)
+    assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
+    assert.equal(state().activeSessionId, meta.id)
+    assert.equal(state().openTabs[0]?.meta, meta)
+    assert.ok(runtime())
+    state().releaseProjectDraft(meta.cwd)
+    await Bun.sleep(0)
+    assert.equal(discardCalls, 0)
+    assert.ok(runtime())
+    return
+  }
+
   await state().newSession(meta.cwd)
 
   if (name === 'open-lazy') {
@@ -545,6 +714,10 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'workspace-restore-lazy': 'restored workspaces open only the selected active session',
+    'workspace-restore-retry': 'a failed workspace restore stays retryable',
+    'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
+    'open-project-draft': 'opening a materialized project draft promotes it before leaving the home view',
     'open-lazy': 'opening renders the persisted projection without preparing',
     'open-controls-failure': 'control loading errors propagate from opening',
     'token-stats': 'usage stats load on demand and never outlive their session',

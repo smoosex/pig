@@ -60,6 +60,9 @@ export function ProjectRow({
       sessions: project.sessions
     }
   ]
+  const active = useSessionsStore((s) =>
+    worktrees.some((worktree) => worktree.cwd === s.currentProjectCwd)
+  )
 
   return (
     <div
@@ -69,7 +72,12 @@ export function ProjectRow({
     >
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="px-1">
-          <div className="group/project flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-sidebar-accent">
+          <div
+            className={cn(
+              'group/project flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-sidebar-accent',
+              active && 'bg-sidebar-accent'
+            )}
+          >
             <CollapsibleTrigger asChild>
               <Button
                 ref={setActivatorNodeRef}

@@ -15,18 +15,19 @@ interface FailedDraft {
 
 interface SubmissionOptions {
   sessionId: string | null
+  draftCwd?: string
+  isDraftSession?: boolean
   document: ReturnType<typeof useComposerEditor>
   attachments: ReturnType<typeof useComposerImages>
 }
 
-/** Keep failed submissions recoverable without replacing text typed while a request was pending. */
-export function useComposerSubmission({ sessionId, document, attachments }: SubmissionOptions) {
+export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments }: SubmissionOptions) {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [failedDrafts, setFailedDrafts] = useState<Record<string, FailedDraft[]>>({})
   const exporting = useRef(new Set<string>())
-  // A stop bumps the session's epoch so a send still waiting on preparation can tell it was called off.
   const stopEpochs = useRef(new Map<string, number>())
   const recoverable = sessionId ? failedDrafts[sessionId] : undefined
+  const errorKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : '')
 
   function stopEpoch(target: string): number {
     return stopEpochs.current.get(target) ?? 0
@@ -55,65 +56,79 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
   }, [recoverable, document.draft, attachments.images, sessionId])
 
   async function send(streamingBehavior: PromptStreamingBehavior = 'followUp'): Promise<void> {
-    if (!sessionId || !document.editor || exporting.current.has(sessionId)) return
+    if (!document.editor) return
     const serialized = document.getDraft()
     const images = attachments.getImages()
     const hasAttachments = serialized.attachments.length > 0
     const trimmed = serialized.text.trim()
     if (!trimmed && !hasAttachments && images.length === 0) return
-    const state = useSessionsStore.getState()
-    const runtime = state.runtime[sessionId]
-    if (!runtime) return
-    const instanceId = runtime.instanceId
-    const isCurrent = () => useSessionsStore.getState().runtime[sessionId]?.instanceId === instanceId
-    const streaming = state.runtime[sessionId]?.isStreaming ?? false
-    setErrors((current) => ({ ...current, [sessionId]: undefined }))
-
-    if (!streaming && (trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
-      exporting.current.add(sessionId)
-      try {
-        const result = await api.exportSession(sessionId, exportPathArg(trimmed))
-        if (result && useSessionsStore.getState().activeSessionId === sessionId && document.getDraft() === serialized) {
-          document.clear()
-        }
-      } catch (error) {
-        if (isCurrent()) report(sessionId, error)
-      } finally {
-        exporting.current.delete(sessionId)
-      }
-      return
-    }
 
     const saved = { content: document.editor.getJSON(), images }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const titleText = hasAttachments ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim() : trimmed
     const title = titleText.slice(0, 500) || (hasAttachments ? 'Pasted text' : images.length > 0 ? '图片' : '')
     const text = hasAttachments ? serialized.text : trimmed
+    const target = sessionId
+    if (!target) return
+
+    if (isDraftSession) {
+      if (!draftCwd) return
+      try {
+        if (!await useSessionsStore.getState().promoteProjectDraft(draftCwd, target)) return
+      } catch (error) {
+        report(errorKey, error)
+        return
+      }
+    }
+
+    if (exporting.current.has(target)) return
+    const state = useSessionsStore.getState()
+    const runtime = state.runtime[target]
+    if (!runtime) return
+    const instanceId = runtime.instanceId
+    const isCurrent = () => useSessionsStore.getState().runtime[target]?.instanceId === instanceId
+    const streaming = runtime.isStreaming
+    setErrors((current) => ({ ...current, [target]: undefined }))
+
+    if (!streaming && (trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
+      exporting.current.add(target)
+      try {
+        const result = await api.exportSession(target, exportPathArg(trimmed))
+        if (result && useSessionsStore.getState().activeSessionId === target && document.getDraft() === serialized) {
+          document.clear()
+        }
+      } catch (error) {
+        if (isCurrent()) report(target, error)
+      } finally {
+        exporting.current.delete(target)
+      }
+      return
+    }
+
     const optimistic = composerUserMessage(text, payload, serialized.attachments)
-    if (!streaming) state.beginPrompt(sessionId, optimistic)
-    if (title) state.previewSessionTitle(sessionId, title)
+    if (!streaming) state.beginPrompt(target, optimistic)
+    if (title) state.previewSessionTitle(target, title)
     document.clear()
     attachments.clear()
 
-    const startedAt = stopEpoch(sessionId)
+    const startedAt = stopEpoch(target)
     let cwd: string
     try {
-      const prepared = await api.prepareSession(sessionId)
+      const prepared = await api.prepareSession(target)
       if (!isCurrent()) return
-      if (stopEpoch(sessionId) !== startedAt) {
-        // Nothing reached Pi, so the draft goes back to the composer instead of staying lost.
-        if (!streaming) useSessionsStore.getState().rollbackPrompt(sessionId)
-        setFailedDrafts((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), saved] }))
+      if (stopEpoch(target) !== startedAt) {
+        if (!streaming) useSessionsStore.getState().rollbackPrompt(target)
+        setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
         return
       }
       cwd = prepared.cwd
       if (prepared.created) {
         void useSessionsStore.getState().refreshCwd(cwd).catch((error) => {
-          if (isCurrent()) report(sessionId, error)
+          if (isCurrent()) report(target, error)
         })
       }
       await api.prompt(
-        sessionId,
+        target,
         text,
         payload.length > 0 ? payload : undefined,
         hasAttachments ? serialized.attachments : undefined,
@@ -122,28 +137,27 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
     } catch (error) {
       if (!isCurrent()) return
       const current = useSessionsStore.getState()
-      const runtime = current.runtime[sessionId]
-      const unaccepted = streaming || runtime?.pendingUserMessage
+      const activeRuntime = current.runtime[target]
+      const unaccepted = streaming || activeRuntime?.pendingUserMessage
       if (unaccepted) {
-        if (!streaming) current.rollbackPrompt(sessionId)
-        setFailedDrafts((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), saved] }))
+        if (!streaming) current.rollbackPrompt(target)
+        setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
       }
-      report(sessionId, error)
+      report(target, error)
       return
     }
 
-    // A projection refresh failure must not roll back a prompt already accepted by Pi.
     if (!isCurrent()) return
     const current = useSessionsStore.getState()
-    const consumedCommand = !streaming && current.runtime[sessionId]?.pendingUserMessage
-    if (consumedCommand) current.rollbackPrompt(sessionId)
+    const consumedCommand = !streaming && current.runtime[target]?.pendingUserMessage
+    if (consumedCommand) current.rollbackPrompt(target)
     const results = await Promise.allSettled([
       useSessionsStore.getState().refreshCwd(cwd),
-      useSessionsStore.getState().loadControls(sessionId),
-      ...(consumedCommand ? [useSessionsStore.getState().hydrateTurns(sessionId, { keepOlderTurns: true })] : [])
+      useSessionsStore.getState().loadControls(target),
+      ...(consumedCommand ? [useSessionsStore.getState().hydrateTurns(target, { keepOlderTurns: true })] : [])
     ])
     const failed = results.find((result) => result.status === 'rejected')
-    if (isCurrent() && failed?.status === 'rejected') report(sessionId, failed.reason)
+    if (isCurrent() && failed?.status === 'rejected') report(target, failed.reason)
   }
 
   async function abort(): Promise<void> {
@@ -156,5 +170,11 @@ export function useComposerSubmission({ sessionId, document, attachments }: Subm
     }
   }
 
-  return { send, abort, error: sessionId ? errors[sessionId] : undefined, canRestore: Boolean(recoverable?.length), restore }
+  return {
+    send,
+    abort,
+    error: errorKey ? errors[errorKey] : undefined,
+    canRestore: Boolean(recoverable?.length),
+    restore
+  }
 }

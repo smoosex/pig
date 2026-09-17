@@ -3,18 +3,27 @@ import { DeleteButton } from '../ui/delete-button'
 export function SessionDeleteButton({
   ariaLabel,
   onConfirm,
-  disabled = false
+  disabled = false,
+  surfaceClassName,
+  recessClassName,
+  circleHoverClassName
 }: {
   ariaLabel: string
   onConfirm: () => void
   disabled?: boolean
+  surfaceClassName?: string
+  recessClassName?: string
+  circleHoverClassName?: string
 }) {
   return (
     <DeleteButton
       label={ariaLabel}
       disabled={disabled}
       onConfirm={onConfirm}
-      className="shrink-0 opacity-0 transition-opacity group-hover/session:opacity-100 group-hover/chat:opacity-100 focus-within:opacity-100 data-[state=open]:opacity-100"
+      surfaceClassName={surfaceClassName}
+      recessClassName={recessClassName}
+      circleHoverClassName={circleHoverClassName}
+      className="pointer-events-auto shrink-0 opacity-0 transition-opacity group-hover/session:opacity-100 group-hover/chat:opacity-100 has-[:focus-visible]:opacity-100 data-[state=open]:opacity-100"
     />
   )
 }

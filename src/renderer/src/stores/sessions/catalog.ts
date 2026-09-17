@@ -65,7 +65,10 @@ export function removeCwdSessions(
   state: SessionsStore,
   cwds: Set<string>,
   sessions: SessionMeta[]
-): Pick<SessionsStore, 'openTabs' | 'runtime' | 'activeSessionId'> {
+): Pick<
+  SessionsStore,
+  'openTabs' | 'runtime' | 'activeSessionId' | 'currentProjectCwd' | 'activeSessionByCwd'
+> {
   const deletedSessionIds = new Set([
     ...sessions.filter((session) => cwds.has(session.cwd)).map((session) => session.id),
     ...state.openTabs.filter((tab) => cwds.has(tab.cwd)).map((tab) => tab.sessionId)
@@ -73,11 +76,23 @@ export function removeCwdSessions(
   const openTabs = state.openTabs.filter((tab) => !deletedSessionIds.has(tab.sessionId))
   const runtime = { ...state.runtime }
   for (const sessionId of deletedSessionIds) delete runtime[sessionId]
+  const activeSessionByCwd = { ...state.activeSessionByCwd }
+  for (const cwd of cwds) delete activeSessionByCwd[cwd]
+  const currentProjectCwd = state.currentProjectCwd && cwds.has(state.currentProjectCwd)
+    ? null
+    : state.currentProjectCwd
+  const activeWasDeleted = Boolean(
+    state.activeSessionId && deletedSessionIds.has(state.activeSessionId)
+  )
   return {
     openTabs,
     runtime,
-    activeSessionId: state.activeSessionId && deletedSessionIds.has(state.activeSessionId)
-      ? openTabs[openTabs.length - 1]?.sessionId ?? null
+    currentProjectCwd,
+    activeSessionByCwd,
+    activeSessionId: activeWasDeleted
+      ? currentProjectCwd === null
+        ? openTabs.findLast((tab) => tab.kind === 'chat')?.sessionId ?? null
+        : null
       : state.activeSessionId
   }
 }

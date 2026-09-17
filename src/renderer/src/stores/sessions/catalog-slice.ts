@@ -26,32 +26,51 @@ export const createCatalogSlice: SessionSlice<
   let projectMembershipVersion = 0
   let projectOrderVersion = 0
   let projectLoadVersion = 0
+  let latestProjectLoad: Promise<void> | null = null
   let chatMembershipVersion = 0
   let chatLoadVersion = 0
   const refreshRequests = new Map<string, object>()
+
+  async function waitForLatestProjectLoad(started: Promise<void>): Promise<void> {
+    let current = started
+    while (true) {
+      try {
+        await current
+      } catch (error) {
+        if (latestProjectLoad === current) throw error
+      }
+      const latest = latestProjectLoad
+      if (!latest || latest === current) return
+      current = latest
+    }
+  }
 
   return {
     projects: [],
     chats: [],
     isReorderingProjects: false,
 
-    loadProjects: async () => {
+    loadProjects: () => {
       const request = ++projectLoadVersion
       const version = projectMembershipVersion
       const orderVersion = projectOrderVersion
       const savingOrder = get().isReorderingProjects
-      const projects = await api.listProjects()
-      if (
-        request !== projectLoadVersion ||
-        version !== projectMembershipVersion ||
-        orderVersion !== projectOrderVersion ||
-        savingOrder ||
-        get().isReorderingProjects
-      ) return
-      set((s) => ({
-        projects,
-        openTabs: patchTabsFromGroups(s.openTabs, projects)
-      }))
+      const operation = (async () => {
+        const projects = await api.listProjects()
+        if (
+          request !== projectLoadVersion ||
+          version !== projectMembershipVersion ||
+          orderVersion !== projectOrderVersion ||
+          savingOrder ||
+          get().isReorderingProjects
+        ) return
+        set((s) => ({
+          projects,
+          openTabs: patchTabsFromGroups(s.openTabs, projects)
+        }))
+      })()
+      latestProjectLoad = operation
+      return waitForLatestProjectLoad(operation)
     },
 
     loadChats: async () => {
@@ -79,11 +98,19 @@ export const createCatalogSlice: SessionSlice<
     },
 
     unpinProject: async (cwd) => {
+      const project = get().projects.find((item) => item.cwd === cwd)
       await api.unpinProject(cwd)
       projectMembershipVersion++
-      set((s) => ({
-        projects: s.projects.filter((project) => project.cwd !== cwd)
-      }))
+      set((s) => {
+        const cwds = new Set([
+          cwd,
+          ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
+        ])
+        return {
+          projects: s.projects.filter((item) => item.cwd !== cwd),
+          ...removeCwdSessions(s, cwds, project?.sessions ?? [])
+        }
+      })
     },
 
     reorderProjects: async (cwds) => {
@@ -235,9 +262,16 @@ export const createCatalogSlice: SessionSlice<
       chatMembershipVersion++
 
       set((s) => {
+        const deletedTab = s.openTabs.find((tab) => tab.sessionId === meta.id)
         const openTabs = s.openTabs.filter((tab) => tab.sessionId !== meta.id)
         const runtime = { ...s.runtime }
         delete runtime[meta.id]
+        const activeSessionByCwd = { ...s.activeSessionByCwd }
+        if (deletedTab?.kind === 'project' && activeSessionByCwd[deletedTab.cwd] === meta.id) {
+          activeSessionByCwd[deletedTab.cwd] = openTabs.findLast((tab) =>
+            tab.kind === 'project' && tab.cwd === deletedTab.cwd
+          )?.sessionId ?? null
+        }
         const activeWasDeleted = s.activeSessionId === meta.id
         const projects = s.projects.map((project) =>
           mapGroupSessions(project, (sessions) => sessions.filter((session) => session.id !== meta.id))
@@ -249,11 +283,16 @@ export const createCatalogSlice: SessionSlice<
           ),
           openTabs,
           runtime,
+          activeSessionByCwd,
           activeSessionId: activeWasDeleted
-            ? openTabs[openTabs.length - 1]?.sessionId ?? null
+            ? deletedTab?.kind === 'project'
+              ? activeSessionByCwd[deletedTab.cwd] ?? null
+              : openTabs.findLast((tab) => tab.kind === 'chat')?.sessionId ?? null
             : s.activeSessionId
         }
       })
+      const next = get().activeSessionId
+      if (next && !get().runtime[next]) await get().activateTab(next)
     }
   }
 }

@@ -48,7 +48,7 @@ function ChatRow({ session, title, cwd }: { session: SessionMeta; title: string;
           className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
           title={title}
           disabled={pending !== null}
-          onClick={() => void runAction('open', () => openExisting(session))}
+          onClick={() => void runAction('open', () => openExisting(session, 'chat'))}
         >
           <span className="min-w-0 truncate">{title}</span>
         </Button>

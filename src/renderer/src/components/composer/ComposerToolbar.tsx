@@ -1,5 +1,6 @@
 import { ArrowUp, Square } from 'lucide-react'
 import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
+import { useSettingsStore } from '../../stores/settings'
 import { useSessionsStore } from '../../stores/sessions'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
@@ -29,19 +30,27 @@ export function ComposerToolbar({
   sessionId,
   isStreaming,
   hasDraft,
+  isDraftSession,
   onSend,
   onAbort
 }: {
   sessionId: string | null
   isStreaming: boolean
   hasDraft: boolean
+  isDraftSession: boolean
   onSend: () => Promise<void>
   onAbort: () => Promise<void>
 }) {
-  const model = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
-  const models = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
-  const thinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
-  const thinkingLevels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevels ?? EMPTY_LEVELS) : EMPTY_LEVELS)
+  const sessionModel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
+  const sessionModels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
+  const sessionThinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
+  const sessionThinkingLevels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevels ?? EMPTY_LEVELS) : EMPTY_LEVELS)
+  const defaultModel = useSettingsStore((s) => s.defaultModel)
+  const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
+  const model = sessionId ? sessionModel : defaultModel
+  const models = sessionId ? sessionModels : (defaultModel ? [defaultModel] : EMPTY_MODELS)
+  const thinkingLevel = sessionId ? sessionThinkingLevel : (defaultThinkingLevel ?? 'off')
+  const thinkingLevels = sessionId ? sessionThinkingLevels : [thinkingLevel]
   const actions = useModelControls(sessionId)
 
   return (
@@ -56,7 +65,7 @@ export function ComposerToolbar({
           actions={actions}
           disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
         />
-        <SessionTreeButton disabled={!sessionId || isStreaming} />
+        <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming} />
       </div>
       <div className="flex items-center gap-1.5">
         <SessionContextUsage sessionId={sessionId} />

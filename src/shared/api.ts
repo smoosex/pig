@@ -18,6 +18,7 @@ export interface SessionMeta {
   created: string
   modified: string
   messageCount: number
+  turnCount: number
   firstMessage: string
 }
 
@@ -60,6 +61,17 @@ export interface SidebarPrefs {
   projectsCollapsed: boolean
   chatsCollapsed: boolean
   split: number
+}
+
+export interface OpenProjectWorkspace {
+  cwd: string
+  sessionIds: string[]
+  activeSessionId: string | null
+}
+
+export interface OpenProjectSessionsState {
+  currentCwd: string | null
+  workspaces: OpenProjectWorkspace[]
 }
 
 export interface SessionRef {
@@ -283,6 +295,8 @@ export interface SessionApi {
   reorderProjects: (cwds: string[]) => Promise<string[]>
   prepareSession: (sessionId: string) => Promise<SessionRef>
   createSession: (cwd: string) => Promise<SessionRef>
+  promoteSession: (sessionId: string) => Promise<void>
+  discardDraftSession: (sessionId: string) => Promise<void>
   createChat: () => Promise<SessionRef>
   deleteChat: (cwd: string) => Promise<void>
   openSession: (path: string) => Promise<OpenSessionRef>
@@ -318,6 +332,8 @@ export interface SessionApi {
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
+  getOpenProjectSessions: () => Promise<OpenProjectSessionsState>
+  selectOpenProjectWorkspace: (cwd: string, sessionId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<ThemePrefs>

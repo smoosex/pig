@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
 import { EditorContent } from '@tiptap/react'
+import { Folder, GitBranch } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { cn } from '../lib/utils'
 import { InputGroup } from './ui/input-group'
@@ -16,8 +17,16 @@ import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
 
 /** Composes the input surface; session commands and editor lifecycle live in hooks. */
-export function Composer() {
-  const { sessionId, isStreaming, editor, hasDraft, commands, attachments, send, abort, error, canRestore, restore } = useComposer()
+export function Composer({
+  draftCwd,
+  draftSessionId,
+  workspace
+}: {
+  draftCwd?: string
+  draftSessionId?: string | null
+  workspace?: { project: string; branch: string } | null
+} = {}) {
+  const { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
   const appearance = useComposerAppearance()
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -58,6 +67,7 @@ export function Composer() {
                     sessionId={sessionId}
                     isStreaming={isStreaming}
                     hasDraft={hasDraft}
+                    isDraftSession={isDraftSession}
                     onSend={send}
                     onAbort={abort}
                   />
@@ -68,6 +78,18 @@ export function Composer() {
         </PopoverAnchor>
         <SlashSuggestions commands={commands} anchorRef={boxRef} />
       </Popover>
+      {workspace ? (
+        <div className="flex min-w-0 items-center gap-5 px-3.5 pt-2 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate" title={workspace.project}>{workspace.project}</span>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate" title={workspace.branch}>{workspace.branch}</span>
+          </span>
+        </div>
+      ) : null}
       <ImagePreview src={attachments.preview} onClose={() => attachments.setPreview(null)} />
     </div>
   )

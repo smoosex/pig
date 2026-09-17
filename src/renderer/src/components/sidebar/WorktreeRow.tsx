@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { AlertCircle, ChevronRight, LoaderCircle, LockKeyhole, Plus } from 'lucide-react'
 import { useSessionsStore, type WorktreeGroup } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
@@ -24,12 +25,13 @@ export function WorktreeRow({
 }) {
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteWorktree = useSessionsStore((s) => s.deleteWorktree)
-  const deleteSession = useSessionsStore((s) => s.deleteSession)
-  const openExisting = useSessionsStore((s) => s.openExisting)
-  const active = useSessionsStore((s) => {
-    const tab = s.openTabs.find((item) => item.sessionId === s.activeSessionId)
-    return tab?.cwd === worktree.cwd
-  })
+  const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
+  const openTabs = useSessionsStore((s) => s.openTabs)
+  const sessions = useMemo(
+    () => openTabs.filter((tab) => tab.kind === 'project' && tab.cwd === worktree.cwd),
+    [openTabs, worktree.cwd]
+  )
+  const active = useSessionsStore((s) => s.currentProjectCwd === worktree.cwd)
   const namingLabel =
     worktree.naming === 'pending'
       ? '待命名'
@@ -38,6 +40,36 @@ export function WorktreeRow({
         : worktree.naming === 'failed'
           ? '命名失败'
           : null
+  const branchButton = (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal !bg-transparent"
+      aria-label={`${worktree.branch}${namingLabel ? `，${namingLabel}` : ''}`}
+      onClick={() => void selectProjectCwd(worktree.cwd)}
+    >
+      <ChevronRight
+        className={cn(
+          'size-2.5 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] group-hover/worktree:opacity-100 group-focus-within/worktree:opacity-100',
+          open && 'rotate-90',
+          sessions.length === 0 && 'invisible'
+        )}
+      />
+      <span className="min-w-0 truncate">{worktree.branch}</span>
+      {worktree.locked && <LockKeyhole className="text-muted-foreground" />}
+      {worktree.missing && <AlertCircle className="text-destructive" />}
+      {namingLabel && (
+        <span
+          className={cn(
+            'shrink-0 text-muted-foreground',
+            worktree.naming === 'failed' && 'text-destructive'
+          )}
+        >
+          {namingLabel}
+        </span>
+      )}
+    </Button>
+  )
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
@@ -48,34 +80,9 @@ export function WorktreeRow({
             active && 'bg-sidebar-accent'
           )}
         >
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              size="xs"
-              className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal !bg-transparent"
-              aria-label={`${worktree.branch}${namingLabel ? `，${namingLabel}` : ''}`}
-            >
-              <ChevronRight
-                className={cn(
-                  'size-2.5 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] group-hover/worktree:opacity-100 group-focus-within/worktree:opacity-100',
-                  open && 'rotate-90'
-                )}
-              />
-              <span className="min-w-0 truncate">{worktree.branch}</span>
-              {worktree.locked && <LockKeyhole className="text-muted-foreground" />}
-              {worktree.missing && <AlertCircle className="text-destructive" />}
-              {namingLabel && (
-                <span
-                  className={cn(
-                    'shrink-0 text-muted-foreground',
-                    worktree.naming === 'failed' && 'text-destructive'
-                  )}
-                >
-                  {namingLabel}
-                </span>
-              )}
-            </Button>
-          </CollapsibleTrigger>
+          {sessions.length > 0 ? (
+            <CollapsibleTrigger asChild>{branchButton}</CollapsibleTrigger>
+          ) : branchButton}
           {!worktree.isPrimary && (
             <WorktreeDeleteButton
               branch={worktree.branch}
@@ -114,14 +121,7 @@ export function WorktreeRow({
         </div>
       </div>
       <CollapsibleContent>
-        <SessionList
-          sessions={worktree.sessions}
-          pending={pending !== null}
-          onOpen={(session) => void runAction(`open:${session.id}`, () => openExisting(session))}
-          onDelete={(session) =>
-            void runAction(`delete-session:${session.id}`, () => deleteSession(session))
-          }
-        />
+        {sessions.length > 0 ? <SessionList sessions={sessions} /> : null}
       </CollapsibleContent>
     </Collapsible>
   )

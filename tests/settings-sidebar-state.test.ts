@@ -288,6 +288,7 @@ async function runFixture(name: string): Promise<void> {
         await import('../src/renderer/src/components/sidebar/project-action')
       const { CreateWorktreeButton } =
         await import('../src/renderer/src/components/sidebar/WorktreeActions')
+      const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
       let action!: ReturnType<typeof useProjectAction>
       const checks: ReturnType<typeof deferred<WorktreeCreateInfo>>[] = []
       const creates: boolean[] = []
@@ -298,22 +299,26 @@ async function runFixture(name: string): Promise<void> {
       }
       function Probe() {
         action = useProjectAction()
-        return createElement(CreateWorktreeButton, {
-          projectCwd: '/project',
-          hasGit: false,
-          disabled: action.pending !== null,
-          busy: action.pending !== null,
-          runAction: action.runAction,
-          onCreate: async (initGit) => {
-            creates.push(initGit)
-          }
-        })
+        return createElement(
+          TooltipProvider,
+          null,
+          createElement(CreateWorktreeButton, {
+            projectCwd: '/project',
+            hasGit: false,
+            disabled: action.pending !== null,
+            busy: action.pending !== null,
+            runAction: action.runAction,
+            onCreate: async (initGit) => {
+              creates.push(initGit)
+            }
+          })
+        )
       }
       await act(async () => {
         root.render(createElement(Probe))
       })
       const button = () =>
-        container.querySelector<HTMLButtonElement>('[aria-label="创建 worktree"]')!
+        container.querySelector<HTMLButtonElement>('[aria-label="初始化 Git"]')!
       await act(async () => {
         button().click()
         button().click()

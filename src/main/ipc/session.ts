@@ -2,6 +2,7 @@ import { dialog, ipcMain } from 'electron'
 import {
   closeSession,
   createPendingSession,
+  discardDraftSession,
   exportSession,
   getSessionControls,
   getSessionTokenStats,
@@ -10,6 +11,7 @@ import {
   listSessionCommands,
   openSession,
   prepareSession,
+  promoteDraftSession,
   refreshSessionModels,
   setSessionModel,
   setSessionThinking,
@@ -20,6 +22,7 @@ import {
 import { getDisplayTurns, getTurnMessages, getTurnWindow } from '../pi/session-display'
 import { removeSessionFile } from '../pi/session-loader'
 import { isChatCwd, isChatsRoot } from '../chats'
+import { forgetOpenProjectSession, rememberOpenProjectSession } from '../open-project-sessions'
 import { promptSession } from '../pi/session-prompt'
 import { windowForEvent } from './window'
 
@@ -36,9 +39,26 @@ export function registerSessionIpc(): void {
     return { sessionId: session.sessionId, cwd: session.cwd }
   })
 
+  ipcMain.handle('session:promote', async (_event, sessionId: string) => {
+    const cwd = promoteDraftSession(sessionId)
+    void rememberOpenProjectSession(cwd, sessionId).catch((error) => {
+      console.error('Failed to remember open session:', error)
+    })
+  })
+
+  ipcMain.handle('session:discard-draft', async (_event, sessionId: string) => {
+    await discardDraftSession(sessionId)
+  })
+
   ipcMain.handle('session:open', async (event, path: string) => {
     const win = windowForEvent(event)
-    return openSession(path, win)
+    const session = await openSession(path, win)
+    if (!isChatCwd(session.cwd)) {
+      void rememberOpenProjectSession(session.cwd, session.sessionId).catch((error) => {
+        console.error('Failed to remember open session:', error)
+      })
+    }
+    return session
   })
 
   ipcMain.handle('session:prepare', async (_event, sessionId: string) => {
@@ -49,6 +69,7 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:close', async (_event, sessionId: string) => {
     await closeSession(sessionId)
+    await forgetOpenProjectSession(sessionId)
   })
 
   ipcMain.handle(
@@ -57,6 +78,7 @@ export function registerSessionIpc(): void {
       if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
       await closeSession(sessionId)
       await removeSessionFile(path)
+      await forgetOpenProjectSession(sessionId)
     }
   )
 

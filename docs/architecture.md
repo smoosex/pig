@@ -13,6 +13,7 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 | `src/main/ipc/` | 接收请求、解析窗口、调用业务模块、返回 DTO |
 | `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节 |
 | `src/main/app-url.ts` | 窗口只允许停在自己的 UI 上（含重定向） |
+| `src/main/open-project-sessions.ts` | 按 Worktree 持久化已打开会话及活动标签；与进程中的 session 生命周期分离 |
 | `src/main/pi/session-jsonl.ts` | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手 |
 | `src/main/pi/session-source.ts` | pending / live 会话统一的只读条目视图 |
 | `src/renderer/src/ipc/api.ts` | renderer 的接口入口，复用共享类型 |
@@ -27,7 +28,9 @@ Pig 保留 Electron 的 main / preload / renderer 边界。会话由 main 中的
 打开会话只索引 JSONL（`pi/session-jsonl.ts` 按行记录 id/parentId/type/role 与字节偏移），
 SDK 构建推迟到第一次真正需要 agentSession 的交互
 （发送提示词、斜杠命令、切换分支、导出）。会话必须完成扩展绑定和待应用的模型设置后
-才能发布为 live；关闭目录时先等待正在初始化的会话，再释放资源。模型设置、controls 投影、
+才能发布为 live；关闭目录时先等待正在初始化的会话，再释放资源。空分支页会按 cwd 持有一个
+未加入标签和打开记录的 pending 草稿，使模型、思考强度和斜杠命令在首条消息前可用；发送时
+提升为正式标签，离开时丢弃，并删除斜杠命令可能提前物化出的空 JSONL。模型设置、controls 投影、
 树投影、提示词处理分别位于 `model-settings`、`session-controls`、`session-tree`、
 `session-prompt`。pending 会话通过 `pi/session-source.ts` 读取：新会话读内存里的 manager，
 已打开的会话按分支读文件行，只有需要的那几行会被解析（`pi/session-jsonl.ts` 的探针能直接
@@ -76,14 +79,16 @@ React，也不维护另一套聊天记录。
 
 `worktrees.ts` 负责 Git 工作目录的串行变更、命名和删除保护；
 `project-worktrees.ts` 负责项目与工作目录的组合查询。分支命名继续使用
-独立、短生命周期的 utility process。
+独立、短生命周期的 utility process。`open-project-sessions.ts` 把“已打开”保存到
+`PIG_DIR/open-project-sessions.json`：用户关闭才移除记录，应用退出时的资源释放不移除。
+恢复时只有当前 Worktree 的活动标签真正调用 `openSession`，其余标签保持冷状态。启动扫描暂时无法匹配的 Worktree 或会话只在本次恢复中忽略，不回写删除持久化记录；记录仅由用户关闭、删除项目或删除 Worktree 等明确操作移除。恢复只有真正成功才算完成：项目扫描或持久化读取失败时不置 `workspaceRestoreReady`，把原因留在 `workspaceRestoreError`，窗口重新聚焦或用户点击重试都会再跑一次，直到成功。只有文件不存在才会被当作空状态；其他读取错误直接上抛并中止本次写入，内容无法解析的文件先改名为 `open-project-sessions.json.corrupt` 归档，避免下一次写入把已有记录覆盖成空。
 
 ## Renderer：状态与展示
 
 `stores/sessions.ts` 将三个 slice 组合成一个 Zustand store：
 
 - `catalog-slice`：项目、独立对话、工作目录的发现和成员变更。
-- `tabs-slice`：打开、关闭、切换标签页及标题。
+- `tabs-slice`：按 Worktree 打开、关闭、恢复和懒加载标签页，并管理标题。
 - `conversation-slice`：历史轮次、实时 Pi messages、过程缓存、controls 与分支视图。
 
 保留一个 store 是为了让删除项目、关闭关联标签页和清理运行状态保持原子性。
@@ -95,7 +100,8 @@ React，也不维护另一套聊天记录。
 
 UI 按功能组合：`components/composer/` 管理文档、附件、命令和发送；
 `components/turn/` 展示用户消息、答案、过程和工具结果；
-`components/sidebar/` 组合项目、工作目录和会话；`components/settings/`
+`components/sidebar/` 组合项目、工作目录和已打开会话；顶部 `SessionHistoryPopover`
+展示当前 Worktree 的全部磁盘会话，删除也只从这里进入；`components/settings/`
 按设置领域拆分。`components/ui/` 保持通用 shadcn 封装。
 
 ## 对话滚动

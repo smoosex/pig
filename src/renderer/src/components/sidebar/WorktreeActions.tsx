@@ -4,6 +4,7 @@ import { api } from '../../ipc/api'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import type { RunProjectAction } from './project-action'
 
 export function CreateWorktreeButton({
@@ -22,6 +23,7 @@ export function CreateWorktreeButton({
   onCreate: (initGit: boolean) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState<{ hasGit: boolean } | null>(null)
+  const createLabel = hasGit ? '创建 worktree' : '初始化 Git'
 
   const prepareCreation = async () => {
     const info = await api.worktreeCreateInfo(projectCwd)
@@ -34,22 +36,26 @@ export function CreateWorktreeButton({
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className={cn(
-          '!bg-transparent',
-          !busy &&
-            'pointer-events-none opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
-        )}
-        aria-label="创建 worktree"
-        title="创建 worktree"
-        disabled={disabled}
-        aria-busy={busy}
-        onClick={() => void runAction('create-worktree', prepareCreation)}
-      >
-        {busy ? <LoaderCircle className="animate-spin" /> : hasGit ? <Plus /> : <GitBranch />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={cn(
+              '!bg-transparent',
+              !busy &&
+                'pointer-events-none opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
+            )}
+            aria-label={createLabel}
+            disabled={disabled}
+            aria-busy={busy}
+            onClick={() => void runAction('create-worktree', prepareCreation)}
+          >
+            {busy ? <LoaderCircle className="animate-spin" /> : hasGit ? <Plus /> : <GitBranch />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{createLabel}</TooltipContent>
+      </Tooltip>
       <Dialog
         open={prompt !== null}
         onOpenChange={(open) => {

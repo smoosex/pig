@@ -95,6 +95,7 @@ export interface OpenSessionPreview {
 
 const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
+const drafts = new Map<string, { path: string; materialized: boolean }>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 
@@ -151,7 +152,11 @@ async function build(
   }
 }
 
-export function createPendingSession(cwd: string, win: BrowserWindow): PendingSession {
+export function createPendingSession(
+  cwd: string,
+  win: BrowserWindow,
+  options: { draft?: boolean } = {}
+): PendingSession {
   worktrees.assertAvailable(cwd)
   if (!statSync(cwd).isDirectory()) throw new Error('会话工作目录不存在')
   const sessionManager = SessionManager.create(cwd)
@@ -164,8 +169,26 @@ export function createPendingSession(cwd: string, win: BrowserWindow): PendingSe
     win,
     needsMaterialize: true
   }
+  const sessionFile = sessionManager.getSessionFile()
+  if (!sessionFile) throw new Error('Pending session has no session file')
   pending.set(sessionId, session)
+  if (options.draft !== false) {
+    drafts.set(sessionId, { path: sessionFile, materialized: false })
+  }
   return session
+}
+
+export function promoteDraftSession(sessionId: string): string {
+  if (!drafts.delete(sessionId)) throw new Error(`Draft session not found: ${sessionId}`)
+  return sessionState(sessionId).cwd
+}
+
+export async function discardDraftSession(sessionId: string): Promise<void> {
+  const draft = drafts.get(sessionId)
+  if (!draft) return
+  drafts.delete(sessionId)
+  await closeSession(sessionId)
+  if (draft.materialized) await rm(draft.path, { force: true })
 }
 
 async function materialize(
@@ -179,11 +202,14 @@ async function materialize(
 
   // Drafts acquire a JSONL file only on first use; rollback must never remove an existing file.
   await writeFile(sessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx' })
+  const draft = drafts.get(session.sessionId)
+  if (draft) draft.materialized = true
   try {
     session.sessionManager.setSessionFile(sessionFile)
     return await build(session.sessionManager, session.cwd, session.win, configure)
   } catch (error) {
     await rm(sessionFile, { force: true })
+    if (draft) draft.materialized = false
     throw error
   }
 }
@@ -459,6 +485,7 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
 export function closeSession(sessionId: string): Promise<void> {
   const existing = closing.get(sessionId)
   if (existing) return existing.promise
+  drafts.delete(sessionId)
   const preparation = preparing.get(sessionId)
   const session = live.get(sessionId) ?? pending.get(sessionId) ?? preparation
   if (!session) return Promise.resolve()
@@ -487,12 +514,16 @@ export async function closeSessionsForCwd(cwd: string): Promise<void> {
   for (const [id, session] of [...pending, ...live, ...preparing, ...closing]) {
     if (resolve(session.cwd) === target) sessionIds.add(id)
   }
-  await Promise.all([...sessionIds].map(closeSession))
+  await Promise.all([...sessionIds].map((sessionId) =>
+    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId)
+  ))
 }
 
 export async function disposeAll(): Promise<void> {
   const sessionIds = new Set([...pending.keys(), ...live.keys(), ...preparing.keys(), ...closing.keys()])
-  await Promise.all([...sessionIds].map(closeSession))
+  await Promise.all([...sessionIds].map((sessionId) =>
+    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId)
+  ))
 }
 
 function sessionState(sessionId: string): SessionState {

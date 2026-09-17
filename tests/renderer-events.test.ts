@@ -9,7 +9,10 @@ async function runFixture(name: string): Promise<void> {
   const timers = new Map<number, () => void>()
   const api = {
     createSession: async () => ({ sessionId: 'session', cwd: '/project' }),
+    promoteSession: async () => {},
+    discardDraftSession: async () => {},
     closeSession: async () => {},
+    selectOpenProjectWorkspace: async () => {},
     getControls: async () => ({
       model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
       contextUsage: null,

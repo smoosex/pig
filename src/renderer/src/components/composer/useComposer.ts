@@ -7,16 +7,19 @@ import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
 
 /** Coordinates a draft with the active Pi session; editor and attachment state stay local. */
-export function useComposer() {
-  const sessionId = useSessionsStore((s) => s.activeSessionId)
+export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
+  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const sessionId = activeSessionId ?? draftSessionId ?? null
+  const isDraftSession = Boolean(!activeSessionId && draftCwd && draftSessionId)
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
-  const attachments = useComposerImages(sessionId)
-  const document = useComposerEditor({ sessionId, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
+  const draftKey = activeSessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
+  const attachments = useComposerImages(draftKey)
+  const document = useComposerEditor({ sessionId: draftKey, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
-  const submission = useComposerSubmission({ sessionId, document, attachments })
+  const submission = useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments })
   const commands = useSlashCommands(sessionId, draft.text, (command) => {
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
@@ -48,5 +51,5 @@ export function useComposer() {
     return true
   }
 
-  return { sessionId, isStreaming, editor, hasDraft, commands, attachments, ...submission }
+  return { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, attachments, ...submission }
 }

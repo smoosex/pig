@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderPlus, MessageSquarePlus, PanelLeft } from 'lucide-react'
+import { FolderPlus, MessageSquarePlus, PanelLeft, RefreshCw } from 'lucide-react'
 import { useSessionsStore } from './stores/sessions'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionWindows } from './hooks/useSessionWindows'
@@ -12,6 +12,8 @@ import { TabBar } from './components/TabBar'
 import { ChatView } from './components/ChatView'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
+import { ProjectSessionHome } from './components/ProjectSessionHome'
+import { SessionGreeting } from './components/SessionGreeting'
 import { useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
@@ -63,11 +65,22 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 }
 
 export default function App() {
-  const loadProjects = useSessionsStore((s) => s.loadProjects)
+  const initializeProjectWorkspaces = useSessionsStore((s) => s.initializeProjectWorkspaces)
+  const acquireProjectDraft = useSessionsStore((s) => s.acquireProjectDraft)
+  const releaseProjectDraft = useSessionsStore((s) => s.releaseProjectDraft)
   const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
   const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const projects = useSessionsStore((s) => s.projects)
+  const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
+  const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
+  const draftSessionId = useSessionsStore((s) =>
+    currentProjectCwd ? (s.draftSessionByCwd[currentProjectCwd] ?? null) : null
+  )
+  const activeTab = useSessionsStore((s) =>
+    s.openTabs.find((tab) => tab.sessionId === s.activeSessionId)
+  )
   const loadSettings = useSettingsStore((s) => s.load)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -98,10 +111,43 @@ export default function App() {
   }, [openProject])
 
   useEffect(() => {
-    void loadProjects()
+    void initializeProjectWorkspaces()
     void loadChats()
     void loadSettings()
-  }, [loadProjects, loadChats, loadSettings])
+  }, [initializeProjectWorkspaces, loadChats, loadSettings])
+
+  // A failed restore keeps retrying on focus until it succeeds; the store no-ops afterwards.
+  useEffect(() => {
+    const retry = () => void initializeProjectWorkspaces()
+    window.addEventListener('focus', retry)
+    return () => window.removeEventListener('focus', retry)
+  }, [initializeProjectWorkspaces])
+
+  const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
+  const projectHome = Boolean(currentProjectCwd && !activeSessionId)
+  const restoreError = !currentProjectCwd && !activeTab ? workspaceRestoreError : null
+  const currentProject = currentProjectCwd
+    ? projects.find((project) =>
+        project.cwd === currentProjectCwd ||
+        project.worktrees?.some((worktree) => worktree.cwd === currentProjectCwd)
+      )
+    : undefined
+  const currentWorktree = currentProject?.worktrees?.find(
+    (worktree) => worktree.cwd === currentProjectCwd
+  )
+  const composerWorkspace = currentProject
+    ? {
+        project: currentProject.name,
+        branch: currentWorktree?.branch ?? currentProject.name
+      }
+    : null
+
+  useEffect(() => {
+    if (!projectHome || !currentProjectCwd) return
+    const cwd = currentProjectCwd
+    acquireProjectDraft(cwd)
+    return () => releaseProjectDraft(cwd)
+  }, [acquireProjectDraft, currentProjectCwd, projectHome, releaseProjectDraft])
 
   return (
     <TooltipProvider>
@@ -121,26 +167,53 @@ export default function App() {
             <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
-                  {activeSessionId ? <TabBar /> : <div className="flex-1" />}
+                  {currentProjectCwd || activeSessionId ? <TabBar /> : <div className="flex-1" />}
                 </div>
-                {activeSessionId ? (
+                {sessionReady || projectHome ? (
                   <>
-                    <ChatView />
-                    <Composer />
+                    {sessionReady ? <ChatView /> : <SessionGreeting />}
+                    <Composer
+                      draftCwd={projectHome ? currentProjectCwd! : undefined}
+                      draftSessionId={projectHome ? draftSessionId : null}
+                      workspace={composerWorkspace}
+                    />
+                    {projectHome ? <ProjectSessionHome cwd={currentProjectCwd!} /> : null}
                   </>
                 ) : (
                   <Empty className="gap-4">
-                    <EmptyDescription>从左侧选择，或打开项目、开始对话</EmptyDescription>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void openProject()}>
-                        <FolderPlus />
-                        打开项目
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => void newChat()}>
-                        <MessageSquarePlus />
-                        新对话
-                      </Button>
-                    </div>
+                    <EmptyDescription>
+                      {restoreError
+                        ? `恢复已打开会话失败：${restoreError}`
+                        : activeTab?.loadState === 'opening'
+                        ? '正在加载会话'
+                        : activeTab?.loadState === 'error'
+                          ? activeTab.loadError || '会话加载失败'
+                          : currentProjectCwd
+                            ? '从对话历史打开，或在当前分支中新建会话'
+                            : '从左侧选择，或打开项目、开始对话'}
+                    </EmptyDescription>
+                    {!currentProjectCwd && !activeTab ? (
+                      <div className="flex items-center gap-2">
+                        {restoreError ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void initializeProjectWorkspaces()}
+                          >
+                            <RefreshCw />
+                            重试恢复
+                          </Button>
+                        ) : null}
+                        <Button variant="outline" size="sm" onClick={() => void openProject()}>
+                          <FolderPlus />
+                          打开项目
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void newChat()}>
+                          <MessageSquarePlus />
+                          新对话
+                        </Button>
+                      </div>
+                    ) : null}
                   </Empty>
                 )}
               </div>

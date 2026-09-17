@@ -15,6 +15,8 @@ const api: SessionApi = {
   deleteChat: (cwd: string) => ipcRenderer.invoke('session:delete-chat', cwd),
   createSession: (cwd: string) =>
     ipcRenderer.invoke('session:create', cwd),
+  promoteSession: (sessionId: string) => ipcRenderer.invoke('session:promote', sessionId),
+  discardDraftSession: (sessionId: string) => ipcRenderer.invoke('session:discard-draft', sessionId),
   openSession: (path: string) =>
     ipcRenderer.invoke('session:open', path),
   prepareSession: (sessionId: string) =>
@@ -73,6 +75,9 @@ const api: SessionApi = {
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
   setSidebarPrefs: (patch: unknown) =>
     ipcRenderer.invoke('system:set-sidebar-prefs', patch),
+  getOpenProjectSessions: () => ipcRenderer.invoke('system:get-open-project-sessions'),
+  selectOpenProjectWorkspace: (cwd: string, sessionId: string | null) =>
+    ipcRenderer.invoke('system:select-open-project-workspace', cwd, sessionId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),

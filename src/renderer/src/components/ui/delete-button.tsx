@@ -49,7 +49,8 @@ const GLYPH = "text-muted-foreground";
 const FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const ACCENT = "var(--destructive)";
 
-const CIRCLE = `grid size-6 place-items-center rounded-full transition-colors duration-200 hover:bg-accent ${FOCUS} ${SURFACE}`;
+const CIRCLE = `grid size-6 place-items-center rounded-full transition-colors duration-200 ${FOCUS}`;
+const CIRCLE_HOVER = "hover:bg-accent";
 
 const ICON = {
   viewBox: "0 0 24 24",
@@ -72,10 +73,14 @@ const circleMotion = {
 function Circle({
   label,
   onClick,
+  surfaceClassName,
+  hoverClassName,
   children,
 }: {
   label: string;
   onClick: () => void;
+  surfaceClassName: string;
+  hoverClassName: string;
   children: ReactNode;
 }) {
   const reduced = useReducedMotion() ?? false;
@@ -89,7 +94,7 @@ function Circle({
         whileHover={reduced ? undefined : { scale: 1.03 }}
         whileTap={reduced ? undefined : { scale: 0.84 }}
         transition={PRESS}
-        className={CIRCLE}
+        className={cn(CIRCLE, surfaceClassName, hoverClassName)}
       >
         <svg
           {...ICON}
@@ -115,6 +120,9 @@ export type DeleteButtonProps = Omit<
   onCancel?: () => void;
   disabled?: boolean;
   label?: string;
+  surfaceClassName?: string;
+  recessClassName?: string;
+  circleHoverClassName?: string;
 };
 
 export function DeleteButton({
@@ -123,6 +131,9 @@ export function DeleteButton({
   onCancel,
   disabled = false,
   label = "删除",
+  surfaceClassName = SURFACE,
+  recessClassName = RECESS,
+  circleHoverClassName = CIRCLE_HOVER,
   ...props
 }: DeleteButtonProps) {
   const reduced = useReducedMotion() ?? false;
@@ -170,7 +181,7 @@ export function DeleteButton({
       data-slot="delete-button"
       data-state={open ? "open" : "closed"}
       data-status={status}
-      className={cn("relative h-6 rounded-md", SURFACE, GLYPH, className)}
+      className={cn("relative h-6 rounded-md", surfaceClassName, GLYPH, className)}
       animate={{ width: open ? TILE + PANEL : TILE }}
       transition={timing(WIDTH)}
       onKeyDown={(event) => {
@@ -257,7 +268,7 @@ export function DeleteButton({
             style={{ width: PANEL }}
             className={cn(
               "absolute inset-y-0 right-0 flex items-center justify-center gap-1 rounded-md",
-              RECESS,
+              recessClassName,
             )}
             variants={reduced ? undefined : panelMotion}
             initial="hidden"
@@ -268,13 +279,23 @@ export function DeleteButton({
               aria-hidden
               className={cn(
                 "absolute -left-1.25 top-1/2 z-20 h-2.5 w-1.5 -translate-y-1/2 [clip-path:polygon(100%_0,0_50%,100%_100%)]",
-                RECESS,
+                recessClassName,
               )}
             />
-            <Circle label="确认删除" onClick={() => { if (!disabled) resolve("deleted"); }}>
+            <Circle
+              label="确认删除"
+              onClick={() => { if (!disabled) resolve("deleted"); }}
+              surfaceClassName={surfaceClassName}
+              hoverClassName={circleHoverClassName}
+            >
               <path d="M4 12.5 9.5 18 20 7" stroke={ACCENT} />
             </Circle>
-            <Circle label="取消" onClick={() => resolve("kept")}>
+            <Circle
+              label="取消"
+              onClick={() => resolve("kept")}
+              surfaceClassName={surfaceClassName}
+              hoverClassName={circleHoverClassName}
+            >
               <path d="M6 6 18 18M18 6 6 18" />
             </Circle>
           </motion.div>
