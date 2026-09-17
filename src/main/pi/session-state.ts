@@ -23,8 +23,6 @@ interface PendingBase {
 export interface MemorySession extends PendingBase {
   kind: 'memory'
   sessionManager: SessionManager
-  /** Drafts own no file until their first interaction; an opened file is persisted already. */
-  needsMaterialize: boolean
 }
 
 /** An opened JSONL session read through the byte index; the SDK build waits for the first interaction. */

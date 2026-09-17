@@ -4,14 +4,14 @@ import { runBranchNamer } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
 import { getDefaultSessionSettings } from './model-settings'
 import { normalizeSessionPrompt, type SessionPromptInput } from './prompt-input'
-import { prepareSession } from './session-registry'
+import { activateSession } from './session-registry'
 
 /**
  * Submit a prompt and attach display metadata when Pi accepts its user message.
  * Queued follow-ups must not persist metadata or rename a worktree before delivery.
  */
 export async function promptSession(sessionId: string, input: SessionPromptInput): Promise<void> {
-  const { cwd, agentSession } = await prepareSession(sessionId)
+  const { cwd, agentSession } = (await activateSession(sessionId)).session
   const prompt = normalizeSessionPrompt(input)
   worktrees.assertAvailable(cwd)
   const streamingBehavior =

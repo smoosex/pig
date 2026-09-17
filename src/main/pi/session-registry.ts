@@ -4,7 +4,7 @@
  * Publish sessions only after extensions and pending controls are ready.
  * Closing a directory waits for its builds before the caller removes it.
  */
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { createAgentSession, SessionManager, type AgentSession, type SessionEntry } from '@earendil-works/pi-coding-agent'
@@ -95,7 +95,8 @@ export interface OpenSessionPreview {
 
 const live = new Map<string, LiveSession>()
 const pending = new Map<string, PendingSession>()
-const drafts = new Map<string, { path: string; materialized: boolean }>()
+/** Draft sessions by id: the file they own, which stays absent until the first send. */
+const drafts = new Map<string, string>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 
@@ -166,14 +167,13 @@ export function createPendingSession(
     sessionId,
     cwd,
     sessionManager,
-    win,
-    needsMaterialize: true
+    win
   }
   const sessionFile = sessionManager.getSessionFile()
   if (!sessionFile) throw new Error('Pending session has no session file')
   pending.set(sessionId, session)
   if (options.draft !== false) {
-    drafts.set(sessionId, { path: sessionFile, materialized: false })
+    drafts.set(sessionId, sessionFile)
   }
   return session
 }
@@ -184,32 +184,73 @@ export function promoteDraftSession(sessionId: string): string {
 }
 
 export async function discardDraftSession(sessionId: string): Promise<void> {
-  const draft = drafts.get(sessionId)
-  if (!draft) return
+  const path = drafts.get(sessionId)
+  if (path === undefined) return
   drafts.delete(sessionId)
   await closeSession(sessionId)
-  if (draft.materialized) await rm(draft.path, { force: true })
+  // The path is computed when the draft is created, so a stranger's file may be sitting on it.
+  if (!isOwnSessionFile(path, sessionId)) return
+  await rm(path, { force: true })
 }
 
-async function materialize(
-  session: MemorySession,
-  configure: (created: AgentSession) => Promise<void>
-): Promise<LiveSession> {
-  worktrees.assertAvailable(session.cwd)
-  const sessionFile = session.sessionManager.getSessionFile()
-  const header = session.sessionManager.getHeader()
-  if (!sessionFile || !header) throw new Error('Pending session has no session file or header')
+function managerOf(session: LiveSession | MemorySession): SessionManager {
+  return 'agentSession' in session ? session.agentSession.sessionManager : session.sessionManager
+}
 
-  // Drafts acquire a JSONL file only on first use; rollback must never remove an existing file.
-  await writeFile(sessionFile, `${JSON.stringify(header)}\n`, { flag: 'wx' })
-  const draft = drafts.get(session.sessionId)
-  if (draft) draft.materialized = true
+/** Whether a file already on disk is this session's own, rather than a stranger that owns its path. */
+function isOwnSessionFile(path: string, sessionId: string): boolean {
   try {
-    session.sessionManager.setSessionFile(sessionFile)
-    return await build(session.sessionManager, session.cwd, session.win, configure)
+    return readSessionHeader(path).sessionId === sessionId
   } catch (error) {
-    await rm(sessionFile, { force: true })
-    if (draft) draft.materialized = false
+    if (error instanceof UnsupportedSessionFile) return false
+    throw error
+  }
+}
+
+/**
+ * A session exists on disk from its first send, not from its first read: this writes the header and
+ * whatever the manager already holds, then hands the file to the SDK so later entries append to it
+ * instead of rewinding. A file this session already published is left alone.
+ */
+async function publishSessionFile(sessionId: string): Promise<{ created: boolean; path?: string }> {
+  const session = sessionState(sessionId)
+  // An opened file is persisted already, and building it is what hands over the manager.
+  if (!('agentSession' in session) && session.kind === 'file') return { created: false }
+  const manager = managerOf(session)
+  const path = manager.getSessionFile()
+  const header = manager.getHeader()
+  worktrees.assertAvailable(session.cwd)
+  if (!path || !header) throw new Error('Pending session has no session file or header')
+  if (existsSync(path)) {
+    // Only our own file may be adopted without a second handover: adopting a stranger's would leave
+    // the manager detached and blow up in the SDK's write on the first assistant message.
+    if (isOwnSessionFile(path, manager.getSessionId())) return { created: false }
+    throw new Error(`Session file already exists: ${path}`)
+  }
+
+  const rows = [header, ...manager.getEntries()]
+  await writeFile(path, rows.map((row) => `${JSON.stringify(row)}\n`).join(''), { flag: 'wx' })
+  try {
+    manager.setSessionFile(path)
+  } catch (error) {
+    await rm(path, { force: true })
+    throw error
+  }
+  return { created: true, path }
+}
+
+/**
+ * The send path: the file comes first, so a build that fails can take it back out and leave no
+ * empty session behind in the session directory.
+ */
+export async function activateSession(
+  sessionId: string
+): Promise<{ session: LiveSession; created: boolean }> {
+  const { created, path } = await publishSessionFile(sessionId)
+  try {
+    return { session: await prepareSession(sessionId), created }
+  } catch (error) {
+    if (created && path) await rm(path, { force: true })
     throw error
   }
 }
@@ -234,9 +275,7 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
   const building =
     session.kind === 'file'
       ? build(SessionManager.open(session.path), session.cwd, session.win, configure)
-      : session.needsMaterialize
-        ? materialize(session, configure)
-        : build(session.sessionManager, session.cwd, session.win, configure)
+      : build(session.sessionManager, session.cwd, session.win, configure)
   return trackPreparation(sessionId, session.cwd, building)
 }
 
@@ -279,8 +318,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
       sessionId,
       cwd,
       win,
-      sessionManager: manager,
-      needsMaterialize: false
+      sessionManager: manager
     }
     pending.set(sessionId, session)
     return previewFor(managerSource(manager), cwd)
@@ -371,7 +409,6 @@ function downgradeFileSession(session: SessionFileSession): SessionManager | nul
     cwd: session.cwd,
     win: session.win,
     sessionManager: SessionManager.open(session.path),
-    needsMaterialize: false,
     // A retried read must not lose the model the user just picked for this session.
     ...(session.modelProvider === undefined ? {} : { modelProvider: session.modelProvider }),
     ...(session.modelId === undefined ? {} : { modelId: session.modelId }),
@@ -422,11 +459,6 @@ function errorMessage(error: unknown): string {
 
 export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
-}
-
-export function isPendingDraft(sessionId: string): boolean {
-  const session = pending.get(sessionId)
-  return session?.kind === 'memory' && session.needsMaterialize
 }
 
 /** A file session's source needs its index, which is why this waits on the deferred build. */

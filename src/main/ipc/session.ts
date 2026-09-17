@@ -1,12 +1,12 @@
 import { dialog, ipcMain } from 'electron'
 import {
+  activateSession,
   closeSession,
   createPendingSession,
   discardDraftSession,
   exportSession,
   getSessionControls,
   getSessionTokenStats,
-  isPendingDraft,
   getSessionTree,
   listSessionCommands,
   openSession,
@@ -62,8 +62,7 @@ export function registerSessionIpc(): void {
   })
 
   ipcMain.handle('session:prepare', async (_event, sessionId: string) => {
-    const created = isPendingDraft(sessionId)
-    const session = await prepareSession(sessionId)
+    const { session, created } = await activateSession(sessionId)
     return { sessionId: session.sessionId, cwd: session.cwd, created }
   })
 

@@ -22,18 +22,21 @@ async function fixture(scenario: string): Promise<void> {
   const sessionId = 'draft-session'
   const sessionFile = join(cwd, 'session.jsonl')
   const header = { type: 'session', version: 3, id: sessionId, cwd }
+  const stamp = '2026-01-01T00:00:00.000Z'
+  const entries: unknown[] = []
   let createCalls = 0
   let modelCalls = 0
   let subscribeCalls = 0
   let disposeCalls = 0
+  let setSessionFileCalls = 0
   let registry: typeof import('../src/main/pi/session-registry') | undefined
   const manager = {
     getCwd: () => cwd,
     getSessionId: () => sessionId,
     getSessionFile: () => sessionFile,
     getHeader: () => header,
-    setSessionFile: () => {},
-    getEntries: () => []
+    setSessionFile: () => { setSessionFileCalls++ },
+    getEntries: () => entries
   }
   const session = {
     sessionId,
@@ -85,22 +88,57 @@ async function fixture(scenario: string): Promise<void> {
     if (scenario === 'discard-pending') {
       await sessions.discardDraftSession(sessionId)
       assert.equal(await stat(sessionFile).catch(() => null), null)
-      assert.equal(sessions.isPendingDraft(sessionId), false)
+      assert.equal(sessions.getLive(sessionId), undefined)
+      return
+    }
+
+    if (scenario === 'discard-foreign') {
+      const foreign = `${JSON.stringify({ ...header, id: 'someone-else' })}\n`
+      await writeFile(sessionFile, foreign)
+      await sessions.discardDraftSession(sessionId)
+      assert.equal(await readFile(sessionFile, 'utf8'), foreign)
+      assert.equal(sessions.getLive(sessionId), undefined)
+      return
+    }
+
+    if (scenario === 'read-then-send') {
+      // The slash-command path builds the session without giving it a file.
+      const read = await sessions.prepareSession(sessionId)
+      assert.equal(await stat(sessionFile).catch(() => null), null)
+      assert.equal(setSessionFileCalls, 0)
+      entries.push({ type: 'model_change', id: 'm1', parentId: null, timestamp: stamp, provider: 'test', modelId: 'test' })
+      const activated = await sessions.activateSession(sessionId)
+      assert.equal(activated.created, true)
+      assert.equal(activated.session, read)
+      assert.equal(setSessionFileCalls, 1)
+      // The entry the live manager collected before the send is in the file the send published.
+      const published = `${JSON.stringify(header)}\n${JSON.stringify(entries[0])}\n`
+      assert.equal(await readFile(sessionFile, 'utf8'), published)
+      // A later send finds its own file and leaves the manager attached to it.
+      const again = await sessions.activateSession(sessionId)
+      assert.equal(again.created, false)
+      assert.equal(setSessionFileCalls, 1)
+      assert.equal(await readFile(sessionFile, 'utf8'), published)
       return
     }
 
     if (scenario === 'promoted') sessions.promoteDraftSession(sessionId)
 
     if (scenario === 'existing-file') {
+      // A stranger's file at our path has to stop the send here, not inside the SDK's first write.
+      const foreign = `${JSON.stringify({ ...header, id: 'someone-else' })}\n`
+      await writeFile(sessionFile, foreign)
+      await assert.rejects(sessions.activateSession(sessionId), /Session file already exists/)
+      assert.equal(await readFile(sessionFile, 'utf8'), foreign)
+      // A file with no header is no more adoptable than a foreign one.
       await writeFile(sessionFile, 'existing session data\n')
-      await assert.rejects(sessions.prepareSession(sessionId), /EEXIST/)
+      await assert.rejects(sessions.activateSession(sessionId), /Session file already exists/)
       assert.equal(await readFile(sessionFile, 'utf8'), 'existing session data\n')
-      assert.equal(subscribeCalls, 0)
       return
     }
 
     if (scenario === 'close') {
-      await sessions.prepareSession(sessionId)
+      await sessions.activateSession(sessionId)
       const first = sessions.closeSession(sessionId)
       await aborting.promise
       assert.equal(sessions.closeSession(sessionId), first)
@@ -122,12 +160,16 @@ async function fixture(scenario: string): Promise<void> {
 
     draft.modelProvider = 'test'
     draft.modelId = 'test'
-    const opening = sessions.prepareSession(sessionId)
+    const opening = sessions.activateSession(sessionId)
     const result = opening.then((value) => ({ value }), (error: unknown) => ({ error }))
     await configuring.promise
     assert.equal(sessions.getLive(sessionId), undefined)
     assert.equal(subscribeCalls, 0)
-    assert.equal(sessions.prepareSession(sessionId), opening)
+    // A reader arriving mid-send joins the send's build, and the send only ever started one.
+    const shared = sessions.prepareSession(sessionId)
+    assert.equal(sessions.prepareSession(sessionId), shared)
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(modelCalls, 1)
 
     if (scenario === 'delete') {
       const deletion = service.withBlockedCwds([cwd], () => sessions.closeSessionsForCwd(cwd))
@@ -147,15 +189,17 @@ async function fixture(scenario: string): Promise<void> {
     if (scenario === 'retry') {
       assert.ok('error' in settled)
       assert.match(String(settled.error), /Model configuration failed/)
+      // A build that fails takes the file the send had just created back out with it.
       assert.equal(await stat(sessionFile).catch(() => null), null)
       assert.equal(disposeCalls, 1)
-      assert.equal(sessions.isPendingDraft(sessionId), true)
-      await sessions.prepareSession(sessionId)
+      assert.equal(sessions.getLive(sessionId), undefined)
+      const retry = await sessions.activateSession(sessionId)
+      assert.equal(retry.created, true)
       assert.equal(modelCalls, 2)
       assert.equal(createCalls, 1)
     } else {
       assert.ok('value' in settled)
-      assert.equal(sessions.getLive(sessionId), settled.value)
+      assert.equal(sessions.getLive(sessionId), settled.value.session)
       assert.equal(modelCalls, 1)
     }
     assert.equal(subscribeCalls, 1)
@@ -167,7 +211,7 @@ async function fixture(scenario: string): Promise<void> {
     } else if (scenario === 'directory-draft') {
       await sessions.closeSessionsForCwd(cwd)
       assert.equal(await stat(sessionFile).catch(() => null), null)
-      assert.equal(sessions.isPendingDraft(sessionId), false)
+      assert.equal(sessions.getLive(sessionId), undefined)
     } else if (scenario === 'close-reopen') {
       const message = {
         type: 'message',
@@ -178,7 +222,7 @@ async function fixture(scenario: string): Promise<void> {
       }
       await writeFile(sessionFile, `${JSON.stringify(message)}\n`, { flag: 'a' })
       await sessions.closeSession(sessionId)
-      assert.equal(sessions.isPendingDraft(sessionId), false)
+      assert.equal(sessions.getLive(sessionId), undefined)
       await sessions.openSession(sessionFile, win)
       await sessions.disposeAll()
       assert.match(await readFile(sessionFile, 'utf8'), /message-1/)
@@ -207,12 +251,14 @@ if (process.argv[2] === '--lifecycle-fixture') {
     retry: 'failed pending controls dispose the SDK session and allow a clean retry',
     close: 'concurrent close and directory cleanup await the same teardown',
     delete: 'directory deletion waits for pending controls and prevents publication',
-    'existing-file': 'materialization never overwrites or removes an existing session file',
+    'existing-file': 'a session file this session does not own stops the send',
+    'read-then-send': 'reading a draft through the slash-command path leaves no file until the send',
     'discard-pending': 'discarding an unused draft creates no session file',
-    'discard-materialized': 'discarding a materialized draft removes its empty session file',
-    'directory-draft': 'closing a directory discards its materialized draft',
+    'discard-foreign': 'discarding a draft leaves a session file it does not own alone',
+    'discard-materialized': 'discarding a draft that was sent removes its empty session file',
+    'directory-draft': 'closing a directory discards its sent draft',
     'close-reopen': 'closing a draft clears its identity before the same file is reopened',
-    promoted: 'promoting a draft preserves its session file during shutdown',
+    promoted: 'a promoted session keeps its file when the app closes',
     persistent: 'a persistent pending session preserves its messages during shutdown'
   }
   for (const [scenario, name] of Object.entries(scenarios)) {

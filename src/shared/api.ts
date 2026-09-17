@@ -88,6 +88,7 @@ export interface OpenProjectSessionsState {
 export interface SessionRef {
   sessionId: string
   cwd: string
+  /** This call gave the session its file: the directory it belongs to should be rescanned. */
   created?: boolean
 }
 

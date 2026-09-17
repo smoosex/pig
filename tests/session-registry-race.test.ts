@@ -187,7 +187,8 @@ async function reproduceReopen(): Promise<void> {
       getBranch: () => [],
       getSessionFile: () => sessionFile,
       getHeader: () => header,
-      setSessionFile: () => {}
+      setSessionFile: () => {},
+      getEntries: () => []
     }
 
     mock.module('electron', () => ({
@@ -226,7 +227,7 @@ async function reproduceReopen(): Promise<void> {
     const win = {} as Parameters<typeof sessions.openSession>[1]
 
     const draft = sessions.createPendingSession(cwd, win)
-    const preparing = observe(sessions.prepareSession(draft.sessionId))
+    const preparing = observe(sessions.activateSession(draft.sessionId))
     operations.push(preparing)
     await started.promise
 

@@ -148,7 +148,7 @@ async function fixture(name: string): Promise<void> {
 
     available = true
     const opened = (branch: unknown[], messages: unknown[] = []) => ({
-      sessionId: 'opened', cwd: '/tmp', win: {}, needsMaterialize: false,
+      sessionId: 'opened', cwd: '/tmp', win: {},
       sessionManager: {
         getEntries: () => [],
         getBranch: () => branch,
@@ -269,7 +269,7 @@ if (process.argv[2] === '--main-settings-fixture') {
   await fixture(process.argv[3])
 } else {
   for (const [name, title] of Object.entries({
-    preparation: 'choices made during materialization apply to the published live session',
+    preparation: 'choices made before the publish apply to the live session',
     runtime: 'failed startup retries and background refresh errors stay handled',
     controls: 'pending model selection applies the same reasoning level the picker displays',
     auth: 'an old login cannot clear a newer prompt or open a stale login URL',

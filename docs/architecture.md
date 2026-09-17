@@ -30,7 +30,9 @@ SDK 构建推迟到第一次真正需要 agentSession 的交互
 （发送提示词、斜杠命令、切换分支、导出）。会话必须完成扩展绑定和待应用的模型设置后
 才能发布为 live；关闭目录时先等待正在初始化的会话，再释放资源。空分支页会按 cwd 持有一个
 未加入标签和打开记录的 pending 草稿，使模型、思考强度和斜杠命令在首条消息前可用；发送时
-提升为正式标签，离开时丢弃，并删除斜杠命令可能提前物化出的空 JSONL。模型设置、controls 投影、
+提升为正式标签，离开时丢弃。草稿在发送前不落盘：斜杠命令、控件与投影这类读路径只建 SDK 会话，
+文件由 `activateSession` 在首条消息真正发出时创建——写 header 并连同 manager 已持有的条目把文件
+交给 SDK，build 失败则把刚建的文件收回，因此历史与侧边栏不会出现从未发过消息的空会话。模型设置、controls 投影、
 树投影、提示词处理分别位于 `model-settings`、`session-controls`、`session-tree`、
 `session-prompt`。pending 会话通过 `pi/session-source.ts` 读取：新会话读内存里的 manager，
 已打开的会话按分支读文件行，只有需要的那几行会被解析（`pi/session-jsonl.ts` 的探针能直接
