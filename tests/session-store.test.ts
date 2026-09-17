@@ -6,6 +6,7 @@ import type {
   OpenProjectSessionsState,
   OpenSessionRef,
   ProjectGroup,
+  ProjectWorktreeDiscovery,
   SessionApi,
   SessionControls,
   SessionMeta
@@ -75,6 +76,8 @@ async function runFixture(name: string): Promise<void> {
     },
     listChats: async (): Promise<ProjectGroup[]> => [],
     listProjects: async (): Promise<ProjectGroup[]> => [],
+    discoverOpenedWorktrees: async (): Promise<ProjectWorktreeDiscovery[]> => [],
+    listWorktreeSessions: async (): Promise<SessionMeta[]> => [],
     listProject: async (): Promise<ProjectGroup | null> => null,
     isChatCwd: async () => true,
     deleteChat: async () => {},
@@ -184,6 +187,75 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().currentProjectCwd, '/project')
     assert.equal(state().activeSessionId, 'first')
     assert.equal(state().openTabs[0]?.loadState, 'ready')
+    return
+  }
+
+  if (name === 'worktree-topology-sync') {
+    const primary = { ...meta, id: 'primary' }
+    const removed = { ...meta, id: 'removed', cwd: '/old' }
+    api.listProjects = async () => [{
+      cwd: '/project', name: 'project', hasGit: false, sessions: [primary, removed],
+      worktrees: [
+        { cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [primary] },
+        { cwd: '/old', branch: 'old', isPrimary: false, locked: false, missing: false, managed: false, sessions: [removed] }
+      ]
+    }]
+    await state().loadProjects()
+    let scans = 0
+    api.listProject = async () => { scans++; return null }
+    const response = deferred<ProjectWorktreeDiscovery[]>()
+    let discoveries = 0
+    api.discoverOpenedWorktrees = () => { discoveries++; return response.promise }
+    const first = state().syncProjectWorktrees()
+    const second = state().syncProjectWorktrees()
+    assert.equal(discoveries, 1, 'focuses joining one discovery do not start another IPC')
+    response.resolve([{
+      cwd: '/project',
+      hasGit: true,
+      worktrees: [
+        { cwd: '/project', branch: 'trunk', isPrimary: true, locked: false, missing: false, managed: false },
+        { cwd: '/new', branch: 'new', isPrimary: false, locked: false, missing: false, managed: false }
+      ]
+    }])
+    await Promise.all([first, second])
+    const project = state().projects[0]
+    assert.equal(scans, 0, 'topology discovery never asks for session JSONL')
+    assert.equal(project?.hasGit, true)
+    assert.deepEqual(project?.worktrees?.map((worktree) => [
+      worktree.cwd,
+      worktree.branch,
+      worktree.sessions.map((session) => session.id)
+    ]), [
+      ['/project', 'trunk', ['primary']],
+      ['/new', 'new', []]
+    ])
+    assert.deepEqual(project?.sessions.map((session) => session.id), ['primary'])
+    assert.equal(project?.worktrees?.[1]?.sessionsLoaded, false)
+
+    const discovered = { ...meta, id: 'discovered', cwd: '/new' }
+    let worktreeScans = 0
+    api.listWorktreeSessions = async (projectCwd, cwd) => {
+      worktreeScans++
+      assert.equal(projectCwd, '/project')
+      assert.equal(cwd, '/new')
+      return [discovered]
+    }
+    await state().selectProjectCwd('/new')
+    assert.equal(worktreeScans, 1, 'entering a new worktree scans only that cwd once')
+    assert.deepEqual(
+      state().projects[0]?.worktrees?.find((worktree) => worktree.cwd === '/new')?.sessions,
+      [discovered]
+    )
+    assert.deepEqual(state().projects[0]?.sessions.map((session) => session.id), ['primary', 'discovered'])
+    const loadedWorktrees = state().projects[0]?.worktrees
+
+    api.discoverOpenedWorktrees = async () => [{
+      cwd: '/project', hasGit: false, worktrees: null, gitError: 'git failed'
+    }]
+    await state().syncProjectWorktrees()
+    assert.equal(state().projects[0]?.hasGit, false)
+    assert.equal(state().projects[0]?.gitError, 'git failed')
+    assert.deepEqual(state().projects[0]?.worktrees, loadedWorktrees, 'a failed discovery keeps the last topology')
     return
   }
 
@@ -897,6 +969,7 @@ if (process.argv[2] === '--session-store-fixture') {
   const cases = {
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
+    'worktree-topology-sync': 'focus discovery preserves sessions without scanning their files',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
     'project-draft-id-first': 'the home owns its session id before the create resolves',
     'project-draft-promoted-while-creating': 'a promote during the create round trip keeps the session',

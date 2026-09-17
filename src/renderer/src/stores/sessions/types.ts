@@ -86,6 +86,8 @@ export interface SessionsStore {
   isReorderingProjects: boolean
 
   loadProjects: () => Promise<void>
+  syncProjectWorktrees: () => Promise<void>
+  loadWorktreeSessions: (cwd: string) => Promise<void>
   loadChats: () => Promise<void>
   openProject: () => Promise<void>
   unpinProject: (cwd: string) => Promise<void>

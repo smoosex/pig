@@ -275,6 +275,11 @@ export const createTabsSlice: SessionSlice<
       const sessionId = get().activeSessionByCwd[cwd] ?? null
       set({ currentProjectCwd: cwd, activeSessionId: sessionId })
       persistSelection(cwd, sessionId)
+      try {
+        await get().loadWorktreeSessions(cwd)
+      } catch (error) {
+        if (selection === selectionVersion) set({ workspaceError: describeError(error) })
+      }
       if (sessionId && selection === selectionVersion) await get().activateTab(sessionId)
     },
 

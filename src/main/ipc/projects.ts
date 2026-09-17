@@ -4,9 +4,11 @@ import { removeProjectDir } from '../pi/session-loader'
 import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
 import { canonicalProject } from '../worktrees'
 import {
+  discoverOpenedWorktrees,
   loadOpenedWorktreeProjects,
   loadProjectForCwd,
   loadWorktreeProject,
+  loadWorktreeSessions,
   requireOpenedProject,
   worktrees
 } from '../project-worktrees'
@@ -18,6 +20,10 @@ import { windowForEvent } from './window'
 export function registerProjectIpc(): void {
   registerWorktreeIpc()
   ipcMain.handle('session:list-projects', async () => loadOpenedWorktreeProjects())
+  ipcMain.handle('project:discover-opened-worktrees', async () => discoverOpenedWorktrees())
+  ipcMain.handle('project:list-worktree-sessions', async (_event, projectCwd: string, cwd: string) =>
+    loadWorktreeSessions(projectCwd, cwd)
+  )
   ipcMain.handle('session:list-project', async (_event, cwd: string) => loadProjectForCwd(cwd))
 
   ipcMain.handle('session:open-project', async (event) => {

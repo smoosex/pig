@@ -3,7 +3,13 @@
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
-import { mapGroupSessions, patchTabsFromGroups, removeCwdSessions, upsertGroup } from './catalog'
+import {
+  mapGroupSessions,
+  mergeWorktreeDiscoveries,
+  patchTabsFromGroups,
+  removeCwdSessions,
+  upsertGroup
+} from './catalog'
 import type { SessionSlice } from './types'
 
 export const createCatalogSlice: SessionSlice<
@@ -11,6 +17,8 @@ export const createCatalogSlice: SessionSlice<
   | 'chats'
   | 'isReorderingProjects'
   | 'loadProjects'
+  | 'syncProjectWorktrees'
+  | 'loadWorktreeSessions'
   | 'loadChats'
   | 'openProject'
   | 'unpinProject'
@@ -27,6 +35,8 @@ export const createCatalogSlice: SessionSlice<
   let projectOrderVersion = 0
   let projectLoadVersion = 0
   let latestProjectLoad: Promise<void> | null = null
+  let worktreeDiscovery: Promise<void> | null = null
+  const worktreeSessionLoads = new Map<string, Promise<void>>()
   let chatMembershipVersion = 0
   let chatLoadVersion = 0
   const refreshRequests = new Map<string, object>()
@@ -71,6 +81,54 @@ export const createCatalogSlice: SessionSlice<
       })()
       latestProjectLoad = operation
       return waitForLatestProjectLoad(operation)
+    },
+
+    syncProjectWorktrees: () => {
+      if (worktreeDiscovery) return worktreeDiscovery
+      const membership = projectMembershipVersion
+      const operation = (async () => {
+        const discoveries = await api.discoverOpenedWorktrees()
+        if (membership !== projectMembershipVersion) return
+        set((state) => ({
+          projects: mergeWorktreeDiscoveries(state.projects, discoveries)
+        }))
+      })()
+      worktreeDiscovery = operation.finally(() => {
+        worktreeDiscovery = null
+      })
+      return worktreeDiscovery
+    },
+
+    loadWorktreeSessions: (cwd) => {
+      const project = get().projects.find((item) =>
+        item.worktrees?.some((worktree) => worktree.cwd === cwd)
+      )
+      const worktree = project?.worktrees?.find((item) => item.cwd === cwd)
+      if (!project || worktree?.sessionsLoaded !== false) return Promise.resolve()
+      const pending = worktreeSessionLoads.get(cwd)
+      if (pending) return pending
+      const membership = projectMembershipVersion
+      const operation = (async () => {
+        const sessions = await api.listWorktreeSessions(project.cwd, cwd)
+        if (membership !== projectMembershipVersion) return
+        set((state) => ({
+          projects: state.projects.map((item) => {
+            if (item.cwd !== project.cwd || !item.worktrees?.some((entry) => entry.cwd === cwd)) {
+              return item
+            }
+            const worktrees = item.worktrees.map((entry) => entry.cwd === cwd
+              ? { ...entry, sessions, sessionsLoaded: true }
+              : entry
+            )
+            return { ...item, worktrees, sessions: worktrees.flatMap((entry) => entry.sessions) }
+          })
+        }))
+      })()
+      const tracked = operation.finally(() => {
+        worktreeSessionLoads.delete(cwd)
+      })
+      worktreeSessionLoads.set(cwd, tracked)
+      return tracked
     },
 
     loadChats: async () => {

@@ -116,13 +116,6 @@ export default function App() {
     void loadSettings()
   }, [initializeProjectWorkspaces, loadChats, loadSettings])
 
-  // A failed restore keeps retrying on focus until it succeeds; the store no-ops afterwards.
-  useEffect(() => {
-    const retry = () => void initializeProjectWorkspaces()
-    window.addEventListener('focus', retry)
-    return () => window.removeEventListener('focus', retry)
-  }, [initializeProjectWorkspaces])
-
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
   const projectHome = Boolean(currentProjectCwd && !activeSessionId)
   const restoreError = !currentProjectCwd && !activeTab ? workspaceRestoreError : null

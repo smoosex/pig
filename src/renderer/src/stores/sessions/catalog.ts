@@ -1,4 +1,4 @@
-import type { ProjectGroup, SessionMeta } from '../../ipc/api'
+import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta } from '../../ipc/api'
 import type { OpenTab, SessionsStore } from './types'
 
 export function mapGroupSessions(
@@ -15,6 +15,40 @@ export function mapGroupSessions(
       }))
     })
   }
+}
+
+export function mergeWorktreeDiscoveries(
+  projects: ProjectGroup[],
+  discoveries: ProjectWorktreeDiscovery[]
+): ProjectGroup[] {
+  const byCwd = new Map(discoveries.map((discovery) => [discovery.cwd, discovery]))
+  return projects.map((project) => {
+    const discovery = byCwd.get(project.cwd)
+    if (!discovery) return project
+    const hasGit = discovery.hasGit ?? project.hasGit
+    if (!discovery.worktrees) return { ...project, hasGit, gitError: discovery.gitError }
+    const existingByCwd = new Map(
+      (project.worktrees ?? []).map((worktree) => [worktree.cwd, worktree])
+    )
+    const worktrees = discovery.worktrees.map((worktree) => {
+      const existing = existingByCwd.get(worktree.cwd)
+      const primarySessions = !project.worktrees && worktree.cwd === project.cwd
+        ? project.sessions
+        : []
+      return {
+        ...worktree,
+        sessions: existing?.sessions ?? primarySessions,
+        sessionsLoaded: existing?.sessionsLoaded ?? Boolean(existing || !project.worktrees)
+      }
+    })
+    return {
+      ...project,
+      hasGit,
+      worktrees,
+      sessions: worktrees.flatMap((worktree) => worktree.sessions),
+      gitError: discovery.gitError
+    }
+  })
 }
 
 export function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string): ProjectGroup[] {

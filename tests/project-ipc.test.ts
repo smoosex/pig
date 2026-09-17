@@ -8,6 +8,8 @@ async function runFixture(): Promise<void> {
   const handlers = new Map<string, (...args: any[]) => unknown>()
   const discoveryError = new Error('cannot discover worktrees')
   let closeCalls = 0
+  let discoveryCalls = 0
+  let sessionListCalls = 0
   let removeWorkspaceCalls = 0
   let removeProjectCalls = 0
 
@@ -35,8 +37,16 @@ async function runFixture(): Promise<void> {
     canonicalProject: async (cwd: string) => cwd
   }))
   mock.module(modulePath('../src/main/project-worktrees.ts'), () => ({
+    discoverOpenedWorktrees: async () => {
+      discoveryCalls++
+      return [{ cwd: '/project', hasGit: true, worktrees: [] }]
+    },
     loadOpenedWorktreeProjects: async () => [],
     loadProjectForCwd: async () => null,
+    loadWorktreeSessions: async (projectCwd: string, cwd: string) => {
+      sessionListCalls++
+      return [{ projectCwd, cwd }]
+    },
     loadWorktreeProject: async () => null,
     requireOpenedProject: async () => '/project',
     worktrees: {
@@ -63,9 +73,19 @@ async function runFixture(): Promise<void> {
 
   const { registerProjectIpc } = await import('../src/main/ipc/projects')
   registerProjectIpc()
+  const discover = handlers.get('project:discover-opened-worktrees')
+  const listWorktreeSessions = handlers.get('project:list-worktree-sessions')
   const unpin = handlers.get('session:unpin-project')
+  assert.ok(discover)
+  assert.ok(listWorktreeSessions)
   assert.ok(unpin)
 
+  assert.deepEqual(await discover({}), [{ cwd: '/project', hasGit: true, worktrees: [] }])
+  assert.equal(discoveryCalls, 1)
+  assert.deepEqual(await listWorktreeSessions({}, '/project', '/worktree'), [{
+    projectCwd: '/project', cwd: '/worktree'
+  }])
+  assert.equal(sessionListCalls, 1)
   await assert.rejects(Promise.resolve().then(() => unpin({}, '/project')), (error) => error === discoveryError)
   assert.equal(closeCalls, 0)
   assert.equal(removeWorkspaceCalls, 0)

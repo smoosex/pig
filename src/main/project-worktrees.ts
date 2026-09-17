@@ -4,7 +4,7 @@ import { listOpenedCwds } from './opened-projects'
 import { pigPath } from './pig-dir'
 import { listProject } from './pi/session-loader'
 import { isGitProject, WorktreeService } from './worktrees'
-import type { ProjectGroup, WorktreeGroup } from '../shared/api'
+import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta, WorktreeGroup } from '../shared/api'
 
 export type { WorktreeGroup } from '../shared/api'
 
@@ -50,6 +50,33 @@ export async function loadWorktreeProject(cwd: string): Promise<WorktreeProject>
 
 export async function loadOpenedWorktreeProjects(): Promise<WorktreeProject[]> {
   return Promise.all((await listOpenedCwds()).map(loadWorktreeProject))
+}
+
+export async function discoverOpenedWorktrees(): Promise<ProjectWorktreeDiscovery[]> {
+  return Promise.all((await listOpenedCwds()).map(async (cwd) => {
+    let hasGit: boolean | null = null
+    try {
+      hasGit = await isGitProject(cwd)
+      return { cwd, hasGit, worktrees: await worktrees.discover(cwd, hasGit) }
+    } catch (error) {
+      return {
+        cwd,
+        hasGit,
+        worktrees: null,
+        gitError: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }))
+}
+
+export async function loadWorktreeSessions(projectCwd: string, cwd: string): Promise<SessionMeta[]> {
+  const project = await requireOpenedProject(projectCwd)
+  const target = resolve(cwd)
+  const topology = await worktrees.discover(project)
+  if (!topology.some((worktree) => worktree.cwd === target)) {
+    throw new Error('Worktree 不属于已打开项目')
+  }
+  return (await listProject(target))?.sessions ?? []
 }
 
 export async function loadProjectForCwd(cwd: string): Promise<ProjectGroup | null> {

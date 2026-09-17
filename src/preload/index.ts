@@ -4,6 +4,9 @@ import type { SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../sha
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
   listProjects: () => ipcRenderer.invoke('session:list-projects'),
+  discoverOpenedWorktrees: () => ipcRenderer.invoke('project:discover-opened-worktrees'),
+  listWorktreeSessions: (projectCwd: string, cwd: string) =>
+    ipcRenderer.invoke('project:list-worktree-sessions', projectCwd, cwd),
   listProject: (cwd: string) => ipcRenderer.invoke('session:list-project', cwd),
   listChats: () => ipcRenderer.invoke('session:list-chats'),
   isChatCwd: (cwd: string) => ipcRenderer.invoke('session:is-chat-cwd', cwd),

@@ -33,6 +33,17 @@ export interface WorktreeGroup {
   naming?: 'pending' | 'naming' | 'failed'
   namingError?: string
   sessions: SessionMeta[]
+  /** False only for a worktree found by topology discovery whose session directory has not been read. */
+  sessionsLoaded?: boolean
+}
+
+export type WorktreeTopology = Omit<WorktreeGroup, 'sessions' | 'sessionsLoaded'>
+
+export interface ProjectWorktreeDiscovery {
+  cwd: string
+  hasGit: boolean | null
+  worktrees: WorktreeTopology[] | null
+  gitError?: string
 }
 
 export interface WorktreeCreateInfo {
@@ -287,6 +298,8 @@ export interface AppSettings extends ThemePrefs {
 
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
+  discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
+  listWorktreeSessions: (projectCwd: string, cwd: string) => Promise<SessionMeta[]>
   listProject: (cwd: string) => Promise<ProjectGroup | null>
   listChats: () => Promise<ProjectGroup[]>
   isChatCwd: (cwd: string) => Promise<boolean>

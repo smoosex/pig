@@ -202,9 +202,10 @@ export class WorktreeService {
     }
   }
 
-  async discover(projectCwd: string): Promise<GitWorktree[]> {
+  async discover(projectCwd: string, knownHasGit?: boolean): Promise<GitWorktree[]> {
     const cwd = resolve(projectCwd)
-    if (!(await isGitProject(cwd))) {
+    const hasGit = knownHasGit ?? await isGitProject(cwd)
+    if (!hasGit) {
       return [{ cwd, branch: basename(cwd), isPrimary: true, locked: false, missing: false, managed: false }]
     }
     const items = await repositoryWorktrees(cwd)

@@ -17,7 +17,7 @@ export function useProjectList() {
   const reorderProjects = useSessionsStore((s) => s.reorderProjects)
   const isReorderingProjects = useSessionsStore((s) => s.isReorderingProjects)
   const refreshProject = useSessionsStore((s) => s.refreshProject)
-  const loadProjects = useSessionsStore((s) => s.loadProjects)
+  const syncProjectWorktrees = useSessionsStore((s) => s.syncProjectWorktrees)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const clickGuard = useRef(false)
@@ -29,8 +29,18 @@ export function useProjectList() {
 
   useEffect(() => {
     let disposed = false
-    const refresh = (cwd?: string) => {
-      void (cwd ? refreshProject(cwd) : loadProjects()).then(
+    const refresh = (cwd: string) => {
+      void refreshProject(cwd).then(
+        () => {
+          if (!disposed) setSyncError(null)
+        },
+        (error: unknown) => {
+          if (!disposed) setSyncError(errorMessage(error))
+        }
+      )
+    }
+    const sync = () => {
+      void syncProjectWorktrees().then(
         () => {
           if (!disposed) setSyncError(null)
         },
@@ -40,15 +50,14 @@ export function useProjectList() {
       )
     }
     const unsubscribe = api.onProjectsChanged((cwd) => refresh(cwd))
-    const onFocus = () => refresh()
-    window.addEventListener('focus', onFocus)
-    refresh()
+    window.addEventListener('focus', sync)
+    sync()
     return () => {
       disposed = true
       unsubscribe()
-      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('focus', sync)
     }
-  }, [refreshProject, loadProjects])
+  }, [refreshProject, syncProjectWorktrees])
 
   const clearDrag = () => {
     setActiveId(null)
