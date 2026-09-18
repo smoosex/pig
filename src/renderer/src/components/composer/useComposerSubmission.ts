@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JSONContent } from '@tiptap/core'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior } from '../../ipc/api'
-import { useSessionsStore } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
 import { exportPathArg } from './commands'
 import { composerUserMessage } from './document'
 import type { useComposerEditor } from './useComposerEditor'
@@ -94,7 +94,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       exporting.current.add(target)
       try {
         const result = await api.exportSession(target, exportPathArg(trimmed))
-        if (result && useSessionsStore.getState().activeSessionId === target && document.getDraft() === serialized) {
+        if (result && selectActiveSessionId(useSessionsStore.getState()) === target && document.getDraft() === serialized) {
           document.clear()
         }
       } catch (error) {

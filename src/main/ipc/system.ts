@@ -1,6 +1,10 @@
 import { dialog, ipcMain } from 'electron'
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from '../sidebar-prefs'
-import { loadOpenProjectSessions, selectOpenProjectWorkspace } from '../open-project-sessions'
+import {
+  loadOpenProjectSessions,
+  saveOpenProjectChangesTab,
+  selectOpenProjectWorkspace
+} from '../open-project-sessions'
 import { windowForEvent } from './window'
 
 export function registerSystemIpc(): void {
@@ -11,7 +15,13 @@ export function registerSystemIpc(): void {
   ipcMain.handle('system:get-open-project-sessions', async () => loadOpenProjectSessions())
   ipcMain.handle(
     'system:select-open-project-workspace',
-    async (_event, cwd: string, sessionId: string | null) => selectOpenProjectWorkspace(cwd, sessionId)
+    async (_event, cwd: string, sessionId: string | null, activeTabId: string | null) =>
+      selectOpenProjectWorkspace(cwd, sessionId, activeTabId)
+  )
+  ipcMain.handle(
+    'system:save-open-project-changes-tab',
+    async (_event, cwd: string, open: boolean, activeTabId: string | null) =>
+      saveOpenProjectChangesTab(cwd, open, activeTabId)
   )
   ipcMain.handle('system:pick-directory', async (event) => {
     const win = windowForEvent(event)

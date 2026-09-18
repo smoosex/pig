@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { FolderPlus, MessageSquarePlus, PanelLeft, RefreshCw } from 'lucide-react'
-import { useSessionsStore } from './stores/sessions'
+import { FolderPlus, MessageSquarePlus, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
+import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
+import { useDiffStore } from './stores/diff'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionWindows } from './hooks/useSessionWindows'
 import { Button } from './components/ui/button'
@@ -10,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { ChatView } from './components/ChatView'
+import { ChangesView } from './components/diff/ChangesView'
+import { ReviewPanel } from './components/diff/ReviewPanel'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
@@ -54,12 +57,14 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
           size="icon-sm"
           className="no-drag translate-y-px"
           onClick={onClick}
-          aria-label="侧边栏"
+          aria-label="左侧边栏"
         >
           <PanelLeft />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>侧边栏 <Kbd className="bg-transparent!">⌘ E</Kbd></TooltipContent>
+      <TooltipContent>
+        左·侧边栏 <Kbd className="bg-transparent!">⌘ E</Kbd>
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -71,7 +76,8 @@ export default function App() {
   const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionsStore((s) => selectActiveSessionId(s))
+  const activeTabId = useSessionsStore((s) => s.activeTabId)
   const projects = useSessionsStore((s) => s.projects)
   const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
   const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
@@ -79,9 +85,10 @@ export default function App() {
     currentProjectCwd ? (s.draftSessionByCwd[currentProjectCwd] ?? null) : null
   )
   const activeTab = useSessionsStore((s) =>
-    s.openTabs.find((tab) => tab.sessionId === s.activeSessionId)
+    s.openTabs.find((tab) => tab.id === s.activeTabId)
   )
   const loadSettings = useSettingsStore((s) => s.load)
+  const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   useEventBridge()
@@ -95,6 +102,13 @@ export default function App() {
         if (event.key.toLowerCase() === 'a') {
           event.preventDefault()
           if (!event.repeat) void openProject()
+        } else if (event.key.toLowerCase() === 'e') {
+          event.preventDefault()
+          // The right column only exists inside a project, so outside one the key does nothing.
+          if (!event.repeat && currentProjectCwd) {
+            const diff = useDiffStore.getState()
+            diff.setReviewOpen(!diff.reviewOpen)
+          }
         }
         return
       }
@@ -108,16 +122,20 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [openProject])
+  }, [currentProjectCwd, openProject])
 
   useEffect(() => {
     void initializeProjectWorkspaces()
     void loadChats()
     void loadSettings()
-  }, [initializeProjectWorkspaces, loadChats, loadSettings])
+    void loadReviewPrefs()
+  }, [initializeProjectWorkspaces, loadChats, loadSettings, loadReviewPrefs])
 
+  const diffTab = activeTab?.kind === 'diff' ? activeTab : null
+  const reviewOpen = useDiffStore((s) => s.reviewOpen)
+  const setReviewOpen = useDiffStore((s) => s.setReviewOpen)
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
-  const projectHome = Boolean(currentProjectCwd && !activeSessionId)
+  const projectHome = Boolean(currentProjectCwd && !activeTabId)
   const restoreError = !currentProjectCwd && !activeTab ? workspaceRestoreError : null
   const currentProject = currentProjectCwd
     ? projects.find((project) =>
@@ -151,18 +169,41 @@ export default function App() {
           <div className={cn('flex h-full shrink-0 items-center pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />}
           </div>
+          <div className="flex-1" />
+          {currentProjectCwd && !settingsOpen ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn('no-drag mr-3 translate-y-px', reviewOpen && 'bg-muted text-foreground')}
+                  aria-label="右侧边栏"
+                  aria-pressed={reviewOpen}
+                  onClick={() => setReviewOpen(!reviewOpen)}
+                >
+                  <PanelRight />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                右·侧边栏 <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
         <div className="flex min-h-0 flex-1">
           <Sidebar hidden={!sidebarOpen || settingsOpen} onOpenSettings={() => setSettingsOpen(true)} />
           {settingsOpen ? (
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
-            <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
+            <>
+              <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
-                  {currentProjectCwd || activeSessionId ? <TabBar /> : <div className="flex-1" />}
+                  {currentProjectCwd || activeTabId ? <TabBar /> : <div className="flex-1" />}
                 </div>
-                {sessionReady || projectHome ? (
+                {diffTab ? (
+                  <ChangesView cwd={diffTab.cwd} />
+                ) : sessionReady || projectHome ? (
                   <>
                     {sessionReady ? <ChatView /> : <SessionGreeting />}
                     <Composer
@@ -211,6 +252,8 @@ export default function App() {
                 )}
               </div>
             </div>
+            {currentProjectCwd ? <ReviewPanel cwd={currentProjectCwd} hidden={!reviewOpen} /> : null}
+            </>
           )}
         </div>
       </div>

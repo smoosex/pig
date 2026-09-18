@@ -191,8 +191,8 @@ async function runFixture(name: string): Promise<void> {
     elapsedByTurnId: {}, streamElapsedMs: null, isStreaming: false
   })
   let store = {
-    activeSessionId: 's1',
-    openTabs: [{ sessionId: 's1' }, { sessionId: 's2' }],
+    activeTabId: 's1',
+    openTabs: [{ id: 's1', kind: 'project' }, { id: 's2', kind: 'project' }],
     runtime: { s1: runtime('v1', 24), s2: runtime('v2', 12) },
     loadTurnProcess: async () => {},
     loadOlderTurns: async (_sessionId: string, target?: number) => {
@@ -217,6 +217,7 @@ async function runFixture(name: string): Promise<void> {
   }
   const heights = new Map<string, number>()
   mock.module('../src/renderer/src/stores/sessions', () => ({
+    selectActiveSessionId: (state: typeof store) => state.activeTabId,
     useSessionsStore: Object.assign(
       (select: (state: typeof store) => unknown) =>
         useSyncExternalStore(
@@ -356,7 +357,7 @@ async function runFixture(name: string): Promise<void> {
     await render()
   }
   const switchTo = async (session: 's1' | 's2', flush = true) => {
-    store = { ...store, activeSessionId: session }
+    store = { ...store, activeTabId: session }
     notify()
     await render(flush)
   }

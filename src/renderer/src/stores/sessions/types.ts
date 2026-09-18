@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type {
+  DiffScope,
   DisplayTurn,
   DisplayTurnsResult,
   FollowUpAction,
@@ -57,26 +58,35 @@ export interface RuntimeState extends SessionControls {
   queuedEditText: string | null
 }
 
-export type TabKind = 'project' | 'chat'
+export type TabKind = 'project' | 'chat' | 'diff'
 export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
 
 export interface OpenTab {
-  sessionId: string
+  /** The tab's own identity: a session id, or a worktree's `diff:<cwd>`. */
+  id: string
   cwd: string
   title: string
   kind: TabKind
   loadState: TabLoadState
   loadError?: string
   meta?: SessionMeta
+  /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
+  diffScope?: DiffScope
 }
 
 export interface SessionsStore {
   projects: ProjectGroup[]
   chats: ProjectGroup[]
   openTabs: OpenTab[]
-  activeSessionId: string | null
+  /** Which tab the strip shows: a session tab or a diff tab. */
+  activeTabId: string | null
   currentProjectCwd: string | null
   activeSessionByCwd: Record<string, string | null>
+  /**
+   * The tab each worktree was left on, sessions and changes tabs alike: a session id cannot stand in for
+   * a changes tab, so switching worktrees has to remember the strip itself, not just the session.
+   */
+  activeTabByCwd: Record<string, string>
   draftSessionByCwd: Record<string, string | undefined>
   draftSessionErrorByCwd: Record<string, string | undefined>
   workspaceRestoreReady: boolean
@@ -123,8 +133,16 @@ export interface SessionsStore {
 
   initializeProjectWorkspaces: () => Promise<void>
   selectProjectCwd: (cwd: string) => Promise<void>
-  activateTab: (sessionId: string) => Promise<void>
-  openExisting: (meta: SessionMeta, kind?: TabKind) => Promise<void>
+  activateTab: (tabId: string) => Promise<void>
+  openExisting: (meta: SessionMeta, kind?: 'project' | 'chat') => Promise<void>
+  /**
+   * Brings a worktree's changes tab to the front, opening it when the strip does not hold it. A `path`
+   * asks the tab to reveal that file, and a `scope` switches it to that group — which is how the
+   * review column's rows point at a file and at the group the row was read under.
+   */
+  openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
+  /** The toolbar's scope control: one changes tab, its title and its contents following the choice. */
+  setChangesScope: (cwd: string, scope: DiffScope) => void
   acquireProjectDraft: (cwd: string) => void
   releaseProjectDraft: (cwd: string) => void
   promoteProjectDraft: (cwd: string, sessionId: string) => Promise<boolean>
@@ -135,9 +153,9 @@ export interface SessionsStore {
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>
-  closeTab: (sessionId: string) => void
-  setActive: (sessionId: string) => void
-  renameTab: (sessionId: string, title: string) => void
+  closeTab: (tabId: string) => void
+  setActive: (tabId: string) => void
+  renameTab: (tabId: string, title: string) => void
   previewSessionTitle: (sessionId: string, title: string) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void

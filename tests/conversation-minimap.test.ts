@@ -55,6 +55,7 @@ async function runFixture(name: string): Promise<void> {
     loadOlderTurns: async (_sessionId: string, _target?: number) => {}
   }
   mock.module('../src/renderer/src/stores/sessions', () => ({
+    selectActiveSessionId: () => null,
     useSessionsStore: Object.assign(
       (select: (state: typeof store) => unknown) => select(store),
       { getState: () => storeState }

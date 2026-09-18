@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { Turn } from '../../chat/turns'
-import { useSessionsStore } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
 
+/** Live turns work out their elapsed time from the session that is actually streaming. */
 export function useWorkedMs(turn: Turn): number {
+  const sessionId = useSessionsStore(selectActiveSessionId)
   const streamStartedAt = useSessionsStore((s) =>
-    turn.streaming && s.activeSessionId ? (s.runtime[s.activeSessionId]?.streamStartedAt ?? null) : null
+    turn.streaming && sessionId ? (s.runtime[sessionId]?.streamStartedAt ?? null) : null
   )
   const streamElapsedMs = useSessionsStore((s) =>
-    !turn.streaming && turn.workedMs == null && turn.id?.startsWith('live:') && s.activeSessionId
-      ? (s.runtime[s.activeSessionId]?.streamElapsedMs ?? null)
+    !turn.streaming && turn.workedMs == null && turn.id?.startsWith('live:') && sessionId
+      ? (s.runtime[sessionId]?.streamElapsedMs ?? null)
       : null
   )
   const [now, setNow] = useState(() => Date.now())

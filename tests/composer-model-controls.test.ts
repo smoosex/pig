@@ -25,7 +25,8 @@ async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  Object.assign(window, { api: {} })
+  // The store persists tab selection through the bridge, so the stub has to answer that call.
+  Object.assign(window, { api: { selectOpenProjectWorkspace: async () => {} } })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
@@ -39,20 +40,20 @@ async function fixture(scenario: string): Promise<void> {
 
   useSessionsStore.setState({
     openTabs: [
-      { sessionId: 'a', cwd: '/project', title: 'A' },
-      { sessionId: 'b', cwd: '/project', title: 'B' }
+      { id: 'a', cwd: '/project', title: 'A', kind: 'project', loadState: 'ready' },
+      { id: 'b', cwd: '/project', title: 'B', kind: 'project', loadState: 'ready' }
     ] as never,
     runtime: {
       a: { ...emptyRuntime(), model: model('old') },
       b: { ...emptyRuntime(), model: model('other') }
     },
-    activeSessionId: 'a'
+    activeTabId: 'a'
   })
 
   let actions!: ReturnType<typeof useModelControls>
   const shown: Array<{ sessionId: string | null; model: string | null }> = []
   function Probe() {
-    const sessionId = useSessionsStore((s) => s.activeSessionId)
+    const sessionId = useSessionsStore((s) => s.activeTabId)
     const current = useSessionsStore((s) => (sessionId ? s.runtime[sessionId]?.model ?? null : null))
     actions = useModelControls(sessionId)
     shown.push({ sessionId, model: current?.id ?? null })

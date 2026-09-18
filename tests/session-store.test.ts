@@ -69,10 +69,25 @@ async function runFixture(name: string): Promise<void> {
     getTurnWindow: async (): Promise<DisplayTurnsResult> => history('older'),
     getTokenStats: async () => { tokenCalls++; return tokenStats(7) },
     getOpenProjectSessions: async () => persistedOpenProjectSessions,
-    selectOpenProjectWorkspace: async (cwd: string, sessionId: string | null) => {
+    selectOpenProjectWorkspace: async (
+      cwd: string,
+      sessionId: string | null,
+      activeTabId: string | null
+    ) => {
       persistedOpenProjectSessions.currentCwd = cwd
       const workspace = persistedOpenProjectSessions.workspaces.find((item) => item.cwd === cwd)
-      if (workspace) workspace.activeSessionId = sessionId
+      if (workspace) {
+        workspace.activeSessionId = sessionId
+        workspace.activeTabId = activeTabId ?? sessionId
+      }
+    },
+    // Main writes the strip's selection here too, which is how a changes tab is recorded at all.
+    saveOpenProjectChangesTab: async (cwd: string, open: boolean, activeTabId: string | null) => {
+      const workspace = persistedOpenProjectSessions.workspaces.find((item) => item.cwd === cwd)
+      if (workspace) {
+        workspace.changesOpen = open
+        workspace.activeTabId = activeTabId
+      }
     },
     listChats: async (): Promise<ProjectGroup[]> => [],
     listProjects: async (): Promise<ProjectGroup[]> => [],
@@ -110,9 +125,9 @@ async function runFixture(name: string): Promise<void> {
     persistedOpenProjectSessions = {
       currentCwd: '/project',
       workspaces: [
-        { cwd: '/project', sessionIds: ['first', 'missing', 'second'], activeSessionId: 'second' },
-        { cwd: '/other', sessionIds: ['other'], activeSessionId: 'other' },
-        { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable' }
+        { cwd: '/project', sessionIds: ['first', 'missing', 'second'], activeSessionId: 'second', changesOpen: false, activeTabId: 'second' },
+        { cwd: '/other', sessionIds: ['other'], activeSessionId: 'other', changesOpen: false, activeTabId: 'other' },
+        { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable', changesOpen: false, activeTabId: 'unavailable' }
       ]
     }
     api.openSession = async (path: string) => {
@@ -139,9 +154,9 @@ async function runFixture(name: string): Promise<void> {
       'startup must not erase entries missing from one scan'
     )
     assert.equal(state().currentProjectCwd, '/project')
-    assert.equal(state().activeSessionId, 'second')
-    assert.equal(state().openTabs.find((tab) => tab.sessionId === 'first')?.loadState, 'cold')
-    assert.equal(state().openTabs.find((tab) => tab.sessionId === 'first')?.title, '空会话')
+    assert.equal(state().activeTabId, 'second')
+    assert.equal(state().openTabs.find((tab) => tab.id === 'first')?.loadState, 'cold')
+    assert.equal(state().openTabs.find((tab) => tab.id === 'first')?.title, '空会话')
     assert.ok(state().runtime.second)
     assert.equal(state().runtime.first, undefined)
     assert.equal(state().runtime.other, undefined)
@@ -149,7 +164,7 @@ async function runFixture(name: string): Promise<void> {
     await state().selectProjectCwd('/other')
     assert.equal(openCalls, 2)
     assert.equal(state().currentProjectCwd, '/other')
-    assert.equal(state().activeSessionId, 'other')
+    assert.equal(state().activeTabId, 'other')
     assert.ok(state().runtime.other)
     return
   }
@@ -172,7 +187,7 @@ async function runFixture(name: string): Promise<void> {
     }
     api.getOpenProjectSessions = async () => ({
       currentCwd: '/project',
-      workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first' }]
+      workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first', changesOpen: false, activeTabId: 'first' }]
     })
     api.openSession = async () => ({ sessionId: 'first', cwd: '/project', display: history('first') })
 
@@ -186,7 +201,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().workspaceRestoreReady, true)
     assert.equal(state().workspaceRestoreError, null)
     assert.equal(state().currentProjectCwd, '/project')
-    assert.equal(state().activeSessionId, 'first')
+    assert.equal(state().activeTabId, 'first')
     assert.equal(state().openTabs[0]?.loadState, 'ready')
     return
   }
@@ -260,6 +275,92 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  // A worktree the reader has not visited yet has no memory of its own: the restore has to seed it from
+  // what each workspace persisted, or the first switch to it lands on nothing.
+  if (name === 'worktree-restore-tabs') {
+    const catalog: ProjectGroup[] = [{
+      cwd: '/project',
+      name: 'project',
+      sessions: [],
+      worktrees: [
+        { cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [] },
+        { cwd: '/other', branch: 'other', isPrimary: false, locked: false, missing: false, managed: true, sessions: [] }
+      ]
+    }]
+    api.listProjects = async () => catalog
+    persistedOpenProjectSessions = {
+      currentCwd: '/project',
+      workspaces: [
+        { cwd: '/project', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/project' },
+        { cwd: '/other', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/other' }
+      ]
+    }
+
+    await state().initializeProjectWorkspaces()
+    assert.equal(state().activeTabId, 'diff:/project', 'the restored worktree opens the tab it was left on')
+    assert.equal(
+      state().activeTabByCwd['/other'],
+      'diff:/other',
+      'and every other worktree carries its own restored tab'
+    )
+
+    await state().selectProjectCwd('/other')
+    assert.equal(state().activeTabId, 'diff:/other', 'switching to a worktree never visited lands on its tab')
+    return
+  }
+
+  // Switching worktrees and coming back has to return to the tab that worktree was left on. A changes tab
+  // has no session behind it, so a session id cannot stand in for it: the strip's selection is remembered
+  // per worktree, and it is that selection — not the session — that reaches the persisted workspace.
+  if (name === 'worktree-tab-remembered') {
+    const changesTab = 'diff:/other'
+    persistedOpenProjectSessions = {
+      currentCwd: '/other',
+      workspaces: [{
+        cwd: '/other',
+        sessionIds: ['other'],
+        activeSessionId: 'other',
+        changesOpen: true,
+        activeTabId: 'other'
+      }]
+    }
+    store.setState({
+      projects: [],
+      openTabs: [
+        { id: 'other', cwd: '/other', title: 'Other', kind: 'project', loadState: 'ready' },
+        { id: changesTab, cwd: '/other', title: '全部变更', kind: 'diff', loadState: 'ready' }
+      ],
+      activeSessionByCwd: { '/other': 'other' },
+      activeTabByCwd: {},
+      currentProjectCwd: '/other',
+      activeTabId: 'other'
+    })
+
+    await state().activateTab(changesTab)
+    assert.equal(state().activeTabId, changesTab)
+    assert.equal(
+      persistedOpenProjectSessions.workspaces[0]?.activeTabId,
+      changesTab,
+      'reading the changes tab is what the workspace records'
+    )
+
+    await state().selectProjectCwd('/project')
+    await state().selectProjectCwd('/other')
+    assert.equal(state().activeTabId, changesTab, 'the worktree comes back to the tab it was left on')
+    assert.equal(
+      persistedOpenProjectSessions.workspaces[0]?.activeTabId,
+      changesTab,
+      'and switching back does not overwrite that with the session'
+    )
+    assert.equal(state().activeSessionByCwd['/other'], 'other', 'the active session is still remembered')
+
+    // Closing it hands the strip back to the session, and the memory follows the strip.
+    state().closeTab(changesTab)
+    assert.equal(state().activeTabId, 'other')
+    assert.equal(state().activeTabByCwd['/other'], 'other')
+    return
+  }
+
   if (name === 'project-draft-lifecycle') {
     state().acquireProjectDraft(meta.cwd)
     state().acquireProjectDraft(meta.cwd)
@@ -268,7 +369,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(draftId, createdIds[0], 'main receives the id the home already uses')
     await Bun.sleep(0)
     assert.equal(state().draftSessionByCwd[meta.cwd], draftId)
-    assert.equal(state().activeSessionId, null)
+    assert.equal(state().activeTabId, null)
     assert.equal(state().openTabs.length, 0)
     assert.equal(state().runtime[draftId]?.controlsRevision, 1)
 
@@ -287,8 +388,8 @@ async function runFixture(name: string): Promise<void> {
     await Bun.sleep(0)
     assert.equal(await state().promoteProjectDraft(meta.cwd, nextDraftId), true)
     assert.equal(promoteCalls, 1)
-    assert.equal(state().activeSessionId, nextDraftId)
-    assert.equal(state().openTabs[0]?.sessionId, nextDraftId)
+    assert.equal(state().activeTabId, nextDraftId)
+    assert.equal(state().openTabs[0]?.id, nextDraftId)
     assert.equal(state().openTabs[0]?.title, '空会话')
     state().previewSessionTitle(nextDraftId, 'First prompt')
     assert.equal(state().openTabs[0]?.title, 'First prompt')
@@ -337,8 +438,8 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().openTabs.length, 0)
     gate.resolve()
     assert.equal(await promoting, true)
-    assert.equal(state().activeSessionId, draftId)
-    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    assert.equal(state().activeTabId, draftId)
+    assert.equal(state().openTabs[0]?.id, draftId)
     state().releaseProjectDraft(meta.cwd)
     await Bun.sleep(0)
     assert.equal(discardCalls, 0, 'a promote during the round trip must not discard the session')
@@ -412,8 +513,8 @@ async function runFixture(name: string): Promise<void> {
     state().releaseProjectDraft(meta.cwd)
     gate.resolve()
     assert.equal(await promoting, true, 'the create must not sweep the session a promote is waiting for')
-    assert.equal(state().activeSessionId, draftId)
-    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    assert.equal(state().activeTabId, draftId)
+    assert.equal(state().openTabs[0]?.id, draftId)
     assert.equal(discardCalls, 0)
     assert.ok(state().runtime[draftId])
     return
@@ -457,8 +558,8 @@ async function runFixture(name: string): Promise<void> {
     api.promoteSession = async () => { promoteCalls++ }
     assert.equal(await state().promoteProjectDraft(meta.cwd, draftId), true)
     assert.equal(createdIds.at(-1), draftId, 'the retry creates the session main never had')
-    assert.equal(state().activeSessionId, draftId)
-    assert.equal(state().openTabs[0]?.sessionId, draftId)
+    assert.equal(state().activeTabId, draftId)
+    assert.equal(state().openTabs[0]?.id, draftId)
     assert.equal(state().draftSessionErrorByCwd[meta.cwd], undefined)
     return
   }
@@ -472,7 +573,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(promoteCalls, 1)
     assert.equal(openCalls, 0)
     assert.equal(state().draftSessionByCwd[meta.cwd], undefined)
-    assert.equal(state().activeSessionId, draftId)
+    assert.equal(state().activeTabId, draftId)
     assert.equal(state().openTabs[0]?.meta, materialized)
     assert.equal(state().openTabs[0]?.title, '空会话')
     assert.ok(state().runtime[draftId])
@@ -705,7 +806,7 @@ async function runFixture(name: string): Promise<void> {
     await Promise.all([first, second])
     assert.equal(openCalls, 1)
     assert.equal(state().openTabs.length, 1)
-    assert.equal(state().activeSessionId, meta.id)
+    assert.equal(state().activeTabId, meta.id)
   } else if (name === 'close-reopen') {
     const closed = deferred<void>()
     api.closeSession = () => closed.promise
@@ -933,7 +1034,7 @@ async function runFixture(name: string): Promise<void> {
     state().setActive(meta.id)
     response.resolve({ sessionId: 'other', cwd: '/other', display: history('other') })
     await opening
-    assert.equal(state().activeSessionId, meta.id)
+    assert.equal(state().activeTabId, meta.id)
     assert.equal(state().openTabs.length, 2)
   } else if (name === 'deleted-chat') {
     const chat = { cwd: meta.cwd, name: 'chat', sessions: [meta] }
@@ -951,6 +1052,17 @@ async function runFixture(name: string): Promise<void> {
     await Promise.all([loading, refreshing])
     assert.deepEqual(state().chats, [])
     assert.equal(runtime(), undefined)
+  } else if (name === 'chat-session-delete-keeps-diff') {
+    const { useDiffStore } = await import('../src/renderer/src/stores/diff')
+    const forgotten: string[] = []
+    useDiffStore.setState({ forgetWorktree: (cwd) => { forgotten.push(cwd) } })
+    api.deleteSession = async () => {}
+    const chatCwd = '/chat-only'
+    const chatMeta = { ...meta, cwd: chatCwd }
+    store.setState({ chats: [{ cwd: chatCwd, name: 'chat', sessions: [chatMeta] }] })
+    await state().deleteChat(chatCwd)
+    await state().deleteSession(chatMeta)
+    assert.deepEqual(forgotten, [], 'chat and session deletion never clear worktree diff state')
   } else if (name === 'project-load-order') {
     const first = deferred<ProjectGroup[]>()
     const second = deferred<ProjectGroup[]>()
@@ -975,6 +1087,8 @@ if (process.argv[2] === '--session-store-fixture') {
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
     'worktree-topology-sync': 'focus discovery preserves sessions without scanning their files',
+    'worktree-tab-remembered': 'a worktree returns to the changes tab it was left on',
+    'worktree-restore-tabs': 'a restored worktree opens the tab it was left on',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
     'project-draft-id-first': 'the home owns its session id before the create resolves',
     'project-draft-promoted-while-creating': 'a promote during the create round trip keeps the session',
@@ -1012,6 +1126,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'consecutive-prompts': 'sending before history refresh preserves completed live messages',
     'selection-order': 'a delayed open does not override a later tab selection',
     'deleted-chat': 'late directory scans do not restore a deleted chat',
+    'chat-session-delete-keeps-diff': 'deleting a chat or session does not clear worktree diff state',
     'project-load-order': 'a slow project scan cannot replace a newer list'
   }
   for (const [name, description] of Object.entries(cases)) {

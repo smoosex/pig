@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -37,6 +37,16 @@ const api: SessionApi = {
     const handler = (_event: Electron.IpcRendererEvent, cwd: string) => listener(cwd)
     ipcRenderer.on('projects:changed', handler)
     return () => ipcRenderer.off('projects:changed', handler)
+  },
+  onDiffChanged: (listener: (cwd: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, cwd: string) => listener(cwd)
+    ipcRenderer.on('diff:changed', handler)
+    return () => ipcRenderer.off('diff:changed', handler)
+  },
+  onDiffWatchError: (listener: (error: DiffWatchError) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: DiffWatchError) => listener(error)
+    ipcRenderer.on('diff:watch-error', handler)
+    return () => ipcRenderer.off('diff:watch-error', handler)
   },
   deleteSession: (sessionId: string, path: string, cwd: string) =>
     ipcRenderer.invoke('session:delete', sessionId, path, cwd),
@@ -76,11 +86,20 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:follow-up-action', sessionId, index, action),
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
+  readWorktreeDiff: (cwd: string) => ipcRenderer.invoke('diff:read-worktree', cwd),
+  readWorktreePatch: (cwd: string, scope: DiffScope) =>
+    ipcRenderer.invoke('diff:read-patch', cwd, scope),
+  readUntrackedFile: (cwd: string, path: string) =>
+    ipcRenderer.invoke('diff:read-untracked', cwd, path),
+  watchWorktreeDiff: (cwd: string) => ipcRenderer.invoke('diff:watch', cwd),
+  unwatchWorktreeDiff: (cwd: string, leaseId: string) => ipcRenderer.invoke('diff:unwatch', cwd, leaseId),
   setSidebarPrefs: (patch: unknown) =>
     ipcRenderer.invoke('system:set-sidebar-prefs', patch),
   getOpenProjectSessions: () => ipcRenderer.invoke('system:get-open-project-sessions'),
-  selectOpenProjectWorkspace: (cwd: string, sessionId: string | null) =>
-    ipcRenderer.invoke('system:select-open-project-workspace', cwd, sessionId),
+  saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) =>
+    ipcRenderer.invoke('system:save-open-project-changes-tab', cwd, open, activeTabId),
+  selectOpenProjectWorkspace: (cwd: string, sessionId: string | null, activeTabId: string | null) =>
+    ipcRenderer.invoke('system:select-open-project-workspace', cwd, sessionId, activeTabId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),

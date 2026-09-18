@@ -1,41 +1,17 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useMemo, useRef, useState } from 'react'
 import type { BashExecutionMessage } from '../../pi/types'
 import { resultText, toolStepLabel, type ToolStep } from '../../chat/turns'
 import { langFromPath, useHighlightHtml } from '../../lib/highlight'
-import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Separator } from '../ui/separator'
 import { Chevron, disclosureButton, hideScroll, VerbLabel } from './ProcessChrome'
-import { editList, hunkRows, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
+import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
+
+const EditDiffBody = lazy(() => import('../diff/EditDiffBody'))
 
 const panelCell =
   `max-h-60 overflow-auto px-3 py-2 font-mono text-xs leading-snug break-words whitespace-pre-wrap text-muted-foreground ${hideScroll}`
-
-function EditDiff({ edits }: { edits: { oldText: string; newText: string }[] }) {
-  return (
-    <div className="max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {edits.map((edit, i) => (
-        <div key={i}>
-          <div className="px-3 py-1.5 text-muted-foreground">{`// — edit ${i + 1} —`}</div>
-          {hunkRows(edit.oldText, edit.newText).map((row, j) => (
-            <div
-              key={j}
-              className={cn(
-                'min-h-5 whitespace-pre px-3',
-                row.type === 'del' && 'bg-destructive/15 text-destructive',
-                row.type === 'add' && 'bg-success/15 text-success',
-                row.type === 'ctx' && 'text-muted-foreground'
-              )}
-            >
-              {`${row.type === 'del' ? '-' : row.type === 'add' ? '+' : ' '} ${row.text}`}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
 
 function CodePanel({ path, code, notice }: { path: string; code: string; notice?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -72,7 +48,7 @@ function ToolPanel({ input, output }: { input?: string; output?: string }) {
 export function ToolRow({ step }: { step: ToolStep }) {
   const [open, setOpen] = useState(false)
   const failed = !!step.result?.isError
-  const edits = step.name === 'edit' ? editList(step.args) : []
+  const edits = useMemo(() => (step.name === 'edit' ? editList(step.args) : []), [step])
   const path = typeof step.args.path === 'string' ? step.args.path : ''
   const writeCode = step.name === 'write' && typeof step.args.content === 'string' ? step.args.content : ''
   const read = step.name === 'read' && !failed ? splitReadOutput(resultText(step.result)) : undefined
@@ -90,7 +66,9 @@ export function ToolRow({ step }: { step: ToolStep }) {
         ) : writeCode && !failed ? (
           <CodePanel path={path} code={writeCode} />
         ) : edits.length > 0 ? (
-          <EditDiff edits={edits} />
+          <Suspense fallback={<div className="px-3 py-2 text-xs text-muted-foreground">正在渲染…</div>}>
+            <EditDiffBody path={path} edits={edits} />
+          </Suspense>
         ) : (
           <ToolPanel input={toolInput(step)} output={resultText(step.result)} />
         )}

@@ -1,36 +1,41 @@
 import { useEffect, useState, type RefObject } from 'react'
-import {
-  createHighlighter,
-  createOnigurumaEngine,
-  bundledLanguages,
-  type BundledLanguage,
-  type Highlighter
-} from 'shiki'
+import { getSharedHighlighter, type DiffsHighlighter } from '@pierre/diffs'
 import { useDarkMode } from './useDarkMode'
 
-let ready: Promise<Highlighter> | undefined
+type HighlightTheme = 'github-dark' | 'github-light'
 
-// The WASM engine is several times faster than the JS regex engine on real sessions and carries its
-// own chunk, so it is only paid for once highlighting is actually wanted.
-function highlighter(): Promise<Highlighter> {
-  ready ??= import('shiki/wasm')
-    .then(({ default: wasm }) =>
-      createHighlighter({
-        engine: createOnigurumaEngine(wasm),
-        themes: ['github-dark', 'github-light'],
-        langs: ['plaintext', 'typescript', 'tsx', 'javascript', 'jsx', 'json']
-      })
-    )
-    .catch((error) => {
-      ready = undefined
-      throw error
-    })
-  return ready
+const THEMES: HighlightTheme[] = ['github-dark', 'github-light']
+const SEED_LANGS = ['text', 'typescript', 'tsx', 'javascript', 'jsx', 'json']
+const TEXT_ALIASES = new Set(['text', 'plaintext', 'txt'])
+
+/**
+ * The diff renderer and the transcript share one Shiki highlighter: the module-level singleton owned
+ * by @pierre/diffs. `preferredHighlighter` only counts on the call that creates the instance, and the
+ * WASM engine is several times faster than the JS regex engine on real sessions, so every path asks
+ * for it. Grammar resolution and the theme cache are the library's, which is why this module no
+ * longer keeps a highlighter of its own. A creation failure is not retried by the library, so a
+ * broken engine leaves code blocks unhighlighted for the rest of the session.
+ */
+function sharedHighlighter(langs: string[]): Promise<DiffsHighlighter> {
+  return getSharedHighlighter({ themes: THEMES, langs, preferredHighlighter: 'shiki-wasm' })
+}
+
+/** A transcript can name any extension, and an unknown language throws instead of degrading. */
+async function resolveHighlightLanguage(lang: string): Promise<string> {
+  if (TEXT_ALIASES.has(lang)) return 'text'
+  try {
+    await getSharedHighlighter({ themes: [], langs: [lang], preferredHighlighter: 'shiki-wasm' })
+    return lang
+  } catch {
+    return 'text'
+  }
 }
 
 /** Engine startup and grammar compiles would otherwise happen while the first transcript paints. */
 export function prewarmHighlighter(): void {
-  void highlighter().catch((error) => console.warn('shiki highlighter warm-up failed:', error))
+  void sharedHighlighter(SEED_LANGS).catch((error) =>
+    console.warn('shiki highlighter warm-up failed:', error)
+  )
 }
 
 const EXT: Record<string, string> = {
@@ -84,30 +89,14 @@ export function langFromPath(path: string): string {
   return EXT[ext] ?? 'plaintext'
 }
 
-type HighlightTheme = 'github-dark' | 'github-light'
 const MAX_CACHE_CHARS = 4_000_000
 const MAX_CACHE_ENTRIES = 200
 const cache = new Map<string, string>()
 const pending = new Map<string, Promise<string>>()
-const loadingLanguages = new Map<string, Promise<void>>()
 let cacheChars = 0
 
 async function renderHighlight(code: string, lang: string, theme: HighlightTheme): Promise<string> {
-  const hl = await highlighter()
-  let resolved = lang in bundledLanguages ? lang : 'plaintext'
-  if (resolved !== 'plaintext' && !hl.getLoadedLanguages().includes(resolved)) {
-    try {
-      let loading = loadingLanguages.get(resolved)
-      if (!loading) {
-        const language = resolved
-        loading = hl.loadLanguage(language as BundledLanguage).finally(() => loadingLanguages.delete(language))
-        loadingLanguages.set(language, loading)
-      }
-      await loading
-    } catch {
-      resolved = 'plaintext'
-    }
-  }
+  const [hl, resolved] = await Promise.all([sharedHighlighter(SEED_LANGS), resolveHighlightLanguage(lang)])
   return hl.codeToHtml(code, { lang: resolved, theme })
 }
 

@@ -24,7 +24,7 @@ async function fixture(scenario: string): Promise<void> {
   let promoteCalls = 0
   const runtime = () => ({ instanceId: 1, pendingUserMessage: false, isStreaming: false, liveMessages: [] as unknown[] })
   const store = {
-    activeSessionId: scenario === 'draft-create' ? null as string | null : 'one' as string | null,
+    activeTabId: scenario === 'draft-create' ? null as string | null : 'one' as string | null,
     runtime: { one: runtime(), two: runtime() },
     beginPrompt(id: 'one' | 'two', message: unknown) {
       Object.assign(this.runtime[id], { isStreaming: true, pendingUserMessage: true, liveMessages: [message] })
@@ -36,14 +36,17 @@ async function fixture(scenario: string): Promise<void> {
     previewSessionTitle() {},
     promoteProjectDraft: async () => {
       promoteCalls++
-      store.activeSessionId = 'one'
+      store.activeTabId = 'one'
       return true
     },
     refreshCwd: async () => { if (scenario === 'refresh') throw new Error('Refresh failed') },
     hydrateTurns: async () => { hydrationCalls++; return true },
     loadControls: async () => {}
   }
-  mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: { getState: () => store } }))
+  mock.module('../src/renderer/src/stores/sessions', () => ({
+    useSessionsStore: { getState: () => store },
+    selectActiveSessionId: () => store.activeTabId
+  }))
   Object.assign(window, { api: {
     prepareSession: async () => {
       await prepared.promise
@@ -83,7 +86,7 @@ async function fixture(scenario: string): Promise<void> {
   document.body.append(container)
   const root = createRoot(container)
   const render = async (sessionId: 'one' | 'two' | null, draft = false) => {
-    store.activeSessionId = draft ? null : sessionId
+    store.activeTabId = draft ? null : sessionId
     await act(async () => { root.render(createElement(Probe, { sessionId, draft })) })
   }
 

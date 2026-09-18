@@ -4,7 +4,7 @@ import type { OpenProjectSessionsState, OpenProjectWorkspace } from '../shared/a
 import { pigDir, pigPath } from './pig-dir'
 
 interface OpenProjectSessionsFile extends OpenProjectSessionsState {
-  version: 1
+  version: 3
 }
 
 const emptyState = (): OpenProjectSessionsState => ({ currentCwd: null, workspaces: [] })
@@ -15,7 +15,7 @@ function filePath(): string {
 
 function normalizeWorkspace(value: unknown): OpenProjectWorkspace | null {
   if (!value || typeof value !== 'object') return null
-  const item = value as Partial<OpenProjectWorkspace>
+  const item = value as Partial<OpenProjectWorkspace> & { diffTabs?: unknown; activeSessionId?: string | null }
   if (typeof item.cwd !== 'string' || !item.cwd) return null
   const sessionIds = Array.isArray(item.sessionIds)
     ? [...new Set(item.sessionIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
@@ -23,7 +23,15 @@ function normalizeWorkspace(value: unknown): OpenProjectWorkspace | null {
   const activeSessionId = typeof item.activeSessionId === 'string' && sessionIds.includes(item.activeSessionId)
     ? item.activeSessionId
     : sessionIds.at(-1) ?? null
-  return { cwd: resolve(item.cwd), sessionIds, activeSessionId }
+  // Version 2 kept a list of per-file diff tabs, which one 全部变更 tab replaced.
+  const changesOpen = typeof item.changesOpen === 'boolean'
+    ? item.changesOpen
+    : Array.isArray(item.diffTabs) && item.diffTabs.length > 0
+  // Files written before either tab kind existed only have `activeSessionId` to restore from.
+  const activeTabId = typeof item.activeTabId === 'string' && item.activeTabId
+    ? item.activeTabId
+    : activeSessionId
+  return { cwd: resolve(item.cwd), sessionIds, activeSessionId, changesOpen, activeTabId }
 }
 
 /** A file that cannot be parsed is kept aside so the next write cannot silently drop it. */
@@ -67,7 +75,7 @@ async function writeState(state: OpenProjectSessionsState): Promise<void> {
   await mkdir(pigDir(), { recursive: true })
   const path = filePath()
   const temporary = `${path}.${process.pid}.tmp`
-  const body: OpenProjectSessionsFile = { version: 1, ...state }
+  const body: OpenProjectSessionsFile = { version: 3, ...state }
   try {
     await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`)
     await rename(temporary, path)
@@ -99,11 +107,12 @@ export function rememberOpenProjectSession(cwd: string, sessionId: string): Prom
   return mutate((state) => {
     let workspace = state.workspaces.find((item) => item.cwd === target)
     if (!workspace) {
-      workspace = { cwd: target, sessionIds: [], activeSessionId: null }
+      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null }
       state.workspaces.push(workspace)
     }
     if (!workspace.sessionIds.includes(sessionId)) workspace.sessionIds.push(sessionId)
     workspace.activeSessionId ??= sessionId
+    workspace.activeTabId ??= sessionId
   })
 }
 
@@ -116,23 +125,63 @@ export function forgetOpenProjectSession(sessionId: string): Promise<void> {
       if (workspace.activeSessionId === sessionId) {
         workspace.activeSessionId = workspace.sessionIds.at(-1) ?? null
       }
+      if (workspace.activeTabId === sessionId) workspace.activeTabId = workspace.activeSessionId
     }
-    state.workspaces = state.workspaces.filter((workspace) => workspace.sessionIds.length > 0)
+    state.workspaces = state.workspaces.filter(
+      (workspace) => workspace.sessionIds.length > 0 || workspace.changesOpen
+    )
   })
 }
 
-export function selectOpenProjectWorkspace(cwd: string, sessionId: string | null): Promise<void> {
+/**
+ * Where a worktree was left: which session was active, and which of its tabs was on the strip. The two
+ * are not the same — a changes tab has no session behind it — so the renderer states both and this
+ * stores both rather than guessing the tab from the session.
+ */
+export function selectOpenProjectWorkspace(
+  cwd: string,
+  sessionId: string | null,
+  activeTabId: string | null
+): Promise<void> {
   const target = resolve(cwd)
   return mutate((state) => {
     state.currentCwd = target
     let workspace = state.workspaces.find((item) => item.cwd === target)
     if (!workspace && sessionId) {
-      workspace = { cwd: target, sessionIds: [sessionId], activeSessionId: sessionId }
+      workspace = {
+        cwd: target,
+        sessionIds: [sessionId],
+        activeSessionId: sessionId,
+        changesOpen: false,
+        activeTabId: activeTabId ?? sessionId
+      }
       state.workspaces.push(workspace)
     } else if (workspace) {
       if (sessionId && !workspace.sessionIds.includes(sessionId)) workspace.sessionIds.push(sessionId)
       workspace.activeSessionId = sessionId
+      // Never an active session without an active tab: a workspace with no strip selection falls back
+      // to the session it just recorded.
+      workspace.activeTabId = activeTabId ?? sessionId
     }
+  })
+}
+
+/** The renderer owns the strip: this mirrors whether one worktree keeps its 全部变更 tab open. */
+export function saveOpenProjectChangesTab(
+  cwd: string,
+  open: boolean,
+  activeTabId: string | null
+): Promise<void> {
+  const target = resolve(cwd)
+  return mutate((state) => {
+    state.currentCwd = target
+    let workspace = state.workspaces.find((item) => item.cwd === target)
+    if (!workspace) {
+      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null }
+      state.workspaces.push(workspace)
+    }
+    workspace.changesOpen = open
+    workspace.activeTabId = activeTabId
   })
 }
 

@@ -1,5 +1,5 @@
 import { CircleAlert, LoaderCircle, X } from 'lucide-react'
-import { useSessionsStore, type OpenTab } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { HookSidebar } from '../ui/hook-sidebar'
@@ -7,7 +7,7 @@ import { SquaresSpinner } from '../RunningSpinners'
 
 export function SessionList({ sessions }: { sessions: OpenTab[] }) {
   const activeIndex = useSessionsStore((state) =>
-    sessions.findIndex((session) => session.sessionId === state.activeSessionId)
+    sessions.findIndex((session) => session.id === selectActiveSessionId(state))
   )
 
   return (
@@ -26,8 +26,8 @@ export function SessionList({ sessions }: { sessions: OpenTab[] }) {
 }
 
 function SessionRow({ session }: { session: OpenTab }) {
-  const active = useSessionsStore((state) => state.activeSessionId === session.sessionId)
-  const streaming = useSessionsStore((state) => state.runtime[session.sessionId]?.isStreaming ?? false)
+  const active = useSessionsStore((state) => selectActiveSessionId(state) === session.id)
+  const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const activateTab = useSessionsStore((state) => state.activateTab)
   const closeTab = useSessionsStore((state) => state.closeTab)
   return (
@@ -43,7 +43,7 @@ function SessionRow({ session }: { session: OpenTab }) {
           size="xs"
           className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
           title={session.loadError || session.title}
-          onClick={() => void activateTab(session.sessionId)}
+          onClick={() => void activateTab(session.id)}
         >
           <span className="min-w-0 truncate">{session.title}</span>
         </Button>
@@ -56,7 +56,7 @@ function SessionRow({ session }: { session: OpenTab }) {
           size="icon-xs"
           className="pointer-events-none shrink-0 opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
           aria-label={`关闭 ${session.title}`}
-          onClick={() => closeTab(session.sessionId)}
+          onClick={() => closeTab(session.id)}
         >
           <X />
         </Button>

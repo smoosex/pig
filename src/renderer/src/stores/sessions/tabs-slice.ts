@@ -1,5 +1,6 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
-import { api, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
+import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
+import { SCOPE_LABELS, useDiffStore } from '../diff'
 import { newSessionId } from '../../lib/session-id'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
@@ -9,7 +10,15 @@ import {
   NEW_CHAT_TITLE,
   sessionTitle
 } from './session-title'
-import type { OpenTab, SessionsStore, SessionSlice, TabKind } from './types'
+import type { OpenTab, SessionsStore, SessionSlice } from './types'
+
+/** The scope a changes tab starts on, and what a workspace restored without one shows. */
+const DEFAULT_SCOPE: DiffScope = 'all'
+
+/** One changes tab per worktree, so its id is the worktree: it is never parsed, only compared. */
+function changesTabId(cwd: string): string {
+  return `diff:${cwd}`
+}
 
 /** Drops a draft slot, but only while `cwd` still points at `sessionId`. */
 function dropDraftSlot(
@@ -28,9 +37,10 @@ function dropDraftSlot(
 
 export const createTabsSlice: SessionSlice<
   | 'openTabs'
-  | 'activeSessionId'
+  | 'activeTabId'
   | 'currentProjectCwd'
   | 'activeSessionByCwd'
+  | 'activeTabByCwd'
   | 'draftSessionByCwd'
   | 'draftSessionErrorByCwd'
   | 'workspaceRestoreReady'
@@ -40,6 +50,8 @@ export const createTabsSlice: SessionSlice<
   | 'selectProjectCwd'
   | 'activateTab'
   | 'openExisting'
+  | 'openChangesTab'
+  | 'setChangesScope'
   | 'acquireProjectDraft'
   | 'releaseProjectDraft'
   | 'promoteProjectDraft'
@@ -118,36 +130,64 @@ export const createTabsSlice: SessionSlice<
     return request
   }
 
-  function persistSelection(cwd: string, sessionId: string | null): void {
-    const request = ++persistenceVersion
-    void api.selectOpenProjectWorkspace(cwd, sessionId).then(
+  function persist(request: Promise<void>): void {
+    const version = ++persistenceVersion
+    void request.then(
       () => {
-        if (request === persistenceVersion) set({ workspaceError: null })
+        if (version === persistenceVersion) set({ workspaceError: null })
       },
       (error: unknown) => {
-        if (request === persistenceVersion) set({ workspaceError: describeError(error) })
+        if (version === persistenceVersion) set({ workspaceError: describeError(error) })
       }
     )
+  }
+
+  /** What a worktree was left on: its active session, and the tab the strip was showing. */
+  function persistSelection(cwd: string, sessionId: string | null, activeTabId: string | null): void {
+    persist(api.selectOpenProjectWorkspace(cwd, sessionId, activeTabId))
+  }
+
+  /**
+   * The strip and the per-worktree memory move together: every place a tab becomes active goes through
+   * here, so a worktree switched away from and back again returns to the tab it was left on — a changes
+   * tab included, which no session id can stand in for. `selectProjectCwd` reads the memory back, guarded
+   * by the tab still being open.
+   */
+  function activeTabPatch(
+    state: SessionsStore,
+    tabId: string | null,
+    cwd: string | null
+  ): Partial<SessionsStore> {
+    return {
+      activeTabId: tabId,
+      activeTabByCwd: tabId && cwd ? { ...state.activeTabByCwd, [cwd]: tabId } : state.activeTabByCwd
+    }
+  }
+
+  /** The renderer owns the changes tab, so whether one worktree keeps it open is mirrored here. */
+  function persistChangesTab(cwd: string): void {
+    const open = get().openTabs.some((tab) => tab.kind === 'diff' && tab.cwd === cwd)
+    persist(api.saveOpenProjectChangesTab(cwd, open, get().activeTabId))
   }
 
   function addReadyTab(tab: OpenTab, selection: number): boolean {
     let added = false
     set((state) => {
-      const existing = state.openTabs.some((item) => item.sessionId === tab.sessionId)
+      const existing = state.openTabs.some((item) => item.id === tab.id)
       added = !existing
       const project = tab.kind === 'project'
       return {
         openTabs: existing ? state.openTabs : [...state.openTabs, tab],
-        activeSessionId: selection === selectionVersion ? tab.sessionId : state.activeSessionId,
+        ...(selection === selectionVersion ? activeTabPatch(state, tab.id, project ? tab.cwd : null) : {}),
         currentProjectCwd: selection === selectionVersion
           ? (project ? tab.cwd : null)
           : state.currentProjectCwd,
         activeSessionByCwd: project && selection === selectionVersion
-          ? { ...state.activeSessionByCwd, [tab.cwd]: tab.sessionId }
+          ? { ...state.activeSessionByCwd, [tab.cwd]: tab.id }
           : state.activeSessionByCwd,
-        runtime: existing || state.runtime[tab.sessionId]
+        runtime: existing || state.runtime[tab.id]
           ? state.runtime
-          : { ...state.runtime, [tab.sessionId]: emptyRuntime() }
+          : { ...state.runtime, [tab.id]: emptyRuntime() }
       }
     })
     return added
@@ -176,9 +216,10 @@ export const createTabsSlice: SessionSlice<
 
   return {
     openTabs: [],
-    activeSessionId: null,
+    activeTabId: null,
     currentProjectCwd: null,
     activeSessionByCwd: {},
+    activeTabByCwd: {},
     draftSessionByCwd: {},
     draftSessionErrorByCwd: {},
     workspaceRestoreReady: false,
@@ -209,59 +250,88 @@ export const createTabsSlice: SessionSlice<
         const workspaces = persisted.workspaces.flatMap((workspace) => {
           if (!worktreeCwds.has(workspace.cwd)) return []
           const sessionIds = workspace.sessionIds.filter((id) => metas.get(id)?.cwd === workspace.cwd)
-          if (sessionIds.length === 0) return []
+          if (sessionIds.length === 0 && !workspace.changesOpen) return []
           return [{
             cwd: workspace.cwd,
             sessionIds,
+            changesOpen: workspace.changesOpen,
             activeSessionId: sessionIds.includes(workspace.activeSessionId ?? '')
               ? workspace.activeSessionId
-              : sessionIds.at(-1) ?? null
+              : sessionIds.at(-1) ?? null,
+            activeTabId: workspace.activeTabId
           }]
         })
         const currentProjectCwd = persisted.currentCwd && worktreeCwds.has(persisted.currentCwd)
           ? persisted.currentCwd
           : null
-        const restoredTabs: OpenTab[] = workspaces.flatMap((workspace) =>
-          workspace.sessionIds.flatMap((id) => {
+        const restoredTabs: OpenTab[] = workspaces.flatMap((workspace) => [
+          ...workspace.sessionIds.flatMap((id) => {
             const meta = metas.get(id)
             return meta ? [{
-              sessionId: id,
+              id,
               cwd: workspace.cwd,
               title: sessionTitle(meta),
               kind: 'project' as const,
               loadState: 'cold' as const,
               meta
             }] : []
-          })
-        )
+          }),
+          ...(workspace.changesOpen
+            ? [{
+                id: changesTabId(workspace.cwd),
+                cwd: workspace.cwd,
+                title: SCOPE_LABELS[DEFAULT_SCOPE],
+                kind: 'diff' as const,
+                loadState: 'ready' as const,
+                diffScope: DEFAULT_SCOPE
+              }]
+            : [])
+        ])
         const activeSessionByCwd = Object.fromEntries(
           workspaces.map((workspace) => [workspace.cwd, workspace.activeSessionId])
         )
         const activeSessionId = currentProjectCwd
           ? activeSessionByCwd[currentProjectCwd] ?? null
           : null
+        // What each worktree was left on, kept only where that tab actually came back: this is the memory
+        // `selectProjectCwd` reads, so a worktree the reader has not visited yet still opens its own tab.
+        const restoredIds = new Set(restoredTabs.map((tab) => tab.id))
+        const restoredActiveTabs = Object.fromEntries(
+          workspaces.flatMap((workspace) =>
+            workspace.activeTabId && restoredIds.has(workspace.activeTabId)
+              ? [[workspace.cwd, workspace.activeTabId] as const]
+              : []
+          )
+        )
+        const restoredActiveTabId = currentProjectCwd ? restoredActiveTabs[currentProjectCwd] : undefined
+        const activeTabId = restoredActiveTabId ?? activeSessionId
 
         const selectionUnchanged = restoreSelection === selectionVersion
         set((state) => {
-          const restoredIds = new Set(restoredTabs.map((tab) => tab.sessionId))
+          const restoredIds = new Set(restoredTabs.map((tab) => tab.id))
           const projectTabs = [
             ...restoredTabs,
-            ...state.openTabs.filter((tab) => tab.kind === 'project' && !restoredIds.has(tab.sessionId))
+            ...state.openTabs.filter(
+              (tab) => (tab.kind === 'project' || tab.kind === 'diff') && !restoredIds.has(tab.id)
+            )
           ]
           return {
-            openTabs: [...state.openTabs.filter((tab) => tab.kind !== 'project'), ...projectTabs],
+            openTabs: [...state.openTabs.filter((tab) => tab.kind === 'chat'), ...projectTabs],
             activeSessionByCwd: selectionUnchanged
               ? activeSessionByCwd
               : { ...activeSessionByCwd, ...state.activeSessionByCwd },
+            activeTabByCwd: selectionUnchanged
+              ? restoredActiveTabs
+              : { ...restoredActiveTabs, ...state.activeTabByCwd },
             currentProjectCwd: selectionUnchanged ? currentProjectCwd : state.currentProjectCwd,
-            activeSessionId: selectionUnchanged ? activeSessionId : state.activeSessionId,
+            activeTabId: selectionUnchanged ? activeTabId : state.activeTabId,
             workspaceRestoreReady: true,
             workspaceRestoreError: null
           }
         })
 
-        if (selectionUnchanged && activeSessionId) {
-          await get().activateTab(activeSessionId)
+        if (selectionUnchanged && activeTabId) {
+          await get().activateTab(activeTabId)
         }
       })().catch((error: unknown) => {
         // A failed scan stays retryable: the restore only counts as done once it actually succeeded.
@@ -274,52 +344,73 @@ export const createTabsSlice: SessionSlice<
 
     selectProjectCwd: async (cwd) => {
       const selection = ++selectionVersion
-      const sessionId = get().activeSessionByCwd[cwd] ?? null
-      set({ currentProjectCwd: cwd, activeSessionId: sessionId })
-      persistSelection(cwd, sessionId)
+      const state = get()
+      const sessionId = state.activeSessionByCwd[cwd] ?? null
+      const remembered = state.activeTabByCwd[cwd]
+      // The tab this worktree was left on wins over its session, as long as it is still open: that is how a
+      // changes tab comes back instead of the session tab taking its place (and its persisted slot).
+      const tabId = remembered && state.openTabs.some((tab) => tab.id === remembered) ? remembered : sessionId
+      set((current) => ({
+        currentProjectCwd: cwd,
+        ...activeTabPatch(current, tabId, cwd)
+      }))
+      persistSelection(cwd, sessionId, tabId)
       try {
         await get().loadWorktreeSessions(cwd)
       } catch (error) {
         if (selection === selectionVersion) set({ workspaceError: describeError(error) })
       }
-      if (sessionId && selection === selectionVersion) await get().activateTab(sessionId)
+      if (tabId && selection === selectionVersion) await get().activateTab(tabId)
     },
 
-    activateTab: async (sessionId) => {
-      const tab = get().openTabs.find((item) => item.sessionId === sessionId)
+    activateTab: async (tabId) => {
+      const tab = get().openTabs.find((item) => item.id === tabId)
       if (!tab) return
-      if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === sessionId) {
-        await get().promoteProjectDraft(tab.cwd, sessionId)
+      if (tab.kind === 'diff') {
+        // Nothing to load: the patch is the panel's data, and the worktree watch is already running.
+        // The version bump keeps a session opening behind this click from stealing the strip back.
+        ++selectionVersion
+        set((state) => ({
+          ...activeTabPatch(state, tab.id, tab.cwd),
+          currentProjectCwd: tab.cwd,
+          openTabs: state.openTabs
+        }))
+        persistChangesTab(tab.cwd)
+        return
+      }
+      if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === tab.id) {
+        await get().promoteProjectDraft(tab.cwd, tab.id)
         return
       }
       const selection = ++selectionVersion
-      if (get().activeSessionId === sessionId && tab.loadState === 'ready') return
+      if (get().activeTabId === tab.id && tab.loadState === 'ready') return
       set((state) => ({
-        activeSessionId: sessionId,
+        ...activeTabPatch(state, tab.id, tab.kind === 'project' ? tab.cwd : null),
         currentProjectCwd: tab.kind === 'project' ? tab.cwd : null,
         activeSessionByCwd: tab.kind === 'project'
-          ? { ...state.activeSessionByCwd, [tab.cwd]: sessionId }
+          ? { ...state.activeSessionByCwd, [tab.cwd]: tab.id }
           : state.activeSessionByCwd,
         openTabs: state.openTabs.map((item) =>
-          item.sessionId === sessionId && (item.loadState === 'cold' || item.loadState === 'error')
+          item.id === tab.id && (item.loadState === 'cold' || item.loadState === 'error')
             ? { ...item, loadState: 'opening', loadError: undefined }
             : item
         )
       }))
-      if (tab.kind === 'project') persistSelection(tab.cwd, sessionId)
+      if (tab.kind === 'project') persistSelection(tab.cwd, tab.id, tab.id)
       if (tab.loadState === 'ready' || tab.loadState === 'opening') return
       if (!tab.meta) {
         set((state) => ({
-          openTabs: state.openTabs.map((item) => item.sessionId === sessionId
+          openTabs: state.openTabs.map((item) => item.id === tab.id
             ? { ...item, loadState: 'error', loadError: '会话文件不存在' }
             : item)
         }))
         return
       }
 
+      const sessionId = tab.id
       try {
         const ref = await openRef(tab.meta)
-        const current = get().openTabs.find((item) => item.sessionId === sessionId)
+        const current = get().openTabs.find((item) => item.id === sessionId)
         if (!current) {
           await api.closeSession(ref.sessionId)
           return
@@ -329,17 +420,17 @@ export const createTabsSlice: SessionSlice<
         })
         await get().hydrateTurns(ref.sessionId, { display: ref.display })
         set((state) => ({
-          openTabs: state.openTabs.map((item) => item.sessionId === sessionId
+          openTabs: state.openTabs.map((item) => item.id === sessionId
             ? { ...item, loadState: 'ready', loadError: undefined }
             : item)
         }))
         if (selection !== selectionVersion && get().currentProjectCwd) {
           const cwd = get().currentProjectCwd!
-          persistSelection(cwd, get().activeSessionByCwd[cwd] ?? null)
+          persistSelection(cwd, get().activeSessionByCwd[cwd] ?? null, get().activeTabByCwd[cwd] ?? null)
         }
       } catch (error) {
         set((state) => ({
-          openTabs: state.openTabs.map((item) => item.sessionId === sessionId
+          openTabs: state.openTabs.map((item) => item.id === sessionId
             ? { ...item, loadState: 'error', loadError: describeError(error) }
             : item)
         }))
@@ -352,16 +443,55 @@ export const createTabsSlice: SessionSlice<
       }
     },
 
-    openExisting: async (meta, kind: TabKind = 'project') => {
-      const existing = get().openTabs.find((tab) => tab.meta?.path === meta.path || tab.sessionId === meta.id)
+    /**
+     * One changes tab per worktree, so a row in the review column switches the tab it already opened
+     * instead of adding a second one: the group the row was read under becomes the tab's scope.
+     */
+    openChangesTab: async (cwd, path, scope) => {
+      const id = changesTabId(cwd)
+      const next = scope ?? DEFAULT_SCOPE
+      set((state) => state.openTabs.some((tab) => tab.id === id)
+        ? {
+            openTabs: state.openTabs.map((tab) =>
+              tab.id === id && tab.diffScope !== next
+                ? { ...tab, diffScope: next, title: SCOPE_LABELS[next] }
+                : tab
+            )
+          }
+        : {
+            openTabs: [...state.openTabs, {
+              id,
+              cwd,
+              title: SCOPE_LABELS[next],
+              kind: 'diff' as const,
+              loadState: 'ready' as const,
+              diffScope: next
+            }]
+          })
+      // The panel points at a file through the tab's own focus, which the tab clears by scrolling.
+      if (path) useDiffStore.getState().focusPath(cwd, path)
+      await get().activateTab(id)
+    },
+
+    setChangesScope: (cwd, scope) => {
+      const id = changesTabId(cwd)
+      set((state) => ({
+        openTabs: state.openTabs.map((tab) =>
+          tab.id === id ? { ...tab, diffScope: scope, title: SCOPE_LABELS[scope] } : tab
+        )
+      }))
+    },
+
+    openExisting: async (meta, kind: 'project' | 'chat' = 'project') => {
+      const existing = get().openTabs.find((tab) => tab.meta?.path === meta.path || tab.id === meta.id)
       if (existing) {
-        await get().activateTab(existing.sessionId)
+        await get().activateTab(existing.id)
         return
       }
       if (kind === 'project' && get().draftSessionByCwd[meta.cwd] === meta.id) {
         await get().promoteProjectDraft(meta.cwd, meta.id)
         set((state) => ({
-          openTabs: state.openTabs.map((tab) => tab.sessionId === meta.id
+          openTabs: state.openTabs.map((tab) => tab.id === meta.id
             ? { ...tab, title: sessionTitle(meta), meta }
             : tab)
         }))
@@ -370,7 +500,7 @@ export const createTabsSlice: SessionSlice<
       const selection = ++selectionVersion
       const ref = await openRef(meta)
       const added = addReadyTab({
-        sessionId: ref.sessionId,
+        id: ref.sessionId,
         cwd: ref.cwd,
         title: sessionTitle(meta, kind),
         kind,
@@ -378,7 +508,7 @@ export const createTabsSlice: SessionSlice<
         meta
       }, selection)
       if (kind === 'project' && selection === selectionVersion) {
-        persistSelection(ref.cwd, ref.sessionId)
+        persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
       }
       if (added) await hydrateReady(ref)
     },
@@ -466,13 +596,13 @@ export const createTabsSlice: SessionSlice<
         throw error
       }
       addReadyTab({
-        sessionId,
+        id: sessionId,
         cwd,
         title: EMPTY_SESSION_TITLE,
         kind: 'project',
         loadState: 'ready'
       }, selection)
-      if (selection === selectionVersion) persistSelection(cwd, sessionId)
+      if (selection === selectionVersion) persistSelection(cwd, sessionId, sessionId)
       return selection === selectionVersion
     },
 
@@ -490,13 +620,13 @@ export const createTabsSlice: SessionSlice<
         throw error
       }
       const added = addReadyTab({
-        sessionId: ref.sessionId,
+        id: ref.sessionId,
         cwd: ref.cwd,
         title: EMPTY_SESSION_TITLE,
         kind: 'project',
         loadState: 'ready'
       }, selection)
-      if (selection === selectionVersion) persistSelection(ref.cwd, ref.sessionId)
+      if (selection === selectionVersion) persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
       if (added) {
         try {
           await get().loadControls(ref.sessionId)
@@ -511,7 +641,7 @@ export const createTabsSlice: SessionSlice<
       const selection = ++selectionVersion
       const ref = await api.createChat()
       if (addReadyTab({
-        sessionId: ref.sessionId,
+        id: ref.sessionId,
         cwd: ref.cwd,
         title: NEW_CHAT_TITLE,
         kind: 'chat',
@@ -521,57 +651,77 @@ export const createTabsSlice: SessionSlice<
       }
     },
 
-    closeTab: (sessionId) => {
-      if (closing.has(sessionId)) return
-      const tab = get().openTabs.find((item) => item.sessionId === sessionId)
+    closeTab: (tabId) => {
+      const tab = get().openTabs.find((item) => item.id === tabId)
       if (!tab) return
+      if (tab.kind === 'diff') {
+        // A diff tab owns no session: closing it hands the strip back to the worktree's session.
+        const fallback = get().activeSessionByCwd[tab.cwd] ?? null
+        const wasActive = get().activeTabId === tab.id
+        set((state) => ({
+          openTabs: state.openTabs.filter((item) => item.id !== tabId),
+          ...(wasActive ? activeTabPatch(state, fallback, tab.cwd) : {})
+        }))
+        persistChangesTab(tab.cwd)
+        if (wasActive && fallback) void get().activateTab(fallback)
+        return
+      }
+      if (closing.has(tabId)) return
       const state = get()
       const remainingInScope = state.openTabs.filter((item) =>
-        item.sessionId !== sessionId && item.kind === tab.kind &&
+        item.id !== tabId && item.kind === tab.kind &&
         (tab.kind === 'chat' || item.cwd === tab.cwd)
       )
-      const fallback = remainingInScope.at(-1)?.sessionId ?? null
-      if (state.activeSessionId === sessionId) selectionVersion++
+      const fallback = remainingInScope.at(-1)?.id ?? null
+      if (state.activeTabId === tabId) selectionVersion++
       set((current) => {
-        const openTabs = current.openTabs.filter((item) => item.sessionId !== sessionId)
+        const openTabs = current.openTabs.filter((item) => item.id !== tabId)
         const runtime = { ...current.runtime }
-        delete runtime[sessionId]
-        const activeSessionByCwd = tab.kind === 'project' && current.activeSessionByCwd[tab.cwd] === sessionId
+        delete runtime[tabId]
+        const activeSessionByCwd = tab.kind === 'project' && current.activeSessionByCwd[tab.cwd] === tabId
           ? { ...current.activeSessionByCwd, [tab.cwd]: fallback }
           : current.activeSessionByCwd
         return {
           openTabs,
           runtime,
           activeSessionByCwd,
-          activeSessionId: current.activeSessionId === sessionId ? fallback : current.activeSessionId
+          ...(current.activeTabId === tabId
+            ? activeTabPatch(current, fallback, tab.kind === 'project' ? tab.cwd : null)
+            : {})
         }
       })
+      const sessionId = tabId
       const request = api.closeSession(sessionId)
       closing.set(sessionId, request)
       void request.then(() => {
         if (tab.kind === 'project' && get().currentProjectCwd === tab.cwd) {
-          persistSelection(tab.cwd, get().activeSessionByCwd[tab.cwd] ?? null)
+          // The memory is already on whatever closeTab handed the strip to, which is what gets mirrored.
+          persistSelection(
+            tab.cwd,
+            get().activeSessionByCwd[tab.cwd] ?? null,
+            get().activeTabByCwd[tab.cwd] ?? null
+          )
         }
       }, (error: unknown) => {
         set({ workspaceError: describeError(error) })
       }).finally(() => {
         if (closing.get(sessionId) === request) closing.delete(sessionId)
       })
-      if (fallback && state.activeSessionId === sessionId) void get().activateTab(fallback)
+      if (fallback && state.activeTabId === tabId) void get().activateTab(fallback)
     },
 
-    setActive: (sessionId) => {
-      if (!get().openTabs.some((tab) => tab.sessionId === sessionId)) return
-      void get().activateTab(sessionId)
+    setActive: (tabId) => {
+      if (!get().openTabs.some((tab) => tab.id === tabId)) return
+      void get().activateTab(tabId)
     },
 
-    renameTab: (sessionId, title) => set((state) => ({
-      openTabs: state.openTabs.map((tab) => tab.sessionId === sessionId ? { ...tab, title } : tab)
+    renameTab: (tabId, title) => set((state) => ({
+      openTabs: state.openTabs.map((tab) => tab.id === tabId ? { ...tab, title } : tab)
     })),
 
     previewSessionTitle: (sessionId, title) => set((state) => ({
       openTabs: state.openTabs.map((tab) =>
-        tab.sessionId === sessionId && isPlaceholderSessionTitle(tab.title)
+        tab.id === sessionId && isPlaceholderSessionTitle(tab.title)
           ? { ...tab, title }
           : tab
       ),

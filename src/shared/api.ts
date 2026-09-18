@@ -68,16 +68,27 @@ export interface ProjectGroup {
   gitError?: string
 }
 
+export const MIN_REVIEW_WIDTH = 240
+export const MAX_REVIEW_WIDTH = 720
+export const DEFAULT_REVIEW_WIDTH = 320
+
 export interface SidebarPrefs {
   projectsCollapsed: boolean
   chatsCollapsed: boolean
   split: number
+  /** The change review column and its width, dragged and remembered like the sidebar. */
+  reviewOpen: boolean
+  reviewWidth: number
 }
 
 export interface OpenProjectWorkspace {
   cwd: string
   sessionIds: string[]
   activeSessionId: string | null
+  /** Whether this workspace keeps its 全部变更 tab open. */
+  changesOpen: boolean
+  /** The tab the workbench shows for this workspace: a session id or the changes tab id. */
+  activeTabId: string | null
 }
 
 export interface OpenProjectSessionsState {
@@ -133,11 +144,72 @@ export interface SessionControls {
 export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
 
 export type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
-
 export interface SlashCommand {
   name: string
   description?: string
   source: SlashCommandSource
+}
+
+/** `git status --porcelain=v1 -z`: one entry per dirty side of a path. */
+export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflicted'
+
+/**
+ * Which slice of the worktree a changes view reads: everything HEAD does not have, only what the index
+ * holds, or only what the worktree adds on top of the index. The three are different diffs, not three
+ * filters of one: a half-staged file reads differently in each.
+ */
+export type DiffScope = 'all' | 'staged' | 'unstaged'
+
+/** One row of the review panel: `staged` and `unstaged` keep their own lists, `all` is per path. */
+export interface WorktreeDiff {
+  git: boolean
+  staged: DiffFileEntry[]
+  unstaged: DiffFileEntry[]
+  all: DiffFileEntry[]
+}
+
+export interface DiffWatchError {
+  cwd: string
+  leaseId: string
+  message: string
+}
+
+/**
+ * One untracked file, read on demand: an untracked file has no diff to ask git for, and reading the
+ * whole set on every refresh is what turns a worktree full of generated files into a stalled app. The
+ * changes tab reads one of these when its card is opened, so the cost follows what is on screen — and
+ * the line count comes back with the bytes, because nothing else can know it without reading the file.
+ */
+export type UntrackedFileResult =
+  | { kind: 'text'; contents: string; lines: number }
+  | { kind: 'binary' }
+  | { kind: 'too-large'; bytes: number }
+  /** A link stood where a regular file had just been: the read refused it, the row stays visible. */
+  | { kind: 'blocked' }
+  /** The read failed — a permission, a descriptor table that ran out: the card shows what main said. */
+  | { kind: 'failed'; message: string }
+  | { kind: 'missing' }
+
+/**
+ * One scope of the worktree in one payload: the patch for its tracked files. Untracked ones are not in
+ * any diff git prints and are read per card instead — see `UntrackedFileResult`.
+ */
+export interface WorktreePatch {
+  git: boolean
+  patch: string
+  /** The patch hit its size cap and stops at a file boundary. */
+  truncated: boolean
+}
+
+export interface DiffFileEntry {
+  /** Repo-relative, exactly as git spells it. */
+  path: string
+  /** Where a rename or copy came from. */
+  origPath?: string
+  status: DiffFileStatus
+  /** Null when git reports a binary file or nobody has read the file to count it. */
+  additions: number | null
+  deletions: number | null
 }
 
 /** An image block a turn refers to; the bytes stay in main behind a pig-image URL. */
@@ -346,8 +418,21 @@ export interface SessionApi {
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
+  readWorktreeDiff: (cwd: string) => Promise<WorktreeDiff>
+  readWorktreePatch: (cwd: string, scope: DiffScope) => Promise<WorktreePatch>
+  readUntrackedFile: (cwd: string, path: string) => Promise<UntrackedFileResult>
+  watchWorktreeDiff: (cwd: string) => Promise<string>
+  unwatchWorktreeDiff: (cwd: string, leaseId: string) => Promise<void>
+  onDiffChanged: (listener: (cwd: string) => void) => () => void
+  onDiffWatchError: (listener: (error: DiffWatchError) => void) => () => void
   getOpenProjectSessions: () => Promise<OpenProjectSessionsState>
-  selectOpenProjectWorkspace: (cwd: string, sessionId: string | null) => Promise<void>
+  /** `activeTabId` is the strip's own selection: a session id, or a worktree's changes tab. */
+  selectOpenProjectWorkspace: (
+    cwd: string,
+    sessionId: string | null,
+    activeTabId: string | null
+  ) => Promise<void>
+  saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<ThemePrefs>

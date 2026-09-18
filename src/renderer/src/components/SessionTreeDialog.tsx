@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, GitBranch } from 'lucide-react'
 import { api, type SessionTreeRow } from '../ipc/api'
-import { useSessionsStore } from '../stores/sessions'
+import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import {
@@ -61,7 +61,7 @@ function isFoldedAway(
 }
 
 export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionsStore(selectActiveSessionId)
   const viewBranch = useSessionsStore((s) => s.viewBranch)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')

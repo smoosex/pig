@@ -52,32 +52,6 @@ export function editList(args: Record<string, unknown>): { oldText: string; newT
   return []
 }
 
-function splitLines(text: string): string[] {
-  if (!text) return []
-  const lines = text.split('\n')
-  if (lines[lines.length - 1] === '') lines.pop()
-  return lines
-}
-
-export function hunkRows(oldText: string, newText: string): { type: 'ctx' | 'del' | 'add'; text: string }[] {
-  const a = splitLines(oldText)
-  const b = splitLines(newText)
-  let start = 0
-  while (start < a.length && start < b.length && a[start] === b[start]) start++
-  let endA = a.length
-  let endB = b.length
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
-    endA--
-    endB--
-  }
-  const rows: { type: 'ctx' | 'del' | 'add'; text: string }[] = []
-  for (let i = 0; i < start; i++) rows.push({ type: 'ctx', text: a[i] })
-  for (let i = start; i < endA; i++) rows.push({ type: 'del', text: a[i] })
-  for (let i = start; i < endB; i++) rows.push({ type: 'add', text: b[i] })
-  for (let i = endA; i < a.length; i++) rows.push({ type: 'ctx', text: a[i] })
-  return rows
-}
-
 export function splitReadOutput(text: string): { code: string; notice?: string } {
   const idx = text.lastIndexOf('\n\n[')
   if (idx === -1) return { code: text }

@@ -1,4 +1,4 @@
-import { useSessionsStore, type ProjectGroup, type SessionMeta } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId, type ProjectGroup, type SessionMeta } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { SquaresSpinner } from '../RunningSpinners'
@@ -31,7 +31,7 @@ export function ChatList() {
 function ChatRow({ session, title, cwd }: { session: SessionMeta; title: string; cwd: string }) {
   const openExisting = useSessionsStore((s) => s.openExisting)
   const deleteChat = useSessionsStore((s) => s.deleteChat)
-  const active = useSessionsStore((s) => s.activeSessionId === session.id)
+  const active = useSessionsStore((s) => selectActiveSessionId(s) === session.id)
   const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
   const { pending, error, runAction } = useProjectAction()
   return (

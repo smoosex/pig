@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleAlert, LoaderCircle, Plus, X } from 'lucide-react'
+import { CircleAlert, FileDiff, LoaderCircle, Plus, X } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
@@ -8,7 +8,7 @@ import { SessionHistoryPopover } from './SessionHistoryPopover'
 
 export function TabBar() {
   const openTabs = useSessionsStore((state) => state.openTabs)
-  const activeSessionId = useSessionsStore((state) => state.activeSessionId)
+  const activeTabId = useSessionsStore((state) => state.activeTabId)
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
   const workspaceError = useSessionsStore((state) => state.workspaceError)
   const setActive = useSessionsStore((state) => state.setActive)
@@ -18,7 +18,7 @@ export function TabBar() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const visibleTabs = openTabs.filter((tab) => currentProjectCwd
-    ? tab.kind === 'project' && tab.cwd === currentProjectCwd
+    ? tab.kind !== 'chat' && tab.cwd === currentProjectCwd
     : tab.kind === 'chat')
 
   const createTab = async () => {
@@ -40,14 +40,15 @@ export function TabBar() {
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {visibleTabs.map((tab) => (
           <Tab
-            key={tab.sessionId}
-            sessionId={tab.sessionId}
+            key={tab.id}
+            tabId={tab.id}
             title={tab.title}
-            active={tab.sessionId === activeSessionId}
+            diff={tab.kind === 'diff'}
+            active={tab.id === activeTabId}
             loading={tab.loadState === 'opening'}
             error={tab.loadState === 'error' ? tab.loadError : undefined}
-            onSelect={() => setActive(tab.sessionId)}
-            onClose={() => closeTab(tab.sessionId)}
+            onSelect={() => setActive(tab.id)}
+            onClose={() => closeTab(tab.id)}
           />
         ))}
         <Button
@@ -85,23 +86,25 @@ export function TabBar() {
 }
 
 function Tab({
-  sessionId,
+  tabId,
   title,
+  diff,
   active,
   loading,
   error,
   onSelect,
   onClose
 }: {
-  sessionId: string
+  tabId: string
   title: string
+  diff: boolean
   active: boolean
   loading: boolean
   error?: string
   onSelect: () => void
   onClose: () => void
 }) {
-  const streaming = useSessionsStore((state) => state.runtime[sessionId]?.isStreaming ?? false)
+  const streaming = useSessionsStore((state) => state.runtime[tabId]?.isStreaming ?? false)
   return (
     <div
       className={cn(
@@ -113,6 +116,7 @@ function Tab({
       title={error}
       onClick={onSelect}
     >
+      {diff ? <FileDiff className="size-3.5 shrink-0" aria-hidden /> : null}
       <span className="max-w-35 truncate">{title}</span>
       {loading ? <LoaderCircle className="animate-spin" aria-label="正在加载" /> : null}
       {error ? <CircleAlert className="text-destructive" aria-label={error} /> : null}

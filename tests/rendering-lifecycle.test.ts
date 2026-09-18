@@ -8,57 +8,82 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+/**
+ * Stands in for the shared highlighter @pierre/diffs owns: one instance per process, grammars loaded
+ * per language and deduped while in flight, unknown languages rejected.
+ */
+async function mockDiffs(options: {
+  failCreation?: boolean
+  gate?: Promise<void>
+  render?: (code: string, options: { theme: string; lang: string }) => string
+} = {}) {
+  const { mock } = await import('bun:test')
+  const calls: { themes: string[]; langs: string[]; preferredHighlighter?: string }[] = []
+  const languages = new Map<string, Promise<void>>()
+  const unbundled = new Set(['not-a-language'])
+  const state = { creations: 0, loads: {} as Record<string, number>, renders: 0, loaded: [] as string[] }
+  let instance: { codeToHtml: (code: string, options: { theme: string; lang: string }) => string } | undefined
+  mock.module('@pierre/diffs', () => ({
+    getSharedHighlighter: async (input: { themes: string[]; langs: string[]; preferredHighlighter?: string }) => {
+      calls.push(input)
+      if (input.preferredHighlighter !== 'shiki-wasm') throw new Error('caller dropped the WASM engine')
+      if (!instance) {
+        state.creations++
+        if (options.failCreation) throw new Error('Highlighter initialization failed')
+        const render = options.render ?? ((code: string, to: { theme: string; lang: string }) => `${to.theme}:${to.lang}:${code}`)
+        instance = {
+          codeToHtml: (code, to) => {
+            state.renders++
+            return render(code, to)
+          }
+        }
+      }
+      for (const lang of input.langs) {
+        if (lang === 'text') continue
+        if (unbundled.has(lang)) throw new Error(`resolveLanguage: "${lang}" not found in bundled or custom languages`)
+        if (!languages.has(lang)) {
+          state.loads[lang] = (state.loads[lang] ?? 0) + 1
+          languages.set(lang, (options.gate ?? Promise.resolve()).then(() => { state.loaded.push(lang) }))
+        }
+        await languages.get(lang)
+      }
+      return instance
+    }
+  }))
+  return { calls, state }
+}
+
 async function fixture(scenario: string): Promise<void> {
   const { mock } = await import('bun:test')
   if (scenario === 'highlight') {
     const language = deferred<void>()
-    let creations = 0
-    let loads = 0
-    let renders = 0
-    const engines: unknown[] = []
-    const loaded = new Set<string>()
-    mock.module('shiki', () => ({
-      bundledLanguages: { python: {}, typescript: {} },
-      createOnigurumaEngine: (wasm: unknown) => {
-        engines.push(wasm)
-        return {}
-      },
-      createHighlighter: async () => {
-        creations++
-        if (creations === 1) throw new Error('Highlighter initialization failed')
-        return {
-          getLoadedLanguages: () => [...loaded],
-          loadLanguage: async (lang: string) => { loads++; await language.promise; loaded.add(lang) },
-          codeToHtml: (code: string, options: { theme: string; lang: string }) => {
-            renders++
-            return `${options.theme}:${options.lang}:${code}`
-          }
-        }
-      }
-    }))
+    const diffs = await mockDiffs({ gate: language.promise })
     const { highlightHtml } = await import('../src/renderer/src/lib/highlight')
-    await assert.rejects(highlightHtml('retry', 'plaintext'), /initialization failed/)
     const one = highlightHtml('first', 'python')
     const duplicate = highlightHtml('first', 'python')
     const two = highlightHtml('second', 'python')
     assert.equal(one, duplicate)
-    await Promise.resolve()
-    await Promise.resolve()
+    // Let both renders reach the shared grammar load before releasing it.
+    for (let i = 0; i < 4; i++) await Promise.resolve()
     language.resolve()
     assert.deepEqual(await Promise.all([one, two]), ['github-dark:python:first', 'github-dark:python:second'])
-    assert.equal(creations, 2)
-    assert.equal(loads, 1)
-    assert.equal(renders, 2)
+    assert.equal(diffs.state.creations, 1)
+    assert.equal(diffs.state.loads.python, 1, 'concurrent blocks share one grammar load')
+    assert.equal(diffs.state.renders, 2)
     assert.equal(await highlightHtml('first', 'python'), 'github-dark:python:first')
-    assert.equal(renders, 2)
+    assert.equal(diffs.state.renders, 2)
     assert.equal(await highlightHtml('first', 'python', 'github-light'), 'github-light:python:first')
-    assert.equal(await highlightHtml('unknown', 'not-a-language'), 'github-dark:plaintext:unknown')
-    assert.equal(engines.length, 2, 'the retry rebuilds the engine')
-    assert.equal(typeof engines[0], 'function', 'highlighting runs on the WASM engine, not the JS one')
+    assert.equal(diffs.state.renders, 3, 'the cache key carries the theme')
+    assert.equal(await highlightHtml('unknown', 'not-a-language'), 'github-dark:text:unknown')
     for (let i = 0; i < 205; i++) await highlightHtml(String(i), 'plaintext')
-    const before = renders
+    const before = diffs.state.renders
     await highlightHtml('first', 'python')
-    assert.equal(renders, before + 1, 'the cache evicts entries past its cap')
+    assert.equal(diffs.state.renders, before + 1, 'the cache evicts entries past its cap')
+    assert.deepEqual(diffs.calls[0]!.themes, ['github-dark', 'github-light'])
+    assert.ok(
+      diffs.calls.every((call) => call.preferredHighlighter === 'shiki-wasm'),
+      'every caller asks for the WASM engine'
+    )
     return
   }
 
@@ -146,8 +171,11 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(state.error, null)
     } else if (scenario === 'worked-label') {
       const { create } = await import('zustand')
-      const store = create(() => ({ activeSessionId: 'one', runtime: { one: { streamStartedAt: 100, streamElapsedMs: 500 } } }))
-      mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: store }))
+      const store = create(() => ({ activeTabId: 'one', runtime: { one: { streamStartedAt: 100, streamElapsedMs: 500 } } }))
+      mock.module('../src/renderer/src/stores/sessions', () => ({
+        useSessionsStore: store,
+        selectActiveSessionId: () => 'one'
+      }))
       const { useWorkedMs } = await import('../src/renderer/src/components/turn/useWorkedMs')
       let renders = 0
       function Probe() {
@@ -165,8 +193,11 @@ async function fixture(scenario: string): Promise<void> {
       let now = 1000
       const originalNow = Date.now
       Date.now = () => now
-      const store = create(() => ({ activeSessionId: 'one', runtime: { one: { streamStartedAt: 0, streamElapsedMs: null } } }))
-      mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: store }))
+      const store = create(() => ({ activeTabId: 'one', runtime: { one: { streamStartedAt: 0, streamElapsedMs: null } } }))
+      mock.module('../src/renderer/src/stores/sessions', () => ({
+        useSessionsStore: store,
+        selectActiveSessionId: () => 'one'
+      }))
       let processRenders = 0
       mock.module('../src/renderer/src/components/turn/TurnProcess', () => ({
         ProcessOutline: () => { processRenders++; return createElement('div', { 'data-process': '' }) },
@@ -207,11 +238,7 @@ async function fixture(scenario: string): Promise<void> {
         Date.now = originalNow
       }
     } else if (scenario === 'highlight-fallback') {
-      mock.module('shiki', () => ({
-        bundledLanguages: {},
-        createOnigurumaEngine: () => ({}),
-        createHighlighter: async () => { throw new Error('Unavailable grammar engine') }
-      }))
+      await mockDiffs({ failCreation: true })
       const { useHighlightHtml } = await import('../src/renderer/src/lib/highlight')
       const frames: FrameRequestCallback[] = []
       globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length }
@@ -228,16 +255,12 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(container.textContent, 'fallback code')
     } else if (scenario === 'highlight-viewport') {
       const rendered: string[] = []
-      mock.module('shiki', () => ({
-        bundledLanguages: { typescript: {} },
-        createOnigurumaEngine: () => ({}),
-        createHighlighter: async () => ({
-          getLoadedLanguages: () => ['plaintext'],
-          loadLanguage: async () => {},
-          codeToHtml: (code: string) => { rendered.push(code); return `hl-${code}` }
-        })
-      }))
-      mock.module('shiki/wasm', () => ({ default: () => ({}) }))
+      await mockDiffs({
+        render: (code) => {
+          rendered.push(code)
+          return `hl-${code}`
+        }
+      })
       const frames: FrameRequestCallback[] = []
       globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length }
       globalThis.cancelAnimationFrame = () => {}
@@ -298,17 +321,13 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(rendered.length, 3)
     } else if (scenario === 'highlight-no-observer') {
       const rendered: string[] = []
-      mock.module('shiki', () => ({
-        bundledLanguages: { typescript: {} },
-        createOnigurumaEngine: () => ({}),
-        createHighlighter: async () => ({
-          getLoadedLanguages: () => ['plaintext'],
-          loadLanguage: async () => {},
-          codeToHtml: (code: string) => { rendered.push(code); return `hl-${code}` }
-        })
-      }))
+      await mockDiffs({
+        render: (code) => {
+          rendered.push(code)
+          return `hl-${code}`
+        }
+      })
       globalThis.IntersectionObserver = undefined as unknown as typeof IntersectionObserver
-      mock.module('shiki/wasm', () => ({ default: () => ({}) }))
       const frames: FrameRequestCallback[] = []
       globalThis.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length }
       globalThis.cancelAnimationFrame = () => {}

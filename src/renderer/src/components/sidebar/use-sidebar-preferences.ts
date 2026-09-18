@@ -3,6 +3,7 @@ import { api } from '../../ipc/api'
 import { errorMessage } from './project-action'
 
 type Section = 'projects' | 'chats'
+type PrefField = 'projectsCollapsed' | 'chatsCollapsed' | 'read'
 
 export function useSidebarPreferences() {
   const [collapsed, setCollapsed] = useState({ projects: false, chats: false })
@@ -10,6 +11,16 @@ export function useSidebarPreferences() {
   const touched = useRef(new Set<Section>())
   const writes = useRef(Promise.resolve())
   const mounted = useRef(false)
+  /**
+   * Failures are per field and a success clears only the field it wrote: `setSidebarPrefs` merges one field
+   * at a time, so saving the chats section says nothing about the projects one. Oldest failure first, so
+   * the newest unresolved one is what shows.
+   */
+  const failures = useRef(new Map<PrefField, string>())
+
+  const publishError = () => {
+    if (mounted.current) setError([...failures.current.values()].at(-1) ?? null)
+  }
 
   useEffect(() => {
     let disposed = false
@@ -23,7 +34,9 @@ export function useSidebarPreferences() {
         }))
       },
       (error: unknown) => {
-        if (!disposed) setError(errorMessage(error))
+        if (disposed) return
+        failures.current.set('read', errorMessage(error))
+        setError(errorMessage(error))
       }
     )
     return () => {
@@ -35,14 +48,22 @@ export function useSidebarPreferences() {
   const setSectionCollapsed = (section: Section, value: boolean) => {
     touched.current.add(section)
     setCollapsed((current) => ({ ...current, [section]: value }))
-    setError(null)
+    const field: PrefField = section === 'projects' ? 'projectsCollapsed' : 'chatsCollapsed'
     const patch = section === 'projects' ? { projectsCollapsed: value } : { chatsCollapsed: value }
     writes.current = writes.current
       .then(() => api.setSidebarPrefs(patch))
       .then(
-        () => {},
+        () => {
+          failures.current.delete(field)
+          // A write that landed proves the file can be reached, so it answers a read that failed as well.
+          failures.current.delete('read')
+          publishError()
+        },
         (error: unknown) => {
-          if (mounted.current) setError(errorMessage(error))
+          // Re-inserting keeps the map ordered oldest first, so a repeated failure becomes the one shown.
+          failures.current.delete(field)
+          failures.current.set(field, errorMessage(error))
+          publishError()
         }
       )
   }

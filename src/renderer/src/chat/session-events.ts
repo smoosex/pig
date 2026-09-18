@@ -59,10 +59,12 @@ export function subscribeSessionEvents(): () => void {
   const offStore = useSessionsStore.subscribe((state, previous) => {
     if (state.openTabs === previous.openTabs) return
     for (const tab of previous.openTabs) {
-      if (state.runtime[tab.sessionId]) continue
-      cancelDelay(tab.sessionId)
-      updates.delete(tab.sessionId)
-      thinking.forgetSession(tab.sessionId)
+      // Diff tabs own no session: they leave no streaming state behind.
+      if (tab.kind === 'diff') continue
+      if (state.runtime[tab.id]) continue
+      cancelDelay(tab.id)
+      updates.delete(tab.id)
+      thinking.forgetSession(tab.id)
     }
     cancelFrame()
   })

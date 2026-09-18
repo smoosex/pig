@@ -1,11 +1,8 @@
-import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
-import { promisify } from 'node:util'
-
-const exec = promisify(execFile)
+import { execGit, isNotARepoError, type GitExecOptions } from './git/exec'
 
 function resolve(path: string): string {
   const absolute = resolvePath(path)
@@ -44,21 +41,8 @@ interface WorktreeRecord {
   deleting?: boolean
 }
 
-export async function git(cwd: string, args: string[]): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-  for (const key of Object.keys(env)) {
-    if (key.startsWith('GIT_') && key !== 'GIT_TERMINAL_PROMPT') delete env[key]
-  }
-  try {
-    const { stdout } = await exec('git', ['-C', cwd, ...args], {
-      env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024
-    })
-    return stdout
-  } catch (error) {
-    const cause = error as Error & { stderr?: string; code?: string | number }
-    if (cause.code === 'ENOENT') throw new Error('未找到 Git，请先安装 Git')
-    throw new Error(cause.stderr?.trim() || cause.message)
-  }
+export function git(cwd: string, args: string[], options?: GitExecOptions): Promise<string> {
+  return execGit(cwd, args, options)
 }
 
 export function parseWorktrees(output: string): GitWorktree[] {
@@ -97,10 +81,10 @@ export async function repositoryWorktrees(cwd: string): Promise<GitWorktree[]> {
 
 export async function isGitProject(cwd: string): Promise<boolean> {
   try {
-    await git(cwd, ['rev-parse', '--git-dir'])
+    await git(cwd, ['rev-parse', '--git-dir'], { locale: 'C' })
     return true
   } catch (error) {
-    if (String(error).includes('not a git repository')) return false
+    if (isNotARepoError(error)) return false
     throw error
   }
 }

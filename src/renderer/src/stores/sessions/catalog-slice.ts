@@ -3,6 +3,7 @@
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
+import { useDiffStore } from '../diff'
 import {
   mapGroupSessions,
   mergeWorktreeDiscoveries,
@@ -270,6 +271,7 @@ export const createCatalogSlice: SessionSlice<
       }
       const result = await api.deleteWorktree(projectCwd, cwd, force)
       if (!result) return
+      useDiffStore.getState().forgetWorktree(cwd)
       projectMembershipVersion++
       set((s) => {
         const current = s.projects.find((item) => item.cwd === projectCwd)
@@ -288,6 +290,12 @@ export const createCatalogSlice: SessionSlice<
     deleteProject: async (cwd) => {
       const project = get().projects.find((item) => item.cwd === cwd)
       if (!(await api.deleteProject(cwd))) return
+      for (const worktreeCwd of new Set([
+        cwd,
+        ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
+      ])) {
+        useDiffStore.getState().forgetWorktree(worktreeCwd)
+      }
       projectMembershipVersion++
       set((s) => {
         const current = s.projects.find((item) => item.cwd === cwd)
@@ -320,17 +328,17 @@ export const createCatalogSlice: SessionSlice<
       chatMembershipVersion++
 
       set((s) => {
-        const deletedTab = s.openTabs.find((tab) => tab.sessionId === meta.id)
-        const openTabs = s.openTabs.filter((tab) => tab.sessionId !== meta.id)
+        const deletedTab = s.openTabs.find((tab) => tab.id === meta.id)
+        const openTabs = s.openTabs.filter((tab) => tab.id !== meta.id)
         const runtime = { ...s.runtime }
         delete runtime[meta.id]
         const activeSessionByCwd = { ...s.activeSessionByCwd }
         if (deletedTab?.kind === 'project' && activeSessionByCwd[deletedTab.cwd] === meta.id) {
           activeSessionByCwd[deletedTab.cwd] = openTabs.findLast((tab) =>
             tab.kind === 'project' && tab.cwd === deletedTab.cwd
-          )?.sessionId ?? null
+          )?.id ?? null
         }
-        const activeWasDeleted = s.activeSessionId === meta.id
+        const activeWasDeleted = s.activeTabId === meta.id
         const projects = s.projects.map((project) =>
           mapGroupSessions(project, (sessions) => sessions.filter((session) => session.id !== meta.id))
         )
@@ -342,14 +350,14 @@ export const createCatalogSlice: SessionSlice<
           openTabs,
           runtime,
           activeSessionByCwd,
-          activeSessionId: activeWasDeleted
+          activeTabId: activeWasDeleted
             ? deletedTab?.kind === 'project'
               ? activeSessionByCwd[deletedTab.cwd] ?? null
-              : openTabs.findLast((tab) => tab.kind === 'chat')?.sessionId ?? null
-            : s.activeSessionId
+              : openTabs.findLast((tab) => tab.kind === 'chat')?.id ?? null
+            : s.activeTabId
         }
       })
-      const next = get().activeSessionId
+      const next = get().activeTabId
       if (next && !get().runtime[next]) await get().activateTab(next)
     }
   }

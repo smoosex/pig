@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useSessionsStore } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
 import { useComposerEditor } from './useComposerEditor'
 import { useComposerImages } from './useComposerImages'
@@ -8,7 +8,7 @@ import { useComposerSubmission } from './useComposerSubmission'
 
 /** Coordinates a draft with the active Pi session; editor and attachment state stay local. */
 export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionsStore(selectActiveSessionId)
   const sessionId = activeSessionId ?? draftSessionId ?? null
   const isDraftSession = Boolean(!activeSessionId && draftCwd && draftSessionId)
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)

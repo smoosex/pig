@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { GitExecError, isNotARepoError } from '../src/main/git/exec'
 import { canonicalProject, git, isGitProject, parseWorktrees, validateBranchName, WorktreeService } from '../src/main/worktrees'
 
 const temps: string[] = []
@@ -41,6 +42,15 @@ function deferred<T>() {
 const noop = async () => {}
 
 describe('worktree discovery and lifecycle', () => {
+  test('only classifies a completed Git not-a-repository failure as a plain directory', () => {
+    const failure = (code: string | number | null, stderr: string, killed = false) =>
+      new GitExecError(stderr, { name: 'Error', message: stderr, code, stderr, killed })
+    expect(isNotARepoError(failure(128, 'fatal: not a git repository'))).toBe(true)
+    expect(isNotARepoError(failure(128, 'fatal: detected dubious ownership'))).toBe(false)
+    expect(isNotARepoError(failure('ENOENT', 'not a git repository'))).toBe(false)
+    expect(isNotARepoError(failure(null, 'not a git repository', true))).toBe(false)
+  })
+
   test('parses nul-delimited paths, branches, detached and locked worktrees', () => {
     const entries = parseWorktrees('worktree /repo\0HEAD aabbccdd1234\0branch refs/heads/main\0\0worktree /tree with\nnewline\0HEAD 112233445566\0detached\0locked reason\0prunable gone\0\0')
     expect(entries[0]).toMatchObject({ branch: 'main', isPrimary: true })

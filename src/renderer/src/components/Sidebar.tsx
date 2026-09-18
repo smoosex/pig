@@ -1,5 +1,6 @@
 import { FolderPlus, Plus, Settings } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
+import { useDiffStore } from '../stores/diff'
 import { Button } from './ui/button'
 import { Kbd } from './ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -27,7 +28,9 @@ export function Sidebar({
     runAction: runProjectAction
   } = useProjectAction()
   const { collapsed, setSectionCollapsed, error: preferencesError } = useSidebarPreferences()
-  const error = projectError ?? preferencesError
+  // The right sidebar keeps its own preferences in the same file, so its failures belong on this same line.
+  const reviewPrefsError = useDiffStore((s) => s.prefsError)
+  const error = projectError ?? preferencesError ?? reviewPrefsError
 
   return (
     <aside

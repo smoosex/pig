@@ -2,7 +2,7 @@ import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { toTurn } from '../chat/display-turns'
 import { groupTurns } from '../chat/turns'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
-import { useSessionsStore } from '../stores/sessions'
+import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../stores/sessions'
 import type { RuntimeState } from '../stores/sessions/types'
 import { ConversationViewport } from './chat/ConversationViewport'
 import { SessionGreeting } from './SessionGreeting'
@@ -23,8 +23,11 @@ function sameIds(left: string[], right: string[]): boolean {
 }
 
 /** Keep the active pane and the two most recently visited panes mounted. */
-function useRetainedSessionIds(openTabs: { sessionId: string }[], activeSessionId: string | null): string[] {
-  const openIds = useMemo(() => new Set(openTabs.map((tab) => tab.sessionId)), [openTabs])
+function useRetainedSessionIds(openTabs: OpenTab[], activeSessionId: string | null): string[] {
+  const openIds = useMemo(
+    () => new Set(openTabs.filter((tab) => tab.kind !== 'diff').map((tab) => tab.id)),
+    [openTabs]
+  )
   const [recentIds, setRecentIds] = useState<string[]>([])
 
   useEffect(() => {
@@ -139,10 +142,13 @@ const SessionChatPane = memo(function SessionChatPane({
 /** Projects open conversations while retaining a bounded set of mounted panes. */
 export function ChatView() {
   const openTabs = useSessionsStore((s) => s.openTabs)
-  const activeSessionId = useSessionsStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionsStore(selectActiveSessionId)
   const retainedSessionIds = useRetainedSessionIds(openTabs, activeSessionId)
   const snapshots = useRef<SnapshotCache>(new Map()).current
-  const openIds = useMemo(() => new Set(openTabs.map((tab) => tab.sessionId)), [openTabs])
+  const openIds = useMemo(
+    () => new Set(openTabs.filter((tab) => tab.kind !== 'diff').map((tab) => tab.id)),
+    [openTabs]
+  )
   const previousOpenIds = useRef<Set<string>>(new Set())
   const newlyOpenedIds = new Set([...openIds].filter((id) => !previousOpenIds.current.has(id)))
 

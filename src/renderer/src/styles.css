@@ -2,6 +2,7 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
+@import '@fontsource-variable/lilex';
 @import 'lxgw-wenkai-lite-webfont/lxgwwenkailite-light.css';
 @import 'lxgw-wenkai-lite-webfont/lxgwwenkailite-regular.css';
 @import 'lxgw-wenkai-lite-webfont/lxgwwenkailite-bold.css';
@@ -21,6 +22,7 @@
   --text-sm--line-height: calc(24 / 14);
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;
+  --font-mono: 'Lilex Variable', ui-monospace, monospace;
   --font-wenkai: 'LXGW WenKai Lite', sans-serif;
   --color-canvas: var(--background);
   --color-elev: var(--card);
@@ -94,7 +96,13 @@
 :root {
 	--font-sans: 'Geist Variable', sans-serif;
 	--font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-	--font-mono: 'Geist Variable', monospace;
+	--font-mono: 'Lilex Variable', ui-monospace, monospace;
+	/* @pierre/diffs draws into a shadow root, where page font CSS cannot reach: the host inherits the
+	   code typography through these variables. The size matches the chat's code blocks (`text-xs`
+	   plus the line-height override in `@theme`). */
+	--diffs-font-family: var(--font-mono);
+	--diffs-font-size: 12px;
+	--diffs-line-height: 20px;
 	--radius: 0.5rem;
 	--shadow-x: 0;
 	--shadow-y: 1px;

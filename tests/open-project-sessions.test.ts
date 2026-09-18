@@ -35,11 +35,17 @@ describe('open project sessions', () => {
       state.rememberOpenProjectSession(cwd, 'one'),
       state.rememberOpenProjectSession(cwd, 'two')
     ])
-    await state.selectOpenProjectWorkspace(cwd, 'two')
+    await state.selectOpenProjectWorkspace(cwd, 'two', 'two')
 
     expect(await state.loadOpenProjectSessions()).toEqual({
       currentCwd: resolve(cwd),
-      workspaces: [{ cwd: resolve(cwd), sessionIds: ['one', 'two'], activeSessionId: 'two' }]
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: ['one', 'two'],
+        activeSessionId: 'two',
+        changesOpen: false,
+        activeTabId: 'two'
+      }]
     })
   })
 
@@ -47,12 +53,18 @@ describe('open project sessions', () => {
     const cwd = join(root, 'project')
     await state.rememberOpenProjectSession(cwd, 'one')
     await state.rememberOpenProjectSession(cwd, 'two')
-    await state.selectOpenProjectWorkspace(cwd, 'two')
+    await state.selectOpenProjectWorkspace(cwd, 'two', 'two')
     await state.forgetOpenProjectSession('two')
 
     expect(await state.loadOpenProjectSessions()).toEqual({
       currentCwd: resolve(cwd),
-      workspaces: [{ cwd: resolve(cwd), sessionIds: ['one'], activeSessionId: 'one' }]
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: ['one'],
+        activeSessionId: 'one',
+        changesOpen: false,
+        activeTabId: 'one'
+      }]
     })
   })
 
@@ -61,12 +73,37 @@ describe('open project sessions', () => {
     const second = join(root, 'second')
     await state.rememberOpenProjectSession(first, 'one')
     await state.rememberOpenProjectSession(second, 'two')
-    await state.selectOpenProjectWorkspace(first, 'one')
+    await state.selectOpenProjectWorkspace(first, 'one', 'one')
     await state.removeOpenProjectWorkspaces([first])
 
     expect(await state.loadOpenProjectSessions()).toEqual({
       currentCwd: null,
-      workspaces: [{ cwd: resolve(second), sessionIds: ['two'], activeSessionId: 'two' }]
+      workspaces: [{
+        cwd: resolve(second),
+        sessionIds: ['two'],
+        activeSessionId: 'two',
+        changesOpen: false,
+        activeTabId: 'two'
+      }]
+    })
+  })
+
+  // The strip's selection is not the active session: a worktree can be left reading its changes tab, and
+  // that is what has to come back — not the session behind it.
+  test('remembers a changes tab as the active tab of its worktree', async () => {
+    const cwd = join(root, 'project')
+    await state.rememberOpenProjectSession(cwd, 'one')
+    await state.selectOpenProjectWorkspace(cwd, 'one', `diff:${resolve(cwd)}`)
+
+    expect(await state.loadOpenProjectSessions()).toEqual({
+      currentCwd: resolve(cwd),
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: ['one'],
+        activeSessionId: 'one',
+        changesOpen: false,
+        activeTabId: `diff:${resolve(cwd)}`
+      }]
     })
   })
 
@@ -85,7 +122,77 @@ describe('open project sessions', () => {
       workspaces: [{
         cwd: resolve(join(root, 'project')),
         sessionIds: ['one'],
-        activeSessionId: 'one'
+        activeSessionId: 'one',
+        changesOpen: false,
+        activeTabId: 'one'
+      }]
+    })
+  })
+
+  test('a version 1 file restores with no changes tab and keeps the active session', async () => {
+    const cwd = join(root, 'legacy')
+    await writeFile(join(root, 'open-project-sessions.json'), JSON.stringify({
+      version: 1,
+      currentCwd: cwd,
+      workspaces: [{ cwd, sessionIds: ['one'], activeSessionId: 'one' }]
+    }))
+
+    expect(await state.loadOpenProjectSessions()).toEqual({
+      currentCwd: resolve(cwd),
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: ['one'],
+        activeSessionId: 'one',
+        changesOpen: false,
+        activeTabId: 'one'
+      }]
+    })
+  })
+
+  test('keeps an open changes tab for a worktree that has no session left', async () => {
+    const cwd = join(root, 'changes-only')
+    await state.saveOpenProjectChangesTab(cwd, true, `diff:${cwd}`)
+
+    const loaded = await state.loadOpenProjectSessions()
+    expect(loaded.currentCwd).toBe(resolve(cwd))
+    expect(loaded.workspaces).toEqual([{
+      cwd: resolve(cwd),
+      sessionIds: [],
+      activeSessionId: null,
+      changesOpen: true,
+      activeTabId: `diff:${cwd}`
+    }])
+
+    await state.forgetOpenProjectSession('nothing')
+    expect((await state.loadOpenProjectSessions()).workspaces).toHaveLength(1)
+
+    await state.saveOpenProjectChangesTab(cwd, false, null)
+    await state.forgetOpenProjectSession('nothing')
+    expect((await state.loadOpenProjectSessions()).workspaces).toEqual([])
+  })
+
+  test('a version 2 file restores its diff tabs as one open changes tab', async () => {
+    const cwd = join(root, 'legacy-diffs')
+    await writeFile(join(root, 'open-project-sessions.json'), JSON.stringify({
+      version: 2,
+      currentCwd: cwd,
+      workspaces: [{
+        cwd,
+        sessionIds: [],
+        activeSessionId: null,
+        diffTabs: [{ path: 'src/a.ts', scope: 'unstaged' }],
+        activeTabId: 'diff:unstaged:src/a.ts'
+      }]
+    }))
+
+    expect(await state.loadOpenProjectSessions()).toEqual({
+      currentCwd: resolve(cwd),
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: [],
+        activeSessionId: null,
+        changesOpen: true,
+        activeTabId: 'diff:unstaged:src/a.ts'
       }]
     })
   })
@@ -110,7 +217,9 @@ describe('open project sessions', () => {
     expect(JSON.parse(await readFile(path, 'utf8')).workspaces).toEqual([{
       cwd: resolve(join(root, 'project')),
       sessionIds: ['one'],
-      activeSessionId: 'one'
+      activeSessionId: 'one',
+      changesOpen: false,
+      activeTabId: 'one'
     }])
   })
 })
