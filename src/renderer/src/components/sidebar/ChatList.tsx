@@ -1,6 +1,6 @@
 import { useSessionsStore, selectActiveSessionId, type ProjectGroup, type SessionMeta } from '../../stores/sessions'
-import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
+import { TreeNav } from '../spectrumui/tree-nav'
 import { SquaresSpinner } from '../RunningSpinners'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
@@ -11,42 +11,55 @@ function chatTitle(group: ProjectGroup): string {
 }
 
 export function ChatList() {
-  const chats = useSessionsStore((s) => s.chats)
+  const chats = useSessionsStore((state) => state.chats)
+  const activeSessionId = useSessionsStore(selectActiveSessionId)
+  const rows = chats.flatMap((chat) => {
+    const session = chat.sessions[0]
+    return session ? [{ session, title: chatTitle(chat), cwd: chat.cwd }] : []
+  })
 
-  if (chats.length === 0) {
+  if (rows.length === 0) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">点击 + 开始对话</p>
   }
 
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      {chats.map((chat) => {
-        const session = chat.sessions[0]
-        if (!session) return null
-        return <ChatRow key={chat.cwd} session={session} title={chatTitle(chat)} cwd={chat.cwd} />
-      })}
-    </div>
+    <TreeNav
+      items={rows.map(({ session, title }) => ({ label: title, href: session.id }))}
+      activeHref={activeSessionId ?? undefined}
+      className="py-1 pr-1"
+      renderItem={(_, index, active) => {
+        const row = rows[index]
+        return row ? <ChatRow {...row} active={active} /> : null
+      }}
+    />
   )
 }
 
-function ChatRow({ session, title, cwd }: { session: SessionMeta; title: string; cwd: string }) {
-  const openExisting = useSessionsStore((s) => s.openExisting)
-  const deleteChat = useSessionsStore((s) => s.deleteChat)
-  const active = useSessionsStore((s) => selectActiveSessionId(s) === session.id)
-  const streaming = useSessionsStore((s) => s.runtime[session.id]?.isStreaming ?? false)
+function ChatRow({
+  session,
+  title,
+  cwd,
+  active
+}: {
+  session: SessionMeta
+  title: string
+  cwd: string
+  active: boolean
+}) {
+  const openExisting = useSessionsStore((state) => state.openExisting)
+  const deleteChat = useSessionsStore((state) => state.deleteChat)
+  const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const { pending, error, runAction } = useProjectAction()
+
   return (
-    <div className="px-1">
-      <div
-        className={cn(
-          'group/chat flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
-          active && 'bg-sidebar-accent'
-        )}
-      >
+    <div>
+      <div className="group/chat flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2">
         <Button
           variant="ghost"
           size="xs"
-          className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
+          className="h-8 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
           title={title}
+          aria-current={active ? 'page' : undefined}
           disabled={pending !== null}
           onClick={() => void runAction('open', () => openExisting(session, 'chat'))}
         >
@@ -63,7 +76,7 @@ function ChatRow({ session, title, cwd }: { session: SessionMeta; title: string;
         )}
       </div>
       {error ? (
-        <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">
+        <p role="alert" className="px-2 py-1 text-xs break-words text-destructive">
           {error}
         </p>
       ) : null}
