@@ -131,9 +131,6 @@ function HistoryRow({
           <SessionDeleteButton
             ariaLabel={`删除会话 ${title}`}
             disabled={pending !== null}
-            surfaceClassName="bg-accent"
-            recessClassName="bg-popover"
-            circleHoverClassName="hover:bg-primary/15"
             onConfirm={onDelete}
           />
         )}

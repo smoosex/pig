@@ -1,29 +1,23 @@
-import { DeleteButton } from '../ui/delete-button'
+import { HoldToConfirmButton } from '../spectrumui/hold-to-confirm'
 
 export function SessionDeleteButton({
   ariaLabel,
   onConfirm,
-  disabled = false,
-  surfaceClassName,
-  recessClassName,
-  circleHoverClassName
+  disabled = false
 }: {
   ariaLabel: string
   onConfirm: () => void
   disabled?: boolean
-  surfaceClassName?: string
-  recessClassName?: string
-  circleHoverClassName?: string
 }) {
   return (
-    <DeleteButton
+    <HoldToConfirmButton
       label={ariaLabel}
+      confirmedLabel="已删除"
+      size="sm"
+      iconOnly
       disabled={disabled}
       onConfirm={onConfirm}
-      surfaceClassName={surfaceClassName}
-      recessClassName={recessClassName}
-      circleHoverClassName={circleHoverClassName}
-      className="pointer-events-auto shrink-0 opacity-0 transition-opacity group-hover/session:opacity-100 group-hover/chat:opacity-100 has-[:focus-visible]:opacity-100 data-[state=open]:opacity-100"
+      className="pointer-events-auto size-6 shrink-0 gap-0 border-0 bg-transparent p-0 opacity-0 transition-opacity hover:bg-accent group-hover/session:opacity-100 group-hover/chat:opacity-100 focus-visible:opacity-100"
     />
   )
 }
