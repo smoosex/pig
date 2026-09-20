@@ -10,7 +10,8 @@ import { fileDiffOptions } from './diff-options'
  * its middle marked deleted and re-added, and the lines come back syntax highlighted.
  *
  * Imported lazily by `ToolRow`, so the library and its Shiki renderer are only fetched when a step is
- * actually opened, and each block virtualizes its own rows.
+ * actually opened. Every edit sits in one scroll panel so a multi-edit step reads as a single diff
+ * window instead of a stack of bordered blocks.
  */
 export default function EditDiffBody({
   path,
@@ -29,19 +30,19 @@ export default function EditDiffBody({
     [edits, path]
   )
   return (
-    <div className="flex flex-col gap-2">
-      {diffs.map((fileDiff, index) => (
-        <div key={index} className="overflow-hidden rounded-lg border border-code-border">
-          {diffs.length > 1 ? (
-            <div className="border-b border-code-border px-3 py-1.5 font-mono text-xs text-muted-foreground">
-              {`// — edit ${index + 1} —`}
-            </div>
-          ) : null}
-          <Virtualizer className="max-h-80 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="overflow-hidden rounded-lg border border-code-border">
+      <Virtualizer className="max-h-80 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {diffs.map((fileDiff, index) => (
+          <div key={index}>
+            {diffs.length > 1 ? (
+              <div className={`${index > 0 ? 'border-t ' : ''}border-b border-code-border px-3 py-1.5 font-mono text-xs text-muted-foreground`}>
+                {`// — edit ${index + 1} —`}
+              </div>
+            ) : null}
             <FileDiff fileDiff={fileDiff} options={options} />
-          </Virtualizer>
-        </div>
-      ))}
+          </div>
+        ))}
+      </Virtualizer>
     </div>
   )
 }

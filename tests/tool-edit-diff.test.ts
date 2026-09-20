@@ -4,8 +4,8 @@
  * deleted and re-added, and the body is fetched only once the step is opened.
  *
  * The library is mocked, so this pins the wiring — one parse per edit with both sides named after the
- * file, one virtualized diff per parse, a marker only when the step carries several edits — without
- * standing up Shiki in happy-dom.
+ * file, a single virtualized panel holding every parse, a marker only when the step carries several
+ * edits — without standing up Shiki in happy-dom.
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
@@ -81,8 +81,8 @@ async function runFixture(): Promise<void> {
       old: { name: PATH, contents: 'three' },
       next: { name: PATH, contents: 'three\nfour' }
     })
-    assert.equal(virtualizers.length, 2, 'each block virtualizes its own rows')
-    assert.match(virtualizers[0], /max-h-80/, 'each block keeps the old height cap')
+    assert.equal(virtualizers.length, 1, 'both edits share one scrolling panel')
+    assert.match(virtualizers[0], /max-h-80/, 'the panel keeps the old height cap')
     const twoText = two.container.textContent ?? ''
     assert.match(twoText, /edit 1/)
     assert.match(twoText, /edit 2/)
@@ -94,7 +94,8 @@ async function runFixture(): Promise<void> {
     const one = await open([{ oldText: 'one\ntwo', newText: 'one\nTWO' }])
     assert.equal(rendered.length, 3, 'the body is built for the second step too')
     assert.doesNotMatch(one.container.textContent ?? '', /edit 1/, 'a single edit needs no marker')
-    assert.equal(one.container.querySelectorAll('[data-virtualizer]').length, 1)
+    assert.equal(one.container.querySelectorAll('[data-virtualizer]').length, 1, 'one panel per step')
+    assert.equal(virtualizers.length, 2, 'the single-edit step still owns a panel')
     await act(async () => {
       one.root.unmount()
     })
