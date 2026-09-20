@@ -7,6 +7,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { InputGroupButton } from '../ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
 
@@ -152,46 +153,45 @@ export function ModelPicker({
           </Button>
         </div>
         {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
-        <div
-          className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {filtered.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
-            </p>
-          ) : (
-            filtered.map((item, index) => {
-              const key = modelKey(item)
-              const selected = model?.provider === item.provider && model.id === item.id
-              return (
-                <Button
+        <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <SmoothHoverHighlight activeKey={navigation.index}>
+            {filtered.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
+              </p>
+            ) : (
+              filtered.map((item, index) => {
+                const key = modelKey(item)
+                const selected = model?.provider === item.provider && model.id === item.id
+                return (
+                  <Button
                   key={key}
                   type="button"
                   variant="ghost"
                   data-model={key}
+                  data-hover-highlight-row
+                  data-hover-highlight-active={navigation.index === index ? '' : undefined}
                   ref={navigation.index === index ? navigation.activeRef : undefined}
                   onPointerMove={() => navigation.hover(index)}
                   aria-current={selected || undefined}
                   disabled={actions.pending}
-                  className={cn(
-                    'h-auto w-full items-baseline justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-accent dark:hover:bg-accent',
-                    navigation.index === index && 'bg-accent'
-                  )}
+                  className="relative h-auto w-full items-baseline justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-transparent!"
                   onClick={() => void select(item)}
                 >
                   <span className="w-6 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
                     {index + 1}
                   </span>
                   <span className="min-w-0 flex-1 text-left">
-                    <span className="block text-sm font-medium">{item.name}</span>
+                    <span className="block text-xs font-normal">{item.name}</span>
                     <span className="block text-xs font-normal text-muted-foreground">
                       {item.providerName} · {item.provider}/{item.id}
                     </span>
                   </span>
-                </Button>
-              )
-            })
-          )}
+                  </Button>
+                )
+              })
+            )}
+          </SmoothHoverHighlight>
         </div>
       </PopoverContent>
     </Popover>
