@@ -12,6 +12,7 @@ import {
   CommandSeparator
 } from '../ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 
 export function AddProviderDialog({
   open,
@@ -95,38 +96,44 @@ export function AddProviderDialog({
               onValueChange={setQuery}
             />
             <CommandList className="max-h-80">
-              <CommandEmpty>没有匹配的供应商，试试其他名称或关键词。</CommandEmpty>
-              {[
-                { heading: '订阅登录', items: available.filter((provider) => provider.oauth) },
-                {
-                  heading: 'API 密钥',
-                  items: available.filter((provider) => !provider.oauth && provider.apiKey)
-                }
-              ].map(({ heading, items }, index) => (
-                <Fragment key={heading}>
-                  {index > 0 ? <CommandSeparator /> : null}
-                  <CommandGroup heading={heading}>
-                    {items.map((provider) => (
-                      <CommandItem
-                        key={provider.id}
-                        value={provider.id}
-                        keywords={[provider.name]}
-                        className="py-3"
-                        onSelect={() => setChosen(provider)}
-                      >
-                        <span className="min-w-0 flex-1 truncate">{provider.name}</span>
-                        <span
-                          data-slot="command-shortcut"
-                          className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+              <SmoothHoverHighlight
+                activeSelector="[data-selected='true']"
+                activeAttribute="data-selected"
+              >
+                <CommandEmpty>没有匹配的供应商，试试其他名称或关键词。</CommandEmpty>
+                {[
+                  { heading: '订阅登录', items: available.filter((provider) => provider.oauth) },
+                  {
+                    heading: 'API 密钥',
+                    items: available.filter((provider) => !provider.oauth && provider.apiKey)
+                  }
+                ].map(({ heading, items }, index) => (
+                  <Fragment key={heading}>
+                    {index > 0 ? <CommandSeparator /> : null}
+                    <CommandGroup heading={heading}>
+                      {items.map((provider) => (
+                        <CommandItem
+                          key={provider.id}
+                          value={provider.id}
+                          keywords={[provider.name]}
+                          data-hover-highlight-row
+                          className="py-3 data-selected:bg-transparent!"
+                          onSelect={() => setChosen(provider)}
                         >
-                          {provider.configured ? '已配置' : null}
-                          <ChevronRight />
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </Fragment>
-              ))}
+                          <span className="min-w-0 flex-1 truncate">{provider.name}</span>
+                          <span
+                            data-slot="command-shortcut"
+                            className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+                          >
+                            {provider.configured ? '已配置' : null}
+                            <ChevronRight />
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Fragment>
+                ))}
+              </SmoothHoverHighlight>
             </CommandList>
           </Command>
         )}

@@ -11,6 +11,7 @@ import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import { cn } from '../../lib/utils'
 
 const GLIDE = { type: 'spring', visualDuration: 0.22, bounce: 0 } as const
+const KEYBOARD_GLIDE = { type: 'spring', visualDuration: 0.1, bounce: 0 } as const
 const FADE = { duration: 0.12, ease: 'easeOut' } as const
 
 export function SmoothHoverHighlight({
@@ -18,6 +19,8 @@ export function SmoothHoverHighlight({
   className,
   highlightClassName,
   rowSelector = '[data-hover-highlight-row]',
+  activeSelector = '[data-hover-highlight-active]',
+  activeAttribute = 'data-hover-highlight-active',
   targetAttribute = 'data-hover-highlight-target',
   children,
   ...props
@@ -25,10 +28,13 @@ export function SmoothHoverHighlight({
   activeKey?: string | number | null
   highlightClassName?: string
   rowSelector?: string
+  activeSelector?: string
+  activeAttribute?: string
   targetAttribute?: string
 }) {
   const areaRef = useRef<HTMLDivElement>(null)
   const pointerInsideRef = useRef(false)
+  const pointerControlsRef = useRef(false)
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null)
   const pointerRowRef = useRef<HTMLElement | null>(null)
   const focusRowRef = useRef<HTMLElement | null>(null)
@@ -52,7 +58,7 @@ export function SmoothHoverHighlight({
   )
 
   const moveTo = useCallback(
-    (row: HTMLElement | null, immediate = false) => {
+    (row: HTMLElement | null, immediate = false, fast = false) => {
       const area = areaRef.current
       const nextTarget = row && area?.contains(row) ? row : null
       if (targetRef.current !== nextTarget) {
@@ -84,7 +90,7 @@ export function SmoothHoverHighlight({
         [height, next.height]
       ] as const) {
         if (jump) value.jump(destination)
-        else animate(value, destination, GLIDE)
+        else animate(value, destination, fast ? KEYBOARD_GLIDE : GLIDE)
       }
       animate(opacity, 1, reduced ? { duration: 0 } : FADE)
     },
@@ -105,13 +111,15 @@ export function SmoothHoverHighlight({
     const retarget = () => {
       frame = 0
       const position = pointerPositionRef.current
-      if (!pointerInsideRef.current || !position) return
+      if (!pointerInsideRef.current || !pointerControlsRef.current || !position) return
       const row = rowFrom(document.elementFromPoint(position.x, position.y))
       pointerRowRef.current = row
       moveTo(row, true)
     }
     const handleScroll = () => {
-      if (!frame && pointerInsideRef.current) frame = requestAnimationFrame(retarget)
+      if (!frame && pointerInsideRef.current && pointerControlsRef.current) {
+        frame = requestAnimationFrame(retarget)
+      }
     }
     window.addEventListener('scroll', handleScroll, true)
     return () => {
@@ -121,10 +129,24 @@ export function SmoothHoverHighlight({
   }, [moveTo, rowFrom])
 
   useEffect(() => {
-    const row = areaRef.current?.querySelector<HTMLElement>('[data-hover-highlight-active]') ?? null
-    activeRowRef.current = row
-    if (!pointerInsideRef.current) moveTo(row ?? focusRowRef.current)
-  }, [activeKey, moveTo])
+    const area = areaRef.current
+    if (!area) return
+    const sync = () => {
+      const row = area.querySelector<HTMLElement>(activeSelector)
+      activeRowRef.current = row
+      if (row && row !== pointerRowRef.current) {
+        pointerControlsRef.current = false
+        pointerRowRef.current = null
+        moveTo(row, false, true)
+      } else if (!pointerInsideRef.current) {
+        moveTo(row ?? focusRowRef.current, false, true)
+      }
+    }
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(area, { attributeFilter: [activeAttribute], attributes: true, subtree: true })
+    return () => observer.disconnect()
+  }, [activeAttribute, activeKey, activeSelector, moveTo])
 
   useEffect(
     () => () => targetRef.current?.removeAttribute(targetAttribute),
@@ -133,6 +155,7 @@ export function SmoothHoverHighlight({
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     pointerInsideRef.current = true
+    pointerControlsRef.current = true
     pointerPositionRef.current = { x: event.clientX, y: event.clientY }
     const row = rowFrom(event.target)
     if (row === pointerRowRef.current) return
@@ -142,6 +165,7 @@ export function SmoothHoverHighlight({
 
   const handlePointerLeave = () => {
     pointerInsideRef.current = false
+    pointerControlsRef.current = false
     pointerPositionRef.current = null
     pointerRowRef.current = null
     moveTo(activeRowRef.current ?? focusRowRef.current)
