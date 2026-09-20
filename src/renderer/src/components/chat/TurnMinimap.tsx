@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useReducedMotion } from 'motion/react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { api } from '../../ipc/api'
 import { buildTurn } from '../../chat/turns'
 import { isPiMessage } from '../../pi/types'
@@ -11,11 +12,18 @@ import { useMessageScrollerVisibility } from '../ui/message-scroller'
 
 const MIN_WIDTH = 6
 const MAX_WIDTH = 18
-const DOCK_SCALE = 0.55
+const DOCK_SCALE = 1.5
 const DOCK_REACH = 3
 const BAR_HEIGHT = 2
 const GAP = 8
 const ITEM_SIZE = BAR_HEIGHT + GAP
+const DOCK_RADIUS = DOCK_REACH * ITEM_SIZE
+const DOCK_STIFFNESS = 320
+const DOCK_DAMPING = 34
+const DOCK_MASS = 0.7
+const DOCK_REST_VALUE = 0.002
+const DOCK_REST_SPEED = 0.02
+const DOCK_MAX_STEP = 1 / 30
 const OVERSCAN = 8
 const PADDING_Y = 8
 const FADE = PADDING_Y + 4 * BAR_HEIGHT + 3 * GAP
@@ -28,10 +36,14 @@ const SCROLL_BUFFER_ITEMS = 5
 const previewCache = new Map<string, MinimapPreview>()
 const previewRequests = new Map<string, Promise<MinimapPreview>>()
 
-function dockBoost(index: number, position: number | null): number {
-  if (position == null) return 0
-  const distance = Math.abs(index - position)
-  return distance >= DOCK_REACH ? 0 : Math.cos((distance / DOCK_REACH) * (Math.PI / 2))
+type DockSpring = { element: HTMLSpanElement | null; value: number; velocity: number }
+
+/** How far one bar stretches for a pointer at this height: full under it, back to 1 a radius away. */
+function dockTarget(pointerY: number, element: HTMLElement): number {
+  if (!Number.isFinite(pointerY)) return 1
+  const rect = element.getBoundingClientRect()
+  const distance = Math.abs(pointerY - (rect.top + rect.height / 2))
+  return 1 + DOCK_SCALE * Math.max(0, 1 - distance / DOCK_RADIUS)
 }
 
 function rememberPreview(key: string, preview: MinimapPreview): MinimapPreview {
@@ -128,6 +140,63 @@ function TurnPreviewCard({
   )
 }
 
+/**
+ * One bar of the rail. The width stays React's business, while `transform` is owned by the rail's
+ * spring loop, which writes it straight to the node: the dock animation must not go through a
+ * re-render, and the rail asserts that unmounting leaves no frame scheduled.
+ */
+const MinimapBar = ({
+  index,
+  label,
+  turn,
+  width,
+  hovered,
+  current,
+  visible,
+  docked,
+  tabbable,
+  registerBar,
+  onJump,
+  onFocus
+}: {
+  index: number
+  label: string
+  turn: number
+  width: number
+  hovered: boolean
+  current: boolean
+  visible: boolean
+  docked: boolean
+  tabbable: boolean
+  registerBar: (index: number, element: HTMLSpanElement | null) => void
+  onJump: (turn: number) => void
+  onFocus: (index: number, event: FocusEvent<HTMLButtonElement>) => void
+}) => (
+  <Button
+    type="button"
+    variant="link"
+    tabIndex={tabbable ? 0 : -1}
+    aria-label={label}
+    aria-current={current ? 'step' : undefined}
+    data-turn-index={index}
+    className="h-0.5 shrink-0 border-0 p-0 active:translate-y-0"
+    onFocus={(event) => onFocus(index, event)}
+    onClick={(event) => {
+      event.stopPropagation()
+      onJump(turn)
+    }}
+  >
+    <span
+      ref={(element) => registerBar(index, element)}
+      className={cn(
+        'block h-0.5 origin-right rounded-full transition-[width] duration-300 ease-out',
+        hovered ? 'bg-foreground' : current ? 'bg-primary' : visible ? 'bg-primary/50' : 'bg-border'
+      )}
+      style={{ width: docked ? width : MIN_WIDTH }}
+    />
+  </Button>
+)
+
 export const TurnMinimap = memo(function TurnMinimap({
   items,
   sessionId,
@@ -150,7 +219,12 @@ export const TurnMinimap = memo(function TurnMinimap({
   const openTimer = useRef<number | null>(null)
   const closeTimer = useRef<number | null>(null)
   const previousPreviewIndex = useRef<number | null>(null)
-  const [hoverPos, setHoverPos] = useState<number | null>(null)
+  const springsRef = useRef(new Map<number, DockSpring>())
+  const pointerYRef = useRef(Infinity)
+  const dockFrameRef = useRef<number | null>(null)
+  const dockTimeRef = useRef(0)
+  const reduceMotion = useReducedMotion() ?? false
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [focusIndex, setFocusIndex] = useState(0)
   const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null)
   const [focused, setFocused] = useState(false)
@@ -187,6 +261,63 @@ export const TurnMinimap = memo(function TurnMinimap({
     overscan: OVERSCAN
   })
   const virtualRows = virtualizer.getVirtualItems()
+
+  // The whole rail shares one spring loop: a pointer move retargets every mounted bar and each one
+  // keeps its own value and velocity. Motion values would put a framesync subscription on every bar,
+  // and this view is expected to leave no frame behind when it unmounts.
+  const stepDock = useCallback(
+    (timestamp: number) => {
+      const dt = Math.min(DOCK_MAX_STEP, Math.max(0.001, (timestamp - dockTimeRef.current) / 1000))
+      dockTimeRef.current = timestamp
+      let moving = false
+      for (const [index, spring] of springsRef.current) {
+        const element = spring.element
+        if (!element) {
+          springsRef.current.delete(index)
+          continue
+        }
+        const target = dockTarget(pointerYRef.current, element)
+        if (reduceMotion) {
+          spring.value = target
+          spring.velocity = 0
+        } else {
+          const force = -DOCK_STIFFNESS * (spring.value - target) - DOCK_DAMPING * spring.velocity
+          spring.velocity += (force / DOCK_MASS) * dt
+          spring.value += spring.velocity * dt
+          if (Math.abs(spring.value - target) < DOCK_REST_VALUE && Math.abs(spring.velocity) < DOCK_REST_SPEED) {
+            spring.value = target
+            spring.velocity = 0
+          } else moving = true
+        }
+        element.style.transform = `scaleX(${spring.value.toFixed(4)})`
+      }
+      dockFrameRef.current = moving ? requestAnimationFrame(stepDock) : null
+    },
+    [reduceMotion]
+  )
+
+  const startDock = useCallback(() => {
+    if (dockFrameRef.current != null) return
+    dockTimeRef.current = performance.now()
+    dockFrameRef.current = requestAnimationFrame(stepDock)
+  }, [stepDock])
+
+  const registerBar = useCallback((index: number, element: HTMLSpanElement | null) => {
+    const springs = springsRef.current
+    const existing = springs.get(index)
+    if (existing) {
+      existing.element = element
+      return
+    }
+    if (!element) return
+    const value = dockTarget(pointerYRef.current, element)
+    springs.set(index, { element, value, velocity: 0 })
+    element.style.transform = `scaleX(${value.toFixed(4)})`
+  }, [])
+
+  useEffect(() => () => {
+    if (dockFrameRef.current != null) cancelAnimationFrame(dockFrameRef.current)
+  }, [])
 
   function syncOverflow(element: HTMLDivElement): void {
     const top = element.scrollTop > 1
@@ -237,9 +368,10 @@ export const TurnMinimap = memo(function TurnMinimap({
   const tabbableIndex = virtualRows.some((row) => row.index === activeIndex)
     ? activeIndex
     : virtualRows[0]?.index ?? activeIndex
-  const position = hoverPos ?? (focused ? activeIndex : null)
-  const hoveredIndex = position == null ? -1 : Math.min(items.length - 1, Math.max(0, Math.round(position)))
-  const targetIndex = hoveredIndex >= 0 ? hoveredIndex : focused && activeIndex >= 0 ? activeIndex : null
+  const focusTarget = focused && activeIndex >= 0 ? activeIndex : null
+  const hoveredIndex = hoverIndex ?? focusTarget ?? -1
+  const docked = hoverIndex != null || focusTarget != null
+  const targetIndex = hoverIndex ?? focusTarget
 
   useEffect(() => {
     const clearOpen = () => {
@@ -312,38 +444,53 @@ export const TurnMinimap = memo(function TurnMinimap({
     if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
     return (clientY - rect.top - BAR_HEIGHT / 2) / ITEM_SIZE
   }
+  const pointerIndex = (clientX: number, clientY: number): number | null => {
+    const position = pointerPosition(clientX, clientY)
+    if (position == null) return null
+    return Math.min(items.length - 1, Math.max(0, Math.round(position)))
+  }
+  const focusRow = (index: number, event: FocusEvent<HTMLButtonElement>): void => {
+    setPendingFocusIndex(null)
+    setFocusIndex(index)
+    setFocused(event.currentTarget.matches(':focus-visible'))
+  }
 
   return (
     <div
       ref={rootRef}
       role="navigation"
       aria-label="对话轮次导航"
-      className="absolute top-1/2 right-4 z-10 w-5 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="absolute top-1/2 right-4 z-10 w-8 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       onScroll={(event) => {
         syncOverflow(event.currentTarget)
         const pointer = pointerRef.current
         if (!pointer) return
         movementSource.current = 'scroll'
-        setHoverPos(pointerPosition(pointer.x, pointer.y))
+        setHoverIndex(pointerIndex(pointer.x, pointer.y))
+        startDock()
       }}
       onPointerMove={(event) => {
-        const position = pointerPosition(event.clientX, event.clientY)
-        pointerRef.current = position == null ? null : { x: event.clientX, y: event.clientY }
+        const index = pointerIndex(event.clientX, event.clientY)
+        pointerRef.current = index == null ? null : { x: event.clientX, y: event.clientY }
         movementSource.current = 'pointer'
-        setHoverPos(position)
+        setHoverIndex(index)
+        pointerYRef.current = index == null ? Infinity : event.clientY
+        startDock()
       }}
       onPointerLeave={() => {
         pointerRef.current = null
-        setHoverPos(null)
+        setHoverIndex(null)
+        pointerYRef.current = Infinity
+        startDock()
       }}
       onBlur={(event) => {
         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFocused(false)
       }}
       onClick={(event) => {
-        const position = pointerPosition(event.clientX, event.clientY)
-        if (position == null) return
-        const item = items[Math.round(position)]
+        const index = pointerIndex(event.clientX, event.clientY)
+        if (index == null) return
+        const item = items[index]
         if (item) onJump(item.turn)
       }}
       onKeyDown={(event) => {
@@ -373,28 +520,19 @@ export const TurnMinimap = memo(function TurnMinimap({
               className="absolute top-0 left-0 flex w-full justify-end"
               style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
             >
-              <Button
-                type="button"
-                variant="link"
-                tabIndex={index === tabbableIndex ? 0 : -1}
-                aria-label={row.label}
-                aria-current={index === currentIndex ? 'step' : undefined}
-                data-turn-index={index}
-                className={cn(
-                  'h-0.5 origin-right shrink-0 rounded-full border-0 p-0 transition-[width] duration-300 ease-out active:translate-y-0',
-                  index === hoveredIndex
-                    ? 'bg-foreground'
-                    : index === currentIndex
-                      ? 'bg-primary'
-                      : visibleIndexes.has(index) ? 'bg-primary/50' : 'bg-border'
-                )}
-                style={{ width: position == null ? MIN_WIDTH : width, transform: `scaleX(${1 + DOCK_SCALE * dockBoost(index, position)})` }}
-                onFocus={(event) => {
-                  setPendingFocusIndex(null)
-                  setFocusIndex(index)
-                  setFocused(event.currentTarget.matches(':focus-visible'))
-                }}
-                onClick={(event) => { event.stopPropagation(); onJump(row.turn) }}
+              <MinimapBar
+                index={index}
+                label={row.label}
+                turn={row.turn}
+                width={width}
+                hovered={index === hoveredIndex}
+                current={index === currentIndex}
+                visible={visibleIndexes.has(index)}
+                docked={docked}
+                tabbable={index === tabbableIndex}
+                registerBar={registerBar}
+                onJump={onJump}
+                onFocus={focusRow}
               />
             </div>
           )
