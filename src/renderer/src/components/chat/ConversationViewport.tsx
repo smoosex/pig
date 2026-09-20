@@ -107,10 +107,11 @@ export function ConversationViewport({
   const onJump = useCallback((turn: number) => { void jumpToTurnIndex(turn) }, [jumpToTurnIndex])
 
   return (
-    <MessageScroller className="min-h-0 flex-1">
+    <MessageScroller className="min-h-0 flex-1 py-2">
       <MessageScrollerViewport
         ref={viewportRef}
         preserveScrollOnPrepend={false}
+        className="mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_1rem,rgb(0_0_0)_calc(100%-1rem),rgb(0_0_0/0.0))]"
         onScroll={onScroll}
         onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest('[data-slot="collapsible-trigger"]')) {
