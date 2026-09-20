@@ -76,6 +76,7 @@ export default function App() {
   const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
+  const closeTab = useSessionsStore((s) => s.closeTab)
   const activeSessionId = useSessionsStore((s) => selectActiveSessionId(s))
   const activeTabId = useSessionsStore((s) => s.activeTabId)
   const projects = useSessionsStore((s) => s.projects)
@@ -115,6 +116,9 @@ export default function App() {
       if (event.key.toLowerCase() === 'e') {
         event.preventDefault()
         setSidebarOpen((open) => !open)
+      } else if (event.key.toLowerCase() === 'w' && activeTabId) {
+        event.preventDefault()
+        if (!event.repeat) closeTab(activeTabId)
       } else if (event.key === ',') {
         event.preventDefault()
         if (!event.repeat) setSettingsOpen((open) => !open)
@@ -122,7 +126,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [currentProjectCwd, openProject])
+  }, [activeTabId, closeTab, currentProjectCwd, openProject])
 
   useEffect(() => {
     void initializeProjectWorkspaces()

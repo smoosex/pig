@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleAlert, FileDiff, LoaderCircle, Plus, X } from 'lucide-react'
+import { CircleAlert, FileDiff, LoaderCircle, Plus, SquareText, X } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
@@ -108,7 +108,7 @@ function Tab({
   return (
     <div
       className={cn(
-        'no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
+        'group/tab no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
         active
           ? 'bg-card text-foreground before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
           : 'text-muted-foreground'
@@ -116,26 +116,32 @@ function Tab({
       title={error}
       onClick={onSelect}
     >
-      {diff ? <FileDiff className="size-3.5 shrink-0" aria-hidden /> : null}
+      <span className="relative flex size-6 shrink-0 items-center justify-center">
+        {diff ? (
+          <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+        ) : (
+          <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="no-drag absolute opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100 text-muted-foreground hover:text-foreground"
+          aria-label={`关闭 ${title}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+          }}
+        >
+          <span className="relative inline-flex size-3.5 items-center justify-center">
+            {streaming ? <CloseSpin /> : null}
+            <X className="size-2.5" />
+          </span>
+        </Button>
+      </span>
       <span className="max-w-35 truncate">{title}</span>
       {loading ? <LoaderCircle className="animate-spin" aria-label="正在加载" /> : null}
       {error ? <CircleAlert className="text-destructive" aria-label={error} /> : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        className="no-drag text-muted-foreground hover:text-foreground"
-        aria-label={`关闭 ${title}`}
-        onClick={(event) => {
-          event.stopPropagation()
-          onClose()
-        }}
-      >
-        <span className="relative inline-flex size-3.5 items-center justify-center">
-          {streaming ? <CloseSpin /> : null}
-          <X className="size-2.5" />
-        </span>
-      </Button>
     </div>
   )
 }
