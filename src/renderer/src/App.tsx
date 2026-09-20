@@ -176,7 +176,7 @@ export default function App() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className={cn('no-drag mr-3 translate-y-px', reviewOpen && 'bg-muted text-foreground')}
+                  className="no-drag mr-3 translate-y-px"
                   aria-label="右侧边栏"
                   aria-pressed={reviewOpen}
                   onClick={() => setReviewOpen(!reviewOpen)}
