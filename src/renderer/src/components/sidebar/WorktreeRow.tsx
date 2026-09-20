@@ -75,8 +75,9 @@ export function WorktreeRow({
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <div className="px-1">
         <div
+          data-sidebar-hover-row
           className={cn(
-            'group/worktree flex h-7 min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
+            'group/worktree relative flex h-7 min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors',
             active && 'bg-sidebar-accent'
           )}
         >

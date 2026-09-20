@@ -23,6 +23,7 @@ export interface TreeNavProps {
   activeHref?: string;
   /** Slide the marker and background to the hovered row and spring back on leave. */
   followHover?: boolean;
+  showHighlight?: boolean;
   /** Element used for links, e.g. Next's Link. Defaults to a plain anchor. */
   linkComponent?: LinkComponent;
   onSelect?: (item: TreeNavItem, event: React.MouseEvent<HTMLAnchorElement>) => void;
@@ -45,6 +46,7 @@ export function TreeNav({
   items,
   activeHref,
   followHover = true,
+  showHighlight = true,
   linkComponent: Link = 'a',
   onSelect,
   renderItem,
@@ -170,11 +172,13 @@ export function TreeNav({
 
       {/* One shared background: rests on the active row, follows the pointer,
           springs back on leave. */}
-      <motion.span
-        aria-hidden
-        className="pointer-events-none absolute end-0 start-6 top-0 rounded-md bg-sidebar-accent will-change-transform"
-        style={{ height: ROW_H, y: pillY, opacity: visibility }}
-      />
+      {showHighlight ? (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute end-0 start-6 top-0 rounded-md bg-sidebar-accent will-change-transform"
+          style={{ height: ROW_H, y: pillY, opacity: visibility }}
+        />
+      ) : null}
 
       {items.map((item, index) => {
         const isActive = index === activeIndex;

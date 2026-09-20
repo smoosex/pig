@@ -20,6 +20,7 @@ import {
 } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { STATUS_META, fileIcon, splitPath, sumCounts } from './file-entry'
 
@@ -71,13 +72,14 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
         key={entry.path}
         type="button"
         title={entry.path}
+        data-sidebar-hover-row
         onClick={() => void openChangesTab(cwd, entry.path, scope)}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs transition-colors',
+          'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs transition-colors',
           // A grouped row starts where the group label does (4px inset + px-1 + chevron + gap), not
           // under the chevron; the flat list starts where the chevron of that label sits.
           indented ? 'pl-6' : 'pl-1',
-          isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent'
+          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
       >
         <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={meta.label}>
@@ -113,12 +115,13 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
       const open = !collapsed[group.key]
       return (
         <div key={group.key}>
-          <div className="sticky top-0 z-10 bg-sidebar px-1">
+          <div className="sticky top-0 z-10 bg-sidebar px-1 has-[[data-sidebar-hover-target]]:bg-transparent">
             <button
               type="button"
               aria-expanded={open}
+              data-sidebar-hover-row
               onClick={() => setCollapsed((current) => ({ ...current, [group.key]: open }))}
-              className="flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap transition-colors hover:bg-sidebar-accent"
+              className="relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
             >
               <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
               <span>{group.label}</span>
@@ -159,7 +162,7 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {list()}
+        <SidebarHoverHighlight>{list()}</SidebarHoverHighlight>
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">

@@ -17,8 +17,16 @@ export function SectionHeader({
   className?: string
 }) {
   return (
-    <div className={cn('sticky z-10 shrink-0 bg-sidebar px-1', className)}>
-      <div className="group/header flex h-8 items-center gap-0.5 rounded-md px-1 hover:bg-sidebar-accent">
+    <div
+      className={cn(
+        'sticky z-10 shrink-0 bg-sidebar px-1 has-[[data-sidebar-hover-target]]:bg-transparent',
+        className
+      )}
+    >
+      <div
+        data-sidebar-hover-row
+        className="group/header relative flex h-8 items-center gap-0.5 rounded-md px-1"
+      >
         <Button
           variant="ghost"
           className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal text-muted-foreground !bg-transparent"

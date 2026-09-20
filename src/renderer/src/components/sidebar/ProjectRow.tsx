@@ -73,8 +73,9 @@ export function ProjectRow({
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="px-1">
           <div
+            data-sidebar-hover-row
             className={cn(
-              'group/project flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors hover:bg-sidebar-accent',
+              'group/project relative flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors',
               active && 'bg-sidebar-accent'
             )}
           >

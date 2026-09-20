@@ -26,6 +26,7 @@ export function ChatList() {
     <TreeNav
       items={rows.map(({ session, title }) => ({ label: title, href: session.id }))}
       activeHref={activeSessionId ?? undefined}
+      showHighlight={false}
       className="py-1 pr-1"
       renderItem={(_, index, active) => {
         const row = rows[index]
@@ -53,7 +54,10 @@ function ChatRow({
 
   return (
     <div>
-      <div className="group/chat flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2">
+      <div
+        data-sidebar-hover-row
+        className="group/chat relative flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2"
+      >
         <Button
           variant="ghost"
           size="xs"

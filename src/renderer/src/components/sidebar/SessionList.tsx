@@ -33,8 +33,9 @@ function SessionRow({ session }: { session: OpenTab }) {
   return (
     <div className="pr-1 pl-9">
       <div
+        data-sidebar-hover-row
         className={cn(
-          'group/session flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors hover:bg-sidebar-accent',
+          'group/session relative flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors',
           active && 'bg-sidebar-accent'
         )}
       >

@@ -10,6 +10,7 @@ import { cn } from '../lib/utils'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SectionHeader } from './sidebar/SectionHeader'
+import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { useProjectAction } from './sidebar/project-action'
 import { useSidebarPreferences } from './sidebar/use-sidebar-preferences'
 
@@ -43,7 +44,7 @@ export function Sidebar({
     >
       <div className="flex w-62 shrink-0 flex-col pl-2">
         <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
-          <div className="pt-1">
+          <SidebarHoverHighlight className="pt-1">
             <Collapsible
               open={!collapsed.projects}
               onOpenChange={(open) => setSectionCollapsed('projects', !open)}
@@ -84,7 +85,7 @@ export function Sidebar({
                 <ChatList />
               </CollapsibleContent>
             </Collapsible>
-          </div>
+          </SidebarHoverHighlight>
         </ScrollArea>
         {error && (
           <p role="alert" className="px-2 py-1 text-xs break-words text-destructive">
