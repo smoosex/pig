@@ -116,9 +116,9 @@ export default function App() {
       if (event.key.toLowerCase() === 'e') {
         event.preventDefault()
         setSidebarOpen((open) => !open)
-      } else if (event.key.toLowerCase() === 'w' && activeTabId) {
+      } else if (event.key.toLowerCase() === 'w') {
         event.preventDefault()
-        if (!event.repeat) closeTab(activeTabId)
+        if (!event.repeat && activeTabId) closeTab(activeTabId)
       } else if (event.key === ',') {
         event.preventDefault()
         if (!event.repeat) setSettingsOpen((open) => !open)
