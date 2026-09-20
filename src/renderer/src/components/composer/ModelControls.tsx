@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Box, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
 import { cn } from '../../lib/utils'
@@ -7,6 +7,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { InputGroupButton } from '../ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
 
 const thinkingLabels: Record<ThinkingLevel, string> = {
@@ -126,7 +127,7 @@ export function ModelPicker({
     >
       <PopoverTrigger asChild>
         <InputGroupButton className={cn(toolbarBtn, 'max-w-44')} disabled={disabled}>
-          <Box data-icon="inline-start" />
+          <ModelBrandIcon model={model} />
           <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
         </InputGroupButton>
       </PopoverTrigger>
