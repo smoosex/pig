@@ -16,6 +16,8 @@ import { STATUS_META, fileIcon, splitPath, sumCounts } from './file-entry'
 
 type Group = { key: 'staged' | 'unstaged'; label: string; entries: DiffFileEntry[] }
 
+const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
+
 export function ChangesPanel({ cwd }: { cwd: string }) {
   const state = useDiffStore((s) => s.worktrees[cwd])
   const openChangesTab = useSessionsStore((s) => s.openChangesTab)
@@ -140,8 +142,12 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           onValueChange={(value) => value && setFlat(value === 'all')}
           aria-label="变更列表分组方式"
         >
-          <ToggleGroupItem value="grouped">分组</ToggleGroupItem>
-          <ToggleGroupItem value="all">全部</ToggleGroupItem>
+          <ToggleGroupItem value="grouped" className={sidebarSurfaceToggle}>
+            分组
+          </ToggleGroupItem>
+          <ToggleGroupItem value="all" className={sidebarSurfaceToggle}>
+            全部
+          </ToggleGroupItem>
         </ToggleGroup>
       </footer>
     </div>

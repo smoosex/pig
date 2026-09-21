@@ -98,7 +98,7 @@ export function Sidebar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground"
+                className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
                 aria-label="设置"
                 onClick={onOpenSettings}
               >
@@ -114,7 +114,7 @@ export function Sidebar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground"
+                className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
                 aria-label="打开项目"
                 disabled={projectPending !== null}
                 aria-busy={projectPending !== null}

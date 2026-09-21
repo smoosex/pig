@@ -58,7 +58,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="no-drag translate-y-px"
+          className="no-drag translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
           onClick={onClick}
           aria-label="左侧边栏"
         >
@@ -184,7 +184,7 @@ export default function App() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="no-drag mr-3 translate-y-px"
+                  className="no-drag mr-3 translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
                   aria-label="右侧边栏"
                   aria-pressed={reviewOpen}
                   onClick={() => setReviewOpen(!reviewOpen)}

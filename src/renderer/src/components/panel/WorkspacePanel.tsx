@@ -24,6 +24,8 @@ import { FileTree } from '../files/FileTree'
 import { ChangesPanel } from '../diff/ChangesPanel'
 import { cn } from '../../lib/utils'
 
+const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
+
 export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
   const width = useDiffStore((s) => s.reviewWidth)
   const setWidth = useDiffStore((s) => s.setReviewWidth)
@@ -56,8 +58,10 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
           onValueChange={(value) => value && setPanelTab(cwd, value as PanelTab)}
           aria-label="侧边栏视图"
         >
-          <ToggleGroupItem value="files">文件</ToggleGroupItem>
-          <ToggleGroupItem value="changes">
+          <ToggleGroupItem value="files" className={sidebarSurfaceToggle}>
+            文件
+          </ToggleGroupItem>
+          <ToggleGroupItem value="changes" className={sidebarSurfaceToggle}>
             变更
             {changed === null ? null : (
               <span className="tabular-nums text-muted-foreground">{changed}</span>
