@@ -1,17 +1,27 @@
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { History } from 'lucide-react'
 import { relativeTime } from '../lib/relative-time'
-import { useSessionsStore, type SessionMeta } from '../stores/sessions'
+import { cn } from '../lib/utils'
+import { useSessionsStore, selectActiveSessionId, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
 import { SquaresSpinner } from './RunningSpinners'
 import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
 
 const emptySessions: SessionMeta[] = []
 
-export function SessionHistoryPopover({ cwd }: { cwd: string }) {
+export function SessionHistoryPopover({
+  cwd,
+  size = 'icon-sm',
+  triggerClassName
+}: {
+  cwd: string
+  size?: ComponentProps<typeof Button>['size']
+  triggerClassName?: string
+}) {
   const sessions = useSessionsStore((state) => {
     for (const project of state.projects) {
       const worktree = project.worktrees?.find((item) => item.cwd === cwd)
@@ -22,6 +32,7 @@ export function SessionHistoryPopover({ cwd }: { cwd: string }) {
   })
   const openExisting = useSessionsStore((state) => state.openExisting)
   const deleteSession = useSessionsStore((state) => state.deleteSession)
+  const activeId = useSessionsStore((state) => selectActiveSessionId(state))
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -50,8 +61,8 @@ export function SessionHistoryPopover({ cwd }: { cwd: string }) {
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
-          className="no-drag shrink-0 text-muted-foreground"
+          size={size}
+          className={cn('shrink-0 text-muted-foreground', triggerClassName)}
           aria-label="对话历史"
         >
           <History />
@@ -63,19 +74,20 @@ export function SessionHistoryPopover({ cwd }: { cwd: string }) {
         className="max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] w-96 overflow-hidden p-1.5"
       >
         <div className="min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex flex-col gap-0.5">
+          <SmoothHoverHighlight activeKey={activeId} className="flex flex-col gap-0.5">
             {sessions.length === 0 ? (
               <p className="px-2 py-4 text-center text-xs text-muted-foreground">暂无历史会话</p>
             ) : sessions.map((session) => (
               <HistoryRow
                 key={session.id}
                 session={session}
+                active={session.id === activeId}
                 pending={pending}
                 onOpen={() => void run(session, 'open')}
                 onDelete={() => void run(session, 'delete')}
               />
             ))}
-          </div>
+          </SmoothHoverHighlight>
         </div>
         {error ? <p role="alert" className="px-2 py-1 text-xs text-destructive">{error}</p> : null}
       </PopoverContent>
@@ -85,11 +97,13 @@ export function SessionHistoryPopover({ cwd }: { cwd: string }) {
 
 function HistoryRow({
   session,
+  active,
   pending,
   onOpen,
   onDelete
 }: {
   session: SessionMeta
+  active: boolean
   pending: string | null
   onOpen: () => void
   onDelete: () => void
@@ -97,7 +111,11 @@ function HistoryRow({
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const title = sessionTitle(session)
   return (
-    <div className="group/session relative flex min-w-0 items-center rounded-md px-1 transition-colors hover:bg-accent">
+    <div
+      data-hover-highlight-row
+      data-hover-highlight-active={active ? '' : undefined}
+      className="group/session relative flex min-w-0 items-center rounded-md px-1"
+    >
       <Button
         type="button"
         variant="ghost"
@@ -124,7 +142,7 @@ function HistoryRow({
           />
         </span>
       </Button>
-      <div className="pointer-events-none absolute right-1 z-10 flex w-12 items-center justify-end group-hover/session:bg-accent has-[:focus-visible]:bg-accent">
+      <div className="pointer-events-none absolute right-1 z-10 flex w-12 items-center justify-end">
         {streaming || pending === session.id ? (
           <SquaresSpinner />
         ) : (

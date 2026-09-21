@@ -4,7 +4,6 @@ import { useSessionsStore } from '../stores/sessions'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
 import { CloseSpin } from './RunningSpinners'
-import { SessionHistoryPopover } from './SessionHistoryPopover'
 
 export function TabBar() {
   const openTabs = useSessionsStore((state) => state.openTabs)
@@ -51,11 +50,17 @@ export function TabBar() {
             onClose={() => closeTab(tab.id)}
           />
         ))}
+      </div>
+      <div className="no-drag relative flex shrink-0 items-center gap-0.5 px-1.5 before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-border">
+        {workspaceError ? (
+          <span title={workspaceError} role="alert" className="text-destructive">
+            <CircleAlert />
+          </span>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="no-drag mx-1 self-center"
           aria-label="新建标签页"
           aria-busy={creating}
           title={createError ?? '新建标签页'}
@@ -71,16 +76,6 @@ export function TabBar() {
           )}
         </Button>
       </div>
-      {currentProjectCwd ? (
-        <div className="no-drag relative flex shrink-0 items-center gap-0.5 px-1.5 before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-border">
-          {workspaceError ? (
-            <span title={workspaceError} role="alert" className="text-destructive">
-              <CircleAlert />
-            </span>
-          ) : null}
-          <SessionHistoryPopover cwd={currentProjectCwd} />
-        </div>
-      ) : null}
     </div>
   )
 }

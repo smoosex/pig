@@ -6,6 +6,7 @@ import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { WorktreeDeleteButton } from './WorktreeActions'
 import { SessionList } from './SessionList'
+import { SessionHistoryPopover } from '../SessionHistoryPopover'
 import type { RunProjectAction } from './project-action'
 
 export function WorktreeRow({
@@ -95,6 +96,11 @@ export function WorktreeRow({
               onConfirm={(force) => deleteWorktree(projectCwd, worktree.cwd, force)}
             />
           )}
+          <SessionHistoryPopover
+            cwd={worktree.cwd}
+            size="icon-xs"
+            triggerClassName="pointer-events-none opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100"
+          />
           <Button
             variant="ghost"
             size="icon-xs"
