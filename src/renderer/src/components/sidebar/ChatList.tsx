@@ -1,21 +1,17 @@
-import { useSessionsStore, selectActiveSessionId, type ProjectGroup, type SessionMeta } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionId, type SessionMeta } from '../../stores/sessions'
+import { sessionTitle } from '../../stores/sessions/session-title'
 import { Button } from '../ui/button'
 import { TreeNav } from '../spectrumui/tree-nav'
 import { SquaresSpinner } from '../RunningSpinners'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 
-function chatTitle(group: ProjectGroup): string {
-  const session = group.sessions[0]
-  return session?.name || session?.firstMessage || '新对话'
-}
-
 export function ChatList() {
   const chats = useSessionsStore((state) => state.chats)
   const activeSessionId = useSessionsStore(selectActiveSessionId)
   const rows = chats.flatMap((chat) => {
     const session = chat.sessions[0]
-    return session ? [{ session, title: chatTitle(chat), cwd: chat.cwd }] : []
+    return session ? [{ session, title: sessionTitle(session), cwd: chat.cwd }] : []
   })
 
   if (rows.length === 0) {

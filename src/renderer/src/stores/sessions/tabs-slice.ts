@@ -7,7 +7,6 @@ import { emptyRuntime } from './runtime'
 import {
   EMPTY_SESSION_TITLE,
   isPlaceholderSessionTitle,
-  NEW_CHAT_TITLE,
   sessionTitle
 } from './session-title'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
@@ -502,7 +501,7 @@ export const createTabsSlice: SessionSlice<
       const added = addReadyTab({
         id: ref.sessionId,
         cwd: ref.cwd,
-        title: sessionTitle(meta, kind),
+        title: sessionTitle(meta),
         kind,
         loadState: 'ready',
         meta
@@ -643,7 +642,7 @@ export const createTabsSlice: SessionSlice<
       if (addReadyTab({
         id: ref.sessionId,
         cwd: ref.cwd,
-        title: NEW_CHAT_TITLE,
+        title: EMPTY_SESSION_TITLE,
         kind: 'chat',
         loadState: 'ready'
       }, selection)) {
