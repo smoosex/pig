@@ -307,11 +307,6 @@ export interface SessionTreeRow {
   text: string
 }
 
-export type PiEvent = {
-  type: string
-  [key: string]: unknown
-}
-
 export type SendShortcut = 'enter' | 'shift-enter'
 export type Appearance = 'system' | 'light' | 'dark'
 export type PaletteId = 'pig' | 'everforest'

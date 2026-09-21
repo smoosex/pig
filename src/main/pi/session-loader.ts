@@ -247,10 +247,6 @@ export async function listProject(cwd: string): Promise<ProjectGroup | null> {
   return projectGroup(resolved, metas)
 }
 
-export async function listOpenedProjects(cwds: string[]): Promise<ProjectGroup[]> {
-  return Promise.all(cwds.map(async (cwd) => (await listProject(cwd)) ?? projectGroup(cwd, [])))
-}
-
 export async function listProjects(): Promise<ProjectGroup[]> {
   const metas = await scanFiles(await collectAllFiles())
   const byCwd = new Map<string, SessionMeta[]>()

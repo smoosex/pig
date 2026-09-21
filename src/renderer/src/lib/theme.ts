@@ -2,12 +2,6 @@ import type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 
 export type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 
-export const defaultThemePrefs: ThemePrefs = {
-  appearance: 'system',
-  lightTheme: 'pig',
-  darkTheme: 'pig'
-}
-
 const STORAGE_KEY = 'pig.theme'
 
 export function parseAppearance(value: unknown): Appearance {

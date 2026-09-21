@@ -310,10 +310,6 @@ export function formatElapsed(ms: number): string {
   return r ? `${m} 分 ${r} 秒` : `${m} 分`
 }
 
-export function formatDuration(startedAt: number, endedAt: number): string {
-  return formatElapsed(Math.max(1000, endedAt - startedAt))
-}
-
 function oneLine(value: unknown): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? '')
   return text.replace(/\s+/g, ' ').trim()
@@ -341,26 +337,6 @@ export function toolStepLabel(step: ToolStep): string {
     default:
       return `调用 ${step.name}`
   }
-}
-
-export function toolGroupLabel(tools: ToolStep[]): string {
-  const cats: string[] = []
-  const seen = new Set<string>()
-  for (const step of tools) {
-    let cat = step.name
-    if (step.name === 'bash') cat = '执行命令'
-    else if (step.name === 'read') cat = '读取文件'
-    else if (step.name === 'write' || step.name === 'edit') cat = '编辑文件'
-    else if (step.name === 'ls') cat = '列出文件'
-    else if (step.name === 'fffind' || step.name === 'find' || step.name === 'ffgrep' || step.name === 'grep') {
-      cat = '搜索'
-    }
-    if (!seen.has(cat)) {
-      seen.add(cat)
-      cats.push(cat)
-    }
-  }
-  return cats.join('、')
 }
 
 export function resultText(result?: ToolResultMessage): string {
