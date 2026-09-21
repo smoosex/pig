@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowBigUpDash, LoaderCircle } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { relativeTime } from '../lib/relative-time'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
@@ -61,9 +61,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
             >
               {pending === session.id ? (
                 <LoaderCircle data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <ArrowBigUpDash data-icon="inline-start" />
-              )}
+              ) : null}
               <span className="min-w-0 flex-1 truncate text-left">{sessionTitle(session)}</span>
               <span className="flex shrink-0 items-center gap-2">
                 <span className="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
