@@ -257,6 +257,12 @@
 }
 
 
+/* Mermaid measures diagrams inside a temp div appended to <body>; an unclipped document would flash a window scrollbar while it renders. */
+html,
+body {
+  overflow: clip;
+}
+
 html,
 body,
 #root {
