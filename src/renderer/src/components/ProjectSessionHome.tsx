@@ -6,6 +6,7 @@ import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
+import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { SessionSizeDots } from './SessionSizeDots'
 
 export function ProjectSessionHome({ cwd }: { cwd: string }) {
@@ -48,13 +49,17 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
             <Separator className="min-w-0 flex-1" />
           </div>
         ) : null}
-        <div className="flex flex-col gap-1 px-4">
+        <SidebarHoverHighlight
+          className="flex flex-col gap-1 px-4"
+          highlightClassName="bg-muted dark:bg-muted/50"
+        >
           {sessions.map((session) => (
             <Button
               key={session.id}
               type="button"
               variant="ghost"
-              className="h-10 w-full justify-start gap-3 px-3 text-xs font-normal"
+              data-sidebar-hover-row
+              className="relative h-10 w-full justify-start gap-3 px-3 text-xs font-normal !bg-transparent"
               disabled={pending !== null}
               aria-busy={pending === session.id}
               onClick={() => void open(session)}
@@ -71,7 +76,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
               </span>
             </Button>
           ))}
-        </div>
+        </SidebarHoverHighlight>
         {draftError || error ? (
           <p role="alert" className="px-3 text-sm text-destructive">{draftError || error}</p>
         ) : null}
