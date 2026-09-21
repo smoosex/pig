@@ -7,6 +7,19 @@ import type { DiffStyle } from '../../stores/diff'
  * horizontal scrollbars are hidden because the page hides its own.
  */
 
+/**
+ * A code surface takes the color of the container it sits in. The library would fill it with the Shiki
+ * theme's own background instead (github-dark's #24292e), which is a color from outside Pig's palette;
+ * `--diffs-bg` is the single variable every part of the surface derives from — gutter, buffer, separators
+ * and the mixed diff-line colors — so pointing it at the code background is what makes the whole area the
+ * same color as the pane. The override rides in the library's `unsafe` layer, which is the one that wins
+ * over its own defaults.
+ */
+const codeSurfaceCSS = [
+  ':host { --diffs-bg: var(--code-background) }',
+  'code { scrollbar-width: none } code::-webkit-scrollbar { display: none }'
+].join('\n')
+
 export function fileDiffOptions(dark: boolean, style: DiffStyle): FileDiffOptions<undefined, undefined> {
   return {
     theme: { light: 'github-light', dark: 'github-dark' },
@@ -16,7 +29,7 @@ export function fileDiffOptions(dark: boolean, style: DiffStyle): FileDiffOption
     diffIndicators: 'bars',
     hunkSeparators: 'line-info-basic',
     disableFileHeader: true,
-    unsafeCSS: 'code { scrollbar-width: none } code::-webkit-scrollbar { display: none }'
+    unsafeCSS: codeSurfaceCSS
   }
 }
 
@@ -30,6 +43,6 @@ export function fileCodeOptions(dark: boolean): FileOptions<undefined, undefined
     themeType: dark ? 'dark' : 'light',
     preferredHighlighter: 'shiki-wasm',
     disableFileHeader: true,
-    unsafeCSS: 'code { scrollbar-width: none } code::-webkit-scrollbar { display: none }'
+    unsafeCSS: codeSurfaceCSS
   }
 }
