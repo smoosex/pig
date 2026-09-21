@@ -15,10 +15,10 @@ export const useSessionsStore = create<SessionsStore>((...args) => ({
 }))
 
 /**
- * The session behind the active tab. A diff tab holds the strip without owning a session, so anything
- * that prompts, streams, or reads runtime state asks for this rather than the raw tab id.
+ * The session behind the active tab. A diff or file tab holds the strip without owning a session, so
+ * anything that prompts, streams, or reads runtime state asks for this rather than the raw tab id.
  */
 export function selectActiveSessionId(state: SessionsStore): string | null {
   const tab = state.openTabs.find((item) => item.id === state.activeTabId)
-  return tab && tab.kind !== 'diff' ? tab.id : null
+  return tab && (tab.kind === 'project' || tab.kind === 'chat') ? tab.id : null
 }

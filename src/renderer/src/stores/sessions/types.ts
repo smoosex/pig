@@ -58,7 +58,7 @@ export interface RuntimeState extends SessionControls {
   queuedEditText: string | null
 }
 
-export type TabKind = 'project' | 'chat' | 'diff'
+export type TabKind = 'project' | 'chat' | 'diff' | 'file'
 export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
 
 export interface OpenTab {
@@ -70,6 +70,8 @@ export interface OpenTab {
   loadState: TabLoadState
   loadError?: string
   meta?: SessionMeta
+  /** A file tab's worktree-relative path; the tab's title is that file's name. */
+  path?: string
   /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
   diffScope?: DiffScope
 }
@@ -141,6 +143,8 @@ export interface SessionsStore {
    * review column's rows point at a file and at the group the row was read under.
    */
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
+  /** Brings a file's tab to the front, opening it when the strip does not hold it. */
+  openFileTab: (cwd: string, path: string) => Promise<void>
   /** The toolbar's scope control: one changes tab, its title and its contents following the choice. */
   setChangesScope: (cwd: string, scope: DiffScope) => void
   acquireProjectDraft: (cwd: string) => void

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -86,6 +86,18 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:follow-up-action', sessionId, index, action),
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
+  readDirectory: (cwd: string, path: string) => ipcRenderer.invoke('files:read-directory', cwd, path),
+  readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
+  writeFile: (
+    cwd: string,
+    path: string,
+    contents: string,
+    options: { expected?: FileStamp; overwrite?: boolean }
+  ) => ipcRenderer.invoke('files:write', cwd, path, contents, options),
+  openFileExternally: (cwd: string, path: string) =>
+    ipcRenderer.invoke('files:open-externally', cwd, path),
+  revealFileExternally: (cwd: string, path: string) =>
+    ipcRenderer.invoke('files:reveal-externally', cwd, path),
   readWorktreeDiff: (cwd: string) => ipcRenderer.invoke('diff:read-worktree', cwd),
   readWorktreePatch: (cwd: string, scope: DiffScope) =>
     ipcRenderer.invoke('diff:read-patch', cwd, scope),

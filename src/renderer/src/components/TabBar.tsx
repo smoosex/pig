@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { CircleAlert, FileDiff, LoaderCircle, Plus, SquareText, X } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
+import type { OpenTab } from '../stores/sessions'
+import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
 import { cn } from '../lib/utils'
 import { CloseSpin } from './RunningSpinners'
+import { fileIcon } from './diff/file-entry'
 
 export function TabBar() {
   const openTabs = useSessionsStore((state) => state.openTabs)
@@ -41,8 +44,10 @@ export function TabBar() {
           <Tab
             key={tab.id}
             tabId={tab.id}
+            cwd={tab.cwd}
             title={tab.title}
-            diff={tab.kind === 'diff'}
+            kind={tab.kind}
+            path={tab.path}
             active={tab.id === activeTabId}
             loading={tab.loadState === 'opening'}
             error={tab.loadState === 'error' ? tab.loadError : undefined}
@@ -82,8 +87,10 @@ export function TabBar() {
 
 function Tab({
   tabId,
+  cwd,
   title,
-  diff,
+  kind,
+  path,
   active,
   loading,
   error,
@@ -91,8 +98,10 @@ function Tab({
   onClose
 }: {
   tabId: string
+  cwd: string
   title: string
-  diff: boolean
+  kind: OpenTab['kind']
+  path?: string
   active: boolean
   loading: boolean
   error?: string
@@ -100,6 +109,11 @@ function Tab({
   onClose: () => void
 }) {
   const streaming = useSessionsStore((state) => state.runtime[tabId]?.isStreaming ?? false)
+  const dirty = useFilesStore((state) => {
+    const document = path ? state.documents[fileKey(cwd, path)] : undefined
+    return document ? isDirty(document) : false
+  })
+  const FileIcon = path ? fileIcon(path) : SquareText
   return (
     <div
       className={cn(
@@ -112,8 +126,10 @@ function Tab({
       onClick={onSelect}
     >
       <span className="relative flex size-6 shrink-0 items-center justify-center">
-        {diff ? (
+        {kind === 'diff' ? (
           <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+        ) : kind === 'file' ? (
+          <FileIcon className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
         ) : (
           <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
         )}
@@ -135,6 +151,7 @@ function Tab({
         </Button>
       </span>
       <span className="max-w-35 truncate">{title}</span>
+      {dirty ? <span role="img" aria-label="未保存" className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
       {loading ? <LoaderCircle className="animate-spin" aria-label="正在加载" /> : null}
       {error ? <CircleAlert className="text-destructive" aria-label={error} /> : null}
     </div>

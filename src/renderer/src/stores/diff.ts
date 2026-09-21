@@ -15,6 +15,7 @@ import {
   type WorktreeDiff,
   type WorktreePatch
 } from '../ipc/api'
+import { failureMessage } from '../lib/ipc-error'
 
 export { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH } from '../ipc/api'
 
@@ -33,6 +34,9 @@ export interface WorktreePatchState {
 
 /** How a diff is laid out; one preference for every tab, kept out of the persisted settings. */
 export type DiffStyle = 'unified' | 'split'
+
+/** The right column shows one of these per worktree; the choice is not persisted, the column is not data. */
+export type PanelTab = 'files' | 'changes'
 
 /** What each scope is called: the tab title, the toolbar control and the two panel groups share it. */
 export const SCOPE_LABELS: Record<DiffScope, string> = {
@@ -82,6 +86,9 @@ interface DiffStore {
   setVisiblePath: (cwd: string, path: string) => void
   reviewOpen: boolean
   reviewWidth: number
+  /** Which view the right column is showing, per worktree: the files, or the change list. */
+  panelTab: Record<string, PanelTab>
+  setPanelTab: (cwd: string, tab: PanelTab) => void
   /** Why the panel's own preferences could not be read or saved, for the alert that says so. */
   prefsError: string | null
   /** Prefs arrive once per renderer: the panel and its toggle both read them. */
@@ -124,10 +131,6 @@ function dropUntrackedClaims(cwd: string): void {
 }
 
 /** Electron prefixes a rejected invoke with the channel it went through; the card wants main's own words. */
-function failureMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '')
-}
 
 /**
  * The untracked row's line count arrives with the read of its card, not with a refresh — main counted it
@@ -266,6 +269,8 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
   },
   reviewOpen: false,
   reviewWidth: DEFAULT_REVIEW_WIDTH,
+  panelTab: {},
+  setPanelTab: (cwd, tab) => set((state) => ({ panelTab: { ...state.panelTab, [cwd]: tab } })),
   reviewReady: false,
   prefsError: null,
 

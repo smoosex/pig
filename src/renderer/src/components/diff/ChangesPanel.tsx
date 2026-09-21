@@ -1,23 +1,13 @@
 /**
- * The change review column: what differs from HEAD right now, grouped the way git stages it, with a
- * flat 全部 view on top. Clicking a row opens the worktree's 全部变更 tab and reveals that file there,
- * so the column stays a list and the reading happens in the conversation area. The panel owns the
- * worktree watch while it is open — nothing here mutates git, it only reads.
- *
- * It is a plain rail rather than a card: it sits on the same surface as the left sidebar, with only a
- * divided edge between it and the chat, and its rows keep that column's rhythm — inset, rounded hover
- * and 2px of air between them. Like that column it is always mounted and collapses by animating its
- * width to 0, so hiding it slides instead of popping; the worktree watch runs only while it is open.
+ * The change list inside the right column: what differs from HEAD right now, grouped the way git stages
+ * it, with a flat 全部 view on top. Clicking a row opens the worktree's 全部变更 tab and reveals that file
+ * there, so the column stays a list and the reading happens in the conversation area. Nothing here
+ * mutates git, it only reads.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
-import {
-  MAX_REVIEW_WIDTH,
-  MIN_REVIEW_WIDTH,
-  retainWorktreeWatch,
-  useDiffStore
-} from '../../stores/diff'
+import { useDiffStore } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
@@ -26,11 +16,8 @@ import { STATUS_META, fileIcon, splitPath, sumCounts } from './file-entry'
 
 type Group = { key: 'staged' | 'unstaged'; label: string; entries: DiffFileEntry[] }
 
-export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
+export function ChangesPanel({ cwd }: { cwd: string }) {
   const state = useDiffStore((s) => s.worktrees[cwd])
-  const width = useDiffStore((s) => s.reviewWidth)
-  const setWidth = useDiffStore((s) => s.setReviewWidth)
-  const commitWidth = useDiffStore((s) => s.commitReviewWidth)
   const openChangesTab = useSessionsStore((s) => s.openChangesTab)
   // A primitive, because a fresh object on every render would loop zustand's store subscription.
   const changesActive = useSessionsStore((s) => s.openTabs.some((tab) => tab.id === s.activeTabId && tab.kind === 'diff'))
@@ -38,11 +25,6 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
   const visiblePath = useDiffStore((s) => s.visible[cwd])
   const [flat, setFlat] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    if (hidden) return
-    return retainWorktreeWatch(cwd)
-  }, [cwd, hidden])
 
   const diff = state?.diff
   const groups: Group[] = [
@@ -142,25 +124,10 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
   }
 
   return (
-    <aside
-      inert={hidden}
-      aria-hidden={hidden}
-      style={{ width: hidden ? 0 : width }}
-      className={cn(
-        'relative flex max-w-1/2 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,margin] duration-200 ease-in-out motion-reduce:transition-none',
-        hidden ? 'mr-0' : 'mr-2'
-      )}
-    >
-      <ResizeHandle width={width} onResize={setWidth} onCommit={commitWidth} />
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* The 4px of air above the list lives here, not on the scroll region: sticky offsets resolve
           against the content box, so padding there both leaves an uncovered band that rows scroll
           through and makes the group label travel before it pins to the top. */}
-      <header className="mb-1 flex h-9 shrink-0 items-center gap-2 pl-3 pr-1 whitespace-nowrap">
-        <span className="text-xs font-medium">变更</span>
-        <span className="text-xs tabular-nums text-muted-foreground">{flatEntries.length}</span>
-        <span className="flex-1" />
-      </header>
-
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <SidebarHoverHighlight>{list()}</SidebarHoverHighlight>
       </div>
@@ -177,55 +144,7 @@ export function ReviewPanel({ cwd, hidden = false }: { cwd: string; hidden?: boo
           <ToggleGroupItem value="all">全部</ToggleGroupItem>
         </ToggleGroup>
       </footer>
-    </aside>
-  )
-}
-
-/** The column sits on the right edge, so a leftward drag widens it. */
-function ResizeHandle({
-  width,
-  onResize,
-  onCommit
-}: {
-  width: number
-  onResize: (width: number) => void
-  onCommit: () => void
-}) {
-  const drag = useRef<{ startX: number; startWidth: number } | null>(null)
-  const finishDrag = () => {
-    if (!drag.current) return
-    drag.current = null
-    onCommit()
-  }
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="调整变更栏宽度"
-      aria-valuenow={width}
-      aria-valuemin={MIN_REVIEW_WIDTH}
-      aria-valuemax={MAX_REVIEW_WIDTH}
-      className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize"
-      onPointerDown={(event) => {
-        // The stored width can be capped by the layout, so a drag starts from what is on screen.
-        const panel = event.currentTarget.parentElement
-        drag.current = { startX: event.clientX, startWidth: panel?.offsetWidth ?? width }
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }}
-      onPointerMove={(event) => {
-        const started = drag.current
-        if (!started) return
-        onResize(started.startWidth - (event.clientX - started.startX))
-      }}
-      onPointerUp={(event) => {
-        finishDrag()
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId)
-        }
-      }}
-      onPointerCancel={finishDrag}
-      onLostPointerCapture={finishDrag}
-    />
+    </div>
   )
 }
 

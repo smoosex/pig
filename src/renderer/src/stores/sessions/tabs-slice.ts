@@ -1,6 +1,7 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
 import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
 import { SCOPE_LABELS, useDiffStore } from '../diff'
+import { useFilesStore } from '../files'
 import { newSessionId } from '../../lib/session-id'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
@@ -17,6 +18,11 @@ const DEFAULT_SCOPE: DiffScope = 'all'
 /** One changes tab per worktree, so its id is the worktree: it is never parsed, only compared. */
 function changesTabId(cwd: string): string {
   return `diff:${cwd}`
+}
+
+/** One file tab per worktree and path: two worktrees hold a `src/main.ts` each, and they are not the same. */
+function fileTabId(cwd: string, path: string): string {
+  return `file:${cwd}\u0000${path}`
 }
 
 /** Drops a draft slot, but only while `cwd` still points at `sessionId`. */
@@ -50,6 +56,7 @@ export const createTabsSlice: SessionSlice<
   | 'activateTab'
   | 'openExisting'
   | 'openChangesTab'
+  | 'openFileTab'
   | 'setChangesScope'
   | 'acquireProjectDraft'
   | 'releaseProjectDraft'
@@ -311,7 +318,9 @@ export const createTabsSlice: SessionSlice<
           const projectTabs = [
             ...restoredTabs,
             ...state.openTabs.filter(
-              (tab) => (tab.kind === 'project' || tab.kind === 'diff') && !restoredIds.has(tab.id)
+              (tab) =>
+                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file') &&
+                !restoredIds.has(tab.id)
             )
           ]
           return {
@@ -375,6 +384,18 @@ export const createTabsSlice: SessionSlice<
           openTabs: state.openTabs
         }))
         persistChangesTab(tab.cwd)
+        return
+      }
+      if (tab.kind === 'file') {
+        // A file tab owns no session either: its bytes belong to the files store, which reads them when
+        // the view mounts. Nothing here is persisted, because a file tab is not part of what a worktree
+        // remembers across launches — only the strip's own memory of it within this run.
+        ++selectionVersion
+        set((state) => ({
+          ...activeTabPatch(state, tab.id, tab.cwd),
+          currentProjectCwd: tab.cwd,
+          openTabs: state.openTabs
+        }))
         return
       }
       if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === tab.id) {
@@ -479,6 +500,27 @@ export const createTabsSlice: SessionSlice<
           tab.id === id ? { ...tab, diffScope: scope, title: SCOPE_LABELS[scope] } : tab
         )
       }))
+    },
+
+    /**
+     * One tab per file, and the title is the file's own name: the path lives in the worktree, so two
+     * worktrees can hold the same relative path without sharing a tab.
+     */
+    openFileTab: async (cwd, path) => {
+      const id = fileTabId(cwd, path)
+      if (!get().openTabs.some((tab) => tab.id === id)) {
+        set((state) => ({
+          openTabs: [...state.openTabs, {
+            id,
+            cwd,
+            path,
+            title: path.slice(path.lastIndexOf('/') + 1),
+            kind: 'file' as const,
+            loadState: 'ready' as const
+          }]
+        }))
+      }
+      await get().activateTab(id)
     },
 
     openExisting: async (meta, kind: 'project' | 'chat' = 'project') => {
@@ -662,6 +704,22 @@ export const createTabsSlice: SessionSlice<
           ...(wasActive ? activeTabPatch(state, fallback, tab.cwd) : {})
         }))
         persistChangesTab(tab.cwd)
+        if (wasActive && fallback) void get().activateTab(fallback)
+        return
+      }
+      if (tab.kind === 'file') {
+        // No session to close: the tab goes, the file store keeps a draft nobody has saved yet and lets
+        // a clean document go. The strip falls back to a tab of the same worktree, or to its session.
+        const state = get()
+        const fallback = state.openTabs.filter((item) => item.id !== tabId && item.cwd === tab.cwd).at(-1)?.id
+          ?? state.activeSessionByCwd[tab.cwd]
+          ?? null
+        const wasActive = state.activeTabId === tab.id
+        set((current) => ({
+          openTabs: current.openTabs.filter((item) => item.id !== tabId),
+          ...(wasActive ? activeTabPatch(current, fallback, tab.cwd) : {})
+        }))
+        if (tab.path) useFilesStore.getState().releaseDocument(tab.cwd, tab.path)
         if (wasActive && fallback) void get().activateTab(fallback)
         return
       }

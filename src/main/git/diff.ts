@@ -6,8 +6,8 @@
  * panel rows and the changes tab key on.
  */
 import { constants, type Stats } from 'node:fs'
-import { lstat, open, readlink, type FileHandle } from 'node:fs/promises'
-import { isAbsolute, join, relative as relativeTo, resolve, sep } from 'node:path'
+import { lstat, open, readlink } from 'node:fs/promises'
+import { join } from 'node:path'
 import type {
   DiffFileEntry,
   DiffFileStatus,
@@ -16,13 +16,14 @@ import type {
   WorktreeDiff,
   WorktreePatch
 } from '../../shared/api'
+import { resolveWorktreePath } from '../files/paths'
+import { isMissingError, readCapped, BINARY_PROBE_BYTES } from '../files/read'
 import { GitExecError, isNotARepoError } from './exec'
 import { runGit } from './run'
 import { countLanes, readLanes } from './limit'
 
 const MAX_PATCH_CHARS = 8 * 1024 * 1024
 const MAX_UNTRACKED_BYTES = 1024 * 1024
-const BINARY_PROBE_BYTES = 8000
 
 const CONFLICTS = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
 
@@ -201,30 +202,10 @@ async function readUntracked(cwd: string, path: string): Promise<UntrackedFile> 
   }
 }
 
-/** Fills the buffer from the start of an open file, stopping at its end or when the buffer is full. */
-async function readCapped(handle: FileHandle, buffer: Buffer): Promise<number> {
-  let offset = 0
-  while (offset < buffer.length) {
-    const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset)
-    if (bytesRead === 0) break
-    offset += bytesRead
-  }
-  return offset
-}
-
 function rememberCount(cwd: string, path: string, info: Stats, lines: number): void {
   const cache = countCache.get(cwd) ?? new Map<string, CountEntry>()
   countCache.set(cwd, cache)
   cache.set(path, { size: info.size, mtimeMs: info.mtimeMs, lines })
-}
-
-/**
- * The two codes that mean "that path is not there". Shared by the read and by the count validation, so
- * one errno list describes what a missing file is everywhere.
- */
-export function isMissingError(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code
-  return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
 /**
@@ -244,16 +225,11 @@ export function untrackedReadFailure(error: unknown): UntrackedFile {
  * a link is its target path, a real file is contents up to the cap.
  */
 export async function readUntrackedFile(cwd: string, path: string): Promise<UntrackedFileResult> {
-  const root = resolve(cwd)
-  const absolute = resolve(root, path)
-  if (isAbsolute(path) || (absolute !== root && !absolute.startsWith(`${root}${sep}`))) {
-    return { kind: 'missing' }
-  }
-  // Back to the spelling git uses for the same file, which is what the count cache is keyed by.
-  const relative = absolute === root ? '' : relativeTo(root, absolute).split(sep).join('/')
+  const target = await resolveWorktreePath(cwd, path, 'file')
+  if (!target) return { kind: 'missing' }
   // The validation pool stats paths; this one holds a buffer and reads bytes. Separate lanes, so a
   // refresh's queue of stats can never stand in front of a card's read.
-  return readLanes.run(() => readUntracked(root, relative))
+  return readLanes.run(() => readUntracked(target.root, target.relative))
 }
 
 /**

@@ -34,7 +34,9 @@ export function createLimiter(lanes: number): Limiter {
   }
 }
 
-/** Untracked contents: four buffers of about a MiB are the whole memory budget of a burst. */
+/** Untracked contents: four buffers of about a MiB are the whole memory budget of a burst. File tabs read
+ * through the same pool — their buffer is a couple of MiB, and a change event asks for every open one at
+ * once — so the pool bounds what content is in memory at a time, not what asked for it. */
 export const readLanes = createLimiter(4)
 /** Count validation: stats only, but a refresh can hand this pool thousands of them. */
 export const countLanes = createLimiter(8)

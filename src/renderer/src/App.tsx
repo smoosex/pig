@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { FolderPlus, MessageSquarePlus, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
@@ -12,7 +12,7 @@ import { Sidebar } from './components/Sidebar'
 import { TabBar } from './components/TabBar'
 import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
-import { ReviewPanel } from './components/diff/ReviewPanel'
+import { WorkspacePanel } from './components/panel/WorkspacePanel'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
@@ -21,6 +21,9 @@ import { useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
+
+// The editor is the heaviest thing a tab can pull in, so it arrives with the first file that is opened.
+const FileView = lazy(() => import('./components/files/FileView'))
 
 function ThemeSync() {
   const appearance = useSettingsStore((s) => s.appearance)
@@ -136,6 +139,7 @@ export default function App() {
   }, [initializeProjectWorkspaces, loadChats, loadSettings, loadReviewPrefs])
 
   const diffTab = activeTab?.kind === 'diff' ? activeTab : null
+  const fileTab = activeTab?.kind === 'file' ? activeTab : null
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
   const setReviewOpen = useDiffStore((s) => s.setReviewOpen)
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
@@ -207,6 +211,12 @@ export default function App() {
                 </div>
                 {diffTab ? (
                   <ChangesView cwd={diffTab.cwd} />
+                ) : fileTab?.path ? (
+                  <Suspense
+                    fallback={<p className="px-3 py-2 text-xs text-muted-foreground">正在打开文件…</p>}
+                  >
+                    <FileView cwd={fileTab.cwd} path={fileTab.path} />
+                  </Suspense>
                 ) : sessionReady || projectHome ? (
                   <>
                     {sessionReady ? <ChatView /> : <SessionGreeting />}
@@ -256,7 +266,7 @@ export default function App() {
                 )}
               </div>
             </div>
-            {currentProjectCwd ? <ReviewPanel cwd={currentProjectCwd} hidden={!reviewOpen} /> : null}
+            {currentProjectCwd ? <WorkspacePanel cwd={currentProjectCwd} hidden={!reviewOpen} /> : null}
             </>
           )}
         </div>

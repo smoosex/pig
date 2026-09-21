@@ -212,6 +212,48 @@ export interface DiffFileEntry {
   deletions: number | null
 }
 
+/**
+ * One row of the file tree. Paths are worktree-relative and `/`-separated, the same spelling the
+ * changes panel uses, so a file the tree opens and a file the review column names are the same string.
+ */
+export interface FileTreeEntry {
+  name: string
+  path: string
+  kind: 'file' | 'directory' | 'link'
+  /** Git ignores it — `.gitignore`, `.git/info/exclude` or the user's global excludes. */
+  ignored: boolean
+}
+
+/** One level of the tree, read when it is first opened and again whenever the worktree changes. */
+export interface DirectoryListing {
+  /** The directory this listing is for; `''` is the worktree root. */
+  path: string
+  entries: FileTreeEntry[]
+}
+
+/** A file's identity on disk, so a write can tell whether it still holds the bytes that were read. */
+export interface FileStamp {
+  mtimeMs: number
+  size: number
+}
+
+/**
+ * One file for a file tab. A link is never followed, so a symlink inside the worktree cannot be a way
+ * to read — or write — anything outside it; the bytes are capped and probed for NUL, like an untracked
+ * file read for the changes card.
+ */
+export type FileReadResult =
+  | ({ kind: 'text'; contents: string } & FileStamp)
+  | { kind: 'binary'; size: number }
+  | { kind: 'too-large'; size: number }
+  | { kind: 'link' }
+  | { kind: 'missing' }
+
+export type FileWriteResult =
+  | ({ kind: 'written' } & FileStamp)
+  /** The file no longer holds what the draft was written against: the reader decides what to do. */
+  | { kind: 'conflict' }
+
 /** An image block a turn refers to; the bytes stay in main behind a pig-image URL. */
 export interface DisplayImage {
   mimeType: string
@@ -413,6 +455,21 @@ export interface SessionApi {
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
+  readDirectory: (cwd: string, path: string) => Promise<DirectoryListing>
+  readFile: (cwd: string, path: string) => Promise<FileReadResult>
+  /**
+   * Writes a file tab's draft. `expected` is the stamp the draft was edited against: a file that has
+   * moved on since then answers `conflict` instead of being overwritten, unless the reader said so.
+   */
+  writeFile: (
+    cwd: string,
+    path: string,
+    contents: string,
+    options: { expected?: FileStamp; overwrite?: boolean }
+  ) => Promise<FileWriteResult>
+  /** 打开方式…: hands the file to the desktop instead of opening a tab for it. */
+  openFileExternally: (cwd: string, path: string) => Promise<void>
+  revealFileExternally: (cwd: string, path: string) => Promise<void>
   readWorktreeDiff: (cwd: string) => Promise<WorktreeDiff>
   readWorktreePatch: (cwd: string, scope: DiffScope) => Promise<WorktreePatch>
   readUntrackedFile: (cwd: string, path: string) => Promise<UntrackedFileResult>

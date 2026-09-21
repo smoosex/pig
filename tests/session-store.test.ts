@@ -99,7 +99,7 @@ async function runFixture(name: string): Promise<void> {
     viewBranch: async (_id: string, tip: string) => ({ leafId: tip })
   } as unknown as SessionApi
   Object.assign(globalThis, { window: { api } })
-  const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
+  const { useSessionsStore: store, selectActiveSessionId } = await import('../src/renderer/src/stores/sessions')
   const state = () => store.getState()
   const runtime = () => state().runtime[meta.id]
 
@@ -1075,6 +1075,51 @@ async function runFixture(name: string): Promise<void> {
     first.resolve([{ cwd: '/old', name: 'old', sessions: [] }])
     await older
     assert.equal(state().projects[0].cwd, '/new')
+  } else if (name === 'file-tabs') {
+    let closes = 0
+    api.closeSession = async () => { closes++ }
+    const sessionTab = {
+      id: meta.id,
+      cwd: '/project',
+      title: '新对话',
+      kind: 'project' as const,
+      loadState: 'ready' as const
+    }
+    store.setState({
+      openTabs: [sessionTab],
+      activeTabId: meta.id,
+      currentProjectCwd: '/project',
+      activeSessionByCwd: { '/project': meta.id }
+    })
+
+    await state().openFileTab('/project', 'src/one.ts')
+    const fileTabId = `file:/project\u0000src/one.ts`
+    assert.equal(openCalls, 0, 'a file tab opens no session')
+    assert.equal(state().activeTabId, fileTabId)
+    assert.equal(selectActiveSessionId(state()), null, 'a file tab is not a session, whoever asks')
+    assert.equal(state().currentProjectCwd, '/project', 'the column keeps the worktree it belongs to')
+    assert.equal(state().openTabs.length, 2)
+    assert.equal(state().openTabs.at(-1)?.title, 'one.ts', 'the tab is named after the file')
+    assert.equal(state().openTabs.at(-1)?.path, 'src/one.ts')
+
+    // Opening the same file again reveals the tab it already has; the same path in another worktree
+    // is another file, and gets a tab of its own.
+    await state().openFileTab('/project', 'src/one.ts')
+    assert.equal(state().openTabs.length, 2)
+    await state().openFileTab('/other', 'src/one.ts')
+    assert.equal(state().openTabs.length, 3)
+    assert.equal(state().currentProjectCwd, '/other')
+    assert.equal(persistedOpenProjectSessions.workspaces.length, 0, 'a file tab is not remembered across launches')
+
+    // Closing one hands the strip back to a tab of its own worktree, and closes no session with it.
+    await state().activateTab(fileTabId)
+    assert.equal(state().currentProjectCwd, '/project')
+    assert.equal(selectActiveSessionId(state()), null)
+    state().closeTab(fileTabId)
+    assert.equal(state().activeTabId, meta.id)
+    assert.equal(selectActiveSessionId(state()), meta.id, 'the session is back behind the strip')
+    assert.equal(state().activeTabByCwd['/project'], meta.id)
+    assert.equal(closes, 0, 'a file tab owns no session to close')
   } else {
     throw new Error(`Unknown fixture: ${name}`)
   }
@@ -1127,6 +1172,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'selection-order': 'a delayed open does not override a later tab selection',
     'deleted-chat': 'late directory scans do not restore a deleted chat',
     'chat-session-delete-keeps-diff': 'deleting a chat or session does not clear worktree diff state',
+    'file-tabs': 'a file tab opens no session and is remembered per worktree',
     'project-load-order': 'a slow project scan cannot replace a newer list'
   }
   for (const [name, description] of Object.entries(cases)) {

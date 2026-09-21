@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   countLines,
-  isMissingError,
   parseNumstat,
   parseStatus,
   readUntrackedFile,
@@ -13,6 +12,7 @@ import {
   untrackedReadFailure
 } from '../src/main/git/diff'
 import { runGit } from '../src/main/git/run'
+import { isMissingError } from '../src/main/files/read'
 
 const NUL = '\0'
 const temps: string[] = []
@@ -238,9 +238,13 @@ describe('readWorktreePatch', () => {
     const outside = await realpath(await mkdtemp(join(tmpdir(), 'pig-diff-outside-')))
     temps.push(outside)
     await writeFile(join(outside, 'secret.txt'), 'PRIVATE\n')
+    // A link to the directory is the one O_NOFOLLOW cannot see: it holds the last segment, and the link
+    // is a level above it.
+    await symlink(outside, join(root, 'outdir'))
 
     expect(await readUntrackedFile(root, '../secret.txt')).toEqual({ kind: 'missing' })
     expect(await readUntrackedFile(root, join(outside, 'secret.txt'))).toEqual({ kind: 'missing' })
+    expect(await readUntrackedFile(root, 'outdir/secret.txt')).toEqual({ kind: 'missing' })
     expect(await readUntrackedFile(root, 'modify.txt')).toEqual({
       kind: 'text',
       contents: 'a\nb\nc\n',

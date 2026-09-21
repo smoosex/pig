@@ -1,8 +1,9 @@
 /**
- * The review column is the only place git state becomes clickable, so this fixture drives the real
- * store and the real panel against a stubbed bridge: grouped rows, the flat 全部 list, the click that
- * opens a changes tab, folding a group, the empty states and a refresh that keeps its rows. A drag is
- * checked too, because the width is what decides whether the panel is usable at all.
+ * The right column is the only place git state becomes clickable, so this fixture drives the real store
+ * and the real panel against a stubbed bridge: grouped rows, the flat 全部 list, the click that opens a
+ * changes tab, folding a group, the empty states and a refresh that keeps its rows. A drag is checked
+ * too, because the width is what decides whether the panel is usable at all — and so is the switch
+ * between the changes list and the file tree that now share the column.
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
@@ -33,11 +34,15 @@ async function runFixture(name: string): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const { mock } = await import('bun:test')
   const opened: { path: string; scope?: string }[] = []
+  const filesOpened: string[] = []
   const sessionState = {
     openTabs: [] as { id: string; kind: string }[],
     activeTabId: null as string | null,
     openChangesTab: async (_cwd: string, path?: string, scope?: string) => {
       if (path) opened.push({ path, scope })
+    },
+    openFileTab: async (_cwd: string, path: string) => {
+      filesOpened.push(path)
     }
   }
   mock.module('../src/renderer/src/stores/sessions', () => ({
@@ -72,7 +77,7 @@ async function runFixture(name: string): Promise<void> {
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useDiffStore } = await import('../src/renderer/src/stores/diff')
-  const { ReviewPanel } = await import('../src/renderer/src/components/diff/ReviewPanel')
+  const { WorkspacePanel } = await import('../src/renderer/src/components/panel/WorkspacePanel')
 
   const container = document.createElement('div')
   document.body.append(container)
@@ -88,7 +93,7 @@ async function runFixture(name: string): Promise<void> {
   }
   const render = async (cwd: string, hidden = false) => {
     await act(async () => {
-      root.render(createElement(ReviewPanel, { cwd, hidden }))
+      root.render(createElement(WorkspacePanel, { cwd, hidden }))
     })
     await act(async () => {
       await Promise.resolve()
@@ -208,7 +213,7 @@ async function runFixture(name: string): Promise<void> {
     assert.match(text, /已暂存/)
     assert.match(text, /未提交/)
     const header = container.querySelector('aside header')!
-    assert.equal(header.textContent, '变更3', 'the header counts files, not lines')
+    assert.equal(header.textContent, '文件变更3', 'the switcher carries the count of changed files, not lines')
     assert.deepEqual(rowTexts(), ['Astaged.tssrc+3-0', 'Mwork.tssrc+2-1', 'Unew.tssrc+4-0'])
 
     // The panel's rows keep the left column's rhythm: inset, rounded, 2px of air between them.
@@ -311,9 +316,57 @@ async function runFixture(name: string): Promise<void> {
     assert.match(collapsed.className, /\bmr-0\b/, 'taking the page margin with it')
     assert.equal(collapsed.getAttribute('aria-hidden'), 'true')
     assert.ok(collapsed.hasAttribute('inert'), 'and stops answering the keyboard')
+  } else if (name === 'views') {
+    const treeCalls: string[] = []
+    api.readDirectory = async (_cwd: string, path: string) => {
+      treeCalls.push(path)
+      if (path === '') {
+        return {
+          path,
+          entries: [
+            { name: 'node_modules', path: 'node_modules', kind: 'directory', ignored: true },
+            { name: 'src', path: 'src', kind: 'directory', ignored: false },
+            { name: 'readme.md', path: 'readme.md', kind: 'file', ignored: false }
+          ]
+        }
+      }
+      return {
+        path,
+        entries: [{ name: 'work.ts', path: 'src/work.ts', kind: 'file', ignored: false }]
+      }
+    }
+    const switcher = (label: string) =>
+      [...container.querySelectorAll('header button[role="radio"]')].find((button) =>
+        (button.textContent ?? '').startsWith(label)
+      )
+
+    await render(CWD)
+    assert.equal(rowTexts().length, 3, 'the changes list is what the column opens on')
+
+    await click(switcher('文件'))
+    assert.deepEqual(treeCalls, [''], 'the tree reads the root the first time it is shown')
+    assert.deepEqual(rowTexts(), ['node_modules', 'src', 'readme.md'])
+
+    // A directory reads its own level, once, and its rows land under it.
+    await click(row('src'))
+    assert.deepEqual(treeCalls, ['', 'src'])
+    assert.deepEqual(rowTexts(), ['node_modules', 'src', 'work.ts', 'readme.md'])
+    await click(row('src'))
+    assert.deepEqual(rowTexts(), ['node_modules', 'src', 'readme.md'])
+    await click(row('src'))
+    assert.deepEqual(treeCalls, ['', 'src', 'src'], 'closing takes the rows away, and opening reads the level again')
+
+    // What git ignores is listed but dimmed, and the footer toggle hides it outright.
+    assert.match(row('node_modules')!.className, /text-muted-foreground/)
+    await click(container.querySelector('footer button[aria-pressed]'))
+    assert.deepEqual(rowTexts(), ['src', 'work.ts', 'readme.md'])
+
+    // A file opens its own tab.
+    await click(row('src/work.ts'))
+    assert.deepEqual(filesOpened, ['src/work.ts'])
   } else if (name === 'drag') {
     await render(CWD)
-    const handle = container.querySelector('div[aria-label="调整变更栏宽度"]')
+    const handle = container.querySelector('div[aria-label="调整侧边栏宽度"]')
     assert.ok(handle, 'expected the resize handle')
     assert.match(handle!.className, /\bleft-0\b/, 'the full handle stays inside the clipped panel')
     assert.doesNotMatch(handle!.className, /-left-1/)
@@ -384,6 +437,7 @@ if (process.argv[2] === '--review-panel-fixture') {
     shell: 'the column has no separators and no duplicate collapse button',
     states: 'a broken read, a non-git folder and a clean worktree each say so',
     refresh: 'a refresh keeps the list while only a first read shows the loading text',
+    views: 'the column switches between the changes list and the file tree',
     drag: 'dragging the edge resizes the panel and writes the preference once'
   })) {
     test(`review panel: ${title}`, async () => {
