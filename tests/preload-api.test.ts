@@ -41,6 +41,7 @@ async function runFixture(): Promise<void> {
   const leaseId = await api.watchWorktreeDiff('/repo')
   await api.unwatchWorktreeDiff('/repo', leaseId)
   api.onDiffWatchError(() => {})
+  api.onSessionNames(() => {})
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
@@ -57,6 +58,7 @@ async function runFixture(): Promise<void> {
     }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
+  assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
 }
 
 if (process.argv[2] === '--preload-api-fixture') {

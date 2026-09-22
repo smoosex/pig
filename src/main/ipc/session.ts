@@ -13,6 +13,7 @@ import {
   prepareSession,
   promoteDraftSession,
   refreshSessionModels,
+  renameSession,
   setSessionModel,
   setSessionThinking,
   updateFollowUpMessage,
@@ -78,6 +79,14 @@ export function registerSessionIpc(): void {
       await closeSession(sessionId)
       await removeSessionFile(path)
       await forgetOpenProjectSession(sessionId)
+    }
+  )
+
+  ipcMain.handle(
+    'session:rename',
+    async (_event, sessionId: string, name: string, path?: string) => {
+      if (!sessionId || typeof name !== 'string') throw new Error('Session id and name are required')
+      await renameSession(sessionId, name, typeof path === 'string' ? path : undefined)
     }
   )
 

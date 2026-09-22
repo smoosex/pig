@@ -46,6 +46,7 @@ async function runFixture(name: string): Promise<void> {
   let tokenCalls = 0
   let promoteCalls = 0
   let discardCalls = 0
+  const renameCalls: Array<{ sessionId: string; name: string; path?: string }> = []
   const createdIds: string[] = []
   let persistedOpenProjectSessions: OpenProjectSessionsState = { currentCwd: null, workspaces: [] }
   const api: SessionApi = {
@@ -96,6 +97,9 @@ async function runFixture(name: string): Promise<void> {
     listProject: async (): Promise<ProjectGroup | null> => null,
     isChatCwd: async () => true,
     deleteChat: async () => {},
+    renameSession: async (sessionId: string, name: string, path?: string) => {
+      renameCalls.push({ sessionId, name, path })
+    },
     viewBranch: async (_id: string, tip: string) => ({ leafId: tip })
   } as unknown as SessionApi
   Object.assign(globalThis, { window: { api } })
@@ -203,6 +207,57 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().currentProjectCwd, '/project')
     assert.equal(state().activeTabId, 'first')
     assert.equal(state().openTabs[0]?.loadState, 'ready')
+    return
+  }
+
+  if (name === 'rename-session') {
+    const chat: SessionMeta = { ...meta, id: 'chat', cwd: '/chat', path: '/chat/chat.jsonl', firstMessage: 'Chat first' }
+    const project: SessionMeta = { ...meta, id: 'project-session', firstMessage: 'Another message' }
+    api.listChats = async () => [{ cwd: '/chat', name: 'chat', sessions: [chat] }]
+    api.listProjects = async () => [{ cwd: '/project', name: 'project', sessions: [project] }]
+    api.openSession = async () => ({ sessionId: project.id, cwd: project.cwd, display: history(project.id) })
+    await Promise.all([state().loadChats(), state().loadProjects()])
+    await state().openExisting(project)
+
+    await state().renameSession(project.id, '  重命名  ', project.path)
+    assert.deepEqual(renameCalls, [{ sessionId: project.id, name: '重命名', path: project.path }])
+    assert.equal(state().openTabs[0]?.title, '重命名')
+    assert.equal(state().openTabs[0]?.meta?.name, '重命名')
+    assert.equal(state().projects[0]?.sessions[0]?.name, '重命名')
+
+    // An empty name clears the override: the first message owns the title again.
+    await state().renameSession(project.id, '')
+    assert.equal(state().openTabs[0]?.title, 'Another message')
+    assert.equal(state().projects[0]?.sessions[0]?.name, undefined)
+
+    // A chat row names the same session whether or not it is open in the strip.
+    await state().renameSession(chat.id, '聊天名字', chat.path)
+    assert.equal(state().chats[0]?.sessions[0]?.name, '聊天名字')
+    return
+  }
+
+  if (name === 'late-session-names') {
+    const chat: SessionMeta = { ...meta, id: 'chat', cwd: '/chat', path: '/chat/chat.jsonl', firstMessage: 'Chat first' }
+    const project: SessionMeta = { ...meta, id: 'project-session', firstMessage: 'Another message' }
+    api.listChats = async () => [{ cwd: '/chat', name: 'chat', sessions: [chat] }]
+    api.listProjects = async () => [{ cwd: '/project', name: 'project', sessions: [project] }]
+    api.openSession = async () => ({ sessionId: project.id, cwd: project.cwd, display: history(project.id) })
+    await Promise.all([state().loadChats(), state().loadProjects()])
+    await state().openExisting(project)
+    assert.equal(state().openTabs[0]?.title, 'Another message', 'the first message stands in until the name arrives')
+
+    // A background scan names a session long after its listing showed the first message instead.
+    state().applySessionNames([
+      { sessionId: project.id, path: project.path, name: '深处的名字' },
+      { sessionId: chat.id, path: chat.path, name: '聊天的名字' },
+      { sessionId: 'not-listed', path: '/project/gone.jsonl', name: '无人认领' }
+    ])
+    assert.equal(state().openTabs[0]?.title, '深处的名字')
+    assert.equal(state().openTabs[0]?.meta?.name, '深处的名字')
+    assert.equal(state().projects[0]?.sessions[0]?.name, '深处的名字')
+    assert.equal(state().chats[0]?.sessions[0]?.name, '聊天的名字')
+    state().applySessionNames([])
+    assert.equal(state().openTabs[0]?.title, '深处的名字')
     return
   }
 
@@ -1132,6 +1187,8 @@ if (process.argv[2] === '--session-store-fixture') {
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
     'worktree-topology-sync': 'focus discovery preserves sessions without scanning their files',
+    'rename-session': 'a rename reaches the tab, the project rows and the chats, and clearing it restores the title',
+    'late-session-names': 'a name found after the listing patches the tab, the project rows and the chats',
     'worktree-tab-remembered': 'a worktree returns to the changes tab it was left on',
     'worktree-restore-tabs': 'a restored worktree opens the tab it was left on',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',

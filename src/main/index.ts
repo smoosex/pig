@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
+import { forwardSessionNames } from './session-names'
 import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
@@ -21,6 +22,7 @@ app.whenReady().then(() => {
   handleSessionImages()
   void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
+  forwardSessionNames()
   createMainWindow()
 
   app.on('activate', () => {

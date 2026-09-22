@@ -1,11 +1,14 @@
 import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
-import type { ProjectGroup, SessionMeta } from '../../shared/api'
+import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
 const PREFIX_BYTES = 64 * 1024
+/** Names are appended, so finding the newest one means walking the file back in reads this large. */
+const NAME_READ_BYTES = 4 * 1024 * 1024
+const NAME_FLUSH_MS = 50
 const SCAN_CONCURRENCY = 32
 const IMAGE_PREVIEW = '图片'
 
@@ -151,7 +154,110 @@ function previewText(content: unknown): string {
   return hasImage(content) ? IMAGE_PREVIEW : ''
 }
 
-async function scanFile(filePath: string): Promise<SessionMeta | null> {
+type NameScan = { sessionId: string; path: string; size: number; dropped?: boolean }
+
+/**
+ * What the prefix scan cannot answer: a name is appended to the end of a session file, which for a long
+ * session is megabytes past the prefix a listing reads. Those files are scanned in the background, once
+ * per run, and the windows showing the row learn the answer through `onSessionNamesResolved`. A file
+ * that had no name is remembered as such: appending can only add one, so nothing but a rename has to
+ * forget the entry again.
+ */
+const sessionNames = new Map<string, string | undefined>()
+const nameScans: NameScan[] = []
+const nameListeners = new Set<(updates: SessionNameUpdate[]) => void>()
+let scanningNames = false
+let currentScan: NameScan | null = null
+let pendingNames: SessionNameUpdate[] = []
+let nameFlush: ReturnType<typeof setTimeout> | null = null
+
+export function onSessionNamesResolved(listener: (updates: SessionNameUpdate[]) => void): () => void {
+  nameListeners.add(listener)
+  return () => {
+    nameListeners.delete(listener)
+  }
+}
+
+/** A rename just appended a name, so a scan still running would report the name it replaced. */
+export function forgetSessionName(path: string): void {
+  sessionNames.delete(path)
+  const queued = nameScans.findIndex((scan) => scan.path === path)
+  if (queued >= 0) nameScans.splice(queued, 1)
+  if (currentScan?.path === path) currentScan.dropped = true
+}
+
+function flushNames(): void {
+  nameFlush = null
+  const updates = pendingNames
+  pendingNames = []
+  for (const listener of nameListeners) listener(updates)
+}
+
+async function drainNameScans(): Promise<void> {
+  if (scanningNames) return
+  scanningNames = true
+  try {
+    for (let scan = nameScans.shift(); scan; scan = nameScans.shift()) {
+      currentScan = scan
+      const name = await findSessionName(scan.path, scan.size).catch(() => undefined)
+      currentScan = null
+      if (scan.dropped) continue
+      sessionNames.set(scan.path, name)
+      if (name) {
+        pendingNames.push({ sessionId: scan.sessionId, path: scan.path, name })
+        if (nameFlush === null) nameFlush = setTimeout(flushNames, NAME_FLUSH_MS)
+      }
+      // The listing that queued this is answered already: the rest of the queue waits for a free tick.
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+  } finally {
+    scanningNames = false
+  }
+}
+
+function sessionNameOf(sessionId: string, path: string, size: number): string | undefined {
+  if (sessionNames.has(path)) return sessionNames.get(path)
+  if (!nameScans.some((scan) => scan.path === path)) {
+    nameScans.push({ sessionId, path, size })
+    void drainNameScans()
+  }
+  return undefined
+}
+
+/**
+ * The name the SDK would report for a session file: the newest `session_info` entry, an empty one
+ * counting as cleared. Reads walk back from the end a chunk at a time and stop at the first entry they
+ * meet, so a name costs what the bytes behind it cost. Lines a reader skips are walked over, and a line
+ * cut in half by a chunk boundary waits for the bytes in front of it.
+ */
+async function findSessionName(filePath: string, size: number): Promise<string | undefined> {
+  const handle = await open(filePath, 'r')
+  try {
+    let cursor = size
+    let carry: string | null = null
+    while (cursor > 0) {
+      const start = Math.max(0, cursor - NAME_READ_BYTES)
+      const buf = Buffer.allocUnsafe(cursor - start)
+      const { bytesRead } = await handle.read(buf, 0, buf.length, start)
+      const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n')
+      // The head of a line that starts before this chunk completes the tail carried from the last one.
+      if (carry !== null) lines[lines.length - 1] += carry
+      carry = start > 0 ? (lines.shift() ?? '') : null
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const line = lines[index]
+        if (!line.trim()) continue
+        const entry = parseEntry(line)
+        if (entry?.type === 'session_info') return entry.name?.trim() || undefined
+      }
+      cursor = start
+    }
+    return undefined
+  } finally {
+    await handle.close()
+  }
+}
+
+async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | null> {
   try {
     const [st, lines] = await Promise.all([stat(filePath), readPrefix(filePath)])
     let id = ''
@@ -183,11 +289,13 @@ async function scanFile(filePath: string): Promise<SessionMeta | null> {
     }
 
     if (!id) return null
+    // Past the prefix the name can still be there, appended long after the first message was written.
+    const resolved = !name && deep && st.size > PREFIX_BYTES ? sessionNameOf(id, filePath, st.size) : name
     return {
       path: filePath,
       id,
       cwd,
-      name,
+      name: resolved,
       created,
       modified: st.mtime.toISOString(),
       size: st.size,
@@ -207,9 +315,10 @@ async function listJsonlFiles(dir: string): Promise<string[]> {
   }
 }
 
-async function scanFiles(files: string[]): Promise<SessionMeta[]> {
+async function scanFiles(files: string[], options: { deep?: boolean } = {}): Promise<SessionMeta[]> {
   if (files.length === 0) return []
-  const metas = await mapPool(files, SCAN_CONCURRENCY, scanFile)
+  const deep = options.deep ?? true
+  const metas = await mapPool(files, SCAN_CONCURRENCY, (file) => scanFile(file, deep))
   return metas.filter((meta): meta is SessionMeta => meta !== null)
 }
 
@@ -248,7 +357,9 @@ export async function listProject(cwd: string): Promise<ProjectGroup | null> {
 }
 
 export async function listProjects(): Promise<ProjectGroup[]> {
-  const metas = await scanFiles(await collectAllFiles())
+  // Every session of every project: the project tree sorts by newest activity, so names are not worth
+  // walking long files for here.
+  const metas = await scanFiles(await collectAllFiles(), { deep: false })
   const byCwd = new Map<string, SessionMeta[]>()
   for (const meta of metas) {
     const cwd = meta.cwd || '(unknown)'
@@ -264,7 +375,8 @@ export async function listProjects(): Promise<ProjectGroup[]> {
 
 export async function listProjectFiles(cwd: string): Promise<string[]> {
   if (cwd === '(unknown)') {
-    return (await scanFiles(await collectAllFiles())).filter((meta) => !meta.cwd).map((meta) => meta.path)
+    // Only the paths are wanted here: names are not worth walking long files for.
+    return (await scanFiles(await collectAllFiles(), { deep: false })).filter((meta) => !meta.cwd).map((meta) => meta.path)
   }
   return listJsonlFiles(sessionDirForCwd(cwd))
 }
@@ -284,7 +396,7 @@ export async function removeProjectDir(cwd: string): Promise<void> {
   const root = resolve(sessionsRoot()) + sep
   if (!dir.startsWith(root)) throw new Error(`Invalid project dir: ${dir}`)
   const target = resolve(cwd)
-  const sessions = await scanFiles(await listJsonlFiles(dir))
+  const sessions = await scanFiles(await listJsonlFiles(dir), { deep: false })
   await Promise.all(sessions
     .filter((session) => session.cwd && resolve(session.cwd) === target)
     .map((session) => removeSessionFile(session.path)))

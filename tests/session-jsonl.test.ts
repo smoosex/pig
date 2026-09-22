@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  appendSessionInfo,
   indexSessionFile,
   probeSessionRow,
   readAllEntries,
@@ -442,4 +444,91 @@ test('reads a reduced row the slow way when its bytes are not the expected shape
     expect((entries[0]!.message as Record<string, unknown>).toolName).toBeUndefined()
     expect((entries[0]!.message as Record<string, unknown>).role).toBe('toolResult')
   })
+})
+
+test('appends a session_info line that hangs from the file it lands in', async () => {
+  await withFile([header(), entry('u1', null, 'user'), entry('a1', 'u1', 'assistant')], (path) => {
+    appendSessionInfo(path, '重命名 之后')
+    const index = indexSessionFile(path)
+    const last = index.entries.at(-1)!
+    expect(last.type).toBe('session_info')
+    expect(last.parentId).toBe('a1')
+    expect(index.leafId).toBe(last.id)
+    expect(readAllEntries(index).at(-1)).toMatchObject({ name: '重命名 之后' })
+  })
+})
+
+test('appends after a last line that carries no trailing newline of its own', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-jsonl-'))
+  const path = join(root, 'session.jsonl')
+  await writeFile(path, [header(), entry('u1', null, 'user')].join('\n'))
+  try {
+    appendSessionInfo(path, 'no newline')
+    const index = indexSessionFile(path)
+    expect(index.entries.at(-1)).toMatchObject({ type: 'session_info', parentId: 'u1' })
+    expect(index.entries).toHaveLength(2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('finds the last id behind a line heavier than the read window', async () => {
+  const heavy = entry('u1', null, 'user', 'x'.repeat(200 * 1024))
+  await withFile([header(), heavy], (path) => {
+    appendSessionInfo(path, 'heavy tail')
+    expect(indexSessionFile(path).entries.at(-1)).toMatchObject({ type: 'session_info', parentId: 'u1' })
+  })
+})
+
+test('a file without entries takes the appended line as its first root', async () => {
+  await withFile([header()], (path) => {
+    appendSessionInfo(path, 'first name')
+    expect(indexSessionFile(path).entries.at(-1)).toMatchObject({ type: 'session_info', parentId: null })
+  })
+})
+
+test('blank lines at the end of the file do not turn the append into a second root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-jsonl-'))
+  const path = join(root, 'session.jsonl')
+  await writeFile(path, `${[header(), entry('u1', null, 'user'), entry('a1', 'u1', 'assistant')].join('\n')}\n\n`)
+  try {
+    appendSessionInfo(path, 'blank tail')
+    const index = indexSessionFile(path)
+    expect(index.entries.at(-1)).toMatchObject({ type: 'session_info', parentId: 'a1' })
+    expect(index.branch.map((item) => item.id)).toEqual(['u1', 'a1', index.leafId!])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('lands behind the last readable line when the tail of the file is truncated', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-jsonl-'))
+  const path = join(root, 'session.jsonl')
+  const truncated = '{"type":"message","id":"u2","par'
+  const lines = [header(), entry('u1', null, 'user'), entry('a1', 'u1', 'assistant')]
+  await writeFile(path, `${lines.join('\n')}\n${truncated}`)
+  try {
+    // A root of its own here would hide every turn above it behind an abandoned branch.
+    appendSessionInfo(path, 'after a crash')
+    const index = indexSessionFile(path)
+    expect(index.entries.at(-1)).toMatchObject({ type: 'session_info', parentId: 'a1' })
+    expect(index.branch.map((item) => item.id)).toEqual(['u1', 'a1', index.leafId!])
+    const written = readFileSync(path, 'utf8')
+    expect(written.startsWith(`${lines.join('\n')}\n${truncated}\n`)).toBe(true)
+    expect(JSON.parse(written.trimEnd().split('\n').at(-1)!)).toMatchObject({ type: 'session_info', parentId: 'a1' })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('refuses to append into a file whose every line is unreadable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-jsonl-'))
+  const path = join(root, 'session.jsonl')
+  await writeFile(path, '{"type":"message","id":"u1","par')
+  try {
+    expect(() => appendSessionInfo(path, 'nowhere')).toThrow(/no readable line/)
+    expect(readFileSync(path, 'utf8')).toBe('{"type":"message","id":"u1","par')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

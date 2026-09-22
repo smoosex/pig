@@ -46,12 +46,14 @@ import {
   type SessionSource
 } from './session-source'
 import {
+  appendSessionInfo,
   readEntryById,
   readSessionHeader,
   UnsupportedSessionFile,
   type SessionHeader
 } from './session-jsonl'
 import { CURRENT_SESSION_VERSION } from '@earendil-works/pi-coding-agent'
+import { forgetSessionName, isSessionFile } from './session-loader'
 import type {
   LiveSession,
   MemorySession,
@@ -181,6 +183,39 @@ export function createPendingSession(
 export function promoteDraftSession(sessionId: string): string {
   if (!drafts.delete(sessionId)) throw new Error(`Draft session not found: ${sessionId}`)
   return sessionState(sessionId).cwd
+}
+
+/**
+ * Renaming writes a `session_info` line, the SDK's own record for a session's display name: through
+ * the manager when one holds the session, into the file when it is not open at all. A draft has no
+ * file yet, so its entry waits in the manager until the first send publishes it.
+ */
+export async function renameSession(sessionId: string, name: string, path?: string): Promise<void> {
+  const clean = name.replace(/[\r\n]+/g, ' ').trim()
+  const session = live.get(sessionId) ?? pending.get(sessionId)
+  if (session) {
+    if ('agentSession' in session) {
+      session.agentSession.setSessionName(clean)
+      return
+    }
+    if (session.kind === 'memory') {
+      session.sessionManager.appendSessionInfo(clean)
+      return
+    }
+    appendSessionInfo(session.path, clean)
+    // The index was built before that line existed: its leaf and its size both moved on.
+    session.index = null
+    session.indexing = null
+    session.tailById = null
+    forgetSessionName(session.path)
+    return
+  }
+  if (!path) throw new Error(`Session not found: ${sessionId}`)
+  // The check compares against the sessions root as it is spelled, so resolving first would reject a
+  // root that is reached through a symlink.
+  if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
+  appendSessionInfo(path, clean)
+  forgetSessionName(path)
 }
 
 export async function discardDraftSession(sessionId: string): Promise<void> {

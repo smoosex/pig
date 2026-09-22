@@ -1,9 +1,16 @@
 import { useState } from 'react'
-import { CircleAlert, FileDiff, LoaderCircle, Plus, SquareText, X } from 'lucide-react'
+import { CircleAlert, FileDiff, LoaderCircle, PenLine, Plus, SquareText, X } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger
+} from './ui/context-menu'
+import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
 import { CloseSpin } from './RunningSpinners'
 import { fileIcon } from './diff/file-entry'
@@ -48,6 +55,7 @@ export function TabBar() {
             title={tab.title}
             kind={tab.kind}
             path={tab.path}
+            sessionPath={tab.meta?.path}
             active={tab.id === activeTabId}
             loading={tab.loadState === 'opening'}
             error={tab.loadState === 'error' ? tab.loadError : undefined}
@@ -91,6 +99,7 @@ function Tab({
   title,
   kind,
   path,
+  sessionPath,
   active,
   loading,
   error,
@@ -102,6 +111,7 @@ function Tab({
   title: string
   kind: OpenTab['kind']
   path?: string
+  sessionPath?: string
   active: boolean
   loading: boolean
   error?: string
@@ -113,8 +123,12 @@ function Tab({
     const document = path ? state.documents[fileKey(cwd, path)] : undefined
     return document ? isDirty(document) : false
   })
+  const rename = useSessionRename(tabId, sessionPath)
+  // A changes or file tab holds no session, so there is no name to write for it.
+  const renamable = kind === 'project' || kind === 'chat'
+  const failure = error ?? rename.error ?? undefined
   const FileIcon = path ? fileIcon(path) : SquareText
-  return (
+  const body = (
     <div
       className={cn(
         'group/tab no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
@@ -122,7 +136,7 @@ function Tab({
           ? 'bg-card text-foreground before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
           : 'text-muted-foreground'
       )}
-      title={error}
+      title={failure}
       onClick={onSelect}
     >
       <span className="relative flex size-6 shrink-0 items-center justify-center">
@@ -150,10 +164,34 @@ function Tab({
           </span>
         </Button>
       </span>
-      <span className="max-w-35 truncate">{title}</span>
+      {rename.editing ? (
+        <SessionRenameField
+          className="h-5 w-35"
+          value={title}
+          onCommit={rename.commit}
+          onCancel={rename.cancel}
+        />
+      ) : (
+        <span className="max-w-35 truncate">{title}</span>
+      )}
       {dirty ? <span role="img" aria-label="未保存" className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
       {loading ? <LoaderCircle className="animate-spin" aria-label="正在加载" /> : null}
-      {error ? <CircleAlert className="text-destructive" aria-label={error} /> : null}
+      {failure ? <CircleAlert className="text-destructive" aria-label={failure} /> : null}
     </div>
+  )
+
+  if (!renamable) return body
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild disabled={rename.editing}>
+        {body}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={rename.start}>
+          <PenLine data-icon="inline-start" />
+          重命名
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

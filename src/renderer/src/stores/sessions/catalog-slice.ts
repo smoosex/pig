@@ -9,8 +9,10 @@ import {
   mergeWorktreeDiscoveries,
   patchTabsFromGroups,
   removeCwdSessions,
+  renameGroupSession,
   upsertGroup
 } from './catalog'
+import { sessionTitle } from './session-title'
 import type { SessionSlice } from './types'
 
 export const createCatalogSlice: SessionSlice<
@@ -31,6 +33,8 @@ export const createCatalogSlice: SessionSlice<
   | 'deleteProject'
   | 'deleteChat'
   | 'deleteSession'
+  | 'renameSession'
+  | 'applySessionNames'
 > = (set, get) => {
   let projectMembershipVersion = 0
   let projectOrderVersion = 0
@@ -359,6 +363,39 @@ export const createCatalogSlice: SessionSlice<
       })
       const next = get().activeTabId
       if (next && !get().runtime[next]) await get().activateTab(next)
+    },
+
+    renameSession: async (sessionId, name, path) => {
+      const clean = name.replace(/[\r\n]+/g, ' ').trim()
+      await api.renameSession(sessionId, clean, path)
+      const display = clean || undefined
+      set((s) => ({
+        projects: renameGroupSession(s.projects, sessionId, display),
+        chats: renameGroupSession(s.chats, sessionId, display),
+        openTabs: s.openTabs.map((tab) => {
+          if (tab.id !== sessionId) return tab
+          if (!tab.meta) return { ...tab, title: display ?? tab.title }
+          const meta = { ...tab.meta, name: display }
+          return { ...tab, meta, title: sessionTitle(meta) }
+        })
+      }))
+    },
+
+    applySessionNames: (updates) => {
+      if (updates.length === 0) return
+      const names = new Map(updates.map((update) => [update.sessionId, update.name]))
+      set((s) => ({
+        projects: [...names].reduce((groups, [id, name]) => renameGroupSession(groups, id, name), s.projects),
+        chats: [...names].reduce((groups, [id, name]) => renameGroupSession(groups, id, name), s.chats),
+        // A pushed name is never empty, so a tab showing only a first message takes it as its title.
+        openTabs: s.openTabs.map((tab) => {
+          const name = names.get(tab.id)
+          if (!name) return tab
+          if (!tab.meta) return { ...tab, title: name }
+          const meta = { ...tab.meta, name }
+          return { ...tab, meta, title: sessionTitle(meta) }
+        })
+      }))
     }
   }
 }

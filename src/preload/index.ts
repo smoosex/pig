@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -38,6 +38,11 @@ const api: SessionApi = {
     ipcRenderer.on('projects:changed', handler)
     return () => ipcRenderer.off('projects:changed', handler)
   },
+  onSessionNames: (listener: (updates: SessionNameUpdate[]) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, updates: SessionNameUpdate[]) => listener(updates)
+    ipcRenderer.on('session:names', handler)
+    return () => ipcRenderer.off('session:names', handler)
+  },
   onDiffChanged: (listener: (cwd: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, cwd: string) => listener(cwd)
     ipcRenderer.on('diff:changed', handler)
@@ -50,6 +55,8 @@ const api: SessionApi = {
   },
   deleteSession: (sessionId: string, path: string, cwd: string) =>
     ipcRenderer.invoke('session:delete', sessionId, path, cwd),
+  renameSession: (sessionId: string, name: string, path?: string) =>
+    ipcRenderer.invoke('session:rename', sessionId, name, path),
   prompt: (
     sessionId: string,
     text: string,

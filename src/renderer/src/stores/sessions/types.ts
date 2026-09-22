@@ -7,6 +7,7 @@ import type {
   ProjectGroup,
   SessionControls,
   SessionMeta,
+  SessionNameUpdate,
   SessionTokenStats,
   SessionWindowMessage,
   ThinkingLevel,
@@ -157,6 +158,16 @@ export interface SessionsStore {
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>
+  /**
+   * Writes the session's display name, and with it every list that shows it: the tab title, the
+   * project's rows, the chats. An empty name clears the override and hands the title back.
+   */
+  renameSession: (sessionId: string, name: string, path?: string) => Promise<void>
+  /**
+   * The names a background scan found for sessions whose listing showed a first message instead: the
+   * rows and the tab titles are patched in place, since the session files are already up to date.
+   */
+  applySessionNames: (updates: SessionNameUpdate[]) => void
   closeTab: (tabId: string) => void
   setActive: (tabId: string) => void
   renameTab: (tabId: string, title: string) => void

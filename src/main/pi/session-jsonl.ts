@@ -14,7 +14,8 @@
  * `parentId` sit next to each other, and only `custom`/`custom_message` entries put their payload
  * ahead of them. A line that does not fit that shape is parsed in full instead of guessed at.
  */
-import { closeSync, openSync, readSync, statSync } from 'node:fs'
+import { appendFileSync, closeSync, openSync, readSync, statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import {
   CURRENT_SESSION_VERSION,
   parseSessionEntries,
@@ -25,6 +26,9 @@ import { PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
 import { isHiddenEntryType } from './session-display-model'
 
 const SCAN_CHUNK = 4 * 1024 * 1024
+/** Enough of a file's tail to hold its last line; a longer line grows the read. */
+const LAST_LINE_BYTES = 64 * 1024
+const NEWLINE = 0x0a
 const HEADER_SCAN_LIMIT = 1024 * 1024
 const TYPE_PREFIX = Buffer.from('{"type"')
 const KEY_ID = Buffer.from('"id"')
@@ -447,6 +451,56 @@ export function readTailWindow(
     }
     length = Math.min(size, length * 2)
   }
+}
+
+/**
+ * Where an append lands: the id of the last line that reads as an entry, and whether the file already
+ * ends on a line break. Lines the readers skip are walked over, blank or truncated alike, because both
+ * this index and the SDK hang the branch off the last line they can parse: landing there agrees with
+ * whatever either reader rebuilds, while a root of its own would hide the session behind a second one.
+ * Only a file whose every line is unreadable has nowhere to land.
+ */
+function appendTarget(path: string): { parentId: string | null; terminated: boolean } | null {
+  const size = statSync(path).size
+  if (size === 0) return null
+  let length = Math.min(size, LAST_LINE_BYTES)
+  for (;;) {
+    const start = Math.max(0, size - length)
+    const chunk = readAt(path, start, size)
+    const terminated = chunk[chunk.length - 1] === NEWLINE
+    let end = chunk.length
+    for (;;) {
+      while (end > 0 && chunk[end - 1] === NEWLINE) end -= 1
+      if (end === 0) break
+      const from = chunk.lastIndexOf(NEWLINE, end - 1) + 1
+      const line = chunk.subarray(from, end)
+      const row = probeSessionRow(line) ?? parseRow(line, 0, line.length)
+      // A file without entries yet ends on its header, which no entry hangs from.
+      if (row) return { parentId: row.type === 'session' ? null : row.id, terminated }
+      // A line that starts before the window may only be unreadable because it is cut off here.
+      if (from === 0) break
+      end = from - 1
+    }
+    if (start === 0) throw new UnsupportedSessionFile(path, 'no readable line')
+    length *= 2
+  }
+}
+
+/**
+ * Appends the SDK's `session_info` line, for a session no manager holds. The entry hangs from the last
+ * entry the file holds so the tree the SDK rebuilds later keeps its single root, and it lands at the
+ * end of the file, which leaves every byte offset the index recorded above it intact.
+ */
+export function appendSessionInfo(path: string, name: string): void {
+  const target = appendTarget(path)
+  const entry = {
+    type: 'session_info',
+    id: randomUUID().slice(0, 8),
+    parentId: target?.parentId ?? null,
+    timestamp: new Date().toISOString(),
+    name
+  }
+  appendFileSync(path, `${target === null || target.terminated ? '' : '\n'}${JSON.stringify(entry)}\n`)
 }
 
 /**

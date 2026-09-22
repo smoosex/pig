@@ -3,6 +3,7 @@ import { FolderPlus, MessageSquarePlus, PanelLeft, PanelRight, RefreshCw } from 
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
 import { useEventBridge } from './hooks/useEventBridge'
+import { useSessionNames } from './hooks/useSessionNames'
 import { useSessionWindows } from './hooks/useSessionWindows'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
@@ -97,6 +98,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   useEventBridge()
   useSessionWindows()
+  useSessionNames()
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

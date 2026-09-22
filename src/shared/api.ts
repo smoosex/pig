@@ -326,6 +326,16 @@ export interface SessionWindowFailure {
 
 export type SessionWindowMessage = SessionWindowUpdate | SessionWindowFailure
 
+/**
+ * Pushed after a listing when a session's name only shows up past the prefix the listing reads, because
+ * it was appended to the end of a long file. The row already rendered with its first message as title.
+ */
+export interface SessionNameUpdate {
+  sessionId: string
+  path: string
+  name: string
+}
+
 /** Switching a branch answers with the new window, so the renderer needs no second round trip. */
 export type SessionBranchRef = DisplayTurnsResult
 
@@ -430,7 +440,9 @@ export interface SessionApi {
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
   onProjectsChanged: (listener: (projectCwd: string) => void) => () => void
+  onSessionNames: (listener: (updates: SessionNameUpdate[]) => void) => () => void
   deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>
+  renameSession: (sessionId: string, name: string, path?: string) => Promise<void>
   prompt: (
     sessionId: string,
     text: string,

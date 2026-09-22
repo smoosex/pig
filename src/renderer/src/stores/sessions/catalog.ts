@@ -61,6 +61,19 @@ export function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string,
   )
 }
 
+/** The display name a rename wrote, or the cleared name that hands the title back to the first message. */
+export function renameGroupSession(
+  groups: ProjectGroup[],
+  sessionId: string,
+  name: string | undefined
+): ProjectGroup[] {
+  return groups.map((group) =>
+    mapGroupSessions(group, (sessions) => sessions.map((session) =>
+      session.id === sessionId ? { ...session, name } : session
+    ))
+  )
+}
+
 export function patchTabsFromGroups(tabs: OpenTab[], groups: ProjectGroup[]): OpenTab[] {
   const metas = new Map(groups.flatMap((group) => group.sessions).map((meta) => [meta.id, meta]))
   return tabs.map((tab) => {
