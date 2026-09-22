@@ -22,3 +22,9 @@ export function selectActiveSessionId(state: SessionsStore): string | null {
   const tab = state.openTabs.find((item) => item.id === state.activeTabId)
   return tab && (tab.kind === 'project' || tab.kind === 'chat') ? tab.id : null
 }
+
+/** The worktree holding the active session: the same tab the id above comes from, projected to cwd. */
+export function selectActiveSessionCwd(state: SessionsStore): string | null {
+  const tab = state.openTabs.find((item) => item.id === state.activeTabId)
+  return tab && (tab.kind === 'project' || tab.kind === 'chat') ? tab.cwd : null
+}

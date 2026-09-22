@@ -2,7 +2,9 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type {
   AppSettings,
+  ProjectGroup,
   SessionApi,
+  SessionMeta,
   SettingsAuthEvent,
   SettingsProvider,
   SidebarPrefs,
@@ -10,6 +12,7 @@ import type {
   WorktreeCreateInfo,
   WorktreeDeletionInfo
 } from '../src/shared/api'
+import type { OpenTab } from '../src/renderer/src/stores/sessions'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -466,6 +469,106 @@ async function runFixture(name: string): Promise<void> {
         confirm.click()
       })
       assert.deepEqual(deletions, [true, false])
+    } else if (name === 'reveal-active-session') {
+      class NoopResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+      Object.assign(globalThis, { ResizeObserver: NoopResizeObserver })
+      Object.assign(window, { ResizeObserver: NoopResizeObserver })
+      const { DndContext } = await import('@dnd-kit/core')
+      const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+      const { ProjectRow } =
+        await import('../src/renderer/src/components/sidebar/ProjectRow')
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const meta = (id: string, cwd: string, firstMessage: string): SessionMeta => ({
+        id,
+        cwd,
+        path: `${cwd}/${id}.jsonl`,
+        created: '2026-09-22T00:00:00.000Z',
+        modified: '2026-09-22T00:00:00.000Z',
+        size: 100,
+        firstMessage
+      })
+      const tab = (id: string, cwd: string, title: string): OpenTab => ({
+        id,
+        cwd,
+        title,
+        kind: 'project',
+        loadState: 'ready'
+      })
+      const project: ProjectGroup = {
+        cwd: '/project',
+        name: 'project',
+        sessions: [],
+        worktrees: [
+          {
+            cwd: '/project',
+            branch: 'main',
+            isPrimary: true,
+            locked: false,
+            missing: false,
+            managed: true,
+            sessions: [meta('s1', '/project', 'First session')]
+          },
+          {
+            cwd: '/project-feature',
+            branch: 'feature',
+            isPrimary: false,
+            locked: false,
+            missing: false,
+            managed: true,
+            sessions: [meta('s2', '/project-feature', 'Second session')]
+          }
+        ]
+      }
+      useSessionsStore.setState({
+        projects: [project],
+        openTabs: [],
+        activeTabId: null,
+        currentProjectCwd: null
+      })
+      await act(async () => {
+        root.render(
+          createElement(
+            TooltipProvider,
+            null,
+            createElement(
+              DndContext,
+              null,
+              createElement(ProjectRow, {
+                project,
+                index: 0,
+                disabled: false,
+                clickGuard: { current: false }
+              })
+            )
+          )
+        )
+      })
+      const shown = (text: string) => document.body.textContent?.includes(text) ?? false
+      assert.equal(shown('First session'), false)
+      await act(async () => {
+        useSessionsStore.setState({
+          openTabs: [tab('s1', '/project', 'First session')],
+          activeTabId: 's1'
+        })
+      })
+      assert.equal(shown('First session'), true)
+      assert.equal(shown('Second session'), false)
+      await act(async () => {
+        useSessionsStore.setState({ activeTabId: null })
+      })
+      assert.equal(shown('First session'), true, 'leaving the session never folds it back')
+      await act(async () => {
+        useSessionsStore.setState({
+          openTabs: [tab('s1', '/project', 'First session'), tab('s2', '/project-feature', 'Second session')],
+          activeTabId: 's2'
+        })
+      })
+      assert.equal(shown('First session'), true)
+      assert.equal(shown('Second session'), true)
     } else {
       throw new Error(`Unknown fixture: ${name}`)
     }
@@ -490,7 +593,9 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     sidebar: 'late preferences preserve user changes and writes remain ordered',
     worktree: 'worktree inspection is guarded and failures never start creation',
     'worktree-delete':
-      'failed deletion checks never delete and dirty worktrees require explicit force'
+      'failed deletion checks never delete and dirty worktrees require explicit force',
+    'reveal-active-session':
+      'opening a session unfolds its project and branch, and leaving never folds back'
   })) {
     test(`settings/sidebar: ${title}`, async () => {
       const child = Bun.spawn(

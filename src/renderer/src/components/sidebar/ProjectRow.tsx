@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ChevronRight, FolderMinus, MoreHorizontal, Trash2 } from 'lucide-react'
-import { useSessionsStore, type ProjectGroup, type WorktreeGroup } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionCwd, type ProjectGroup, type WorktreeGroup } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -63,6 +63,18 @@ export function ProjectRow({
   const active = useSessionsStore((s) =>
     worktrees.some((worktree) => worktree.cwd === s.currentProjectCwd)
   )
+  const activeSessionCwd = useSessionsStore(selectActiveSessionCwd)
+  const revealedCwd =
+    activeSessionCwd !== null && worktrees.some((worktree) => worktree.cwd === activeSessionCwd)
+      ? activeSessionCwd
+      : null
+  // The strip follows the session: opening or switching to one unfolds its project and branch here.
+  // Only ever unfolding, so a branch the user folded stays folded until another session asks for it.
+  useEffect(() => {
+    if (revealedCwd === null) return
+    setOpen(true)
+    setWorktreeOpen((state) => (state[revealedCwd] ? state : { ...state, [revealedCwd]: true }))
+  }, [revealedCwd])
 
   return (
     <div
