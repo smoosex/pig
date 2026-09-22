@@ -578,7 +578,10 @@ export async function viewSessionBranch(sessionId: string, tipId: string): Promi
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
   if (sm.getLeafId() !== tipId) {
     sm.branch(tipId)
-    ls.agentSession.agent.state.messages = sm.buildSessionContext().messages
+    // Every request is built from the session manager now, so the branch takes effect either way;
+    // refreshing the finalized transcript is what keeps the public state and the message-to-entry
+    // map on the branch we just moved to.
+    ls.agentSession.refreshContext()
   }
   return sm.getLeafId()
 }
