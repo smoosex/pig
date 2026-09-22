@@ -419,9 +419,7 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => {
         button('删除 branch').click()
       })
-      await act(async () => {
-        button('删除').click()
-      })
+      assert.throws(() => button('删除'), 'no dialog opens before the check answers')
       await act(async () => {
         checks[0].reject(new Error('cannot inspect deletion'))
       })
@@ -429,9 +427,6 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(action.error, 'cannot inspect deletion')
       await act(async () => {
         button('删除 branch').click()
-      })
-      await act(async () => {
-        button('删除').click()
       })
       await act(async () => {
         checks[1].resolve({
@@ -443,12 +438,34 @@ async function runFixture(name: string): Promise<void> {
         })
       })
       assert.deepEqual(deletions, [])
+      assert.ok(
+        document.body.textContent?.includes('包含未提交、未跟踪或被忽略的文件。'),
+        'the risk joins the same dialog'
+      )
       await act(async () => {
         const confirm = button('仍然删除')
         confirm.click()
         confirm.click()
       })
       assert.deepEqual(deletions, [true])
+      await act(async () => {
+        button('删除 branch').click()
+      })
+      await act(async () => {
+        checks[2].resolve({
+          cwd: '/worktree',
+          branch: 'branch',
+          dirty: false,
+          unmerged: false,
+          missing: false
+        })
+      })
+      await act(async () => {
+        const confirm = button('删除')
+        confirm.click()
+        confirm.click()
+      })
+      assert.deepEqual(deletions, [true, false])
     } else {
       throw new Error(`Unknown fixture: ${name}`)
     }

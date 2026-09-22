@@ -110,29 +110,23 @@ export function WorktreeDeleteButton({
   runAction: RunProjectAction
   onConfirm: (force: boolean) => Promise<void>
 }) {
-  const [open, setOpen] = useState(false)
-  const [forceOpen, setForceOpen] = useState(false)
-  const [warnings, setWarnings] = useState<string[]>([])
+  const [prompt, setPrompt] = useState<string[] | null>(null)
+  const risks = prompt ?? []
+  const forced = risks.length > 0
   const confirm = async (force: boolean) => {
-    setOpen(false)
-    setForceOpen(false)
+    setPrompt(null)
     await onConfirm(force)
   }
 
   const prepareDeletion = async () => {
-    setOpen(false)
     const info = await api.worktreeDeletionInfo(projectCwd, cwd)
-    const next = [
-      info.dirty ? '包含未提交、未跟踪或被忽略的文件。' : null,
-      info.unmerged ? '分支含有尚未合入原项目的提交。' : null,
-      info.missing ? '工作目录已丢失，将清理剩余注册和会话。' : null
-    ].filter((item): item is string => item !== null)
-    if (next.length > 0) {
-      setWarnings(next)
-      setForceOpen(true)
-      return
-    }
-    await confirm(false)
+    setPrompt(
+      [
+        info.dirty ? '包含未提交、未跟踪或被忽略的文件。' : null,
+        info.unmerged ? '分支含有尚未合入原项目的提交。' : null,
+        info.missing ? '工作目录已丢失，将清理剩余注册和会话。' : null
+      ].filter((item): item is string => item !== null)
+    )
   }
 
   return (
@@ -144,50 +138,38 @@ export function WorktreeDeleteButton({
         aria-label={`删除 ${branch}`}
         disabled={disabled}
         aria-busy={busy}
-        onClick={() => setOpen(true)}
+        onClick={() => void runAction(`delete:${cwd}`, prepareDeletion)}
       >
         {busy ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={prompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setPrompt(null)
+        }}
+      >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-sm">删除分支</DialogTitle>
             <DialogDescription className="text-xs">
               将停止该目录的会话，删除工作目录、对应 Git 分支和 Pi 会话文件，无法撤销。
+              {forced ? (
+                <>
+                  {risks.join('')}这些内容和对应会话将被永久删除。
+                </>
+              ) : null}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={() => setPrompt(null)}>
               取消
             </Button>
             <Button
               variant="destructive"
               disabled={disabled}
-              onClick={() => void runAction(`delete:${cwd}`, prepareDeletion)}
+              onClick={() => void runAction(`delete:${cwd}`, () => confirm(forced))}
             >
-              删除
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={forceOpen} onOpenChange={setForceOpen}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="text-sm">删除分支</DialogTitle>
-            <DialogDescription className="text-xs">
-              {warnings.join('')}这些内容和对应会话将被永久删除。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setForceOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={disabled}
-              onClick={() => void runAction(`delete:${cwd}`, () => confirm(true))}
-            >
-              仍然删除
+              {forced ? '仍然删除' : '删除'}
             </Button>
           </div>
         </DialogContent>
