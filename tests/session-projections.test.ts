@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { normalizeSessionPrompt } from '../src/main/pi/prompt-input'
-import { sessionTreeRows } from '../src/main/pi/session-tree'
+import { sessionTreeRows, sessionTreeViews } from '../src/main/pi/session-tree'
 import type { SessionSource } from '../src/main/pi/session-source'
 
 describe('prompt input projection', () => {
@@ -89,5 +89,86 @@ describe('session tree projection', () => {
     expect(rows.map((row) => row.id)).toEqual(['user', 'result', 'alternate'])
     expect(rows[1]).toMatchObject({ parentId: 'user', text: '[read: src/main.ts]', onPath: true, current: true })
     expect(rows[2]).toMatchObject({ parentId: 'user', onPath: false, current: false })
+  })
+
+  test('tree views mirror pi Ctrl+O: no-tools, user-only, labeled-only, all', () => {
+    const entries = [
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: '问题' } },
+      { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: '我来看看' } },
+      {
+        id: 'call',
+        parentId: 'a1',
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'a.ts' } }]
+        }
+      },
+      { id: 'r1', parentId: 'call', type: 'message', message: { role: 'toolResult', toolCallId: 'c1' } },
+      { id: 'b1', parentId: 'r1', type: 'message', message: { role: 'bashExecution', command: 'ls' } },
+      { id: 'use', parentId: 'b1', type: 'usage' },
+      { id: 'ce', parentId: 'use', type: 'context_edit', targetId: 'u1', replacement: null },
+      { id: 'empty', parentId: 'ce', type: 'message', message: { role: 'assistant', content: [] } },
+      { id: 'info', parentId: 'empty', type: 'session_info', name: '名字' },
+      { id: 'lbl', parentId: 'info', type: 'label', targetId: 'u1', label: '起点' },
+      { id: 'lbl2', parentId: 'lbl', type: 'label', targetId: 'a1', label: '草稿' },
+      { id: 'lbl3', parentId: 'lbl2', type: 'label', targetId: 'a1', label: '' },
+      { id: 'u2', parentId: 'lbl3', type: 'message', message: { role: 'user', content: '继续' } }
+    ] as unknown as SessionEntry[]
+    const source = {
+      sessionId: 'session-1',
+      leafId: () => 'u2',
+      entries: () => entries,
+      treeEntries: () => entries,
+      branch: () => entries,
+      branchIds: () => entries.map((entry) => entry.id)
+    } as SessionSource
+    const ids = (view?: Parameters<typeof sessionTreeRows>[1]) =>
+      sessionTreeRows(source, view).map((row) => row.id)
+    expect(ids()).toEqual(['u1', 'a1', 'r1', 'b1', 'u2'])
+    expect(ids('no-tools')).toEqual(['u1', 'a1', 'b1', 'u2'])
+    expect(ids('user-only')).toEqual(['u1', 'u2'])
+    expect(ids('labeled-only')).toEqual(['u1'])
+    expect(ids('all')).toEqual(['u1', 'a1', 'r1', 'b1', 'ce', 'info', 'lbl', 'lbl2', 'lbl3', 'u2'])
+    const tool = sessionTreeRows(source).find((row) => row.id === 'r1')
+    expect(tool).toMatchObject({ text: '[read: a.ts]' })
+    const leaf = sessionTreeRows(source, 'user-only').find((row) => row.id === 'u2')
+    expect(leaf).toMatchObject({ current: true, onPath: true })
+    expect(sessionTreeRows(source).find((row) => row.id === 'u1')).toMatchObject({ label: '起点' })
+    expect(sessionTreeRows(source).find((row) => row.id === 'a1')?.label).toBeUndefined()
+    expect(sessionTreeRows(source).find((row) => row.id === 'u2')?.label).toBeUndefined()
+    const all = sessionTreeRows(source, 'all')
+    expect(all.find((row) => row.id === 'lbl')).toMatchObject({ text: '[label: 起点]' })
+    expect(all.find((row) => row.id === 'lbl3')).toMatchObject({ text: '[label: ]' })
+    expect(all.find((row) => row.id === 'info')).toMatchObject({ text: '[title: 名字]' })
+    expect(all.find((row) => row.id === 'ce')).toMatchObject({ text: '[context omit: u1]' })
+  })
+
+  test('one walk serves all five views', () => {
+    let walks = 0
+    const entries = [
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: '问题' } },
+      { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: '答案' } },
+      { id: 'lbl', parentId: 'a1', type: 'label', targetId: 'u1', label: '起点' },
+      { id: 'u2', parentId: 'lbl', type: 'message', message: { role: 'user', content: '继续' } }
+    ] as unknown as SessionEntry[]
+    const source = {
+      sessionId: 'session-1',
+      leafId: () => 'u2',
+      entries: () => entries,
+      treeEntries: () => {
+        walks += 1
+        return entries
+      },
+      branch: () => entries,
+      branchIds: () => entries.map((entry) => entry.id)
+    } as SessionSource
+    const views = sessionTreeViews(source)
+    expect(Object.keys(views).sort()).toEqual(['all', 'default', 'labeled-only', 'no-tools', 'user-only'])
+    expect(walks).toEqual(1)
+    expect(views.default.map((row) => row.id)).toEqual(['u1', 'a1', 'u2'])
+    expect(views['user-only'].map((row) => row.id)).toEqual(['u1', 'u2'])
+    expect(views['labeled-only'].map((row) => row.id)).toEqual(['u1'])
+    expect(views.all.map((row) => row.id)).toEqual(['u1', 'a1', 'lbl', 'u2'])
   })
 })

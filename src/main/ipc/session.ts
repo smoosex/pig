@@ -7,18 +7,20 @@ import {
   exportSession,
   getSessionControls,
   getSessionTokenStats,
-  getSessionTree,
+  getSessionTrees,
   listSessionCommands,
   openSession,
   prepareSession,
   promoteDraftSession,
   refreshSessionModels,
   renameSession,
+  setSessionLabel,
   setSessionModel,
   setSessionThinking,
   updateFollowUpMessage,
   viewSessionBranch,
-  type SessionThinkingLevel
+  type SessionThinkingLevel,
+  type SessionTreeView
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages, getTurnWindow } from '../pi/session-display'
 import { removeSessionFile } from '../pi/session-loader'
@@ -91,6 +93,21 @@ export function registerSessionIpc(): void {
   )
 
   ipcMain.handle(
+    'session:set-label',
+    async (_event, sessionId: string, targetId: string, label: string, path?: string) => {
+      if (
+        typeof sessionId !== 'string' ||
+        !sessionId ||
+        typeof targetId !== 'string' ||
+        typeof label !== 'string'
+      ) {
+        throw new Error('Session id, target id and label are required')
+      }
+      await setSessionLabel(sessionId, targetId, label, typeof path === 'string' ? path : undefined)
+    }
+  )
+
+  ipcMain.handle(
     'session:prompt',
     async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown) => {
       await promptSession(sessionId, { text, images, textAttachments, streamingBehavior })
@@ -120,8 +137,8 @@ export function registerSessionIpc(): void {
     return getTurnMessages(sessionId, turnId)
   })
 
-  ipcMain.handle('session:get-tree', async (_event, sessionId: string) => {
-    return getSessionTree(sessionId)
+  ipcMain.handle('session:get-trees', async (_event, sessionId: string, views?: SessionTreeView[]) => {
+    return getSessionTrees(sessionId, views)
   })
 
   ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {

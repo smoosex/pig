@@ -68,17 +68,20 @@ export function openTail(
 export function sessionIndex(session: SessionFileSession): Promise<SessionFileIndex> {
   if (session.index) return Promise.resolve(session.index)
   if (!session.indexing) {
-    session.indexing = Promise.resolve()
+    const building = Promise.resolve()
       .then(() => indexSessionFile(session.path))
       .then((index) => {
-        session.index = index
+        // A write that landed mid-scan nulled indexing: the index below predates it, so only the
+        // scan this session still waits on may hang it back.
+        if (session.indexing === building) session.index = index
         return index
       })
       // A failed scan is not a permanent verdict: keep the failure visible but let a later read retry.
       .catch((error: unknown) => {
-        session.indexing = null
+        if (session.indexing === building) session.indexing = null
         throw error
       })
+    session.indexing = building
   }
   return session.indexing
 }

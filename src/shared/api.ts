@@ -344,6 +344,9 @@ export interface SessionTreeGutter {
   show: boolean
 }
 
+/** Mirrors pi's `/tree` Ctrl+O filter cycle: default, no-tools, user-only, labeled-only, all. */
+export type SessionTreeView = 'default' | 'no-tools' | 'user-only' | 'labeled-only' | 'all'
+
 export interface SessionTreeRow {
   id: string
   parentId: string | null
@@ -357,6 +360,8 @@ export interface SessionTreeRow {
   current: boolean
   kind: 'user' | 'assistant' | 'tool' | 'other'
   text: string
+  /** The entry's resolved label, if pi or pig marked it: shown as a chip, and what labeled-only keeps. */
+  label?: string
 }
 
 export type SendShortcut = 'enter' | 'shift-enter'
@@ -454,7 +459,11 @@ export interface SessionApi {
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>
-  getSessionTree: (sessionId: string) => Promise<SessionTreeRow[]>
+  getSessionTrees: (
+    sessionId: string,
+    views?: SessionTreeView[]
+  ) => Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>
+  setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) => Promise<void>
   viewBranch: (sessionId: string, tipId: string) => Promise<SessionBranchRef>
   getControls: (sessionId: string) => Promise<SessionControls>
   getTokenStats: (sessionId: string) => Promise<SessionTokenStats>

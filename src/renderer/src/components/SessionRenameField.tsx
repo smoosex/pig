@@ -36,12 +36,14 @@ export function SessionRenameField({
   value,
   onCommit,
   onCancel,
-  className
+  className,
+  ariaLabel = '会话名称'
 }: {
   value: string
   onCommit: (name: string) => void
   onCancel: () => void
   className?: string
+  ariaLabel?: string
 }) {
   const [draft, setDraft] = useState(value)
   const done = useRef(false)
@@ -59,7 +61,7 @@ export function SessionRenameField({
       onClick={(event) => event.stopPropagation()}
       value={draft}
       autoFocus
-      aria-label="会话名称"
+      aria-label={ariaLabel}
       onFocus={(event) => event.currentTarget.select()}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => finish(true)}

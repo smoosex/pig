@@ -113,12 +113,12 @@ async function runFixture(): Promise<void> {
     }))
     // Bun rebinds the module's exports when a mock is registered, so the real function has to be
     // captured as a value before the mock replaces it.
-    const realTreeRows = (await import('../src/main/pi/session-tree')).sessionTreeRows
+    const realTreeViews = (await import('../src/main/pi/session-tree')).buildSessionTreeViews
     let treeBuilds = 0
     mock.module(fileURLToPath(new URL('../src/main/pi/session-tree.ts', import.meta.url)), () => ({
-      sessionTreeRows: (...args: Parameters<typeof realTreeRows>) => {
+      buildSessionTreeViews: (...args: Parameters<typeof realTreeViews>) => {
         treeBuilds += 1
-        return realTreeRows(...args)
+        return realTreeViews(...args)
       }
     }))
     // The model runtime is faked so the controls read has a deterministic picker; the session file
@@ -301,7 +301,7 @@ async function runFixture(): Promise<void> {
     // Controls only read the last model/thinking/assistant rows, so this pick succeeds untouched.
     assert.equal((await registry.setSessionModel(carryId, 'test', 'reasoner')).model?.id, 'reasoner')
     // Reading the tree walks every branch row, finds the corrupt one, and falls back to the SDK.
-    await registry.getSessionTree(carryId)
+    await registry.getSessionTrees(carryId)
     assert.equal((await registry.getSessionControls(carryId)).model?.id, 'reasoner',
       'the model the user picked before the fallback is not replaced by the file default')
 
@@ -337,12 +337,15 @@ async function runFixture(): Promise<void> {
     // pending, so a second walk would only duplicate work.
     treeBuilds = 0
     const [treeA, treeB] = await Promise.all([
-      registry.getSessionTree('tail-session'),
-      registry.getSessionTree('tail-session')
+      registry.getSessionTrees('tail-session'),
+      registry.getSessionTrees('tail-session')
     ])
     assert.equal(treeBuilds, 1, 'concurrent tree reads build the tree once')
-    assert.ok(treeA.length > 0)
-    assert.deepEqual(treeA.map((row) => row.id), treeB.map((row) => row.id))
+    assert.ok(treeA.default && treeA.default.length > 0)
+    assert.deepEqual(
+      treeA.default?.map((row) => row.id),
+      treeB.default?.map((row) => row.id)
+    )
     assert.equal(treeBuilds, 1, 'a cached tree is not rebuilt')
 
     // A window request is the one read with numeric arguments: a NaN start must not reach the reader

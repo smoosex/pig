@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -71,8 +71,10 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:get-turn-window', sessionId, start, count),
   getTurnMessages: (sessionId: string, turnId: string) =>
     ipcRenderer.invoke('session:get-turn-messages', sessionId, turnId),
-  getSessionTree: (sessionId: string) =>
-    ipcRenderer.invoke('session:get-tree', sessionId),
+  getSessionTrees: (sessionId: string, views?: SessionTreeView[]) =>
+    ipcRenderer.invoke('session:get-trees', sessionId, views),
+  setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) =>
+    ipcRenderer.invoke('session:set-label', sessionId, targetId, label, path),
   viewBranch: (sessionId: string, tipId: string) =>
     ipcRenderer.invoke('session:view-branch', sessionId, tipId),
   getControls: (sessionId: string) =>

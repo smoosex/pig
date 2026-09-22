@@ -1,6 +1,6 @@
 import type { AgentSession, SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import type { BrowserWindow } from 'electron'
-import type { SessionTokenStats, SessionTreeRow, ThinkingLevel } from '../../shared/api'
+import type { SessionTokenStats, SessionTreeRow, SessionTreeView, ThinkingLevel } from '../../shared/api'
 import type { SessionFileIndex } from './session-jsonl'
 
 export interface LiveSession {
@@ -45,10 +45,13 @@ export interface SessionFileSession extends PendingBase {
   indexScheduled?: boolean
   /** Read once on demand: nothing writes to a file before the pending phase ends. */
   tokens?: SessionTokenStats
-  /** The tree of this file, read at most once while the session is pending: the file cannot change. */
-  treeRows?: SessionTreeRow[]
-  /** The tree read that is on its way, so concurrent callers share one build. */
-  treeRowsRequest?: Promise<SessionTreeRow[]> | null
+  /** The tree views read so far: the file cannot change while the session is pending. */
+  treeRows?: Partial<Record<SessionTreeView, SessionTreeRow[]>>
+  /** The tree read on its way, so concurrent callers share one build. */
+  treeRowsRequest?: {
+    views: SessionTreeView[]
+    promise: Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>
+  } | null
 }
 
 export type PendingSession = MemorySession | SessionFileSession

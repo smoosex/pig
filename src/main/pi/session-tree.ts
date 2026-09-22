@@ -4,7 +4,7 @@
  */
 import { homedir } from 'node:os'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
-import type { SessionTreeGutter, SessionTreeRow } from '../../shared/api'
+import type { SessionTreeGutter, SessionTreeRow, SessionTreeView } from '../../shared/api'
 import type { SessionSource } from './session-source'
 
 type TreeNode = {
@@ -17,6 +17,9 @@ type TreeNode = {
     modelId?: string
     thinkingLevel?: string
     name?: string
+    label?: string
+    targetId?: string
+    replacement?: unknown
     message?: {
       role?: string
       content?: unknown
@@ -33,6 +36,7 @@ type TreeNode = {
 function isHiddenEntry(type: string): boolean {
   return (
     type === 'label' ||
+    type === 'context_edit' ||
     type === 'custom' ||
     type === 'model_change' ||
     type === 'thinking_level_change' ||
@@ -66,12 +70,45 @@ function hasTextContent(content: unknown): boolean {
   return false
 }
 
-function hideInDefaultView(entry: TreeNode['entry'], current: boolean): boolean {
-  if (isHiddenEntry(entry.type)) return true
-  if (entry.type !== 'message' || entry.message?.role !== 'assistant' || current) return false
-  const stop = entry.message.stopReason
+function isEmptyAssistant(entry: TreeNode['entry']): boolean {
+  const stop = entry.message?.stopReason
   const isErrorOrAborted = Boolean(stop && stop !== 'stop' && stop !== 'toolUse')
-  return !hasTextContent(entry.message.content) && !isErrorOrAborted && !entry.message.errorMessage
+  return (
+    !hasTextContent(entry.message?.content) && !isErrorOrAborted && !entry.message?.errorMessage
+  )
+}
+
+function hideInView(
+  entry: TreeNode['entry'],
+  current: boolean,
+  view: SessionTreeView,
+  labeled: boolean
+): boolean {
+  // pi hides usage tallies and empty assistant turns in every mode, the leaf always staying visible.
+  if (entry.type === 'usage') return true
+  if (
+    !current &&
+    entry.type === 'message' &&
+    entry.message?.role === 'assistant' &&
+    isEmptyAssistant(entry)
+  ) {
+    return true
+  }
+  switch (view) {
+    case 'user-only':
+      return !(entry.type === 'message' && entry.message?.role === 'user')
+    case 'no-tools':
+      return (
+        isHiddenEntry(entry.type) ||
+        (entry.type === 'message' && entry.message?.role === 'toolResult')
+      )
+    case 'labeled-only':
+      return !labeled
+    case 'all':
+      return false
+    default:
+      return isHiddenEntry(entry.type)
+  }
 }
 
 function shortenPath(path: string): string {
@@ -164,6 +201,13 @@ function labelOf(
     return `[compaction: ${tokens}k tokens]`
   }
   if (entry.type === 'branch_summary') return `[branch summary]: ${oneLine(entry.summary ?? '')}`
+  if (entry.type === 'label') return `[label: ${entry.label ?? '(cleared)'}]`
+  if (entry.type === 'session_info') {
+    return entry.name ? `[title: ${entry.name}]` : '[title: empty]'
+  }
+  if (entry.type === 'context_edit') {
+    return `[context ${entry.replacement === null ? 'omit' : 'replace'}: ${entry.targetId ?? ''}]`
+  }
   return `[${entry.type}]`
 }
 
@@ -216,7 +260,9 @@ function prioritizeActive(children: TreeNode[], containsActive: Map<string, bool
 function collectVisible(
   roots: TreeNode[],
   leafId: string | null,
-  pathSet: Set<string>
+  pathSet: Set<string>,
+  view: SessionTreeView,
+  labels: Map<string, string>
 ): { visible: VisibleNode[]; parentOf: Map<string, string | null> } {
   const containsActive = containsActiveMap(roots, leafId)
   const parentOf = new Map<string, string | null>()
@@ -233,7 +279,7 @@ function collectVisible(
     collectToolCalls(node.entry, toolCalls)
     parentOf.set(node.entry.id, parentId)
     const current = node.entry.id === leafId
-    if (!hideInDefaultView(node.entry, current)) {
+    if (!hideInView(node.entry, current, view, labels.has(node.entry.id))) {
       visible.push({
         id: node.entry.id,
         parentId,
@@ -358,10 +404,51 @@ function treeOf(entries: SessionEntry[]): TreeNode[] {
   return roots
 }
 
-export function sessionTreeRows(source: SessionSource): SessionTreeRow[] {
-  const leafId = source.leafId()
-  const pathSet = new Set(source.branchIds())
-  const { visible, parentOf } = collectVisible(treeOf(source.treeEntries()), leafId, pathSet)
+/** Latest label change wins, an empty one clearing the mark, exactly like the SDK resolves them. */
+function labelsOf(entries: SessionEntry[]): Map<string, string> {
+  const labels = new Map<string, string>()
+  for (const entry of entries) {
+    if (entry.type !== 'label' || typeof entry.targetId !== 'string') continue
+    if (entry.label) labels.set(entry.targetId, entry.label)
+    else labels.delete(entry.targetId)
+  }
+  return labels
+}
+
+export const SESSION_TREE_VIEWS: SessionTreeView[] = [
+  'default',
+  'no-tools',
+  'user-only',
+  'labeled-only',
+  'all'
+]
+
+type PreparedTree = {
+  leafId: string | null
+  pathSet: Set<string>
+  labels: Map<string, string>
+  roots: TreeNode[]
+}
+
+/** The one walk every view shares: pi flattens once per dialog, then each Ctrl+O is just a filter. */
+function prepareTree(source: SessionSource): PreparedTree {
+  const entries = source.treeEntries()
+  return {
+    leafId: source.leafId(),
+    pathSet: new Set(source.branchIds()),
+    labels: labelsOf(entries),
+    roots: treeOf(entries)
+  }
+}
+
+function projectView(prepared: PreparedTree, view: SessionTreeView): SessionTreeRow[] {
+  const { visible, parentOf } = collectVisible(
+    prepared.roots,
+    prepared.leafId,
+    prepared.pathSet,
+    view,
+    prepared.labels
+  )
   layoutVisible(visible, parentOf)
   return visible.map((node) => ({
     id: node.id,
@@ -375,6 +462,25 @@ export function sessionTreeRows(source: SessionSource): SessionTreeRow[] {
     onPath: node.onPath,
     current: node.current,
     kind: node.kind,
-    text: node.text
+    text: node.text,
+    label: prepared.labels.get(node.id)
   }))
+}
+
+export function sessionTreeRows(source: SessionSource, view: SessionTreeView = 'default'): SessionTreeRow[] {
+  return projectView(prepareTree(source), view)
+}
+
+/** All five views from a single walk, so switching tabs never rebuilds the tree. */
+export function sessionTreeViews(source: SessionSource): Record<SessionTreeView, SessionTreeRow[]> {
+  return buildSessionTreeViews(source, SESSION_TREE_VIEWS) as Record<SessionTreeView, SessionTreeRow[]>
+}
+
+/** Only the requested views: one walk still serves them all, but unasked rows never cross IPC. */
+export function buildSessionTreeViews(
+  source: SessionSource,
+  views: SessionTreeView[]
+): Partial<Record<SessionTreeView, SessionTreeRow[]>> {
+  const prepared = prepareTree(source)
+  return Object.fromEntries(views.map((view) => [view, projectView(prepared, view)]))
 }

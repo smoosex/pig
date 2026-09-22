@@ -487,20 +487,37 @@ function appendTarget(path: string): { parentId: string | null; terminated: bool
 }
 
 /**
- * Appends the SDK's `session_info` line, for a session no manager holds. The entry hangs from the last
+ * Appends one entry line for a session no manager holds. The entry hangs from the last readable
  * entry the file holds so the tree the SDK rebuilds later keeps its single root, and it lands at the
- * end of the file, which leaves every byte offset the index recorded above it intact.
+ * end of the file, which leaves every byte offset the index recorded above it intact. The id,
+ * parentId and timestamp are filled in here so every writer keeps the SDK's field order.
  */
-export function appendSessionInfo(path: string, name: string): void {
+function appendEntryLine(path: string, entry: { type: string; [key: string]: unknown }): void {
   const target = appendTarget(path)
-  const entry = {
-    type: 'session_info',
+  const { type, ...rest } = entry
+  const line = {
+    type,
     id: randomUUID().slice(0, 8),
     parentId: target?.parentId ?? null,
     timestamp: new Date().toISOString(),
-    name
+    ...rest
   }
-  appendFileSync(path, `${target === null || target.terminated ? '' : '\n'}${JSON.stringify(entry)}\n`)
+  appendFileSync(path, `${target === null || target.terminated ? '' : '\n'}${JSON.stringify(line)}\n`)
+}
+
+/**
+ * Appends the SDK's `session_info` line, for a session no manager holds.
+ */
+export function appendSessionInfo(path: string, name: string): void {
+  appendEntryLine(path, { type: 'session_info', name })
+}
+
+/**
+ * Appends the SDK's `label` line, for a session no manager holds. An empty label clears the mark,
+ * exactly like the SDK resolves it.
+ */
+export function appendLabelChange(path: string, targetId: string, label: string): void {
+  appendEntryLine(path, { type: 'label', targetId, label })
 }
 
 /**

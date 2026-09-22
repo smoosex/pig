@@ -13,6 +13,8 @@ import type {
   FollowUpAction,
   SessionControls,
   SessionTokenStats,
+  SessionTreeRow,
+  SessionTreeView,
   SessionWindowMessage,
   ThinkingLevel
 } from '../../shared/api'
@@ -35,7 +37,7 @@ import {
   listSessionCommands as commandsFor,
   updateFollowUpMessage as updateFollowUp
 } from './session-actions'
-import { sessionTreeRows } from './session-tree'
+import { buildSessionTreeViews, SESSION_TREE_VIEWS } from './session-tree'
 import {
   displayWindow,
   fileSource,
@@ -46,6 +48,7 @@ import {
   type SessionSource
 } from './session-source'
 import {
+  appendLabelChange,
   appendSessionInfo,
   readEntryById,
   readSessionHeader,
@@ -71,6 +74,7 @@ export type {
   SessionTokenStats,
   SessionTreeGutter,
   SessionTreeRow,
+  SessionTreeView,
   SlashCommand as SessionSlashCommand,
   SlashCommandSource as SessionSlashSource,
   ThinkingLevel as SessionThinkingLevel
@@ -207,6 +211,8 @@ export async function renameSession(sessionId: string, name: string, path?: stri
     session.index = null
     session.indexing = null
     session.tailById = null
+    session.treeRows = undefined
+    session.treeRowsRequest = undefined
     forgetSessionName(session.path)
     return
   }
@@ -216,6 +222,47 @@ export async function renameSession(sessionId: string, name: string, path?: stri
   if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
   appendSessionInfo(path, clean)
   forgetSessionName(path)
+}
+
+/**
+ * Labeling writes a `label` line, the SDK's own bookmark record: through the manager when one holds
+ * the session, into the file when it is not open at all. An empty label clears the mark.
+ */
+export async function setSessionLabel(
+  sessionId: string,
+  targetId: string,
+  label: string,
+  path?: string
+): Promise<void> {
+  const clean = label.replace(/[\r\n]+/g, ' ').trim()
+  const session = live.get(sessionId) ?? pending.get(sessionId)
+  if (session) {
+    if ('agentSession' in session) {
+      session.agentSession.sessionManager.appendLabelChange(targetId, clean)
+      return
+    }
+    if (session.kind === 'memory') {
+      session.sessionManager.appendLabelChange(targetId, clean)
+      return
+    }
+    // The SDK fails fast on an unknown target; a hand-appended line cannot, so check first.
+    const index = await sessionIndex(session)
+    if (!index.byId.has(targetId)) throw new Error(`Entry ${targetId} not found`)
+    appendLabelChange(session.path, targetId, clean)
+    // The index and the tree below were built before that line existed.
+    session.index = null
+    session.indexing = null
+    session.tailById = null
+    session.treeRows = undefined
+    session.treeRowsRequest = undefined
+    return
+  }
+  if (!path) throw new Error(`Session not found: ${sessionId}`)
+  // Same spelling rule as a rename: resolving first would reject a symlinked sessions root.
+  // The target is not checked here: with no session held there is no index to ask, and building a
+  // whole-file index for one id would cost more than the stray line it could prevent.
+  if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
+  appendLabelChange(path, targetId, clean)
 }
 
 export async function discardDraftSession(sessionId: string): Promise<void> {
@@ -637,25 +684,44 @@ export async function exportSession(sessionId: string, outputPath?: string): Pro
   return exportAgentSession((await prepareSession(sessionId)).agentSession, outputPath)
 }
 
-export async function getSessionTree(sessionId: string) {
+export async function getSessionTrees(
+  sessionId: string,
+  views?: SessionTreeView[]
+): Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>> {
+  const picked = views?.filter((view) => SESSION_TREE_VIEWS.includes(view))
+  const wanted = picked?.length ? picked : [...SESSION_TREE_VIEWS]
   return retryAfterIndexFallback(sessionId, async () => {
     const session = sessionState(sessionId)
     // Reopening the dialog must not read the file again: the index is immutable while it is pending.
     if (!('agentSession' in session) && session.kind === 'file') {
       const cached = session.treeRows
-      if (cached) return cached
-      // Concurrent callers share one build instead of walking the branch once each.
-      const request = session.treeRowsRequest ??= (async () => {
-        const rows = sessionTreeRows(fileSource(await sessionIndex(session)))
-        session.treeRows = rows
-        return rows
+      if (cached && wanted.every((view) => cached[view])) {
+        return Object.fromEntries(wanted.map((view) => [view, cached[view]]))
+      }
+      // Concurrent callers share one build when it already covers what they ask for.
+      const resident = session.treeRowsRequest
+      if (resident && wanted.every((view) => resident.views.includes(view))) {
+        const shared = await resident.promise
+        return Object.fromEntries(wanted.map((view) => [view, shared[view]]))
+      }
+      // The slot holds the in-flight build so the closure below can tell it apart from a newer
+      // one: naming the promise directly would read the binding while it is being assigned.
+      const slot: { views: SessionTreeView[]; promise?: Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>> } = {
+        views: wanted
+      }
+      slot.promise = (async () => {
+        const built = buildSessionTreeViews(fileSource(await sessionIndex(session)), wanted)
+        // A write that landed mid-build cleared the request slot: rows read before it are stale.
+        if (session.treeRowsRequest === slot) session.treeRows = { ...session.treeRows, ...built }
+        return built
       })()
+      session.treeRowsRequest = slot as NonNullable<typeof session.treeRowsRequest>
       try {
-        return await request
+        return await slot.promise
       } finally {
-        if (session.treeRowsRequest === request) session.treeRowsRequest = null
+        if (session.treeRowsRequest === slot) session.treeRowsRequest = null
       }
     }
-    return sessionTreeRows(await sourceFor(session))
+    return buildSessionTreeViews(await sourceFor(session), wanted)
   })
 }

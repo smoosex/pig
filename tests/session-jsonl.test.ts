@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  appendLabelChange,
   appendSessionInfo,
   indexSessionFile,
   probeSessionRow,
@@ -519,6 +520,25 @@ test('lands behind the last readable line when the tail of the file is truncated
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('a label hangs from the last entry and reads back as a bookmark', async () => {
+  await withFile([header(), entry('u1', null, 'user'), entry('a1', 'u1', 'assistant')], (path) => {
+    appendLabelChange(path, 'u1', '起点')
+    const written = readFileSync(path, 'utf8').trimEnd().split('\n').at(-1)!
+    expect(JSON.parse(written)).toMatchObject({
+      type: 'label',
+      parentId: 'a1',
+      targetId: 'u1',
+      label: '起点'
+    })
+    const index = indexSessionFile(path)
+    expect(index.entries.at(-1)).toMatchObject({ type: 'label', parentId: 'a1' })
+    expect(index.branch.map((item) => item.id)).toEqual(['u1', 'a1', index.leafId!])
+    appendLabelChange(path, 'u1', '')
+    const cleared = readFileSync(path, 'utf8').trimEnd().split('\n').at(-1)!
+    expect(JSON.parse(cleared)).toMatchObject({ type: 'label', targetId: 'u1', label: '' })
+  })
 })
 
 test('refuses to append into a file whose every line is unreadable', async () => {
