@@ -12,6 +12,7 @@ import { constants, type Stats } from 'node:fs'
 import { lstat, open, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { FileReadResult, FileStamp, FileWriteResult } from '../../shared/api'
+import { t } from '../i18n'
 import { readLanes } from '../git/limit'
 import { resolveWorktreePath } from './paths'
 import { BINARY_PROBE_BYTES, isMissingError, readCapped } from './read'
@@ -70,14 +71,14 @@ export async function writeFile(
   options: { expected?: FileStamp; overwrite?: boolean } = {}
 ): Promise<FileWriteResult> {
   const target = await resolveWorktreePath(cwd, path, 'file')
-  if (!target || target.relative === '') throw new Error('文件不在工作区内')
+  if (!target || target.relative === '') throw new Error(t('error.fileOutsideWorkspace'))
 
   const before = await lstat(target.absolute).catch((error: unknown) => {
     if (isMissingError(error)) return null
     throw error
   })
-  if (before?.isSymbolicLink()) throw new Error('符号链接不写入')
-  if (before && !before.isFile()) throw new Error('这个路径不是文件')
+  if (before?.isSymbolicLink()) throw new Error(t('error.symlinkWrite'))
+  if (before && !before.isFile()) throw new Error(t('error.notAFile'))
   if (!options.overwrite && options.expected && !sameStamp(before && stampOf(before), options.expected)) {
     return { kind: 'conflict' }
   }
@@ -108,7 +109,7 @@ export async function writeFile(
  */
 export async function externalPath(cwd: string, path: string): Promise<string> {
   const target = await resolveWorktreePath(cwd, path, 'file')
-  if (!target || target.relative === '') throw new Error('文件不在工作区内')
+  if (!target || target.relative === '') throw new Error(t('error.fileOutsideWorkspace'))
   return target.absolute
 }
 
@@ -125,7 +126,7 @@ export async function openablePath(cwd: string, path: string): Promise<string> {
     if (isMissingError(error)) return null
     throw error
   })
-  if (info?.isSymbolicLink()) throw new Error('这是符号链接，不跟随')
+  if (info?.isSymbolicLink()) throw new Error(t('error.symlinkFollow'))
   return absolute
 }
 
@@ -142,15 +143,15 @@ function writeFailure(error: unknown): Error {
   const code = (error as NodeJS.ErrnoException).code
   const reason =
     code === 'EACCES' || code === 'EPERM'
-      ? '没有写入权限'
+      ? t('error.noWritePermission')
       : code === 'EISDIR'
-        ? '这个路径是目录'
+        ? t('error.isDirectory')
         : code === 'ENOENT'
-          ? '文件所在的目录不存在'
+          ? t('error.missingDirectory')
           : code === 'ENOSPC'
-            ? '磁盘空间不足'
+            ? t('error.noSpace')
             : code === 'EROFS'
-              ? '文件系统是只读的'
+              ? t('error.readOnlyFilesystem')
               : null
   if (!reason) return error instanceof Error ? error : new Error(String(error))
   return new Error(reason)

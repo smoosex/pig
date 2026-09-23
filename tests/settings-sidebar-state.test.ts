@@ -30,6 +30,8 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings {
     lightTheme: 'pig',
     darkTheme: 'pig',
     sendShortcut: 'enter',
+    localeSetting: 'zh-CN',
+    systemLocale: 'zh-CN',
     defaultModel: null,
     defaultThinkingLevel: null,
     thinkingLevels: [],
@@ -55,6 +57,8 @@ async function runFixture(name: string): Promise<void> {
   const api: Partial<SessionApi> = { getSettings: async () => settings() }
   Object.defineProperty(window, 'api', { value: api, configurable: true })
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
 
   if (name === 'save-order' || name === 'save-failure') {
     await useSettingsStore.getState().load()
@@ -141,6 +145,42 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(useSettingsStore.getState().appearance, 'dark')
     assert.ok(appearances.every((appearance) => appearance === 'dark'))
     unsubscribe()
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'locale') {
+    const writes: string[] = []
+    api.getSettings = async () => settings({ localeSetting: 'system', systemLocale: 'zh-CN' })
+    api.setLocaleSetting = async (locale) => {
+      writes.push(locale)
+      return { localeSetting: locale, systemLocale: 'zh-CN' }
+    }
+    const { t } = await import('../src/renderer/src/lib/i18n')
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    useSessionsStore.setState({
+      openTabs: [
+        { id: 'draft', cwd: '/project', title: '新对话', kind: 'project', loadState: 'ready' }
+      ]
+    })
+
+    await useSettingsStore.getState().load()
+    assert.equal(useSettingsStore.getState().localeSetting, 'system')
+    assert.equal(useSettingsStore.getState().locale, 'zh-CN')
+    assert.equal(document.documentElement.lang, 'zh-CN')
+    assert.equal(document.documentElement.dataset.locale, 'zh-CN')
+    assert.equal(localStorage.getItem('pig.locale'), 'zh-CN')
+    assert.equal(t('sessions.newTitle'), '新对话')
+
+    await useSettingsStore.getState().setLocale('en')
+    assert.deepEqual(writes, ['en'])
+    assert.equal(useSettingsStore.getState().locale, 'en')
+    assert.equal(useSettingsStore.getState().localeSetting, 'en')
+    assert.equal(document.documentElement.lang, 'en')
+    assert.equal(localStorage.getItem('pig.locale'), 'en')
+    assert.equal(t('sessions.newTitle'), 'New chat')
+    assert.equal(useSessionsStore.getState().openTabs[0]?.title, 'New chat')
+
     await GlobalRegistrator.unregister()
     return
   }
@@ -589,6 +629,7 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'save-order': 'serial saves preserve all pending UI choices',
     'save-failure': 'failed saves roll back only their patch and keep the queue usable',
     'load-race': 'a stale settings load cannot replace later edits or provider updates',
+    locale: 'the language setting follows the system, persists and re-titles placeholders',
     auth: 'auth cancellation owns its prompts until completion and cleans up on unmount',
     sidebar: 'late preferences preserve user changes and writes remain ordered',
     worktree: 'worktree inspection is guarded and failures never start creation',

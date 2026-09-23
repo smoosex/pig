@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { resolveLocale, type Locale, type LocaleSetting } from '../../../shared/i18n'
 import {
   api,
   type AppSettings,
@@ -8,13 +9,17 @@ import {
   type ThemePrefs,
   type ThinkingLevel
 } from '../ipc/api'
+import { applyDocumentLocale, storedLocale } from '../lib/locale'
 import { applyDocumentTheme } from '../lib/theme'
 
 interface SettingsStore extends AppSettings {
+  /** The setting resolved against the system language: what the UI actually speaks. */
+  locale: Locale
   loaded: boolean
   error: string | null
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
+  setLocale: (locale: LocaleSetting) => Promise<void>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
   setDefaultModel: (provider: string, id: string) => Promise<void>
   setDefaultThinking: (level: ThinkingLevel) => Promise<void>
@@ -23,6 +28,9 @@ interface SettingsStore extends AppSettings {
 
 const empty: AppSettings = {
   sendShortcut: 'enter',
+  localeSetting: 'system',
+  // Until the first load the only hint is the locale of the last run, which the mirror holds.
+  systemLocale: storedLocale(),
   appearance: 'system',
   lightTheme: 'pig',
   darkTheme: 'pig',
@@ -53,7 +61,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   const pending: Partial<AppSettings>[] = []
 
   const publish = () => {
-    const next = Object.assign({}, confirmed, ...pending) as AppSettings
+    const merged = Object.assign({}, confirmed, ...pending) as AppSettings
+    const locale = resolveLocale(merged.localeSetting, merged.systemLocale)
+    const next = { ...merged, locale }
     const current = get()
     if (
       !current.loaded ||
@@ -63,6 +73,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     ) {
       applyDocumentTheme(next)
     }
+    if (!current.loaded || current.locale !== locale) applyDocumentLocale(locale)
     set(next)
   }
 
@@ -119,6 +130,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
 
   return {
     ...empty,
+    locale: storedLocale(),
     loaded: false,
     error: null,
     load,
@@ -127,6 +139,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       save({ sendShortcut: shortcut }, async () => {
         const next = await api.setSendShortcut(shortcut)
         return { sendShortcut: next.sendShortcut }
+      }),
+
+    setLocale: (locale) =>
+      save({ localeSetting: locale }, async () => {
+        const next = await api.setLocaleSetting(locale)
+        return { localeSetting: next.localeSetting, systemLocale: next.systemLocale }
       }),
 
     setTheme: (patch) =>

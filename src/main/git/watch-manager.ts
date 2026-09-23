@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import type { DiffWatchError } from '../../shared/api'
 import { isNotARepoError } from './exec'
 import { gitWatchTargets, isGitLockEvent, isIgnoredWatchPath } from './watch-path'
+import { t } from '../i18n'
 
 interface Watched {
   watcher: FSWatcher
@@ -64,7 +65,7 @@ export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions)
   }
 
   const assertCurrent = (cwd: string, entry: Watched): void => {
-    if (watched.get(cwd) !== entry) throw entry.closedError ?? new Error('工作区监听已失效')
+    if (watched.get(cwd) !== entry) throw entry.closedError ?? new Error(t('error.watchClosed'))
   }
 
   const watchGitDir = async (cwd: string, entry: Watched): Promise<void> => {
@@ -99,7 +100,7 @@ export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions)
       watcher.on('error', (error) => failEntry(cwd, entry, asError(error)))
       if (watched.get(cwd) !== entry) {
         watcher.close()
-        throw entry.closedError ?? new Error('工作区监听已失效')
+        throw entry.closedError ?? new Error(t('error.watchClosed'))
       }
       entry.gitWatchers.push(watcher)
     }
@@ -112,7 +113,7 @@ export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions)
     if (existing) {
       existing.leases.add(leaseId)
       await existing.ready
-      if (watched.get(cwd) !== existing) throw existing.closedError ?? new Error('工作区监听已失效')
+      if (watched.get(cwd) !== existing) throw existing.closedError ?? new Error(t('error.watchClosed'))
       return leaseId
     }
 
@@ -144,7 +145,7 @@ export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions)
     })
 
     await entry.ready
-    if (watched.get(cwd) !== entry) throw entry.closedError ?? new Error('工作区监听已失效')
+    if (watched.get(cwd) !== entry) throw entry.closedError ?? new Error(t('error.watchClosed'))
     entry.readyDone = true
     return leaseId
   }

@@ -12,12 +12,14 @@ import { useEffect, useMemo } from 'react'
 import { ChevronRight, Eye, EyeOff, Folder, FolderOpen } from 'lucide-react'
 import { watchWorktreeFiles, useFilesStore } from '../../stores/files'
 import { useSessionsStore } from '../../stores/sessions'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { fileIcon } from '../diff/file-entry'
 import { treeRows } from './tree-rows'
 
 export function FileTree({ cwd }: { cwd: string }) {
+  const t = useT()
   const trees = useFilesStore((state) => state.trees[cwd])
   const expanded = useFilesStore((state) => state.expanded[cwd])
   const hideIgnored = useFilesStore((state) => state.hideIgnored)
@@ -43,9 +45,9 @@ export function FileTree({ cwd }: { cwd: string }) {
   const notice = root?.status === 'error'
     ? root.error
     : root?.status === 'loading'
-      ? '正在读取文件…'
+      ? t('file.loading')
       : rows.length === 0
-        ? '这个工作区是空的'
+        ? t('file.emptyTree')
         : null
 
   return (
@@ -101,7 +103,7 @@ export function FileTree({ cwd }: { cwd: string }) {
           size="icon-xs"
           className="text-muted-foreground"
           aria-pressed={hideIgnored}
-          aria-label={hideIgnored ? '显示 Git 忽略的文件' : '隐藏 Git 忽略的文件'}
+          aria-label={hideIgnored ? t('file.showIgnored') : t('file.hideIgnored')}
           onClick={() => setHideIgnored(!hideIgnored)}
         >
           {hideIgnored ? <EyeOff /> : <Eye />}

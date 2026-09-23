@@ -4,6 +4,11 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { GitExecError, isNotARepoError } from '../src/main/git/exec'
 import { canonicalProject, git, isGitProject, parseWorktrees, validateBranchName, WorktreeService } from '../src/main/worktrees'
+import { applyLocaleSetting } from '../src/main/i18n'
+
+// Pig's own errors come from the dictionary: pin the wording these tests spell out.
+applyLocaleSetting('zh-CN')
+
 
 const temps: string[] = []
 const services: WorktreeService[] = []

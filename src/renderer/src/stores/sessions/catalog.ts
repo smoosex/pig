@@ -1,5 +1,6 @@
-import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta } from '../../ipc/api'
+import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta, SessionPreviewFallback } from '../../ipc/api'
 import type { OpenTab, SessionsStore } from './types'
+import { sessionTitle } from './session-title'
 
 export function mapGroupSessions(
   group: ProjectGroup,
@@ -51,17 +52,20 @@ export function mergeWorktreeDiscoveries(
   })
 }
 
-export function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string): ProjectGroup[] {
+export function fillEmptySessionTitle(groups: ProjectGroup[], sessionId: string, title: string, fallback?: SessionPreviewFallback): ProjectGroup[] {
   return groups.map((group) =>
     mapGroupSessions(group, (sessions) => sessions.map((session) =>
       session.id === sessionId && !session.name && !session.firstMessage
-        ? { ...session, firstMessage: title }
+        // A marker preview leaves no word behind: the renderer translates the marker, so clearing
+        // a rename later hands the title back to a fresh word instead of a frozen one.
+        ? { ...session, firstMessage: fallback ? '' : title, previewFallback: fallback }
         : session
     ))
   )
 }
 
-/** The display name a rename wrote, or the cleared name that hands the title back to the first message. */
+/** The display name a rename wrote, or the cleared name that hands the title back to the first message.
+ * A real name only shadows a preview marker; the marker stays so clearing the name re-translates it. */
 export function renameGroupSession(
   groups: ProjectGroup[],
   sessionId: string,
@@ -81,8 +85,12 @@ export function patchTabsFromGroups(tabs: OpenTab[], groups: ProjectGroup[]): Op
     if (!meta) return tab
     return {
       ...tab,
-      title: meta.name || meta.firstMessage || tab.title,
-      meta
+      // A listing with nothing to show keeps the tab's title; sessionTitle() alone would fall back
+      // to the placeholder and wipe a preview the composer just wrote. The marker follows the fresh
+      // listing so a later locale switch does not translate a title that is no longer a preview.
+      title: sessionTitle(meta, tab.title),
+      meta,
+      previewFallback: meta.previewFallback
     }
   })
 }

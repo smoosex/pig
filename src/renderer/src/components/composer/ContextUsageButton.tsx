@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { SessionContextUsage, SessionTokenStats } from '../../ipc/api'
 import { cn } from '../../lib/utils'
+import { useT } from '../../hooks/useT'
 import { InputGroupButton } from '../ui/input-group'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '../ui/popover'
 import { Progress } from '../ui/progress'
@@ -48,11 +49,12 @@ export function ContextUsageButton({
   onOpen: () => void
   disabled?: boolean
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const used = usage?.tokens ?? null
   const windowSize = usage?.contextWindow ?? 0
   const percent = usage?.percent ?? null
-  const hover = '上下文用量'
+  const hover = t('context.usage')
 
   return (
     <Popover
@@ -67,7 +69,7 @@ export function ContextUsageButton({
           <PopoverTrigger asChild>
             <InputGroupButton
               className="size-8 rounded-full p-0 text-muted-foreground"
-              aria-label="上下文窗口"
+              aria-label={t('context.window')}
               disabled={disabled}
             >
               <ContextMeter percent={percent} />
@@ -78,7 +80,7 @@ export function ContextUsageButton({
       </Tooltip>
       <PopoverContent align="end" side="top" className="w-72">
         <PopoverHeader>
-          <PopoverTitle className="text-xs">上下文</PopoverTitle>
+          <PopoverTitle className="text-xs">{t('context.title')}</PopoverTitle>
         </PopoverHeader>
         <div className="flex flex-col gap-2">
           <div className="text-sm tabular-nums">
@@ -89,20 +91,20 @@ export function ContextUsageButton({
           </div>
           <Progress value={percent ?? 0} />
           {error ? (
-            <p role="alert" className="text-xs text-destructive">统计加载失败：{error}</p>
+            <p role="alert" className="text-xs text-destructive">{t('context.loadFailed', { error })}</p>
           ) : null}
           <div className="flex flex-col gap-1.5">
-            <StatRow label="快照" value={percent == null ? '–' : `${Math.round(percent)}%`} />
-            <StatRow label="输入" value={formatTokens(tokens?.input ?? null)} />
-            <StatRow label="缓存读取" value={formatTokens(tokens?.cacheRead ?? null)} />
-            <StatRow label="缓存写入" value={formatTokens(tokens?.cacheWrite ?? null)} />
-            <StatRow label="输出" value={formatTokens(tokens?.output ?? null)} />
+            <StatRow label={t('context.snapshot')} value={percent == null ? '–' : `${Math.round(percent)}%`} />
+            <StatRow label={t('context.input')} value={formatTokens(tokens?.input ?? null)} />
+            <StatRow label={t('context.cacheRead')} value={formatTokens(tokens?.cacheRead ?? null)} />
+            <StatRow label={t('context.cacheWrite')} value={formatTokens(tokens?.cacheWrite ?? null)} />
+            <StatRow label={t('context.output')} value={formatTokens(tokens?.output ?? null)} />
           </div>
           <Separator />
           <div className="flex flex-col gap-1.5">
-            <StatRow label="总输入输出" value={formatTokens(tokens?.total ?? null)} muted={false} />
+            <StatRow label={t('context.total')} value={formatTokens(tokens?.total ?? null)} muted={false} />
             <StatRow
-              label="有效输入"
+              label={t('context.effectiveInput')}
               value={formatTokens(tokens ? tokens.input + tokens.cacheRead : null)}
             />
           </div>

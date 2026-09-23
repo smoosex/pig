@@ -20,7 +20,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, ChevronsDownUp, Columns2, Rows3 } from 'lucide-react'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import {
-  SCOPE_LABELS,
+  scopeLabel,
   patchKey,
   rememberScrollTop,
   savedScrollTop,
@@ -39,6 +39,8 @@ import {
 } from '../ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { cn } from '../../lib/utils'
+import type { Translate } from '../../../../shared/i18n'
+import { useT } from '../../hooks/useT'
 import { STATUS_META, fileIcon, splitPath } from './file-entry'
 import {
   SECTION_SCROLL_LINES,
@@ -65,6 +67,7 @@ const REVEAL_DEADLINE_MS = 2_000
 const REVEAL_MAX_FRAMES = 120
 
 export function ChangesView({ cwd }: { cwd: string }) {
+  const t = useT()
   const diffState = useDiffStore((s) => s.worktrees[cwd])
   const scope =
     useSessionsStore(
@@ -301,7 +304,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label={allExpanded ? '折叠全部' : '展开全部'}
+          aria-label={allExpanded ? t('diff.collapseAll') : t('diff.expandAll')}
           disabled={!sections.length}
           onClick={() =>
             setExpanded(cwd, allExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
@@ -316,23 +319,23 @@ export function ChangesView({ cwd }: { cwd: string }) {
               variant="ghost"
               size="xs"
               className="gap-0.5 px-1 text-xs font-medium"
-              aria-label="变更范围"
+              aria-label={t('diff.scopeAria')}
             >
               <ChevronDown className="size-3 text-muted-foreground" />
-              {SCOPE_LABELS[scope]}
+              {scopeLabel(t, scope)}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuRadioGroup value={scope} onValueChange={(value) => setScope(cwd, value as DiffScope)}>
               {SCOPES.map((value) => (
                 <DropdownMenuRadioItem key={value} value={value} className="text-xs">
-                  {SCOPE_LABELS[value]}
+                  {scopeLabel(t, value)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <span className="text-xs tabular-nums text-muted-foreground">{entries.length} 个更改</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{t('diff.changeCount', { count: entries.length })}</span>
         <span className="flex-1" />
         <ToggleGroup
           type="single"
@@ -341,12 +344,12 @@ export function ChangesView({ cwd }: { cwd: string }) {
           className="border p-px"
           value={diffStyle}
           onValueChange={(value) => value && setDiffStyle(value as 'unified' | 'split')}
-          aria-label="diff 布局"
+          aria-label={t('diff.layout')}
         >
-          <ToggleGroupItem value="unified" aria-label="统一视图">
+          <ToggleGroupItem value="unified" aria-label={t('diff.unified')}>
             <Rows3 />
           </ToggleGroupItem>
-          <ToggleGroupItem value="split" aria-label="并排视图">
+          <ToggleGroupItem value="split" aria-label={t('diff.sideBySide')}>
             <Columns2 />
           </ToggleGroupItem>
         </ToggleGroup>
@@ -366,16 +369,16 @@ export function ChangesView({ cwd }: { cwd: string }) {
   )
 
   function renderList() {
-    if (!diffState) return <Notice flush>正在读取变更…</Notice>
+    if (!diffState) return <Notice flush>{t('diff.reading')}</Notice>
     if (diffState.watchError) return <Notice flush>{diffState.watchError}</Notice>
-    if (pending && !diffState.diff) return <Notice flush>正在读取变更…</Notice>
+    if (pending && !diffState.diff) return <Notice flush>{t('diff.reading')}</Notice>
     if (diffState.status === 'error') return <Notice flush>{diffState.error}</Notice>
     if (patchState?.status === 'error') return <Notice flush>{patchState.error}</Notice>
-    if (!diff?.git) return <Notice flush>当前目录不是 Git 仓库</Notice>
-    if (!sections.length) return <Notice flush>{emptyText(scope)}</Notice>
+    if (!diff?.git) return <Notice flush>{t('diff.notGit')}</Notice>
+    if (!sections.length) return <Notice flush>{emptyText(scope, t)}</Notice>
     return (
       <>
-        {patchState?.patch?.truncated ? <Notice flush>变更过大，超出的文件未读取</Notice> : null}
+        {patchState?.patch?.truncated ? <Notice flush>{t('diff.truncated')}</Notice> : null}
         {sections.map((section) => {
           const entry = section.entry
           const meta = STATUS_META[entry.status]
@@ -397,7 +400,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
                 className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs hover:bg-accent/60"
               >
                 <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
-                <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={meta.label}>
+                <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
                   {meta.letter}
                 </span>
                 <Icon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -447,6 +450,7 @@ function SectionBody({
   load: (cwd: string, path: string) => Promise<void>
   scroll: boolean
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement | null>(null)
   const diffStyle = useDiffStore((s) => s.diffStyle)
   const [near, setNear] = useState(false)
@@ -481,45 +485,56 @@ function SectionBody({
     <div ref={ref} className="text-xs">
       {drawing ? (
         near ? (
-          <Suspense fallback={<Notice>正在渲染…</Notice>}>
+          <Suspense fallback={<Notice>{t('diff.rendering')}</Notice>}>
             <DiffBody fileDiff={drawing} style={diffStyle} scroll={scroll} />
           </Suspense>
         ) : (
-          <Notice>正在准备…</Notice>
+          <Notice>{t('diff.preparing')}</Notice>
         )
       ) : pending || preparing ? (
-        <Notice>{near && pending && entry.status === 'untracked' ? '正在读取…' : '正在准备…'}</Notice>
+        <Notice>
+          {near && pending && entry.status === 'untracked' ? t('diff.loadingFile') : t('diff.preparing')}
+        </Notice>
       ) : (
-        <Notice>{noteText(note, entry, bytes, message)}</Notice>
+        <Notice>{noteText(note, entry, bytes, message, t)}</Notice>
       )}
     </div>
   )
 }
 
-function noteText(note: SectionNote, entry: DiffFileEntry, bytes?: number, message?: string): string {
+function noteText(
+  note: SectionNote,
+  entry: DiffFileEntry,
+  bytes: number | undefined,
+  message: string | undefined,
+  t: Translate
+): string {
   switch (note) {
     case 'binary':
-      return '二进制文件，无法显示文本差异'
+      return t('diff.binary')
     case 'too-large':
-      return bytes ? `文件过大（${Math.round(bytes / 1024 / 1024)} MB），未读取` : '文件过大，未读取'
+      return bytes
+        ? t('diff.tooLarge', { size: Math.round(bytes / 1024 / 1024) })
+        : t('diff.tooLargeUnknown')
     case 'changed':
-      return '读取时文件已换成链接，未读取'
+      return t('diff.nowSymlink')
     case 'failed':
-      return message ? `读取失败：${message}` : '读取失败'
+      return message ? t('diff.readFailed', { error: message }) : t('diff.readFailedPlain')
     case 'truncated':
-      return '变更过大，未读取此文件'
+      return t('diff.tooLargeDiff')
     case 'unparsed':
-      return message ? `无法解析此文件的变更：${message}` : '无法解析此文件的变更'
+      return message
+        ? t('diff.parseFailed', { error: message })
+        : t('diff.parseFailedPlain')
     default:
-      return entry.status === 'deleted' ? '文件已删除' : '没有可显示的变更'
+      return entry.status === 'deleted' ? t('diff.deleted') : t('diff.noChanges')
   }
 }
 
 /** What an empty canvas means depends on what it was asked for. */
-function emptyText(scope: DiffScope): string {
-  if (scope === 'staged') return '暂存区没有变更'
-  if (scope === 'unstaged') return '工作区没有未提交的变更'
-  return '工作区没有未提交的变更'
+function emptyText(scope: DiffScope, t: Translate): string {
+  if (scope === 'staged') return t('diff.emptyStaged')
+  return t('diff.emptyWorktree')
 }
 
 /** `flush` is for notices that sit in the padded list itself rather than inside a file card. */

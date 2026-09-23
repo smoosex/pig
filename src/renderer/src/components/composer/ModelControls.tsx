@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
+import { thinkingLevelKeys } from '../../lib/thinking-levels'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -10,16 +12,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
-
-const thinkingLabels: Record<ThinkingLevel, string> = {
-  off: '关闭',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '极高',
-  max: '最高'
-}
 
 const thinkingBarHeights: Record<3 | 4 | 5, string[]> = {
   3: ['h-1.5', 'h-2.5', 'h-3'],
@@ -86,6 +78,7 @@ export function ModelPicker({
   actions: ModelControlActions
   disabled?: boolean
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -129,7 +122,7 @@ export function ModelPicker({
       <PopoverTrigger asChild>
         <InputGroupButton className={cn(toolbarBtn, 'max-w-44')} disabled={disabled}>
           <ModelBrandIcon model={model} />
-          <span className="min-w-0 truncate">{model?.name ?? '模型'}</span>
+          <span className="min-w-0 truncate">{model?.name ?? t('model.pickerFallback')}</span>
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5" onKeyDown={navigation.onKeyDown}>
@@ -137,7 +130,7 @@ export function ModelPicker({
           <Input
             autoFocus
             value={query}
-            placeholder="搜索模型"
+            placeholder={t('model.search')}
             className="h-7 md:text-xs"
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -145,7 +138,7 @@ export function ModelPicker({
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label="刷新模型列表"
+            aria-label={t('model.refresh')}
             disabled={!sessionId || actions.pending}
             onClick={() => void refresh()}
           >
@@ -157,7 +150,7 @@ export function ModelPicker({
           <SmoothHoverHighlight activeKey={navigation.index}>
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
+                {models.length === 0 ? t('model.empty') : t('model.noMatch')}
               </p>
             ) : (
               filtered.map((item, index) => {
@@ -211,6 +204,7 @@ export function ThinkingPicker({
   actions: ModelControlActions
   disabled?: boolean
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
 
   const select = async (level: ThinkingLevel) => {
@@ -227,7 +221,7 @@ export function ThinkingPicker({
       <PopoverTrigger asChild>
         <InputGroupButton className={toolbarBtn} disabled={disabled}>
           <ThinkingStrengthIcon level={thinkingLevel} levels={thinkingLevels} active />
-          {thinkingLabels[thinkingLevel]}
+          {t(thinkingLevelKeys[thinkingLevel])}
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent
@@ -242,7 +236,7 @@ export function ThinkingPicker({
         }}
         onKeyDown={navigation.onKeyDown}
       >
-        <p className="px-3 py-1.5 text-xs text-muted-foreground">推理强度</p>
+        <p className="px-3 py-1.5 text-xs text-muted-foreground">{t('model.thinking')}</p>
         {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
         {thinkingLevels.map((level, index) => {
           const selected = level === thinkingLevel
@@ -264,7 +258,7 @@ export function ThinkingPicker({
                 {index + 1}
               </span>
               <ThinkingStrengthIcon level={level} levels={thinkingLevels} active={selected} />
-              {thinkingLabels[level]}
+              {t(thinkingLevelKeys[level])}
             </Button>
           )
         })}

@@ -1,11 +1,12 @@
+import type { MessageKey } from '../../../../shared/i18n'
 import type { SlashCommand } from '../../ipc/api'
 
 export const slashGroups = {
-  builtin: { order: 0, label: '内建' },
-  prompt: { order: 1, label: '模板' },
-  extension: { order: 2, label: '扩展' },
-  skill: { order: 3, label: 'Skills' }
-}
+  builtin: { order: 0, labelKey: 'commands.builtin' },
+  prompt: { order: 1, labelKey: 'commands.prompt' },
+  extension: { order: 2, labelKey: 'commands.extension' },
+  skill: { order: 3, labelKey: 'commands.skill' }
+} satisfies Record<SlashCommand['source'], { order: number; labelKey: MessageKey }>
 
 export function slashQuery(text: string): string | null {
   if (!text.startsWith('/')) return null

@@ -6,6 +6,7 @@ import { git, isGitProject } from '../worktrees'
 import { closeSessionsForCwd } from '../pi/session-registry'
 import { removeProjectDir } from '../pi/session-loader'
 import { removeOpenProjectWorkspaces } from '../open-project-sessions'
+import { t } from '../i18n'
 
 async function createInfo(project: string): Promise<{ hasGit: boolean; hasHead: boolean }> {
   const hasGit = await isGitProject(project)
@@ -16,16 +17,16 @@ async function createInfo(project: string): Promise<{ hasGit: boolean; hasHead: 
 export function registerWorktreeIpc(): void {
   ipcMain.handle('project:worktree-create-info', async (_event, projectCwd: string) => {
     const project = await requireOpenedProject(projectCwd)
-    if (isChatCwd(project) || isChatsRoot(project)) throw new Error('独立对话不支持 Worktree')
+    if (isChatCwd(project) || isChatsRoot(project)) throw new Error(t('error.chatHasNoWorktree'))
     return createInfo(project)
   })
 
   ipcMain.handle('project:create-worktree', async (_event, projectCwd: string, options?: { initGit?: boolean }) => {
     const project = await requireOpenedProject(projectCwd)
-    if (isChatCwd(project) || isChatsRoot(project)) throw new Error('独立对话不支持 Worktree')
+    if (isChatCwd(project) || isChatsRoot(project)) throw new Error(t('error.chatHasNoWorktree'))
     const { hasGit, hasHead } = await createInfo(project)
     if (!hasHead && !hasGit) {
-      if (!options?.initGit) throw new Error('请先初始化 Git')
+      if (!options?.initGit) throw new Error(t('error.gitRequired'))
       await worktrees.exclusive(project, () => git(project, ['init']))
     }
     const created = await worktrees.create(project)

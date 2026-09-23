@@ -6,6 +6,7 @@ import {
   SessionManager,
   SettingsManager
 } from '@earendil-works/pi-coding-agent'
+import { t } from '../i18n'
 
 const SYSTEM_PROMPT = `Name a Git branch for the user's task. Return only the branch name, without quotes, code fences, or explanation.
 Use a conventional prefix and short kebab-case slug. Reserve fix/ for an explicitly identified bug or regression that this task will correct; do not infer fix/ from the user's verb alone. Otherwise choose the prefix that best describes the work: feat/, chore/, docs/, refactor/, test/, ci/, perf/, style/, or build/.
@@ -21,7 +22,7 @@ async function nameBranch(request: NamingRequest): Promise<string> {
   const cwd = process.cwd()
   const modelRuntime = await ModelRuntime.create()
   const model = modelRuntime.getModel(request.provider, request.modelId)
-  if (!model) throw new Error('默认命名模型不可用')
+  if (!model) throw new Error(t('naming.modelUnavailable'))
   const settingsManager = SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } })
   const resourceLoader = new DefaultResourceLoader({
     cwd,
@@ -46,7 +47,7 @@ async function nameBranch(request: NamingRequest): Promise<string> {
     await session.prompt(JSON.stringify({ task: request.text }), { expandPromptTemplates: false })
     const last = session.messages.findLast((message) => message.role === 'assistant')
     if (!last || last.role !== 'assistant' || last.stopReason === 'error' || last.stopReason === 'aborted') {
-      throw new Error(last?.role === 'assistant' ? last.errorMessage || '命名失败' : '命名模型未返回结果')
+      throw new Error(last?.role === 'assistant' ? last.errorMessage || t('naming.failed') : t('naming.noResult'))
     }
     return last.content.filter((block) => block.type === 'text').map((block) => block.text).join('').trim()
   } finally {

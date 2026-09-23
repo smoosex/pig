@@ -9,6 +9,7 @@ import {
 } from "motion/react"
 import { Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useT } from "@/hooks/useT"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,7 @@ export function HoldToConfirmButton({
   disabled = false,
   className,
 }: HoldToConfirmButtonProps) {
+  const t = useT()
   const shouldReduceMotion = useReducedMotion()
   const [holding, setHolding] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
@@ -227,7 +229,7 @@ export function HoldToConfirmButton({
     <motion.button
       type="button"
       disabled={disabled}
-      aria-label={`${label}，长按 ${holdSeconds} 秒确认`}
+      aria-label={t('common.holdToConfirm', { label, seconds: holdSeconds })}
       onPointerDown={handlePointerDown}
       onPointerUp={cancelPointerHold}
       onPointerLeave={cancelPointerHold}

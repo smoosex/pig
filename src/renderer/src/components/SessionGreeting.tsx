@@ -1,7 +1,9 @@
 import { cn } from '../lib/utils'
+import { useT } from '../hooks/useT'
 import { Empty } from './ui/empty'
 
 export function SessionGreeting({ className }: { className?: string }) {
+  const t = useT()
   return (
     <Empty className={cn('min-h-0 flex-1 gap-6', className)}>
       <svg
@@ -17,9 +19,7 @@ export function SessionGreeting({ className }: { className?: string }) {
         />
         <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
       </svg>
-      <p className="max-w-xl font-wenkai text-xl text-foreground">
-        昨天是段历史，明天是个谜团，而今天是天赐的礼物
-      </p>
+      <p className="max-w-xl font-wenkai text-xl text-foreground">{t('app.greeting')}</p>
     </Empty>
   )
 }

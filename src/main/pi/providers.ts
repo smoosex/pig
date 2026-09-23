@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { shell, type BrowserWindow } from 'electron'
+import { currentLocale } from '../i18n'
 import { startModelRuntime } from './model-settings'
 
 import type {
@@ -67,7 +68,7 @@ export async function listProviders(): Promise<SettingsProvider[]> {
       }
     })
     .filter((provider) => provider.oauth || provider.apiKey)
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+    .sort((a, b) => a.name.localeCompare(b.name, currentLocale()))
 }
 
 export function cancelProviderLogin(): void {

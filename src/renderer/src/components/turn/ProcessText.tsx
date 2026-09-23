@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CustomMessage, TextContent } from '../../pi/types'
 import { formatElapsed } from '../../chat/turns'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -29,8 +30,12 @@ export function ProcessDisclosure({ title, text }: { title: string; text: string
 
 export function ThinkingBlock({ text, durationMs }: { text: string; durationMs: number }) {
   const [open, setOpen] = useState(false)
+  const t = useT()
   const body = stripThoughtHeading(text)
-  const title = durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'
+  const title =
+    durationMs > 0
+      ? t('turn.thoughtFor', { duration: formatElapsed(durationMs, t) })
+      : t('turn.thought')
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
@@ -53,8 +58,12 @@ export function ThinkingBlock({ text, durationMs }: { text: string; durationMs: 
 
 export function ThinkingLine({ text, durationMs }: { text: string; durationMs: number }) {
   const [open, setOpen] = useState(false)
+  const t = useT()
   const body = stripThoughtHeading(text)
-  const title = durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'
+  const title =
+    durationMs > 0
+      ? t('turn.thoughtFor', { duration: formatElapsed(durationMs, t) })
+      : t('turn.thought')
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>

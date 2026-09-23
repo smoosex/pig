@@ -15,6 +15,7 @@ import {
   type PastedTextDisplayMetadata
 } from '../../shared/pasted-text'
 import { isImagePayload } from '../../shared/session-images'
+import { t } from '../i18n'
 
 /** A `data:` URL puts the payload after its comma; the session file always stores raw base64. */
 function stripDataUrl(data: string): string {
@@ -81,6 +82,6 @@ export function normalizeSessionPrompt(input: SessionPromptInput) {
     metadata,
     displayMetadata,
     images: attachments,
-    namingText: namingText.trim() || (textAttachments.length > 0 ? 'Pasted text' : '用户仅发送了图片，未附文字。')
+    namingText: namingText.trim() || (textAttachments.length > 0 ? t('naming.pastedText') : t('naming.imageOnly'))
   }
 }

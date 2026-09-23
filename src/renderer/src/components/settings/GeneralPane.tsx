@@ -1,4 +1,7 @@
-import type { SendShortcut, ThinkingLevel } from '../../ipc/api'
+import { LOCALES, type Locale, type MessageKey } from '../../../../shared/i18n'
+import { useT } from '../../hooks/useT'
+import type { LocaleSetting, SendShortcut, ThinkingLevel } from '../../ipc/api'
+import { thinkingLevelKeys } from '../../lib/thinking-levels'
 import { useSettingsStore } from '../../stores/settings'
 import {
   Select,
@@ -11,17 +14,17 @@ import {
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
-const thinkingLabels: Record<ThinkingLevel, string> = {
-  off: '关闭',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '极高',
-  max: '最高'
+/** Language names are endonyms, so each locale maps to its own key rather than to a translation. */
+const languageLabels: Record<Locale, MessageKey> = {
+  'zh-CN': 'settings.languageZh',
+  en: 'settings.languageEn'
 }
 
 export function GeneralPane() {
+  const t = useT()
+  const localeSetting = useSettingsStore((s) => s.localeSetting)
+  const systemLocale = useSettingsStore((s) => s.systemLocale)
+  const setLocale = useSettingsStore((s) => s.setLocale)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
@@ -36,10 +39,45 @@ export function GeneralPane() {
     <div className="flex flex-col gap-8">
       <div>
         <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          发送
+          {t('settings.sectionInterface')}
         </p>
         <SettingsCard>
-          <SettingsRow title="发送快捷键" description={`${newline} 换行`}>
+          <SettingsRow
+            title={t('settings.language')}
+            description={t('settings.languageDescription')}
+          >
+            <Select
+              value={localeSetting}
+              onValueChange={(value) => void setLocale(value as LocaleSetting)}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="end">
+                <SelectGroup>
+                  <SelectItem value="system">
+                    {t('settings.languageSystemWith', { language: t(languageLabels[systemLocale]) })}
+                  </SelectItem>
+                  {LOCALES.map((locale) => (
+                    <SelectItem key={locale} value={locale}>
+                      {t(languageLabels[locale])}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {t('settings.send')}
+        </p>
+        <SettingsCard>
+          <SettingsRow
+            title={t('settings.sendShortcut')}
+            description={t('settings.sendShortcutDescription', { key: newline })}
+          >
             <Select
               value={sendShortcut}
               onValueChange={(value) => void setSendShortcut(value as SendShortcut)}
@@ -59,19 +97,25 @@ export function GeneralPane() {
       </div>
       <div>
         <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          模型
+          {t('settings.model')}
         </p>
         <SettingsCard>
-          <SettingsRow title="默认模型" description="新建对话时使用的模型">
+          <SettingsRow
+            title={t('settings.defaultModel')}
+            description={t('settings.defaultModelDescription')}
+          >
             <DefaultModelPicker
               model={defaultModel}
               models={models}
               onSelect={(item) => void setDefaultModel(item.provider, item.id)}
             />
           </SettingsRow>
-          <SettingsRow title="默认思考强度" description="新建对话时使用的推理强度">
+          <SettingsRow
+            title={t('settings.defaultThinking')}
+            description={t('settings.defaultThinkingDescription')}
+          >
             {thinkingLevels.length === 0 ? (
-              <span className="text-xs text-muted-foreground">当前模型不支持</span>
+              <span className="text-xs text-muted-foreground">{t('settings.thinkingUnsupported')}</span>
             ) : (
               <Select
                 value={defaultThinkingLevel ?? thinkingLevels[0]}
@@ -84,7 +128,7 @@ export function GeneralPane() {
                   <SelectGroup>
                     {thinkingLevels.map((level) => (
                       <SelectItem key={level} value={level}>
-                        {thinkingLabels[level]}
+                        {t(thinkingLevelKeys[level])}
                       </SelectItem>
                     ))}
                   </SelectGroup>

@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { useT } from '../../hooks/useT'
 import { Button } from '../ui/button'
 import type { PastedImage } from './useComposerImages'
 
@@ -11,7 +12,10 @@ export function ComposerImages({
   onPreview: (url: string) => void
   onRemove: (id: string) => void
 }) {
+  // Hooks stay above the early return: the strip mounts once and images come and go on the same instance.
+  const t = useT()
   if (images.length === 0) return null
+
   return (
     <div className="flex w-full flex-wrap justify-start gap-1.5 px-3.5 pb-1.5">
       {images.map((image) => (
@@ -20,7 +24,7 @@ export function ComposerImages({
             type="button"
             variant="ghost"
             className="block h-auto rounded-md p-0 hover:bg-transparent"
-            aria-label="预览图片"
+            aria-label={t('composer.previewImage')}
             onClick={() => onPreview(image.url)}
           >
             <img src={image.url} alt="" className="h-10 max-w-16 cursor-pointer rounded-md object-cover" />
@@ -30,7 +34,7 @@ export function ComposerImages({
             variant="ghost"
             size="icon-xs"
             className="absolute top-0.5 right-0.5 size-3.5 rounded-full bg-popover p-0 text-popover-foreground shadow-sm hover:bg-accent hover:text-accent-foreground [&_svg]:size-2"
-            aria-label="移除图片"
+            aria-label={t('composer.removeImage')}
             onClick={() => onRemove(image.id)}
           >
             <X />

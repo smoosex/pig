@@ -12,10 +12,12 @@ import {
 } from './ui/context-menu'
 import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
+import { useT } from '../hooks/useT'
 import { CloseSpin } from './RunningSpinners'
 import { fileIcon } from './diff/file-entry'
 
 export function TabBar() {
+  const t = useT()
   const openTabs = useSessionsStore((state) => state.openTabs)
   const activeTabId = useSessionsStore((state) => state.activeTabId)
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
@@ -74,9 +76,9 @@ export function TabBar() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="新建标签页"
+          aria-label={t('tabBar.new')}
           aria-busy={creating}
-          title={createError ?? '新建标签页'}
+          title={createError ?? t('tabBar.new')}
           disabled={creating}
           onClick={() => void createTab()}
         >
@@ -119,6 +121,7 @@ function Tab({
   onClose: () => void
 }) {
   const streaming = useSessionsStore((state) => state.runtime[tabId]?.isStreaming ?? false)
+  const t = useT()
   const dirty = useFilesStore((state) => {
     const document = path ? state.documents[fileKey(cwd, path)] : undefined
     return document ? isDirty(document) : false
@@ -152,7 +155,7 @@ function Tab({
           variant="ghost"
           size="icon-xs"
           className="no-drag absolute opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100 text-muted-foreground hover:text-foreground"
-          aria-label={`关闭 ${title}`}
+          aria-label={t('sessions.close', { title })}
           onClick={(event) => {
             event.stopPropagation()
             onClose()
@@ -174,8 +177,8 @@ function Tab({
       ) : (
         <span className="max-w-35 truncate">{title}</span>
       )}
-      {dirty ? <span role="img" aria-label="未保存" className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
-      {loading ? <LoaderCircle className="animate-spin" aria-label="正在加载" /> : null}
+      {dirty ? <span role="img" aria-label={t('tabBar.unsaved')} className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
+      {loading ? <LoaderCircle className="animate-spin" aria-label={t('tabBar.loading')} /> : null}
       {failure ? <CircleAlert className="text-destructive" aria-label={failure} /> : null}
     </div>
   )
@@ -189,7 +192,7 @@ function Tab({
       <ContextMenuContent>
         <ContextMenuItem onSelect={rename.start}>
           <PenLine data-icon="inline-start" />
-          重命名
+          {t('common.rename')}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

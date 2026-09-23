@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Collapsible, CollapsibleContent } from './ui/collapsible'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
+import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SectionHeader } from './sidebar/SectionHeader'
@@ -23,6 +24,7 @@ export function Sidebar({
 }) {
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
+  const t = useT()
   const {
     pending: projectPending,
     error: projectError,
@@ -51,7 +53,7 @@ export function Sidebar({
             >
               <SectionHeader
                 className="top-0"
-                label="项目"
+                label={t('sidebar.projects')}
                 collapsed={collapsed.projects}
                 onToggle={() => setSectionCollapsed('projects', !collapsed.projects)}
               />
@@ -65,7 +67,7 @@ export function Sidebar({
             >
               <SectionHeader
                 className="top-8"
-                label="对话"
+                label={t('sidebar.chats')}
                 collapsed={collapsed.chats}
                 onToggle={() => setSectionCollapsed('chats', !collapsed.chats)}
                 action={
@@ -73,7 +75,7 @@ export function Sidebar({
                     variant="ghost"
                     size="icon-xs"
                     className="pointer-events-none opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-                    aria-label="新建对话"
+                    aria-label={t('sidebar.newChat')}
                     disabled={projectPending !== null}
                     onClick={() => void runProjectAction('new-chat', newChat)}
                   >
@@ -99,14 +101,14 @@ export function Sidebar({
                 variant="ghost"
                 size="icon-sm"
                 className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
-                aria-label="设置"
+                aria-label={t('sidebar.settings')}
                 onClick={onOpenSettings}
               >
                 <Settings />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              设置 <Kbd className="bg-transparent!">⌘ ,</Kbd>
+              {t('sidebar.settings')} <Kbd className="bg-transparent!">⌘ ,</Kbd>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -115,7 +117,7 @@ export function Sidebar({
                 variant="ghost"
                 size="icon-sm"
                 className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
-                aria-label="打开项目"
+                aria-label={t('app.openProject')}
                 disabled={projectPending !== null}
                 aria-busy={projectPending !== null}
                 onClick={() => void runProjectAction('open-project', openProject)}
@@ -124,7 +126,7 @@ export function Sidebar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              添加项目 <Kbd className="bg-transparent!">⌘ ⇧ A</Kbd>
+              {t('sidebar.addProject')} <Kbd className="bg-transparent!">⌘ ⇧ A</Kbd>
             </TooltipContent>
           </Tooltip>
         </div>

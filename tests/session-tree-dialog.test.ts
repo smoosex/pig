@@ -114,6 +114,9 @@ async function runFixture(name: string): Promise<void> {
 
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
+  const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { SessionTreeButton } = await import('../src/renderer/src/components/SessionTreeDialog')
 
   const host = document.createElement('div')

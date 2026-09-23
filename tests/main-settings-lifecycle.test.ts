@@ -246,7 +246,8 @@ async function fixture(name: string): Promise<void> {
         savePigSettings({ darkTheme: 'everforest' })
       ])
       assert.deepEqual(await loadPigSettings(), {
-        appearance: 'dark', sendShortcut: 'shift-enter', lightTheme: 'everforest', darkTheme: 'everforest'
+        appearance: 'dark', sendShortcut: 'shift-enter', locale: 'system',
+        lightTheme: 'everforest', darkTheme: 'everforest'
       })
       const updating = savePigSettings({ appearance: 'light' })
       assert.equal((await loadPigSettings()).appearance, 'light')

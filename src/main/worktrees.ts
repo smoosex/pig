@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs'
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { execGit, isNotARepoError, type GitExecOptions } from './git/exec'
+import { t } from './i18n'
 
 function resolve(path: string): string {
   const absolute = resolvePath(path)
@@ -64,7 +65,7 @@ export function parseWorktrees(output: string): GitWorktree[] {
       if (field === 'detached') current.detached = true
       if (field === 'locked' || field.startsWith('locked ')) current.locked = true
       if (field === 'prunable' || field.startsWith('prunable ')) current.missing = true
-      if (field === 'bare') throw new Error('不支持裸 Git 仓库，请选择工作目录')
+      if (field === 'bare') throw new Error(t('error.bareRepository'))
     }
   }
   return result
@@ -93,14 +94,14 @@ export async function canonicalProject(cwd: string): Promise<string> {
   const path = await realpath(resolve(cwd))
   if (!(await isGitProject(path))) return path
   const worktrees = await repositoryWorktrees(path)
-  if (!worktrees[0]) throw new Error('无法识别项目工作目录')
+  if (!worktrees[0]) throw new Error(t('error.unknownWorktreeRoot'))
   return worktrees[0].cwd
 }
 
 export function validateBranchName(value: string): string {
   const name = value.trim()
   if (name.length > 80 || !/^(feat|fix|chore|docs|refactor|test|ci|perf|style|build)\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
-    throw new Error('命名模型未返回有效的 conventional 分支名')
+    throw new Error(t('naming.invalidBranch'))
   }
   return name
 }
@@ -169,7 +170,7 @@ export class WorktreeService {
   }
 
   assertAvailable(cwd: string): void {
-    if (this.stopped || this.blocked.has(resolve(cwd))) throw new Error('Worktree 正在删除或应用正在退出')
+    if (this.stopped || this.blocked.has(resolve(cwd))) throw new Error(t('error.worktreeBusy'))
   }
 
   async withBlockedCwds<T>(cwds: string[], fn: () => Promise<T>): Promise<T> {
@@ -203,10 +204,10 @@ export class WorktreeService {
       if (!item) continue
       item.managed = true
       if (record.deleting) {
-        item.namingError = '删除未完成，重试删除以清理分支和会话'
+        item.namingError = t('error.deleteIncomplete')
       } else if (item.branch === record.initialBranch) {
         item.naming = record.naming === 'naming' ? (this.namingJobs.has(item.cwd) ? 'naming' : 'failed') : record.naming
-        item.namingError = record.namingError || (record.naming === 'naming' && !this.namingJobs.has(item.cwd) ? '命名被中断，保留 UUID 分支' : undefined)
+        item.namingError = record.namingError || (record.naming === 'naming' && !this.namingJobs.has(item.cwd) ? t('naming.interrupted') : undefined)
       }
     }
     return items
@@ -216,8 +217,8 @@ export class WorktreeService {
     return this.exclusive(projectCwd, async () => {
       this.assertAvailable(projectCwd)
       const project = await canonicalProject(projectCwd)
-      if (project !== resolve(projectCwd)) throw new Error('只能从原项目目录创建 Worktree')
-      if (!(await isGitProject(project))) throw new Error('请先初始化 Git')
+      if (project !== resolve(projectCwd)) throw new Error(t('error.worktreeFromProject'))
+      if (!(await isGitProject(project))) throw new Error(t('error.gitRequired'))
       const id = randomUUID()
       const name = basename(project).replace(/[^\p{L}\p{N}._-]/gu, '-').replace(/^\.+/, '') || 'project'
       const hasHead = await git(project, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
@@ -247,9 +248,9 @@ export class WorktreeService {
   async deletionInfo(projectCwd: string, cwd: string): Promise<{ worktree: GitWorktree; dirty: boolean; unmerged: boolean }> {
     const items = await this.discover(projectCwd)
     const worktree = items.find((item) => item.cwd === resolve(cwd))
-    if (!worktree || worktree.isPrimary || worktree.cwd === resolve(projectCwd)) throw new Error('不能删除原项目或未注册的 Worktree')
-    if (worktree.locked) throw new Error('Worktree 已锁定，请先在 Git 中解锁')
-    if (!worktree.detached && items.some((w) => w.cwd !== worktree.cwd && !w.detached && w.branch === worktree.branch)) throw new Error('该分支仍被其他 Worktree 使用，不能删除')
+    if (!worktree || worktree.isPrimary || worktree.cwd === resolve(projectCwd)) throw new Error(t('error.worktreeDeletePrimary'))
+    if (worktree.locked) throw new Error(t('error.worktreeLocked'))
+    if (!worktree.detached && items.some((w) => w.cwd !== worktree.cwd && !w.detached && w.branch === worktree.branch)) throw new Error(t('error.worktreeBranchInUse'))
     const dirty = !worktree.missing && (await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0
     const ref = `refs/heads/${worktree.branch}`
     const hasBranch = !worktree.detached && await git(projectCwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true).catch(() => false)
@@ -263,13 +264,13 @@ export class WorktreeService {
     return this.exclusive(projectCwd, async () => {
       this.assertAvailable(path)
       const initial = await this.deletionInfo(projectCwd, path)
-      if (!force && (initial.dirty || initial.unmerged)) throw new Error('Worktree 存在未提交文件或未合并提交，请重新确认删除')
+      if (!force && (initial.dirty || initial.unmerged)) throw new Error(t('error.worktreeDirty'))
       this.blocked.add(path)
       this.namingJobs.get(path)?.controller.abort()
       try {
         await close()
         const { worktree, dirty, unmerged } = await this.deletionInfo(projectCwd, path)
-        if (!force && (dirty || unmerged)) throw new Error('关闭会话后检测到新修改，请重新确认删除')
+        if (!force && (dirty || unmerged)) throw new Error(t('error.worktreeNewChanges'))
         await this.update((records) => {
           const record = records.find((r) => r.cwd === path)
           const deletion = { branch: worktree.branch, head: worktree.head, detached: worktree.detached, deleting: true }
@@ -311,7 +312,7 @@ export class WorktreeService {
         this.assertAvailable(cwd)
         signal.throwIfAborted()
         const branch = (await git(cwd, ['symbolic-ref', '--short', 'HEAD'])).trim()
-        if (branch !== record.initialBranch) throw new Error('分支已手动切换或重命名，不再自动命名')
+        if (branch !== record.initialBranch) throw new Error(t('error.branchMoved'))
         await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, naming: 'naming', namingError: undefined } : r))
       })
       this.onChange(record.projectCwd)
@@ -325,7 +326,7 @@ export class WorktreeService {
         let branch = requested
         const taken = async (name: string) => items.some((w) => w.branch === name) || await git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`]).then(() => true).catch(() => false)
         if (await taken(branch)) branch = `${requested}-${record.initialBranch.slice(0, 8)}`
-        if (await taken(branch)) throw new Error('生成的分支名已存在')
+        if (await taken(branch)) throw new Error(t('error.branchNameTaken'))
         const hasHead = await git(cwd, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
         if (hasHead) await git(cwd, ['branch', '-m', branch])
         else await git(cwd, ['symbolic-ref', 'HEAD', `refs/heads/${branch}`])

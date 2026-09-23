@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createCatalogSlice } from './sessions/catalog-slice'
 import { createConversationSlice } from './sessions/conversation-slice'
 import { createTabsSlice } from './sessions/tabs-slice'
+import { useSettingsStore } from './settings'
 import type { SessionsStore } from './sessions/types'
 
 export type { ProjectGroup, SessionMeta, WorktreeGroup } from '../ipc/api'
@@ -13,6 +14,12 @@ export const useSessionsStore = create<SessionsStore>((...args) => ({
   ...createConversationSlice(...args),
   ...createTabsSlice(...args)
 }))
+
+// Placeholder tab titles are stored strings, so a language switch has to rewrite them; every other
+// title comes from the session and is language-independent.
+useSettingsStore.subscribe((state, previous) => {
+  if (state.locale !== previous.locale) useSessionsStore.getState().relabelTabs()
+})
 
 /**
  * The session behind the active tab. A diff or file tab holds the strip without owning a session, so

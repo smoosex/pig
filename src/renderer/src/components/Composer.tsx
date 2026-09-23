@@ -4,6 +4,7 @@ import { EditorContent } from '@tiptap/react'
 import { Folder, GitBranch } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { cn } from '../lib/utils'
+import { useT } from '../hooks/useT'
 import { InputGroup } from './ui/input-group'
 import { Button } from './ui/button'
 import { Popover, PopoverAnchor } from './ui/popover'
@@ -26,6 +27,7 @@ export function Composer({
   draftSessionId?: string | null
   workspace?: { project: string; branch: string } | null
 } = {}) {
+  const t = useT()
   const { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
   const appearance = useComposerAppearance()
   const [focused, setFocused] = useState(false)
@@ -59,7 +61,7 @@ export function Composer({
                     {error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{error}</p> : null}
                     {canRestore ? (
                       <Button type="button" variant="link" size="xs" className="mx-2.5 mb-1.5" onClick={restore}>
-                        恢复未发送内容
+                        {t('composer.restoreDraft')}
                       </Button>
                     ) : null}
                   </div>

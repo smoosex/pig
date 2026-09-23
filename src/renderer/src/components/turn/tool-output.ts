@@ -1,26 +1,27 @@
+import type { Translate } from '../../../../shared/i18n'
 import type { ToolStep } from '../../chat/turns'
 
-export function toolClusterLabel(steps: ToolStep[]): string {
+export function toolClusterLabel(steps: ToolStep[], t: Translate): string {
   const n = steps.length
   switch (steps[0].name) {
     case 'read':
-      return `读取 ${n} 个文件`
+      return t('tool.readMany', { n })
     case 'write':
-      return `写入 ${n} 个文件`
+      return t('tool.writeMany', { n })
     case 'edit':
-      return `编辑 ${n} 个文件`
+      return t('tool.editMany', { n })
     case 'bash':
-      return `执行 ${n} 个命令`
+      return t('tool.runMany', { n })
     case 'ls':
-      return `列出 ${n} 次`
+      return t('tool.listMany', { n })
     case 'fffind':
     case 'find':
-      return `查找 ${n} 次`
+      return t('tool.findMany', { n })
     case 'ffgrep':
     case 'grep':
-      return `搜索 ${n} 次`
+      return t('tool.searchMany', { n })
     default:
-      return `调用 ${steps[0].name} ${n} 次`
+      return t('tool.callMany', { name: steps[0].name, n })
   }
 }
 

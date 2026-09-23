@@ -3,6 +3,7 @@
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
+import { t } from '../../lib/i18n'
 import { useDiffStore } from '../diff'
 import {
   mapGroupSessions,
@@ -177,17 +178,17 @@ export const createCatalogSlice: SessionSlice<
     },
 
     reorderProjects: async (cwds) => {
-      if (get().isReorderingProjects) throw new Error('项目排序正在保存')
+      if (get().isReorderingProjects) throw new Error(t('sessions.sortingProjects'))
       const currentProjects = get().projects
       if (
         cwds.length !== currentProjects.length ||
         cwds.some((cwd) => typeof cwd !== 'string') ||
         new Set(cwds).size !== cwds.length
       ) {
-        throw new Error('项目列表已变化，请重试')
+        throw new Error(t('error.projectListChanged'))
       }
       const byCwd = new Map(currentProjects.map((project) => [project.cwd, project]))
-      if (cwds.some((cwd) => !byCwd.has(cwd))) throw new Error('项目列表已变化，请重试')
+      if (cwds.some((cwd) => !byCwd.has(cwd))) throw new Error(t('error.projectListChanged'))
       const nextProjects = cwds.map((cwd) => byCwd.get(cwd)!)
       if (nextProjects.every((project, index) => project.cwd === currentProjects[index]?.cwd)) return
 
@@ -271,7 +272,7 @@ export const createCatalogSlice: SessionSlice<
     deleteWorktree: async (projectCwd, cwd, force = false) => {
       const project = get().projects.find((item) => item.cwd === projectCwd)
       if (cwd === projectCwd || project?.worktrees?.some((worktree) => worktree.cwd === cwd && worktree.isPrimary)) {
-        throw new Error('不能删除原项目目录')
+        throw new Error(t('sessions.cannotDeleteRoot'))
       }
       const result = await api.deleteWorktree(projectCwd, cwd, force)
       if (!result) return
@@ -374,9 +375,9 @@ export const createCatalogSlice: SessionSlice<
         chats: renameGroupSession(s.chats, sessionId, display),
         openTabs: s.openTabs.map((tab) => {
           if (tab.id !== sessionId) return tab
-          if (!tab.meta) return { ...tab, title: display ?? tab.title }
+          if (!tab.meta) return { ...tab, title: display ?? tab.title, previewFallback: undefined }
           const meta = { ...tab.meta, name: display }
-          return { ...tab, meta, title: sessionTitle(meta) }
+          return { ...tab, meta, title: sessionTitle(meta), previewFallback: undefined }
         })
       }))
     },
@@ -391,9 +392,9 @@ export const createCatalogSlice: SessionSlice<
         openTabs: s.openTabs.map((tab) => {
           const name = names.get(tab.id)
           if (!name) return tab
-          if (!tab.meta) return { ...tab, title: name }
+          if (!tab.meta) return { ...tab, title: name, previewFallback: undefined }
           const meta = { ...tab.meta, name }
-          return { ...tab, meta, title: sessionTitle(meta) }
+          return { ...tab, meta, title: sessionTitle(meta), previewFallback: undefined }
         })
       }))
     }

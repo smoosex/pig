@@ -65,6 +65,9 @@ async function runFixture(): Promise<void> {
     BrowserWindow: { getAllWindows: () => [] }
   }))
 
+  const { applyLocaleSetting } = await import('../src/main/i18n')
+  // Pig's own errors come from the dictionary: pin the wording these tests spell out.
+  applyLocaleSetting('zh-CN')
   const { openedWorktree, requireWorktree } = await import('../src/main/worktree-access')
   const { registerFilesIpc } = await import('../src/main/ipc/files')
   const { registerDiffIpc } = await import('../src/main/ipc/diff')

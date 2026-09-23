@@ -8,6 +8,7 @@ import type {
   SessionControls,
   SessionMeta,
   SessionNameUpdate,
+  SessionPreviewFallback,
   SessionTokenStats,
   SessionWindowMessage,
   ThinkingLevel,
@@ -71,6 +72,11 @@ export interface OpenTab {
   loadState: TabLoadState
   loadError?: string
   meta?: SessionMeta
+  /**
+   * The tab title is an app-written stand-in for an attachments/images-only first message, so a
+   * locale switch can translate it. Cleared once a real name or listing takes the title.
+   */
+  previewFallback?: SessionPreviewFallback
   /** A file tab's worktree-relative path; the tab's title is that file's name. */
   path?: string
   /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
@@ -171,7 +177,8 @@ export interface SessionsStore {
   closeTab: (tabId: string) => void
   setActive: (tabId: string) => void
   renameTab: (tabId: string, title: string) => void
-  previewSessionTitle: (sessionId: string, title: string) => void
+  relabelTabs: () => void
+  previewSessionTitle: (sessionId: string, title: string, fallback?: SessionPreviewFallback) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
   beginPrompt: (sessionId: string, message: PiMessage) => void

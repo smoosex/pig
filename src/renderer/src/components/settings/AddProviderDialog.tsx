@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { useT } from '../../hooks/useT'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { ProviderAuthType, SettingsProvider } from '../../ipc/api'
 import { Button } from '../ui/button'
@@ -25,6 +26,7 @@ export function AddProviderDialog({
   providers: SettingsProvider[]
   onConnect: (provider: SettingsProvider, method: ProviderAuthType) => void
 }) {
+  const t = useT()
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<SettingsProvider | null>(null)
   const available = providers.filter((provider) => provider.oauth || provider.apiKey)
@@ -39,11 +41,11 @@ export function AddProviderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{chosen ? chosen.name : '添加供应商'}</DialogTitle>
+          <DialogTitle>{chosen ? chosen.name : t('providers.add')}</DialogTitle>
           <DialogDescription>
             {chosen
-              ? '选择连接方式，凭据将交由 pi 管理。'
-              : '搜索供应商，登录账号或配置 API 密钥。'}
+              ? t('providers.addDescription')
+              : t('providers.pickDescription')}
           </DialogDescription>
         </DialogHeader>
         {chosen ? (
@@ -55,7 +57,7 @@ export function AddProviderDialog({
               onClick={() => setChosen(null)}
             >
               <ChevronLeft data-icon="inline-start" />
-              返回供应商列表
+              {t('providers.backToList')}
             </Button>
             {chosen.oauth ? (
               <Button
@@ -63,7 +65,7 @@ export function AddProviderDialog({
                 className="h-auto justify-between py-3"
                 onClick={() => onConnect(chosen, 'oauth')}
               >
-                <span>{chosen.oauth.subscription ? '订阅登录' : '账号登录'}</span>
+                <span>{chosen.oauth.subscription ? t('providers.subscriptionLogin') : t('providers.accountLogin')}</span>
                 <ChevronRight data-icon="inline-end" />
               </Button>
             ) : null}
@@ -73,12 +75,12 @@ export function AddProviderDialog({
                 className="h-auto justify-between py-3"
                 onClick={() => onConnect(chosen, 'api_key')}
               >
-                <span>设置 API 密钥</span>
+                <span>{t('providers.setKey')}</span>
                 <ChevronRight data-icon="inline-end" />
               </Button>
             ) : chosen.apiKey ? (
               <p className="text-sm text-muted-foreground">
-                此供应商需要通过环境变量或外部凭据配置：{chosen.apiKey.name}
+                {t('providers.environmentNote', { name: chosen.apiKey.name })}
               </p>
             ) : null}
           </div>
@@ -90,8 +92,8 @@ export function AddProviderDialog({
             }}
           >
             <CommandInput
-              aria-label="搜索供应商"
-              placeholder="搜索名称或 ID…"
+              aria-label={t('providers.searchProviders')}
+              placeholder={t('providers.searchPlaceholder')}
               value={query}
               onValueChange={setQuery}
             />
@@ -100,11 +102,11 @@ export function AddProviderDialog({
                 activeSelector="[data-selected='true']"
                 activeAttribute="data-selected"
               >
-                <CommandEmpty>没有匹配的供应商，试试其他名称或关键词。</CommandEmpty>
+                <CommandEmpty>{t('providers.noMatch')}</CommandEmpty>
                 {[
-                  { heading: '订阅登录', items: available.filter((provider) => provider.oauth) },
+                  { heading: t('providers.subscriptionLogin'), items: available.filter((provider) => provider.oauth) },
                   {
-                    heading: 'API 密钥',
+                    heading: t('providers.apiKey'),
                     items: available.filter((provider) => !provider.oauth && provider.apiKey)
                   }
                 ].map(({ heading, items }, index) => (
@@ -125,7 +127,7 @@ export function AddProviderDialog({
                             data-slot="command-shortcut"
                             className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
                           >
-                            {provider.configured ? '已配置' : null}
+                            {provider.configured ? t('providers.configured') : null}
                             <ChevronRight />
                           </span>
                         </CommandItem>

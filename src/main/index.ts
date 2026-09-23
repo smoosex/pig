@@ -2,6 +2,8 @@ import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
+import { initLocale } from './i18n'
+import { loadPigSettings } from './pig-settings'
 import { forwardSessionNames } from './session-names'
 import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
@@ -12,7 +14,7 @@ import { flushOpenProjectSessions } from './open-project-sessions'
 // The renderer loads persisted images through this scheme, so it must be granted before ready.
 registerSessionImageScheme()
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.pig.desktop')
 
   app.on('browser-window-created', (_, window) => {
@@ -22,6 +24,7 @@ app.whenReady().then(() => {
   handleSessionImages()
   void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
+  await initLocale((await loadPigSettings()).locale)
   forwardSessionNames()
   createMainWindow()
 

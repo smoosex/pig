@@ -6,6 +6,7 @@ import type { EditorView } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
 import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
+import { useT } from '../../hooks/useT'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
@@ -52,6 +53,7 @@ function insertPastedText(view: EditorView, text: string, at?: number): void {
 
 /** Keeps Tiptap, clipboard input, and IME handling behind one editor boundary. */
 export function useComposerEditor(options: ComposerEditorOptions) {
+  const t = useT()
   const [draft, setDraft] = useState(EMPTY_COMPOSER)
   const currentDraft = useRef(draft)
   const callbacks = useRef(options)
@@ -94,7 +96,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     editorProps: {
       attributes: {
         'data-slot': 'input-group-control',
-        'aria-label': '消息',
+        'aria-label': t('composer.messageLabel'),
         'aria-multiline': 'true',
         class: 'min-h-16 outline-none whitespace-pre-wrap break-words'
       },

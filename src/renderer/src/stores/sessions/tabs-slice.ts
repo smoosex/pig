@@ -1,15 +1,12 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
 import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
-import { SCOPE_LABELS, useDiffStore } from '../diff'
+import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
 import { newSessionId } from '../../lib/session-id'
+import { t } from '../../lib/i18n'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
-import {
-  EMPTY_SESSION_TITLE,
-  isPlaceholderSessionTitle,
-  sessionTitle
-} from './session-title'
+import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './session-title'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
 
 /** The scope a changes tab starts on, and what a workspace restored without one shows. */
@@ -66,6 +63,7 @@ export const createTabsSlice: SessionSlice<
   | 'closeTab'
   | 'setActive'
   | 'renameTab'
+  | 'relabelTabs'
   | 'previewSessionTitle'
 > = (set, get) => {
   const opening = new Map<string, Promise<OpenSessionRef>>()
@@ -286,7 +284,7 @@ export const createTabsSlice: SessionSlice<
             ? [{
                 id: changesTabId(workspace.cwd),
                 cwd: workspace.cwd,
-                title: SCOPE_LABELS[DEFAULT_SCOPE],
+                title: scopeLabel(t, DEFAULT_SCOPE),
                 kind: 'diff' as const,
                 loadState: 'ready' as const,
                 diffScope: DEFAULT_SCOPE
@@ -421,7 +419,7 @@ export const createTabsSlice: SessionSlice<
       if (!tab.meta) {
         set((state) => ({
           openTabs: state.openTabs.map((item) => item.id === tab.id
-            ? { ...item, loadState: 'error', loadError: '会话文件不存在' }
+            ? { ...item, loadState: 'error', loadError: t('sessions.fileMissing') }
             : item)
         }))
         return
@@ -474,7 +472,7 @@ export const createTabsSlice: SessionSlice<
         ? {
             openTabs: state.openTabs.map((tab) =>
               tab.id === id && tab.diffScope !== next
-                ? { ...tab, diffScope: next, title: SCOPE_LABELS[next] }
+                ? { ...tab, diffScope: next, title: scopeLabel(t, next) }
                 : tab
             )
           }
@@ -482,7 +480,7 @@ export const createTabsSlice: SessionSlice<
             openTabs: [...state.openTabs, {
               id,
               cwd,
-              title: SCOPE_LABELS[next],
+              title: scopeLabel(t, next),
               kind: 'diff' as const,
               loadState: 'ready' as const,
               diffScope: next
@@ -497,7 +495,7 @@ export const createTabsSlice: SessionSlice<
       const id = changesTabId(cwd)
       set((state) => ({
         openTabs: state.openTabs.map((tab) =>
-          tab.id === id ? { ...tab, diffScope: scope, title: SCOPE_LABELS[scope] } : tab
+          tab.id === id ? { ...tab, diffScope: scope, title: scopeLabel(t, scope) } : tab
         )
       }))
     },
@@ -639,7 +637,7 @@ export const createTabsSlice: SessionSlice<
       addReadyTab({
         id: sessionId,
         cwd,
-        title: EMPTY_SESSION_TITLE,
+        title: t('sessions.newTitle'),
         kind: 'project',
         loadState: 'ready'
       }, selection)
@@ -663,7 +661,7 @@ export const createTabsSlice: SessionSlice<
       const added = addReadyTab({
         id: ref.sessionId,
         cwd: ref.cwd,
-        title: EMPTY_SESSION_TITLE,
+        title: t('sessions.newTitle'),
         kind: 'project',
         loadState: 'ready'
       }, selection)
@@ -684,7 +682,7 @@ export const createTabsSlice: SessionSlice<
       if (addReadyTab({
         id: ref.sessionId,
         cwd: ref.cwd,
-        title: EMPTY_SESSION_TITLE,
+        title: t('sessions.newTitle'),
         kind: 'chat',
         loadState: 'ready'
       }, selection)) {
@@ -773,17 +771,42 @@ export const createTabsSlice: SessionSlice<
     },
 
     renameTab: (tabId, title) => set((state) => ({
-      openTabs: state.openTabs.map((tab) => tab.id === tabId ? { ...tab, title } : tab)
+      // The bridge delivered a real name: stamp it into the snapshot too, so a later locale
+      // switch re-derives from this name instead of clobbering it with stale listing data.
+      openTabs: state.openTabs.map((tab) => tab.id === tabId
+        ? { ...tab, title, previewFallback: undefined, meta: tab.meta ? { ...tab.meta, name: title } : tab.meta }
+        : tab)
     })),
 
-    previewSessionTitle: (sessionId, title) => set((state) => ({
+    /**
+     * Titles the app derives itself follow the language; names that came from a session or a file
+     * keep their text. The diff tab stores its scope, so its title is rebuilt rather than detected.
+     */
+    relabelTabs: () => set((state) => ({
+      openTabs: state.openTabs.map((tab) => {
+        if (tab.kind === 'diff') {
+          return { ...tab, title: scopeLabel(t, tab.diffScope ?? DEFAULT_SCOPE) }
+        }
+        // A listing snapshot re-derives locale-made words (the image placeholder, a preview marker)
+        // instead of freezing them; user text falls through untouched. The snapshot is fresh by
+        // construction: renameTab stamps an outside rename into it, each listing replaces it wholesale.
+        if (tab.meta) return { ...tab, title: sessionTitle(tab.meta, tab.title) }
+        // A preview title is a marker, not user text: translate it instead of freezing the old word.
+        if (tab.previewFallback) return { ...tab, title: fallbackTitle(tab.previewFallback) }
+        return isPlaceholderSessionTitle(tab.title) ? { ...tab, title: t('sessions.newTitle') } : tab
+      })
+    })),
+
+    previewSessionTitle: (sessionId, title, fallback) => set((state) => ({
+      // The marker rides on the tab's snapshot as well: without it a later rename-clear would fall
+      // back to a frozen word instead of a freshly translated one.
       openTabs: state.openTabs.map((tab) =>
         tab.id === sessionId && isPlaceholderSessionTitle(tab.title)
-          ? { ...tab, title }
+          ? { ...tab, title, previewFallback: fallback, meta: tab.meta ? { ...tab.meta, previewFallback: fallback } : tab.meta }
           : tab
       ),
-      projects: fillEmptySessionTitle(state.projects, sessionId, title),
-      chats: fillEmptySessionTitle(state.chats, sessionId, title)
+      projects: fillEmptySessionTitle(state.projects, sessionId, title, fallback),
+      chats: fillEmptySessionTitle(state.chats, sessionId, title, fallback)
     }))
   }
 }

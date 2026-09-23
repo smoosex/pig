@@ -10,6 +10,7 @@
 import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { listOpenedCwds } from './opened-projects'
+import { t } from './i18n'
 import { repositoryWorktrees } from './worktrees'
 
 const known = new Set<string>()
@@ -45,6 +46,6 @@ export async function openedWorktree(cwd: unknown): Promise<string | null> {
 /** The same answer, refusing out loud: a window that asks for some other directory gets nothing. */
 export async function requireWorktree(cwd: unknown): Promise<string> {
   const path = await openedWorktree(cwd)
-  if (!path) throw new Error('这个目录不是已打开的工作区')
+  if (!path) throw new Error(t('error.notAnOpenWorkspace'))
   return path
 }

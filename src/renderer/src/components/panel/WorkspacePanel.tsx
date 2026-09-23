@@ -22,11 +22,13 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { FileTree } from '../files/FileTree'
 import { ChangesPanel } from '../diff/ChangesPanel'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 
 const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
 
 export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
+  const t = useT()
   const width = useDiffStore((s) => s.reviewWidth)
   const setWidth = useDiffStore((s) => s.setReviewWidth)
   const commitWidth = useDiffStore((s) => s.commitReviewWidth)
@@ -56,13 +58,13 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
           size="sm"
           value={tab}
           onValueChange={(value) => value && setPanelTab(cwd, value as PanelTab)}
-          aria-label="侧边栏视图"
+          aria-label={t('panel.viewAria')}
         >
           <ToggleGroupItem value="files" className={sidebarSurfaceToggle}>
-            文件
+            {t('panel.files')}
           </ToggleGroupItem>
           <ToggleGroupItem value="changes" className={sidebarSurfaceToggle}>
-            变更
+            {t('panel.changes')}
             {changed === null ? null : (
               <span className="tabular-nums text-muted-foreground">{changed}</span>
             )}
@@ -86,6 +88,7 @@ function ResizeHandle({
   onResize: (width: number) => void
   onCommit: () => void
 }) {
+  const t = useT()
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
   const finishDrag = () => {
     if (!drag.current) return
@@ -96,7 +99,7 @@ function ResizeHandle({
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="调整侧边栏宽度"
+      aria-label={t('panel.resizeAria')}
       aria-valuenow={width}
       aria-valuemin={MIN_REVIEW_WIDTH}
       aria-valuemax={MAX_REVIEW_WIDTH}

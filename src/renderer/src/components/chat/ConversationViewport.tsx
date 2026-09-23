@@ -4,6 +4,7 @@ import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapIt
 import type { ScrollSnapshot } from '../../chat/scroll-state'
 import type { TurnSummary } from '../../ipc/api'
 import type { Turn } from '../../chat/turns'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { useSessionsStore } from '../../stores/sessions'
@@ -54,17 +55,18 @@ export function ConversationViewport({
   initialScrollState?: ScrollSnapshot
   onSave: (state: ScrollSnapshot) => void
 }) {
+  const t = useT()
   // The minimap only needs a stable identity per turn set; live text growth must not rebuild every row.
   // Loaded turns keep the branch's weight when the summary knows them, so one branch has one scale.
   const items = useMemo<MinimapItem[]>(() => [
-    ...summary.slice(0, windowStart).map(summaryMinimapItem),
+    ...summary.slice(0, windowStart).map((row, index) => summaryMinimapItem(row, index, t)),
     ...historical.map((turn, offset) => {
       const index = windowStart + offset
       const row = summary[index]
-      return turnMinimapItem(turn, index, row?.id === turn.id ? row.bytes : undefined)
+      return turnMinimapItem(turn, index, t, row?.id === turn.id ? row.bytes : undefined)
     }),
-    ...live.map((turn, offset) => turnMinimapItem(turn, windowStart + historical.length + offset))
-  ], [historical, live.length, summary, windowStart])
+    ...live.map((turn, offset) => turnMinimapItem(turn, windowStart + historical.length + offset, t))
+  ], [historical, live.length, summary, t, windowStart])
   const scroller = useMessageScroller()
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const loadOlderTurns = useSessionsStore((s) => s.loadOlderTurns)
@@ -125,7 +127,7 @@ export function ConversationViewport({
             // way to ask again.
             <div className={cn(chatColumn, 'flex flex-col items-center gap-1 py-3')}>
               <p role="alert" className="text-center text-xs text-destructive">
-                更早的消息加载失败：{loadError}
+                {t('conversation.loadFailed', { error: loadError })}
               </p>
               <Button
                 variant="ghost"
@@ -134,7 +136,7 @@ export function ConversationViewport({
                 disabled={loadingOlder}
                 onClick={() => onLoadOlder()}
               >
-                重试
+                {t('common.retry')}
               </Button>
             </div>
           ) : !indexTrusted ? (
@@ -148,7 +150,7 @@ export function ConversationViewport({
                 disabled={loadingOlder}
                 onClick={() => onLoadOlder()}
               >
-                正在统计更早轮次…点击重试
+                {t('conversation.counting')}
               </Button>
             </div>
           ) : hasMoreAbove || windowStart > 0 ? (
@@ -165,7 +167,7 @@ export function ConversationViewport({
                   else onLoadOlder()
                 }}
               >
-                {loadingOlder ? '正在加载更早消息…' : '加载更早消息'}
+                {loadingOlder ? t('conversation.loadingOlder') : t('conversation.loadOlder')}
               </Button>
             </div>
           ) : null}
@@ -183,7 +185,7 @@ export function ConversationViewport({
           ))}
           {hasMoreBelow ? (
             <div className={cn(chatColumn, 'py-3 text-center text-xs text-muted-foreground/60')}>
-              向下滚动加载更晚消息
+              {t('conversation.scrollDown')}
             </div>
           ) : null}
         </MessageScrollerContent>

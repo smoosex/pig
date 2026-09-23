@@ -9,6 +9,7 @@
  * editor's.
  */
 import { useEffect, useMemo, useState } from 'react'
+import type { Translate } from '../../../../shared/i18n'
 import { FileText } from 'lucide-react'
 import {
   Editor,
@@ -21,6 +22,7 @@ import { api } from '../../ipc/api'
 import { fileIcon, splitPath } from '../diff/file-entry'
 import { fileCodeOptions } from '../diff/diff-options'
 import { isDirty, fileKey, watchWorktreeFiles, useFilesStore, type FileDocument } from '../../stores/files'
+import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { useDarkMode } from '../../lib/useDarkMode'
 import { Button } from '../ui/button'
@@ -40,6 +42,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
   const setDraft = useFilesStore((state) => state.setDraft)
   const saveDocument = useFilesStore((state) => state.saveDocument)
   const reloadDocument = useFilesStore((state) => state.reloadDocument)
+  const t = useT()
   const dark = useDarkMode()
   // The menu's answer arrives after it closes, so it is the pane that has to say anything about it. The
   // header is not remounted when the tab switches to another file, so the message is dropped on the way.
@@ -88,20 +91,20 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
           disabled={!dirty || saving}
           onClick={() => void saveDocument(cwd, path)}
         >
-          {saving ? '保存中…' : '保存'}
+          {saving ? t('file.saving') : t('file.save')}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
-              打开方式…
+              {t('file.openWith')}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => runExternal(() => api.openFileExternally(cwd, path))}>
-              用默认应用打开
+              {t('file.openDefault')}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => runExternal(() => api.revealFileExternally(cwd, path))}>
-              在文件管理器中显示
+              {t('file.reveal')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -109,7 +112,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 
       {document?.stale ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-warning-background px-3 py-1.5 text-xs text-warning">
-          <span className="min-w-0 flex-1 truncate">文件已在磁盘上变化</span>
+          <span className="min-w-0 flex-1 truncate">{t('file.changedOnDisk')}</span>
           <Button
             type="button"
             variant="ghost"
@@ -117,7 +120,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             className="text-warning"
             onClick={() => void reloadDocument(cwd, path)}
           >
-            重新加载
+            {t('file.reload')}
           </Button>
           <Button
             type="button"
@@ -127,13 +130,15 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             disabled={saving}
             onClick={() => void saveDocument(cwd, path, true)}
           >
-            覆盖
+            {t('file.overwrite')}
           </Button>
         </div>
       ) : document?.refreshError ? (
-        // No 覆盖 here: nothing is known about the bytes on disk, so the only honest offer is a retry.
+        // No overwrite here: nothing is known about the bytes on disk, so the only honest offer is a retry.
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-warning-background px-3 py-1.5 text-xs text-warning">
-          <span className="min-w-0 flex-1 truncate">读取失败：{document.refreshError}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {t('file.readFailed', { error: document.refreshError })}
+          </span>
           <Button
             type="button"
             variant="ghost"
@@ -141,20 +146,20 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             className="text-warning"
             onClick={() => void reloadDocument(cwd, path)}
           >
-            重新加载
+            {t('file.reload')}
           </Button>
         </div>
       ) : null}
 
       {actionError ? (
         <p className="shrink-0 border-b border-border px-3 py-1.5 text-xs text-destructive" role="alert">
-          打开失败：{actionError}
+          {t('file.openFailed', { error: actionError })}
         </p>
       ) : null}
 
       {document?.saveError ? (
         <p className="shrink-0 border-b border-border px-3 py-1.5 text-xs text-destructive" role="alert">
-          保存失败：{document.saveError}
+          {t('file.saveFailed', { error: document.saveError })}
         </p>
       ) : null}
 
@@ -170,7 +175,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
         // A read that failed is the one preview with a way out of it: nothing about the file itself says
         // it is unreadable, so the tab offers the read again rather than making the reader close it.
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-          <span className="min-w-0 flex-1">{notice(document)}</span>
+          <span className="min-w-0 flex-1">{notice(document, t)}</span>
           {document?.status === 'error' ? (
             <Button
               type="button"
@@ -179,7 +184,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
               className="shrink-0"
               onClick={() => void reloadDocument(cwd, path)}
             >
-              重新加载
+              {t('file.reload')}
             </Button>
           ) : null}
         </div>
@@ -228,17 +233,17 @@ function FileSurface({
   )
 }
 
-function notice(document: FileDocument | undefined): string {
-  if (!document || document.status === 'loading') return '正在读取文件…'
-  if (document.status === 'error') return document.error ?? '无法读取这个文件'
+function notice(document: FileDocument | undefined, t: Translate): string {
+  if (!document || document.status === 'loading') return t('file.loading')
+  if (document.status === 'error') return document.error ?? t('file.unreadable')
   switch (document.preview) {
     case 'binary':
-      return '这是二进制文件，不在这里打开'
+      return t('file.ignoredBinary')
     case 'too-large':
-      return '文件超过 2 MB，不在这里打开'
+      return t('file.ignoredLarge')
     case 'link':
-      return '这是符号链接，不跟随：打开它就会读到工作区之外的文件'
+      return t('file.ignoredSymlink')
     default:
-      return '文件不存在'
+      return t('file.missing')
   }
 }

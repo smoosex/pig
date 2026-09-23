@@ -104,6 +104,9 @@ async function runFixture(name: string): Promise<void> {
   } as unknown as SessionApi
   Object.assign(globalThis, { window: { api } })
   const { useSessionsStore: store, selectActiveSessionId } = await import('../src/renderer/src/stores/sessions')
+  // Placeholder titles come from the dictionary, so fixtures pin the language their assertions expect.
+  const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const state = () => store.getState()
   const runtime = () => state().runtime[meta.id]
 
@@ -233,6 +236,48 @@ async function runFixture(name: string): Promise<void> {
     // A chat row names the same session whether or not it is open in the strip.
     await state().renameSession(chat.id, '聊天名字', chat.path)
     assert.equal(state().chats[0]?.sessions[0]?.name, '聊天名字')
+    return
+  }
+
+  if (name === 'relabel-image-tab') {
+    const image: SessionMeta = { ...meta, id: 'image-session', firstMessage: '', firstMessageIsImage: true }
+    api.listChats = async () => []
+    api.listProjects = async () => [{ cwd: '/project', name: 'project', sessions: [image] }]
+    api.openSession = async () => ({ sessionId: image.id, cwd: image.cwd, display: history(image.id) })
+    await state().loadProjects()
+    await state().openExisting(image)
+    assert.equal(state().openTabs[0]?.title, '图片')
+
+    // A locale switch re-derives the image placeholder instead of freezing the old word.
+    useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
+    assert.equal(state().openTabs[0]?.title, 'Image')
+    return
+  }
+
+  if (name === 'rename-clear-preview') {
+    const bare: SessionMeta = { ...meta, id: 'bare-session', firstMessage: '' }
+    api.listChats = async () => []
+    api.listProjects = async () => [{ cwd: '/project', name: 'project', sessions: [bare] }]
+    api.openSession = async () => ({ sessionId: bare.id, cwd: bare.cwd, display: history(bare.id) })
+    await state().loadProjects()
+    await state().openExisting(bare)
+    assert.equal(state().openTabs[0]?.title, '新对话')
+
+    // The composer previews an attachments-only first message with a marker, not a frozen word.
+    state().previewSessionTitle(bare.id, '粘贴的文本', 'pastedText')
+    assert.equal(state().openTabs[0]?.title, '粘贴的文本')
+    assert.equal(state().projects[0]?.sessions[0]?.firstMessage, '')
+    assert.equal(state().projects[0]?.sessions[0]?.previewFallback, 'pastedText')
+
+    await state().renameSession(bare.id, '名字', bare.path)
+    assert.equal(state().openTabs[0]?.title, '名字')
+    await state().renameSession(bare.id, '')
+    assert.equal(state().openTabs[0]?.title, '粘贴的文本')
+    assert.equal(state().projects[0]?.sessions[0]?.firstMessage, '')
+
+    // ...and a later locale switch translates it instead of freezing the old word.
+    useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
+    assert.equal(state().openTabs[0]?.title, 'Pasted text')
     return
   }
 
@@ -1188,6 +1233,8 @@ if (process.argv[2] === '--session-store-fixture') {
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
     'worktree-topology-sync': 'focus discovery preserves sessions without scanning their files',
     'rename-session': 'a rename reaches the tab, the project rows and the chats, and clearing it restores the title',
+    'relabel-image-tab': 'a locale switch re-derives an image placeholder instead of freezing it',
+    'rename-clear-preview': 'clearing a rename hands the title back to a translated marker, not a frozen word',
     'late-session-names': 'a name found after the listing patches the tab, the project rows and the chats',
     'worktree-tab-remembered': 'a worktree returns to the changes tab it was left on',
     'worktree-restore-tabs': 'a restored worktree opens the tab it was left on',

@@ -8,6 +8,7 @@ import { existsSync, statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { createAgentSession, SessionManager, type AgentSession, type SessionEntry } from '@earendil-works/pi-coding-agent'
+import { t } from '../i18n'
 import type {
   DisplayTurnsResult,
   FollowUpAction,
@@ -165,7 +166,7 @@ export function createPendingSession(
   options: { draft?: boolean; id?: string } = {}
 ): PendingSession {
   worktrees.assertAvailable(cwd)
-  if (!statSync(cwd).isDirectory()) throw new Error('会话工作目录不存在')
+  if (!statSync(cwd).isDirectory()) throw new Error(t('error.sessionCwdMissing'))
   const sessionManager = SessionManager.create(cwd, undefined, options.id ? { id: options.id } : undefined)
   const sessionId = sessionManager.getSessionId()
   const session: MemorySession = {

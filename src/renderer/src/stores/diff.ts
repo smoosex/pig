@@ -15,7 +15,9 @@ import {
   type WorktreeDiff,
   type WorktreePatch
 } from '../ipc/api'
+import { t } from '../lib/i18n'
 import { failureMessage } from '../lib/ipc-error'
+import type { MessageKey, Translate } from '../../../shared/i18n'
 
 export { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH } from '../ipc/api'
 
@@ -39,10 +41,14 @@ export type DiffStyle = 'unified' | 'split'
 export type PanelTab = 'files' | 'changes'
 
 /** What each scope is called: the tab title, the toolbar control and the two panel groups share it. */
-export const SCOPE_LABELS: Record<DiffScope, string> = {
-  all: '全部变更',
-  staged: '已暂存',
-  unstaged: '未提交'
+const SCOPE_KEYS: Record<DiffScope, MessageKey> = {
+  all: 'diff.scopeAll',
+  staged: 'diff.scopeStaged',
+  unstaged: 'diff.scopeUnstaged'
+}
+
+export function scopeLabel(t: Translate, scope: DiffScope): string {
+  return t(SCOPE_KEYS[scope])
 }
 
 /** One cache slot per worktree and scope; the pair is joined with NUL so the key is never ambiguous. */
@@ -415,7 +421,8 @@ function setWatchError(cwd: string, error?: unknown): void {
   useDiffStore.setState((state) => {
     const current = state.worktrees[cwd]
     if (!current) return state
-    const watchError = error === undefined ? undefined : `无法监听工作区变更：${failureMessage(error)}`
+    const watchError =
+      error === undefined ? undefined : t('diff.watchFailed', { error: failureMessage(error) })
     if (current.watchError === watchError) return state
     return { worktrees: { ...state.worktrees, [cwd]: { ...current, watchError } } }
   })

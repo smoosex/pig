@@ -38,6 +38,9 @@ async function runFixture(name: string): Promise<void> {
   Object.defineProperty(window, 'api', { value: api, configurable: true })
 
   const React = await import('react')
+  const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const painted: { name: string; contents: string }[] = []
   const mounted: string[] = []
   const { mock } = await import('bun:test')

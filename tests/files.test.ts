@@ -12,6 +12,11 @@ import type { FileStamp } from '../src/shared/api'
 import { readLanes } from '../src/main/git/limit'
 import { readDirectory } from '../src/main/files/tree'
 import { runGit } from '../src/main/git/run'
+import { applyLocaleSetting } from '../src/main/i18n'
+
+// Pig's own errors come from the dictionary: pin the wording these tests spell out.
+applyLocaleSetting('zh-CN')
+
 
 const temps: string[] = []
 

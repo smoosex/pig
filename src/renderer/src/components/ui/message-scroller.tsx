@@ -8,6 +8,7 @@ import {
 import { ArrowDownIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { t } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 
 function MessageScrollerProvider(
@@ -107,7 +108,7 @@ function MessageScrollerButton({
         <>
           <ArrowDownIcon />
           <span className="sr-only">
-            {direction === "end" ? "滚动到底部" : "滚动到顶部"}
+            {direction === "end" ? t('common.scrollToBottom') : t('common.scrollToTop')}
           </span>
         </>
       )}

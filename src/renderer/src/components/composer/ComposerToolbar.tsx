@@ -2,6 +2,7 @@ import { ArrowUp, Square } from 'lucide-react'
 import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useSessionsStore } from '../../stores/sessions'
+import { useT } from '../../hooks/useT'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
 import { ContextUsageButton } from './ContextUsageButton'
@@ -41,6 +42,7 @@ export function ComposerToolbar({
   onSend: () => Promise<void>
   onAbort: () => Promise<void>
 }) {
+  const t = useT()
   const sessionModel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
   const sessionModels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
   const sessionThinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
@@ -74,7 +76,7 @@ export function ComposerToolbar({
             size="icon-sm"
             variant="secondary"
             className="size-7 rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
-            aria-label="暂停"
+            aria-label={t('composer.pause')}
             onClick={() => void onAbort()}
           >
             <Square />
@@ -84,7 +86,7 @@ export function ComposerToolbar({
             size="icon-sm"
             variant="default"
             className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
-            aria-label={isStreaming ? '跟进' : '发送'}
+            aria-label={isStreaming ? t('composer.queue') : t('composer.send')}
             disabled={!hasDraft || !sessionId}
             onClick={() => void onSend()}
           >

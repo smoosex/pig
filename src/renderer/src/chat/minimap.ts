@@ -1,3 +1,4 @@
+import type { Translate } from '../../../shared/i18n'
 import { renderKeyForTurn, type Turn } from './turns'
 import type { TurnSummary } from '../ipc/api'
 
@@ -49,12 +50,17 @@ export function turnMinimapPreview(turn: Turn): MinimapPreview {
   }
 }
 
-export function turnMinimapItem(turn: Turn, index: number, weight?: number): MinimapItem {
+export function turnMinimapItem(turn: Turn, index: number, t: Translate, weight?: number): MinimapItem {
   const { content, user, answer } = turnText(turn)
   const text = user.find((value) => value.length > 0) ?? answer.find((value) => value.length > 0)
   const hasImages = typeof content !== 'string' && (content?.some((block) => block.type === 'image') ?? false)
   const id = renderKeyForTurn(turn, index)
-  const label = `第 ${index + 1} 轮${preview(text) ? `：${preview(text)}` : turn.user ? '：图片消息' : '对话'}`
+  const head = t('minimap.turn', { n: index + 1 })
+  const label = preview(text)
+    ? `${head}${t('common.labelSeparator')}${preview(text)}`
+    : turn.user
+      ? `${head}${t('common.labelSeparator')}${t('turn.imageMessage')}`
+      : `${head}${t('common.labelSeparator')}${t('minimap.conversation')}`
   return {
     id,
     turnId: turn.id ?? id,
@@ -67,11 +73,13 @@ export function turnMinimapItem(turn: Turn, index: number, weight?: number): Min
   }
 }
 
-export function summaryMinimapItem(summary: TurnSummary, index: number): MinimapItem {
+export function summaryMinimapItem(summary: TurnSummary, index: number, t: Translate): MinimapItem {
   return {
     id: summary.id,
     turnId: summary.id,
-    label: `第 ${index + 1} 轮${summary.hasImages ? '：图片消息' : ''}`,
+    label: summary.hasImages
+      ? `${t('minimap.turn', { n: index + 1 })}${t('common.labelSeparator')}${t('turn.imageMessage')}`
+      : t('minimap.turn', { n: index + 1 }),
     length: summary.bytes,
     hasImages: summary.hasImages,
     turn: index

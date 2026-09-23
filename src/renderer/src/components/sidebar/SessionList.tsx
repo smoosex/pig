@@ -11,6 +11,7 @@ import {
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { HookSidebar } from '../ui/hook-sidebar'
 import { SquaresSpinner } from '../RunningSpinners'
+import { useT } from '../../hooks/useT'
 
 export function SessionList({ sessions }: { sessions: OpenTab[] }) {
   const activeIndex = useSessionsStore((state) =>
@@ -33,6 +34,7 @@ export function SessionList({ sessions }: { sessions: OpenTab[] }) {
 }
 
 function SessionRow({ session }: { session: OpenTab }) {
+  const t = useT()
   const active = useSessionsStore((state) => selectActiveSessionId(state) === session.id)
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const activateTab = useSessionsStore((state) => state.activateTab)
@@ -75,7 +77,7 @@ function SessionRow({ session }: { session: OpenTab }) {
               variant="ghost"
               size="icon-xs"
               className="pointer-events-none shrink-0 opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
-              aria-label={`关闭 ${session.title}`}
+              aria-label={t('sessions.close', { title: session.title })}
               onClick={() => closeTab(session.id)}
             >
               <X />
@@ -85,7 +87,7 @@ function SessionRow({ session }: { session: OpenTab }) {
         <ContextMenuContent>
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
-            重命名
+            {t('common.rename')}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

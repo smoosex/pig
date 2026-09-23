@@ -77,6 +77,9 @@ async function fixture(scenario: string): Promise<void> {
       DefaultResourceLoader: class { async reload() {} },
       getAgentDir: () => join(cwd, 'agent')
     }))
+    const { applyLocaleSetting } = await import('../src/main/i18n')
+    // Pig's own errors come from the dictionary: pin the wording these tests spell out.
+    applyLocaleSetting('zh-CN')
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
     const win = {} as Parameters<typeof sessions.createPendingSession>[1]

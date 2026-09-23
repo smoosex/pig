@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { useT } from '../../hooks/useT'
 import { useProjectAction } from './project-action'
 import { CreateWorktreeButton } from './WorktreeActions'
 import { WorktreeRow } from './WorktreeRow'
@@ -36,6 +37,7 @@ export function ProjectRow({
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteProject = useSessionsStore((s) => s.deleteProject)
   const unpinProject = useSessionsStore((s) => s.unpinProject)
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState<Record<string, boolean>>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -123,7 +125,7 @@ export function ProjectRow({
                   variant="ghost"
                   size="icon-xs"
                   className="pointer-events-none opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-                  aria-label={`项目 ${project.name} 更多操作`}
+                  aria-label={t('project.menu', { name: project.name })}
                   disabled={pending !== null}
                 >
                   <MoreHorizontal />
@@ -136,7 +138,7 @@ export function ProjectRow({
                     onSelect={() => void runAction('unpin', () => unpinProject(project.cwd))}
                   >
                     <FolderMinus data-icon="inline-start" />
-                    从列表移除
+                    {t('project.remove')}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     variant="destructive"
@@ -144,7 +146,7 @@ export function ProjectRow({
                     onSelect={() => setDeleteOpen(true)}
                   >
                     <Trash2 data-icon="inline-start" />
-                    删除项目
+                    {t('project.delete')}
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
@@ -178,15 +180,12 @@ export function ProjectRow({
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
           <DialogContent showCloseButton={false}>
             <DialogHeader>
-              <DialogTitle className="text-sm">删除项目</DialogTitle>
-              <DialogDescription className="text-xs">
-                将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree
-                和 Git 分支会保留。会话删除后无法恢复。
-              </DialogDescription>
+              <DialogTitle className="text-sm">{t('project.delete')}</DialogTitle>
+              <DialogDescription className="text-xs">{t('project.deleteBody')}</DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="destructive"
@@ -196,7 +195,7 @@ export function ProjectRow({
                   void runAction('delete-project', () => deleteProject(project.cwd))
                 }}
               >
-                删除会话并移除
+                {t('project.deleteConfirm')}
               </Button>
             </div>
           </DialogContent>

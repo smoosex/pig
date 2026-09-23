@@ -39,6 +39,9 @@ async function runFixture(): Promise<void> {
     }
   }))
 
+  const { applyLocaleSetting } = await import('../src/main/i18n')
+  // Pig's own errors come from the dictionary: pin the wording these tests spell out.
+  applyLocaleSetting('zh-CN')
   const { discoverOpenedWorktrees, loadWorktreeSessions } = await import('../src/main/project-worktrees')
   assert.deepEqual(await discoverOpenedWorktrees(), [
     {

@@ -3,8 +3,10 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ProjectAvatar } from './ProjectAvatar'
 import { ProjectRow } from './ProjectRow'
 import { useProjectList } from './use-project-list'
+import { useT } from '../../hooks/useT'
 
 export function ProjectList() {
+  const t = useT()
   const {
     projects,
     isReorderingProjects,
@@ -38,7 +40,7 @@ export function ProjectList() {
             </p>
           )}
           {projects.length === 0 && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">添加项目即可开始</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">{t('sidebar.projectsEmpty')}</p>
           )}
           {projects.map((project, index) => (
             <ProjectRow

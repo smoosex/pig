@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type Turn } from '../chat/turns'
+import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
@@ -10,8 +11,9 @@ import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkedMs } from './turn/useWorkedMs'
 
 function WorkedLabel({ turn }: { turn: Turn }) {
+  const t = useT()
   const workedMs = useWorkedMs(turn)
-  return <>{turn.streaming ? '已工作' : '工作耗时'} {formatElapsed(workedMs)}</>
+  return <>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs, t) })}</>
 }
 
 /** Coordinates lazy process loading and the transition from live work to an answer. */

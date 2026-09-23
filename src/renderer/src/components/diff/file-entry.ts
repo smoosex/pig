@@ -14,15 +14,19 @@ import {
   FileText,
   type LucideIcon
 } from 'lucide-react'
+import type { MessageKey } from '../../../../shared/i18n'
 import type { DiffFileEntry, DiffFileStatus } from '../../ipc/api'
 
-export const STATUS_META: Record<DiffFileStatus, { letter: string; className: string; label: string }> = {
-  added: { letter: 'A', className: 'text-success', label: '新增' },
-  modified: { letter: 'M', className: 'text-warning', label: '修改' },
-  deleted: { letter: 'D', className: 'text-destructive', label: '删除' },
-  renamed: { letter: 'R', className: 'text-info', label: '重命名' },
-  untracked: { letter: 'U', className: 'text-muted-foreground', label: '未跟踪' },
-  conflicted: { letter: '!', className: 'text-destructive', label: '冲突' }
+export const STATUS_META: Record<
+  DiffFileStatus,
+  { letter: string; className: string; labelKey: MessageKey }
+> = {
+  added: { letter: 'A', className: 'text-success', labelKey: 'diff.statusAdded' },
+  modified: { letter: 'M', className: 'text-warning', labelKey: 'diff.statusModified' },
+  deleted: { letter: 'D', className: 'text-destructive', labelKey: 'diff.statusDeleted' },
+  renamed: { letter: 'R', className: 'text-info', labelKey: 'diff.statusRenamed' },
+  untracked: { letter: 'U', className: 'text-muted-foreground', labelKey: 'diff.statusUntracked' },
+  conflicted: { letter: '!', className: 'text-destructive', labelKey: 'diff.statusConflicted' }
 }
 
 const ICONS: Record<string, LucideIcon> = {

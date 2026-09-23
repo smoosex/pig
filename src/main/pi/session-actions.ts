@@ -1,6 +1,7 @@
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { FollowUpAction, SlashCommand as SessionSlashCommand } from '../../shared/api'
 import { batchQueueUpdates, removePendingUserMessage, updatePendingUserMessageMode } from './event-bridge'
+import { t } from '../i18n'
 
 export async function updateFollowUpMessage(
   session: AgentSession,
@@ -29,12 +30,12 @@ export async function updateFollowUpMessage(
   })
 }
 
-const BUILTIN_SLASH_COMMANDS: SessionSlashCommand[] = [
-  { name: 'export', description: '导出会话为 HTML 或 JSONL', source: 'builtin' }
-]
-
 export async function listSessionCommands(session: AgentSession): Promise<SessionSlashCommand[]> {
-  const taken = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name))
+  // Translated here, not at module scope: main learns the locale in initLocale(), long after imports run.
+  const builtin: SessionSlashCommand[] = [
+    { name: 'export', description: t('commands.exportSession'), source: 'builtin' }
+  ]
+  const taken = new Set(builtin.map((command) => command.name))
   const extensionCommands = session.extensionRunner.getRegisteredCommands().map((command) => ({
     name: command.invocationName,
     description: command.description,
@@ -51,7 +52,7 @@ export async function listSessionCommands(session: AgentSession): Promise<Sessio
     source: 'skill' as const
   }))
   return [
-    ...BUILTIN_SLASH_COMMANDS,
+    ...builtin,
     ...[...extensionCommands, ...templates, ...skills].filter((command) => !taken.has(command.name))
   ]
 }

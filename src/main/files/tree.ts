@@ -9,6 +9,7 @@ import type { DirectoryListing, FileTreeEntry } from '../../shared/api'
 import { GitExecError, isNotARepoError } from '../git/exec'
 import { execGit } from '../git/exec'
 import { resolveWorktreePath } from './paths'
+import { t } from '../i18n'
 
 /** Never listed: git's own directory is machinery, and no editor shows it. */
 const HIDDEN = new Set(['.git'])
@@ -18,7 +19,7 @@ const IGNORE_BATCH = 256
 
 export async function readDirectory(cwd: string, path: string): Promise<DirectoryListing> {
   const target = await resolveWorktreePath(cwd, path, 'directory')
-  if (!target) throw new Error('目录不在工作区内')
+  if (!target) throw new Error(t('error.directoryOutsideWorkspace'))
   const dirents = await readdir(target.absolute, { withFileTypes: true })
 
   const entries: FileTreeEntry[] = []

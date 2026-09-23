@@ -1,4 +1,5 @@
 import { HoldToConfirmButton } from '../spectrumui/hold-to-confirm'
+import { useT } from '../../hooks/useT'
 
 export function SessionDeleteButton({
   ariaLabel,
@@ -9,10 +10,11 @@ export function SessionDeleteButton({
   onConfirm: () => void
   disabled?: boolean
 }) {
+  const t = useT()
   return (
     <HoldToConfirmButton
       label={ariaLabel}
-      confirmedLabel="已删除"
+      confirmedLabel={t('sessions.deleted')}
       size="sm"
       iconOnly
       disabled={disabled}

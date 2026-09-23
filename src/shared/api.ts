@@ -2,13 +2,19 @@
  * Serializable contracts shared by main, preload, and renderer.
  * SDK objects stay in main; only these data shapes cross the IPC boundary.
  */
+import type { Locale, LocaleSetting } from './i18n'
 import type {
   PastedTextAttachment,
   PastedTextAttachmentInput,
   PastedTextDisplaySegment
 } from './pasted-text'
 
+export type { Locale, LocaleSetting } from './i18n'
+
 export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment }
+
+/** An app-written stand-in title for an attachments/images-only first message; the renderer translates it. */
+export type SessionPreviewFallback = 'pastedText' | 'image'
 
 export interface SessionMeta {
   path: string
@@ -20,6 +26,16 @@ export interface SessionMeta {
   /** Size of the session file on disk, as scanned. */
   size: number
   firstMessage: string
+  /**
+   * The title leans on an image-only user message: no earlier message had text, so `firstMessage`
+   * stays empty and the row shows a placeholder. A later message with text takes the title instead.
+   */
+  firstMessageIsImage?: boolean
+  /**
+   * The title is an app-written stand-in for an attachments/images-only first message ('pastedText'
+   * or 'image'), so the renderer translates it on a locale switch instead of freezing the old word.
+   */
+  previewFallback?: SessionPreviewFallback
 }
 
 export interface WorktreeGroup {
@@ -414,6 +430,10 @@ export interface ThemePrefs {
 
 export interface AppSettings extends ThemePrefs {
   sendShortcut: SendShortcut
+  /** The stored choice: a locale, or `system` to follow the OS language. */
+  localeSetting: LocaleSetting
+  /** The OS language resolved against the shipped locales, for the `system` option's label. */
+  systemLocale: Locale
   defaultModel: SessionModelInfo | null
   defaultThinkingLevel: ThinkingLevel | null
   thinkingLevels: ThinkingLevel[]
@@ -508,6 +528,9 @@ export interface SessionApi {
   saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
+  setLocaleSetting: (
+    locale: LocaleSetting
+  ) => Promise<{ localeSetting: LocaleSetting; systemLocale: Locale }>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<ThemePrefs>
   setDefaultModelSetting: (provider: string, id: string) => Promise<DefaultSessionSettings>
   setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<DefaultSessionSettings>

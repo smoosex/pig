@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useT } from '../../hooks/useT'
 import type { SettingsAuthPrompt } from '../../ipc/api'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -30,6 +31,7 @@ export function AuthDialog({
   onSubmit: (value: string) => void
   onCancel: () => void
 }) {
+  const t = useT()
   const [value, setValue] = useState('')
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function AuthDialog({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{prompt?.message ?? '按提示完成登录，或取消。'}</DialogDescription>
+          <DialogDescription>{prompt?.message ?? t('providers.promptDefault')}</DialogDescription>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-2">
           {lines.map((line, i) => (
@@ -100,16 +102,16 @@ export function AuthDialog({
               }}
             />
           ) : busy ? (
-            <p className="text-sm text-muted-foreground">等待供应商响应…</p>
+            <p className="text-sm text-muted-foreground">{t('providers.waiting')}</p>
           ) : null}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel}>
-            取消
+            {t('common.cancel')}
           </Button>
           {prompt && prompt.type !== 'select' ? (
             <Button type="button" disabled={!value.trim()} onClick={() => onSubmit(value)}>
-              继续
+              {t('common.continue')}
             </Button>
           ) : null}
         </DialogFooter>

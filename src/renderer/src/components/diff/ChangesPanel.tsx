@@ -5,6 +5,8 @@
  * mutates git, it only reads.
  */
 import { useState } from 'react'
+import { scopeLabel } from '../../stores/diff'
+import { useT } from '../../hooks/useT'
 import { ChevronRight } from 'lucide-react'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import { useDiffStore } from '../../stores/diff'
@@ -14,11 +16,12 @@ import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { STATUS_META, fileIcon, splitPath, sumCounts } from './file-entry'
 
-type Group = { key: 'staged' | 'unstaged'; label: string; entries: DiffFileEntry[] }
+type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
 
 const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
 
 export function ChangesPanel({ cwd }: { cwd: string }) {
+  const t = useT()
   const state = useDiffStore((s) => s.worktrees[cwd])
   const openChangesTab = useSessionsStore((s) => s.openChangesTab)
   // A primitive, because a fresh object on every render would loop zustand's store subscription.
@@ -30,8 +33,8 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
 
   const diff = state?.diff
   const groups: Group[] = [
-    { key: 'staged', label: '已暂存', entries: diff?.staged ?? [] },
-    { key: 'unstaged', label: '未提交', entries: diff?.unstaged ?? [] }
+    { key: 'staged', entries: diff?.staged ?? [] },
+    { key: 'unstaged', entries: diff?.unstaged ?? [] }
   ]
   const flatEntries = diff?.all ?? []
 
@@ -66,7 +69,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           isActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
         )}
       >
-        <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={meta.label}>
+        <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
           {meta.letter}
         </span>
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -84,12 +87,12 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
 
   function list() {
     // A refresh keeps the list that is already there: the loading text is only for the first read.
-    if (!state) return <Notice>正在读取变更…</Notice>
+    if (!state) return <Notice>{t('diff.reading')}</Notice>
     if (state.watchError) return <Notice>{state.watchError}</Notice>
-    if (state.status === 'loading' && !state.diff) return <Notice>正在读取变更…</Notice>
+    if (state.status === 'loading' && !state.diff) return <Notice>{t('diff.reading')}</Notice>
     if (state.status === 'error') return <Notice>{state.error}</Notice>
-    if (!diff?.git) return <Notice>当前目录不是 Git 仓库</Notice>
-    if (!flatEntries.length) return <Notice>工作区没有未提交的变更</Notice>
+    if (!diff?.git) return <Notice>{t('diff.notGit')}</Notice>
+    if (!flatEntries.length) return <Notice>{t('diff.emptyWorktree')}</Notice>
     if (flat) return rows(flatEntries, 'all', false)
     return groups.map((group) => {
       if (!group.entries.length) return null
@@ -108,7 +111,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
               className="relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
             >
               <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
-              <span>{group.label}</span>
+              <span>{scopeLabel(t, group.key)}</span>
               <span className="tabular-nums text-muted-foreground">({group.entries.length})</span>
               <span className="flex-1" />
               {counts ? (
@@ -140,13 +143,13 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           size="xs"
           value={flat ? 'all' : 'grouped'}
           onValueChange={(value) => value && setFlat(value === 'all')}
-          aria-label="变更列表分组方式"
+          aria-label={t('diff.groupsAria')}
         >
           <ToggleGroupItem value="grouped" className={sidebarSurfaceToggle}>
-            分组
+            {t('diff.group')}
           </ToggleGroupItem>
           <ToggleGroupItem value="all" className={sidebarSurfaceToggle}>
-            全部
+            {t('diff.flat')}
           </ToggleGroupItem>
         </ToggleGroup>
       </footer>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { t } from '../../lib/i18n'
 
 export interface PastedImage {
   id: string
@@ -90,7 +91,7 @@ export function useComposerImages(sessionId: string | null) {
     }
     currentImages.current = [...currentImages.current, ...added]
     setImages(currentImages.current)
-    setError(results.some((result) => result.status === 'rejected') ? '有图片读取失败，请重新粘贴。' : null)
+    setError(results.some((result) => result.status === 'rejected') ? t('composer.imageReadFailed') : null)
   }, [])
 
   const remove = useCallback((id: string) => {

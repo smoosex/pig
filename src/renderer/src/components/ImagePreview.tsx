@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ZoomIn, ZoomOut } from 'lucide-react'
+import { useT } from '../hooks/useT'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
@@ -7,6 +8,7 @@ const MIN = 0.25
 const MAX = 8
 
 export function ImagePreview({ src, onClose }: { src: string | null; onClose: () => void }) {
+  const t = useT()
   const stageRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   const [tx, setTx] = useState(0)
@@ -59,7 +61,7 @@ export function ImagePreview({ src, onClose }: { src: string | null; onClose: ()
         showCloseButton
         className="flex h-[85vh] w-[min(96vw,80rem)] max-w-[min(96vw,80rem)] flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[min(96vw,80rem)]"
       >
-        <DialogTitle className="sr-only">图片预览</DialogTitle>
+        <DialogTitle className="sr-only">{t('composer.imagePreview')}</DialogTitle>
         {src ? (
           <div
             ref={stageRef}
@@ -98,7 +100,7 @@ export function ImagePreview({ src, onClose }: { src: string | null; onClose: ()
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="缩小"
+            aria-label={t('common.zoomOut')}
             onClick={() => zoom(scale / 1.25)}
           >
             <ZoomOut />
@@ -116,7 +118,7 @@ export function ImagePreview({ src, onClose }: { src: string | null; onClose: ()
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="放大"
+            aria-label={t('common.zoomIn')}
             onClick={() => zoom(scale * 1.25)}
           >
             <ZoomIn />

@@ -1,3 +1,4 @@
+import type { MessageKey, Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
   BashExecutionMessage,
@@ -29,7 +30,7 @@ export type ProcessItem =
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
-  | { kind: 'summary'; title: string; text: string }
+  | { kind: 'summary'; titleKey: MessageKey; text: string }
 
 export type AnswerBlock =
   | { type: 'text'; text: string }
@@ -252,11 +253,11 @@ export function buildTurn(
       return
     }
     if (message.role === 'branchSummary') {
-      process.push({ kind: 'summary', title: '分支摘要', text: message.summary })
+      process.push({ kind: 'summary', titleKey: 'chat.branchSummary', text: message.summary })
       return
     }
     if (message.role === 'compactionSummary') {
-      process.push({ kind: 'summary', title: '压缩摘要', text: message.summary })
+      process.push({ kind: 'summary', titleKey: 'chat.compactionSummary', text: message.summary })
     }
   })
 
@@ -302,12 +303,12 @@ export function groupTurns(
   )
 }
 
-export function formatElapsed(ms: number): string {
+export function formatElapsed(ms: number, t: Translate): string {
   const s = Math.max(0, Math.floor(ms / 1000))
-  if (s < 60) return `${s} 秒`
+  if (s < 60) return t('time.seconds', { n: s })
   const m = Math.floor(s / 60)
   const r = s % 60
-  return r ? `${m} 分 ${r} 秒` : `${m} 分`
+  return r ? t('time.minutesSeconds', { m, r }) : t('time.minutes', { n: m })
 }
 
 function oneLine(value: unknown): string {
@@ -315,27 +316,33 @@ function oneLine(value: unknown): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
-export function toolStepLabel(step: ToolStep): string {
+export function toolStepLabel(step: ToolStep, t: Translate): string {
   const args = step.args
   switch (step.name) {
     case 'bash':
-      return args.command ? `执行 ${oneLine(args.command)}` : '执行命令'
+      return args.command
+        ? t('tool.run', { command: oneLine(args.command) })
+        : t('tool.runPlain')
     case 'read':
-      return args.path ? `读取 ${oneLine(args.path)}` : '读取文件'
+      return args.path ? t('tool.read', { path: oneLine(args.path) }) : t('tool.readPlain')
     case 'write':
-      return args.path ? `写入 ${oneLine(args.path)}` : '写入文件'
+      return args.path ? t('tool.write', { path: oneLine(args.path) }) : t('tool.writePlain')
     case 'edit':
-      return args.path ? `编辑 ${oneLine(args.path)}` : '编辑文件'
+      return args.path ? t('tool.edit', { path: oneLine(args.path) }) : t('tool.editPlain')
     case 'ls':
-      return `列出 ${oneLine(args.path ?? '.')}`
+      return t('tool.list', { path: oneLine(args.path ?? '.') })
     case 'fffind':
     case 'find':
-      return args.pattern ? `查找 ${oneLine(args.pattern)}` : '查找文件'
+      return args.pattern
+        ? t('tool.find', { pattern: oneLine(args.pattern) })
+        : t('tool.findPlain')
     case 'ffgrep':
     case 'grep':
-      return args.pattern ? `搜索 ${oneLine(args.pattern)}` : '搜索代码'
+      return args.pattern
+        ? t('tool.search', { pattern: oneLine(args.pattern) })
+        : t('tool.searchPlain')
     default:
-      return `调用 ${step.name}`
+      return t('tool.call', { name: step.name })
   }
 }
 

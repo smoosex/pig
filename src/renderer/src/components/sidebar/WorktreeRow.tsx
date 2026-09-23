@@ -8,6 +8,7 @@ import { WorktreeDeleteButton } from './WorktreeActions'
 import { SessionList } from './SessionList'
 import { SessionHistoryPopover } from '../SessionHistoryPopover'
 import type { RunProjectAction } from './project-action'
+import { useT } from '../../hooks/useT'
 
 export function WorktreeRow({
   projectCwd,
@@ -28,6 +29,7 @@ export function WorktreeRow({
   const deleteWorktree = useSessionsStore((s) => s.deleteWorktree)
   const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
   const openTabs = useSessionsStore((s) => s.openTabs)
+  const t = useT()
   const sessions = useMemo(
     () => openTabs.filter((tab) => tab.kind === 'project' && tab.cwd === worktree.cwd),
     [openTabs, worktree.cwd]
@@ -35,18 +37,18 @@ export function WorktreeRow({
   const active = useSessionsStore((s) => s.currentProjectCwd === worktree.cwd)
   const namingLabel =
     worktree.naming === 'pending'
-      ? '待命名'
+      ? t('worktree.namingPending')
       : worktree.naming === 'naming'
-        ? '命名中'
+        ? t('worktree.naming')
         : worktree.naming === 'failed'
-          ? '命名失败'
+          ? t('worktree.namingFailed')
           : null
   const branchButton = (
     <Button
       variant="ghost"
       size="xs"
       className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal !bg-transparent"
-      aria-label={`${worktree.branch}${namingLabel ? `，${namingLabel}` : ''}`}
+      aria-label={namingLabel ? t('worktree.branchNaming', { branch: worktree.branch, state: namingLabel }) : worktree.branch}
       onClick={() => void selectProjectCwd(worktree.cwd)}
     >
       <ChevronRight
@@ -109,7 +111,7 @@ export function WorktreeRow({
               pending !== `new:${worktree.cwd}` &&
                 'pointer-events-none opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
             )}
-            aria-label={`在 ${worktree.branch} 中新建会话`}
+            aria-label={t('worktree.newSessionAria', { branch: worktree.branch })}
             disabled={pending !== null || worktree.missing}
             aria-busy={pending === `new:${worktree.cwd}`}
             onClick={() =>

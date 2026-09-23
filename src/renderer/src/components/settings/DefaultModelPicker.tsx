@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import type { SessionModelInfo } from '../../ipc/api'
+import { useT } from '../../hooks/useT'
 import { modelKey } from '../../stores/settings'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
 import { Button } from '../ui/button'
@@ -17,6 +18,7 @@ export function DefaultModelPicker({
   models: SessionModelInfo[]
   onSelect: (model: SessionModelInfo) => void
 }) {
+  const t = useT()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const filtered = useMemo(() => {
@@ -43,16 +45,16 @@ export function DefaultModelPicker({
     >
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" size="sm" className="max-w-64 font-normal">
-          <span className="truncate">{model?.name ?? '选择模型'}</span>
+          <span className="truncate">{model?.name ?? t('model.select')}</span>
           <ChevronDown data-icon="inline-end" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 gap-1 p-1.5" onKeyDown={navigation.onKeyDown}>
         <Input
           autoFocus
-          aria-label="搜索模型"
+          aria-label={t('model.search')}
           value={query}
-          placeholder="搜索模型"
+          placeholder={t('model.search')}
           className="h-7 shrink-0 md:text-xs"
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -60,7 +62,7 @@ export function DefaultModelPicker({
           <SmoothHoverHighlight activeKey={navigation.index}>
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {models.length === 0 ? '没有可用模型' : '没有匹配的模型'}
+                {models.length === 0 ? t('model.empty') : t('model.noMatch')}
               </p>
             ) : (
               filtered.map((item, index) => (

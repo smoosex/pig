@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { BookOpen } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useT } from '../../hooks/useT'
 import { Button } from '../ui/button'
 import { PopoverContent } from '../ui/popover'
 import { slashGroups } from './commands'
@@ -13,6 +14,7 @@ export function SlashSuggestions({
   commands: SlashCommands
   anchorRef: RefObject<HTMLDivElement | null>
 }) {
+  const t = useT()
   const selectedRef = useRef<HTMLButtonElement>(null)
   const [width, setWidth] = useState(0)
   const { open, filtered, index: selectedIndex } = commands
@@ -39,7 +41,7 @@ export function SlashSuggestions({
           <Fragment key={`${command.source}:${command.name}`}>
             {index === 0 || filtered[index - 1].source !== command.source ? (
               <div className="px-3 pt-2 pb-1 text-[10px] font-medium text-muted-foreground">
-                {slashGroups[command.source].label}
+                {t(slashGroups[command.source].labelKey)}
               </div>
             ) : null}
             <Button

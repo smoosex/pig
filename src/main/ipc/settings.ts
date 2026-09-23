@@ -7,6 +7,8 @@ import {
   type PaletteId,
   type SendShortcut
 } from '../pig-settings'
+import { applyLocaleSetting, systemLocale } from '../i18n'
+import type { LocaleSetting } from '../../shared/api'
 import {
   cancelProviderLogin,
   listProviders,
@@ -33,6 +35,8 @@ export function registerSettingsIpc(): void {
     ])
     return {
       sendShortcut: pig.sendShortcut,
+      localeSetting: pig.locale,
+      systemLocale: systemLocale(),
       appearance: pig.appearance,
       lightTheme: pig.lightTheme,
       darkTheme: pig.darkTheme,
@@ -46,6 +50,12 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle('settings:set-send-shortcut', async (_event, shortcut: SendShortcut) => {
     return savePigSettings({ sendShortcut: shortcut })
+  })
+
+  ipcMain.handle('settings:set-locale', async (_event, locale: LocaleSetting) => {
+    const next = await savePigSettings({ locale })
+    applyLocaleSetting(next.locale)
+    return { localeSetting: next.locale, systemLocale: systemLocale() }
   })
 
   ipcMain.handle(

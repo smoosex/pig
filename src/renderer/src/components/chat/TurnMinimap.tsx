@@ -5,6 +5,7 @@ import { api } from '../../ipc/api'
 import { buildTurn } from '../../chat/turns'
 import { isPiMessage } from '../../pi/types'
 import { turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card'
@@ -81,6 +82,7 @@ function TurnPreviewCard({
   branchViewId: string
   loadedPreview: (turn: number, turnId: string) => MinimapPreview | undefined
 }) {
+  const t = useT()
   const [preview, setPreview] = useState<MinimapPreview | null>(() => loadedPreview(item.turn, item.turnId) ?? null)
   const [loading, setLoading] = useState(() => preview == null)
   const [failed, setFailed] = useState(false)
@@ -118,18 +120,26 @@ function TurnPreviewCard({
     }
   }, [branchViewId, item.turn, item.turnId, loadedPreview, sessionId])
 
-  if (failed) return <p className="text-muted-foreground">预览加载失败</p>
+  if (failed) return <p className="text-muted-foreground">{t('turn.previewFailed')}</p>
 
-  const question = preview?.question || (preview?.hasQuestionImage || item.hasImages ? '图片消息' : loading ? '正在加载…' : '暂无提问')
-  const answer = preview?.answer || (preview?.hasAnswerImage
-    ? '图片回复'
-    : preview?.streaming
-      ? '正在生成…'
-      : preview?.error
-        ? '回答失败'
-        : loading
-          ? '正在加载…'
-          : '暂无最终回答')
+  const question =
+    preview?.question ||
+    (preview?.hasQuestionImage || item.hasImages
+      ? t('turn.imageMessage')
+      : loading
+        ? t('turn.loading')
+        : t('turn.noQuestion'))
+  const answer =
+    preview?.answer ||
+    (preview?.hasAnswerImage
+      ? t('turn.imageReply')
+      : preview?.streaming
+        ? t('turn.generating')
+        : preview?.error
+          ? t('turn.answerFailed')
+          : loading
+            ? t('turn.loading')
+            : t('turn.noAnswer'))
   const compact = (text: string) => text.replace(/\s+/g, ' ').trim()
 
   return (
@@ -212,6 +222,7 @@ export const TurnMinimap = memo(function TurnMinimap({
   loadedPreview: (turn: number, turnId: string) => MinimapPreview | undefined
   onJump: (index: number) => void
 }) {
+  const t = useT()
   const rootRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
@@ -459,7 +470,7 @@ export const TurnMinimap = memo(function TurnMinimap({
     <div
       ref={rootRef}
       role="navigation"
-      aria-label="对话轮次导航"
+      aria-label={t('turn.navigation')}
       className="absolute top-1/2 right-4 z-10 w-8 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       onScroll={(event) => {

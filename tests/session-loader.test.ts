@@ -43,6 +43,43 @@ test('project cleanup preserves colliding cwd sessions and removes only an empty
 })
 
 /**
+ * An image-only first message has no text to show. The listing reports that as a flag instead of a word,
+ * so the row prints the placeholder in the language the reader happens to be using.
+ */
+test('an image-only first message is reported as a flag rather than as copy', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-session-preview-'))
+  const previous = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = join(root, 'agent')
+  try {
+    const cwd = join(root, 'project')
+    const dir = sessionDirForCwd(cwd)
+    await mkdir(dir, { recursive: true })
+    const line = (entry: unknown) => JSON.stringify(entry) + '\n'
+    const header = (id: string) => line({ type: 'session', version: 3, id, cwd, timestamp: new Date().toISOString() })
+    const user = (content: unknown) => line({ type: 'message', message: { role: 'user', content } })
+    await writeFile(join(dir, 'img.jsonl'), header('img') + user([{ type: 'image', mimeType: 'image/png', data: 'AAAA' }]))
+    await writeFile(join(dir, 'text.jsonl'), header('text') + user([{ type: 'text', text: '看一下截图' }]))
+    // An image-only message only lends the title while no text message follows it.
+    await writeFile(join(dir, 'imgtext.jsonl'), header('imgtext') + user([{ type: 'image', mimeType: 'image/png', data: 'AAAA' }]) + user([{ type: 'text', text: '修登录按钮' }]))
+
+    const sessions = (await listProject(cwd))?.sessions ?? []
+    const image = sessions.find((session) => session.id === 'img')
+    const text = sessions.find((session) => session.id === 'text')
+    const imgtext = sessions.find((session) => session.id === 'imgtext')
+    expect(image?.firstMessage).toBe('')
+    expect(image?.firstMessageIsImage).toBe(true)
+    expect(text?.firstMessage).toBe('看一下截图')
+    expect(text?.firstMessageIsImage).toBeUndefined()
+    expect(imgtext?.firstMessage).toBe('修登录按钮')
+    expect(imgtext?.firstMessageIsImage).toBeUndefined()
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previous
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+/**
  * A name is appended to the end of a session file, so for a long session it sits far past the prefix a
  * listing reads. The listing answers with the first message and the background scan reports the name
  * after it; only a rename has to make the scan look again.

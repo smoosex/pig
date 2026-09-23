@@ -1,4 +1,5 @@
 import { dialog, ipcMain } from 'electron'
+import { t } from '../i18n'
 import {
   activateSession,
   closeSession,
@@ -169,7 +170,7 @@ export function registerSessionIpc(): void {
       if (!target) {
         const win = windowForEvent(event)
         const result = await dialog.showSaveDialog(win, {
-          title: '导出会话',
+          title: t('sessions.exportTitle'),
           defaultPath: 'session.html',
           filters: [
             { name: 'HTML', extensions: ['html'] },

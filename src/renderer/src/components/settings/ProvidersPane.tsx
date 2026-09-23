@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import type { Translate } from '../../../../shared/i18n'
+import { useT } from '../../hooks/useT'
 import { ChevronDown, Plus } from 'lucide-react'
 import type { ProviderAuthType, SettingsProvider } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
@@ -16,15 +18,16 @@ import { AddProviderDialog } from './AddProviderDialog'
 import { AuthDialog } from './AuthDialog'
 import { useProviderAuth } from './use-provider-auth'
 
-function sourceLabel(provider: SettingsProvider): string {
-  if (!provider.configured) return '未配置'
-  if (provider.using === 'oauth') return '已登录'
-  if (provider.source === 'environment') return '环境变量'
-  if (provider.source === 'stored') return '已保存密钥'
-  return '已配置'
+function sourceLabel(t: Translate, provider: SettingsProvider): string {
+  if (!provider.configured) return t('providers.notConfigured')
+  if (provider.using === 'oauth') return t('providers.signedIn')
+  if (provider.source === 'environment') return t('providers.environment')
+  if (provider.source === 'stored') return t('providers.storedKey')
+  return t('providers.configured')
 }
 
 export function ProvidersPane() {
+  const t = useT()
   const providers = useSettingsStore((s) => s.providers)
   const [adding, setAdding] = useState(false)
   const {
@@ -52,10 +55,10 @@ export function ProvidersPane() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">已配置 {configured.length} 个供应商</p>
+        <p className="text-sm text-muted-foreground">{t('providers.configuredCount', { count: configured.length })}</p>
         <Button size="sm" onClick={openAdd} disabled={locked}>
           <Plus data-icon="inline-start" />
-          添加供应商
+          {t('providers.add')}
         </Button>
       </div>
       {actionError ? (
@@ -72,17 +75,17 @@ export function ProvidersPane() {
               description={
                 provider.using === 'oauth'
                   ? provider.oauth?.subscription
-                    ? '订阅账号'
-                    : '账号授权'
-                  : 'API 密钥'
+                    ? t('providers.subscriptionAccount')
+                    : t('providers.accountGrant')
+                  : t('providers.apiKey')
               }
             >
               <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">{sourceLabel(provider)}</span>
+                <span className="text-xs text-muted-foreground">{sourceLabel(t, provider)}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" disabled={locked}>
-                      {removing === provider.id ? '处理中…' : '管理'}
+                      {removing === provider.id ? t('providers.working') : t('providers.manage')}
                       <ChevronDown data-icon="inline-end" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -90,12 +93,12 @@ export function ProvidersPane() {
                     <DropdownMenuGroup>
                       {provider.oauth ? (
                         <DropdownMenuItem onSelect={() => void startLogin(provider, 'oauth')}>
-                          {provider.using === 'oauth' ? '重新登录' : '登录账号'}
+                          {provider.using === 'oauth' ? t('providers.signInAgain') : t('providers.signIn')}
                         </DropdownMenuItem>
                       ) : null}
                       {provider.apiKey?.canLogin ? (
                         <DropdownMenuItem onSelect={() => void startLogin(provider, 'api_key')}>
-                          {provider.using === 'api_key' ? '更新密钥' : '设置密钥'}
+                          {provider.using === 'api_key' ? t('providers.updateKey') : t('providers.setKey')}
                         </DropdownMenuItem>
                       ) : null}
                       {provider.using === 'oauth' || provider.source === 'stored' ? (
@@ -103,10 +106,10 @@ export function ProvidersPane() {
                           variant="destructive"
                           onSelect={() => void logout(provider)}
                         >
-                          {provider.using === 'oauth' ? '退出登录' : '移除密钥'}
+                          {provider.using === 'oauth' ? t('providers.signOut') : t('providers.removeKey')}
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled>凭据由外部配置管理</DropdownMenuItem>
+                        <DropdownMenuItem disabled>{t('providers.externalCredentials')}</DropdownMenuItem>
                       )}
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
@@ -118,11 +121,11 @@ export function ProvidersPane() {
       ) : (
         <Empty className="min-h-60 border">
           <EmptyHeader>
-            <EmptyTitle>连接你的第一个供应商</EmptyTitle>
-            <EmptyDescription>登录订阅账号或添加 API 密钥，即可使用对应模型。</EmptyDescription>
+            <EmptyTitle>{t('providers.connectFirst')}</EmptyTitle>
+            <EmptyDescription>{t('providers.connectFirstDescription')}</EmptyDescription>
           </EmptyHeader>
           <Button variant="outline" onClick={openAdd} disabled={locked}>
-            添加供应商
+            {t('providers.add')}
           </Button>
         </Empty>
       )}
@@ -135,7 +138,11 @@ export function ProvidersPane() {
       <AuthDialog
         open={login != null}
         title={
-          login ? `${login.method === 'oauth' ? '登录' : '配置'} ${login.provider.name}` : '登录'
+          login
+            ? login.method === 'oauth'
+              ? t('providers.authLogin', { name: login.provider.name })
+              : t('providers.authConfigure', { name: login.provider.name })
+            : t('providers.authFallback')
         }
         lines={lines}
         prompt={prompt}

@@ -1,7 +1,12 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { translate } from '../src/shared/i18n'
 import type { Turn } from '../src/renderer/src/chat/turns'
 import { summaryMinimapItem, turnMinimapItem } from '../src/renderer/src/chat/minimap'
+
+/** The labels this file spells out are the Chinese ones, so the translator is pinned to zh-CN. */
+const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
+  translate('zh-CN', key, params)
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -45,8 +50,8 @@ async function fixture(): Promise<void> {
   }))
   // A row the renderer never loaded keeps its bar through the summary alone.
   const items = [
-    ...turns.map((turn, index) => turnMinimapItem(turn, index)),
-    summaryMinimapItem({ id: 'older', bytes: 20, hasImages: true }, 3)
+    ...turns.map((turn, index) => turnMinimapItem(turn, index, t)),
+    summaryMinimapItem({ id: 'older', bytes: 20, hasImages: true }, 3, t)
   ]
   const jumps: number[] = []
   const renderMinimap = (nextItems: typeof items) => createElement(

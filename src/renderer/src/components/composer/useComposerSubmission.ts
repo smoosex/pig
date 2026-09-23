@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { t } from '../../lib/i18n'
 import type { JSONContent } from '@tiptap/core'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
-import { api, type PromptStreamingBehavior } from '../../ipc/api'
+import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
 import { exportPathArg } from './commands'
 import { composerUserMessage } from './document'
@@ -66,7 +67,10 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const saved = { content: document.editor.getJSON(), images }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const titleText = hasAttachments ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim() : trimmed
-    const title = titleText.slice(0, 500) || (hasAttachments ? 'Pasted text' : images.length > 0 ? '图片' : '')
+    // An attachments/images-only first message has no text to show: the title is a marker the store
+    // translates, never a frozen word.
+    const fallback: SessionPreviewFallback | undefined = hasAttachments ? 'pastedText' : images.length > 0 ? 'image' : undefined
+    const title = titleText.slice(0, 500) || (fallback === 'pastedText' ? t('composer.pastedText') : fallback === 'image' ? t('common.image') : '')
     const text = hasAttachments ? serialized.text : trimmed
     const target = sessionId
     if (!target) return
@@ -107,7 +111,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
 
     const optimistic = composerUserMessage(text, payload, serialized.attachments)
     if (!streaming) state.beginPrompt(target, optimistic)
-    if (title) state.previewSessionTitle(target, title)
+    if (title) state.previewSessionTitle(target, title, fallback)
     document.clear()
     attachments.clear()
 

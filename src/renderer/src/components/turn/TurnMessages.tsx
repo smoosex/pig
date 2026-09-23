@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react'
 import { formatPastedTextSize } from '../../../../shared/pasted-text'
 import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/types'
 import { turnImageSrc, type AnswerBlock } from '../../chat/turns'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
@@ -50,6 +51,7 @@ function InlinePastedText({
 }
 
 export const UserBubble = memo(function UserBubble({ message }: { message: PigUserMessage }) {
+  const t = useT()
   const images = userImages(message).flatMap((image, i) => {
     const src = turnImageSrc(image)
     return src ? [{ key: i, src }] : []
@@ -71,7 +73,7 @@ export const UserBubble = memo(function UserBubble({ message }: { message: PigUs
                   type="button"
                   variant="ghost"
                   className="block h-auto rounded-md p-0 hover:bg-transparent"
-                  aria-label="预览图片"
+                  aria-label={t('composer.previewImage')}
                   onClick={() => setPreview(src)}
                 >
                   <img
@@ -109,7 +111,7 @@ export const UserBubble = memo(function UserBubble({ message }: { message: PigUs
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 text-xs font-medium">
                         <FileText data-icon="inline-start" />
-                        <span>Pasted text</span>
+                        <span>{t('composer.pastedText')}</span>
                       </span>
                       <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
                         {attachment.text}

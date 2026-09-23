@@ -1,16 +1,19 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { pigPath } from './pig-dir'
-import type { Appearance, PaletteId, SendShortcut, ThemePrefs } from '../shared/api'
+import { parseLocaleSetting } from '../shared/i18n'
+import type { Appearance, LocaleSetting, PaletteId, SendShortcut, ThemePrefs } from '../shared/api'
 
 export type { Appearance, PaletteId, SendShortcut } from '../shared/api'
 
 export interface PigSettings extends ThemePrefs {
   sendShortcut: SendShortcut
+  locale: LocaleSetting
 }
 
 const defaults: PigSettings = {
   sendShortcut: 'enter',
+  locale: 'system',
   appearance: 'system',
   lightTheme: 'pig',
   darkTheme: 'pig'
@@ -35,6 +38,7 @@ function parsePalette(value: unknown): PaletteId {
 function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
   return {
     sendShortcut: parseShortcut(data?.sendShortcut),
+    locale: parseLocaleSetting(data?.locale),
     appearance: parseAppearance(data?.appearance),
     lightTheme: parsePalette(data?.lightTheme),
     darkTheme: parsePalette(data?.darkTheme)

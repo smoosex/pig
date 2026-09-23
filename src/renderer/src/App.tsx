@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { FolderPlus, MessageSquarePlus, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
+import { useT } from './hooks/useT'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
 import { useSessionWindows } from './hooks/useSessionWindows'
@@ -53,6 +54,7 @@ function HighlighterWarmup() {
 }
 
 function SidebarToggle({ onClick }: { onClick: () => void }) {
+  const t = useT()
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -61,19 +63,20 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
           size="icon-sm"
           className="no-drag translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
           onClick={onClick}
-          aria-label="左侧边栏"
+          aria-label={t('app.sidebarLeft')}
         >
           <PanelLeft />
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        左·侧边栏 <Kbd className="bg-transparent!">⌘ E</Kbd>
+        {t('app.sidebarLeft')} <Kbd className="bg-transparent!">⌘ E</Kbd>
       </TooltipContent>
     </Tooltip>
   )
 }
 
 export default function App() {
+  const t = useT()
   const initializeProjectWorkspaces = useSessionsStore((s) => s.initializeProjectWorkspaces)
   const acquireProjectDraft = useSessionsStore((s) => s.acquireProjectDraft)
   const releaseProjectDraft = useSessionsStore((s) => s.releaseProjectDraft)
@@ -187,7 +190,7 @@ export default function App() {
                   variant="ghost"
                   size="icon-sm"
                   className="no-drag mr-3 translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
-                  aria-label="右侧边栏"
+                  aria-label={t('app.sidebarRight')}
                   aria-pressed={reviewOpen}
                   onClick={() => setReviewOpen(!reviewOpen)}
                 >
@@ -195,7 +198,7 @@ export default function App() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                右·侧边栏 <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
+                {t('app.sidebarRight')} <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -215,7 +218,7 @@ export default function App() {
                   <ChangesView cwd={diffTab.cwd} />
                 ) : fileTab?.path ? (
                   <Suspense
-                    fallback={<p className="px-3 py-2 text-xs text-muted-foreground">正在打开文件…</p>}
+                    fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
                   >
                     <FileView cwd={fileTab.cwd} path={fileTab.path} />
                   </Suspense>
@@ -233,14 +236,14 @@ export default function App() {
                   <Empty className="gap-4">
                     <EmptyDescription>
                       {restoreError
-                        ? `恢复已打开会话失败：${restoreError}`
+                        ? t('app.restoreFailed', { error: restoreError })
                         : activeTab?.loadState === 'opening'
-                        ? '正在加载会话'
+                        ? t('app.loadingSession')
                         : activeTab?.loadState === 'error'
-                          ? activeTab.loadError || '会话加载失败'
+                          ? activeTab.loadError || t('app.loadFailed')
                           : currentProjectCwd
-                            ? '从对话历史打开，或在当前分支中新建会话'
-                            : '从左侧选择，或打开项目、开始对话'}
+                            ? t('app.emptyInProject')
+                            : t('app.emptyNoProject')}
                     </EmptyDescription>
                     {!currentProjectCwd && !activeTab ? (
                       <div className="flex items-center gap-2">
@@ -251,16 +254,16 @@ export default function App() {
                             onClick={() => void initializeProjectWorkspaces()}
                           >
                             <RefreshCw />
-                            重试恢复
+                            {t('app.retryRestore')}
                           </Button>
                         ) : null}
                         <Button variant="outline" size="sm" onClick={() => void openProject()}>
                           <FolderPlus />
-                          打开项目
+                          {t('app.openProject')}
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => void newChat()}>
                           <MessageSquarePlus />
-                          新对话
+                          {t('app.newChat')}
                         </Button>
                       </div>
                     ) : null}

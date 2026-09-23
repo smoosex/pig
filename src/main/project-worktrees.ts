@@ -5,6 +5,7 @@ import { pigPath } from './pig-dir'
 import { listProject } from './pi/session-loader'
 import { isGitProject, WorktreeService } from './worktrees'
 import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta, WorktreeGroup } from '../shared/api'
+import { t } from './i18n'
 
 export type { WorktreeGroup } from '../shared/api'
 
@@ -23,13 +24,13 @@ export const worktrees = new WorktreeService(pigPath('worktrees'), (projectCwd) 
 export async function requireOpenedProject(cwd: string): Promise<string> {
   if (typeof cwd !== 'string' || !cwd) throw new Error('Project cwd is required')
   const path = resolve(cwd)
-  if (!(await listOpenedCwds()).includes(path)) throw new Error('只能操作已打开的项目')
+  if (!(await listOpenedCwds()).includes(path)) throw new Error(t('error.projectNotOpen'))
   return path
 }
 
 export async function loadWorktreeProject(cwd: string): Promise<WorktreeProject> {
   const base = await listProject(cwd)
-  if (!base) throw new Error('项目不存在')
+  if (!base) throw new Error(t('error.projectMissing'))
   const hasGit = await isGitProject(cwd)
   try {
     const branches = await worktrees.discover(cwd)
@@ -74,7 +75,7 @@ export async function loadWorktreeSessions(projectCwd: string, cwd: string): Pro
   const target = resolve(cwd)
   const topology = await worktrees.discover(project)
   if (!topology.some((worktree) => worktree.cwd === target)) {
-    throw new Error('Worktree 不属于已打开项目')
+    throw new Error(t('error.worktreeNotOpen'))
   }
   return (await listProject(target))?.sessions ?? []
 }

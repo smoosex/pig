@@ -95,6 +95,9 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
       getAgentDir: () => join(root, 'agent')
     }))
 
+    const { applyLocaleSetting } = await import('../src/main/i18n')
+    // Pig's own errors come from the dictionary: pin the wording these tests spell out.
+    applyLocaleSetting('zh-CN')
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
     const win = {} as Parameters<typeof sessions.openSession>[1]
@@ -222,6 +225,9 @@ async function reproduceReopen(): Promise<void> {
       getAgentDir: () => join(root, 'agent')
     }))
 
+    const { applyLocaleSetting } = await import('../src/main/i18n')
+    // Pig's own errors come from the dictionary: pin the wording these tests spell out.
+    applyLocaleSetting('zh-CN')
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
     const win = {} as Parameters<typeof sessions.openSession>[1]

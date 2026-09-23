@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
+import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { Button } from '../ui/button'
 import { ScrollArea } from '../ui/scroll-area'
@@ -10,16 +11,22 @@ import { ProvidersPane } from './ProvidersPane'
 const sections = [
   {
     id: 'general',
-    title: '通用',
-    description: '核心行为和快捷键',
+    title: 'settings.sectionGeneral',
+    description: 'settings.sectionGeneralDescription',
     icon: Settings2,
     component: GeneralPane
   },
-  { id: 'theme', title: '主题', description: '外观和配色', icon: Palette, component: ThemePane },
+  {
+    id: 'theme',
+    title: 'settings.sectionTheme',
+    description: 'settings.sectionThemeDescription',
+    icon: Palette,
+    component: ThemePane
+  },
   {
     id: 'providers',
-    title: '供应商',
-    description: '登录订阅账号，或保存 API 密钥',
+    title: 'settings.sectionProviders',
+    description: 'settings.sectionProvidersDescription',
     icon: KeyRound,
     component: ProvidersPane
   }
@@ -28,6 +35,7 @@ const sections = [
 type SettingsSection = (typeof sections)[number]['id']
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
+  const t = useT()
   const [section, setSection] = useState<SettingsSection>('general')
   const load = useSettingsStore((s) => s.load)
   const error = useSettingsStore((s) => s.error)
@@ -60,7 +68,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2 py-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
             <ChevronLeft data-icon="inline-start" />
-            返回
+            {t('settings.back')}
           </Button>
           <Button type="button" variant="outline" size="xs" onClick={onClose}>
             esc
@@ -75,7 +83,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             onClick={() => setSection(id)}
           >
             <SectionIcon data-icon="inline-start" />
-            {title}
+            {t(title)}
           </Button>
         ))}
       </nav>
@@ -85,8 +93,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             <div className="flex items-start gap-2">
               <Icon className="mt-0.5" />
               <div>
-                <h1 className="text-lg font-medium">{currentSection.title}</h1>
-                <p className="text-sm text-muted-foreground">{currentSection.description}</p>
+                <h1 className="text-lg font-medium">{t(currentSection.title)}</h1>
+                <p className="text-sm text-muted-foreground">{t(currentSection.description)}</p>
               </div>
             </div>
             {error ? (

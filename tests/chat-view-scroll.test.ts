@@ -14,6 +14,9 @@ async function runFixture(name: string): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const { act, createElement: h, useSyncExternalStore } = await import('react')
   const { createRoot } = await import('react-dom/client')
+  const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { mock } = await import('bun:test')
 
   const frames = new Map<number, FrameRequestCallback>()

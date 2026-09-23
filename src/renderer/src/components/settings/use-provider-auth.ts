@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { t } from '../../lib/i18n'
 import {
   api,
   type ProviderAuthType,
@@ -162,10 +163,11 @@ function notifyText(event: SettingsAuthNotify): string | null {
   if (event.type === 'info') return event.message
   if (event.type === 'auth_url') {
     return event.instructions
-      ? `已打开浏览器：${event.url}\n${event.instructions}`
-      : `已打开浏览器：${event.url}`
+      ? `${t('providers.browserOpened', { url: event.url })}\n${event.instructions}`
+      : t('providers.browserOpened', { url: event.url })
   }
-  if (event.type === 'device_code') return `在 ${event.verificationUri} 输入代码 ${event.userCode}`
+  if (event.type === 'device_code')
+    return t('providers.deviceCode', { uri: event.verificationUri, code: event.userCode })
   if (event.type === 'progress') return event.message
   return null
 }

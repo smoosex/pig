@@ -2,6 +2,7 @@ import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
+import { t } from '../i18n'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
@@ -10,7 +11,6 @@ const PREFIX_BYTES = 64 * 1024
 const NAME_READ_BYTES = 4 * 1024 * 1024
 const NAME_FLUSH_MS = 50
 const SCAN_CONCURRENCY = 32
-const IMAGE_PREVIEW = '图片'
 
 function sessionsRoot(): string {
   const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
@@ -148,10 +148,15 @@ function parseEntry(line: string): ScanEntry | null {
   }
 }
 
-function previewText(content: unknown): string {
+/**
+ * The row's title falls back to the first user message with text. Images on their own are a fact
+ * rather than copy, so they are reported as a flag and the renderer picks the word: a scanned
+ * placeholder would freeze in whichever language happened to be active when the listing ran.
+ */
+function previewText(content: unknown): { text: string; image: boolean } {
   const text = contentText(content).trim()
-  if (text) return text.slice(0, 500)
-  return hasImage(content) ? IMAGE_PREVIEW : ''
+  if (text) return { text: text.slice(0, 500), image: false }
+  return { text: '', image: hasImage(content) }
 }
 
 type NameScan = { sessionId: string; path: string; size: number; dropped?: boolean }
@@ -265,6 +270,7 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
     let created = st.birthtime.toISOString()
     let name: string | undefined
     let firstMessage = ''
+    let firstMessageIsImage = false
 
     for (const line of lines) {
       if (!line.trim()) continue
@@ -285,7 +291,11 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
       }
       if (entry.type !== 'message') continue
       if (entry.message?.role !== 'user') continue
-      if (!firstMessage) firstMessage = previewText(entry.message.content)
+      if (!firstMessage) {
+        const preview = previewText(entry.message.content)
+        firstMessage = preview.text
+        firstMessageIsImage = preview.image
+      }
     }
 
     if (!id) return null
@@ -299,7 +309,8 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
       created,
       modified: st.mtime.toISOString(),
       size: st.size,
-      firstMessage
+      firstMessage,
+      firstMessageIsImage: firstMessageIsImage || undefined
     }
   } catch {
     return null
@@ -326,7 +337,7 @@ function projectGroup(cwd: string, sessions: SessionMeta[]): ProjectGroup {
   const resolved = cwd === '(unknown)' ? cwd : resolve(cwd)
   return {
     cwd: resolved,
-    name: resolved === '(unknown)' ? '未知项目' : basename(resolved) || resolved,
+    name: resolved === '(unknown)' ? t('sessions.unknownProject') : basename(resolved) || resolved,
     sessions: [...sessions].sort((a, b) => b.modified.localeCompare(a.modified))
   }
 }

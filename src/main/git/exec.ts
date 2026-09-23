@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { t } from '../i18n'
 
 const exec = promisify(execFile)
 
@@ -74,7 +75,7 @@ export async function execGit(cwd: string, args: string[], options: GitExecOptio
       signal?: NodeJS.Signals | null
     }
     const message = cause.code === 'ENOENT'
-      ? '未找到 Git，请先安装 Git'
+      ? t('error.gitMissing')
       : cause.stderr?.trim() || cause.message
     throw new GitExecError(message, cause)
   }

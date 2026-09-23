@@ -7,6 +7,7 @@ import { useRef, useState } from 'react'
 import { useSessionsStore } from '../stores/sessions'
 import { Input } from './ui/input'
 import { cn } from '../lib/utils'
+import { useT } from '../hooks/useT'
 
 export function useSessionRename(sessionId: string, path?: string) {
   const renameSession = useSessionsStore((state) => state.renameSession)
@@ -37,7 +38,7 @@ export function SessionRenameField({
   onCommit,
   onCancel,
   className,
-  ariaLabel = '会话名称'
+  ariaLabel
 }: {
   value: string
   onCommit: (name: string) => void
@@ -47,6 +48,7 @@ export function SessionRenameField({
 }) {
   const [draft, setDraft] = useState(value)
   const done = useRef(false)
+  const t = useT()
 
   const finish = (commit: boolean) => {
     if (done.current) return
@@ -61,7 +63,7 @@ export function SessionRenameField({
       onClick={(event) => event.stopPropagation()}
       value={draft}
       autoFocus
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? t('sessions.nameLabel')}
       onFocus={(event) => event.currentTarget.select()}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => finish(true)}

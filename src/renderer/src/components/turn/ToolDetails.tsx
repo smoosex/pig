@@ -7,6 +7,7 @@ import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Separator } from '../ui/separator'
 import { Chevron, disclosureButton, hideScroll, VerbLabel } from './ProcessChrome'
+import { useT } from '../../hooks/useT'
 import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
 
 const EditDiffBody = lazy(() => import('../diff/EditDiffBody'))
@@ -25,11 +26,12 @@ function CodePanel({
   notice?: string
   fileListing?: boolean
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const copyTimer = useRef<number>(undefined)
   const [copied, setCopied] = useState(false)
   const html = useHighlightHtml(code, langFromPath(path), ref)
-  const filename = path.split(/[/\\]/).pop() || path || '文件'
+  const filename = path.split(/[/\\]/).pop() || path || t('common.file')
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), [])
 
@@ -51,11 +53,11 @@ function CodePanel({
             variant="ghost"
             size="xs"
             className="-mr-1 text-muted-foreground hover:text-foreground"
-            aria-label={copied ? '已复制' : '复制代码'}
+            aria-label={copied ? t('common.copied') : t('tool.copyCode')}
             onClick={() => void copy()}
           >
             {copied ? <Check /> : <Copy />}
-            {copied ? '已复制' : '复制'}
+            {copied ? t('common.copied') : t('common.copy')}
           </Button>
         </div>
       ) : null}
@@ -102,6 +104,7 @@ function ToolPanel({ input, output }: { input?: string; output?: string }) {
 }
 
 export function ToolRow({ step }: { step: ToolStep }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const failed = !!step.result?.isError
   const edits = useMemo(() => (step.name === 'edit' ? editList(step.args) : []), [step])
@@ -112,7 +115,7 @@ export function ToolRow({ step }: { step: ToolStep }) {
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <VerbLabel text={toolStepLabel(step)} failed={failed} />
+          <VerbLabel text={toolStepLabel(step, t)} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
@@ -122,7 +125,7 @@ export function ToolRow({ step }: { step: ToolStep }) {
         ) : writeCode && !failed ? (
           <CodePanel path={path} code={writeCode} fileListing />
         ) : edits.length > 0 ? (
-          <Suspense fallback={<div className="px-3 py-2 text-xs text-muted-foreground">正在渲染…</div>}>
+          <Suspense fallback={<div className="px-3 py-2 text-xs text-muted-foreground">{t('tool.rendering')}</div>}>
             <EditDiffBody path={path} edits={edits} />
           </Suspense>
         ) : (
@@ -134,13 +137,14 @@ export function ToolRow({ step }: { step: ToolStep }) {
 }
 
 export function BashRow({ message }: { message: BashExecutionMessage }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <VerbLabel text={`执行 ${message.command}`} failed={failed} />
+          <VerbLabel text={t('tool.run', { command: message.command })} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
@@ -152,6 +156,7 @@ export function BashRow({ message }: { message: BashExecutionMessage }) {
 }
 
 export function ToolCluster({ steps }: { steps: ToolStep[] }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   if (steps.length === 1) return <ToolRow step={steps[0]} />
   const failed = steps.some((step) => !!step.result?.isError)
@@ -159,7 +164,7 @@ export function ToolCluster({ steps }: { steps: ToolStep[] }) {
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <VerbLabel text={toolClusterLabel(steps)} failed={failed} />
+          <VerbLabel text={toolClusterLabel(steps, t)} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
@@ -175,6 +180,7 @@ export function ToolCluster({ steps }: { steps: ToolStep[] }) {
 }
 
 export function BashCluster({ messages }: { messages: BashExecutionMessage[] }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   if (messages.length === 1) return <BashRow message={messages[0]} />
   const failed = messages.some((message) => message.cancelled || (message.exitCode ?? 0) !== 0)
@@ -182,7 +188,7 @@ export function BashCluster({ messages }: { messages: BashExecutionMessage[] }) 
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <VerbLabel text={`执行 ${messages.length} 个命令`} failed={failed} />
+          <VerbLabel text={t('tool.runMany', { n: messages.length })} failed={failed} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, GitBranch, PenLine } from 'lucide-react'
+import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
+import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import {
@@ -27,12 +29,12 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 const toolbarBtn =
   "h-6 rounded-full px-2 text-xs font-light [&_svg:not([class*='size-'])]:size-3"
 
-const treeViews: { value: SessionTreeView; label: string }[] = [
-  { value: 'default', label: '默认' },
-  { value: 'no-tools', label: '无工具' },
-  { value: 'user-only', label: '用户' },
-  { value: 'labeled-only', label: '标注' },
-  { value: 'all', label: '全部' }
+const treeViews: { value: SessionTreeView; labelKey: MessageKey }[] = [
+  { value: 'default', labelKey: 'tree.viewDefault' },
+  { value: 'no-tools', labelKey: 'tree.viewNoTools' },
+  { value: 'user-only', labelKey: 'tree.viewUser' },
+  { value: 'labeled-only', labelKey: 'tree.viewLabeled' },
+  { value: 'all', labelKey: 'tree.viewAll' }
 ]
 
 // The tree list mounts only the rows its window can show. The height is fixed so the scroll math
@@ -92,6 +94,7 @@ function isFoldedAway(
 }
 
 export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
+  const t = useT()
   const activeSessionId = useSessionsStore(selectActiveSessionId)
   const activePath = useSessionsStore((state) => {
     const tab = state.openTabs.find((item) => item.id === state.activeTabId)
@@ -258,9 +261,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       }}
     >
       <DialogTrigger asChild>
-        <InputGroupButton className={toolbarBtn} disabled={disabled} aria-label="会话树">
+        <InputGroupButton className={toolbarBtn} disabled={disabled} aria-label={t('tree.buttonAria')}>
           <GitBranch data-icon="inline-start" />
-          树
+          {t('tree.button')}
         </InputGroupButton>
       </DialogTrigger>
       <DialogContent
@@ -273,8 +276,8 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
         }}
       >
         <DialogHeader>
-          <DialogTitle>Session Tree</DialogTitle>
-          <DialogDescription>选择任意节点，从那里继续对话。</DialogDescription>
+          <DialogTitle>{t('tree.buttonAria')}</DialogTitle>
+          <DialogDescription>{t('tree.description')}</DialogDescription>
         </DialogHeader>
         <SmoothHoverHighlight activeKey={view}>
           <ToggleGroup
@@ -289,7 +292,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
               setFolded(new Set())
               ensureView(mode)
             }}
-            aria-label="会话树视角"
+            aria-label={t('tree.viewAria')}
             className="justify-start"
           >
             {treeViews.map((item) => (
@@ -300,14 +303,14 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                 data-hover-highlight-active={item.value === view ? '' : undefined}
                 className="relative !bg-transparent data-[state=on]:text-accent-foreground"
               >
-                {item.label}
+                {t(item.labelKey)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
         </SmoothHoverHighlight>
         <Input
           value={query}
-          placeholder="搜索节点"
+          placeholder={t('tree.search')}
           onChange={(event) => setQuery(event.target.value)}
         />
         <div
@@ -318,9 +321,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           {error ? (
             <div className="py-8 text-center text-destructive">{error}</div>
           ) : !trees?.[view] ? (
-            <div className="py-8 text-center text-muted-foreground">加载中…</div>
+            <div className="py-8 text-center text-muted-foreground">{t('tree.loading')}</div>
           ) : visible.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">没有节点</div>
+            <div className="py-8 text-center text-muted-foreground">{t('tree.empty')}</div>
           ) : (
             <>
               <div style={{ height: first * ROW_H }} />
@@ -344,7 +347,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             variant="ghost"
                             size="icon-xs"
                             className="shrink-0"
-                            aria-label={collapsed ? '展开' : '折叠'}
+                            aria-label={collapsed ? t('tree.expand') : t('tree.collapse')}
                             onClick={() => {
                               setFolded((current) => {
                                 const next = new Set(current)
@@ -363,7 +366,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             onCommit={(label) => commitLabel(row.id, label)}
                             onCancel={() => setLabelingId(null)}
                             className="mx-1 flex-1"
-                            ariaLabel="标注"
+                            ariaLabel={t('tree.label')}
                           />
                         ) : (
                           <Button
@@ -398,7 +401,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                     <ContextMenuContent>
                       <ContextMenuItem onSelect={() => startLabel(row.id)}>
                         <PenLine data-icon="inline-start" />
-                        标注
+                        {t('tree.label')}
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>

@@ -124,6 +124,7 @@ const api: SessionApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
+  setLocaleSetting: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
   setTheme: (patch: unknown) => ipcRenderer.invoke('settings:set-theme', patch),
   setDefaultModelSetting: (provider: string, id: string) =>
     ipcRenderer.invoke('settings:set-default-model', provider, id),

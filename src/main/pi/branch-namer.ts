@@ -1,13 +1,14 @@
 import { utilityProcess } from 'electron'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { t } from '../i18n'
 
 export function runBranchNamer(
   text: string,
   model: { provider: string; id: string } | null,
   signal: AbortSignal
 ): Promise<string> {
-  if (!model) return Promise.reject(new Error('请先在设置中配置默认模型'))
+  if (!model) return Promise.reject(new Error(t('naming.skipped')))
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
     const child = utilityProcess.fork(fileURLToPath(new URL('./branch-namer-worker.js', import.meta.url)), [], {
@@ -23,8 +24,8 @@ export function runBranchNamer(
       if (error) reject(error)
       else resolve(branch!)
     }
-    const abort = () => finish(new Error('分支命名已取消'))
-    const timer = setTimeout(() => finish(new Error('分支命名超时，保留 UUID 分支')), 120_000)
+    const abort = () => finish(new Error(t('naming.cancelled')))
+    const timer = setTimeout(() => finish(new Error(t('naming.timeout'))), 120_000)
     signal.addEventListener('abort', abort, { once: true })
     child.stdout?.resume()
     child.stderr?.resume()
@@ -33,9 +34,9 @@ export function runBranchNamer(
     })
     child.once('message', (message: { branch?: string; error?: string }) => {
       if (typeof message?.branch === 'string') finish(undefined, message.branch)
-      else finish(new Error(message?.error || '临时 Pi 进程返回无效结果'))
+      else finish(new Error(message?.error || t('naming.invalidResult')))
     })
-    child.once('exit', (code) => finish(new Error(`临时 Pi 进程退出 (${code})`)))
+    child.once('exit', (code) => finish(new Error(t('naming.processExit', { code: code ?? '' }))))
     if (signal.aborted) abort()
   })
 }

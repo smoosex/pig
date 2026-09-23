@@ -9,12 +9,14 @@ import {
 } from '../ui/context-menu'
 import { PenLine } from 'lucide-react'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
+import { useT } from '../../hooks/useT'
 import { TreeNav } from '../spectrumui/tree-nav'
 import { SquaresSpinner } from '../RunningSpinners'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 
 export function ChatList() {
+  const t = useT()
   const chats = useSessionsStore((state) => state.chats)
   const activeSessionId = useSessionsStore(selectActiveSessionId)
   const rows = chats.flatMap((chat) => {
@@ -23,7 +25,7 @@ export function ChatList() {
   })
 
   if (rows.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">点击 + 开始对话</p>
+    return <p className="px-2 py-1 text-xs text-muted-foreground">{t('sidebar.chatsEmpty')}</p>
   }
 
   return (
@@ -53,6 +55,7 @@ function ChatRow({
 }) {
   const openExisting = useSessionsStore((state) => state.openExisting)
   const deleteChat = useSessionsStore((state) => state.deleteChat)
+  const t = useT()
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const { pending, error, runAction } = useProjectAction()
   const rename = useSessionRename(session.id, session.path)
@@ -89,7 +92,7 @@ function ChatRow({
               <SquaresSpinner />
             ) : (
               <SessionDeleteButton
-                ariaLabel={`删除对话 ${title}`}
+                ariaLabel={t('sessions.deleteChat', { title })}
                 disabled={pending !== null}
                 onConfirm={() => void runAction('delete', () => deleteChat(cwd))}
               />
@@ -99,7 +102,7 @@ function ChatRow({
         <ContextMenuContent>
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
-            重命名
+            {t('common.rename')}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

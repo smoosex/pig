@@ -19,6 +19,9 @@ async function runFixture(name: string): Promise<void> {
       })
   }))
   const { createRoot } = await import('react-dom/client')
+  const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+  // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { TurnView } = await import('../src/renderer/src/components/TurnView')
   const style = document.createElement('style')
   style.textContent = `

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
+import { useT } from '../hooks/useT'
 import { relativeTime } from '../lib/relative-time'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
@@ -10,6 +11,7 @@ import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { SessionSizeDots } from './SessionSizeDots'
 
 export function ProjectSessionHome({ cwd }: { cwd: string }) {
+  const t = useT()
   const projects = useSessionsStore((state) => state.projects)
   const openExisting = useSessionsStore((state) => state.openExisting)
   const draftError = useSessionsStore((state) => state.draftSessionErrorByCwd[cwd])
@@ -45,7 +47,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
       <div className={`${chatColumn} flex flex-col gap-2 pt-4 pb-8`}>
         {sessions.length > 0 ? (
           <div className="flex items-center gap-3">
-            <span className="shrink-0 text-xs text-muted-foreground">最近</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t('sessions.recent')}</span>
             <Separator className="min-w-0 flex-1" />
           </div>
         ) : null}
@@ -70,7 +72,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
               <span className="min-w-0 flex-1 truncate text-left">{sessionTitle(session)}</span>
               <span className="flex shrink-0 items-center gap-2">
                 <span className="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
-                  {relativeTime(session.modified)}
+                  {relativeTime(session.modified, t)}
                 </span>
                 <SessionSizeDots size={session.size} />
               </span>

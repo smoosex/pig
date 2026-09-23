@@ -1,5 +1,6 @@
 import { useState, type ComponentProps } from 'react'
 import { History } from 'lucide-react'
+import { useT } from '../hooks/useT'
 import { relativeTime } from '../lib/relative-time'
 import { cn } from '../lib/utils'
 import { useSessionsStore, selectActiveSessionId, type SessionMeta } from '../stores/sessions'
@@ -33,6 +34,7 @@ export function SessionHistoryPopover({
   const openExisting = useSessionsStore((state) => state.openExisting)
   const deleteSession = useSessionsStore((state) => state.deleteSession)
   const activeId = useSessionsStore((state) => selectActiveSessionId(state))
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export function SessionHistoryPopover({
           variant="ghost"
           size={size}
           className={cn('shrink-0 text-muted-foreground', triggerClassName)}
-          aria-label="对话历史"
+          aria-label={t('sessions.history')}
         >
           <History />
         </Button>
@@ -76,7 +78,7 @@ export function SessionHistoryPopover({
         <div className="min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <SmoothHoverHighlight activeKey={activeId} className="flex flex-col gap-0.5">
             {sessions.length === 0 ? (
-              <p className="px-2 py-4 text-center text-xs text-muted-foreground">暂无历史会话</p>
+              <p className="px-2 py-4 text-center text-xs text-muted-foreground">{t('sessions.historyEmpty')}</p>
             ) : sessions.map((session) => (
               <HistoryRow
                 key={session.id}
@@ -109,6 +111,7 @@ function HistoryRow({
   onDelete: () => void
 }) {
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
+  const t = useT()
   const title = sessionTitle(session)
   return (
     <div
@@ -130,7 +133,7 @@ function HistoryRow({
             className="w-14 shrink-0 text-right text-[0.7rem] text-muted-foreground tabular-nums"
             title={new Date(session.modified).toLocaleString()}
           >
-            {relativeTime(session.modified)}
+            {relativeTime(session.modified, t)}
           </span>
           <SessionSizeDots
             size={session.size}
@@ -147,7 +150,7 @@ function HistoryRow({
           <SquaresSpinner />
         ) : (
           <SessionDeleteButton
-            ariaLabel={`删除会话 ${title}`}
+            ariaLabel={t('sessions.deleteSession', { title })}
             disabled={pending !== null}
             onConfirm={onDelete}
           />

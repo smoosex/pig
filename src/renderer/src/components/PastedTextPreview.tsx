@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { formatPastedTextSize } from '../../../shared/pasted-text'
+import { useT } from '../hooks/useT'
 import { Button } from './ui/button'
 import {
   Popover,
@@ -19,6 +20,7 @@ export function PastedTextPreview({
   byteSize: number
   children: ReactElement
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -44,7 +46,7 @@ export function PastedTextPreview({
         className="max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] w-[min(32rem,calc(100vw-2rem))] overflow-hidden rounded-xl p-3"
       >
         <PopoverHeader className="flex-row items-center justify-between gap-3">
-          <PopoverTitle className="text-sm">Pasted text</PopoverTitle>
+          <PopoverTitle className="text-sm">{t('composer.pastedText')}</PopoverTitle>
           <div className="flex shrink-0 items-center gap-1">
             <span className="text-xs text-muted-foreground">
               UTF-8 {formatPastedTextSize(byteSize)}
@@ -54,8 +56,8 @@ export function PastedTextPreview({
               variant="ghost"
               size="icon-xs"
               className="shrink-0"
-              aria-label={copied ? '已复制' : '复制全文'}
-              title={copied ? '已复制' : '复制全文'}
+              aria-label={copied ? t('common.copied') : t('common.copyAll')}
+              title={copied ? t('common.copied') : t('common.copyAll')}
               onClick={() => void copy()}
             >
               {copied ? <Check /> : <Copy />}

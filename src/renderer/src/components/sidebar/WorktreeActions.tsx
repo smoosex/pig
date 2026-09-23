@@ -5,6 +5,7 @@ import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { useT } from '../../hooks/useT'
 import type { RunProjectAction } from './project-action'
 
 export function CreateWorktreeButton({
@@ -23,7 +24,8 @@ export function CreateWorktreeButton({
   onCreate: (initGit: boolean) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState<{ hasGit: boolean } | null>(null)
-  const createLabel = hasGit ? '创建 worktree' : '初始化 Git'
+  const t = useT()
+  const createLabel = hasGit ? t('worktree.create') : t('worktree.initGit')
 
   const prepareCreation = async () => {
     const info = await api.worktreeCreateInfo(projectCwd)
@@ -65,16 +67,13 @@ export function CreateWorktreeButton({
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
-              {prompt?.hasGit ? '此仓库尚无提交，创建空 Worktree？' : '此项目没有 Git，先初始化？'}
+              {prompt?.hasGit ? t('worktree.emptyPrompt') : t('worktree.initPrompt')}
             </DialogTitle>
-            <DialogDescription>
-              不会提交项目文件。由于没有初始提交，将创建空的孤立分支；原目录中的未提交文件不会复制到
-              Worktree。
-            </DialogDescription>
+            <DialogDescription>{t('worktree.emptyNote')}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setPrompt(null)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               disabled={disabled}
@@ -84,7 +83,7 @@ export function CreateWorktreeButton({
                 void runAction('create-worktree', () => onCreate(initGit))
               }}
             >
-              {prompt?.hasGit ? '创建空 Worktree' : '初始化并创建'}
+              {prompt?.hasGit ? t('worktree.createEmpty') : t('worktree.initAndCreate')}
             </Button>
           </div>
         </DialogContent>
@@ -111,6 +110,7 @@ export function WorktreeDeleteButton({
   onConfirm: (force: boolean) => Promise<void>
 }) {
   const [prompt, setPrompt] = useState<string[] | null>(null)
+  const t = useT()
   const risks = prompt ?? []
   const forced = risks.length > 0
   const confirm = async (force: boolean) => {
@@ -122,9 +122,9 @@ export function WorktreeDeleteButton({
     const info = await api.worktreeDeletionInfo(projectCwd, cwd)
     setPrompt(
       [
-        info.dirty ? '包含未提交、未跟踪或被忽略的文件。' : null,
-        info.unmerged ? '分支含有尚未合入原项目的提交。' : null,
-        info.missing ? '工作目录已丢失，将清理剩余注册和会话。' : null
+        info.dirty ? t('worktree.riskDirty') : null,
+        info.unmerged ? t('worktree.riskUnmerged') : null,
+        info.missing ? t('worktree.riskMissing') : null
       ].filter((item): item is string => item !== null)
     )
   }
@@ -135,7 +135,7 @@ export function WorktreeDeleteButton({
         variant="ghost"
         size="icon-xs"
         className="pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:text-destructive !bg-transparent"
-        aria-label={`删除 ${branch}`}
+        aria-label={t('worktree.deleteAria', { branch })}
         disabled={disabled}
         aria-busy={busy}
         onClick={() => void runAction(`delete:${cwd}`, prepareDeletion)}
@@ -150,26 +150,27 @@ export function WorktreeDeleteButton({
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle className="text-sm">删除分支</DialogTitle>
+            <DialogTitle className="text-sm">{t('worktree.deleteTitle')}</DialogTitle>
             <DialogDescription className="text-xs">
-              将停止该目录的会话，删除工作目录、对应 Git 分支和 Pi 会话文件，无法撤销。
+              {t('worktree.deleteBody')}
               {forced ? (
                 <>
-                  {risks.join('')}这些内容和对应会话将被永久删除。
+                  {risks.join(t('common.sentenceSeparator'))}
+                  {t('worktree.deletePermanent')}
                 </>
               ) : null}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setPrompt(null)}>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
               disabled={disabled}
               onClick={() => void runAction(`delete:${cwd}`, () => confirm(forced))}
             >
-              {forced ? '仍然删除' : '删除'}
+              {forced ? t('worktree.forceDelete') : t('common.delete')}
             </Button>
           </div>
         </DialogContent>

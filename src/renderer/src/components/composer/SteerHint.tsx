@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { cn } from '../../lib/utils'
+import { useT } from '../../hooks/useT'
 
 export function SteerHint({ visible }: { visible: boolean }) {
+  const t = useT()
   const [mounted, setMounted] = useState(false)
   const [leaving, setLeaving] = useState(false)
 
@@ -26,7 +28,7 @@ export function SteerHint({ visible }: { visible: boolean }) {
       'pointer-events-none absolute right-3 bottom-full z-0 rounded-t-md bg-primary px-2 py-0.5 text-xs text-primary-foreground shadow-sm',
       leaving ? 'steer-hint-exit' : 'steer-hint-enter'
     )}>
-      Tab 转为引导
+      {t('composer.steerHint')}
     </div>
   )
 }

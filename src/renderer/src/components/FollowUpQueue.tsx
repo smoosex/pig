@@ -4,6 +4,7 @@ import { Clock3, CornerDownRight, Trash2 } from 'lucide-react'
 import { followUpRowsMatch, reconcileFollowUpRows, type FollowUpRow } from '../chat/follow-ups'
 import type { FollowUpAction } from '../ipc/api'
 import { useSessionsStore } from '../stores/sessions'
+import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { ScrollArea } from './ui/scroll-area'
@@ -34,6 +35,7 @@ function QueueRow({
   onAction: (row: FollowUpRow, action: FollowUpAction) => void
   onExitComplete: () => void
 }) {
+  const t = useT()
   const present = useIsPresent()
   const reducedMotion = useReducedMotion()
   const dismissedRows = usePresenceData() as ReadonlySet<string> | undefined
@@ -74,8 +76,8 @@ function QueueRow({
             variant="ghost"
             size="icon-xs"
             className="font-normal"
-            aria-label="删除待发送消息"
-            title="删除"
+            aria-label={t('followUp.deleteAria')}
+            title={t('common.delete')}
             disabled={busy || !present}
             onClick={() => onAction(row, 'dismiss')}
           >
@@ -88,7 +90,7 @@ function QueueRow({
         title={error ?? row.text}
         role={error ? 'alert' : undefined}
       >
-        {error ?? (row.text || '图片')}
+        {error ?? (row.text || t('common.image'))}
       </span>
       <div className="pointer-events-none flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:max-w-full group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:max-w-full group-focus-within:opacity-100 motion-reduce:transition-none">
         <Button
@@ -99,7 +101,7 @@ function QueueRow({
           disabled={busy || !present}
           onClick={() => onAction(row, 'edit')}
         >
-          编辑
+          {t('followUp.edit')}
         </Button>
       </div>
       <Button
@@ -111,7 +113,7 @@ function QueueRow({
         onClick={() => onAction(row, 'steer')}
       >
         <CornerDownRight data-icon="inline-start" />
-        插话
+        {t('followUp.steer')}
       </Button>
     </motion.li>
   )
@@ -132,6 +134,7 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [listHeight, setListHeight] = useState(0)
   const reducedMotion = useReducedMotion()
+  const t = useT()
 
   useLayoutEffect(() => {
     if (busy || followUpRowsMatch(rows, messages)) return
@@ -169,7 +172,7 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
       if (action === 'dismiss') dismissedRows.current.add(row.id)
       removedId.current = row.id
     } catch (reason) {
-      setError({ id: row.id, message: reason instanceof Error ? reason.message : '操作失败，请重试' })
+      setError({ id: row.id, message: reason instanceof Error ? reason.message : t('followUp.failed') })
     } finally {
       actionInFlight.current = false
       setBusy(false)
@@ -195,7 +198,7 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
         transition={{ duration: reducedMotion ? 0 : 0.22, ease: EASE }}
       >
         <ScrollArea layoutScroll className="h-full min-h-0 [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]]:overscroll-contain">
-          <ul ref={listRef} aria-label="待发送消息" className="relative flex flex-col gap-1">
+          <ul ref={listRef} aria-label={t('followUp.list')} className="relative flex flex-col gap-1">
             <AnimatePresence mode="sync" custom={dismissedRows.current}>
               {rows.map((row, index) => (
                 <QueueRow

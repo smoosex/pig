@@ -3,9 +3,11 @@
  * same Pi process items while keeping unfinished work visible.
  */
 import { useEffect, useState } from 'react'
+import type { MessageKey } from '../../../../shared/i18n'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { BashExecutionMessage } from '../../pi/types'
 import { formatElapsed, toolStepLabel, type ProcessItem, type ToolStep } from '../../chat/turns'
+import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -17,6 +19,7 @@ import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ProcessDisclosure, stripThoughtHeading, ThinkingBlock, ThinkingLine } from './ProcessText'
 
 function GroupBody({ items }: { items: ProcessItem[] }) {
+  const t = useT()
   return (
     <div className="flex min-w-0 flex-col">
       {clusterWork(items).map((row, i) => {
@@ -26,7 +29,8 @@ function GroupBody({ items }: { items: ProcessItem[] }) {
         if (row.kind === 'tools') return <ToolCluster key={row.steps[0].id} steps={row.steps} />
         if (row.kind === 'bash') return <BashCluster key={i} messages={row.messages} />
         if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
-        if (row.kind === 'summary') return <ProcessDisclosure key={i} title={row.title} text={row.text} />
+        if (row.kind === 'summary')
+          return <ProcessDisclosure key={i} title={t(row.titleKey)} text={row.text} />
         return null
       })}
     </div>
@@ -34,6 +38,7 @@ function GroupBody({ items }: { items: ProcessItem[] }) {
 }
 
 function ActivityGroup({ items }: { items: ProcessItem[] }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const tools = countTools(items)
   if (tools === 0) {
@@ -44,7 +49,8 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
             return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-          if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+          if (item.kind === 'summary')
+            return <ProcessDisclosure key={i} title={t(item.titleKey)} text={item.text} />
           return null
         })}
       </>
@@ -55,7 +61,9 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={cn(disclosureButton, 'w-full')}>
           <StackedIcons kinds={iconKinds(items)} />
-          <span className="min-w-0 flex-1 truncate text-left">使用了 {tools} 个工具</span>
+          <span className="min-w-0 flex-1 truncate text-left">
+            {t('turn.toolsUsed', { count: tools })}
+          </span>
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
@@ -68,30 +76,35 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
   )
 }
 
-const WAIT_LINES = [
-  '正在加班加点理解你的问题...',
-  '网速被乌龟侵占了，正在寻找兔子...',
-  '问题有点调皮，我先围着它转两圈...',
-  '正在把你的话从空气里捞出来...',
-  '神经元还在排队，马上就到...',
-  '先热热身，灵感正在路上堵车...'
+const WAIT_LINE_KEYS: MessageKey[] = [
+  'turn.placeholder1',
+  'turn.placeholder2',
+  'turn.placeholder3',
+  'turn.placeholder4',
+  'turn.placeholder5',
+  'turn.placeholder6'
 ]
 
 function WaitLine({ streaming }: { streaming: boolean }) {
+  const t = useT()
   const [index, setIndex] = useState(0)
   useEffect(() => {
     if (!streaming) return
     const id = window.setInterval(() => {
       setIndex((current) => {
-        if (WAIT_LINES.length < 2) return current
+        if (WAIT_LINE_KEYS.length < 2) return current
         let next = current
-        while (next === current) next = Math.floor(Math.random() * WAIT_LINES.length)
+        while (next === current) next = Math.floor(Math.random() * WAIT_LINE_KEYS.length)
         return next
       })
     }, 2800)
     return () => window.clearInterval(id)
   }, [streaming])
-  return <span className={cn(streaming && 'shimmer')}>{WAIT_LINES[index] ?? WAIT_LINES[0]}</span>
+  return (
+    <span className={cn(streaming && 'shimmer')}>
+      {t(WAIT_LINE_KEYS[index] ?? WAIT_LINE_KEYS[0])}
+    </span>
+  )
 }
 
 function OutlineThinking({
@@ -108,12 +121,17 @@ function OutlineThinking({
   streaming: boolean
 }) {
   const body = text ? stripThoughtHeading(text) : ''
+  const t = useT()
   const header = (
     <Marker className={statusMarker}>
       {stacked ? <StackedIcons kinds={['thinking']} /> : null}
       <MarkerContent className="flex-1 truncate">
         <span className={cn(current && streaming && 'shimmer')}>
-          {current ? '思考中...' : durationMs > 0 ? `已思考 ${formatElapsed(durationMs)}` : '思考'}
+          {current
+            ? t('turn.thinkingNow')
+            : durationMs > 0
+              ? t('turn.thoughtFor', { duration: formatElapsed(durationMs, t) })
+              : t('turn.thought')}
         </span>
       </MarkerContent>
     </Marker>
@@ -138,27 +156,34 @@ function OutlineThinking({
 }
 
 function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
+  const t = useT()
   return (
     <Marker className={statusMarker}>
       <MarkerContent className="flex min-w-0 flex-1">
-        <VerbLabel text={toolStepLabel(step)} failed={!!step.result?.isError} active={active} />
+        <VerbLabel text={toolStepLabel(step, t)} failed={!!step.result?.isError} active={active} />
       </MarkerContent>
     </Marker>
   )
 }
 
 function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
+  const t = useT()
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
     <Marker className={statusMarker}>
       <MarkerContent className="flex min-w-0 flex-1">
-        <VerbLabel text={`执行 ${message.command}`} failed={failed} active={active && message.exitCode === undefined} />
+        <VerbLabel
+          text={t('tool.run', { command: message.command })}
+          failed={failed}
+          active={active && message.exitCode === undefined}
+        />
       </MarkerContent>
     </Marker>
   )
 }
 
 function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
+  const t = useT()
   if (row.kind === 'thinking') {
     if (last && row.durationMs <= 0) {
       return <OutlineThinking text={row.text} durationMs={0} current streaming={streaming} />
@@ -194,7 +219,7 @@ function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; str
     )
   }
   if (row.kind === 'custom') return <CustomProcess message={row.message} />
-  if (row.kind === 'summary') return <ProcessDisclosure title={row.title} text={row.text} />
+  if (row.kind === 'summary') return <ProcessDisclosure title={t(row.titleKey)} text={row.text} />
   return null
 }
 
@@ -210,6 +235,7 @@ function OutlineBody({ items, active, streaming }: { items: ProcessItem[]; activ
 }
 
 function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
+  const t = useT()
   const tools = countTools(items)
   if (tools === 0) {
     return (
@@ -223,7 +249,8 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
             return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-          if (item.kind === 'summary') return <ProcessDisclosure key={i} title={item.title} text={item.text} />
+          if (item.kind === 'summary')
+            return <ProcessDisclosure key={i} title={t(item.titleKey)} text={item.text} />
           return null
         })}
       </>
@@ -233,7 +260,7 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
     <div className="min-w-0">
       <Marker className={statusMarker}>
         <StackedIcons kinds={iconKinds(items)} />
-        <MarkerContent className="flex-1 truncate">正在使用工具</MarkerContent>
+        <MarkerContent className="flex-1 truncate">{t('turn.usingTool')}</MarkerContent>
       </Marker>
       <Rail>
         <OutlineBody items={items} active={active} streaming={streaming} />
