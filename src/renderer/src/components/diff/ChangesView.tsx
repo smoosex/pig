@@ -17,7 +17,7 @@
  * back.
  */
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, ChevronsDownUp, Columns2, Rows3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Rows3 } from 'lucide-react'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import {
   scopeLabel,
@@ -310,7 +310,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
             setExpanded(cwd, allExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
           }
         >
-          <ChevronsDownUp className={cn(allExpanded && 'rotate-180')} />
+          {allExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
