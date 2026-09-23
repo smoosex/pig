@@ -96,6 +96,7 @@ const api: SessionApi = {
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
   readDirectory: (cwd: string, path: string) => ipcRenderer.invoke('files:read-directory', cwd, path),
+  suggestFiles: (cwd: string, query: string) => ipcRenderer.invoke('files:suggest', cwd, query),
   readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (
     cwd: string,

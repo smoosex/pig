@@ -12,6 +12,7 @@ import { FollowUpQueue } from './FollowUpQueue'
 import { ImagePreview } from './ImagePreview'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
+import { MentionSuggestions } from './composer/MentionSuggestions'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
 import { useComposer } from './composer/useComposer'
@@ -28,7 +29,7 @@ export function Composer({
   workspace?: { project: string; branch: string } | null
 } = {}) {
   const t = useT()
-  const { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
+  const { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
   const appearance = useComposerAppearance()
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -36,10 +37,10 @@ export function Composer({
   return (
     <div className={cn(chatColumn, 'relative isolate shrink-0 pb-3.5')}>
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
-      <Popover open={commands.open} onOpenChange={(open) => { if (!open) commands.dismiss() }}>
+      <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
           <div ref={boxRef} className="relative rounded-2xl shadow-md">
-            <SteerHint visible={isStreaming && hasDraft && !commands.open} />
+            <SteerHint visible={isStreaming && hasDraft && !commands.open && !mentions.open} />
             <div className="relative z-10">
               <BorderBeam size="md" {...appearance} active={focused || isStreaming} className="w-full">
                 <InputGroup
@@ -78,7 +79,8 @@ export function Composer({
             </div>
           </div>
         </PopoverAnchor>
-        <SlashSuggestions commands={commands} anchorRef={boxRef} />
+        {commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
+        {mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
       </Popover>
       {workspace ? (
         <div className="flex min-w-0 items-center gap-5 px-3.5 pt-2 text-xs text-muted-foreground">

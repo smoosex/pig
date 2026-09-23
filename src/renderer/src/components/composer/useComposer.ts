@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
+import { useSessionsStore, selectActiveSessionCwd, selectActiveSessionId } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
 import { useComposerEditor } from './useComposerEditor'
 import { useComposerImages } from './useComposerImages'
+import { useFileMentions } from './useFileMentions'
 import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
 
@@ -26,6 +27,10 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
   })
+  // A draft is its own workspace; a tab reads the workspace off the session behind it.
+  const activeCwd = useSessionsStore(selectActiveSessionCwd)
+  const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
+  const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 
   useEffect(() => {
@@ -37,6 +42,7 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
 
   function handleKeyDown(event: KeyboardEvent): boolean {
     if (commands.handleKeyDown(event)) return true
+    if (mentions.handleKeyDown(event)) return true
     if (
       event.key === 'Tab' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
       isStreaming && hasDraft
@@ -53,5 +59,5 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
     return true
   }
 
-  return { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, attachments, ...submission }
+  return { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, mentions, attachments, ...submission }
 }

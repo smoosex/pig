@@ -1,12 +1,15 @@
 import { ipcMain, shell } from 'electron'
 import type { FileStamp } from '../../shared/api'
 import { externalPath, openablePath, readFile, writeFile } from '../files/file'
+import { suggestFiles } from '../files/suggest'
 import { readDirectory } from '../files/tree'
-import { requireWorktree } from '../worktree-access'
+import { openedWorktree, requireWorktree } from '../worktree-access'
 
 /**
  * The file tree and the file tabs: one directory level, one file's bytes, and one draft write. Every
  * handler resolves the worktree first, because a cwd the renderer sent is a request rather than a fact.
+ * The `@` suggest handler answers `[]` for a cwd with no workspace — a chat composer has none — but
+ * its own failures propagate like every other handler: the composer already clears a failed fetch.
  */
 export function registerFilesIpc(): void {
   ipcMain.handle('files:read-directory', async (_event, cwd: string, path: string) =>
@@ -15,6 +18,11 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:read', async (_event, cwd: string, path: string) =>
     readFile(await requireWorktree(cwd), path)
   )
+  ipcMain.handle('files:suggest', async (_event, cwd: string, query: string) => {
+    const root = await openedWorktree(cwd)
+    if (!root) return []
+    return suggestFiles(root, query)
+  })
   ipcMain.handle(
     'files:write',
     async (

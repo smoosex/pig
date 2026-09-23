@@ -247,6 +247,15 @@ export interface DirectoryListing {
   entries: FileTreeEntry[]
 }
 
+/**
+ * One `@` completion row. Paths are worktree-relative and `/`-separated, and a directory carries
+ * its trailing slash so the composer can keep completing inside it without another lookup shape.
+ */
+export interface FileSuggestion {
+  path: string
+  isDirectory: boolean
+}
+
 /** A file's identity on disk, so a write can tell whether it still holds the bytes that were read. */
 export interface FileStamp {
   mtimeMs: number
@@ -497,6 +506,7 @@ export interface SessionApi {
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   readDirectory: (cwd: string, path: string) => Promise<DirectoryListing>
+  suggestFiles: (cwd: string, query: string) => Promise<FileSuggestion[]>
   readFile: (cwd: string, path: string) => Promise<FileReadResult>
   /**
    * Writes a file tab's draft. `expected` is the stamp the draft was edited against: a file that has
