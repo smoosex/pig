@@ -55,7 +55,7 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
       <header className="mb-1 flex h-9 shrink-0 items-center gap-2 pr-1 pl-1.5 whitespace-nowrap">
         <ToggleGroup
           type="single"
-          size="sm"
+          size="xs"
           value={tab}
           onValueChange={(value) => value && setPanelTab(cwd, value as PanelTab)}
           aria-label={t('panel.viewAria')}
