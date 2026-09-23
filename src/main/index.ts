@@ -39,12 +39,18 @@ app.on('window-all-closed', () => {
 
 let isDisposing = false
 
+// Teardown waits on sessions and naming jobs, and any of them can stay pending: a turn that never
+// settles, a build still starting, a hook nobody answers. The quit must not inherit that, so the
+// chain is raced against a deadline and the process exits on its own terms.
+const QUIT_DEADLINE_MS = 5_000
+
 app.on('before-quit', (event) => {
   if (isDisposing) return
   event.preventDefault()
   isDisposing = true
-  void Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions()])
+  const teardown = Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions()])
     .then(() => disposeAll())
     .catch(() => {})
-    .finally(() => app.quit())
+  void Promise.race([teardown, new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))])
+    .finally(() => app.exit(0))
 })
