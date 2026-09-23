@@ -61,6 +61,8 @@ const SCOPES: DiffScope[] = ['all', 'staged', 'unstaged']
 const NOTHING_EXPANDED: Record<string, boolean> = {}
 const NOTHING_UNTRACKED: Record<string, never> = {}
 
+/** Falls back to this when the list's own gap cannot be read: its `gap-3`. */
+const REVEAL_TOP_GAP_PX = 12
 /** How long a reveal keeps re-aligning its file after the last change of the canvas height. */
 const REVEAL_SETTLE_MS = 700
 const REVEAL_DEADLINE_MS = 2_000
@@ -89,13 +91,14 @@ export function ChangesView({ cwd }: { cwd: string }) {
   const list = useRef<HTMLDivElement | null>(null)
   /** A reveal from the review column has already placed this canvas, so no restore may fight it. */
   const revealed = useRef(false)
-  /** The file a reveal still has to bring to the top of the canvas, until the layout stops moving. */
+  /** The file a reveal still has to seat a card-gap below the top of the canvas. */
   const pendingReveal = useRef<{
     path: string
     height: number
     until: number
     deadline: number
     frames: number
+    top: number
   } | null>(null)
   const revealFrame = useRef(0)
 
@@ -130,10 +133,10 @@ export function ChangesView({ cwd }: { cwd: string }) {
   }, [sections])
 
   /**
-   * Puts a revealed card's header at the top of the canvas. Folding the other files unmounts their
-   * bodies while the target's own body mounts a moment later, so the alignment keeps correcting until
-   * the canvas stops changing height; a card near the end can be too short to ever reach the top, and
-   * the canvas cannot scroll past its own end.
+   * Seats a revealed card's header a card-gap below the top of the canvas, the way the list's own
+   * rhythm reads. Folding the other files unmounts their bodies while the target's own body mounts
+   * a moment later, so the alignment keeps correcting until the canvas stops changing height; a card
+   * near the end can be too short to ever reach its seat, and the canvas cannot scroll past its end.
    */
   function alignReveal(): void {
     const pending = pendingReveal.current
@@ -145,7 +148,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
     const region = list.current
     const element = document.getElementById(sectionId(pending.path))
     if (!region || !element) return
-    const delta = element.getBoundingClientRect().top - region.getBoundingClientRect().top
+    const delta = element.getBoundingClientRect().top - region.getBoundingClientRect().top - pending.top
     if (Math.abs(delta) > 1) region.scrollTop += delta
     const now = performance.now()
     if (region.scrollHeight !== pending.height) {
@@ -180,12 +183,15 @@ export function ChangesView({ cwd }: { cwd: string }) {
     clearFocus(cwd)
     setExpanded(cwd, { [path]: true })
     const now = performance.now()
+    const region = list.current
+    const gap = region ? Number.parseFloat(getComputedStyle(region).rowGap) : Number.NaN
     pendingReveal.current = {
       path,
       height: 0,
       until: now + REVEAL_SETTLE_MS,
       deadline: now + REVEAL_DEADLINE_MS,
-      frames: 0
+      frames: 0,
+      top: Number.isFinite(gap) ? gap : REVEAL_TOP_GAP_PX
     }
     alignReveal()
     pumpReveal()
