@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react'
 import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
-import { cn } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import type { IconKind } from './process-model'
 
-export const hideScroll = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 export const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap ${hideScroll}`
 export const statusMarker = 'pointer-events-none h-7 min-w-0 gap-1.5 px-1 text-xs font-normal'
 export const disclosureButton =

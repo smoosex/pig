@@ -230,6 +230,8 @@ export const zh = {
     run: '执行 {command}',
     runPlain: '执行命令',
     runMany: '执行 {n} 个命令',
+    command: '命令',
+    output: '输出',
     read: '读取 {path}',
     readPlain: '读取文件',
     readMany: '读取 {n} 个文件',

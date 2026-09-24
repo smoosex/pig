@@ -1,14 +1,14 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { Components } from 'react-markdown'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Streamdown, preprocessLaTeX } from '@lobehub/streamdown'
-import { useHighlightHtml } from '../lib/highlight'
 import { renderMermaid } from '../lib/mermaid-renderer'
 import { useDarkMode } from '../lib/useDarkMode'
 import { cn } from '../lib/utils'
+import { HighlightedCode } from './HighlightedCode'
 import { Separator } from './ui/separator'
 import 'katex/dist/katex.min.css'
 
@@ -16,23 +16,7 @@ const remarkPlugins = [remarkGfm, remarkMath]
 const rehypePlugins = [rehypeKatex]
 
 function CodeFence({ lang, code }: { lang: string; code: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const html = useHighlightHtml(code, lang || 'plaintext', ref)
-  return (
-    <div
-      ref={ref}
-      className="my-2 max-h-80 overflow-auto rounded-lg border border-code-border bg-code-background font-mono text-code-foreground text-xs leading-snug [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      {html ? (
-        <div
-          className="[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-snug"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <pre className="m-0 whitespace-pre p-3">{code}</pre>
-      )}
-    </div>
-  )
+  return <HighlightedCode code={code} lang={lang || 'plaintext'} />
 }
 
 function MermaidBlock({ code }: { code: string }) {

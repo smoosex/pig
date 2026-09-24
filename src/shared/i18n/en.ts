@@ -228,6 +228,8 @@ export const en: Messages = {
     run: 'Run {command}',
     runPlain: 'Run a command',
     runMany: 'Run {n} commands',
+    command: 'command',
+    output: 'output',
     read: 'Read {path}',
     readPlain: 'Read a file',
     readMany: 'Read {n} files',
