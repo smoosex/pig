@@ -1,6 +1,6 @@
 node_modules
 out
-src/renderer/public/file-icons-LICENSE.txt
+src/renderer/public/file-icons/
 src/renderer/src/lib/file-icons.generated.ts
 dist
 release

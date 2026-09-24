@@ -1,6 +1,5 @@
 import { File } from 'lucide-react'
 import { fileIconName } from '../../lib/file-icons'
-import { icons } from '../../lib/file-icons.generated'
 import { cn } from '../../lib/utils'
 
 export function FileTypeIcon({ path, className }: { path: string; className?: string }) {
@@ -12,7 +11,7 @@ export function FileTypeIcon({ path, className }: { path: string; className?: st
       aria-hidden="true"
       className={cn('inline-block bg-current', className)}
       style={{
-        maskImage: `url("${icons[icon]}")`,
+        maskImage: `url("${new URL(`file-icons/${icon}.svg`, document.baseURI).href}")`,
         maskPosition: 'center',
         maskRepeat: 'no-repeat',
         maskSize: 'contain'
