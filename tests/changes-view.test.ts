@@ -264,6 +264,9 @@ async function runFixture(): Promise<void> {
   assert.equal(cards()[0].querySelector('div.border-t'), null, 'a folded card is only its header')
 
   const unfoldAll = container.querySelector<HTMLButtonElement>('button[aria-label="展开全部"]')!
+  const layoutToggle = container.querySelector('[data-slot="toggle-group"]')
+  assert.equal(unfoldAll.previousElementSibling?.classList.contains('flex-1'), true, 'fold-all is on the toolbar right')
+  assert.equal(unfoldAll.nextElementSibling, layoutToggle, 'fold-all sits immediately before the layout switches')
   await click(unfoldAll)
   assert.deepEqual(
     headers().map((header) => header.getAttribute('aria-expanded')),

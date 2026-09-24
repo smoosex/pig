@@ -307,18 +307,6 @@ export function ChangesView({ cwd }: { cwd: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={anyExpanded ? t('diff.collapseAll') : t('diff.expandAll')}
-          disabled={!sections.length}
-          onClick={() =>
-            setExpanded(cwd, anyExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
-          }
-        >
-          {anyExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
-        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -344,6 +332,18 @@ export function ChangesView({ cwd }: { cwd: string }) {
         </DropdownMenu>
         <span className="text-xs tabular-nums text-muted-foreground">{t('diff.changeCount', { count: entries.length })}</span>
         <span className="flex-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={anyExpanded ? t('diff.collapseAll') : t('diff.expandAll')}
+          disabled={!sections.length}
+          onClick={() =>
+            setExpanded(cwd, anyExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
+          }
+        >
+          {anyExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
+        </Button>
         <ToggleGroup
           type="single"
           spacing={0.5}
