@@ -15,7 +15,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
-import { fileIcon } from '../diff/file-entry'
+import { FileTypeIcon } from './FileTypeIcon'
 import { treeRows } from './tree-rows'
 
 export function FileTree({ cwd }: { cwd: string }) {
@@ -57,9 +57,6 @@ export function FileTree({ cwd }: { cwd: string }) {
         <div className="flex flex-col gap-0.5 px-1">
           {rows.map(({ entry, depth }) => {
             const open = entry.kind === 'directory' && expanded?.[entry.path] === true
-            const Icon = entry.kind === 'directory'
-              ? open ? FolderOpen : Folder
-              : fileIcon(entry.path)
             return (
               <button
                 key={entry.path}
@@ -87,7 +84,12 @@ export function FileTree({ cwd }: { cwd: string }) {
                 ) : (
                   <span className="size-3.5 shrink-0" />
                 )}
-                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                {entry.kind === 'directory' ? (
+                  open ? <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                    : <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <FileTypeIcon path={entry.path} className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
                 <span className="truncate">{entry.name}</span>
               </button>
             )

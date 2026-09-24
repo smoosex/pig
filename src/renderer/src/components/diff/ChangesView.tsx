@@ -41,7 +41,8 @@ import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { cn } from '../../lib/utils'
 import type { Translate } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
-import { STATUS_META, fileIcon, splitPath } from './file-entry'
+import { FileTypeIcon } from '../files/FileTypeIcon'
+import { STATUS_META, splitPath } from './file-entry'
 import {
   SECTION_SCROLL_LINES,
   buildSections,
@@ -388,7 +389,6 @@ export function ChangesView({ cwd }: { cwd: string }) {
         {sections.map((section) => {
           const entry = section.entry
           const meta = STATUS_META[entry.status]
-          const Icon = fileIcon(entry.path)
           const { name, directory } = splitPath(entry.path)
           const open = expanded[entry.path] === true
           const lines = (entry.additions ?? 0) + (entry.deletions ?? 0)
@@ -409,7 +409,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
                 <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
                   {meta.letter}
                 </span>
-                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                <FileTypeIcon path={entry.path} className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="shrink-0 truncate font-medium">{name}</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground" dir="rtl">
                   {directory}

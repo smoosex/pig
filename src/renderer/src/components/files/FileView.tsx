@@ -10,7 +10,6 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { Translate } from '../../../../shared/i18n'
-import { FileText } from 'lucide-react'
 import {
   Editor,
   type EditorChangeEvent,
@@ -19,7 +18,8 @@ import {
 } from '@pierre/diffs/edit'
 import { EditProvider, File as FileCode, Virtualizer } from '@pierre/diffs/react'
 import { api } from '../../ipc/api'
-import { fileIcon, splitPath } from '../diff/file-entry'
+import { splitPath } from '../diff/file-entry'
+import { FileTypeIcon } from './FileTypeIcon'
 import { fileCodeOptions } from '../diff/diff-options'
 import { isDirty, fileKey, watchWorktreeFiles, useFilesStore, type FileDocument } from '../../stores/files'
 import { useT } from '../../hooks/useT'
@@ -60,7 +60,6 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
     void run().catch((error: unknown) => setActionError(failureMessage(error)))
   }
 
-  const Icon = document?.preview === 'text' ? fileIcon(path) : FileText
   const { name, directory } = splitPath(path)
   const dirty = document ? isDirty(document) : false
   const saving = document?.saving === true
@@ -75,7 +74,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
       }}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <FileTypeIcon path={path} className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-xs font-medium" title={path}>
           {name}
         </span>

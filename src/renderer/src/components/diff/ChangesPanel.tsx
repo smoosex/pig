@@ -14,7 +14,8 @@ import { useSessionsStore } from '../../stores/sessions'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
-import { STATUS_META, fileIcon, splitPath, sumCounts } from './file-entry'
+import { FileTypeIcon } from '../files/FileTypeIcon'
+import { STATUS_META, splitPath, sumCounts } from './file-entry'
 
 type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
 
@@ -51,7 +52,6 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   // and the tab's title says which group that is.
   function row(entry: DiffFileEntry, scope: DiffScope, indented: boolean) {
     const meta = STATUS_META[entry.status]
-    const Icon = fileIcon(entry.path)
     const { name, directory } = splitPath(entry.path)
     const isActive = changesActive && visiblePath === entry.path
     return (
@@ -72,7 +72,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
           {meta.letter}
         </span>
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <FileTypeIcon path={entry.path} className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="max-w-1/2 shrink-0 truncate">{name}</span>
         <span className="min-w-0 flex-1 truncate text-muted-foreground">{directory}</span>
         {entry.additions === null ? null : (

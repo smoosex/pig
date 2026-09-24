@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import { FileText, Folder } from 'lucide-react'
+import { Folder } from 'lucide-react'
+import { FileTypeIcon } from '../files/FileTypeIcon'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { PopoverContent } from '../ui/popover'
@@ -37,7 +38,6 @@ export function MentionSuggestions({
     >
       <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((item, index) => {
-          const Icon = item.isDirectory ? Folder : FileText
           return (
             <Button
               key={item.path}
@@ -51,7 +51,11 @@ export function MentionSuggestions({
               onMouseEnter={() => mentions.setIndex(index)}
               onClick={() => mentions.select(item)}
             >
-              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+              {item.isDirectory ? (
+                <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <FileTypeIcon path={item.path} className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
               <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium')}>
                 {baseName(item.path)}{item.isDirectory ? '/' : null}
               </span>

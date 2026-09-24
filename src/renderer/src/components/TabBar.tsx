@@ -14,7 +14,7 @@ import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
 import { CloseSpin } from './RunningSpinners'
-import { fileIcon } from './diff/file-entry'
+import { FileTypeIcon } from './files/FileTypeIcon'
 import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
 
@@ -134,7 +134,6 @@ function Tab({
   // A changes or file tab holds no session, so there is no name to write for it.
   const renamable = kind === 'project' || kind === 'chat'
   const failure = error ?? rename.error ?? undefined
-  const FileIcon = path ? fileIcon(path) : SquareText
   const body = (
     <div
       className={cn(
@@ -150,7 +149,7 @@ function Tab({
         {kind === 'diff' ? (
           <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
         ) : kind === 'file' ? (
-          <FileIcon className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+          <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" />
         ) : (
           <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
         )}
