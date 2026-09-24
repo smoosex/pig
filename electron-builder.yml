@@ -1,16 +1,22 @@
 appId: dev.pig.desktop
 productName: Pig
 publish: null
+electronLanguages:
+  - en
+  - en-US
+  - zh-CN
+  - zh_CN
 directories:
   buildResources: build
 files:
-  - '!**/.vscode/*'
-  - '!src/*'
-  - '!tests/*'
-  - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.test.json}'
-  - '!{.env,.env.*}'
-  - '!{bun.lock,bun.lockb}'
+  - out/**/*
+  - package.json
+  - from: node_modules/@earendil-works/pi-coding-agent
+    to: node_modules/@earendil-works/pi-coding-agent
+    filter:
+      - README.md
+      - docs/**/*.md
+      - examples/**/*
 asarUnpack:
   - resources/**
 win:
