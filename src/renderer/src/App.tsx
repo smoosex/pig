@@ -245,7 +245,7 @@ export default function App() {
   }
 
   return (
-    <TooltipProvider>
+    <TooltipProvider disableHoverableContent>
       <ThemeSync />
       <HighlighterWarmup />
       <div className="flex h-full flex-col bg-background">
