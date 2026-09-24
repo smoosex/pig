@@ -34,7 +34,7 @@ async function fixture(scenario: string): Promise<void> {
       Object.assign(this.runtime[id], { isStreaming: false, pendingUserMessage: false, liveMessages: [] })
     },
     previewSessionTitle() {},
-    promoteProjectDraft: async () => {
+    promoteDraft: async () => {
       promoteCalls++
       store.activeTabId = 'one'
       return true

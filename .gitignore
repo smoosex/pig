@@ -8,4 +8,5 @@ release
 .env.*
 .pig/*
 !.pig/.gitkeep
+.electron-user-data/
 .tmp/

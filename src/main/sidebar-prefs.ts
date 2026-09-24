@@ -10,8 +10,7 @@ import {
 export type { SidebarPrefs } from '../shared/api'
 
 const defaults: SidebarPrefs = {
-  projectsCollapsed: false,
-  chatsCollapsed: false,
+  sidebarTab: 'projects',
   split: 0.5,
   reviewOpen: false,
   reviewWidth: DEFAULT_REVIEW_WIDTH
@@ -57,8 +56,7 @@ export async function loadSidebarPrefs(): Promise<SidebarPrefs> {
   }
   const data = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<SidebarPrefs>
   return {
-    projectsCollapsed: Boolean(data.projectsCollapsed),
-    chatsCollapsed: Boolean(data.chatsCollapsed),
+    sidebarTab: data.sidebarTab === 'chats' ? 'chats' : defaults.sidebarTab,
     split: clampSplit(data.split ?? defaults.split),
     reviewOpen: Boolean(data.reviewOpen),
     reviewWidth: clampReviewWidth(data.reviewWidth ?? defaults.reviewWidth)
@@ -68,9 +66,10 @@ export async function loadSidebarPrefs(): Promise<SidebarPrefs> {
 export async function saveSidebarPrefs(patch: Partial<SidebarPrefs>): Promise<SidebarPrefs> {
   const current = await loadSidebarPrefs()
   const next: SidebarPrefs = {
-    projectsCollapsed:
-      patch.projectsCollapsed === undefined ? current.projectsCollapsed : Boolean(patch.projectsCollapsed),
-    chatsCollapsed: patch.chatsCollapsed === undefined ? current.chatsCollapsed : Boolean(patch.chatsCollapsed),
+    sidebarTab:
+      patch.sidebarTab === 'projects' || patch.sidebarTab === 'chats'
+        ? patch.sidebarTab
+        : current.sidebarTab,
     split: patch.split === undefined ? current.split : clampSplit(patch.split),
     reviewOpen: patch.reviewOpen === undefined ? current.reviewOpen : Boolean(patch.reviewOpen),
     reviewWidth:

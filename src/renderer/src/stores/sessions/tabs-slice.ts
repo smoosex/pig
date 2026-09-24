@@ -45,6 +45,8 @@ export const createTabsSlice: SessionSlice<
   | 'activeTabByCwd'
   | 'draftSessionByCwd'
   | 'draftSessionErrorByCwd'
+  | 'chatDraft'
+  | 'chatDraftError'
   | 'workspaceRestoreReady'
   | 'workspaceRestoreError'
   | 'workspaceError'
@@ -57,7 +59,12 @@ export const createTabsSlice: SessionSlice<
   | 'setChangesScope'
   | 'acquireProjectDraft'
   | 'releaseProjectDraft'
-  | 'promoteProjectDraft'
+  | 'promoteDraft'
+  | 'acquireChatDraft'
+  | 'releaseChatDraft'
+  | 'retryChatDraft'
+  | 'focusChatHome'
+  | 'invalidateSelection'
   | 'newSession'
   | 'newChat'
   | 'closeTab'
@@ -74,6 +81,9 @@ export const createTabsSlice: SessionSlice<
   const draftRetry = new Set<string>()
   /** A promote waiting on the create on its way holds the slot for that moment. */
   const draftPromotions = new Set<string>()
+  /** Holders of the chat home's draft, and the create on its way: the slot waits for main's answer. */
+  let chatLeases = 0
+  let chatCreating: Promise<void> | null = null
   let initializeRequest: Promise<void> | null = null
   let selectionVersion = 0
   let persistenceVersion = 0
@@ -218,6 +228,39 @@ export const createTabsSlice: SessionSlice<
     await get().loadControls(ref.sessionId)
   }
 
+  /**
+   * The chat home's session. Main mints both the id and the directory, so the slot waits for the
+   * round trip; a lease that has gone by then takes the chat with it rather than leaving it behind.
+   */
+  const createChatDraft = (): Promise<void> => {
+    if (get().chatDraft || chatCreating) return Promise.resolve()
+    const request = (async () => {
+      try {
+        const ref = await api.createChat()
+        if (chatLeases === 0) {
+          await api.deleteChat(ref.cwd)
+          return
+        }
+        set((state) => ({
+          chatDraft: ref,
+          chatDraftError: null,
+          runtime: { ...state.runtime, [ref.sessionId]: state.runtime[ref.sessionId] ?? emptyRuntime() }
+        }))
+        try {
+          await get().loadControls(ref.sessionId)
+        } catch (error) {
+          get().setControlsStatus(ref.sessionId, { controlsError: describeError(error) })
+        }
+      } catch (error) {
+        if (chatLeases > 0) set({ chatDraftError: describeError(error) })
+      }
+    })().finally(() => {
+      if (chatCreating === request) chatCreating = null
+    })
+    chatCreating = request
+    return request
+  }
+
   return {
     openTabs: [],
     activeTabId: null,
@@ -226,6 +269,8 @@ export const createTabsSlice: SessionSlice<
     activeTabByCwd: {},
     draftSessionByCwd: {},
     draftSessionErrorByCwd: {},
+    chatDraft: null,
+    chatDraftError: null,
     workspaceRestoreReady: false,
     workspaceRestoreError: null,
     workspaceError: null,
@@ -397,7 +442,7 @@ export const createTabsSlice: SessionSlice<
         return
       }
       if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === tab.id) {
-        await get().promoteProjectDraft(tab.cwd, tab.id)
+        await get().promoteDraft(tab.cwd, tab.id)
         return
       }
       const selection = ++selectionVersion
@@ -528,7 +573,7 @@ export const createTabsSlice: SessionSlice<
         return
       }
       if (kind === 'project' && get().draftSessionByCwd[meta.cwd] === meta.id) {
-        await get().promoteProjectDraft(meta.cwd, meta.id)
+        await get().promoteDraft(meta.cwd, meta.id)
         set((state) => ({
           openTabs: state.openTabs.map((tab) => tab.id === meta.id
             ? { ...tab, title: sessionTitle(meta), meta }
@@ -591,7 +636,64 @@ export const createTabsSlice: SessionSlice<
       })
     },
 
-    promoteProjectDraft: async (cwd, sessionId) => {
+    acquireChatDraft: () => {
+      chatLeases += 1
+      void createChatDraft()
+    },
+
+    retryChatDraft: () => {
+      if (chatLeases > 0) void createChatDraft()
+    },
+
+    releaseChatDraft: () => {
+      chatLeases = Math.max(0, chatLeases - 1)
+      if (chatLeases > 0) return
+      const draft = get().chatDraft
+      set({ chatDraftError: null })
+      // A chat that was sent to is a tab by then, and the slot is what says a draft is still to take
+      // back: nothing here can reach a chat the reader has kept.
+      if (!draft) return
+      set((state) => {
+        const runtime = { ...state.runtime }
+        delete runtime[draft.sessionId]
+        return { chatDraft: null, runtime }
+      })
+      void api.deleteChat(draft.cwd).catch((error: unknown) => {
+        set({ workspaceError: describeError(error) })
+      })
+    },
+
+    focusChatHome: () => {
+      // Leaving the worktree is a selection of its own: work started for the old one must not land,
+      // and its leftovers are not the chat home's news.
+      ++selectionVersion
+      set((state) => ({
+        currentProjectCwd: null,
+        workspaceError: null,
+        ...activeTabPatch(state, null, null)
+      }))
+    },
+
+    invalidateSelection: () => {
+      ++selectionVersion
+    },
+
+    promoteDraft: async (cwd, sessionId) => {
+      // The chat home's draft has no worktree behind it: main already holds the session, so promoting
+      // it only means giving it the tab the chats half was missing.
+      const chat = get().chatDraft
+      if (chat?.sessionId === sessionId) {
+        const selection = ++selectionVersion
+        set({ chatDraft: null })
+        addReadyTab({
+          id: chat.sessionId,
+          cwd: chat.cwd,
+          title: t('sessions.newTitle'),
+          kind: 'chat',
+          loadState: 'ready'
+        }, selection)
+        return selection === selectionVersion
+      }
       if (get().draftSessionByCwd[cwd] !== sessionId) return false
       // The session may not exist in main yet: wait for the create on its way, and try once more if
       // the last one failed, which the slot survived so the composer keeps its text.
@@ -648,7 +750,7 @@ export const createTabsSlice: SessionSlice<
     newSession: async (cwd) => {
       const draftSessionId = get().draftSessionByCwd[cwd]
       if (draftSessionId) {
-        return await get().promoteProjectDraft(cwd, draftSessionId) ? draftSessionId : null
+        return await get().promoteDraft(cwd, draftSessionId) ? draftSessionId : null
       }
       const selection = ++selectionVersion
       const ref = await api.createSession(cwd, newSessionId())

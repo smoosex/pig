@@ -7,6 +7,7 @@ import type {
   OpenSessionRef,
   ProjectGroup,
   ProjectWorktreeDiscovery,
+  SessionRef,
   SessionApi,
   SessionControls,
   SessionMeta
@@ -46,6 +47,7 @@ async function runFixture(name: string): Promise<void> {
   let tokenCalls = 0
   let promoteCalls = 0
   let discardCalls = 0
+  let chatDeletes = 0
   const renameCalls: Array<{ sessionId: string; name: string; path?: string }> = []
   const createdIds: string[] = []
   let persistedOpenProjectSessions: OpenProjectSessionsState = { currentCwd: null, workspaces: [] }
@@ -91,12 +93,13 @@ async function runFixture(name: string): Promise<void> {
       }
     },
     listChats: async (): Promise<ProjectGroup[]> => [],
+    createChat: async (): Promise<SessionRef> => ({ sessionId: 'chat', cwd: '/chats/0' }),
     listProjects: async (): Promise<ProjectGroup[]> => [],
     discoverOpenedWorktrees: async (): Promise<ProjectWorktreeDiscovery[]> => [],
     listWorktreeSessions: async (): Promise<SessionMeta[]> => [],
     listProject: async (): Promise<ProjectGroup | null> => null,
     isChatCwd: async () => true,
-    deleteChat: async () => {},
+    deleteChat: async () => { chatDeletes++ },
     renameSession: async (sessionId: string, name: string, path?: string) => {
       renameCalls.push({ sessionId, name, path })
     },
@@ -486,7 +489,7 @@ async function runFixture(name: string): Promise<void> {
     const nextDraftId = state().draftSessionByCwd[meta.cwd]
     assert.ok(nextDraftId)
     await Bun.sleep(0)
-    assert.equal(await state().promoteProjectDraft(meta.cwd, nextDraftId), true)
+    assert.equal(await state().promoteDraft(meta.cwd, nextDraftId), true)
     assert.equal(promoteCalls, 1)
     assert.equal(state().activeTabId, nextDraftId)
     assert.equal(state().openTabs[0]?.id, nextDraftId)
@@ -496,6 +499,118 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(state().runtime[nextDraftId])
     state().releaseProjectDraft(meta.cwd)
     assert.equal(discardCalls, 1)
+    return
+  }
+
+  if (name === 'chat-draft-lifecycle') {
+    api.createChat = async () => ({ sessionId: 'chat-1', cwd: '/chats/1' })
+    state().acquireChatDraft()
+    state().acquireChatDraft()
+    assert.equal(state().chatDraft, null, 'main owns the id and the directory, so the slot waits')
+    await Bun.sleep(0)
+    assert.deepEqual(state().chatDraft, { sessionId: 'chat-1', cwd: '/chats/1' })
+    assert.equal(state().openTabs.length, 0, 'the home chat is not a tab')
+    assert.equal(state().runtime['chat-1']?.controlsRevision, 1, 'the home composer has controls')
+
+    state().releaseChatDraft()
+    assert.ok(state().chatDraft, 'the second lease still holds it')
+    state().releaseChatDraft()
+    await Bun.sleep(0)
+    assert.equal(state().chatDraft, null)
+    assert.equal(state().runtime['chat-1'], undefined)
+    assert.equal(chatDeletes, 1, 'a chat nobody sent to is taken back with its directory')
+
+    api.createChat = async () => ({ sessionId: 'chat-2', cwd: '/chats/2' })
+    state().acquireChatDraft()
+    await Bun.sleep(0)
+    assert.equal(await state().promoteDraft('/chats/2', 'chat-2'), true)
+    assert.equal(state().chatDraft, null)
+    assert.equal(state().activeTabId, 'chat-2')
+    assert.equal(state().openTabs[0]?.kind, 'chat')
+    assert.equal(state().openTabs[0]?.title, '新对话')
+    assert.ok(state().runtime['chat-2'], 'the promoted chat keeps its runtime')
+    state().releaseChatDraft()
+    await Bun.sleep(0)
+    assert.equal(chatDeletes, 1, 'a promoted chat is never taken back')
+    return
+  }
+
+  if (name === 'chat-home-leaves-the-worktree') {
+    state().acquireProjectDraft(meta.cwd)
+    store.setState({ currentProjectCwd: meta.cwd, activeTabId: meta.id, workspaceError: 'stale' })
+    state().focusChatHome()
+    assert.equal(state().currentProjectCwd, null)
+    assert.equal(state().activeTabId, null, 'the pane leaves the worktree, not just the sidebar half')
+    assert.equal(state().workspaceError, null, 'the worktree error is not the chat home news')
+    assert.equal(state().draftSessionByCwd[meta.cwd], createdIds[0], 'the worktree draft is kept')
+    return
+  }
+
+  if (name === 'chat-home-invalidates-restore') {
+    const persisted = deferred<OpenProjectSessionsState>()
+    const scan = deferred<ProjectGroup[]>()
+    api.getOpenProjectSessions = () => persisted.promise
+    api.listProjects = () => scan.promise
+    const restoring = state().initializeProjectWorkspaces()
+    // The reader leaves the worktree for the chat home before the scan is back.
+    state().focusChatHome()
+    persisted.resolve({
+      currentCwd: meta.cwd,
+      workspaces: [{
+        cwd: meta.cwd,
+        sessionIds: [meta.id],
+        activeSessionId: meta.id,
+        changesOpen: false,
+        activeTabId: meta.id
+      }]
+    })
+    scan.resolve([{
+      cwd: meta.cwd,
+      name: 'project',
+      sessions: [meta],
+      worktrees: [{
+        cwd: meta.cwd,
+        branch: 'main',
+        isPrimary: true,
+        locked: false,
+        missing: false,
+        managed: false,
+        sessions: [meta]
+      }]
+    }])
+    await restoring
+    assert.equal(state().workspaceRestoreReady, true)
+    assert.equal(state().currentProjectCwd, null, 'the restore must not take the pane back')
+    assert.equal(state().activeTabId, null)
+    return
+  }
+
+  if (name === 'chat-draft-create-failure') {
+    api.createChat = async () => {
+      throw new Error('create failed')
+    }
+    state().acquireChatDraft()
+    await Bun.sleep(0)
+    assert.equal(state().chatDraft, null)
+    assert.equal(state().chatDraftError, 'create failed')
+
+    api.createChat = async () => ({ sessionId: 'chat-3', cwd: '/chats/3' })
+    state().retryChatDraft()
+    await Bun.sleep(0)
+    assert.deepEqual(state().chatDraft, { sessionId: 'chat-3', cwd: '/chats/3' })
+    assert.equal(state().chatDraftError, null)
+    assert.equal(state().runtime['chat-3']?.controlsRevision, 1)
+
+    // Nobody is on the home any more, so a retry has no one to report to and must not make a chat.
+    state().releaseChatDraft()
+    await Bun.sleep(0)
+    api.createChat = async () => {
+      throw new Error('nope')
+    }
+    state().retryChatDraft()
+    await Bun.sleep(0)
+    assert.equal(state().chatDraft, null)
+    assert.equal(state().chatDraftError, null)
     return
   }
 
@@ -532,7 +647,7 @@ async function runFixture(name: string): Promise<void> {
     state().acquireProjectDraft(meta.cwd)
     const draftId = state().draftSessionByCwd[meta.cwd]!
     // The promote waits for the session to exist rather than racing the create.
-    const promoting = state().promoteProjectDraft(meta.cwd, draftId)
+    const promoting = state().promoteDraft(meta.cwd, draftId)
     await Bun.sleep(0)
     assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 'the slot stays until main answers')
     assert.equal(state().openTabs.length, 0)
@@ -609,7 +724,7 @@ async function runFixture(name: string): Promise<void> {
     state().acquireProjectDraft(meta.cwd)
     const draftId = state().draftSessionByCwd[meta.cwd]!
     // The reader sends and leaves the home before main answers: the promote still owns the draft.
-    const promoting = state().promoteProjectDraft(meta.cwd, draftId)
+    const promoting = state().promoteDraft(meta.cwd, draftId)
     state().releaseProjectDraft(meta.cwd)
     gate.resolve()
     assert.equal(await promoting, true, 'the create must not sweep the session a promote is waiting for')
@@ -653,10 +768,10 @@ async function runFixture(name: string): Promise<void> {
     }
     // Neither call can reach a session main does not have; both have to leave the slot standing.
     api.promoteSession = async () => { throw new Error('draft is gone') }
-    await assert.rejects(state().promoteProjectDraft(meta.cwd, draftId), /draft is gone/)
+    await assert.rejects(state().promoteDraft(meta.cwd, draftId), /draft is gone/)
     assert.equal(state().draftSessionByCwd[meta.cwd], draftId, 'a failed promote puts the slot back')
     api.promoteSession = async () => { promoteCalls++ }
-    assert.equal(await state().promoteProjectDraft(meta.cwd, draftId), true)
+    assert.equal(await state().promoteDraft(meta.cwd, draftId), true)
     assert.equal(createdIds.at(-1), draftId, 'the retry creates the session main never had')
     assert.equal(state().activeTabId, draftId)
     assert.equal(state().openTabs[0]?.id, draftId)
@@ -1239,6 +1354,10 @@ if (process.argv[2] === '--session-store-fixture') {
     'worktree-tab-remembered': 'a worktree returns to the changes tab it was left on',
     'worktree-restore-tabs': 'a restored worktree opens the tab it was left on',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
+    'chat-draft-lifecycle': 'the chat home holds a chat out of the strip until the first send',
+    'chat-draft-create-failure': 'a failed chat home create stays retryable in place',
+    'chat-home-invalidates-restore': 'leaving for the chat home cancels a restore on its way',
+    'chat-home-leaves-the-worktree': 'the chat home clears the worktree and keeps its draft',
     'project-draft-id-first': 'the home owns its session id before the create resolves',
     'project-draft-promoted-while-creating': 'a promote during the create round trip keeps the session',
     'project-draft-abandoned-while-creating': 'an abandoned in-flight draft is discarded once it exists',

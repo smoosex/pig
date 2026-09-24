@@ -15,8 +15,12 @@ import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
 import { CloseSpin } from './RunningSpinners'
 import { fileIcon } from './diff/file-entry'
+import type { SidebarTab } from '../../../shared/api'
+import { stripShowsChats, visibleTabsFor } from './tab-strip'
 
-export function TabBar() {
+/** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
+ * worktree's tabs, the chats half the chats, and outside a project it falls back to chats. */
+export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const t = useT()
   const openTabs = useSessionsStore((state) => state.openTabs)
   const activeTabId = useSessionsStore((state) => state.activeTabId)
@@ -28,17 +32,17 @@ export function TabBar() {
   const newChat = useSessionsStore((state) => state.newChat)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const visibleTabs = openTabs.filter((tab) => currentProjectCwd
-    ? tab.kind !== 'chat' && tab.cwd === currentProjectCwd
-    : tab.kind === 'chat')
+  const visibleTabs = visibleTabsFor(openTabs, sidebarTab, currentProjectCwd)
 
   const createTab = async () => {
     if (creating) return
     setCreating(true)
     setCreateError(null)
     try {
-      if (currentProjectCwd) await newSession(currentProjectCwd)
-      else await newChat()
+      // The button makes whatever the strip is listing, so the projects half only creates a session
+      // once there is a worktree for it to belong to.
+      if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
+      else if (currentProjectCwd) await newSession(currentProjectCwd)
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : String(error))
     } finally {

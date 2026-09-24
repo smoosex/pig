@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { FolderPlus, MessageSquarePlus, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
@@ -11,7 +11,11 @@ import { Kbd } from './components/ui/kbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
+import { GooglyEyesButton } from './components/ui/googly-eyes-button'
+import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
+import type { SidebarTab } from '../../shared/api'
 import { TabBar } from './components/TabBar'
+import { halfSwitch } from './components/tab-strip'
 import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
 import { WorkspacePanel } from './components/panel/WorkspacePanel'
@@ -80,25 +84,43 @@ export default function App() {
   const initializeProjectWorkspaces = useSessionsStore((s) => s.initializeProjectWorkspaces)
   const acquireProjectDraft = useSessionsStore((s) => s.acquireProjectDraft)
   const releaseProjectDraft = useSessionsStore((s) => s.releaseProjectDraft)
+  const acquireChatDraft = useSessionsStore((s) => s.acquireChatDraft)
+  const releaseChatDraft = useSessionsStore((s) => s.releaseChatDraft)
+  const focusChatHome = useSessionsStore((s) => s.focusChatHome)
+  const retryChatDraft = useSessionsStore((s) => s.retryChatDraft)
+  const chatDraft = useSessionsStore((s) => s.chatDraft)
+  const chatDraftError = useSessionsStore((s) => s.chatDraftError)
+  const workspaceError = useSessionsStore((s) => s.workspaceError)
   const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
-  const newChat = useSessionsStore((s) => s.newChat)
   const closeTab = useSessionsStore((s) => s.closeTab)
   const activeSessionId = useSessionsStore((s) => selectActiveSessionId(s))
   const activeTabId = useSessionsStore((s) => s.activeTabId)
+  const openTabs = useSessionsStore((s) => s.openTabs)
+  const setActiveTab = useSessionsStore((s) => s.setActive)
+  const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
   const projects = useSessionsStore((s) => s.projects)
   const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
   const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
   const draftSessionId = useSessionsStore((s) =>
     currentProjectCwd ? (s.draftSessionByCwd[currentProjectCwd] ?? null) : null
   )
+  const workspaceRestoreReady = useSessionsStore((s) => s.workspaceRestoreReady)
   const activeTab = useSessionsStore((s) =>
     s.openTabs.find((tab) => tab.id === s.activeTabId)
   )
   const loadSettings = useSettingsStore((s) => s.load)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const { tab: sidebarTab, setTab: setSidebarTab, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * What each half of the switcher was left on. A chat clears `currentProjectCwd`, so the worktree
+   * the projects half sat in has to be remembered here; the chat half remembers its tab because the
+   * strip's own memory is per worktree and chats have none.
+   */
+  const projectFocusCwd = useRef<string | null>(null)
+  const chatFocusTabId = useRef<string | null>(null)
   useEventBridge()
   useSessionWindows()
   useSessionNames()
@@ -149,6 +171,11 @@ export default function App() {
   const setReviewOpen = useDiffStore((s) => s.setReviewOpen)
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
+  /**
+   * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
+   * waits for the restore, which is what decides whether a worktree was open to show instead.
+   */
+  const chatHome = Boolean(workspaceRestoreReady && !activeTab && !currentProjectCwd && !workspaceRestoreError)
   const restoreError = !currentProjectCwd && !activeTab ? workspaceRestoreError : null
   const currentProject = currentProjectCwd
     ? projects.find((project) =>
@@ -156,6 +183,13 @@ export default function App() {
         project.worktrees?.some((worktree) => worktree.cwd === currentProjectCwd)
       )
     : undefined
+  /** What the projects half may still return to: a worktree nobody lists is not one of them. */
+  const knownProjectCwds = new Set(
+    projects.flatMap((project) => [
+      project.cwd,
+      ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
+    ])
+  )
   const currentWorktree = currentProject?.worktrees?.find(
     (worktree) => worktree.cwd === currentProjectCwd
   )
@@ -173,14 +207,64 @@ export default function App() {
     return () => releaseProjectDraft(cwd)
   }, [acquireProjectDraft, currentProjectCwd, projectHome, releaseProjectDraft])
 
+  useEffect(() => {
+    if (!chatHome) return
+    acquireChatDraft()
+    return () => releaseChatDraft()
+  }, [acquireChatDraft, chatHome, releaseChatDraft])
+
+  useEffect(() => {
+    if (!activeTab) {
+      if (currentProjectCwd) projectFocusCwd.current = currentProjectCwd
+      return
+    }
+    if (activeTab.kind === 'chat') chatFocusTabId.current = activeTab.id
+    else projectFocusCwd.current = activeTab.cwd
+  }, [activeTab, currentProjectCwd])
+
+  /**
+   * The switcher moves the content pane with it: the half being entered shows the session it was
+   * left on, or its newest tab when that one is gone. The chats half with nothing open shows its
+   * own home, so the pane never keeps the half that was just left.
+   */
+  const switchSidebarTab = (next: SidebarTab) => {
+    if (next === sidebarTab) return
+    setSidebarTab(next)
+    const action = halfSwitch(
+      openTabs,
+      next,
+      activeTabId,
+      currentProjectCwd,
+      chatFocusTabId.current,
+      projectFocusCwd.current,
+      knownProjectCwds
+    )
+    if (action.kind === 'chat') setActiveTab(action.tabId)
+    else if (action.kind === 'project') void selectProjectCwd(action.cwd)
+    else if (action.kind === 'chatHome') focusChatHome()
+  }
+
   return (
     <TooltipProvider>
       <ThemeSync />
       <HighlighterWarmup />
       <div className="flex h-full flex-col bg-background">
         <div className="drag flex h-10 shrink-0 items-center">
-          <div className={cn('flex h-full shrink-0 items-center pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
-            {settingsOpen ? null : <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />}
+          <div className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
+            {settingsOpen ? null : (
+              <>
+                <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
+                <GooglyEyesButton
+                  label={t(sidebarTab === 'projects' ? 'sidebar.projects' : 'sidebar.chats')}
+                  alternateLabel={t(sidebarTab === 'projects' ? 'sidebar.chats' : 'sidebar.projects')}
+                  pressed={sidebarTab === 'chats'}
+                  ariaLabel={t('sidebar.tabsAria')}
+                  // The toolbar's icon buttons are h-7; match the button, not its icon.
+                  height={28}
+                  onClick={() => switchSidebarTab(sidebarTab === 'projects' ? 'chats' : 'projects')}
+                />
+              </>
+            )}
           </div>
           <div className="flex-1" />
           {currentProjectCwd && !settingsOpen ? (
@@ -204,7 +288,12 @@ export default function App() {
           ) : null}
         </div>
         <div className="flex min-h-0 flex-1">
-          <Sidebar hidden={!sidebarOpen || settingsOpen} onOpenSettings={() => setSettingsOpen(true)} />
+          <Sidebar
+            hidden={!sidebarOpen || settingsOpen}
+            onOpenSettings={() => setSettingsOpen(true)}
+            tab={sidebarTab}
+            preferencesError={sidebarPrefsError}
+          />
           {settingsOpen ? (
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
@@ -212,7 +301,7 @@ export default function App() {
               <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div className="flex h-9 shrink-0 items-center overflow-hidden">
-                  {currentProjectCwd || activeTabId ? <TabBar /> : <div className="flex-1" />}
+                  {currentProjectCwd || activeTabId ? <TabBar sidebarTab={sidebarTab} /> : <div className="flex-1" />}
                 </div>
                 {diffTab ? (
                   <ChangesView cwd={diffTab.cwd} />
@@ -222,12 +311,32 @@ export default function App() {
                   >
                     <FileView cwd={fileTab.cwd} path={fileTab.path} />
                   </Suspense>
-                ) : sessionReady || projectHome ? (
+                ) : sessionReady || projectHome || chatHome ? (
                   <>
                     {sessionReady ? <ChatView /> : <SessionGreeting />}
+                    {chatHome && (chatDraftError || workspaceError) ? (
+                      <div
+                        role="alert"
+                        className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
+                      >
+                        {chatDraftError ? (
+                          <span className="flex items-center gap-2">
+                            {chatDraftError}
+                            <Button variant="outline" size="xs" onClick={retryChatDraft}>
+                              <RefreshCw />
+                              {t('common.retry')}
+                            </Button>
+                          </span>
+                        ) : null}
+                        {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
+                        {workspaceError ? <span>{workspaceError}</span> : null}
+                      </div>
+                    ) : null}
                     <Composer
-                      draftCwd={projectHome ? currentProjectCwd! : undefined}
-                      draftSessionId={projectHome ? draftSessionId : null}
+                      draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
+                      draftSessionId={
+                        projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
+                      }
                       workspace={composerWorkspace}
                     />
                     {projectHome ? <ProjectSessionHome cwd={currentProjectCwd!} /> : null}
@@ -237,35 +346,19 @@ export default function App() {
                     <EmptyDescription>
                       {restoreError
                         ? t('app.restoreFailed', { error: restoreError })
-                        : activeTab?.loadState === 'opening'
-                        ? t('app.loadingSession')
                         : activeTab?.loadState === 'error'
                           ? activeTab.loadError || t('app.loadFailed')
-                          : currentProjectCwd
-                            ? t('app.emptyInProject')
-                            : t('app.emptyNoProject')}
+                          : t('app.loadingSession')}
                     </EmptyDescription>
-                    {!currentProjectCwd && !activeTab ? (
-                      <div className="flex items-center gap-2">
-                        {restoreError ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void initializeProjectWorkspaces()}
-                          >
-                            <RefreshCw />
-                            {t('app.retryRestore')}
-                          </Button>
-                        ) : null}
-                        <Button variant="outline" size="sm" onClick={() => void openProject()}>
-                          <FolderPlus />
-                          {t('app.openProject')}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => void newChat()}>
-                          <MessageSquarePlus />
-                          {t('app.newChat')}
-                        </Button>
-                      </div>
+                    {restoreError ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void initializeProjectWorkspaces()}
+                      >
+                        <RefreshCw />
+                        {t('app.retryRestore')}
+                      </Button>
                     ) : null}
                   </Empty>
                 )}

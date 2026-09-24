@@ -318,8 +318,8 @@ async function runFixture(): Promise<void> {
   assert.equal(useDiffStore.getState().focus, null, 'the request is consumed rather than kept as a mode')
   assert.equal(
     Math.round(cards()[2].getBoundingClientRect().top - region().getBoundingClientRect().top),
-    0,
-    'the revealed card is put at the top of the canvas'
+    12,
+    'the revealed card sits a card-gap below the top of the canvas'
   )
 
   // The same component instance can move between worktrees. A reveal consumed by the old canvas must
@@ -388,8 +388,8 @@ async function runFixture(): Promise<void> {
   await flushFrame()
   assert.equal(
     Math.round(cards()[2].getBoundingClientRect().top - region().getBoundingClientRect().top),
-    0,
-    'the reveal completes when the target appears after one frame'
+    12,
+    'the reveal completes a card-gap below the top when the target appears after one frame'
   )
   document.getElementById = originalGetElementById
   await act(async () => {

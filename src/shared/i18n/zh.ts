@@ -33,13 +33,11 @@ export const zh = {
     restoreFailed: '恢复已打开会话失败：{error}',
     loadingSession: '正在加载会话',
     loadFailed: '会话加载失败',
-    emptyInProject: '从对话历史打开，或在当前分支中新建会话',
-    emptyNoProject: '从左侧选择，或打开项目、开始对话',
     retryRestore: '重试恢复',
-    openProject: '打开项目',
-    newChat: '新对话'
+    openProject: '打开项目'
   },
   sidebar: {
+    tabsAria: '项目 / 对话切换',
     projects: '项目',
     chats: '对话',
     newChat: '新建对话',

@@ -1,4 +1,6 @@
 import { app, BrowserWindow } from 'electron'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
@@ -10,9 +12,25 @@ import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { flushOpenProjectSessions } from './open-project-sessions'
+import { pruneEmptyChatDirs } from './chats'
 
 // The renderer loads persisted images through this scheme, so it must be granted before ready.
 registerSessionImageScheme()
+
+// Dev keeps its Electron profile and instance lock beside its project data, separate from the
+// packaged app's profile. setPath requires the directory to exist and must precede the lock.
+if (!app.isPackaged) {
+  const userData = join(app.getAppPath(), '.electron-user-data')
+  mkdirSync(userData, { recursive: true })
+  app.setPath('userData', userData)
+}
+
+// A second copy sharing this profile could sweep the first one's unsent chat. Use app.exit rather
+// than app.quit: the latter would run teardown against state this process never loaded.
+if (!app.requestSingleInstanceLock()) {
+  console.warn('Another Pig is already running; this launch exits.')
+  app.exit(0)
+}
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.pig.desktop')
@@ -25,6 +43,8 @@ app.whenReady().then(async () => {
   void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
   await initLocale((await loadPigSettings()).locale)
+  // Before the window can make one: a chat the last run left behind is nobody's.
+  await pruneEmptyChatDirs().catch(() => {})
   forwardSessionNames()
   createMainWindow()
 
@@ -35,6 +55,16 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// The launch that stepped aside has already told this one, so the window comes back instead of
+// nothing happening at all.
+app.on('second-instance', () => {
+  const [window] = BrowserWindow.getAllWindows()
+  if (!window) return void createMainWindow()
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
 })
 
 let isDisposing = false

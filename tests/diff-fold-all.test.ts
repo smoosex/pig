@@ -5,6 +5,11 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import {
+  DEFAULT_REVIEW_WIDTH,
+  MAX_REVIEW_WIDTH,
+  MIN_REVIEW_WIDTH
+} from '../src/shared/api'
 
 const CWD = '/fold-project'
 
@@ -23,20 +28,20 @@ const diff = {
 
 test('the fold-all button swaps its icon with its action', async () => {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  let domOurs = false
   try {
     GlobalRegistrator.register({ url: 'http://localhost' })
+    domOurs = true
   } catch {
-    // One registration per process; other fixtures may have taken it already.
+    // Another fixture in this process holds the document; the containers below keep every
+    // assertion scoped, so sharing it is fine.
   }
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { mock } = await import('bun:test')
-  mock.module('../src/renderer/src/stores/sessions', () => ({
-    useSessionsStore: Object.assign(() => null, { getState: () => ({}) })
-  }))
-  Object.defineProperty(window, 'api', {
-    value: {
+  mock.module('../src/renderer/src/ipc/api', () => ({
+    api: {
       readWorktreeDiff: async () => diff,
       readWorktreePatch: async () => ({ git: true, patch: '', truncated: false }),
       readUntrackedFile: async () => ({ kind: 'text', contents: '', lines: 0 }),
@@ -45,8 +50,10 @@ test('the fold-all button swaps its icon with its action', async () => {
       onDiffChanged: () => () => {},
       onDiffWatchError: () => () => {}
     },
-    configurable: true
-  })
+    DEFAULT_REVIEW_WIDTH,
+    MAX_REVIEW_WIDTH,
+    MIN_REVIEW_WIDTH
+  }))
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { ChangesView } = await import('../src/renderer/src/components/diff/ChangesView')
@@ -88,4 +95,5 @@ test('the fold-all button swaps its icon with its action', async () => {
   assert.equal(iconName(), 'unfold')
   assert.deepEqual(cardStates(), ['false', 'false'])
   await act(async () => { root.unmount() })
+  if (domOurs) await GlobalRegistrator.unregister()
 })

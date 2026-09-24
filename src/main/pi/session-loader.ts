@@ -317,7 +317,7 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
   }
 }
 
-async function listJsonlFiles(dir: string): Promise<string[]> {
+export async function listJsonlFiles(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true })
     return entries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map((entry) => join(dir, entry.name))

@@ -63,6 +63,16 @@ export interface RuntimeState extends SessionControls {
 export type TabKind = 'project' | 'chat' | 'diff' | 'file'
 export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
 
+/**
+ * The chat the chats half shows while nothing is open there. It exists in main from the moment the
+ * half is entered — the composer needs a session to hold its controls — but stays out of the strip
+ * and off the chat list until the first message, so a peek at the half leaves nothing behind.
+ */
+export interface ChatDraft {
+  sessionId: string
+  cwd: string
+}
+
 export interface OpenTab {
   /** The tab's own identity: a session id, or a worktree's `diff:<cwd>`. */
   id: string
@@ -98,6 +108,9 @@ export interface SessionsStore {
   activeTabByCwd: Record<string, string>
   draftSessionByCwd: Record<string, string | undefined>
   draftSessionErrorByCwd: Record<string, string | undefined>
+  chatDraft: ChatDraft | null
+  /** A chat home whose chat main could not make: the home stays empty until it is asked for again. */
+  chatDraftError: string | null
   workspaceRestoreReady: boolean
   workspaceRestoreError: string | null
   workspaceError: string | null
@@ -156,7 +169,16 @@ export interface SessionsStore {
   setChangesScope: (cwd: string, scope: DiffScope) => void
   acquireProjectDraft: (cwd: string) => void
   releaseProjectDraft: (cwd: string) => void
-  promoteProjectDraft: (cwd: string, sessionId: string) => Promise<boolean>
+  /** Turns a draft into a tab: a worktree's session, or the chat home's chat. */
+  promoteDraft: (cwd: string, sessionId: string) => Promise<boolean>
+  acquireChatDraft: () => void
+  releaseChatDraft: () => void
+  /** Another try at the chat home's chat after a create failed. */
+  retryChatDraft: () => void
+  /** Leaves the worktree behind for the chat home, the way activating a chat tab does. */
+  focusChatHome: () => void
+  /** Drops the selection work in flight: the worktrees it was started for are gone. */
+  invalidateSelection: () => void
   newSession: (cwd: string) => Promise<string | null>
   newChat: () => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>

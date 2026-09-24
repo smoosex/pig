@@ -12,8 +12,7 @@ import { join } from 'node:path'
 import type { SidebarPrefs } from '../src/shared/api'
 
 const defaults: SidebarPrefs = {
-  projectsCollapsed: false,
-  chatsCollapsed: false,
+  sidebarTab: 'projects',
   split: 0.5,
   reviewOpen: false,
   reviewWidth: 320
@@ -31,7 +30,7 @@ async function runFixture(): Promise<void> {
     assert.deepEqual(await loadSidebarPrefs(), defaults, 'a file that was never written is the defaults')
     assert.equal(await readFile(backup, 'utf8').then(() => true, () => false), false)
 
-    const broken = '{"projectsCollapsed": true, "reviewOpen": '
+    const broken = '{"sidebarTab": "chats", "reviewOpen": '
     await writeFile(file, broken)
     assert.deepEqual(await loadSidebarPrefs(), defaults, 'a file that will not parse falls back')
     assert.equal(await readFile(backup, 'utf8'), broken, 'and is kept aside instead of being dropped')
@@ -43,6 +42,11 @@ async function runFixture(): Promise<void> {
       { version: 1, ...defaults, reviewOpen: true },
       'which writes the patch over defaults rather than over the unreadable file'
     )
+
+    await writeFile(file, JSON.stringify({ sidebarTab: 'nope' }))
+    assert.equal((await loadSidebarPrefs()).sidebarTab, 'projects', 'an unknown tab falls back')
+    await saveSidebarPrefs({ sidebarTab: 'chats' })
+    assert.equal((await loadSidebarPrefs()).sidebarTab, 'chats', 'and a known one round-trips')
 
     if (process.getuid?.() !== 0) {
       await writeFile(file, JSON.stringify({ reviewOpen: true, reviewWidth: 400 }))

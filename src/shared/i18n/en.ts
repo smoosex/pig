@@ -31,13 +31,11 @@ export const en: Messages = {
     restoreFailed: 'Could not restore the open sessions: {error}',
     loadingSession: 'Loading session',
     loadFailed: 'The session failed to load',
-    emptyInProject: 'Open one from the chat history, or start a session on this branch',
-    emptyNoProject: 'Pick a session on the left, or open a project and start chatting',
     retryRestore: 'Retry',
-    openProject: 'Open project',
-    newChat: 'New chat'
+    openProject: 'Open project'
   },
   sidebar: {
+    tabsAria: 'Projects / chats switch',
     projects: 'Projects',
     chats: 'Chats',
     newChat: 'New chat',

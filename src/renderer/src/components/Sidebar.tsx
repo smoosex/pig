@@ -1,26 +1,28 @@
 import { FolderPlus, Plus, Settings } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { useDiffStore } from '../stores/diff'
+import type { SidebarTab } from '../../../shared/api'
 import { Button } from './ui/button'
 import { Kbd } from './ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import { Collapsible, CollapsibleContent } from './ui/collapsible'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
-import { SectionHeader } from './sidebar/SectionHeader'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { useProjectAction } from './sidebar/project-action'
-import { useSidebarPreferences } from './sidebar/use-sidebar-preferences'
 
 export function Sidebar({
   onOpenSettings,
-  hidden = false
+  hidden = false,
+  tab,
+  preferencesError
 }: {
   onOpenSettings: () => void
   hidden?: boolean
+  tab: SidebarTab
+  preferencesError: string | null
 }) {
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
@@ -30,7 +32,6 @@ export function Sidebar({
     error: projectError,
     runAction: runProjectAction
   } = useProjectAction()
-  const { collapsed, setSectionCollapsed, error: preferencesError } = useSidebarPreferences()
   // The right sidebar keeps its own preferences in the same file, so its failures belong on this same line.
   const reviewPrefsError = useDiffStore((s) => s.prefsError)
   const error = projectError ?? preferencesError ?? reviewPrefsError
@@ -45,48 +46,25 @@ export function Sidebar({
       )}
     >
       <div className="flex w-62 shrink-0 flex-col pl-2">
+        {tab === 'chats' ? (
+          <div className="group/header flex h-8 shrink-0 items-center pr-1 pl-2">
+            <span className="text-xs font-medium text-muted-foreground">{t('sidebar.chats')}</span>
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="pointer-events-none opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
+              aria-label={t('sidebar.newChat')}
+              disabled={projectPending !== null}
+              onClick={() => void runProjectAction('new-chat', newChat)}
+            >
+              <Plus />
+            </Button>
+          </div>
+        ) : null}
         <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <SidebarHoverHighlight className="pt-1">
-            <Collapsible
-              open={!collapsed.projects}
-              onOpenChange={(open) => setSectionCollapsed('projects', !open)}
-            >
-              <SectionHeader
-                className="top-0"
-                label={t('sidebar.projects')}
-                collapsed={collapsed.projects}
-                onToggle={() => setSectionCollapsed('projects', !collapsed.projects)}
-              />
-              <CollapsibleContent>
-                <ProjectList />
-              </CollapsibleContent>
-            </Collapsible>
-            <Collapsible
-              open={!collapsed.chats}
-              onOpenChange={(open) => setSectionCollapsed('chats', !open)}
-            >
-              <SectionHeader
-                className="top-8"
-                label={t('sidebar.chats')}
-                collapsed={collapsed.chats}
-                onToggle={() => setSectionCollapsed('chats', !collapsed.chats)}
-                action={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="pointer-events-none opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
-                    aria-label={t('sidebar.newChat')}
-                    disabled={projectPending !== null}
-                    onClick={() => void runProjectAction('new-chat', newChat)}
-                  >
-                    <Plus />
-                  </Button>
-                }
-              />
-              <CollapsibleContent>
-                <ChatList />
-              </CollapsibleContent>
-            </Collapsible>
+            {tab === 'projects' ? <ProjectList /> : <ChatList />}
           </SidebarHoverHighlight>
         </ScrollArea>
         {error && (

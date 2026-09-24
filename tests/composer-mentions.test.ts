@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { atMentionToken, mentionValue } from '../src/renderer/src/components/composer/mentions'
 
@@ -60,13 +60,30 @@ describe('mention value', () => {
 })
 
 let domReady = false
+let domOurs = false
 async function ensureDom(): Promise<void> {
   if (domReady) return
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
-  GlobalRegistrator.register({ url: 'http://localhost' })
+  try {
+    GlobalRegistrator.register({ url: 'http://localhost' })
+    domOurs = true
+  } catch {
+    // Another fixture in this process holds the document; the containers below keep every
+    // assertion scoped, so sharing it is fine.
+    domOurs = false
+  }
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   domReady = true
 }
+
+async function releaseDom(): Promise<void> {
+  if (!domReady || !domOurs) return
+  const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  await GlobalRegistrator.unregister()
+  domReady = false
+  domOurs = false
+}
+afterEach(async () => { await releaseDom() })
 
 describe('file mention dismissal', () => {
   test('the menu reopens after completing once', async () => {

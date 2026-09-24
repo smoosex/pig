@@ -303,64 +303,34 @@ async function runFixture(name: string): Promise<void> {
         root.render(createElement(Probe))
       })
       await act(async () => {
-        state.setSectionCollapsed('projects', true)
+        state.setTab('chats')
       })
       await act(async () => {
-        initial.resolve({ projectsCollapsed: false, chatsCollapsed: true, split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        initial.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 })
       })
-      assert.deepEqual(state.collapsed, { projects: true, chats: true })
+      assert.equal(state.tab, 'chats', 'a switch made before the prefs land wins over them')
       await act(async () => {
-        state.setSectionCollapsed('chats', false)
+        state.setTab('projects')
       })
-      assert.equal(saves.length, 1)
+      assert.equal(saves.length, 1, 'the second write waits for the first')
+      assert.deepEqual(
+        saves.map((save) => save.patch),
+        [{ sidebarTab: 'chats' }]
+      )
       await act(async () => {
         saves[0].result.reject(new Error('save failed'))
       })
-      assert.equal(saves.length, 2)
       assert.equal(state.error, 'save failed')
+      assert.equal(saves.length, 2, 'settling the first releases the second')
       assert.deepEqual(
         saves.map((save) => save.patch),
-        [{ projectsCollapsed: true }, { chatsCollapsed: false }]
+        [{ sidebarTab: 'chats' }, { sidebarTab: 'projects' }]
       )
       await act(async () => {
-        saves[1].result.resolve({ projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        saves[1].result.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 })
       })
-      assert.deepEqual(state.collapsed, { projects: true, chats: false })
-      assert.equal(
-        state.error,
-        'save failed',
-        'a later save of another section leaves the failure alone: projects never reached the disk'
-      )
-
-      await act(async () => {
-        state.setSectionCollapsed('chats', true)
-      })
-      assert.equal(saves.length, 3, 'the next write goes out on its own')
-      await act(async () => {
-        saves[2].result.reject(new Error('still failing'))
-      })
-      assert.equal(state.error, 'still failing')
-      await act(async () => {
-        state.setSectionCollapsed('chats', false)
-      })
-      assert.equal(saves.length, 4)
-      await act(async () => {
-        saves[3].result.resolve({ projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: false, reviewWidth: 320 })
-      })
-      assert.equal(
-        state.error,
-        'save failed',
-        'saving chats again clears only chats, so the projects failure is what is left to report'
-      )
-
-      await act(async () => {
-        state.setSectionCollapsed('projects', false)
-      })
-      assert.equal(saves.length, 5)
-      await act(async () => {
-        saves[4].result.resolve({ projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: false, reviewWidth: 320 })
-      })
-      assert.equal(state.error, null, 'and saving the section that failed clears the message')
+      assert.equal(state.error, null, 'a write that landed clears the message')
+      assert.equal(state.tab, 'projects')
     } else if (name === 'worktree') {
       const { useProjectAction } =
         await import('../src/renderer/src/components/sidebar/project-action')

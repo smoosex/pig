@@ -58,15 +58,13 @@ async function runFixture(name: string): Promise<void> {
     onDiffChanged: () => () => {},
     onDiffWatchError: () => () => {},
     getSidebarPrefs: async () => ({
-      projectsCollapsed: false,
-      chatsCollapsed: false,
+      sidebarTab: 'projects',
       split: 0.5,
       reviewOpen: true,
       reviewWidth: 320
     }),
     setSidebarPrefs: async (patch) => ({
-      projectsCollapsed: false,
-      chatsCollapsed: false,
+      sidebarTab: 'projects',
       split: 0.5,
       reviewOpen: patch.reviewOpen ?? true,
       reviewWidth: patch.reviewWidth ?? 320
@@ -137,7 +135,7 @@ async function runFixture(name: string): Promise<void> {
     const saved: Partial<SidebarPrefs>[] = []
     api.setSidebarPrefs = async (patch) => {
       saved.push(patch)
-      return { projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: false, reviewWidth: 320 }
+      return { sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 }
     }
     await act(async () => {
       useDiffStore.getState().setReviewOpen(false)
@@ -155,7 +153,7 @@ async function runFixture(name: string): Promise<void> {
       new Promise((resolve, reject) => {
         held.push({
           patch,
-          resolve: () => resolve({ projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: false, reviewWidth: 320 }),
+          resolve: () => resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 }),
           reject
         })
       })
@@ -376,7 +374,7 @@ async function runFixture(name: string): Promise<void> {
     const writes: number[] = []
     api.setSidebarPrefs = async (patch) => {
       if (patch.reviewWidth !== undefined) writes.push(patch.reviewWidth)
-      return { projectsCollapsed: false, chatsCollapsed: false, split: 0.5, reviewOpen: true, reviewWidth: patch.reviewWidth ?? 320 }
+      return { sidebarTab: 'projects', split: 0.5, reviewOpen: true, reviewWidth: patch.reviewWidth ?? 320 }
     }
     // happy-dom lays nothing out, so the drag start has to be given a width to work from.
     Object.defineProperty(handle!.parentElement!, 'offsetWidth', { value: 320, configurable: true })

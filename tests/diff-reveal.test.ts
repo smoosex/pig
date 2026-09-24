@@ -6,6 +6,11 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import {
+  DEFAULT_REVIEW_WIDTH,
+  MAX_REVIEW_WIDTH,
+  MIN_REVIEW_WIDTH
+} from '../src/shared/api'
 
 const CWD = '/reveal-project'
 
@@ -42,10 +47,13 @@ const diff = {
 
 test('a reveal seats the card a card-gap below the top', async () => {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  let domOurs = false
   try {
     GlobalRegistrator.register({ url: 'http://localhost' })
+    domOurs = true
   } catch {
-    // One registration per process; other fixtures may have taken it already.
+    // Another fixture in this process holds the document; the containers below keep every
+    // assertion scoped, so sharing it is fine.
   }
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   // The reveal loop rides frames; one synchronous alignment is all this asserts, so frames park.
@@ -53,11 +61,8 @@ test('a reveal seats the card a card-gap below the top', async () => {
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { mock } = await import('bun:test')
-  mock.module('../src/renderer/src/stores/sessions', () => ({
-    useSessionsStore: Object.assign(() => null, { getState: () => ({}) })
-  }))
-  Object.defineProperty(window, 'api', {
-    value: {
+  mock.module('../src/renderer/src/ipc/api', () => ({
+    api: {
       readWorktreeDiff: async () => diff,
       readWorktreePatch: async () => ({ git: true, patch: PATCH, truncated: false }),
       readUntrackedFile: async () => ({ kind: 'text', contents: '', lines: 0 }),
@@ -66,8 +71,10 @@ test('a reveal seats the card a card-gap below the top', async () => {
       onDiffChanged: () => () => {},
       onDiffWatchError: () => () => {}
     },
-    configurable: true
-  })
+    DEFAULT_REVIEW_WIDTH,
+    MAX_REVIEW_WIDTH,
+    MIN_REVIEW_WIDTH
+  }))
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { ChangesView } = await import('../src/renderer/src/components/diff/ChangesView')
@@ -109,4 +116,5 @@ test('a reveal seats the card a card-gap below the top', async () => {
     ['true', 'false']
   )
   await act(async () => { root.unmount() })
+  if (domOurs) await GlobalRegistrator.unregister()
 })

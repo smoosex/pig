@@ -78,7 +78,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     if (isDraftSession) {
       if (!draftCwd) return
       try {
-        if (!await useSessionsStore.getState().promoteProjectDraft(draftCwd, target)) return
+        if (!await useSessionsStore.getState().promoteDraft(draftCwd, target)) return
       } catch (error) {
         report(errorKey, error)
         return

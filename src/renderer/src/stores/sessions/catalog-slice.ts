@@ -165,6 +165,8 @@ export const createCatalogSlice: SessionSlice<
       const project = get().projects.find((item) => item.cwd === cwd)
       await api.unpinProject(cwd)
       projectMembershipVersion++
+      // The worktrees this drops may be what a restore or a switch is still heading for.
+      get().invalidateSelection()
       set((s) => {
         const cwds = new Set([
           cwd,
@@ -302,6 +304,7 @@ export const createCatalogSlice: SessionSlice<
         useDiffStore.getState().forgetWorktree(worktreeCwd)
       }
       projectMembershipVersion++
+      get().invalidateSelection()
       set((s) => {
         const current = s.projects.find((item) => item.cwd === cwd)
         const sessions = [...(project?.sessions ?? []), ...(current?.sessions ?? [])]

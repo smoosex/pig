@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../ipc/api'
+import type { SidebarTab } from '../../../../shared/api'
 import { errorMessage } from './project-action'
 
-type Section = 'projects' | 'chats'
-type PrefField = 'projectsCollapsed' | 'chatsCollapsed' | 'read'
+type PrefField = 'sidebarTab' | 'read'
 
 export function useSidebarPreferences() {
-  const [collapsed, setCollapsed] = useState({ projects: false, chats: false })
+  const [tab, setTabState] = useState<SidebarTab>('projects')
   const [error, setError] = useState<string | null>(null)
-  const touched = useRef(new Set<Section>())
+  const touched = useRef(false)
   const writes = useRef(Promise.resolve())
   const mounted = useRef(false)
   /**
-   * Failures are per field and a success clears only the field it wrote: `setSidebarPrefs` merges one field
-   * at a time, so saving the chats section says nothing about the projects one. Oldest failure first, so
+   * Failures are per field and a success clears only the field it wrote. Oldest failure first, so
    * the newest unresolved one is what shows.
    */
   const failures = useRef(new Map<PrefField, string>())
@@ -28,10 +27,7 @@ export function useSidebarPreferences() {
     void api.getSidebarPrefs().then(
       (prefs) => {
         if (disposed) return
-        setCollapsed((current) => ({
-          projects: touched.current.has('projects') ? current.projects : prefs.projectsCollapsed,
-          chats: touched.current.has('chats') ? current.chats : prefs.chatsCollapsed
-        }))
+        if (!touched.current) setTabState(prefs.sidebarTab)
       },
       (error: unknown) => {
         if (disposed) return
@@ -45,28 +41,27 @@ export function useSidebarPreferences() {
     }
   }, [])
 
-  const setSectionCollapsed = (section: Section, value: boolean) => {
-    touched.current.add(section)
-    setCollapsed((current) => ({ ...current, [section]: value }))
-    const field: PrefField = section === 'projects' ? 'projectsCollapsed' : 'chatsCollapsed'
-    const patch = section === 'projects' ? { projectsCollapsed: value } : { chatsCollapsed: value }
+  const setTab = (next: SidebarTab) => {
+    touched.current = true
+    setTabState(next)
+    const patch = { sidebarTab: next }
     writes.current = writes.current
       .then(() => api.setSidebarPrefs(patch))
       .then(
         () => {
-          failures.current.delete(field)
+          failures.current.delete('sidebarTab')
           // A write that landed proves the file can be reached, so it answers a read that failed as well.
           failures.current.delete('read')
           publishError()
         },
         (error: unknown) => {
           // Re-inserting keeps the map ordered oldest first, so a repeated failure becomes the one shown.
-          failures.current.delete(field)
-          failures.current.set(field, errorMessage(error))
+          failures.current.delete('sidebarTab')
+          failures.current.set('sidebarTab', errorMessage(error))
           publishError()
         }
       )
   }
 
-  return { collapsed, setSectionCollapsed, error }
+  return { tab, setTab, error }
 }
