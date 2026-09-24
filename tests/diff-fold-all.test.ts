@@ -75,21 +75,34 @@ test('the fold-all button swaps its icon with its action', async () => {
     [...container.querySelectorAll('section[id^="diff-section:"]')].map(
       (card) => card.querySelector('button')?.getAttribute('aria-expanded')
     )
-  const click = async () => {
-    const target = control()
+  const click = async (target = control()) => {
     assert.ok(target)
     await act(async () => {
       target.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
     })
     await act(async () => { await Promise.resolve() })
   }
+  const header = (index: number) =>
+    container.querySelectorAll('section[id^="diff-section:"]')[index]?.querySelector('button') as HTMLElement | null
 
+  assert.equal(control()?.getAttribute('aria-label'), '展开全部')
+  assert.equal(iconName(), 'unfold')
+  await click(header(0))
+  assert.deepEqual(cardStates(), ['true', 'false'])
+  assert.equal(control()?.getAttribute('aria-label'), '折叠全部')
+  assert.equal(iconName(), 'fold')
+  await click()
+  assert.deepEqual(cardStates(), ['false', 'false'])
   assert.equal(control()?.getAttribute('aria-label'), '展开全部')
   assert.equal(iconName(), 'unfold')
   await click()
   assert.equal(control()?.getAttribute('aria-label'), '折叠全部')
   assert.equal(iconName(), 'fold')
   assert.deepEqual(cardStates(), ['true', 'true'])
+  await click(header(0))
+  assert.deepEqual(cardStates(), ['false', 'true'])
+  assert.equal(control()?.getAttribute('aria-label'), '折叠全部')
+  assert.equal(iconName(), 'fold')
   await click()
   assert.equal(control()?.getAttribute('aria-label'), '展开全部')
   assert.equal(iconName(), 'unfold')

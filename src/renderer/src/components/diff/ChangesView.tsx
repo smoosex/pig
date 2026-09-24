@@ -302,7 +302,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
     measureNow.current()
   })
 
-  const allExpanded = sections.length > 0 && sections.every((section) => expanded[section.entry.path])
+  const anyExpanded = sections.some((section) => expanded[section.entry.path] === true)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -311,13 +311,13 @@ export function ChangesView({ cwd }: { cwd: string }) {
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label={allExpanded ? t('diff.collapseAll') : t('diff.expandAll')}
+          aria-label={anyExpanded ? t('diff.collapseAll') : t('diff.expandAll')}
           disabled={!sections.length}
           onClick={() =>
-            setExpanded(cwd, allExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
+            setExpanded(cwd, anyExpanded ? {} : Object.fromEntries(sections.map((s) => [s.entry.path, true])))
           }
         >
-          {allExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
+          {anyExpanded ? <ChevronsDownUp /> : <ChevronsUpDown />}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
