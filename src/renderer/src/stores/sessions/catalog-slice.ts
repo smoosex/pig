@@ -3,6 +3,7 @@
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
+import { compareGroupsByLatestSession } from '../../../../shared/session-order'
 import { t } from '../../lib/i18n'
 import { useDiffStore } from '../diff'
 import {
@@ -247,7 +248,7 @@ export const createCatalogSlice: SessionSlice<
           if (refreshRequests.get(cwd) !== request || membership !== chatMembershipVersion) return
           chatLoadVersion++
           set((s) => ({
-            chats: upsertGroup(s.chats, cwd, chat, false, true),
+            chats: upsertGroup(s.chats, cwd, chat, false).sort(compareGroupsByLatestSession),
             openTabs: patchTabsFromGroups(s.openTabs, chat ? [chat] : [])
           }))
         } finally {

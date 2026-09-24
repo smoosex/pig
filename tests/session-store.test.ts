@@ -1251,6 +1251,20 @@ async function runFixture(name: string): Promise<void> {
     await opening
     assert.equal(state().activeTabId, meta.id)
     assert.equal(state().openTabs.length, 2)
+  } else if (name === 'chat-refresh-order') {
+    const older = { cwd: '/chats/older', name: 'older', sessions: [{ ...meta, id: 'older', cwd: '/chats/older', modified: '2026-01-01T00:00:00.000Z' }] }
+    const newer = { cwd: '/chats/newer', name: 'newer', sessions: [{ ...meta, id: 'newer', cwd: '/chats/newer', modified: '2026-01-02T00:00:00.000Z' }] }
+    store.setState({ chats: [newer, older] })
+    api.listProject = async (cwd) => cwd === older.cwd
+      ? { ...older, sessions: [{ ...older.sessions[0], modified: '2026-01-03T00:00:00.000Z' }] }
+      : null
+    await state().refreshCwd(older.cwd)
+    assert.deepEqual(state().chats.map((chat) => chat.cwd), [older.cwd, newer.cwd])
+    assert.equal(state().chats[0].sessions[0].modified, '2026-01-03T00:00:00.000Z')
+    const tied = { cwd: '/chats/z', name: 'tied', sessions: [{ ...meta, id: 'tied', cwd: '/chats/z', modified: newer.sessions[0].modified }] }
+    api.listProject = async () => tied
+    await state().refreshCwd(tied.cwd)
+    assert.deepEqual(state().chats.map((chat) => chat.cwd), [older.cwd, newer.cwd, tied.cwd], 'a new chat with the same timestamp follows cwd order, not a prepend hint')
   } else if (name === 'deleted-chat') {
     const chat = { cwd: meta.cwd, name: 'chat', sessions: [meta] }
     store.setState({ chats: [chat] })
@@ -1394,6 +1408,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'consecutive-prompts': 'sending before history refresh preserves completed live messages',
     'selection-order': 'a delayed open does not override a later tab selection',
     'deleted-chat': 'late directory scans do not restore a deleted chat',
+    'chat-refresh-order': 'refreshing a chat moves it to its modified-time position immediately',
     'chat-session-delete-keeps-diff': 'deleting a chat or session does not clear worktree diff state',
     'file-tabs': 'a file tab opens no session and is remembered per worktree',
     'project-load-order': 'a slow project scan cannot replace a newer list'

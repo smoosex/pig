@@ -99,17 +99,14 @@ export function upsertGroup(
   groups: ProjectGroup[],
   cwd: string,
   group: ProjectGroup | null,
-  keepEmpty: boolean,
-  prepend = false
+  keepEmpty: boolean
 ): ProjectGroup[] {
   const index = groups.findIndex((item) => item.cwd === cwd)
   const next = [...groups]
   const keep = group && (keepEmpty || group.sessions.length > 0)
   if (keep && group) {
-    if (index === -1) {
-      if (prepend) next.unshift(group)
-      else next.push(group)
-    } else next[index] = group
+    if (index === -1) next.push(group)
+    else next[index] = group
   } else if (index !== -1) {
     next.splice(index, 1)
   }

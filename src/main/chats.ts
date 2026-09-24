@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { pigPath } from './pig-dir'
 import { listJsonlFiles, listProject, sessionDirForCwd, type ProjectGroup } from './pi/session-loader'
+import { compareGroupsByLatestSession } from '../shared/session-order'
 
 export function chatsDir(): string {
   return pigPath('chats')
@@ -40,7 +41,7 @@ export async function listChats(): Promise<ProjectGroup[]> {
   }
   const groups = await Promise.all(names.map((name) => listProject(join(chatsDir(), name))))
   const chats = groups.filter((group): group is ProjectGroup => (group?.sessions.length ?? 0) > 0)
-  chats.sort((a, b) => (b.sessions[0]?.modified ?? '').localeCompare(a.sessions[0]?.modified ?? ''))
+  chats.sort(compareGroupsByLatestSession)
   return chats
 }
 

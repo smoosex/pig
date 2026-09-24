@@ -2,6 +2,7 @@ import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
+import { compareGroupsByLatestSession } from '../../shared/session-order'
 import { t } from '../i18n'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
@@ -380,7 +381,7 @@ export async function listProjects(): Promise<ProjectGroup[]> {
   }
 
   const groups = [...byCwd].map(([cwd, sessions]) => projectGroup(cwd, sessions))
-  groups.sort((a, b) => (b.sessions[0]?.modified ?? '').localeCompare(a.sessions[0]?.modified ?? ''))
+  groups.sort(compareGroupsByLatestSession)
   return groups
 }
 
