@@ -100,6 +100,8 @@ export interface SessionsStore {
   /** Which tab the strip shows: a session tab or a diff tab. */
   activeTabId: string | null
   currentProjectCwd: string | null
+  /** The worktree persisted before launch, even when the chats half owns the restored pane. */
+  restoredProjectCwd: string | null
   activeSessionByCwd: Record<string, string | null>
   /**
    * The tab each worktree was left on, sessions and changes tabs alike: a session id cannot stand in for
@@ -153,7 +155,9 @@ export interface SessionsStore {
   clearQueuedEditText: (sessionId: string) => void
   setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
 
-  initializeProjectWorkspaces: () => Promise<void>
+  initializeProjectWorkspaces: (startInChatHome?: boolean) => Promise<void>
+  /** A pending restore follows the latest sidebar half without starting another scan. */
+  setWorkspaceRestoreMode: (startInChatHome: boolean) => void
   selectProjectCwd: (cwd: string) => Promise<void>
   activateTab: (tabId: string) => Promise<void>
   openExisting: (meta: SessionMeta, kind?: 'project' | 'chat') => Promise<void>

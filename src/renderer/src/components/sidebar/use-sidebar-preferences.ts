@@ -5,8 +5,11 @@ import { errorMessage } from './project-action'
 
 type PrefField = 'sidebarTab' | 'read'
 
+const SIDEBAR_PREFS_TIMEOUT_MS = 2000
+
 export function useSidebarPreferences() {
   const [tab, setTabState] = useState<SidebarTab>('projects')
+  const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const touched = useRef(false)
   const writes = useRef(Promise.resolve())
@@ -23,20 +26,31 @@ export function useSidebarPreferences() {
 
   useEffect(() => {
     let disposed = false
+    let timedOut = false
     mounted.current = true
+    const timeout = setTimeout(() => {
+      timedOut = true
+      if (!disposed) setReady(true)
+    }, SIDEBAR_PREFS_TIMEOUT_MS)
     void api.getSidebarPrefs().then(
       (prefs) => {
-        if (disposed) return
+        // The fallback already chose the pane; a late read must not move it.
+        if (disposed || timedOut) return
+        clearTimeout(timeout)
         if (!touched.current) setTabState(prefs.sidebarTab)
+        setReady(true)
       },
       (error: unknown) => {
-        if (disposed) return
+        if (disposed || timedOut) return
+        clearTimeout(timeout)
         failures.current.set('read', errorMessage(error))
         setError(errorMessage(error))
+        setReady(true)
       }
     )
     return () => {
       disposed = true
+      clearTimeout(timeout)
       mounted.current = false
     }
   }, [])
@@ -63,5 +77,5 @@ export function useSidebarPreferences() {
       )
   }
 
-  return { tab, setTab, error }
+  return { tab, setTab, ready, error }
 }

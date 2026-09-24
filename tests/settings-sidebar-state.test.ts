@@ -280,6 +280,56 @@ async function runFixture(name: string): Promise<void> {
       await second
       assert.deepEqual(useSettingsStore.getState().providers, [])
       assert.deepEqual(replies, [{ id: 'one', value: 'a' }])
+    } else if (name === 'sidebar-timeout') {
+      const initial = deferred<SidebarPrefs>()
+      api.getSidebarPrefs = () => initial.promise
+      const { useSidebarPreferences } =
+        await import('../src/renderer/src/components/sidebar/use-sidebar-preferences')
+      let state!: ReturnType<typeof useSidebarPreferences>
+      function Probe() {
+        state = useSidebarPreferences()
+        return null
+      }
+      const originalSetTimeout = globalThis.setTimeout
+      const pendingTimeouts: Array<() => void> = []
+      globalThis.setTimeout = ((callback: () => void, delay?: number, ...args: unknown[]) => {
+        if (delay === 2000) {
+          pendingTimeouts.push(callback)
+          return 0 as unknown as ReturnType<typeof setTimeout>
+        }
+        return originalSetTimeout(callback, delay, ...args)
+      }) as typeof setTimeout
+      try {
+        await act(async () => { root.render(createElement(Probe)) })
+        assert.equal(state.ready, false)
+        assert.equal(pendingTimeouts.length, 1)
+        await act(async () => { pendingTimeouts[0]() })
+        assert.equal(state.ready, true, 'an unanswered preference read cannot block workspace restore')
+        assert.equal(state.tab, 'projects', 'a timed-out read falls back to Projects')
+        await act(async () => {
+          initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        })
+        assert.equal(state.tab, 'projects', 'a late preference cannot steal the pane after fallback')
+      } finally {
+        globalThis.setTimeout = originalSetTimeout
+      }
+    } else if (name === 'sidebar-restore') {
+      const initial = deferred<SidebarPrefs>()
+      api.getSidebarPrefs = () => initial.promise
+      const { useSidebarPreferences } =
+        await import('../src/renderer/src/components/sidebar/use-sidebar-preferences')
+      let state!: ReturnType<typeof useSidebarPreferences>
+      function Probe() {
+        state = useSidebarPreferences()
+        return null
+      }
+      await act(async () => { root.render(createElement(Probe)) })
+      assert.equal(state.ready, false)
+      await act(async () => {
+        initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+      })
+      assert.equal(state.ready, true)
+      assert.equal(state.tab, 'chats', 'a restored Chats preference can drive the initial workspace selection')
     } else if (name === 'sidebar') {
       const initial = deferred<SidebarPrefs>()
       const saves: {
@@ -302,6 +352,7 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => {
         root.render(createElement(Probe))
       })
+      assert.equal(state.ready, false, 'the workspace must wait for the sidebar selection')
       await act(async () => {
         state.setTab('chats')
       })
@@ -309,6 +360,7 @@ async function runFixture(name: string): Promise<void> {
         initial.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 })
       })
       assert.equal(state.tab, 'chats', 'a switch made before the prefs land wins over them')
+      assert.equal(state.ready, true)
       await act(async () => {
         state.setTab('projects')
       })
@@ -602,6 +654,8 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     locale: 'the language setting follows the system, persists and re-titles placeholders',
     auth: 'auth cancellation owns its prompts until completion and cleans up on unmount',
     sidebar: 'late preferences preserve user changes and writes remain ordered',
+    'sidebar-restore': 'sidebar preferences expose the saved Chats selection before workspace restore',
+    'sidebar-timeout': 'an unanswered sidebar read falls back without applying a late response',
     worktree: 'worktree inspection is guarded and failures never start creation',
     'worktree-delete':
       'failed deletion checks never delete and dirty worktrees require explicit force',

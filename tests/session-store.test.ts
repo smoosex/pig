@@ -205,6 +205,9 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().workspaceRestoreReady, false, 'a failed restore stays retryable')
     assert.equal(state().workspaceRestoreError, 'scan failed')
     assert.equal(state().openTabs.length, 0)
+    state().setWorkspaceRestoreMode(true)
+    assert.equal(scans, 1, 'switching sidebar halves never retries a failed scan')
+    assert.equal(state().workspaceRestoreError, 'scan failed')
 
     await state().initializeProjectWorkspaces()
     assert.equal(scans, 2, 'the retry scans again')
@@ -213,6 +216,73 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(state().currentProjectCwd, '/project')
     assert.equal(state().activeTabId, 'first')
     assert.equal(state().openTabs[0]?.loadState, 'ready')
+    return
+  }
+
+  if (
+    name === 'chat-home-restore' || name === 'workspace-restore-sidebar-race' ||
+    name === 'workspace-restore-switch-back'
+  ) {
+    const project: ProjectGroup = {
+      cwd: meta.cwd,
+      name: 'project',
+      sessions: [meta],
+      worktrees: [{
+        cwd: meta.cwd, branch: 'main', isPrimary: true, locked: false, missing: false,
+        managed: false, sessions: [meta]
+      }]
+    }
+    const saved: OpenProjectSessionsState = {
+      currentCwd: meta.cwd,
+      workspaces: [{
+        cwd: meta.cwd, sessionIds: [meta.id], activeSessionId: meta.id,
+        changesOpen: false, activeTabId: meta.id
+      }]
+    }
+    if (name !== 'chat-home-restore') {
+      const persisted = deferred<OpenProjectSessionsState>()
+      const scan = deferred<ProjectGroup[]>()
+      api.getOpenProjectSessions = () => persisted.promise
+      api.listProjects = () => scan.promise
+      const restoring = state().initializeProjectWorkspaces()
+      state().setWorkspaceRestoreMode(true)
+      if (name === 'workspace-restore-switch-back') {
+        state().focusChatHome()
+        state().setWorkspaceRestoreMode(false)
+      }
+      persisted.resolve(saved)
+      scan.resolve([project])
+      await restoring
+    } else {
+      api.getOpenProjectSessions = async () => saved
+      api.listProjects = async () => [project]
+      await state().initializeProjectWorkspaces(true)
+    }
+    assert.equal(state().workspaceRestoreReady, true)
+    if (name === 'workspace-restore-switch-back') {
+      assert.equal(state().currentProjectCwd, meta.cwd, 'switching back returns to the project')
+      assert.equal(state().activeTabId, meta.id)
+      assert.equal(openCalls, 1)
+      return
+    }
+    assert.equal(state().currentProjectCwd, null, 'the chat home owns the pane')
+    assert.equal(state().activeTabId, null, 'a project tab cannot be active in Chats')
+    assert.equal(state().restoredProjectCwd, meta.cwd, 'Projects can still return to the previous worktree')
+    assert.equal(state().openTabs[0]?.loadState, 'cold', 'project tabs remain available without loading them')
+    assert.equal(openCalls, 0)
+
+    state().acquireChatDraft()
+    await Bun.sleep(0)
+    assert.equal(state().chatDraft?.sessionId, 'chat', 'the chat home creates a fresh draft')
+    assert.equal(state().openTabs.length, 1, 'an unsent chat is not an open tab')
+    state().releaseChatDraft()
+    await Bun.sleep(0)
+    assert.equal(chatDeletes, 1, 'leaving the empty chat discards only its draft')
+
+    await state().selectProjectCwd(state().restoredProjectCwd!)
+    assert.equal(state().currentProjectCwd, meta.cwd)
+    assert.equal(state().activeTabId, meta.id)
+    assert.equal(openCalls, 1, 'the project loads only when selected')
     return
   }
 
@@ -1360,6 +1430,9 @@ if (process.argv[2] === '--session-store-fixture') {
   const cases = {
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
+    'chat-home-restore': 'restoring Chats starts a new conversation instead of opening the last project',
+    'workspace-restore-sidebar-race': 'a sidebar change during restore controls the initial pane',
+    'workspace-restore-switch-back': 'a rapid switch back to Projects restores its pane',
     'worktree-topology-sync': 'focus discovery preserves sessions without scanning their files',
     'rename-session': 'a rename reaches the tab, the project rows and the chats, and clearing it restores the title',
     'relabel-image-tab': 'a locale switch re-derives an image placeholder instead of freezing it',

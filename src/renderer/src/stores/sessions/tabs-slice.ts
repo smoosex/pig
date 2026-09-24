@@ -41,6 +41,7 @@ export const createTabsSlice: SessionSlice<
   | 'openTabs'
   | 'activeTabId'
   | 'currentProjectCwd'
+  | 'restoredProjectCwd'
   | 'activeSessionByCwd'
   | 'activeTabByCwd'
   | 'draftSessionByCwd'
@@ -51,6 +52,7 @@ export const createTabsSlice: SessionSlice<
   | 'workspaceRestoreError'
   | 'workspaceError'
   | 'initializeProjectWorkspaces'
+  | 'setWorkspaceRestoreMode'
   | 'selectProjectCwd'
   | 'activateTab'
   | 'openExisting'
@@ -85,6 +87,8 @@ export const createTabsSlice: SessionSlice<
   let chatLeases = 0
   let chatCreating: Promise<void> | null = null
   let initializeRequest: Promise<void> | null = null
+  let restoreInChatHome = false
+  let restoreProjectAfterSwitch = false
   let selectionVersion = 0
   let persistenceVersion = 0
 
@@ -265,6 +269,7 @@ export const createTabsSlice: SessionSlice<
     openTabs: [],
     activeTabId: null,
     currentProjectCwd: null,
+    restoredProjectCwd: null,
     activeSessionByCwd: {},
     activeTabByCwd: {},
     draftSessionByCwd: {},
@@ -275,9 +280,11 @@ export const createTabsSlice: SessionSlice<
     workspaceRestoreError: null,
     workspaceError: null,
 
-    initializeProjectWorkspaces: () => {
+    initializeProjectWorkspaces: (startInChatHome = false) => {
       if (get().workspaceRestoreReady) return Promise.resolve()
       if (initializeRequest) return initializeRequest
+      restoreInChatHome = startInChatHome
+      restoreProjectAfterSwitch = false
       const restoreSelection = selectionVersion
       set({ workspaceRestoreError: null })
       initializeRequest = (async () => {
@@ -356,6 +363,10 @@ export const createTabsSlice: SessionSlice<
         const activeTabId = restoredActiveTabId ?? activeSessionId
 
         const selectionUnchanged = restoreSelection === selectionVersion
+        const chatHome = restoreInChatHome
+        const restoreSelectedProject = selectionUnchanged || (
+          !chatHome && restoreProjectAfterSwitch && !get().currentProjectCwd && !get().activeTabId
+        )
         set((state) => {
           const restoredIds = new Set(restoredTabs.map((tab) => tab.id))
           const projectTabs = [
@@ -374,14 +385,19 @@ export const createTabsSlice: SessionSlice<
             activeTabByCwd: selectionUnchanged
               ? restoredActiveTabs
               : { ...restoredActiveTabs, ...state.activeTabByCwd },
-            currentProjectCwd: selectionUnchanged ? currentProjectCwd : state.currentProjectCwd,
-            activeTabId: selectionUnchanged ? activeTabId : state.activeTabId,
+            restoredProjectCwd: currentProjectCwd,
+            currentProjectCwd: restoreSelectedProject
+              ? (chatHome ? null : currentProjectCwd)
+              : state.currentProjectCwd,
+            activeTabId: restoreSelectedProject
+              ? (chatHome ? null : activeTabId)
+              : state.activeTabId,
             workspaceRestoreReady: true,
             workspaceRestoreError: null
           }
         })
 
-        if (selectionUnchanged && activeTabId) {
+        if (restoreSelectedProject && !chatHome && activeTabId) {
           await get().activateTab(activeTabId)
         }
       })().catch((error: unknown) => {
@@ -391,6 +407,14 @@ export const createTabsSlice: SessionSlice<
         initializeRequest = null
       })
       return initializeRequest
+    },
+
+    setWorkspaceRestoreMode: (startInChatHome) => {
+      if (!initializeRequest) return
+      // A switch back to Projects can undo the chat-home selection made during this scan, but not a
+      // real tab or worktree selection the reader made afterward.
+      restoreInChatHome = startInChatHome
+      restoreProjectAfterSwitch = !startInChatHome && !get().currentProjectCwd && !get().activeTabId
     },
 
     selectProjectCwd: async (cwd) => {

@@ -82,6 +82,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 export default function App() {
   const t = useT()
   const initializeProjectWorkspaces = useSessionsStore((s) => s.initializeProjectWorkspaces)
+  const setWorkspaceRestoreMode = useSessionsStore((s) => s.setWorkspaceRestoreMode)
   const acquireProjectDraft = useSessionsStore((s) => s.acquireProjectDraft)
   const releaseProjectDraft = useSessionsStore((s) => s.releaseProjectDraft)
   const acquireChatDraft = useSessionsStore((s) => s.acquireChatDraft)
@@ -101,6 +102,7 @@ export default function App() {
   const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
   const projects = useSessionsStore((s) => s.projects)
   const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
+  const restoredProjectCwd = useSessionsStore((s) => s.restoredProjectCwd)
   const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
   const draftSessionId = useSessionsStore((s) =>
     currentProjectCwd ? (s.draftSessionByCwd[currentProjectCwd] ?? null) : null
@@ -112,7 +114,7 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.load)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const { tab: sidebarTab, setTab: setSidebarTab, error: sidebarPrefsError } = useSidebarPreferences()
+  const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * What each half of the switcher was left on. A chat clears `currentProjectCwd`, so the worktree
@@ -121,6 +123,7 @@ export default function App() {
    */
   const projectFocusCwd = useRef<string | null>(null)
   const chatFocusTabId = useRef<string | null>(null)
+  const requestedWorkspaceRestore = useRef(false)
   useEventBridge()
   useSessionWindows()
   useSessionNames()
@@ -159,11 +162,16 @@ export default function App() {
   }, [activeTabId, closeTab, currentProjectCwd, openProject])
 
   useEffect(() => {
-    void initializeProjectWorkspaces()
+    if (!sidebarReady || requestedWorkspaceRestore.current) return
+    requestedWorkspaceRestore.current = true
+    void initializeProjectWorkspaces(sidebarTab === 'chats')
+  }, [initializeProjectWorkspaces, sidebarReady, sidebarTab])
+
+  useEffect(() => {
     void loadChats()
     void loadSettings()
     void loadReviewPrefs()
-  }, [initializeProjectWorkspaces, loadChats, loadSettings, loadReviewPrefs])
+  }, [loadChats, loadSettings, loadReviewPrefs])
 
   const diffTab = activeTab?.kind === 'diff' ? activeTab : null
   const fileTab = activeTab?.kind === 'file' ? activeTab : null
@@ -230,13 +238,15 @@ export default function App() {
   const switchSidebarTab = (next: SidebarTab) => {
     if (next === sidebarTab) return
     setSidebarTab(next)
+    // Keep the restore mode in sync now: the scan may finish before a sidebarTab effect runs.
+    setWorkspaceRestoreMode(next === 'chats')
     const action = halfSwitch(
       openTabs,
       next,
       activeTabId,
       currentProjectCwd,
       chatFocusTabId.current,
-      projectFocusCwd.current,
+      projectFocusCwd.current ?? restoredProjectCwd,
       knownProjectCwds
     )
     if (action.kind === 'chat') setActiveTab(action.tabId)
@@ -354,7 +364,7 @@ export default function App() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => void initializeProjectWorkspaces()}
+                        onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
                       >
                         <RefreshCw />
                         {t('app.retryRestore')}
