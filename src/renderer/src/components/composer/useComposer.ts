@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { useSessionsStore, selectActiveSessionCwd, selectActiveSessionId } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
 import { useComposerEditor } from './useComposerEditor'
@@ -22,15 +22,37 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
   const attachments = useComposerImages(draftKey)
   const document = useComposerEditor({ sessionId: draftKey, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
-  const submission = useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments })
+  const [bashModeKey, setBashModeKey] = useState<string | null>(null)
+  const [dismissedBashKey, setDismissedBashKey] = useState<string | null>(null)
+  useEffect(() => {
+    setBashModeKey(null)
+    setDismissedBashKey(null)
+  }, [draftKey])
+  const enteringBash = Boolean(
+    draftKey && draft.text.startsWith('!') && draft.attachments[0]?.start !== 0 &&
+    bashModeKey !== draftKey && dismissedBashKey !== draftKey
+  )
+  const bashMode = (bashModeKey === draftKey && draftKey !== null) || enteringBash
+  useLayoutEffect(() => {
+    if (!enteringBash || !editor) return
+    setBashModeKey(draftKey)
+    editor.chain().deleteRange({ from: 1, to: 2 }).run()
+  }, [draftKey, editor, enteringBash])
+  useEffect(() => {
+    if (!draft.text.startsWith('!')) setDismissedBashKey(null)
+  }, [draft.text])
+  const submission = useComposerSubmission({
+    sessionId, draftCwd, isDraftSession, document, attachments, bashMode,
+    onBashSubmitted: () => setBashModeKey(null)
+  })
   const commands = useSlashCommands(sessionId, draft.text, (command) => {
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
-  })
+  }, bashMode)
   // A draft is its own workspace; a tab reads the workspace off the session behind it.
   const activeCwd = useSessionsStore(selectActiveSessionCwd)
   const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
-  const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open })
+  const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 
   useEffect(() => {
@@ -41,11 +63,18 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
   }, [sessionId, clearQueuedEditText, editor, queuedEditText, replaceText])
 
   function handleKeyDown(event: KeyboardEvent): boolean {
+    if (bashMode && event.key === 'Escape') {
+      event.preventDefault()
+      setDismissedBashKey(draftKey)
+      setBashModeKey(null)
+      document.restoreBashPrefix()
+      return true
+    }
     if (commands.handleKeyDown(event)) return true
     if (mentions.handleKeyDown(event)) return true
     if (
       event.key === 'Tab' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
-      isStreaming && hasDraft
+      isStreaming && hasDraft && !bashMode
     ) {
       event.preventDefault()
       void submission.send('steer')
@@ -59,5 +88,5 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
     return true
   }
 
-  return { sessionId, isDraftSession, isStreaming, editor, hasDraft, commands, mentions, attachments, ...submission }
+  return { sessionId, isDraftSession, isStreaming, bashMode, canRunBash: Boolean((enteringBash ? draft.text.slice(1) : draft.text).trim()), editor, hasDraft, commands, mentions, attachments, ...submission }
 }

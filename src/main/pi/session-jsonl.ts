@@ -318,15 +318,14 @@ function branchOf(
 }
 
 /**
- * Where turns begin, using the same rule the projection groups by: the run of visible rows before
- * the first user message is a turn of its own, and every user message opens another. Counting only
- * user rows would disagree with the projected turn list and cut the newest turn off a window.
+ * Where turns begin, using the same rule the projection groups by: direct bash commands and user
+ * messages each open a turn; the run of visible rows before either is a turn of its own.
  */
 function turnStartsOf(branch: SessionFileEntry[]): number[] {
   const starts: number[] = []
   branch.forEach((row, position) => {
     if (row.hidden === true || isHiddenEntryType(row.type)) return
-    if (row.type === 'message' && row.role === 'user') starts.push(position)
+    if (row.type === 'message' && (row.role === 'user' || row.role === 'bashExecution')) starts.push(position)
     else if (starts.length === 0) starts.push(position)
   })
   return starts

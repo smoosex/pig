@@ -72,6 +72,7 @@ const SessionChatPane = memo(function SessionChatPane({
   const turnLoading = useSessionsStore((s) => s.runtime[sessionId]?.turnLoading ?? false)
   const turnError = useSessionsStore((s) => s.runtime[sessionId]?.turnError ?? null)
   const liveMessages = useSessionsStore((s) => s.runtime[sessionId]?.liveMessages ?? emptyMessages)
+  const bashExecution = useSessionsStore((s) => s.runtime[sessionId]?.bashExecution ?? null)
   const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
   const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
   const elapsedByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.elapsedByTurnId ?? emptyDurations)
@@ -83,14 +84,23 @@ const SessionChatPane = memo(function SessionChatPane({
     [turns, processByTurnId, elapsedByTurnId]
   )
   const live = useMemo(() => {
-    if (liveMessages.length === 0) return []
     const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations)
-    return grouped.map((turn, index) => ({
+    const turns = grouped.map((turn, index) => ({
       ...turn,
       id: turn.id ?? `live:${turn.renderKey ?? index}`,
       workedMs: index === grouped.length - 1 ? streamElapsedMs ?? undefined : undefined
     }))
-  }, [liveMessages, isStreaming, thinkingDurations, streamElapsedMs])
+    if (bashExecution) {
+      const bash = groupTurns([bashExecution.message], false)[0]
+      turns.push({
+        ...bash,
+        id: `live:bash:${bashExecution.id}`,
+        bashRunning: true,
+        workedMs: undefined
+      })
+    }
+    return turns
+  }, [liveMessages, bashExecution, isStreaming, thinkingDurations, streamElapsedMs])
 
   const scrollKey = branchViewId ? `${sessionId}\u0000${branchViewId}` : null
   const saveScrollState = useCallback((state: ScrollSnapshot) => {

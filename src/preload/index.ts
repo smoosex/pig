@@ -65,6 +65,9 @@ const api: SessionApi = {
     streamingBehavior?: Parameters<SessionApi['prompt']>[4]
   ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior),
   abort: (sessionId: string) => ipcRenderer.invoke('session:abort', sessionId),
+  executeBash: (sessionId: string, command: string, id: string) =>
+    ipcRenderer.invoke('session:execute-bash', sessionId, command, id),
+  abortBash: (sessionId: string) => ipcRenderer.invoke('session:abort-bash', sessionId),
   getDisplayTurns: (sessionId: string) =>
     ipcRenderer.invoke('session:get-display-turns', sessionId),
   getTurnWindow: (sessionId: string, start: number, count: number) =>

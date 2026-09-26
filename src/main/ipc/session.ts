@@ -120,6 +120,21 @@ export function registerSessionIpc(): void {
     await ls.agentSession.abort()
   })
 
+  ipcMain.handle('session:execute-bash', async (_event, sessionId: string, command: string, id: string) => {
+    if (!sessionId || typeof command !== 'string' || !command.trim() || typeof id !== 'string' || !id) {
+      throw new Error('Session id, command and execution id are required')
+    }
+    const { agentSession } = (await activateSession(sessionId)).session
+    if (agentSession.isStreaming || agentSession.isBashRunning) throw new Error('Session is busy')
+    return agentSession.executeBash(command, undefined, { id })
+  })
+
+  ipcMain.handle('session:abort-bash', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    const { agentSession } = await prepareSession(sessionId)
+    agentSession.abortBash()
+  })
+
   ipcMain.handle('session:get-display-turns', async (_event, sessionId: string) => {
     return getDisplayTurns(sessionId)
   })

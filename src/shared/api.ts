@@ -301,6 +301,7 @@ export type DisplayAnswer =
 export interface DisplayTurn {
   id: string
   user?: DisplayUser
+  bash?: { command: string; exitCode?: number; cancelled: boolean }
   /** Original user-message timestamp used to preserve the live Turn DOM key. */
   userTimestamp?: number
   answer: DisplayAnswer[]
@@ -452,6 +453,13 @@ export interface AppSettings extends ThemePrefs {
   providers: SettingsProvider[]
 }
 
+export interface BashExecutionResult {
+  output: string
+  exitCode?: number
+  cancelled: boolean
+  truncated: boolean
+}
+
 export interface SessionApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
@@ -487,6 +495,8 @@ export interface SessionApi {
     streamingBehavior?: PromptStreamingBehavior
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
+  executeBash: (sessionId: string, command: string, id: string) => Promise<BashExecutionResult>
+  abortBash: (sessionId: string) => Promise<void>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>

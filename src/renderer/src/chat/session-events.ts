@@ -1,6 +1,7 @@
 import { api } from '../ipc/api'
 import { isPiMessage, type PiMessage, type PiSessionEvent } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
+import { MAX_LIVE_BASH_CHARS } from '../stores/sessions/conversation-slice'
 import { sameMessage } from '../stores/sessions/runtime'
 import { createThinkingTracker } from './thinking-tracker'
 
@@ -13,15 +14,16 @@ const HYDRATE_DELAY_MS = 320
 export function subscribeSessionEvents(): () => void {
   const delays = new Map<string, number>()
   const updates = new Map<string, { instanceId: number; branchRequest: number; message: PiMessage }>()
+  const bashDeltas = new Map<string, { id: string; text: string }>()
   let frame: number | null = null
   const actions = useSessionsStore.getState()
   const {
-    setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage,
+    setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage, appendBashOutput,
     renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages
   } = actions
   const thinking = createThinkingTracker(setThinkingDuration)
   const cancelFrame = () => {
-    if (frame != null && updates.size === 0) {
+    if (frame != null && updates.size === 0 && bashDeltas.size === 0) {
       window.cancelAnimationFrame(frame)
       frame = null
     }
@@ -41,17 +43,37 @@ export function subscribeSessionEvents(): () => void {
     if (pending != null) window.clearTimeout(pending)
     delays.delete(sessionId)
   }
+  const flushBash = (sessionId: string) => {
+    const pending = bashDeltas.get(sessionId)
+    if (!pending) return
+    bashDeltas.delete(sessionId)
+    appendBashOutput(sessionId, pending.id, pending.text)
+    cancelFrame()
+  }
+  const scheduleFrame = () => {
+    // Streaming snapshots and command output arrive per chunk; render the batches once per frame.
+    frame ??= window.requestAnimationFrame(() => {
+      frame = null
+      for (const id of updates.keys()) flush(id)
+      for (const id of bashDeltas.keys()) flushBash(id)
+    })
+  }
+  const queueBashDelta = (sessionId: string, id: string, delta: string) => {
+    const pending = bashDeltas.get(sessionId)
+    if (pending && pending.id !== id) flushBash(sessionId)
+    const accumulated = pending?.id === id ? pending : { id, text: '' }
+    // Frames stop in hidden windows, so a batch can outlive any single stream chunk.
+    accumulated.text = (accumulated.text + delta).slice(-MAX_LIVE_BASH_CHARS)
+    bashDeltas.set(sessionId, accumulated)
+    scheduleFrame()
+  }
   const queueUpdate = (sessionId: string, message: PiMessage) => {
     const current = useSessionsStore.getState().runtime[sessionId]
     if (!current) return
     const pending = updates.get(sessionId)
     if (pending && !sameMessage(pending.message, message)) flush(sessionId)
     updates.set(sessionId, { instanceId: current.instanceId, branchRequest: current.branchRequest, message })
-    // Streaming snapshots are complete messages; render only the last one per frame.
-    frame ??= window.requestAnimationFrame(() => {
-      frame = null
-      for (const id of updates.keys()) flush(id)
-    })
+    scheduleFrame()
   }
   const reportError = (operation: string) => (error: unknown) => {
     console.error(`Failed to ${operation}:`, error)
@@ -64,6 +86,7 @@ export function subscribeSessionEvents(): () => void {
       if (state.runtime[tab.id]) continue
       cancelDelay(tab.id)
       updates.delete(tab.id)
+      bashDeltas.delete(tab.id)
       thinking.forgetSession(tab.id)
     }
     cancelFrame()
@@ -122,6 +145,11 @@ export function subscribeSessionEvents(): () => void {
         )
         break
       }
+      case 'bash_execution_update':
+        if (typeof event.id === 'string' && typeof event.delta === 'string') {
+          queueBashDelta(sessionId, event.id, event.delta)
+        }
+        break
       case 'queue_update':
         if (Array.isArray(event.followUp) && event.followUp.every((item) => typeof item === 'string')) {
           setFollowUpMessages(sessionId, [...event.followUp] as string[])

@@ -86,9 +86,61 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'message_end', message: assistant('complete') })
       flush()
       assert.deepEqual(runtime().liveMessages, [assistant('complete'), tool('first'), tool('second')])
+    } else if (name === 'bash') {
+      store.getState().beginBash('session', 'run-1', 'echo ready')
+      let updates = 0
+      const off = store.subscribe((state, previous) => {
+        if (state.runtime.session.bashExecution !== previous.runtime.session.bashExecution) updates++
+      })
+      for (let i = 0; i < 100; i++) emit({ type: 'bash_execution_update', id: 'run-1', delta: 'x' })
+      assert.equal(frames.size, 1)
+      assert.equal(updates, 0)
+      assert.equal(runtime().bashExecution?.message.output, '')
+      flush()
+      assert.equal(updates, 1)
+      assert.equal(runtime().bashExecution?.message.output, 'x'.repeat(100))
+      // Output of a different execution must not be reordered into the pending batch.
+      emit({ type: 'bash_execution_update', id: 'old-run', delta: 'ignored' })
+      emit({ type: 'bash_execution_update', id: 'run-1', delta: 'tail' })
+      flush()
+      assert.equal(runtime().bashExecution?.message.output, `${'x'.repeat(100)}tail`)
+      off()
+      store.getState().endBash('session', 'run-1')
+      emit({ type: 'bash_execution_update', id: 'run-1', delta: 'late' })
+      flush()
+      assert.equal(runtime().bashExecution, null)
+
+      // A hidden window stops frames, so the pending batch is tailed before it reaches the store.
+      store.getState().beginBash('session', 'run-2', 'yes')
+      emit({ type: 'bash_execution_update', id: 'run-2', delta: 'a'.repeat(70_000) })
+      emit({ type: 'bash_execution_update', id: 'run-2', delta: 'tail' })
+      flush()
+      const long = runtime().bashExecution?.message.output ?? ''
+      assert.equal(long.length, 64 * 1024)
+      assert.ok(long.startsWith('a'))
+      assert.ok(long.endsWith('tail'))
+      store.getState().endBash('session', 'run-2')
+      emit({ type: 'bash_execution_update', id: 'run-2', delta: 'late' })
+      flush()
+      assert.equal(runtime().bashExecution, null)
+      store.getState().beginBash('session', 'run-2', 'echo ready')
+      store.setState((state) => ({
+        runtime: {
+          ...state.runtime,
+          session: {
+            ...state.runtime.session,
+            turns: [{ id: 'bash-row', bash: { command: 'echo ready', exitCode: 0, cancelled: false }, answer: [], startedAt: 1, endedAt: 2, hasProcess: true }]
+          }
+        }
+      }))
+      store.getState().endBash('session', 'run-2', { output: 'ready', exitCode: 0, cancelled: false, truncated: false }, 'bash-row')
+      assert.deepEqual(runtime().turns[0].bash, { command: 'echo ready', exitCode: 0, cancelled: false })
+      assert.equal(runtime().processByTurnId['bash-row'][0].kind, 'bash')
     } else if (name === 'closed') {
       emit({ type: 'message_start', message: assistant('') })
       emit({ type: 'message_update', message: assistant('old') })
+      store.getState().beginBash('session', 'run-1', 'echo ready')
+      emit({ type: 'bash_execution_update', id: 'run-1', delta: 'ready' })
       assert.equal(frames.size, 1)
       store.getState().closeTab('session')
       assert.equal(frames.size, 0)
@@ -97,6 +149,7 @@ async function runFixture(name: string): Promise<void> {
       await store.getState().newSession('/project')
       flush()
       assert.deepEqual(runtime().liveMessages, [])
+      assert.equal(runtime().bashExecution, null)
     } else if (name === 'cleanup') {
       emit({ type: 'agent_end' })
       assert.equal(timers.size, 1)
@@ -141,6 +194,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
   const cases = {
     burst: '100 token snapshots produce one state update per animation frame',
     boundaries: 'message boundaries preserve queued updates and distinct tool results',
+    bash: 'command output is batched per frame and follows the active execution id',
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
     'unaccepted-end': 'agent end cannot acknowledge a user message that was never received',

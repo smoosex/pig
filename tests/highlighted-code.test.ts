@@ -30,6 +30,11 @@ async function runFixture(): Promise<void> {
     assert.equal(panel().classList.contains('max-h-60'), true)
     assert.equal(panel().classList.contains('border-code-border'), true)
     assert.equal(panel().querySelector('.token')?.textContent, 'echo ok')
+    assert.equal(panel().classList.contains('bg-secondary'), true)
+
+    await act(async () => { root.render(createElement(HighlightedCode, { code: 'pwd', lang: 'bash', variant: 'terminal' })) })
+    assert.equal(panel().classList.contains('bg-code-background'), true)
+    assert.equal(panel().querySelector('.token')?.textContent, 'pwd')
 
     await act(async () => {
       root.render(createElement(HighlightedCode, { code: 'one\ntwo', lang: 'text', variant: 'file', fileListing: true, notice: 'truncated' }))
@@ -49,7 +54,7 @@ async function runFixture(): Promise<void> {
     assert.equal(panel().classList.contains('my-2'), true)
     assert.equal(panel().classList.contains('max-h-80'), true)
     assert.equal(panel().querySelector('.token')?.textContent, 'answer')
-    assert.deepEqual(calls, ['bash:echo ok', 'text:one\ntwo', 'typescript:file body', 'text:answer'])
+    assert.deepEqual(calls, ['bash:echo ok', 'bash:pwd', 'text:one\ntwo', 'typescript:file body', 'text:answer'])
   } finally {
     await act(async () => { root.unmount() })
     await GlobalRegistrator.unregister()

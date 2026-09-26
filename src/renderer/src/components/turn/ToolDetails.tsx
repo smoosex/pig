@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Check, Copy, FileCode2 } from 'lucide-react'
 import type { BashExecutionMessage } from '../../pi/types'
 import { resultText, toolStepLabel, type ToolStep } from '../../chat/turns'
+import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { langFromPath } from '../../lib/highlight'
-import { hideScroll } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import { bashCodeSurface, codeSurface, HighlightedCode } from '../HighlightedCode'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -29,18 +30,8 @@ function CodePanel({
   fileListing?: boolean
 }) {
   const t = useT()
-  const copyTimer = useRef<number>(undefined)
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyFeedback(code)
   const filename = path.split(/[/\\]/).pop() || path || t('common.file')
-
-  useEffect(() => () => window.clearTimeout(copyTimer.current), [])
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(code)
-    setCopied(true)
-    window.clearTimeout(copyTimer.current)
-    copyTimer.current = window.setTimeout(() => setCopied(false), 1500)
-  }
 
   return (
     <div className={`overflow-hidden ${codeSurface}`}>
@@ -52,7 +43,7 @@ function CodePanel({
             type="button"
             variant="ghost"
             size="xs"
-            className="-mr-1 text-muted-foreground hover:text-foreground"
+            className={cn('-mr-1 text-muted-foreground hover:text-foreground', copied && 'text-success hover:text-success')}
             aria-label={copied ? t('common.copied') : t('tool.copyCode')}
             onClick={() => void copy()}
           >

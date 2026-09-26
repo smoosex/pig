@@ -7,6 +7,7 @@ import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Marker, MarkerContent } from './ui/marker'
 import { Answer, UserBubble } from './turn/TurnMessages'
+import { BashTurn } from './turn/BashTurn'
 import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkedMs } from './turn/useWorkedMs'
 
@@ -17,7 +18,7 @@ function WorkedLabel({ turn }: { turn: Turn }) {
 }
 
 /** Coordinates lazy process loading and the transition from live work to an answer. */
-export const TurnView = memo(function TurnView({
+function AgentTurnView({
   turn,
   onNeedProcess
 }: {
@@ -114,5 +115,32 @@ export const TurnView = memo(function TurnView({
       ) : null}
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
     </div>
+  )
+}
+
+// A command can head a turn that still carries summaries, answers, or errors: the card renders
+// the command, so the leftovers are projected onto a turn without command metadata.
+function withoutCommand(turn: Turn): Turn | null {
+  const process = turn.process.filter((item) => item.kind !== 'bash')
+  if (process.length === 0 && turn.answer.length === 0 && !turn.errorMessage) return null
+  return { ...turn, process, bash: undefined, hasProcess: process.length > 0 }
+}
+
+export const TurnView = memo(function TurnView({
+  turn,
+  onNeedProcess,
+  onAbortBash
+}: {
+  turn: Turn
+  onNeedProcess?: (turnId: string) => Promise<void>
+  onAbortBash?: () => Promise<void>
+}) {
+  if (!turn.bash) return <AgentTurnView turn={turn} onNeedProcess={onNeedProcess} />
+  const rest = withoutCommand(turn)
+  return (
+    <>
+      <BashTurn turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
+      {rest ? <AgentTurnView turn={rest} onNeedProcess={onNeedProcess} /> : null}
+    </>
   )
 })

@@ -13,6 +13,8 @@ import type { RuntimeState, SessionSlice } from './types'
 const PAGE_TURNS = 40
 /** One request never reads more than this, so a far jump pages instead of blocking on the whole gap. */
 const MAX_PAGE_TURNS = 200
+/** Live command output is tailed at this size in both the pending batch and the store. */
+export const MAX_LIVE_BASH_CHARS = 64 * 1024
 
 export const createConversationSlice: SessionSlice<
   | 'runtime'
@@ -31,6 +33,9 @@ export const createConversationSlice: SessionSlice<
   | 'setStreaming'
   | 'beginPrompt'
   | 'rollbackPrompt'
+  | 'beginBash'
+  | 'appendBashOutput'
+  | 'endBash'
   | 'setThinkingDuration'
   | 'appendLiveMessage'
   | 'replaceLiveMessage'
@@ -353,6 +358,45 @@ export const createConversationSlice: SessionSlice<
       liveMessages: rt.pendingUserMessage ? rt.liveMessages.slice(0, -1) : rt.liveMessages,
       pendingUserMessage: false
     })),
+
+    beginBash: (sessionId, id, command) => update(sessionId, {
+      bashExecution: {
+        id,
+        message: {
+          role: 'bashExecution', command, output: '', exitCode: undefined,
+          cancelled: false, truncated: false, timestamp: Date.now()
+        }
+      }
+    }),
+
+    appendBashOutput: (sessionId, id, delta) => update(sessionId, (rt) =>
+      rt.bashExecution?.id === id
+        ? { bashExecution: {
+            id,
+            message: {
+              ...rt.bashExecution.message,
+              output: (rt.bashExecution.message.output + delta).slice(-MAX_LIVE_BASH_CHARS)
+            }
+          } }
+        : null
+    ),
+
+    endBash: (sessionId, id, result, turnId) => update(sessionId, (rt) => {
+      const execution = rt.bashExecution
+      if (execution?.id !== id) return null
+      return {
+        bashExecution: null,
+        ...(result && turnId ? {
+          processByTurnId: {
+            ...rt.processByTurnId,
+            [turnId]: [{
+              kind: 'bash' as const,
+              message: { ...execution.message, ...result }
+            }]
+          }
+        } : {})
+      }
+    }),
 
     setThinkingDuration: (sessionId, timestamp, index, durationMs) => update(sessionId, (rt) => {
       const key = thinkingTimingKey(timestamp, index)

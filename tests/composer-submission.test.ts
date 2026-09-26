@@ -22,7 +22,14 @@ async function fixture(scenario: string): Promise<void> {
   let exportCalls = 0
   let hydrationCalls = 0
   let promoteCalls = 0
-  const runtime = () => ({ instanceId: 1, pendingUserMessage: false, isStreaming: false, liveMessages: [] as unknown[] })
+  let bashCalls = 0
+  let bashEnds = 0
+  let sentPrompt = ''
+  const runtime = () => ({
+    instanceId: 1, pendingUserMessage: false, isStreaming: false, liveMessages: [] as unknown[],
+    bashExecution: null as { id: string; command: string } | null,
+    turns: [] as Array<{ id: string; bash: { command: string } }>
+  })
   const store = {
     activeTabId: scenario === 'draft-create' ? null as string | null : 'one' as string | null,
     runtime: { one: runtime(), two: runtime() },
@@ -34,13 +41,26 @@ async function fixture(scenario: string): Promise<void> {
       Object.assign(this.runtime[id], { isStreaming: false, pendingUserMessage: false, liveMessages: [] })
     },
     previewSessionTitle() {},
+    beginBash(id: 'one' | 'two', executionId: string, command: string) {
+      this.runtime[id].bashExecution = { id: executionId, command }
+    },
+    endBash(id: 'one' | 'two', executionId: string) {
+      if (this.runtime[id].bashExecution?.id === executionId) {
+        bashEnds++
+        this.runtime[id].bashExecution = null
+      }
+    },
     promoteDraft: async () => {
       promoteCalls++
       store.activeTabId = 'one'
       return true
     },
     refreshCwd: async () => { if (scenario === 'refresh') throw new Error('Refresh failed') },
-    hydrateTurns: async () => { hydrationCalls++; return true },
+    hydrateTurns: async () => {
+      hydrationCalls++
+      if (scenario.startsWith('bash')) store.runtime.one.turns = [{ id: 'bash-row', bash: { command: 'echo done' } }]
+      return true
+    },
     loadControls: async () => {}
   }
   mock.module('../src/renderer/src/stores/sessions', () => ({
@@ -52,12 +72,20 @@ async function fixture(scenario: string): Promise<void> {
       await prepared.promise
       return { sessionId: 'one', cwd: '/project', created: true }
     },
-    prompt: async () => {
+    prompt: async (_id: string, text: string) => {
       promptCalls++
+      sentPrompt = text
       if (scenario !== 'command-only') store.runtime.one.pendingUserMessage = false
       if (scenario === 'accepted-error') throw new Error('Run failed after acknowledgement')
     },
     exportSession: async () => { exportCalls++; await prepared.promise; throw new Error('Export failed') },
+    executeBash: async (_id: string, command: string) => {
+      bashCalls++
+      assert.equal(command, 'echo done')
+      if (scenario === 'bash-error') throw new Error('Shell failed')
+      return { output: 'done', exitCode: 0, cancelled: false, truncated: false }
+    },
+    abortBash: async () => {},
     abort: async () => {
       abortCalls++
       if (scenario !== 'stopped') throw new Error('Abort failed')
@@ -78,7 +106,8 @@ async function fixture(scenario: string): Promise<void> {
       draftCwd: draft ? '/project' : undefined,
       isDraftSession: draft,
       document: editor,
-      attachments: images
+      attachments: images,
+      bashMode: scenario.startsWith('bash')
     })
     return null
   }
@@ -91,23 +120,26 @@ async function fixture(scenario: string): Promise<void> {
   }
 
   try {
-    await render('one', scenario.startsWith('draft-'))
+    await render('one', scenario.startsWith('draft-') || scenario === 'bash-draft')
     await act(async () => {
       if (scenario !== 'duplicate-images') {
         editor.restore({ type: 'doc', content: [{ type: 'paragraph', content: [
-          { type: 'text', text: scenario === 'export' ? '/export' : '原文' },
-          ...(scenario === 'export' ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
+          { type: 'text', text: scenario === 'export' ? '/export' : scenario === 'escaped-bash' ? '!echo done' : scenario.startsWith('bash') ? 'echo done' : '原文' },
+          ...(scenario === 'export' || scenario.startsWith('bash') || scenario === 'escaped-bash' ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
         ] }] })
       }
-      if (scenario !== 'export') images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
+      if (scenario !== 'export' && (scenario === 'bash-attachments' || (!scenario.startsWith('bash') && scenario !== 'escaped-bash'))) {
+        images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
+      }
     })
     let sending!: Promise<void>
     let duplicate!: Promise<void>
     await act(async () => {
       sending = state.send()
-      if (scenario === 'duplicate-images' || scenario === 'export') duplicate = state.send()
+      if (scenario === 'duplicate-images' || scenario === 'export' || scenario === 'bash') duplicate = state.send()
     })
     if (scenario === 'newer-draft') await act(async () => { editor.replaceText('新输入') })
+    if (scenario === 'bash-busy') store.runtime.one.isStreaming = true
     if (scenario === 'draft-failure') await render('one')
     if (scenario === 'stopped') await act(async () => { await state.abort() })
     if (scenario === 'switch') await render('two')
@@ -167,6 +199,36 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(editor.getDraft().attachments.length, 1)
       assert.equal(images.images.length, 1)
       assert.match(state.error ?? '', /Prepare failed/)
+    } else if (scenario === 'bash-attachments') {
+      assert.equal(promptCalls, 0)
+      assert.equal(bashCalls, 0)
+      assert.equal(editor.getDraft().text, 'echo done')
+      assert.equal(images.images.length, 1)
+      assert.match(state.error ?? '', /Remove images and attachments/)
+    } else if (scenario === 'escaped-bash') {
+      assert.equal(promptCalls, 1)
+      assert.equal(sentPrompt, '!echo done')
+      assert.equal(bashCalls, 0)
+    } else if (scenario === 'bash-busy') {
+      assert.equal(promptCalls, 0)
+      assert.equal(bashCalls, 0)
+      assert.equal(bashEnds, 0)
+      assert.equal(editor.getDraft().text, 'echo done')
+      assert.match(state.error ?? '', /started working|已经开始工作/)
+    } else if (scenario === 'bash' || scenario === 'bash-error' || scenario === 'bash-draft') {
+      assert.equal(promptCalls, 0)
+      assert.equal(bashCalls, 1)
+      assert.equal(bashEnds, 1)
+      assert.equal(store.runtime.one.bashExecution, null)
+      if (scenario === 'bash' || scenario === 'bash-draft') {
+        if (scenario === 'bash-draft') assert.equal(promoteCalls, 1)
+        assert.equal(hydrationCalls, 1)
+        assert.equal(editor.getDraft().text, '')
+        assert.equal(state.error, undefined)
+      } else {
+        assert.match(state.error ?? '', /Shell failed/)
+        assert.equal(editor.getDraft().text, '!echo done')
+      }
     } else if (scenario === 'command-only') {
       assert.equal(promptCalls, 1)
       assert.equal(rollbackCalls, 1)
@@ -191,7 +253,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped', 'draft-create', 'draft-failure']) {
+  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

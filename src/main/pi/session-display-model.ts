@@ -113,7 +113,7 @@ function* pathMessages(entries: SessionEntry[]): Generator<PathMessage> {
 function* groupPath(items: Iterable<PathMessage>): Generator<PathMessage[]> {
   let current: PathMessage[] = []
   for (const item of items) {
-    if (item.message.role === 'user') {
+    if (item.message.role === 'user' || item.message.role === 'bashExecution') {
       if (current.length > 0) yield current
       current = [item]
     } else {
@@ -221,6 +221,13 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
   const userMsg = userEntry.message.role === 'user' ? userEntry.message : undefined
   const rest = userMsg ? chunk.slice(1) : chunk
   const user = userMsg ? displayUser(userMsg, sessionId, userEntry.id, userEntry.pastedText) : undefined
+  const bash = userEntry.message.role === 'bashExecution'
+    ? {
+        command: String(userEntry.message.command ?? ''),
+        exitCode: typeof userEntry.message.exitCode === 'number' ? userEntry.message.exitCode : undefined,
+        cancelled: userEntry.message.cancelled === true
+      }
+    : undefined
 
   let lastAssistant = -1
   for (let i = 0; i < rest.length; i++) {
@@ -291,6 +298,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
 
   return {
     user,
+    bash,
     userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
     answer,
     errorMessage,

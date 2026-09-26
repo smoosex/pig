@@ -574,7 +574,7 @@ export function sessionEntryLookup(sessionId: string, entryId: string): Promise<
 
 export async function viewSessionBranch(sessionId: string, tipId: string): Promise<string | null> {
   const ls = await prepareSession(sessionId)
-  if (ls.agentSession.isStreaming) throw new Error('Session is streaming')
+  if (ls.agentSession.isStreaming || ls.agentSession.isBashRunning) throw new Error('Session is busy')
   const sm = ls.agentSession.sessionManager
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
   if (sm.getLeafId() !== tipId) {

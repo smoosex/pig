@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { composePromptText } from '../src/shared/pasted-text'
 import type { DisplayTurn } from '../src/shared/api'
-import { renderKeyForUser, turnImageSrc, type ProcessItem } from '../src/renderer/src/chat/turns'
+import { renderKeyForUser, turnImageSrc, groupTurns, type ProcessItem } from '../src/renderer/src/chat/turns'
 import type { PigImageContent } from '../src/renderer/src/pi/types'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
@@ -80,6 +80,18 @@ describe('display turn projection', () => {
     expect(turnImageSrc({ type: 'image', mimeType: 'image/png', data: 'AA==' }))
       .toBe('data:image/png;base64,AA==')
     expect(turnImageSrc({ type: 'image', mimeType: 'image/png' } as PigImageContent)).toBeUndefined()
+  })
+
+  test('keeps a command turn when a compaction summary follows the command', () => {
+    const command = {
+      role: 'bashExecution', command: 'pwd', output: 'files', exitCode: 0, cancelled: false, timestamp: 10
+    } as const
+    const summary = {
+      role: 'compactionSummary', summary: 'compacted', tokensBefore: 100, timestamp: 11
+    } as const
+    const [turn] = groupTurns([command, summary] as never, false)
+    expect(turn.bash).toEqual({ command: 'pwd', exitCode: 0, cancelled: false })
+    expect(turn.process.map((item) => item.kind)).toEqual(['bash', 'summary'])
   })
 
   test('keeps assistant-only errors and history metadata intact', () => {

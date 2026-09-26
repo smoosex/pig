@@ -31,9 +31,11 @@ function preview(text: string | undefined): string {
 
 function turnText(turn: Turn) {
   const content = turn.user?.content
-  const user = typeof content === 'string'
-    ? [content]
-    : content?.flatMap((block) => block.type === 'text' ? [block.text] : []) ?? []
+  const user = turn.bash
+    ? [`!${turn.bash.command}`]
+    : typeof content === 'string'
+      ? [content]
+      : content?.flatMap((block) => block.type === 'text' ? [block.text] : []) ?? []
   const answer = turn.answer.flatMap((block) => block.type === 'text' ? [block.text] : [])
   return { content, user, answer }
 }

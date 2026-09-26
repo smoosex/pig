@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor } from '@tiptap/react'
 import { selectionToInsertionEnd, type JSONContent } from '@tiptap/core'
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model'
+import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
@@ -165,6 +166,17 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     if (!editor?.isDestroyed) editor?.commands.setContent(content)
   }, [editor])
 
+  const restoreBashPrefix = useCallback(() => {
+    if (!editor || editor.isDestroyed) return
+    const { state, view } = editor
+    const transaction = state.tr.insertText('!', 1)
+    transaction.setSelection(TextSelection.between(
+      transaction.doc.resolve(transaction.mapping.map(state.selection.anchor, 1)),
+      transaction.doc.resolve(transaction.mapping.map(state.selection.head, 1))
+    ))
+    view.dispatch(transaction)
+  }, [editor])
+
   useEffect(() => {
     clear()
     editor?.setEditable(Boolean(options.sessionId))
@@ -188,5 +200,5 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     if (compositionFrame.current != null) cancelAnimationFrame(compositionFrame.current)
   }, [])
 
-  return { editor, draft, getDraft: () => currentDraft.current, clear, replaceText, restore }
+  return { editor, draft, getDraft: () => currentDraft.current, clear, replaceText, restore, restoreBashPrefix }
 }

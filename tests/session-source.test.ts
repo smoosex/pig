@@ -108,6 +108,53 @@ test('counts and projects the same turns when the branch opens without a user me
   })
 })
 
+test('a command keeps its card when compaction follows it in the same turn', async () => {
+  const bash = (id: string, parentId: string | null, command: string) => JSON.stringify({
+    type: 'message', id, parentId, timestamp: STAMP,
+    message: { role: 'bashExecution', command, output: `output from ${command}`, exitCode: 0, cancelled: false, timestamp: 2 }
+  })
+  const compaction = JSON.stringify({
+    type: 'compaction', id: 'k0', parentId: 'b0', timestamp: STAMP,
+    summary: 'compacted', tokensBefore: 1000
+  })
+  const lines = [header(), bash('b0', null, 'pwd'), compaction, message('a0', 'k0', 'assistant', 'later')]
+  await withFile(lines, async (path) => {
+    const index = indexSessionFile(path)
+    const file = fileSource(index)
+    const live = managerSource(await manager(path))
+    for (const source of [file, live]) {
+      const turns = displayWindow(source).turns
+      expect(turns.map((turn) => turn.id)).toEqual(['b0'])
+      expect(turns[0].bash?.command).toBe('pwd')
+      expect(turns[0].hasProcess).toBe(true)
+    }
+  })
+})
+
+test('commands after answers and consecutive commands are standalone turns in both sources', async () => {
+  const bash = (id: string, parentId: string, command: string) => JSON.stringify({
+    type: 'message', id, parentId, timestamp: STAMP,
+    message: { role: 'bashExecution', command, output: `output from ${command}`, exitCode: 0, cancelled: false, timestamp: 2 }
+  })
+  const lines = [
+    header(), message('u0', null, 'user', 'q0'), message('a0', 'u0', 'assistant', 'a0'),
+    bash('b0', 'a0', 'pwd'), bash('b1', 'b0', 'ls'),
+    message('u1', 'b1', 'user', 'q1'), message('a1', 'u1', 'assistant', 'a1')
+  ]
+  await withFile(lines, async (path) => {
+    const index = indexSessionFile(path)
+    expect(index.turnStarts.map((at) => index.branch[at]?.id)).toEqual(['u0', 'b0', 'b1', 'u1'])
+    const file = fileSource(index)
+    const live = managerSource(await manager(path))
+    for (const source of [file, live]) {
+      expect(displayWindow(source).turns.map((turn) => turn.id)).toEqual(['u0', 'b0', 'b1', 'u1'])
+      expect(turnWindow(source, 1, 2).turns.map((turn) => turn.bash?.command)).toEqual(['pwd', 'ls'])
+      expect((source.turnMessages('b0')[0] as { command: string }).command).toBe('pwd')
+      expect(source.turnMessages('b0')).toHaveLength(1)
+    }
+  })
+})
+
 test('every window matches the projection of the turns it asks for', async () => {
   const lines = [header(), message('u0', null, 'user', 'q0'), message('a0', 'u0', 'assistant', 'a0')]
   for (const index of [1, 2, 3]) {

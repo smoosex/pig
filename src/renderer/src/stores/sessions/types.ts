@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type {
+  BashExecutionResult,
   DiffScope,
   DisplayTurn,
   DisplayTurnsResult,
@@ -15,7 +16,7 @@ import type {
   TurnSummary
 } from '../../ipc/api'
 import type { ProcessItem, ThinkingDurations } from '../../chat/turns'
-import type { PiMessage } from '../../pi/types'
+import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
 export interface RuntimeState extends SessionControls {
   instanceId: number
@@ -50,6 +51,7 @@ export interface RuntimeState extends SessionControls {
   branchViews: Record<string, string>
   branchRequest: number
   liveMessages: PiMessage[]
+  bashExecution: { id: string; message: BashExecutionMessage } | null
   pendingUserMessage: boolean
   processByTurnId: Record<string, ProcessItem[]>
   thinkingDurations: ThinkingDurations
@@ -209,6 +211,9 @@ export interface SessionsStore {
   setStreaming: (sessionId: string, streaming: boolean) => void
   beginPrompt: (sessionId: string, message: PiMessage) => void
   rollbackPrompt: (sessionId: string) => void
+  beginBash: (sessionId: string, id: string, command: string) => void
+  appendBashOutput: (sessionId: string, id: string, delta: string) => void
+  endBash: (sessionId: string, id: string, result?: BashExecutionResult, turnId?: string) => void
   setThinkingDuration: (
     sessionId: string,
     messageTimestamp: number,

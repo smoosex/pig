@@ -1,4 +1,4 @@
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUp, Square, SquareTerminal } from 'lucide-react'
 import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useSessionsStore } from '../../stores/sessions'
@@ -30,6 +30,8 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
 export function ComposerToolbar({
   sessionId,
   isStreaming,
+  bashMode,
+  canRunBash,
   hasDraft,
   isDraftSession,
   onSend,
@@ -37,12 +39,15 @@ export function ComposerToolbar({
 }: {
   sessionId: string | null
   isStreaming: boolean
+  bashMode: boolean
+  canRunBash: boolean
   hasDraft: boolean
   isDraftSession: boolean
   onSend: () => Promise<void>
   onAbort: () => Promise<void>
 }) {
   const t = useT()
+  const bashRunning = useSessionsStore((s) => sessionId ? s.runtime[sessionId]?.bashExecution != null : false)
   const sessionModel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
   const sessionModels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
   const sessionThinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
@@ -58,25 +63,33 @@ export function ComposerToolbar({
   return (
     <InputGroupAddon align="block-end" className="shrink-0 justify-between px-2.5 pb-2.5">
       <div className="flex min-w-0 items-center gap-1">
-        <ModelPicker key={`model-${sessionId}`} sessionId={sessionId} model={model} models={models} actions={actions} disabled={!sessionId || actions.pending} />
-        <ThinkingPicker
-          sessionId={sessionId}
-          key={`thinking-${sessionId}`}
-          thinkingLevel={thinkingLevel}
-          thinkingLevels={thinkingLevels}
-          actions={actions}
-          disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
-        />
-        <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming} />
+        {bashMode ? (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <SquareTerminal className="size-3.5" /> {t('composer.bashMode')}
+          </span>
+        ) : (
+          <>
+            <ModelPicker key={`model-${sessionId}`} sessionId={sessionId} model={model} models={models} actions={actions} disabled={!sessionId || actions.pending} />
+            <ThinkingPicker
+              sessionId={sessionId}
+              key={`thinking-${sessionId}`}
+              thinkingLevel={thinkingLevel}
+              thinkingLevels={thinkingLevels}
+              actions={actions}
+              disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
+            />
+            <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming || bashRunning} />
+          </>
+        )}
       </div>
       <div className="flex items-center gap-1.5">
-        <SessionContextUsage sessionId={sessionId} />
-        {isStreaming && !hasDraft ? (
+        {!bashMode ? <SessionContextUsage sessionId={sessionId} /> : null}
+        {bashRunning || (isStreaming && (!hasDraft || bashMode)) ? (
           <InputGroupButton
             size="icon-sm"
             variant="secondary"
             className="size-7 rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
-            aria-label={t('composer.pause')}
+            aria-label={t(bashRunning ? 'composer.stopBash' : 'composer.pause')}
             onClick={() => void onAbort()}
           >
             <Square />
@@ -86,8 +99,8 @@ export function ComposerToolbar({
             size="icon-sm"
             variant="default"
             className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
-            aria-label={isStreaming ? t('composer.queue') : t('composer.send')}
-            disabled={!hasDraft || !sessionId}
+            aria-label={bashMode ? t('composer.runBash') : isStreaming ? t('composer.queue') : t('composer.send')}
+            disabled={!sessionId || bashRunning || (bashMode ? !canRunBash || isStreaming : !hasDraft)}
             onClick={() => void onSend()}
           >
             <ArrowUp />

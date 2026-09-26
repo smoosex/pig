@@ -5,7 +5,8 @@ import { filterSlashCommands, slashQuery } from './commands'
 export function useSlashCommands(
   sessionId: string | null,
   text: string,
-  onSelect: (command: SlashCommand) => void
+  onSelect: (command: SlashCommand) => void,
+  disabled = false
 ) {
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [index, setIndex] = useState(0)
@@ -39,7 +40,7 @@ export function useSlashCommands(
 
   const filtered = useMemo(() => filterSlashCommands(commands, query), [commands, query])
   useEffect(() => { setIndex(0) }, [query, commands])
-  const open = query !== null && !dismissed && filtered.length > 0
+  const open = !disabled && query !== null && !dismissed && filtered.length > 0
   const selectedIndex = Math.min(index, Math.max(0, filtered.length - 1))
 
   const select = (command: SlashCommand) => {

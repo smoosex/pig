@@ -42,6 +42,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
   return {
     id: display.id,
     user,
+    bash: display.bash,
     process,
     answer: display.answer.map((block) =>
       block.type === 'text'

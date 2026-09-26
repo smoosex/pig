@@ -5,7 +5,7 @@ import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
 import { exportPathArg } from './commands'
-import { composerUserMessage } from './document'
+import { composerUserMessage, textToComposerDocument } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import type { PastedImage, useComposerImages } from './useComposerImages'
 
@@ -20,12 +20,15 @@ interface SubmissionOptions {
   isDraftSession?: boolean
   document: ReturnType<typeof useComposerEditor>
   attachments: ReturnType<typeof useComposerImages>
+  bashMode?: boolean
+  onBashSubmitted?: () => void
 }
 
-export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments }: SubmissionOptions) {
+export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments, bashMode = false, onBashSubmitted }: SubmissionOptions) {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [failedDrafts, setFailedDrafts] = useState<Record<string, FailedDraft[]>>({})
   const exporting = useRef(new Set<string>())
+  const bashInFlight = useRef(new Set<string>())
   const stopEpochs = useRef(new Map<string, number>())
   const recoverable = sessionId ? failedDrafts[sessionId] : undefined
   const errorKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : '')
@@ -63,8 +66,15 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const hasAttachments = serialized.attachments.length > 0
     const trimmed = serialized.text.trim()
     if (!trimmed && !hasAttachments && images.length === 0) return
+    const target = sessionId
+    if (!target || bashInFlight.current.has(target)) return
+    const command = bashMode ? serialized.text.trim() : null
+    if (command !== null && (!command || hasAttachments || images.length > 0)) {
+      if (hasAttachments || images.length > 0) setErrors((current) => ({ ...current, [target]: t('composer.bashAttachments') }))
+      return
+    }
 
-    const saved = { content: document.editor.getJSON(), images }
+    const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const titleText = hasAttachments ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim() : trimmed
     // An attachments/images-only first message has no text to show: the title is a marker the store
@@ -72,17 +82,86 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const fallback: SessionPreviewFallback | undefined = hasAttachments ? 'pastedText' : images.length > 0 ? 'image' : undefined
     const title = titleText.slice(0, 500) || (fallback === 'pastedText' ? t('composer.pastedText') : fallback === 'image' ? t('common.image') : '')
     const text = hasAttachments ? serialized.text : trimmed
-    const target = sessionId
-    if (!target) return
+    if (command !== null) bashInFlight.current.add(target)
 
     if (isDraftSession) {
-      if (!draftCwd) return
+      if (!draftCwd) {
+        bashInFlight.current.delete(target)
+        return
+      }
       try {
-        if (!await useSessionsStore.getState().promoteDraft(draftCwd, target)) return
+        if (!await useSessionsStore.getState().promoteDraft(draftCwd, target)) {
+          bashInFlight.current.delete(target)
+          return
+        }
       } catch (error) {
+        bashInFlight.current.delete(target)
         report(errorKey, error)
         return
       }
+    }
+
+    if (command !== null) {
+      const initial = useSessionsStore.getState().runtime[target]
+      if (!initial || exporting.current.has(target)) {
+        bashInFlight.current.delete(target)
+        return
+      }
+      if (initial.isStreaming || initial.bashExecution) {
+        bashInFlight.current.delete(target)
+        report(target, new Error(t('composer.bashBusy')))
+        return
+      }
+      const instanceId = initial.instanceId
+      const isCurrent = () => useSessionsStore.getState().runtime[target]?.instanceId === instanceId
+      const id = crypto.randomUUID()
+      let begun = false
+      let cleared = false
+      let result: Awaited<ReturnType<typeof api.executeBash>> | undefined
+      let persistedTurnId: string | undefined
+      setErrors((current) => ({ ...current, [target]: undefined }))
+      try {
+        const prepared = await api.prepareSession(target)
+        if (!isCurrent()) return
+        if (useSessionsStore.getState().runtime[target]?.isStreaming) {
+          report(target, new Error(t('composer.bashBusy')))
+          return
+        }
+        if (prepared.created) {
+          void useSessionsStore.getState().refreshCwd(prepared.cwd).catch((error) => {
+            if (isCurrent()) report(target, error)
+          })
+        }
+        useSessionsStore.getState().beginBash(target, id, command)
+        begun = true
+        if (document.getDraft() === serialized) {
+          document.clear()
+          onBashSubmitted?.()
+          cleared = true
+        }
+        useSessionsStore.getState().previewSessionTitle(target, `!${command.slice(0, 499)}`)
+        result = await api.executeBash(target, command, id)
+        if (!isCurrent()) return
+        const results = await Promise.allSettled([
+          useSessionsStore.getState().hydrateTurns(target, { keepOlderTurns: true }),
+          useSessionsStore.getState().refreshCwd(prepared.cwd)
+        ])
+        if (results[0].status === 'fulfilled' && results[0].value) {
+          const last = useSessionsStore.getState().runtime[target]?.turns.at(-1)
+          if (last?.bash?.command === command) persistedTurnId = last.id
+        }
+        const failed = results.find((item) => item.status === 'rejected')
+        if (failed?.status === 'rejected') report(target, failed.reason)
+      } catch (error) {
+        if (isCurrent()) {
+          if (cleared && !result) setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
+          report(target, error)
+        }
+      } finally {
+        if (begun) useSessionsStore.getState().endBash(target, id, result, persistedTurnId)
+        bashInFlight.current.delete(target)
+      }
+      return
     }
 
     if (exporting.current.has(target)) return
@@ -166,6 +245,14 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
 
   async function abort(): Promise<void> {
     if (!sessionId) return
+    if (useSessionsStore.getState().runtime[sessionId]?.bashExecution) {
+      try {
+        await api.abortBash(sessionId)
+      } catch (error) {
+        report(sessionId, error)
+      }
+      return
+    }
     stopEpochs.current.set(sessionId, stopEpoch(sessionId) + 1)
     try {
       await api.abort(sessionId)

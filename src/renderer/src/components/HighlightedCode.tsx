@@ -9,6 +9,11 @@ export const bashCodeSurface = cn(codeSurface, 'bg-secondary')
 const highlightedPre = '[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:text-xs'
 const numberedLines = '[&_code]:[counter-reset:line] [&_.line]:before:mr-3 [&_.line]:before:inline-block [&_.line]:before:w-7 [&_.line]:before:border-r [&_.line]:before:border-code-border [&_.line]:before:pr-2 [&_.line]:before:text-right [&_.line]:before:text-muted-foreground [&_.line]:before:content-[counter(line)] [&_.line]:before:[counter-increment:line]'
 
+const commandLayout = {
+  pre: '[&_pre]:px-3 [&_pre]:py-2 [&_pre]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:leading-snug',
+  fallback: 'whitespace-pre-wrap break-words px-3 py-2'
+} as const
+
 const variants = {
   fence: {
     viewport: `${codeSurface} my-2 max-h-80 leading-snug`,
@@ -22,8 +27,11 @@ const variants = {
   },
   command: {
     viewport: `${bashCodeSurface} max-h-60 leading-snug`,
-    pre: '[&_pre]:px-3 [&_pre]:py-2 [&_pre]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:leading-snug',
-    fallback: 'whitespace-pre-wrap break-words px-3 py-2'
+    ...commandLayout
+  },
+  terminal: {
+    viewport: `${codeSurface} max-h-60 leading-snug`,
+    ...commandLayout
   }
 } as const
 
@@ -36,7 +44,7 @@ export function HighlightedCode({
 }: {
   code: string
   lang: string
-  variant?: 'fence' | 'file' | 'command'
+  variant?: keyof typeof variants
   fileListing?: boolean
   notice?: string
 }) {

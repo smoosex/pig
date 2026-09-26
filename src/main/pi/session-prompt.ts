@@ -14,6 +14,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
   const { cwd, agentSession } = (await activateSession(sessionId)).session
   const prompt = normalizeSessionPrompt(input)
   worktrees.assertAvailable(cwd)
+  if (agentSession.isBashRunning) throw new Error('Session is running a bash command')
   const streamingBehavior =
     agentSession.isStreaming &&
     (input.streamingBehavior === 'steer' || input.streamingBehavior === 'followUp')

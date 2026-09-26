@@ -27,6 +27,7 @@ export const emptyRuntime = (): RuntimeState => ({
   branchViews: {},
   branchRequest: 0,
   liveMessages: [],
+  bashExecution: null,
   pendingUserMessage: false,
   processByTurnId: {},
   thinkingDurations: {},

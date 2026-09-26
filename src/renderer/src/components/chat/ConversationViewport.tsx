@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import { chatColumn } from '../../chat/layout'
 import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
 import type { ScrollSnapshot } from '../../chat/scroll-state'
-import type { TurnSummary } from '../../ipc/api'
+import { api, type TurnSummary } from '../../ipc/api'
 import type { Turn } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
@@ -95,6 +95,9 @@ export function ConversationViewport({
   const onNeedProcess = useCallback(async (turnId: string) => {
     await loadTurnProcess(sessionId, turnId)
   }, [sessionId, loadTurnProcess])
+  const onAbortBash = useCallback(async () => {
+    await api.abortBash(sessionId)
+  }, [sessionId])
   const previewTurns = useRef({ historical, live, windowStart })
   previewTurns.current = { historical, live, windowStart }
   const loadedPreview = useCallback((turnIndex: number, turnId: string): MinimapPreview | undefined => {
@@ -180,7 +183,7 @@ export function ConversationViewport({
               data-turn-index={windowStart + index}
               className={cn(measuredItem, chatColumn)}
             >
-              <TurnView turn={turn} onNeedProcess={onNeedProcess} />
+              <TurnView turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
             </MessageScrollerItem>
           ))}
           {hasMoreBelow ? (

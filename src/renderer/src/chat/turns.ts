@@ -45,6 +45,8 @@ export function turnImageSrc(image: PigImageContent): string | undefined {
 export interface Turn {
   id?: string
   user?: PigUserMessage
+  bash?: { command: string; exitCode?: number; cancelled: boolean }
+  bashRunning?: boolean
   process: ProcessItem[]
   answer: AnswerBlock[]
   errorMessage?: string
@@ -205,6 +207,7 @@ export function buildTurn(
   renderKey?: string
 ): Turn {
   const user = chunk[0]?.role === 'user' ? (chunk[0] as PigUserMessage) : undefined
+  const bash = chunk[0]?.role === 'bashExecution' ? chunk[0] : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
   let answer: AnswerBlock[] = []
@@ -266,6 +269,7 @@ export function buildTurn(
 
   return {
     user,
+    bash: bash ? { command: bash.command, exitCode: bash.exitCode, cancelled: bash.cancelled } : undefined,
     process,
     answer,
     errorMessage,
@@ -285,7 +289,7 @@ export function groupTurns(
   const chunks: PiMessage[][] = []
   let current: PiMessage[] = []
   for (const message of messages) {
-    if (message.role === 'user') {
+    if (message.role === 'user' || message.role === 'bashExecution') {
       if (current.length) chunks.push(current)
       current = [message]
     } else {
