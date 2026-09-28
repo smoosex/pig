@@ -778,7 +778,7 @@ export async function listSessionCommands(sessionId: string) {
   return commandsFor((await prepareSession(sessionId)).agentSession)
 }
 
-export async function exportSession(sessionId: string, outputPath?: string): Promise<string> {
+export async function exportSession(sessionId: string, outputPath: string): Promise<string> {
   return exportAgentSession((await prepareSession(sessionId)).agentSession, outputPath)
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { composerUserMessage, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
-import { exportPathArg, filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
+import { filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
 import type { SlashCommand } from '../src/shared/api'
 
 describe('composer document protocol', () => {
@@ -59,7 +59,5 @@ describe('composer commands', () => {
     ] as SlashCommand[]
     expect(filterSlashCommands(commands, 'ex')).toEqual([commands[2], commands[1], commands[0]])
     expect(commands[0].source).toBe('skill')
-    expect(exportPathArg('/export "/tmp/my session.html"')).toBe('/tmp/my session.html')
-    expect(exportPathArg('/export')).toBeUndefined()
   })
 })

@@ -63,7 +63,7 @@ export const en: Messages = {
     sizeAria: 'Session size {size}',
     imagePreview: 'Image',
     unknownProject: 'Unknown project',
-    exportTitle: 'Export session'
+    export: 'Export session'
   },
   tabBar: {
     new: 'New tab',
@@ -415,8 +415,7 @@ export const en: Messages = {
     builtin: 'Built-in',
     prompt: 'Template',
     extension: 'Extension',
-    skill: 'Skills',
-    exportSession: 'Export this session as HTML or JSONL'
+    skill: 'Skills'
   },
   thinking: {
     off: 'Off',

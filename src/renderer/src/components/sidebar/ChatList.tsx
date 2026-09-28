@@ -7,7 +7,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger
 } from '../ui/context-menu'
-import { PenLine } from 'lucide-react'
+import { Download, PenLine } from 'lucide-react'
+import { api } from '../../ipc/api'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useT } from '../../hooks/useT'
 import { TreeNav } from '../spectrumui/tree-nav'
@@ -103,6 +104,13 @@ function ChatRow({
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
             {t('common.rename')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={pending !== null}
+            onSelect={() => void runAction('export', () => api.exportSession(session.id))}
+          >
+            <Download data-icon="inline-start" />
+            {t('sessions.export')}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

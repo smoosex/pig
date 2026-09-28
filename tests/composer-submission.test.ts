@@ -19,7 +19,6 @@ async function fixture(scenario: string): Promise<void> {
   let promptCalls = 0
   let abortCalls = 0
   let rollbackCalls = 0
-  let exportCalls = 0
   let hydrationCalls = 0
   let promoteCalls = 0
   let bashCalls = 0
@@ -78,7 +77,6 @@ async function fixture(scenario: string): Promise<void> {
       if (scenario !== 'command-only') store.runtime.one.pendingUserMessage = false
       if (scenario === 'accepted-error') throw new Error('Run failed after acknowledgement')
     },
-    exportSession: async () => { exportCalls++; await prepared.promise; throw new Error('Export failed') },
     executeBash: async (_id: string, command: string) => {
       bashCalls++
       assert.equal(command, 'echo done')
@@ -124,11 +122,11 @@ async function fixture(scenario: string): Promise<void> {
     await act(async () => {
       if (scenario !== 'duplicate-images') {
         editor.restore({ type: 'doc', content: [{ type: 'paragraph', content: [
-          { type: 'text', text: scenario === 'export' ? '/export' : scenario === 'escaped-bash' ? '!echo done' : scenario.startsWith('bash') ? 'echo done' : '原文' },
-          ...(scenario === 'export' || scenario.startsWith('bash') || scenario === 'escaped-bash' ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
+          { type: 'text', text: scenario === 'escaped-bash' ? '!echo done' : scenario.startsWith('bash') ? 'echo done' : '原文' },
+          ...(scenario.startsWith('bash') || scenario === 'escaped-bash' ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
         ] }] })
       }
-      if (scenario !== 'export' && (scenario === 'bash-attachments' || (!scenario.startsWith('bash') && scenario !== 'escaped-bash'))) {
+      if (scenario === 'bash-attachments' || (!scenario.startsWith('bash') && scenario !== 'escaped-bash')) {
         images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
       }
     })
@@ -136,7 +134,7 @@ async function fixture(scenario: string): Promise<void> {
     let duplicate!: Promise<void>
     await act(async () => {
       sending = state.send()
-      if (scenario === 'duplicate-images' || scenario === 'export' || scenario === 'bash') duplicate = state.send()
+      if (scenario === 'duplicate-images' || scenario === 'bash') duplicate = state.send()
     })
     if (scenario === 'newer-draft') await act(async () => { editor.replaceText('新输入') })
     if (scenario === 'bash-busy') store.runtime.one.isStreaming = true
@@ -183,10 +181,6 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(editor.getDraft().text, '原文附件')
       assert.equal(editor.getDraft().attachments.length, 1)
       assert.equal(images.images.length, 1)
-    } else if (scenario === 'export') {
-      assert.equal(exportCalls, 1)
-      assert.equal(editor.getDraft().text, '/export')
-      assert.match(state.error ?? '', /Export failed/)
     } else if (scenario === 'draft-create') {
       assert.equal(promoteCalls, 1)
       assert.equal(promptCalls, 1)
@@ -253,7 +247,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'export', 'command-only', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash']) {
+  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

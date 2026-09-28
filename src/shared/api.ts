@@ -563,7 +563,7 @@ export interface SessionApi {
   getControls: (sessionId: string) => Promise<SessionControls>
   getTokenStats: (sessionId: string) => Promise<SessionTokenStats>
   getCommands: (sessionId: string) => Promise<SlashCommand[]>
-  exportSession: (sessionId: string, outputPath?: string) => Promise<{ path: string } | null>
+  exportSession: (sessionId: string) => Promise<{ path: string } | null>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   refreshModels: (sessionId: string) => Promise<SessionControls>

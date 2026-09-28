@@ -1,5 +1,7 @@
-import { CircleAlert, LoaderCircle, PenLine, X } from 'lucide-react'
+import { CircleAlert, Download, LoaderCircle, PenLine, X } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../../stores/sessions'
+import { api } from '../../ipc/api'
+import { useProjectAction } from './project-action'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import {
@@ -40,6 +42,7 @@ function SessionRow({ session }: { session: OpenTab }) {
   const activateTab = useSessionsStore((state) => state.activateTab)
   const closeTab = useSessionsStore((state) => state.closeTab)
   const rename = useSessionRename(session.id, session.meta?.path)
+  const { pending, error, runAction } = useProjectAction()
   return (
     <div className="pr-1 pl-9">
       <ContextMenu>
@@ -89,11 +92,18 @@ function SessionRow({ session }: { session: OpenTab }) {
             <PenLine data-icon="inline-start" />
             {t('common.rename')}
           </ContextMenuItem>
+          <ContextMenuItem
+            disabled={pending !== null}
+            onSelect={() => void runAction('export', () => api.exportSession(session.id))}
+          >
+            <Download data-icon="inline-start" />
+            {t('sessions.export')}
+          </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
-      {rename.error ? (
+      {error || rename.error ? (
         <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">
-          {rename.error}
+          {error || rename.error}
         </p>
       ) : null}
     </div>

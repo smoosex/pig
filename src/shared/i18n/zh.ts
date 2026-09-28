@@ -65,7 +65,7 @@ export const zh = {
     sizeAria: '会话大小 {size}',
     imagePreview: '图片',
     unknownProject: '未知项目',
-    exportTitle: '导出会话'
+    export: '导出会话'
   },
   tabBar: {
     new: '新建标签页',
@@ -417,8 +417,7 @@ export const zh = {
     builtin: '内建',
     prompt: '模板',
     extension: '扩展',
-    skill: 'Skills',
-    exportSession: '导出会话为 HTML 或 JSONL'
+    skill: 'Skills'
   },
   thinking: {
     off: '关闭',

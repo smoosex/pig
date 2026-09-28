@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { CircleAlert, FileDiff, LoaderCircle, PenLine, Plus, SquareText, X } from 'lucide-react'
+import { CircleAlert, Download, FileDiff, LoaderCircle, PenLine, Plus, SquareText, X } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
+import { api } from '../ipc/api'
+import { useProjectAction } from './sidebar/project-action'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
@@ -131,9 +133,10 @@ function Tab({
     return document ? isDirty(document) : false
   })
   const rename = useSessionRename(tabId, sessionPath)
+  const { pending, error: exportError, runAction } = useProjectAction()
   // A changes or file tab holds no session, so there is no name to write for it.
   const renamable = kind === 'project' || kind === 'chat'
-  const failure = error ?? rename.error ?? undefined
+  const failure = error ?? exportError ?? rename.error ?? undefined
   const body = (
     <div
       className={cn(
@@ -196,6 +199,13 @@ function Tab({
         <ContextMenuItem onSelect={rename.start}>
           <PenLine data-icon="inline-start" />
           {t('common.rename')}
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={pending !== null}
+          onSelect={() => void runAction('export', () => api.exportSession(tabId))}
+        >
+          <Download data-icon="inline-start" />
+          {t('sessions.export')}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

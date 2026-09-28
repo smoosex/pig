@@ -86,8 +86,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:get-token-stats', sessionId),
   getCommands: (sessionId: string) =>
     ipcRenderer.invoke('session:get-commands', sessionId),
-  exportSession: (sessionId: string, outputPath?: string) =>
-    ipcRenderer.invoke('session:export', sessionId, outputPath),
+  exportSession: (sessionId: string) =>
+    ipcRenderer.invoke('session:export', sessionId),
   setModel: (sessionId: string, provider: string, id: string) =>
     ipcRenderer.invoke('session:set-model', sessionId, provider, id),
   setThinking: (sessionId: string, level: string) =>

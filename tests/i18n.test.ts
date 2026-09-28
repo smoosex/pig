@@ -103,33 +103,12 @@ describe('main-process copy', () => {
     try {
       applyLocaleSetting('en')
       expect(mainT('error.gitRequired')).toBe('Initialize Git first')
-      expect(mainT('sessions.exportTitle')).toBe('Export session')
+      expect(mainT('sessions.export')).toBe('Export session')
       expect(mainT('naming.processExit', { code: 3 })).toBe('The temporary pi process exited (3)')
       applyLocaleSetting('zh-CN')
       expect(mainT('error.gitRequired')).toBe('请先初始化 Git')
-      expect(mainT('sessions.exportTitle')).toBe('导出会话')
+      expect(mainT('sessions.export')).toBe('导出会话')
       expect(mainT('naming.processExit', { code: 3 })).toBe('临时 Pi 进程退出 (3)')
-    } finally {
-      applyLocaleSetting(before)
-    }
-  })
-
-  test('the /export description is translated when asked, not when imported', async () => {
-    const { applyLocaleSetting, currentLocale } = await import('../src/main/i18n')
-    const { listSessionCommands } = await import('../src/main/pi/session-actions')
-    const fake = {
-      extensionRunner: { getRegisteredCommands: () => [] },
-      promptTemplates: [],
-      resourceLoader: { getSkills: () => ({ skills: [] }) }
-    }
-    const before = currentLocale()
-    try {
-      applyLocaleSetting('zh-CN')
-      expect((await listSessionCommands(fake as never)).find((c) => c.name === 'export')?.description)
-        .toBe('导出会话为 HTML 或 JSONL')
-      applyLocaleSetting('en')
-      expect((await listSessionCommands(fake as never)).find((c) => c.name === 'export')?.description)
-        .toBe('Export this session as HTML or JSONL')
     } finally {
       applyLocaleSetting(before)
     }

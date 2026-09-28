@@ -177,27 +177,20 @@ export function registerSessionIpc(): void {
     return listSessionCommands(sessionId)
   })
 
-  ipcMain.handle(
-    'session:export',
-    async (event, sessionId: string, outputPath?: string) => {
-      if (!sessionId) throw new Error('Session id is required')
-      let target = typeof outputPath === 'string' ? outputPath.trim() : ''
-      if (!target) {
-        const win = windowForEvent(event)
-        const result = await dialog.showSaveDialog(win, {
-          title: t('sessions.exportTitle'),
-          defaultPath: 'session.html',
-          filters: [
-            { name: 'HTML', extensions: ['html'] },
-            { name: 'JSONL', extensions: ['jsonl'] }
-          ]
-        })
-        if (result.canceled || !result.filePath) return null
-        target = result.filePath
-      }
-      return { path: await exportSession(sessionId, target) }
-    }
-  )
+  ipcMain.handle('session:export', async (event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    const win = windowForEvent(event)
+    const result = await dialog.showSaveDialog(win, {
+      title: t('sessions.export'),
+      defaultPath: 'session.html',
+      filters: [
+        { name: 'HTML', extensions: ['html'] },
+        { name: 'JSONL', extensions: ['jsonl'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    return { path: await exportSession(sessionId, result.filePath) }
+  })
 
   ipcMain.handle(
     'session:set-model',

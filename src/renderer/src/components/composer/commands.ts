@@ -25,14 +25,3 @@ export function filterSlashCommands(commands: SlashCommand[], query: string | nu
       return slashGroups[a.source].order - slashGroups[b.source].order || aHit - bHit || a.name.localeCompare(b.name)
     })
 }
-
-export function exportPathArg(text: string): string | undefined {
-  if (!text.startsWith('/export ')) return undefined
-  const rest = text.slice(8).trim()
-  if (!rest) return undefined
-  const quote = rest[0]
-  if ((quote === '"' || quote === "'") && rest.endsWith(quote) && rest.length >= 2) {
-    return rest.slice(1, -1)
-  }
-  return rest
-}

@@ -3,8 +3,7 @@ import { t } from '../../lib/i18n'
 import type { JSONContent } from '@tiptap/core'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
-import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
-import { exportPathArg } from './commands'
+import { useSessionsStore } from '../../stores/sessions'
 import { composerUserMessage, textToComposerDocument } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import type { PastedImage, useComposerImages } from './useComposerImages'
@@ -27,7 +26,6 @@ interface SubmissionOptions {
 export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments, bashMode = false, onBashSubmitted }: SubmissionOptions) {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [failedDrafts, setFailedDrafts] = useState<Record<string, FailedDraft[]>>({})
-  const exporting = useRef(new Set<string>())
   const bashInFlight = useRef(new Set<string>())
   const stopEpochs = useRef(new Map<string, number>())
   const recoverable = sessionId ? failedDrafts[sessionId] : undefined
@@ -103,7 +101,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
 
     if (command !== null) {
       const initial = useSessionsStore.getState().runtime[target]
-      if (!initial || exporting.current.has(target)) {
+      if (!initial) {
         bashInFlight.current.delete(target)
         return
       }
@@ -164,7 +162,6 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       return
     }
 
-    if (exporting.current.has(target)) return
     const state = useSessionsStore.getState()
     const runtime = state.runtime[target]
     if (!runtime) return
@@ -172,21 +169,6 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const isCurrent = () => useSessionsStore.getState().runtime[target]?.instanceId === instanceId
     const streaming = runtime.isStreaming
     setErrors((current) => ({ ...current, [target]: undefined }))
-
-    if (!streaming && (trimmed === '/export' || trimmed.startsWith('/export ')) && !hasAttachments) {
-      exporting.current.add(target)
-      try {
-        const result = await api.exportSession(target, exportPathArg(trimmed))
-        if (result && selectActiveSessionId(useSessionsStore.getState()) === target && document.getDraft() === serialized) {
-          document.clear()
-        }
-      } catch (error) {
-        if (isCurrent()) report(target, error)
-      } finally {
-        exporting.current.delete(target)
-      }
-      return
-    }
 
     const optimistic = composerUserMessage(text, payload, serialized.attachments)
     if (!streaming) state.beginPrompt(target, optimistic)
