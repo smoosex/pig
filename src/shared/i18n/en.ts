@@ -347,8 +347,8 @@ export const en: Messages = {
     low: 'Low',
     medium: 'Medium',
     high: 'High',
-    xhigh: 'Very high',
-    max: 'Maximum'
+    xhigh: 'Extra high',
+    max: 'Max'
   },
   model: {
     select: 'Select a model',
