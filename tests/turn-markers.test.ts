@@ -99,15 +99,50 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({ process }))
       assert.deepEqual(shimmerText(), ['思考中...'])
       assert.equal(container.querySelector('.shimmer')!.children.length, 0)
-      assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
-      assert.equal(container.querySelector('pre')?.closest('.shimmer'), null)
       assert.equal(container.querySelector('.shimmer svg'), null)
+      assert.equal(container.querySelector('pre'), null)
+      const live = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('思考中'))!
+      assert.ok(live)
+      assert.equal(live.getAttribute('aria-expanded'), 'false')
+      await act(async () => { live.click() })
+      assert.equal(live.getAttribute('aria-expanded'), 'true')
+      const liveBody = container.querySelector('pre')!
+      assert.equal(liveBody.textContent, '完整思考正文')
+      assert.equal(liveBody.closest('.shimmer'), null)
+      assert.ok(liveBody.className.includes('max-h-60'))
+      Object.defineProperty(liveBody, 'scrollHeight', { value: 1_000, configurable: true })
+      Object.defineProperty(liveBody, 'clientHeight', { value: 0, configurable: true })
+      await act(async () => {
+        liveBody.scrollTop = 0
+        liveBody.dispatchEvent(new Event('scroll'))
+      })
+      await render(makeTurn({ process: [{ ...process[0], text: '完整思考正文，继续推理' } as ProcessItem] }))
+      const scrolled = container.querySelector('pre')!
+      assert.equal(scrolled.scrollTop, 0)
+      Object.defineProperty(scrolled, 'scrollHeight', { value: 2_000, configurable: true })
+      await act(async () => {
+        scrolled.scrollTop = 2_000
+        scrolled.dispatchEvent(new Event('scroll'))
+      })
+      await render(makeTurn({ process: [{ ...process[0], text: '完整思考正文，继续推理。' } as ProcessItem] }))
+      assert.equal(container.querySelector('pre')!.scrollTop, 2_000)
       await render(makeTurn({ process: [{ ...process[0], durationMs: 1_000 } as ProcessItem] }))
       assert.deepEqual(shimmerText(), [])
       const thinking = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('已思考'))!
       assert.ok(thinking)
-      await act(async () => { thinking.click() })
+      // Expanding a live thought keeps it open once it settles.
       assert.equal(thinking.getAttribute('aria-expanded'), 'true')
+      assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
+      await act(async () => { thinking.click() })
+      assert.equal(thinking.getAttribute('aria-expanded'), 'false')
+      assert.equal(
+        thinking
+          .closest('[data-slot="collapsible"]')
+          ?.querySelector('[data-slot="collapsible-content"]')
+          ?.getAttribute('data-state'),
+        'closed'
+      )
+      await act(async () => { thinking.click() })
       assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
     } else if (name === 'tools') {
       const process: ProcessItem[] = [

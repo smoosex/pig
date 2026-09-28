@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { MessageKey } from '../../../../shared/i18n'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { BashExecutionMessage } from '../../pi/types'
-import { formatElapsed, toolStepLabel, type ProcessItem, type ToolStep } from '../../chat/turns'
+import { toolStepLabel, type ProcessItem, type ToolStep } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -16,7 +16,7 @@ import { MarkdownText } from '../MarkdownText'
 import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel } from './ProcessChrome'
 import { clusterWork, countTools, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
-import { CustomProcess, ProcessDisclosure, stripThoughtHeading, ThinkingBlock, ThinkingLine } from './ProcessText'
+import { CustomProcess, ProcessDisclosure, ThinkingRow } from './ProcessText'
 
 function GroupBody({ items }: { items: ProcessItem[] }) {
   const t = useT()
@@ -24,7 +24,7 @@ function GroupBody({ items }: { items: ProcessItem[] }) {
     <div className="flex min-w-0 flex-col">
       {clusterWork(items).map((row, i) => {
         if (row.kind === 'thinking') {
-          return <ThinkingLine key={i} text={row.text} durationMs={row.durationMs} />
+          return <ThinkingRow key={i} text={row.text} durationMs={row.durationMs} />
         }
         if (row.kind === 'tools') return <ToolCluster key={row.steps[0].id} steps={row.steps} />
         if (row.kind === 'bash') return <BashCluster key={i} messages={row.messages} />
@@ -46,7 +46,7 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
       <>
         {items.map((item, i) => {
           if (item.kind === 'thinking') {
-            return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
+            return <ThinkingRow key={i} text={item.text} durationMs={item.durationMs} stacked />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
           if (item.kind === 'summary')
@@ -107,54 +107,6 @@ function WaitLine({ streaming }: { streaming: boolean }) {
   )
 }
 
-function OutlineThinking({
-  text,
-  durationMs,
-  current,
-  stacked,
-  streaming
-}: {
-  text?: string
-  durationMs: number
-  current?: boolean
-  stacked?: boolean
-  streaming: boolean
-}) {
-  const body = text ? stripThoughtHeading(text) : ''
-  const t = useT()
-  const header = (
-    <Marker className={statusMarker}>
-      {stacked ? <StackedIcons kinds={['thinking']} /> : null}
-      <MarkerContent className="flex-1 truncate">
-        <span className={cn(current && streaming && 'shimmer')}>
-          {current
-            ? t('turn.thinkingNow')
-            : durationMs > 0
-              ? t('turn.thoughtFor', { duration: formatElapsed(durationMs, t) })
-              : t('turn.thought')}
-        </span>
-      </MarkerContent>
-    </Marker>
-  )
-  if (!current || !body) return header
-  const stream = (
-    <pre
-      className={cn(
-        'mt-0 font-mono text-xs leading-snug break-words whitespace-pre-wrap text-muted-foreground',
-        !stacked && 'ml-2.5 border-l border-border px-3 py-1'
-      )}
-    >
-      {body}
-    </pre>
-  )
-  return (
-    <div className="min-w-0">
-      {header}
-      {stacked ? <Rail>{stream}</Rail> : stream}
-    </div>
-  )
-}
-
 function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
   const t = useT()
   return (
@@ -186,9 +138,9 @@ function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; str
   const t = useT()
   if (row.kind === 'thinking') {
     if (last && row.durationMs <= 0) {
-      return <OutlineThinking text={row.text} durationMs={0} current streaming={streaming} />
+      return <ThinkingRow text={row.text} live streaming={streaming} />
     }
-    return <ThinkingLine text={row.text} durationMs={row.durationMs} />
+    return <ThinkingRow text={row.text} durationMs={row.durationMs} />
   }
   if (row.kind === 'tools') {
     if (!last) return <ToolCluster steps={row.steps} />
@@ -244,9 +196,9 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
           if (item.kind === 'thinking') {
             const live = active && i === items.length - 1 && item.durationMs <= 0
             if (live) {
-              return <OutlineThinking key={i} text={item.text} durationMs={0} current stacked streaming={streaming} />
+              return <ThinkingRow key={i} text={item.text} live stacked streaming={streaming} />
             }
-            return <ThinkingBlock key={i} text={item.text} durationMs={item.durationMs} />
+            return <ThinkingRow key={i} text={item.text} durationMs={item.durationMs} stacked />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
           if (item.kind === 'summary')
