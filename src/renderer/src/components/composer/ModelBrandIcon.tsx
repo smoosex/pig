@@ -26,6 +26,7 @@ import type { SessionModelInfo } from '../../ipc/api'
 const providerIcons: Record<string, SimpleIcon> = {
   anthropic: siAnthropic,
   openai: siOpenaigym,
+  'openai-codex': siOpenaigym,
   google: siGooglegemini,
   'google-vertex': siGooglecloud,
   deepseek: siDeepseek,
