@@ -292,7 +292,8 @@ export const zh = {
   },
   chat: {
     branchSummary: '分支摘要',
-    compactionSummary: '压缩摘要'
+    compacted: '上下文已压缩',
+    compactedFrom: '压缩前 {tokens} tokens'
   },
   tool: {
     run: '执行 {command}',

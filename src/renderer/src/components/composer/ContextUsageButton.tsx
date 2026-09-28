@@ -12,17 +12,7 @@ import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } 
 import { Progress } from '../ui/progress'
 import { Separator } from '../ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
-
-function formatTokens(value: number | null): string {
-  if (value == null) return '–'
-  if (value < 1000) return String(value)
-  if (value < 1_000_000) {
-    const scaled = value / 1000
-    return `${scaled >= 100 && Number.isInteger(scaled) ? scaled : scaled.toFixed(1)}k`
-  }
-  const scaled = value / 1_000_000
-  return `${Number.isInteger(scaled) ? scaled : scaled.toFixed(1)}M`
-}
+import { formatTokens } from '../../lib/format'
 
 function StatRow({
   label,

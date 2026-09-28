@@ -43,6 +43,8 @@ export type WorkRow =
 export function clusterWork(items: ProcessItem[]): WorkRow[] {
   const rows: WorkRow[] = []
   for (const item of items) {
+    // Compactions are lifted out of the work list by the turn view.
+    if (item.kind === 'compaction') continue
     if (item.kind === 'thinking') {
       rows.push({ kind: 'thinking', text: item.text, durationMs: item.durationMs })
       continue

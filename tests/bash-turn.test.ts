@@ -119,7 +119,7 @@ async function fixture(): Promise<void> {
     const mixed: Turn = {
       ...turn, id: 'command-1', process: [
         { kind: 'bash', message },
-        { kind: 'summary', titleKey: 'chat.compactionSummary', text: 'compacted' }
+        { kind: 'summary', titleKey: 'chat.branchSummary', text: 'summarized' }
       ], answer: [{ type: 'text', text: 'later' }]
     }
     await act(async () => { root.render(createElement(TurnView, { turn: mixed })) })
@@ -128,9 +128,9 @@ async function fixture(): Promise<void> {
     assert.equal(container.textContent?.includes('later'), true)
     const worked = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Worked for'))
     assert.ok(worked)
-    assert.equal(container.textContent?.includes('Compaction summary'), false)
+    assert.equal(container.textContent?.includes('Branch summary'), false)
     await act(async () => { worked.click(); await Bun.sleep(0) })
-    assert.equal(container.textContent?.includes('Compaction summary'), true)
+    assert.equal(container.textContent?.includes('Branch summary'), true)
     assert.equal(container.querySelectorAll('[data-slot="card"]').length, 1)
 
     const failedTurn: Turn = { ...turn, id: 'command-1', errorMessage: 'model exploded' }

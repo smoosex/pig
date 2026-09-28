@@ -290,7 +290,8 @@ export const en: Messages = {
   },
   chat: {
     branchSummary: 'Branch summary',
-    compactionSummary: 'Compaction summary'
+    compacted: 'Context compacted',
+    compactedFrom: '{tokens} tokens before'
   },
   tool: {
     run: 'Run {command}',

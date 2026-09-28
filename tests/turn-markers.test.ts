@@ -187,6 +187,67 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { separator().click() })
       assert.equal(separator().getAttribute('aria-expanded'), 'true')
       assert.deepEqual(shimmerText(), [])
+    } else if (name === 'compaction') {
+      const process: ProcessItem[] = [
+        { kind: 'tools', tools: [readTool('done', true)] },
+        { kind: 'compaction', text: '- 保留这条记忆', tokensBefore: 523_400, afterAnswer: false }
+      ]
+      await render(makeTurn({ process, streaming: false }))
+      const markers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+      assert.equal(markers.length, 2)
+      const compaction = markers[1]
+      assert.equal(compaction.getAttribute('aria-expanded'), 'false')
+      assert.ok(compaction.textContent?.includes('上下文已压缩'))
+      assert.ok(compaction.textContent?.includes('压缩前 523.4k tokens'))
+      assert.equal(container.textContent?.includes('保留这条记忆'), false)
+      await act(async () => { compaction.click(); await Bun.sleep(0) })
+      assert.equal(compaction.getAttribute('aria-expanded'), 'true')
+      assert.ok(container.textContent?.includes('保留这条记忆'))
+      assert.equal(compaction.classList.contains('aria-expanded:bg-transparent'), true)
+      const box = [...container.querySelectorAll('li')]
+        .find((element) => element.textContent === '保留这条记忆')
+        ?.closest('[data-slot="collapsible-content"]')?.firstElementChild
+      assert.ok(box)
+      assert.deepEqual([...box.classList].filter((name) => name.startsWith('bg-')), [])
+      // A turn that carries nothing but a compaction has no work block to head.
+      await render(makeTurn({
+        process: [{ kind: 'compaction', text: '只有压缩', tokensBefore: 1, afterAnswer: false }],
+        streaming: false,
+        hasProcess: true
+      }))
+      assert.equal(container.textContent?.includes('工作耗时'), false)
+      assert.ok(container.textContent?.includes('上下文已压缩'))
+      // A compaction that arrived after the answer reads below it, not above the work.
+      await render(makeTurn({
+        process: [
+          { kind: 'tools', tools: [readTool('before', true)] },
+          { kind: 'compaction', text: '尾压缩', tokensBefore: 999, afterAnswer: true }
+        ],
+        answer: [{ type: 'text', text: '回答正文' }],
+        streaming: false
+      }))
+      const text = container.textContent ?? ''
+      assert.ok(text.indexOf('回答正文') < text.indexOf('上下文已压缩'), text)
+      assert.equal(container.textContent?.includes('尾压缩'), false)
+      const trailing = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')].pop()
+      assert.ok(trailing)
+      assert.equal(trailing.closest('[data-slot="collapsible-content"]'), null)
+      await act(async () => { trailing.click(); await Bun.sleep(0) })
+      assert.ok(container.textContent?.includes('尾压缩'))
+    } else if (name === 'compaction-ids') {
+      await render(makeTurn({
+        streaming: true,
+        process: [
+          { kind: 'tools', tools: [readTool('first', true)] },
+          { kind: 'compaction', text: '中间压缩', tokensBefore: 42, afterAnswer: false },
+          { kind: 'tools', tools: [readTool('second', true)] }
+        ]
+      }))
+      const ids = [...container.querySelectorAll<HTMLElement>('[id]')].map((element) => element.id)
+      assert.equal(new Set(ids).size, ids.length, ids.join(','))
+      const controls = separator().getAttribute('aria-controls')
+      assert.ok(controls)
+      assert.equal(document.querySelectorAll(`[id="${controls}"]`).length, 1)
     } else if (name === 'disclosure') {
       let requested: string | undefined
       let release!: () => void
@@ -239,6 +300,8 @@ if (process.argv[2] === '--marker-fixture') {
     tools: 'only the current tool text shimmers while its action prefix stays static',
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
+    compaction: 'a compaction renders as its own landmark outside the collapsed work block',
+    'compaction-ids': 'each work block split by a compaction owns a unique content id',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
   }
   for (const [name, title] of Object.entries(fixtures)) {

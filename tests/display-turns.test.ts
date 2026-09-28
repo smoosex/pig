@@ -91,7 +91,40 @@ describe('display turn projection', () => {
     } as const
     const [turn] = groupTurns([command, summary] as never, false)
     expect(turn.bash).toEqual({ command: 'pwd', exitCode: 0, cancelled: false })
-    expect(turn.process.map((item) => item.kind)).toEqual(['bash', 'summary'])
+    expect(turn.process.map((item) => item.kind)).toEqual(['bash', 'compaction'])
+    // No assistant in the chunk, so the marker belongs below whatever the command rendered.
+    expect(turn.process[1]).toEqual({ kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true })
+  })
+
+  test('splits a compaction onto the side of the answer it followed', () => {
+    const user = { role: 'user', content: 'go', timestamp: 9 } as const
+    const assistant = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'done' }],
+      timestamp: 10
+    } as const
+    const summary = { role: 'compactionSummary', summary: 'compacted', tokensBefore: 100, timestamp: 11 } as const
+    const [turn] = groupTurns([user, assistant, summary] as never, false)
+    expect(turn.answer).toEqual([{ type: 'text', text: 'done' }])
+    expect(turn.process).toEqual([{ kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true }])
+    const [midTurn] = groupTurns([user, assistant, summary, { ...assistant, timestamp: 12 }] as never, false)
+    expect(midTurn.process.find((item) => item.kind === 'compaction')).toMatchObject({ afterAnswer: false })
+  })
+
+  test('keeps a compaction inside the work when an overflow error was retried after it', () => {
+    const user = { role: 'user', content: 'go', timestamp: 9 } as const
+    const overflow = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'context length exceeded' }],
+      errorMessage: 'context length exceeded',
+      timestamp: 10
+    } as const
+    const summary = { role: 'compactionSummary', summary: 'compacted', tokensBefore: 300_000, timestamp: 11 } as const
+    const retry = { role: 'assistant', content: [{ type: 'text', text: 'retried answer' }], timestamp: 12 } as const
+    const [turn] = groupTurns([user, overflow, summary, retry] as never, false)
+    expect(turn.answer).toEqual([{ type: 'text', text: 'retried answer' }])
+    expect(turn.errorMessage).toBe('context length exceeded')
+    expect(turn.process.find((item) => item.kind === 'compaction')).toMatchObject({ afterAnswer: false })
   })
 
   test('keeps assistant-only errors and history metadata intact', () => {

@@ -31,6 +31,16 @@ export type ProcessItem =
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
   | { kind: 'summary'; titleKey: MessageKey; text: string }
+  | CompactionItem
+
+/**
+ * A compaction is a session landmark, not work: it resets what the model can still see, so it is
+ * projected apart from the process items and rendered outside the collapsed work block.
+ * `afterAnswer` is set when the summary sits behind the chunk's last assistant message, which puts
+ * it below the answer instead of inside the work that preceded it. It is decided by position, not
+ * by the turn's state: an overflow that was compacted and retried leaves an earlier error behind.
+ */
+export type CompactionItem = { kind: 'compaction'; text: string; tokensBefore: number; afterAnswer: boolean }
 
 export type AnswerBlock =
   | { type: 'text'; text: string }
@@ -260,7 +270,14 @@ export function buildTurn(
       return
     }
     if (message.role === 'compactionSummary') {
-      process.push({ kind: 'summary', titleKey: 'chat.compactionSummary', text: message.summary })
+      process.push({
+        kind: 'compaction',
+        text: message.summary,
+        tokensBefore: message.tokensBefore,
+        // Position, not the turn's state: an overflow error earlier in the chunk is followed by a
+        // retried answer, and that compaction still belongs inside the work.
+        afterAnswer: i > lastAssistant
+      })
     }
   })
 

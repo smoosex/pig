@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { formatElapsed, renderKeyForTurn, type Turn } from '../chat/turns'
+import { formatElapsed, renderKeyForTurn, type ProcessItem, type Turn } from '../chat/turns'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
@@ -8,8 +8,38 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collap
 import { Marker, MarkerContent } from './ui/marker'
 import { Answer, UserBubble } from './turn/TurnMessages'
 import { BashTurn } from './turn/BashTurn'
+import { CompactionNotice } from './turn/CompactionNotice'
 import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkedMs } from './turn/useWorkedMs'
+
+/**
+ * A mid-turn compaction splits the process: the work either side of it is rendered as its own block,
+ * with the marker between them. Compactions that arrived after the turn's answer are handed back
+ * separately, because they belong below the answer rather than inside the work block.
+ */
+type ProcessSegment =
+  | { kind: 'work'; items: ProcessItem[] }
+  | { kind: 'compaction'; item: Extract<ProcessItem, { kind: 'compaction' }> }
+
+function segmentProcess(items: ProcessItem[]): ProcessSegment[] {
+  const segments: ProcessSegment[] = []
+  let work: ProcessItem[] = []
+  const flush = () => {
+    if (work.length === 0) return
+    segments.push({ kind: 'work', items: work })
+    work = []
+  }
+  for (const item of items) {
+    if (item.kind === 'compaction') {
+      flush()
+      segments.push({ kind: 'compaction', item })
+      continue
+    }
+    work.push(item)
+  }
+  flush()
+  return segments
+}
 
 function WorkedLabel({ turn }: { turn: Turn }) {
   const t = useT()
@@ -25,7 +55,20 @@ function AgentTurnView({
   turn: Turn
   onNeedProcess?: (turnId: string) => Promise<void>
 }) {
-  const hasProcess = Boolean(turn.hasProcess) || turn.process.length > 0 || turn.streaming
+  const trailing: Extract<ProcessItem, { kind: 'compaction' }>[] = []
+  const inline: ProcessItem[] = []
+  for (const item of turn.process) {
+    if (item.kind === 'compaction' && item.afterAnswer) trailing.push(item)
+    else inline.push(item)
+  }
+  const segments = segmentProcess(inline)
+  const hasWork = segments.some((segment) => segment.kind === 'work')
+  // A turn whose process is still on disk only knows that it has one: the header stands in for it.
+  const showHeader = hasWork || turn.streaming || (Boolean(turn.hasProcess) && turn.process.length === 0)
+  const showBody = showHeader || segments.length > 0
+  // An empty process still renders the body: while streaming it holds the waiting line.
+  const blocks: ProcessSegment[] = segments.length > 0 ? segments : [{ kind: 'work', items: [] }]
+  const firstWork = blocks.findIndex((block) => block.kind === 'work')
   const [open, setOpen] = useState(turn.streaming)
   const [liveOutline, setLiveOutline] = useState(turn.streaming)
   const [loading, setLoading] = useState(false)
@@ -79,41 +122,56 @@ function AgentTurnView({
   return (
     <div className="mb-4">
       {turn.user ? <UserBubble message={turn.user} /> : null}
-      {hasProcess ? (
-        <Collapsible
-          open={open}
-          onOpenChange={(next) => void toggleProcess(next)}
-          className="mb-3"
-        >
-          <Marker variant="separator" asChild>
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={loading}
-                className={cn(
-                  'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
-                  turn.streaming && 'pointer-events-none'
-                )}
-              >
-                <MarkerContent className="flex shrink-0 items-center gap-1">
-                  <WorkedLabel turn={turn} />
-                  <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
-                </MarkerContent>
-              </Button>
-            </CollapsibleTrigger>
-          </Marker>
-          {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
-          <CollapsibleContent className="duration-300">
-            {liveOutline ? (
-              <ProcessOutline items={turn.process} streaming={turn.streaming && !turn.errorMessage} />
+      {showBody ? (
+        <div className="mb-3">
+          {blocks.map((block, index) =>
+            block.kind === 'compaction' ? (
+              <CompactionNotice key={`compaction-${index}`} item={block.item} />
             ) : (
-              <ProcessList items={turn.process} />
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+              // One Collapsible per work block: they share the open state, and each block gets its
+              // own content id (a single root reuses one id for every content it owns).
+              <Collapsible
+                key={`work-${index}`}
+                open={open}
+                onOpenChange={(next) => void toggleProcess(next)}
+              >
+                {index === firstWork ? (
+                  <>
+                    <Marker variant="separator" asChild>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={loading}
+                          className={cn(
+                            'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
+                            turn.streaming && 'pointer-events-none'
+                          )}
+                        >
+                          <MarkerContent className="flex shrink-0 items-center gap-1">
+                            <WorkedLabel turn={turn} />
+                            <ChevronRight className={cn('size-3.5 transition-transform duration-150', open && 'rotate-90')} />
+                          </MarkerContent>
+                        </Button>
+                      </CollapsibleTrigger>
+                    </Marker>
+                    {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
+                  </>
+                ) : null}
+                <CollapsibleContent className="duration-300">
+                  {liveOutline ? (
+                    <ProcessOutline items={block.items} streaming={turn.streaming && !turn.errorMessage} />
+                  ) : (
+                    <ProcessList items={block.items} />
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
+            )
+          )}
+        </div>
       ) : null}
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
+      {trailing.map((item, index) => <CompactionNotice key={`trailing-${index}`} item={item} />)}
     </div>
   )
 }
