@@ -22,6 +22,7 @@ interface InstalledPlugin {
 
 interface Registry {
   memoryEnabled: boolean
+  reviewEnabled: boolean
   installed: InstalledPlugin[]
 }
 
@@ -30,6 +31,9 @@ const packageRoot = () => pigPath('plugin-packages')
 const memoryPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'observational-memory', 'index.ts')
   : join(app.getAppPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
+const reviewPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pi-review', 'index.ts')
+  : join(app.getAppPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
 
 let mutation: Promise<void> = Promise.resolve()
 function serialize<T>(action: () => Promise<T>): Promise<T> {
@@ -43,7 +47,7 @@ async function readRegistry(): Promise<Registry> {
   try {
     text = await readFile(registryPath(), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { memoryEnabled: false, installed: [] }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { memoryEnabled: false, reviewEnabled: false, installed: [] }
     throw error
   }
   const value: unknown = JSON.parse(text)
@@ -56,7 +60,11 @@ async function readRegistry(): Promise<Registry> {
       throw new Error('Invalid Pig plugin registry entry')
     }
   }
-  return { memoryEnabled: 'memoryEnabled' in value && value.memoryEnabled === true, installed: value.installed }
+  return {
+    memoryEnabled: 'memoryEnabled' in value && value.memoryEnabled === true,
+    reviewEnabled: 'reviewEnabled' in value && value.reviewEnabled === true,
+    installed: value.installed
+  }
 }
 
 async function saveRegistry(value: Registry): Promise<void> {
@@ -124,6 +132,10 @@ export async function enabledPluginPaths(): Promise<string[]> {
   if (registry.memoryEnabled) {
     if (!existsSync(memoryPath())) throw new Error('Bundled observational memory extension is missing')
     paths.push(memoryPath())
+  }
+  if (registry.reviewEnabled) {
+    if (!existsSync(reviewPath())) throw new Error('Bundled code review extension is missing')
+    paths.push(reviewPath())
   }
   for (const plugin of registry.installed.filter((item) => item.enabled)) {
     const found = await resourcesFor(plugin.source)
@@ -208,6 +220,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'observational-memory', name: 'Observational Memory', source: 'Pig built-in',
     kind: 'system', enabled: registry.memoryEnabled, available: existsSync(memoryPath()),
     ...(!existsSync(memoryPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pi-review', name: 'Pi Review', source: 'Pig built-in',
+    kind: 'system', enabled: registry.reviewEnabled, available: existsSync(reviewPath()),
+    ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -252,6 +268,9 @@ export function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
     if (id === 'observational-memory') {
       if (enabled && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
       registry.memoryEnabled = enabled
+    } else if (id === 'pi-review') {
+      if (enabled && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
+      registry.reviewEnabled = enabled
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')

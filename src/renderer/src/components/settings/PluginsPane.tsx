@@ -158,7 +158,7 @@ export function PluginsPane() {
     <SettingsRow key={plugin.id} title={plugin.name} description={plugin.error ?? plugin.source}>
       <div className="flex items-center gap-2">
         {!plugin.available ? <Badge variant="destructive">{t('plugins.missing')}</Badge> : null}
-        {plugin.kind === 'system' || plugin.settings ? (
+        {plugin.id === 'observational-memory' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}

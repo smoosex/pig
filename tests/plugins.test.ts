@@ -35,8 +35,12 @@ async function fixture(): Promise<void> {
     assert.equal((await module.listPlugins())[0]?.enabled, false)
     assert.equal(await module.isMemoryPluginEnabled(), false)
     assert.deepEqual(await module.enabledPluginPaths(), [])
+    await module.setPluginEnabled('pi-review', true)
+    assert.ok((await module.enabledPluginPaths()).some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
+    await module.setPluginEnabled('pi-review', false)
+    assert.deepEqual(await module.enabledPluginPaths(), [])
     await module.installPlugin(plugin)
-    const installed = (await module.listPlugins())[1]!
+    const installed = (await module.listPlugins()).find((item) => item.kind === 'local')!
     assert.equal(installed.kind, 'local')
     assert.equal(installed.enabled, false)
     assert.equal(installed.available, true)
@@ -72,7 +76,7 @@ async function fixture(): Promise<void> {
     const privateLoader = await createNoExtensionsResourceLoader(root)
     assert.equal(privateLoader.getSkills().skills.some((skill) => skill.name === 'plugin-invisible'), false)
     await module.removePlugin(installed.id)
-    assert.equal((await module.listPlugins()).length, 1)
+    assert.equal((await module.listPlugins()).filter((item) => item.kind !== 'system').length, 0)
     assert.equal(existsSync(genericSettings), false)
 
     const agentSettings = join(root, 'agent', 'settings.json')

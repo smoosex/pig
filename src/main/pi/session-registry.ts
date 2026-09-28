@@ -158,9 +158,33 @@ async function build(
   try {
     worktrees.assertAvailable(cwd)
     const uiContext = createPluginUI(session.sessionId, win)
+    // Pig owns session lifecycle, so extension-driven replacement is refused rather than faked as a
+    // user cancellation; the notification is the only signal an extension (or the user) gets.
+    const unsupportedAction = (what: string): { cancelled: boolean } => {
+      uiContext.notify(`${what} is not supported in Pig`, 'warning')
+      return { cancelled: true }
+    }
     await session.bindExtensions({
       mode: 'rpc',
       uiContext,
+      // Pi binds these actions only in its own hosts; without them ctx.navigateTree is a no-op that
+      // reports success, which stranded extensions that switch branches (like code review).
+      commandContextActions: {
+        waitForIdle: () => session.waitForIdle(),
+        newSession: async () => unsupportedAction('Starting a new session'),
+        fork: async () => unsupportedAction('Forking the session'),
+        navigateTree: async (targetId, options) => {
+          const result = await session.navigateTree(targetId, options)
+          if (!result.cancelled && !win.isDestroyed()) {
+            win.webContents.send('session:branch-changed', session.sessionId, session.sessionManager.getLeafId())
+          }
+          return { cancelled: result.cancelled }
+        },
+        switchSession: async () => unsupportedAction('Switching sessions'),
+        reload: async () => {
+          await session.reload()
+        }
+      },
       onError: (error) => uiContext.notify(`${error.extensionPath}: ${error.error}`, 'error')
     })
     worktrees.assertAvailable(cwd)
@@ -671,11 +695,19 @@ export async function viewSessionBranch(sessionId: string, tipId: string): Promi
   const sm = ls.agentSession.sessionManager
   if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
   if (sm.getLeafId() !== tipId) {
+    const oldLeafId = sm.getLeafId()
     sm.branch(tipId)
     // Every request is built from the session manager now, so the branch takes effect either way;
     // refreshing the finalized transcript is what keeps the public state and the message-to-entry
     // map on the branch we just moved to.
     ls.agentSession.refreshContext()
+    // Extensions track the leaf through session_tree; without the event a plugin bound to the old
+    // branch (for example an active review) keeps acting on the branch the user left.
+    await ls.agentSession.extensionRunner.emit({
+      type: 'session_tree',
+      newLeafId: sm.getLeafId(),
+      oldLeafId
+    })
   }
   return sm.getLeafId()
 }

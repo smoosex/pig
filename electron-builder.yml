@@ -23,6 +23,11 @@ extraResources:
     filter:
       - '**/*.ts'
       - LICENSE
+  - from: src/main/plugins/pi-review
+    to: system-plugins/pi-review
+    filter:
+      - '**/*.ts'
+      - LICENSE
 asarUnpack:
   - resources/**
 win:

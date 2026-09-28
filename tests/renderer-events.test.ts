@@ -5,6 +5,7 @@ import type { PiMessage, PiSessionEvent } from '../src/renderer/src/pi/types'
 async function runFixture(name: string): Promise<void> {
   let nextId = 0
   let listener: ((event: unknown) => void) | undefined
+  let branchListener: ((sessionId: string, leafId: string | null) => void) | undefined
   const frames = new Map<number, FrameRequestCallback>()
   const timers = new Map<number, () => void>()
   const api = {
@@ -19,9 +20,14 @@ async function runFixture(name: string): Promise<void> {
       followUpMessages: []
     }),
     getDisplayTurns: async () => ({ leafId: null, turns: [] }),
+    viewBranch: async (_sessionId: string, tipId: string) => ({ leafId: tipId, turns: [], startIndex: 0, totalTurns: 0 }),
     onEvent: (callback: (event: unknown) => void) => {
       listener = callback
       return () => { listener = undefined }
+    },
+    onSessionBranchChanged: (callback: (sessionId: string, leafId: string | null) => void) => {
+      branchListener = callback
+      return () => { branchListener = undefined }
     }
   }
   Object.assign(globalThis, {
@@ -167,6 +173,11 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(runtime().pendingUserMessage, true)
       store.getState().rollbackPrompt('session')
       assert.deepEqual(runtime().liveMessages, [])
+    } else if (name === 'branch') {
+      assert.equal(runtime().leafId, null)
+      branchListener?.('session', 'leaf-1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runtime().leafId, 'leaf-1')
     } else if (name === 'prompt-transition') {
       const oldUser: PiMessage = { role: 'user', content: 'old question', timestamp: 1 }
       emit({ type: 'agent_start' })
@@ -198,6 +209,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
     'unaccepted-end': 'agent end cannot acknowledge a user message that was never received',
+    branch: 'an extension branch change rebinds the conversation to the new leaf',
     'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it'
   }
   for (const [name, description] of Object.entries(cases)) {

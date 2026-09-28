@@ -187,6 +187,13 @@ const api: SessionApi = {
       ipcRenderer.off('session:window', handler)
     }
   },
+  onSessionBranchChanged: (listener: (sessionId: string, leafId: string | null) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: string, leafId: string | null): void => listener(sessionId, leafId)
+    ipcRenderer.on('session:branch-changed', handler)
+    return () => {
+      ipcRenderer.off('session:branch-changed', handler)
+    }
+  },
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: SettingsAuthEvent): void => listener(event)
     ipcRenderer.on('settings:auth-event', handler)

@@ -635,5 +635,7 @@ export interface SessionApi {
   onEvent: (listener: (event: unknown) => void) => () => void
   onNotificationClick: (listener: (sessionId: string) => void) => () => void
   onSessionWindow: (listener: (update: SessionWindowMessage) => void) => () => void
+  /** Pushed when an extension moves the session leaf; null means the root before any entry. */
+  onSessionBranchChanged: (listener: (sessionId: string, leafId: string | null) => void) => () => void
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void) => () => void
 }
