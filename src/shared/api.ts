@@ -442,6 +442,7 @@ export interface ThemePrefs {
 
 export interface AppSettings extends ThemePrefs {
   sendShortcut: SendShortcut
+  completionNotifications: boolean
   /** The stored choice: a locale, or `system` to follow the OS language. */
   localeSetting: LocaleSetting
   /** The OS language resolved against the shipped locales, for the `system` option's label. */
@@ -550,6 +551,7 @@ export interface SessionApi {
   saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
+  setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
   setLocaleSetting: (
     locale: LocaleSetting
   ) => Promise<{ localeSetting: LocaleSetting; systemLocale: Locale }>
@@ -562,6 +564,7 @@ export interface SessionApi {
   replyAuthPrompt: (id: string, value: string | null) => Promise<void>
   cancelLogin: () => Promise<void>
   onEvent: (listener: (event: unknown) => void) => () => void
+  onNotificationClick: (listener: (sessionId: string) => void) => () => void
   onSessionWindow: (listener: (update: SessionWindowMessage) => void) => () => void
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void) => () => void
 }

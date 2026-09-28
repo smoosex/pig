@@ -128,6 +128,8 @@ const api: SessionApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
+  setCompletionNotifications: (enabled: boolean) =>
+    ipcRenderer.invoke('settings:set-completion-notifications', enabled),
   setLocaleSetting: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
   setTheme: (patch: unknown) => ipcRenderer.invoke('settings:set-theme', patch),
   setDefaultModelSetting: (provider: string, id: string) =>
@@ -148,6 +150,11 @@ const api: SessionApi = {
     return () => {
       ipcRenderer.off('pi:event', handler)
     }
+  },
+  onNotificationClick: (listener: (sessionId: string) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, sessionId: string): void => listener(sessionId)
+    ipcRenderer.on('notification:click', handler)
+    return () => ipcRenderer.off('notification:click', handler)
   },
   onSessionWindow: (listener: (update: SessionWindowMessage) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, update: SessionWindowMessage): void => listener(update)

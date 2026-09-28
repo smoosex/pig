@@ -50,6 +50,11 @@ bun install
 bun run dev
 ```
 
+On macOS, `dev` signs the local Electron bundle once so system notifications work.
+Allow notifications for Electron in System Settings if prompted. `build:mac` uses
+ad-hoc signing for local builds; distribution requires a Developer ID signature
+and notarization.
+
 ## Typecheck
 
 ```bash

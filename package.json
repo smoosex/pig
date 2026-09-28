@@ -9,9 +9,9 @@
   "scripts": {
     "postinstall": "bun run icons:generate && node node_modules/electron/install.js",
     "icons:generate": "bun scripts/generate-file-icons.ts",
-    "dev": "bun run icons:generate && electron-vite dev",
+    "dev": "bun run icons:generate && bun scripts/prepare-mac-dev.ts && electron-vite dev",
     "build": "bun run icons:generate && electron-vite build",
-    "preview": "electron-vite preview",
+    "preview": "bun scripts/prepare-mac-dev.ts && electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json --composite false",

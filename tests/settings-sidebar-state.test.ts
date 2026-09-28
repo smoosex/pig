@@ -30,6 +30,7 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings {
     lightTheme: 'pig',
     darkTheme: 'pig',
     sendShortcut: 'enter',
+    completionNotifications: true,
     localeSetting: 'zh-CN',
     systemLocale: 'zh-CN',
     defaultModel: null,
@@ -145,6 +146,54 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(useSettingsStore.getState().appearance, 'dark')
     assert.ok(appearances.every((appearance) => appearance === 'dark'))
     unsubscribe()
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'notification-setting') {
+    await useSettingsStore.getState().load()
+    let persisted = true
+    api.setCompletionNotifications = async (enabled) => {
+      persisted = enabled
+      return { completionNotifications: enabled }
+    }
+    await useSettingsStore.getState().setCompletionNotifications(false)
+    assert.equal(persisted, false)
+    assert.equal(useSettingsStore.getState().completionNotifications, false)
+    await useSettingsStore.getState().setCompletionNotifications(true)
+    assert.equal(persisted, true)
+    assert.equal(useSettingsStore.getState().completionNotifications, true)
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'notification-navigation') {
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    const { openNotifiedSession } = await import('../src/renderer/src/chat/notification-navigation')
+    const selected: string[] = []
+    const switched: string[] = []
+    const restoreModes: boolean[] = []
+    let closes = 0
+    const setTab = (tab: 'chats' | 'projects') => switched.push(tab)
+    const setRestoreMode = (chat: boolean) => restoreModes.push(chat)
+    const closeSettings = () => { closes++ }
+    useSessionsStore.setState({
+      openTabs: [
+        { id: 'project', kind: 'project', cwd: '/project', title: 'Project', loadState: 'ready' },
+        { id: 'chat', kind: 'chat', cwd: '/chat', title: 'Chat', loadState: 'ready' },
+        { id: 'diff', kind: 'diff', cwd: '/project', title: 'Diff', loadState: 'ready' }
+      ],
+      setActive: (id) => { selected.push(id) }
+    })
+    openNotifiedSession('project', 'chats', setTab, setRestoreMode, closeSettings)
+    openNotifiedSession('chat', 'projects', setTab, setRestoreMode, closeSettings)
+    openNotifiedSession('project', 'projects', setTab, setRestoreMode, closeSettings)
+    openNotifiedSession('diff', 'projects', setTab, setRestoreMode, closeSettings)
+    openNotifiedSession('closed', 'projects', setTab, setRestoreMode, closeSettings)
+    assert.deepEqual(selected, ['project', 'chat', 'project'])
+    assert.deepEqual(switched, ['projects', 'chats'])
+    assert.deepEqual(restoreModes, [false, true])
+    assert.equal(closes, 3)
     await GlobalRegistrator.unregister()
     return
   }
@@ -652,6 +701,8 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'save-failure': 'failed saves roll back only their patch and keep the queue usable',
     'load-race': 'a stale settings load cannot replace later edits or provider updates',
     locale: 'the language setting follows the system, persists and re-titles placeholders',
+    'notification-setting': 'the completion notification setting persists through the settings store',
+    'notification-navigation': 'notification clicks select only open session tabs across sidebar halves',
     auth: 'auth cancellation owns its prompts until completion and cleans up on unmount',
     sidebar: 'late preferences preserve user changes and writes remain ordered',
     'sidebar-restore': 'sidebar preferences expose the saved Chats selection before workspace restore',

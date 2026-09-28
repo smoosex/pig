@@ -42,6 +42,8 @@ async function runFixture(): Promise<void> {
   await api.unwatchWorktreeDiff('/repo', leaseId)
   api.onDiffWatchError(() => {})
   api.onSessionNames(() => {})
+  api.onNotificationClick(() => {})
+  await api.setCompletionNotifications(false)
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
@@ -52,6 +54,7 @@ async function runFixture(): Promise<void> {
     { channel: 'diff:read-untracked', args: ['/repo', 'src/new.ts'] },
     { channel: 'diff:watch', args: ['/repo'] },
     { channel: 'diff:unwatch', args: ['/repo', 'lease-1'] },
+    { channel: 'settings:set-completion-notifications', args: [false] },
     {
       channel: 'system:select-open-project-workspace',
       args: ['/repo', 'session-1', 'diff:/repo']
@@ -59,6 +62,7 @@ async function runFixture(): Promise<void> {
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
+  assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')
 }
 
 if (process.argv[2] === '--preload-api-fixture') {

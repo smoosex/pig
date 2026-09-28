@@ -35,6 +35,7 @@ export function registerSettingsIpc(): void {
     ])
     return {
       sendShortcut: pig.sendShortcut,
+      completionNotifications: pig.completionNotifications,
       localeSetting: pig.locale,
       systemLocale: systemLocale(),
       appearance: pig.appearance,
@@ -50,6 +51,11 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle('settings:set-send-shortcut', async (_event, shortcut: SendShortcut) => {
     return savePigSettings({ sendShortcut: shortcut })
+  })
+
+  ipcMain.handle('settings:set-completion-notifications', async (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean notification setting')
+    return savePigSettings({ completionNotifications: enabled })
   })
 
   ipcMain.handle('settings:set-locale', async (_event, locale: LocaleSetting) => {

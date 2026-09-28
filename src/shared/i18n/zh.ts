@@ -36,6 +36,9 @@ export const zh = {
     retryRestore: '重试恢复',
     openProject: '打开项目'
   },
+  notification: {
+    replyReady: '回复已完成'
+  },
   sidebar: {
     tabsAria: '项目 / 对话切换',
     projects: '项目',
@@ -204,6 +207,11 @@ export const zh = {
     send: '发送',
     sendShortcut: '发送快捷键',
     sendShortcutDescription: '{key} 换行',
+    notifications: '通知',
+    completionNotifications: '回复完成通知',
+    completionNotificationsDescription: '窗口不在前台时发送系统通知',
+    notificationsOn: '开启',
+    notificationsOff: '关闭',
     model: '模型',
     defaultModel: '默认模型',
     defaultModelDescription: '新建对话时使用的模型',

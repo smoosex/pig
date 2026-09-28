@@ -14,6 +14,7 @@ function fixture(initial: string[] = ['第一条', '第二条', '第三条']) {
   let destroyed = false
   const listeners = new Set<(event: AgentSessionEvent) => void>()
   const events: AgentSessionEvent[] = []
+  const notifications: string[] = []
   const emit = (event: AgentSessionEvent) => {
     for (const listener of listeners) listener(event)
   }
@@ -50,9 +51,73 @@ function fixture(initial: string[] = ['第一条', '第二条', '第三条']) {
       }
     }
   } as unknown as BrowserWindow
-  const unsubscribe = bridgeEvents(session, 'test-session', win)
-  return { session, events, emit, unsubscribe, destroy: () => { destroyed = true } }
+  const unsubscribe = bridgeEvents(session, 'test-session', win, async (sessionId) => {
+    notifications.push(sessionId)
+  })
+  return { session, events, notifications, emit, unsubscribe, destroy: () => { destroyed = true } }
 }
+
+function assistantEnd(stopReason: 'stop' | 'length' | 'error' | 'aborted'): AgentSessionEvent {
+  return { type: 'message_end', message: { role: 'assistant', stopReason } } as AgentSessionEvent
+}
+
+describe('completion notifications', () => {
+  test('waits until the entire run settles and sends at most once', () => {
+    const state = fixture()
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop'))
+    state.emit({ type: 'agent_end', messages: [], willRetry: false })
+    expect(state.notifications).toEqual([])
+    state.emit({ type: 'agent_settled' })
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toEqual(['test-session'])
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop'))
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toHaveLength(2)
+    state.unsubscribe()
+  })
+
+  test('notifies when the final reply reaches the output token limit', () => {
+    const state = fixture()
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('length'))
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toEqual(['test-session'])
+    state.unsubscribe()
+  })
+
+  test('ignores retries, aborted or failed answers, and runs with no reply', () => {
+    const state = fixture()
+    state.emit({ type: 'agent_settled' })
+    state.emit({ type: 'agent_start' })
+    state.emit({ type: 'agent_settled' })
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('error'))
+    state.emit({ type: 'agent_end', messages: [], willRetry: true })
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('aborted'))
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toEqual([])
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('error'))
+    state.emit({ type: 'agent_end', messages: [], willRetry: true })
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop'))
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toEqual(['test-session'])
+    state.unsubscribe()
+  })
+
+  test('never notifies after the bridge closes', () => {
+    const state = fixture()
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop'))
+    state.unsubscribe()
+    state.emit({ type: 'agent_settled' })
+    expect(state.notifications).toEqual([])
+  })
+})
 
 describe('batched queue updates', () => {
   for (const action of ['steer', 'dismiss', 'edit'] as const) {

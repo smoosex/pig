@@ -8,11 +8,13 @@ export type { Appearance, PaletteId, SendShortcut } from '../shared/api'
 
 export interface PigSettings extends ThemePrefs {
   sendShortcut: SendShortcut
+  completionNotifications: boolean
   locale: LocaleSetting
 }
 
 const defaults: PigSettings = {
   sendShortcut: 'enter',
+  completionNotifications: true,
   locale: 'system',
   appearance: 'system',
   lightTheme: 'pig',
@@ -38,6 +40,7 @@ function parsePalette(value: unknown): PaletteId {
 function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
   return {
     sendShortcut: parseShortcut(data?.sendShortcut),
+    completionNotifications: data?.completionNotifications !== false,
     locale: parseLocaleSetting(data?.locale),
     appearance: parseAppearance(data?.appearance),
     lightTheme: parsePalette(data?.lightTheme),

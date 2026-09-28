@@ -34,6 +34,9 @@ export const en: Messages = {
     retryRestore: 'Retry',
     openProject: 'Open project'
   },
+  notification: {
+    replyReady: 'Reply complete'
+  },
   sidebar: {
     tabsAria: 'Projects / chats switch',
     projects: 'Projects',
@@ -202,6 +205,11 @@ export const en: Messages = {
     send: 'Sending',
     sendShortcut: 'Send shortcut',
     sendShortcutDescription: '{key} inserts a newline',
+    notifications: 'Notifications',
+    completionNotifications: 'Reply completion',
+    completionNotificationsDescription: 'Show a system notification when Pig is not in the foreground',
+    notificationsOn: 'On',
+    notificationsOff: 'Off',
     model: 'Model',
     defaultModel: 'Default model',
     defaultModelDescription: 'Model used by new conversations',

@@ -5,6 +5,8 @@ import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
+import { api } from './ipc/api'
+import { openNotifiedSession } from './chat/notification-navigation'
 import { useSessionWindows } from './hooks/useSessionWindows'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
@@ -127,6 +129,10 @@ export default function App() {
   useEventBridge()
   useSessionWindows()
   useSessionNames()
+
+  useEffect(() => api.onNotificationClick((sessionId) => {
+    openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))
+  }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

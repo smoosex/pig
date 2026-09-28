@@ -26,6 +26,7 @@ mac:
     - dmg
   category: public.app-category.developer-tools
   identity: null
+afterPack: scripts/sign-mac-local.cjs
 linux:
   target:
     - AppImage

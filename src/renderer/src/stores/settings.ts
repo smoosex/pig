@@ -19,6 +19,7 @@ interface SettingsStore extends AppSettings {
   error: string | null
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
+  setCompletionNotifications: (enabled: boolean) => Promise<void>
   setLocale: (locale: LocaleSetting) => Promise<void>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
   setDefaultModel: (provider: string, id: string) => Promise<void>
@@ -28,6 +29,7 @@ interface SettingsStore extends AppSettings {
 
 const empty: AppSettings = {
   sendShortcut: 'enter',
+  completionNotifications: true,
   localeSetting: 'system',
   // Until the first load the only hint is the locale of the last run, which the mirror holds.
   systemLocale: storedLocale(),
@@ -139,6 +141,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       save({ sendShortcut: shortcut }, async () => {
         const next = await api.setSendShortcut(shortcut)
         return { sendShortcut: next.sendShortcut }
+      }),
+
+    setCompletionNotifications: (enabled) =>
+      save({ completionNotifications: enabled }, async () => {
+        const next = await api.setCompletionNotifications(enabled)
+        return { completionNotifications: next.completionNotifications }
       }),
 
     setLocale: (locale) =>

@@ -4,6 +4,11 @@ import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
 const bridged = new WeakSet<AgentSession>()
 
+async function notifyOnCompletion(sessionId: string, win: BrowserWindow, signal: AbortSignal): Promise<void> {
+  const { sendCompletionNotification } = await import('../completion-notification')
+  await sendCompletionNotification(sessionId, win, signal)
+}
+
 interface QueueUpdateBatch {
   depth: number
   followUp: string[]
@@ -99,14 +104,24 @@ export function removePendingUserMessage(
 export function bridgeEvents(
   session: AgentSession,
   sessionId: string,
-  win: BrowserWindow
+  win: BrowserWindow,
+  notify: typeof notifyOnCompletion = notifyOnCompletion
 ): () => void {
   if (bridged.has(session)) return () => {}
   bridged.add(session)
 
   let subscribed = true
+  let runActive = false
+  let lastAnswerSucceeded = false
+  const lifetime = new AbortController()
   const forward = (event: AgentSessionEvent) => {
     if (!subscribed) return
+    if (event.type === 'agent_start') {
+      runActive = true
+      lastAnswerSucceeded = false
+    } else if (event.type === 'message_end' && event.message.role === 'assistant') {
+      lastAnswerSucceeded = event.message.stopReason === 'stop' || event.message.stopReason === 'length'
+    }
     let metadata: PastedTextDisplayMetadata | undefined
     const message = 'message' in event ? event.message : undefined
     const queue = pendingUserMessages.get(session)
@@ -149,6 +164,15 @@ export function bridgeEvents(
           }
         : event
     win.webContents.send('pi:event', { sessionId, event: enriched })
+    if (event.type === 'agent_settled') {
+      if (runActive && lastAnswerSucceeded) {
+        void notify(sessionId, win, lifetime.signal).catch((error: unknown) => {
+          console.error('Could not send completion notification:', error)
+        })
+      }
+      runActive = false
+      lastAnswerSucceeded = false
+    }
   }
 
   const unsubscribe = session.subscribe((event) => {
@@ -161,6 +185,7 @@ export function bridgeEvents(
   })
   return () => {
     subscribed = false
+    lifetime.abort()
     unsubscribe()
     bridged.delete(session)
   }

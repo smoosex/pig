@@ -31,6 +31,8 @@ export function GeneralPane() {
   const thinkingLevels = useSettingsStore((s) => s.thinkingLevels)
   const models = useSettingsStore((s) => s.models)
   const setSendShortcut = useSettingsStore((s) => s.setSendShortcut)
+  const completionNotifications = useSettingsStore((s) => s.completionNotifications)
+  const setCompletionNotifications = useSettingsStore((s) => s.setCompletionNotifications)
   const setDefaultModel = useSettingsStore((s) => s.setDefaultModel)
   const setDefaultThinking = useSettingsStore((s) => s.setDefaultThinking)
   const newline = sendShortcut === 'enter' ? 'Shift+Enter' : 'Enter'
@@ -89,6 +91,32 @@ export function GeneralPane() {
                 <SelectGroup>
                   <SelectItem value="enter">Enter</SelectItem>
                   <SelectItem value="shift-enter">Shift+Enter</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {t('settings.notifications')}
+        </p>
+        <SettingsCard>
+          <SettingsRow
+            title={t('settings.completionNotifications')}
+            description={t('settings.completionNotificationsDescription')}
+          >
+            <Select
+              value={completionNotifications ? 'on' : 'off'}
+              onValueChange={(value) => void setCompletionNotifications(value === 'on')}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="end">
+                <SelectGroup>
+                  <SelectItem value="on">{t('settings.notificationsOn')}</SelectItem>
+                  <SelectItem value="off">{t('settings.notificationsOff')}</SelectItem>
                 </SelectGroup>
               </SelectContent>
             </Select>
