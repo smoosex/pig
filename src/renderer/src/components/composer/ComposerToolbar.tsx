@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { ArrowUp, Square, SquareTerminal } from 'lucide-react'
+import { api } from '../../ipc/api'
 import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useSessionsStore } from '../../stores/sessions'
@@ -12,12 +14,26 @@ import { useModelControls } from './useModelControls'
 const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
 function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
+  const projectCwd = useSessionsStore((s) => s.currentProjectCwd)
+  const [memoryEnabled, setMemoryEnabled] = useState(false)
+  useEffect(() => {
+    let active = true
+    if (!sessionId || !projectCwd) return
+    const load = () => { void api.isMemoryPluginEnabled().then((enabled) => {
+      if (active) setMemoryEnabled(enabled)
+    }, () => { if (active) setMemoryEnabled(false) }) }
+    load()
+    const off = api.onPluginsChanged(load)
+    return () => { active = false; off() }
+  }, [sessionId, projectCwd])
   const usage = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.contextUsage ?? null) : null)
   const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? null) : null)
   const tokensError = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokensError ?? null) : null)
   const loadTokenStats = useSessionsStore((s) => s.loadTokenStats)
   return (
     <ContextUsageButton
+      sessionId={sessionId}
+      memoryAvailable={!!projectCwd && memoryEnabled}
       usage={usage}
       tokens={tokens}
       error={tokensError}

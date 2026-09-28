@@ -1,4 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Activity, ScrollText } from 'lucide-react'
+import { Button } from '../ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
+import { ScrollArea } from '../ui/scroll-area'
+import { api } from '../../ipc/api'
 import type { SessionContextUsage, SessionTokenStats } from '../../ipc/api'
 import { cn } from '../../lib/utils'
 import { useT } from '../../hooks/useT'
@@ -37,12 +42,16 @@ function StatRow({
 }
 
 export function ContextUsageButton({
+  sessionId,
+  memoryAvailable,
   usage,
   tokens,
   error,
   onOpen,
   disabled
 }: {
+  sessionId: string | null
+  memoryAvailable: boolean
   usage: SessionContextUsage | null
   tokens: SessionTokenStats | null
   error?: string | null
@@ -51,12 +60,39 @@ export function ContextUsageButton({
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
+  const [detail, setDetail] = useState<'status' | 'view' | null>(null)
+  const [full, setFull] = useState(false)
+  const [text, setText] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!memoryAvailable) setDetail(null)
+  }, [memoryAvailable])
+  useEffect(() => {
+    if (!detail || !sessionId) return
+    let active = true
+    setText(null)
+    setDetailError(null)
+    setCopied(false)
+    void api.getMemoryDetail(sessionId, detail, detail === 'view' && full).then((value) => {
+      if (active) setText(value)
+    }, (failure) => {
+      if (active) setDetailError(failure instanceof Error ? failure.message : String(failure))
+    })
+    return () => { active = false }
+  }, [detail, full, sessionId])
+  const showDetail = (kind: 'status' | 'view') => {
+    setFull(false)
+    setDetail(kind)
+    setOpen(false)
+  }
   const used = usage?.tokens ?? null
   const windowSize = usage?.contextWindow ?? 0
   const percent = usage?.percent ?? null
   const hover = t('context.usage')
 
   return (
+    <>
     <Popover
       open={open}
       onOpenChange={(next) => {
@@ -78,9 +114,23 @@ export function ContextUsageButton({
         </TooltipTrigger>
         {!open ? <TooltipContent>{hover}</TooltipContent> : null}
       </Tooltip>
-      <PopoverContent align="end" side="top" className="w-72">
-        <PopoverHeader>
+      <PopoverContent align="end" side="top" className="w-72" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <PopoverHeader className="flex-row items-center justify-between">
           <PopoverTitle className="text-xs">{t('context.title')}</PopoverTitle>
+          {memoryAvailable ? <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('context.memoryStatus')} onClick={() => showDetail('status')}><Activity /></Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('context.memoryStatus')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={t('context.memoryView')} onClick={() => showDetail('view')}><ScrollText /></Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('context.memoryView')}</TooltipContent>
+            </Tooltip>
+          </div> : null}
         </PopoverHeader>
         <div className="flex flex-col gap-2">
           <div className="text-sm tabular-nums">
@@ -111,6 +161,26 @@ export function ContextUsageButton({
         </div>
       </PopoverContent>
     </Popover>
+    <Dialog open={detail !== null} onOpenChange={(next) => { if (!next) setDetail(null) }}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+        <DialogHeader><DialogTitle>{t(detail === 'status' ? 'context.memoryStatus' : 'context.memoryView')}</DialogTitle></DialogHeader>
+        {detail === 'view' ? <div className="flex items-center gap-2">
+          <Button size="sm" variant={full ? 'ghost' : 'secondary'} onClick={() => setFull(false)}>{t('context.memoryVisible')}</Button>
+          <Button size="sm" variant={full ? 'secondary' : 'ghost'} onClick={() => setFull(true)}>{t('context.memoryFull')}</Button>
+        </div> : null}
+        {detailError ? <p role="alert" className="text-sm text-destructive">{t('context.memoryFailed', { error: detailError })}</p> : null}
+        {!text && !detailError ? <p className="text-sm text-muted-foreground">{t('context.memoryLoading')}</p> : null}
+        {text ? <>
+          <ScrollArea className="h-[min(60vh,32rem)] rounded-md border border-code-border bg-code-background">
+            <pre className="whitespace-pre-wrap break-words p-4 font-mono text-xs text-code-foreground">{text}</pre>
+          </ScrollArea>
+          <Button variant="outline" size="sm" className="self-end" onClick={() => {
+            void navigator.clipboard.writeText(text).then(() => setCopied(true), (failure) => setDetailError(String(failure)))
+          }}>{t(copied ? 'context.memoryCopied' : 'context.memoryCopy')}</Button>
+        </> : null}
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

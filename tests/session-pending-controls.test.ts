@@ -104,6 +104,7 @@ async function fixture(version: number): Promise<void> {
       },
       SessionManager: { create: () => manager, open: () => manager },
       SettingsManager: {
+        fromStorage: sdk.SettingsManager.fromStorage,
         create: () => ({
           getModelThinkingLevel: () => undefined,
           getDefaultThinkingLevel: () => undefined,
@@ -114,6 +115,7 @@ async function fixture(version: number): Promise<void> {
       },
       DefaultResourceLoader: class {
         async reload() {}
+        getExtensions() { return { extensions: [], errors: [] } }
       },
       getAgentDir: () => join(cwd, 'agent')
     }))

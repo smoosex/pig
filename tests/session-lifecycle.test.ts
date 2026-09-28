@@ -73,8 +73,11 @@ async function fixture(scenario: string): Promise<void> {
       createAgentSession: async () => ({ session }),
       ModelRuntime: { create: async () => ({ refresh: async () => {}, getModel: () => ({ id: 'test' }) }) },
       SessionManager: { create: () => { createCalls++; return manager }, open: () => manager },
-      SettingsManager: { create: () => ({}) },
-      DefaultResourceLoader: class { async reload() {} },
+      SettingsManager: { fromStorage: sdk.SettingsManager.fromStorage, create: () => ({}) },
+      DefaultResourceLoader: class {
+        async reload() {}
+        getExtensions() { return { extensions: [], errors: [] } }
+      },
       getAgentDir: () => join(cwd, 'agent')
     }))
     const { applyLocaleSetting } = await import('../src/main/i18n')

@@ -7,7 +7,7 @@ async function fixture(): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   Object.assign(window, {
-    api: { getCommands: async () => [{ name: 'export', description: 'Export the session' }] }
+    api: { getCommands: async () => [{ name: 'export', description: 'Export the session' }], onPluginsChanged: () => () => {} }
   })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')

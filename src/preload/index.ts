@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, PluginUIEvent, MemoryPluginSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -126,6 +126,30 @@ const api: SessionApi = {
   selectOpenProjectWorkspace: (cwd: string, sessionId: string | null, activeTabId: string | null) =>
     ipcRenderer.invoke('system:select-open-project-workspace', cwd, sessionId, activeTabId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  listPlugins: () => ipcRenderer.invoke('plugins:list'),
+  installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),
+  pickPluginPath: () => ipcRenderer.invoke('plugins:pick-path'),
+  setPluginEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugins:enable', id, enabled),
+  updatePlugin: (id: string) => ipcRenderer.invoke('plugins:update', id),
+  removePlugin: (id: string) => ipcRenderer.invoke('plugins:remove', id),
+  isMemoryPluginEnabled: () => ipcRenderer.invoke('plugins:memory-enabled'),
+  getMemoryPluginDefaults: () => ipcRenderer.invoke('plugins:memory-defaults'),
+  getMemoryPluginSettings: () => ipcRenderer.invoke('plugins:memory-get'),
+  setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => ipcRenderer.invoke('plugins:memory-set', patch),
+  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => ipcRenderer.invoke('plugins:memory-detail', sessionId, kind, full),
+  getPluginSettings: (id: string) => ipcRenderer.invoke('plugins:config-get', id),
+  setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => ipcRenderer.invoke('plugins:config-set', id, patch),
+  replyPluginUI: (id: string, value: string | boolean | null) => ipcRenderer.invoke('plugins:ui-reply', id, value),
+  onPluginUI: (listener: (event: PluginUIEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: PluginUIEvent) => listener(value)
+    ipcRenderer.on('plugins:ui', handler)
+    return () => ipcRenderer.off('plugins:ui', handler)
+  },
+  onPluginsChanged: (listener: () => void): (() => void) => {
+    const handler = () => listener()
+    ipcRenderer.on('plugins:changed', handler)
+    return () => ipcRenderer.off('plugins:changed', handler)
+  },
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
   setCompletionNotifications: (enabled: boolean) =>

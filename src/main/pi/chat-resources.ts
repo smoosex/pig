@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
-import { resolve, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, resolve, sep } from 'node:path'
 import {
   DefaultResourceLoader,
   getAgentDir,
@@ -18,13 +19,36 @@ function isInside(file: string, root: string): boolean {
   return target === base || target.startsWith(base + sep)
 }
 
-export async function createNoExtensionsResourceLoader(cwd: string): Promise<ResourceLoader> {
+export function sessionResourceSettings(cwd: string, agentDir: string): SettingsManager {
+  // ResourceLoader resolves packages even with noExtensions=true, potentially running install scripts.
+  // Only Pig's explicitly approved package paths may participate in extension loading.
+  return SettingsManager.fromStorage({
+    withLock(scope, fn) {
+      const path = scope === 'global' ? join(agentDir, 'settings.json') : join(cwd, '.pi', 'settings.json')
+      let text: string | undefined
+      try {
+        const settings: unknown = JSON.parse(readFileSync(path, 'utf8'))
+        if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error(`Invalid Pi settings: ${path}`)
+        text = JSON.stringify({ ...settings, packages: [] })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      // Read-only by design: Pig owns plugin allowlisting and its own settings files, and the
+      // Pi extension API exposes no settings writer, so any write here indicates misuse.
+      const next = fn(text)
+      if (next !== undefined) throw new Error('Pi settings are read-only in Pig sessions')
+    }
+  })
+}
+
+export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = []): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager: SettingsManager.create(cwd, agentDir),
-    noExtensions: true
+    settingsManager: sessionResourceSettings(cwd, agentDir),
+    noExtensions: true,
+    additionalExtensionPaths: pluginPaths
   })
   await loader.reload()
   return loader
@@ -36,7 +60,7 @@ export async function createChatResourceLoader(cwd: string): Promise<ResourceLoa
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager: SettingsManager.create(cwd, agentDir),
+    settingsManager: sessionResourceSettings(cwd, agentDir),
     noExtensions: true,
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))

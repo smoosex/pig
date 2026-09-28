@@ -454,6 +454,59 @@ export interface AppSettings extends ThemePrefs {
   providers: SettingsProvider[]
 }
 
+export interface PluginSettingsField {
+  key: string
+  label: string
+  description?: string
+  type: 'string' | 'integer' | 'boolean' | 'select'
+  options?: string[]
+  min?: number
+  max?: number
+}
+
+export interface PluginSettingsSchema {
+  namespace: string
+  fields: PluginSettingsField[]
+}
+
+export interface PluginInfo {
+  id: string
+  name: string
+  source: string
+  kind: 'system' | 'local' | 'npm' | 'git'
+  enabled: boolean
+  available: boolean
+  error?: string
+  settings?: PluginSettingsSchema
+}
+
+export type PluginUIEvent =
+  | { kind: 'prompt'; id: string; sessionId: string; method: 'select' | 'confirm' | 'input' | 'editor'; title: string; message?: string; options?: string[]; prefill?: string }
+  | { kind: 'dismiss'; id: string; sessionId: string }
+  | { kind: 'notify'; sessionId: string; message: string; level: 'info' | 'warning' | 'error' }
+  | { kind: 'status'; sessionId: string; key: string; text?: string }
+  | { kind: 'widget'; sessionId: string; key: string; lines?: string[] }
+
+export interface MemoryPluginSettings {
+  observeAfterTokens?: number
+  reflectAfterTokens?: number
+  observerChunkMaxTokens?: number
+  compactAfterTokens?: number
+  compactAfterTokensMode?: 'calibrated' | 'ratio'
+  compactAfterTokensRatio?: number
+  observationsPoolMaxTokens?: number
+  observationsPoolTargetTokens?: number
+  agentMaxTurns?: number
+  agentMaxTokens?: number
+  model?: { provider: string; id: string; thinking?: ThinkingLevel }
+  showWorkerNotifications?: boolean
+  showCompactionNotifications?: boolean
+  passive?: boolean
+  debugLog?: boolean
+}
+
+export type MemoryPluginSettingsPatch = { [K in keyof MemoryPluginSettings]?: MemoryPluginSettings[K] | null }
+
 export interface BashExecutionResult {
   output: string
   exitCode?: number
@@ -550,6 +603,22 @@ export interface SessionApi {
   ) => Promise<void>
   saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
+  listPlugins: () => Promise<PluginInfo[]>
+  installPlugin: (source: string) => Promise<PluginInfo[]>
+  pickPluginPath: () => Promise<string | null>
+  setPluginEnabled: (id: string, enabled: boolean) => Promise<PluginInfo[]>
+  updatePlugin: (id: string) => Promise<PluginInfo[]>
+  removePlugin: (id: string) => Promise<PluginInfo[]>
+  isMemoryPluginEnabled: () => Promise<boolean>
+  getMemoryPluginDefaults: () => Promise<Record<string, number>>
+  getMemoryPluginSettings: () => Promise<MemoryPluginSettings>
+  setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => Promise<MemoryPluginSettings>
+  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => Promise<string>
+  getPluginSettings: (id: string) => Promise<Record<string, string | number | boolean>>
+  setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => Promise<Record<string, string | number | boolean>>
+  replyPluginUI: (id: string, value: string | boolean | null) => Promise<void>
+  onPluginUI: (listener: (event: PluginUIEvent) => void) => () => void
+  onPluginsChanged: (listener: () => void) => () => void
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
   setLocaleSetting: (

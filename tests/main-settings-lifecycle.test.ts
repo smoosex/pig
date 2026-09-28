@@ -14,6 +14,8 @@ function deferred() {
 async function fixture(name: string): Promise<void> {
   if (name === 'preparation') {
     const root = await mkdtemp(join(tmpdir(), 'pig-controls-preparation-'))
+    const previousPig = process.env.PIG_DIR
+    process.env.PIG_DIR = join(root, 'pig')
     const started = deferred()
     const release = deferred()
     let registry: typeof import('../src/main/pi/session-registry') | undefined
@@ -67,6 +69,8 @@ async function fixture(name: string): Promise<void> {
     } finally {
       release.resolve()
       await registry?.disposeAll()
+      if (previousPig === undefined) delete process.env.PIG_DIR
+      else process.env.PIG_DIR = previousPig
       await rm(root, { recursive: true, force: true })
     }
     return

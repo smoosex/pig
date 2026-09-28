@@ -24,6 +24,8 @@ import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
 import { bridgeEvents } from './event-bridge'
+import { enabledPluginPaths } from './plugins'
+import { cancelPluginPrompts, createPluginUI } from './plugin-ui'
 import { startModelRuntime } from './model-settings'
 import {
   applyPendingControls,
@@ -130,9 +132,14 @@ async function build(
   configure?: (session: AgentSession) => Promise<void>
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
-  const resourceLoader = isChatCwd(cwd)
-    ? await createChatResourceLoader(cwd)
-    : await createNoExtensionsResourceLoader(cwd)
+  const pluginPaths = isChatCwd(cwd) ? undefined : await enabledPluginPaths()
+  const resourceLoader = pluginPaths
+    ? await createNoExtensionsResourceLoader(cwd, pluginPaths)
+    : await createChatResourceLoader(cwd)
+  const extensionErrors = resourceLoader?.getExtensions().errors ?? []
+  if (extensionErrors.length) {
+    throw new Error(extensionErrors.map((item) => `${item.path}: ${item.error}`).join('\n'))
+  }
   const result = await createAgentSession({
     cwd,
     sessionManager,
@@ -144,11 +151,18 @@ async function build(
     sessionId: session.sessionId,
     cwd,
     agentSession: session,
-    unsubscribe: () => {}
+    unsubscribe: () => {},
+    pluginPaths,
+    win
   }
   try {
     worktrees.assertAvailable(cwd)
-    await session.bindExtensions({ mode: 'rpc' })
+    const uiContext = createPluginUI(session.sessionId, win)
+    await session.bindExtensions({
+      mode: 'rpc',
+      uiContext,
+      onError: (error) => uiContext.notify(`${error.extensionPath}: ${error.error}`, 'error')
+    })
     worktrees.assertAvailable(cwd)
     await configure?.(session)
     worktrees.assertAvailable(cwd)
@@ -447,7 +461,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
  */
 async function warmIndex(session: SessionFileSession): Promise<void> {
   // A session that was promoted to live has nobody left to answer, and its window is already stale.
-  if (pending.get(session.sessionId) !== session) return
+  if (pending.get(session.sessionId) !== session || preparing.has(session.sessionId)) return
   let index
   try {
     index = await sessionIndex(session)
@@ -456,7 +470,7 @@ async function warmIndex(session: SessionFileSession): Promise<void> {
     downgradeFileSession(session)
     return
   }
-  if (pending.get(session.sessionId) !== session) return
+  if (pending.get(session.sessionId) !== session || preparing.has(session.sessionId)) return
   session.tailById = null
   sendWindow(session, windowUpdate(fileSource(index), session.tailTurns))
 }
@@ -544,6 +558,85 @@ export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
 }
 
+export function sessionCwd(sessionId: string): string {
+  return sessionState(sessionId).cwd
+}
+
+const refreshingPlugins = new Set<string>()
+const queuedPluginRefresh = new Map<string, boolean>()
+
+async function refreshLivePlugins(session: LiveSession, force = false): Promise<void> {
+  const paths = session.pluginPaths
+  if (!paths) return
+  if (refreshingPlugins.has(session.sessionId)) {
+    queuedPluginRefresh.set(session.sessionId, force || queuedPluginRefresh.get(session.sessionId) === true)
+    return
+  }
+  refreshingPlugins.add(session.sessionId)
+  try {
+    let mustReload = force
+    let delay = 300
+    while (live.get(session.sessionId) === session) {
+      if (!session.agentSession.isIdle || session.agentSession.isBashRunning) {
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        delay = Math.min(delay * 2, 2000)
+        continue
+      }
+      const next = await enabledPluginPaths()
+      if (!mustReload && paths.length === next.length && paths.every((path, i) => path === next[i])) return
+
+      cancelPluginPrompts(session.sessionId)
+      const previous = [...paths]
+      paths.splice(0, paths.length, ...next)
+      try {
+        await session.agentSession.reload()
+      } catch (error) {
+        paths.splice(0, paths.length, ...previous)
+        throw error
+      }
+      mustReload = false
+      delay = 300
+      if (session.win && !session.win.isDestroyed()) session.win.webContents.send('plugins:changed')
+    }
+  } catch (error) {
+    console.error('Could not reload session plugins:', error)
+    if (session.win && !session.win.isDestroyed()) {
+      session.win.webContents.send('plugins:ui', {
+        kind: 'notify', sessionId: session.sessionId, level: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
+  } finally {
+    refreshingPlugins.delete(session.sessionId)
+    if (queuedPluginRefresh.has(session.sessionId) && live.get(session.sessionId) === session) {
+      const forceNext = queuedPluginRefresh.get(session.sessionId) === true
+      queuedPluginRefresh.delete(session.sessionId)
+      void refreshLivePlugins(session, forceNext)
+    } else {
+      queuedPluginRefresh.delete(session.sessionId)
+    }
+  }
+}
+
+export async function refreshPluginSessions(force = false, cwd?: string): Promise<void> {
+  const building = [...preparing.values()]
+    .filter((item) => !cwd || resolve(item.cwd) === resolve(cwd))
+    .map((item) => item.promise.catch(() => undefined))
+  await Promise.all(building)
+  await Promise.all([...live.values()].filter((session) => !cwd || resolve(session.cwd) === resolve(cwd)).map(async (session) => {
+    if (session.pluginPaths && session.agentSession.isIdle && !session.agentSession.isBashRunning) {
+      await refreshLivePlugins(session, force)
+    } else if (session.pluginPaths) {
+      void refreshLivePlugins(session, force)
+    }
+  }))
+}
+
+export function hasBusyPluginSessions(): boolean {
+  return [...live.values()].some((session) => session.pluginPaths &&
+    (!session.agentSession.isIdle || session.agentSession.isBashRunning || refreshingPlugins.has(session.sessionId)))
+}
+
 /** A file session's source needs its index, which is why this waits on the deferred build. */
 async function sourceFor(session: SessionState): Promise<SessionSource> {
   if ('agentSession' in session) return managerSource(session.agentSession.sessionManager)
@@ -588,6 +681,7 @@ export async function viewSessionBranch(sessionId: string, tipId: string): Promi
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {
+  cancelPluginPrompts(session.sessionId)
   session.unsubscribe()
   try {
     await session.agentSession.abort()

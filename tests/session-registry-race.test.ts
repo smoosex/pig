@@ -88,9 +88,10 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
           return { getCwd: () => sessionCwd, getSessionId: () => sessionId, getLeafId: () => null, getBranch: () => [] }
         }
       },
-      SettingsManager: { create: () => ({}) },
+      SettingsManager: { fromStorage: sdk.SettingsManager.fromStorage, create: () => ({}) },
       DefaultResourceLoader: class {
         async reload() {}
+        getExtensions() { return { extensions: [], errors: [] } }
       },
       getAgentDir: () => join(root, 'agent')
     }))
@@ -218,9 +219,10 @@ async function reproduceReopen(): Promise<void> {
           return manager
         }
       },
-      SettingsManager: { create: () => ({}) },
+      SettingsManager: { fromStorage: sdk.SettingsManager.fromStorage, create: () => ({}) },
       DefaultResourceLoader: class {
         async reload() {}
+        getExtensions() { return { extensions: [], errors: [] } }
       },
       getAgentDir: () => join(root, 'agent')
     }))

@@ -8,6 +8,8 @@ export interface LiveSession {
   cwd: string
   agentSession: AgentSession
   unsubscribe: () => void
+  pluginPaths?: string[]
+  win?: BrowserWindow
 }
 
 interface PendingBase {

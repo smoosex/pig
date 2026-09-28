@@ -101,6 +101,11 @@ The smoke test starts the naming worker with isolated credentials and a local mo
 provider, checking naming, disabled tools/context, no saved sessions, and process
 exit without calling an external model API.
 
+## Plugins
+
+Manage trusted Pi extensions and the bundled Observational Memory extension in
+**Settings → Plugins**. See [plugin loading, configuration and package metadata](docs/plugins.md).
+
 ## Authentication
 
 Open **设置 → 供应商** in Pig to log in to a provider account or add an API key.

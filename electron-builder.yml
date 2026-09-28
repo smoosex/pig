@@ -17,6 +17,12 @@ files:
       - README.md
       - docs/**/*.md
       - examples/**/*
+extraResources:
+  - from: src/main/plugins/observational-memory
+    to: system-plugins/observational-memory
+    filter:
+      - '**/*.ts'
+      - LICENSE
 asarUnpack:
   - resources/**
 win:

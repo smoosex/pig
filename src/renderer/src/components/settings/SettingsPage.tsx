@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, KeyRound, Palette, Settings2 } from 'lucide-react'
+import { ChevronLeft, KeyRound, Palette, Puzzle, Settings2 } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { Button } from '../ui/button'
@@ -7,6 +7,7 @@ import { ScrollArea } from '../ui/scroll-area'
 import { GeneralPane } from './GeneralPane'
 import { ThemePane } from './ThemePane'
 import { ProvidersPane } from './ProvidersPane'
+import { PluginsPane } from './PluginsPane'
 
 const sections = [
   {
@@ -29,6 +30,13 @@ const sections = [
     description: 'settings.sectionProvidersDescription',
     icon: KeyRound,
     component: ProvidersPane
+  },
+  {
+    id: 'plugins',
+    title: 'settings.sectionPlugins',
+    description: 'settings.sectionPluginsDescription',
+    icon: Puzzle,
+    component: PluginsPane
   }
 ] as const
 

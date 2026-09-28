@@ -11,6 +11,7 @@ export function useSlashCommands(
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [index, setIndex] = useState(0)
   const [dismissed, setDismissed] = useState(false)
+  const [generation, setGeneration] = useState(0)
   const request = useRef<{ sessionId: string } | null>(null)
   const query = slashQuery(text)
 
@@ -21,6 +22,11 @@ export function useSlashCommands(
   }, [sessionId])
 
   useEffect(() => { setDismissed(false) }, [sessionId, text])
+  useEffect(() => api.onPluginsChanged(() => {
+    request.current = null
+    setCommands([])
+    setGeneration((value) => value + 1)
+  }), [])
 
   useEffect(() => {
     if (!sessionId || query === null || request.current?.sessionId === sessionId) return
@@ -36,7 +42,7 @@ export function useSlashCommands(
         setCommands([])
       }
     )
-  }, [sessionId, query])
+  }, [sessionId, query, generation])
 
   const filtered = useMemo(() => filterSlashCommands(commands, query), [commands, query])
   useEffect(() => { setIndex(0) }, [query, commands])
