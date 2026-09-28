@@ -8,6 +8,8 @@ Observational Memory is maintained in Pig at `src/main/plugins/observational-mem
 
 Extensions can use `ctx.ui.notify`, `setStatus`, `setWidget`, and `select`/`confirm`/`input`/`editor` dialogs. Pig does not provide a terminal TUI: `ctx.mode` is `rpc`; terminal-only widgets, themes, custom TUI, and editor manipulation are unavailable. Extensions should test `ctx.mode === 'tui'` before using terminal APIs.
 
+Keep extension imports to Node builtins and Pi packages (`@earendil-works/*`, `typebox`), which the loader aliases to the packaged app. Host modules such as `electron` resolve in development but fail to load from packaged resources, so extensions must not import them.
+
 ## Optional settings form for package authors
 
 An extension may declare a settings form in its root `package.json`. The settings button appears on that plugin’s row. Fields are stored globally under `PIG_DIR/plugin-settings/<namespace>.json`, as a namespaced object; package authors must read that file themselves to use these values. Pig does not write Pi CLI's agent or project settings files. This is declarative metadata, not a renderer plugin API:

@@ -1,9 +1,9 @@
-import { app } from 'electron'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export function memoryDataPath(...parts: string[]): string {
-  const root = process.env.PIG_DIR || (app.isPackaged ? join(homedir(), '.pig') : join(process.cwd(), '.pig'))
+  // The extension loader cannot resolve 'electron' from packaged resources, so this module must
+  // stay dependency-free. The main process guarantees PIG_DIR before any extension loads.
+  const root = process.env.PIG_DIR || join(process.cwd(), '.pig')
   return join(root, 'plugins', 'observational-memory', ...parts)
 }
 

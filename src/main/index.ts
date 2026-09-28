@@ -13,6 +13,11 @@ import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { flushOpenProjectSessions } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
+import { pigDir } from './pig-dir'
+
+// Pig-dir resolution needs Electron, but bundled extensions load through a module loader that
+// cannot resolve 'electron'. Publish the resolved directory so extensions stay dependency-free.
+process.env.PIG_DIR ??= pigDir()
 
 // The renderer loads persisted images through this scheme, so it must be granted before ready.
 registerSessionImageScheme()
