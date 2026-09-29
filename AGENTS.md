@@ -60,6 +60,7 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 | `src/main/ipc/`                      | 接收请求、解析窗口、调用业务模块、返回 DTO                              |
 | `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节                              |
 | `src/main/app-url.ts`                | 窗口只允许停在自己的 UI 上（含重定向）                                  |
+| `src/main/shell-env.ts`              | 启动时从用户登录 shell 导入 PATH 与缺失的环境变量（GUI 启动不继承终端环境） |
 | `src/main/open-project-sessions.ts`  | 按 Worktree 持久化已打开会话及活动标签；与进程中的 session 生命周期分离 |
 | `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |
 | `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |

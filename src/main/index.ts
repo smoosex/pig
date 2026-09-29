@@ -14,10 +14,15 @@ import { handleSessionImages, registerSessionImageScheme } from './session-image
 import { flushOpenProjectSessions } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
+import { importShellEnvironment } from './shell-env'
 
 // Pig-dir resolution needs Electron, but bundled extensions load through a module loader that
 // cannot resolve 'electron'. Publish the resolved directory so extensions stay dependency-free.
 process.env.PIG_DIR ??= pigDir()
+
+// A GUI launch inherits launchd's minimal environment, so the user's shell PATH and API keys are
+// imported before anything reads process.env. Started here to overlap Electron's own boot.
+const shellEnvironment = importShellEnvironment()
 
 // The renderer loads persisted images through this scheme, so it must be granted before ready.
 registerSessionImageScheme()
@@ -38,6 +43,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
+  await shellEnvironment
   electronApp.setAppUserModelId('dev.pig.desktop')
 
   app.on('browser-window-created', (_, window) => {
