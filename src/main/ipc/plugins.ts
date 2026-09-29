@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import type { MemoryPluginSettingsPatch } from '../../shared/api'
+import type { MemoryPluginSettingsPatch, WebSearchSettingsPatch } from '../../shared/api'
 import { windowForEvent } from './window'
 import {
   getMemoryPluginDefaults,
@@ -16,6 +16,8 @@ import {
 } from '../pi/plugins'
 import { getLive, hasBusyPluginSessions, refreshPluginSessions, sessionCwd, sessionSourceFor } from '../pi/session-registry'
 import { isChatCwd } from '../chats'
+import { assertProviderSelection, patchWebSearchSettings, webSearchSettingsState } from '../pi/web-search-settings'
+import { testWebSearchProvider } from '../pi/web-search-test'
 import { memoryStatus, memoryView } from '../plugins/observational-memory/details'
 import type { Entry } from '../plugins/observational-memory/session-ledger'
 import { replyPluginUI } from '../pi/plugin-ui'
@@ -93,6 +95,20 @@ export function registerPluginIpc(): void {
     await refreshPluginSessions(true)
     changed()
     return result
+  })
+  ipcMain.handle('plugins:web-search-get', () => webSearchSettingsState())
+  ipcMain.handle('plugins:web-search-set', async (_event, patch: WebSearchSettingsPatch) => {
+    if (!patch || typeof patch !== 'object') throw new Error('Invalid web search settings')
+    const state = await patchWebSearchSettings(patch)
+    // Provider routing and tool registration are cached when the extension loads.
+    await refreshPluginSessions(true)
+    changed()
+    return state
+  })
+  ipcMain.handle('plugins:web-search-test', async (_event, provider: string | null) => {
+    if (provider !== null && typeof provider !== 'string') throw new Error('Invalid search provider')
+    if (provider) assertProviderSelection(provider)
+    return testWebSearchProvider(provider)
   })
   ipcMain.handle('plugins:ui-reply', async (event, id: string, value: string | boolean | null) => {
     if (typeof id !== 'string' || (typeof value !== 'string' && typeof value !== 'boolean' && value !== null)) {

@@ -23,17 +23,23 @@ interface InstalledPlugin {
 interface Registry {
   memoryEnabled: boolean
   reviewEnabled: boolean
+  webAccessEnabled: boolean
   installed: InstalledPlugin[]
 }
 
 const registryPath = () => pigPath('plugins.json')
 const packageRoot = () => pigPath('plugin-packages')
+// Tests mock electron with a partial app object, so fall back to the project root.
+const appPath = () => typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd()
 const memoryPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'observational-memory', 'index.ts')
-  : join(app.getAppPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
 const reviewPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-review', 'index.ts')
-  : join(app.getAppPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
+const webAccessPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pi-web-access', 'index.js')
+  : join(appPath(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
 
 let mutation: Promise<void> = Promise.resolve()
 function serialize<T>(action: () => Promise<T>): Promise<T> {
@@ -47,7 +53,9 @@ async function readRegistry(): Promise<Registry> {
   try {
     text = await readFile(registryPath(), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { memoryEnabled: false, reviewEnabled: false, installed: [] }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { memoryEnabled: true, reviewEnabled: true, webAccessEnabled: true, installed: [] }
+    }
     throw error
   }
   const value: unknown = JSON.parse(text)
@@ -61,8 +69,9 @@ async function readRegistry(): Promise<Registry> {
     }
   }
   return {
-    memoryEnabled: 'memoryEnabled' in value && value.memoryEnabled === true,
-    reviewEnabled: 'reviewEnabled' in value && value.reviewEnabled === true,
+    memoryEnabled: !('memoryEnabled' in value) || value.memoryEnabled === true,
+    reviewEnabled: !('reviewEnabled' in value) || value.reviewEnabled === true,
+    webAccessEnabled: !('webAccessEnabled' in value) || value.webAccessEnabled === true,
     installed: value.installed
   }
 }
@@ -129,13 +138,19 @@ export async function enabledPluginPaths(): Promise<string[]> {
   await mutation
   const registry = await readRegistry()
   const paths: string[] = []
-  if (registry.memoryEnabled) {
-    if (!existsSync(memoryPath())) throw new Error('Bundled observational memory extension is missing')
-    paths.push(memoryPath())
-  }
-  if (registry.reviewEnabled) {
-    if (!existsSync(reviewPath())) throw new Error('Bundled code review extension is missing')
-    paths.push(reviewPath())
+  // Bundled extensions are on by default, so a build that predates the bundle keeps working
+  // without them; the settings page reports the missing file and refuses to enable it.
+  for (const bundled of [
+    { enabled: registry.memoryEnabled, path: memoryPath(), name: 'observational memory' },
+    { enabled: registry.reviewEnabled, path: reviewPath(), name: 'code review' },
+    { enabled: registry.webAccessEnabled, path: webAccessPath(), name: 'web access' }
+  ]) {
+    if (!bundled.enabled) continue
+    if (!existsSync(bundled.path)) {
+      console.warn(`Bundled ${bundled.name} extension is missing: ${bundled.path}`)
+      continue
+    }
+    paths.push(bundled.path)
   }
   for (const plugin of registry.installed.filter((item) => item.enabled)) {
     const found = await resourcesFor(plugin.source)
@@ -224,6 +239,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pi-review', name: 'Pi Review', source: 'Pig built-in',
     kind: 'system', enabled: registry.reviewEnabled, available: existsSync(reviewPath()),
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pi-web-access', name: 'Pi Web Access', source: 'Pig built-in',
+    kind: 'system', enabled: registry.webAccessEnabled, available: existsSync(webAccessPath()),
+    ...(!existsSync(webAccessPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -271,6 +290,9 @@ export function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
     } else if (id === 'pi-review') {
       if (enabled && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
       registry.reviewEnabled = enabled
+    } else if (id === 'pi-web-access') {
+      if (enabled && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
+      registry.webAccessEnabled = enabled
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')

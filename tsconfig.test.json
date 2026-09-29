@@ -13,8 +13,13 @@
       "vite/client"
     ],
     "paths": {
-      "@/*": ["./src/renderer/src/*"],
-      "@renderer/*": ["./src/renderer/src/*"]
-    }
+      "@/*": [
+        "./src/renderer/src/*"
+      ],
+      "@renderer/*": [
+        "./src/renderer/src/*"
+      ]
+    },
+    "allowImportingTsExtensions": true
   }
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, PluginUIEvent, MemoryPluginSettingsPatch } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, PluginUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -139,6 +139,9 @@ const api: SessionApi = {
   getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => ipcRenderer.invoke('plugins:memory-detail', sessionId, kind, full),
   getPluginSettings: (id: string) => ipcRenderer.invoke('plugins:config-get', id),
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => ipcRenderer.invoke('plugins:config-set', id, patch),
+  getWebSearchSettings: () => ipcRenderer.invoke('plugins:web-search-get'),
+  setWebSearchSettings: (patch: WebSearchSettingsPatch) => ipcRenderer.invoke('plugins:web-search-set', patch),
+  testWebSearch: (provider: string | null) => ipcRenderer.invoke('plugins:web-search-test', provider),
   replyPluginUI: (id: string, value: string | boolean | null) => ipcRenderer.invoke('plugins:ui-reply', id, value),
   onPluginUI: (listener: (event: PluginUIEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, value: PluginUIEvent) => listener(value)

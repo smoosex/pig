@@ -507,6 +507,88 @@ export interface MemoryPluginSettings {
 
 export type MemoryPluginSettingsPatch = { [K in keyof MemoryPluginSettings]?: MemoryPluginSettings[K] | null }
 
+export type WebSearchFetchMode = 'readable' | 'raw' | 'answer'
+
+/** A credential field the settings page writes into web-search.json. */
+export interface WebSearchExtraField {
+  /** Config path; dotted paths address nested objects such as browserCookies.browser. */
+  key: string
+  label: string
+  env?: string
+  type?: 'string' | 'boolean' | 'select'
+  options?: string[]
+}
+
+/** `key` needs an API key, `none` works as-is, `piLogin` uses a Pi provider login. */
+export type WebSearchCredentialKind = 'key' | 'none' | 'piLogin'
+
+export interface WebSearchProviderOption {
+  id: string
+  name: string
+  kind: WebSearchCredentialKind
+  /** Pi login also works, so the API key is optional. */
+  loginOptional?: boolean
+  apiKeyKey?: string
+  apiKeyEnv?: string
+  baseUrlKey?: string
+  baseUrlEnv?: string
+  extras?: WebSearchExtraField[]
+  note?: string
+  group?: 'extract'
+}
+
+export interface WebSearchProviderState extends WebSearchProviderOption {
+  apiKey: string
+  baseUrl: string
+  /** Current values keyed by the option's extra field keys. */
+  extraValues: Record<string, string>
+  /** Effective credential source; null means nothing is configured yet. */
+  source: 'config' | 'env' | null
+}
+
+export interface WebSearchToolFlags {
+  webSearch: boolean
+  sourceCheck: boolean
+  fetchContent: boolean
+  getSearchContent: boolean
+}
+
+export interface WebSearchSettings {
+  provider: string | null
+  allowedProviders: string[] | null
+  maxInlineContentChars: number | null
+  fetchDefaultMode: WebSearchFetchMode | null
+  fetchAllowedModes: WebSearchFetchMode[] | null
+  ssrfAllowRanges: string[] | null
+  ssrfTrustEnvProxy: boolean | null
+  tools: WebSearchToolFlags
+}
+
+export interface WebSearchSettingsState {
+  settings: WebSearchSettings
+  providers: WebSearchProviderState[]
+  /** Set when the stored file is unusable; the panel still edits the readable values and repairs on save. */
+  error: string | null
+}
+
+/** Null removes the key from web-search.json; omitted keys stay untouched. */
+export interface WebSearchSettingsPatch {
+  provider?: string | null
+  allowedProviders?: string[] | null
+  maxInlineContentChars?: number | null
+  fetchDefaultMode?: string | null
+  fetchAllowedModes?: string[] | null
+  ssrfAllowRanges?: string[] | null
+  ssrfTrustEnvProxy?: boolean | null
+  tools?: Partial<WebSearchToolFlags>
+  providers?: Record<string, { apiKey?: string | null; baseUrl?: string | null; extras?: Record<string, string | null> }>
+}
+
+export interface WebSearchTestResult {
+  ok: boolean
+  message: string
+}
+
 export interface BashExecutionResult {
   output: string
   exitCode?: number
@@ -616,6 +698,9 @@ export interface SessionApi {
   getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => Promise<string>
   getPluginSettings: (id: string) => Promise<Record<string, string | number | boolean>>
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => Promise<Record<string, string | number | boolean>>
+  getWebSearchSettings: () => Promise<WebSearchSettingsState>
+  setWebSearchSettings: (patch: WebSearchSettingsPatch) => Promise<WebSearchSettingsState>
+  testWebSearch: (provider: string | null) => Promise<WebSearchTestResult>
   replyPluginUI: (id: string, value: string | boolean | null) => Promise<void>
   onPluginUI: (listener: (event: PluginUIEvent) => void) => () => void
   onPluginsChanged: (listener: () => void) => () => void

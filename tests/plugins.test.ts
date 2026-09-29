@@ -15,6 +15,7 @@ async function fixture(): Promise<void> {
   process.env.PI_CODING_AGENT_DIR = join(root, 'agent')
   const { mock } = await import('bun:test')
   mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
+  const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
   try {
     const module = await import('../src/main/pi/plugins')
     const ui = await import('../src/main/pi/plugin-ui')
@@ -32,11 +33,21 @@ async function fixture(): Promise<void> {
         { key: 'enabled', label: 'Enabled', type: 'boolean' }
       ] }
     } }))
-    assert.equal((await module.listPlugins())[0]?.enabled, false)
-    assert.equal(await module.isMemoryPluginEnabled(), false)
+    assert.equal((await module.listPlugins())[0]?.enabled, true)
+    assert.equal(await module.isMemoryPluginEnabled(), true)
+    const bundledPaths = await module.enabledPluginPaths()
+    assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'observational-memory', 'index.ts'))))
+    assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
+    assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))), existsSync(webAccessBundle))
+    for (const id of ['observational-memory', 'pi-review', 'pi-web-access']) await module.setPluginEnabled(id, false)
     assert.deepEqual(await module.enabledPluginPaths(), [])
     await module.setPluginEnabled('pi-review', true)
     assert.ok((await module.enabledPluginPaths()).some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
+    if (existsSync(webAccessBundle)) {
+      await module.setPluginEnabled('pi-web-access', true)
+      assert.ok((await module.enabledPluginPaths()).some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))))
+      await module.setPluginEnabled('pi-web-access', false)
+    }
     await module.setPluginEnabled('pi-review', false)
     assert.deepEqual(await module.enabledPluginPaths(), [])
     await module.installPlugin(plugin)

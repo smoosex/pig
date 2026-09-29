@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { DefaultModelPicker } from './DefaultModelPicker'
+import { WebSearchSettings } from './WebSearchSettings'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
@@ -158,7 +159,7 @@ export function PluginsPane() {
     <SettingsRow key={plugin.id} title={plugin.name} description={plugin.error ?? plugin.source}>
       <div className="flex items-center gap-2">
         {!plugin.available ? <Badge variant="destructive">{t('plugins.missing')}</Badge> : null}
-        {plugin.id === 'observational-memory' || plugin.settings ? (
+        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
@@ -270,6 +271,7 @@ export function PluginsPane() {
         </SettingsCard>
         <Button size="sm" className="self-end" disabled={saving} onClick={() => void saveMemory()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>
       </div> : null}
+      {selectedPluginId === 'pi-web-access' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
         </DialogContent>
       </Dialog>
       <Dialog open={!!toRemove} onOpenChange={(open) => { if (!open) setToRemove(null) }}>

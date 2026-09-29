@@ -28,6 +28,11 @@ extraResources:
     filter:
       - '**/*.ts'
       - LICENSE
+  - from: out/system-plugins/pi-web-access
+    to: system-plugins/pi-web-access
+    filter:
+      - index.js
+      - LICENSE
 asarUnpack:
   - resources/**
 win:

@@ -13,7 +13,8 @@ bun run dev
 
 ```bash
 bun run typecheck
-bun run build:mac    # 或 build:win / build:linux
+bun run plugins:build   # 重新打包内置 pi-web-access 插件（dev / build 已自动调用）
+bun run build:mac       # 或 build:win / build:linux
 ```
 
 ## 架构
@@ -45,6 +46,8 @@ src/
 
 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 
+内置系统插件（观测记忆、pi-review、pi-web-access）默认开启；`enabledPluginPaths()` 会跳过缺失的内置文件并在设置页标出不可用。pi-web-access 是从上游 0.33.0 fork 到 `src/main/plugins/pi-web-access/` 的源码，删掉了 slash 命令、快捷键、curator 摘要流程和 activity widget，其余搜索/抓取能力保留；它依赖较多 npm 包，必须经 `plugins:build` 打成单文件后再加载，`@earendil-works/*` 与 `typebox` 交给 SDK 的 jiti alias。插件配置由 Pig 独占写入 `$PIG_DIR/web-search.json`（开发时 `cwd/.pig/web-search.json`），PIG_DIR 在 main 启动时发布给同进程的扩展。
+
 Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PIG_DIR` 覆盖。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。
 
 ## 进程与接口
@@ -60,6 +63,9 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 | `src/main/open-project-sessions.ts`  | 按 Worktree 持久化已打开会话及活动标签；与进程中的 session 生命周期分离 |
 | `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |
 | `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |
+| `src/main/pi/plugins.ts`             | 内置 / 第三方插件注册表、启用状态与打包路径                             |
+| `src/main/pi/web-search-settings.ts` | 内置 pi-web-access 的配置读写（`$PIG_DIR/web-search.json`，权限 0600）  |
+| `scripts/build-system-plugins.ts`    | 用 esbuild 把 vendored 插件打成单文件到 `out/system-plugins/`           |
 | `src/renderer/src/ipc/api.ts`        | renderer 的接口入口，复用共享类型                                       |
 | `src/renderer/src/lib/highlight.ts`  | Shiki 高亮（WASM 引擎、按可见性触发、LRU 缓存）                         |
 
@@ -76,6 +82,8 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，可用 `PI
 和 [Agent](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent.ts)
 的做法，模块开头交代职责，复杂逻辑说明生命周期、数据归属或时序约束。
 能由函数名表达的动作不重复写成注释。
+
+tsconfig 开了 `allowImportingTsExtensions`，因为 vendored 插件保留上游的 `.ts` 后缀 import。
 
 ```bash
 bun run typecheck   # node、web、tests 三个 tsconfig 项目
