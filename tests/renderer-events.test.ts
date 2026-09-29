@@ -65,6 +65,11 @@ async function runFixture(name: string): Promise<void> {
     frames.clear()
     for (const callback of callbacks) callback(16)
   }
+  const drainTimers = () => {
+    const callbacks = [...timers.values()]
+    timers.clear()
+    for (const callback of callbacks) callback()
+  }
 
   try {
     if (name === 'burst') {
@@ -135,7 +140,7 @@ async function runFixture(name: string): Promise<void> {
           ...state.runtime,
           session: {
             ...state.runtime.session,
-            turns: [{ id: 'bash-row', bash: { command: 'echo ready', exitCode: 0, cancelled: false }, answer: [], startedAt: 1, endedAt: 2, hasProcess: true }]
+            turns: [{ id: 'bash-row', bash: { command: 'echo ready', exitCode: 0, cancelled: false }, answer: [], compactions: [], startedAt: 1, endedAt: 2, hasProcess: true }]
           }
         }
       }))
@@ -173,6 +178,56 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(runtime().pendingUserMessage, true)
       store.getState().rollbackPrompt('session')
       assert.deepEqual(runtime().liveMessages, [])
+    } else if (name === 'compaction') {
+      let reads = 0
+      let controlReads = 0
+      api.getDisplayTurns = async () => {
+        reads++
+        return { leafId: null, turns: [] }
+      }
+      api.getControls = async () => {
+        controlReads++
+        return {
+          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          contextUsage: null, followUpMessages: []
+        }
+      }
+      // A failed or cancelled compaction wrote no entry, so there is nothing to re-read.
+      emit({ type: 'compaction_end', reason: 'manual', result: undefined, aborted: false, willRetry: false } as PiSessionEvent)
+      emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: true, willRetry: false } as PiSessionEvent)
+      assert.equal(reads, 0)
+      // Pi also compacts between two turns of a running one, and that run reads the finished turn on
+      // its own `agent_end`: this event may not spend a read the resuming run would discard.
+      emit({ type: 'agent_start' })
+      emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
+      assert.equal(reads, 0)
+      // Automatic compaction emits `compaction_end` after `agent_end`, whose own read ran before the
+      // landmark existed. This event is the one that re-reads the turn, and it also refreshes the
+      // context usage that `agent_end` read before the window shrank.
+      emit({ type: 'agent_end' })
+      assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 1 })
+      emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 2 })
+      // A retry continues the run, so the landmark is left to the `agent_end` of the run that
+      // resumes rather than read here and thrown away by its `agent_start`.
+      emit({ type: 'agent_start' })
+      emit({ type: 'agent_end' })
+      emit({ type: 'compaction_end', reason: 'overflow', result: { tokensBefore: 1 }, aborted: false, willRetry: true } as PiSessionEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 3 })
+      // That resumed run reads the finished turn on its own delayed `agent_end` hydrate, which is
+      // what lands the landmark this event deliberately skipped.
+      emit({ type: 'agent_start' })
+      emit({ type: 'agent_end' })
+      assert.equal(timers.size, 1)
+      drainTimers()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 2, controlReads: 4 })
+      // A manual compaction ends no agent run: this event is the only notice the landmark gets.
+      emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 3, controlReads: 5 })
     } else if (name === 'branch') {
       assert.equal(runtime().leafId, null)
       branchListener?.('session', 'leaf-1')
@@ -210,7 +265,8 @@ if (process.argv[2] === '--renderer-events-fixture') {
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
     'unaccepted-end': 'agent end cannot acknowledge a user message that was never received',
     branch: 'an extension branch change rebinds the conversation to the new leaf',
-    'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it'
+    'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it',
+    compaction: 'a finished compaction re-reads its turn and refreshes the context usage'
   }
   for (const [name, description] of Object.entries(cases)) {
     test(`renderer events: ${description}`, async () => {

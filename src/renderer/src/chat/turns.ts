@@ -1,3 +1,4 @@
+import type { DisplayCompaction } from '../../../shared/api'
 import type { MessageKey, Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -40,7 +41,7 @@ export type ProcessItem =
  * it below the answer instead of inside the work that preceded it. It is decided by position, not
  * by the turn's state: an overflow that was compacted and retried leaves an earlier error behind.
  */
-export type CompactionItem = { kind: 'compaction'; text: string; tokensBefore: number; afterAnswer: boolean }
+export type CompactionItem = DisplayCompaction & { kind: 'compaction' }
 
 export type AnswerBlock =
   | { type: 'text'; text: string }
@@ -58,6 +59,11 @@ export interface Turn {
   bash?: { command: string; exitCode?: number; cancelled: boolean }
   bashRunning?: boolean
   process: ProcessItem[]
+  /**
+   * Landmarks from the projection, used until the process is read: Pi writes a compaction into the
+   * same stream as the work, so a loaded process carries its own copies and outranks these.
+   */
+  compactions?: CompactionItem[]
   answer: AnswerBlock[]
   errorMessage?: string
   startedAt: number

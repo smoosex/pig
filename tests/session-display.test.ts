@@ -67,6 +67,31 @@ test('loading one turn ships no image bytes for the process panel', () => {
   expect(JSON.stringify(messages)).not.toContain('QUJD')
 })
 
+test('a turn that carries nothing but a compaction has no work of its own', () => {
+  const entries = [
+    {
+      type: 'message',
+      id: 'user',
+      parentId: null,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'user', content: '问', timestamp: 1 }
+    },
+    {
+      type: 'compaction',
+      id: 'k0',
+      parentId: 'user',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      summary: '压缩了',
+      tokensBefore: 42
+    }
+  ] as unknown as SessionEntry[]
+
+  const [turn] = displayTurnsFromEntries('session-1', entries)
+  expect(turn.compactions).toEqual([{ text: '压缩了', tokensBefore: 42, afterAnswer: true }])
+  // The landmark is not the disclosure's reason to exist: no work behind it means no work header.
+  expect(turn.hasProcess).toBe(false)
+})
+
 describe('session display pasted text metadata', () => {
   test('restores attachment cards from the custom entry before a user message', () => {
     const entries = [

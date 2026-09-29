@@ -6,7 +6,7 @@ import type { PigImageContent } from '../src/renderer/src/pi/types'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
-  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], ...patch
+  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], compactions: [], ...patch
 })
 
 describe('display turn projection', () => {
@@ -41,7 +41,7 @@ describe('display turn projection', () => {
       text: '正文附件', images: [], textAttachments: [attachment],
       textSegments: [{ type: 'text', text: '正文' }, { type: 'attachment', attachment }]
     } })
-    const process: ProcessItem[] = []
+    const process: ProcessItem[] = [{ kind: 'text', text: '工作' }]
     const turn = toTurn(input, process, 1500)
     expect(turn.user?.content).toBe('正文附件')
     expect(turn.user?.timestamp).toBe(1000)
@@ -132,5 +132,18 @@ describe('display turn projection', () => {
     expect(turn.user).toBeUndefined()
     expect(turn).toMatchObject({ id: 'turn', startedAt: 1000, endedAt: 2000, errorMessage: '模型失败', hasProcess: false })
     expect(turn.workedMs).toBeUndefined()
+  })
+
+  test('carries a persisted compaction until the process is read', () => {
+    const landmarks = [
+      { text: '中间压缩', tokensBefore: 523_400, afterAnswer: false },
+      { text: '尾压缩', tokensBefore: 7, afterAnswer: true }
+    ]
+    const unread = toTurn(display({ compactions: landmarks, hasProcess: true }), [])
+    expect(unread.process).toEqual([])
+    expect(unread.compactions).toEqual(landmarks.map((landmark) => ({ kind: 'compaction', ...landmark })))
+    // Once the disclosure is read, Pi's own stream is the one with the landmarks in position.
+    const read: ProcessItem[] = [{ kind: 'text', text: '工作' }]
+    expect(toTurn(display({ compactions: landmarks }), read).process).toBe(read)
   })
 })

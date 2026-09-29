@@ -162,13 +162,13 @@ async function runFixture(name: string): Promise<void> {
   Object.assign(window, { ResizeObserver: GeometryResizeObserver, IntersectionObserver: undefined })
 
   const turns = (count = 24): DisplayTurn[] => Array.from({ length: count }, (_, index) => ({
-    id: `t${index}`, startedAt: index, endedAt: index + 1, hasProcess: true,
+    id: `t${index}`, startedAt: index, endedAt: index + 1, hasProcess: true, compactions: [],
     user: { text: `user ${index}`, images: [], textAttachments: [] },
     answer: [{ type: 'text' as const, text: `answer ${index}` }]
   }))
   // The archived twin of a live prompt: same timestamp and text, so both project to one render key.
   const archivedTurn = (index: number, text: string, timestamp: number): DisplayTurn => ({
-    id: `t${index}`, startedAt: timestamp, endedAt: timestamp + 1, hasProcess: true,
+    id: `t${index}`, startedAt: timestamp, endedAt: timestamp + 1, hasProcess: true, compactions: [],
     user: { text, images: [], textAttachments: [] }, userTimestamp: timestamp,
     answer: [{ type: 'text' as const, text: 'answer' }]
   })

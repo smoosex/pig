@@ -248,9 +248,17 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         process: [{ kind: 'compaction', text: '只有压缩', tokensBefore: 1, afterAnswer: false }],
         streaming: false,
-        hasProcess: true
+        hasProcess: false
       }))
       assert.equal(container.textContent?.includes('工作耗时'), false)
+      assert.ok(container.textContent?.includes('上下文已压缩'))
+      // While the run is live the landmark is not a substitute for the work block: the waiting line
+      // lives in the work block the compaction would otherwise be the only segment of.
+      await render(makeTurn({
+        process: [{ kind: 'compaction', text: '运行中压缩', tokensBefore: 1, afterAnswer: false }],
+        streaming: true
+      }))
+      assert.deepEqual(shimmerText(), ['正在加班加点理解你的问题...'])
       assert.ok(container.textContent?.includes('上下文已压缩'))
       // A compaction that arrived after the answer reads below it, not above the work.
       await render(makeTurn({
@@ -269,6 +277,56 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(trailing.closest('[data-slot="collapsible-content"]'), null)
       await act(async () => { trailing.click(); await Bun.sleep(0) })
       assert.ok(container.textContent?.includes('尾压缩'))
+      // A loaded process carries the landmarks in position, so the projection's copies are dropped
+      // instead of rendering every compaction twice.
+      await render(makeTurn({
+        process: [
+          { kind: 'tools', tools: [readTool('loaded', true)] },
+          { kind: 'compaction', text: '流内压缩', tokensBefore: 42, afterAnswer: false }
+        ],
+        compactions: [
+          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false }
+        ],
+        streaming: false
+      }))
+      const notices = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+      assert.equal(notices.length, 2, 'the work header and one landmark, not the projection copy too')
+      await act(async () => { notices[1].click(); await Bun.sleep(0) })
+      assert.ok(container.textContent?.includes('流内压缩'))
+      assert.equal(container.textContent?.includes('投影压缩'), false)
+      // A process that carries no landmark of its own is a partial one: it must not swallow the
+      // projection's copy, or a turn whose work was read from a stream without the compaction loses
+      // the marker entirely.
+      await render(makeTurn({
+        process: [{ kind: 'text', text: '读到的过程' }],
+        compactions: [
+          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false }
+        ],
+        streaming: false
+      }))
+      const partial = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+      assert.equal(partial.length, 2, 'the work header and the projection landmark')
+      await act(async () => { partial[1].click(); await Bun.sleep(0) })
+      assert.ok(container.textContent?.includes('投影压缩'))
+    } else if (name === 'compaction-unloaded') {
+      // The projection ships the landmark with the turn, so a turn whose work is still on disk shows
+      // its compaction without the reader having to open the block that would have revealed it.
+      let requested: string | undefined
+      await render(makeTurn({
+        process: [],
+        compactions: [
+          { kind: 'compaction', text: '已落盘的压缩', tokensBefore: 42, afterAnswer: false }
+        ],
+        hasProcess: true,
+        streaming: false
+      }), async (id) => { requested = id })
+      assert.ok(container.textContent?.includes('上下文已压缩'))
+      assert.ok(container.textContent?.includes('工作耗时'))
+      assert.equal(container.querySelector('[data-slot="collapsible-content"]')?.getAttribute('data-state'), 'closed')
+      assert.equal(requested, undefined)
+      // The work is behind the header, and opening it is what asks for it.
+      await act(async () => { separator().click(); await Bun.sleep(0) })
+      assert.equal(requested, 'marker-test')
     } else if (name === 'compaction-ids') {
       await render(makeTurn({
         streaming: true,
@@ -336,6 +394,7 @@ if (process.argv[2] === '--marker-fixture') {
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',
+    'compaction-unloaded': 'a persisted compaction shows before its work is read',
     'compaction-ids': 'each work block split by a compaction owns a unique content id',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
   }

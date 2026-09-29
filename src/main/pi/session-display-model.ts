@@ -1,6 +1,7 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type {
   DisplayAnswer,
+  DisplayCompaction,
   DisplayImage,
   DisplayTurn,
   DisplayUser
@@ -15,7 +16,7 @@ import {
   type PastedTextPromptAttachment
 } from '../../shared/pasted-text'
 
-export type { DisplayAnswer, DisplayTurn, DisplayUser } from '../../shared/api'
+export type { DisplayAnswer, DisplayCompaction, DisplayTurn, DisplayUser } from '../../shared/api'
 
 type PathMessage = {
   id: string
@@ -236,6 +237,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
 
   let hasProcess = false
   let answer: DisplayAnswer[] = []
+  const compactions: DisplayCompaction[] = []
   let errorMessage: string | undefined
 
   rest.forEach((entry, i) => {
@@ -283,10 +285,18 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
       message.role === 'toolResult' ||
       message.role === 'bashExecution' ||
       message.role === 'custom' ||
-      message.role === 'branchSummary' ||
-      message.role === 'compactionSummary'
+      message.role === 'branchSummary'
     ) {
       hasProcess = true
+    }
+    if (message.role === 'compactionSummary') {
+      compactions.push({
+        text: typeof message.summary === 'string' ? message.summary : '',
+        tokensBefore: typeof message.tokensBefore === 'number' ? message.tokensBefore : 0,
+        // Position, not the turn's state: an overflow error earlier in the chunk is followed by a
+        // retried answer, and that compaction still belongs inside the work.
+        afterAnswer: i > lastAssistant
+      })
     }
   })
 
@@ -301,6 +311,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     bash,
     userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
     answer,
+    compactions,
     errorMessage,
     startedAt,
     endedAt,

@@ -127,6 +127,38 @@ test('a command keeps its card when compaction follows it in the same turn', asy
       expect(turns.map((turn) => turn.id)).toEqual(['b0'])
       expect(turns[0].bash?.command).toBe('pwd')
       expect(turns[0].hasProcess).toBe(true)
+      // The marker travels with the projection, not with the on-demand process disclosure. Pi wrote
+      // it after the command but before the answer, so it belongs inside the work, not below it.
+      expect(turns[0].compactions).toEqual([{ text: 'compacted', tokensBefore: 1000, afterAnswer: false }])
+    }
+  })
+})
+
+test('a mid-turn compaction is not work, and the turn keeps its work flag for its process', async () => {
+  const compaction = JSON.stringify({
+    type: 'compaction', id: 'k0', parentId: 'a0', timestamp: STAMP,
+    summary: 'compacted', tokensBefore: 1000
+  })
+  const answer = (id: string, parentId: string, text: string) => JSON.stringify({
+    type: 'message', id, parentId, timestamp: STAMP,
+    message: { role: 'assistant', content: [{ type: 'text', text }], timestamp: 2 }
+  })
+  const lines = [
+    header(),
+    message('u0', null, 'user', 'q0'),
+    answer('a0', 'u0', 'first answer'),
+    compaction,
+    answer('a1', 'k0', 'second answer')
+  ]
+  await withFile(lines, async (path) => {
+    const index = indexSessionFile(path)
+    const file = fileSource(index)
+    const live = managerSource(await manager(path))
+    for (const source of [file, live]) {
+      const turns = displayWindow(source).turns
+      expect(turns.map((turn) => turn.id)).toEqual(['u0'])
+      expect(turns[0].answer).toEqual([{ type: 'text', text: 'second answer' }])
+      expect(turns[0].compactions).toEqual([{ text: 'compacted', tokensBefore: 1000, afterAnswer: false }])
     }
   })
 })

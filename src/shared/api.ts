@@ -298,6 +298,18 @@ export type DisplayAnswer =
   | { type: 'text'; text: string }
   | ({ type: 'image' } & DisplayImage)
 
+/**
+ * A compaction is a session landmark rather than work: the model's visible context was summarized,
+ * so everything before it stops counting towards the window. `afterAnswer` is decided by position in
+ * the turn — a summary written behind the last assistant message reads below the answer, an overflow
+ * that was compacted and retried keeps its marker inside the work.
+ */
+export interface DisplayCompaction {
+  text: string
+  tokensBefore: number
+  afterAnswer: boolean
+}
+
 export interface DisplayTurn {
   id: string
   user?: DisplayUser
@@ -305,9 +317,16 @@ export interface DisplayTurn {
   /** Original user-message timestamp used to preserve the live Turn DOM key. */
   userTimestamp?: number
   answer: DisplayAnswer[]
+  /**
+   * The turn's compaction landmarks, in the order Pi appended them. They travel with the projection
+   * rather than with the on-demand process disclosure: a landmark that only appears once the work
+   * block is expanded is one the reader has to find first.
+   */
+  compactions: DisplayCompaction[]
   errorMessage?: string
   startedAt: number
   endedAt: number
+  /** Whether the turn has work beyond its compactions: the process disclosure has something behind it. */
   hasProcess: boolean
 }
 

@@ -15,7 +15,6 @@ function renderKeyContent(user: DisplayUser): string | Array<{ type: 'text'; tex
   ]
 }
 
-/** Rebuild a renderable turn from the persisted DTO without changing Pi message semantics. */
 export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
   const user = display.user
     ? {
@@ -44,6 +43,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     user,
     bash: display.bash,
     process,
+    compactions: display.compactions.map((landmark) => ({ kind: 'compaction' as const, ...landmark })),
     answer: display.answer.map((block) =>
       block.type === 'text'
         ? block

@@ -57,7 +57,12 @@ function AgentTurnView({
 }) {
   const trailing: Extract<ProcessItem, { kind: 'compaction' }>[] = []
   const inline: ProcessItem[] = []
-  for (const item of turn.process) {
+  // Pi keeps a compaction in the same stream as the work, so a loaded process owns its landmarks and
+  // has their exact position. The projection's copies stand in while the process is unread — a
+  // landmark the reader has to open a block to find is one they may never see — and also when the
+  // process on hand is a partial one, such as the command row a finished run leaves behind.
+  const loaded = turn.process.some((item) => item.kind === 'compaction') ? [] : turn.compactions ?? []
+  for (const item of [...turn.process, ...loaded]) {
     if (item.kind === 'compaction' && item.afterAnswer) trailing.push(item)
     else inline.push(item)
   }
@@ -66,8 +71,10 @@ function AgentTurnView({
   // A turn whose process is still on disk only knows that it has one: the header stands in for it.
   const showHeader = hasWork || turn.streaming || (Boolean(turn.hasProcess) && turn.process.length === 0)
   const showBody = showHeader || segments.length > 0
-  // An empty process still renders the body: while streaming it holds the waiting line.
-  const blocks: ProcessSegment[] = segments.length > 0 ? segments : [{ kind: 'work', items: [] }]
+  // An empty process still renders the body: while streaming it holds the waiting line, and the
+  // header needs a block to live in when a compaction is the only thing the turn carries.
+  const blocks: ProcessSegment[] = [...segments]
+  if (showHeader && !hasWork) blocks.unshift({ kind: 'work', items: [] })
   const firstWork = blocks.findIndex((block) => block.kind === 'work')
   const [open, setOpen] = useState(turn.streaming)
   const [liveOutline, setLiveOutline] = useState(turn.streaming)
@@ -180,7 +187,7 @@ function AgentTurnView({
 // the command, so the leftovers are projected onto a turn without command metadata.
 function withoutCommand(turn: Turn): Turn | null {
   const process = turn.process.filter((item) => item.kind !== 'bash')
-  if (process.length === 0 && turn.answer.length === 0 && !turn.errorMessage) return null
+  if (process.length === 0 && turn.answer.length === 0 && !turn.errorMessage && (turn.compactions?.length ?? 0) === 0) return null
   return { ...turn, process, bash: undefined, hasProcess: process.length > 0 }
 }
 
