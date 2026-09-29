@@ -113,7 +113,16 @@ describe('session tree projection', () => {
       { id: 'lbl', parentId: 'info', type: 'label', targetId: 'u1', label: '起点' },
       { id: 'lbl2', parentId: 'lbl', type: 'label', targetId: 'a1', label: '草稿' },
       { id: 'lbl3', parentId: 'lbl2', type: 'label', targetId: 'a1', label: '' },
-      { id: 'u2', parentId: 'lbl3', type: 'message', message: { role: 'user', content: '继续' } }
+      {
+        id: 'u2', parentId: 'lbl3', type: 'message',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: '继续\n\n[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]' },
+            { type: 'image', mimeType: 'image/png', data: 'QUJD' }
+          ]
+        }
+      }
     ] as unknown as SessionEntry[]
     const source = {
       sessionId: 'session-1',
@@ -133,7 +142,7 @@ describe('session tree projection', () => {
     const tool = sessionTreeRows(source).find((row) => row.id === 'r1')
     expect(tool).toMatchObject({ text: '[read: a.ts]' })
     const leaf = sessionTreeRows(source, 'user-only').find((row) => row.id === 'u2')
-    expect(leaf).toMatchObject({ current: true, onPath: true })
+    expect(leaf).toMatchObject({ current: true, onPath: true, text: 'user: 继续' })
     expect(sessionTreeRows(source).find((row) => row.id === 'u1')).toMatchObject({ label: '起点' })
     expect(sessionTreeRows(source).find((row) => row.id === 'a1')?.label).toBeUndefined()
     expect(sessionTreeRows(source).find((row) => row.id === 'u2')?.label).toBeUndefined()

@@ -67,6 +67,24 @@ test('loading one turn ships no image bytes for the process panel', () => {
   expect(JSON.stringify(messages)).not.toContain('QUJD')
 })
 
+test('stored image notes stay in the entry but not in turns or process previews', () => {
+  const hint = '[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]'
+  const text = `看图\n\n${hint}`
+  const entries = [{
+    type: 'message', id: 'shot', parentId: null, timestamp: '2026-01-01T00:00:00.000Z',
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text }, { type: 'image', mimeType: 'image/png', data: 'QUJD' }],
+      timestamp: 1
+    }
+  }] as unknown as SessionEntry[]
+
+  expect(displayTurnsFromEntries('session-1', entries)[0].user?.text).toBe('看图')
+  expect(turnMessagesFromEntries(entries, 'shot')).toMatchObject([{ content: [{ type: 'text', text: '看图' }] }])
+  expect(turnMessagesByIdFromEntries(entries).get('shot')).toMatchObject([{ content: [{ type: 'text', text: '看图' }] }])
+  expect((entries[0] as { message: { content: Array<{ text?: string }> } }).message.content[0].text).toBe(text)
+})
+
 test('a turn that carries nothing but a compaction has no work of its own', () => {
   const entries = [
     {
@@ -173,6 +191,39 @@ describe('session display pasted text metadata', () => {
         type: 'attachment',
         attachment: { id: 'pasted-2', text: '附件', byteSize: 6, filename: 'pasted_text.txt' }
       },
+      { type: 'text', text: '后文' }
+    ])
+  })
+
+  test('keeps inline pasted-text attachments when an image hint is appended by the SDK', () => {
+    const content = '前文附件后文'
+    const hint = '[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]'
+    const entries = [
+      {
+        type: 'custom', id: 'meta', parentId: null, timestamp: '2026-01-01T00:00:00.000Z',
+        customType: 'pig.pasted-text',
+        data: {
+          version: 2,
+          contentLength: content.length,
+          contentHash: pastedTextFingerprint(content),
+          attachments: [{ id: 'paste', start: 2, end: 4, byteSize: 6 }]
+        }
+      },
+      {
+        type: 'message', id: 'user', parentId: 'meta', timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: `${content}\n\n${hint}` }, { type: 'image', mimeType: 'image/png', data: 'QUJD' }],
+          timestamp: 1
+        }
+      }
+    ] as unknown as SessionEntry[]
+
+    const [turn] = displayTurnsFromEntries('session-1', entries)
+    expect(turn.user?.text).toBe(content)
+    expect(turn.user?.textSegments).toEqual([
+      { type: 'text', text: '前文' },
+      { type: 'attachment', attachment: { id: 'paste', text: '附件', byteSize: 6 } },
       { type: 'text', text: '后文' }
     ])
   })

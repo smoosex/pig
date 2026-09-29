@@ -58,16 +58,29 @@ test('an image-only first message is reported as a flag rather than as copy', as
     const header = (id: string) => line({ type: 'session', version: 3, id, cwd, timestamp: new Date().toISOString() })
     const user = (content: unknown) => line({ type: 'message', message: { role: 'user', content } })
     await writeFile(join(dir, 'img.jsonl'), header('img') + user([{ type: 'image', mimeType: 'image/png', data: 'AAAA' }]))
+    const hint = '[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]'
+    await writeFile(join(dir, 'img-hint.jsonl'), header('img-hint') + user([
+      { type: 'text', text: `\n\n${hint}` }, { type: 'image', mimeType: 'image/png', data: 'AAAA' }
+    ]))
+    await writeFile(join(dir, 'img-hint-large.jsonl'), header('img-hint-large') + user([
+      { type: 'text', text: `\n\n${hint}` }, { type: 'image', mimeType: 'image/png', data: 'A'.repeat(70 * 1024) }
+    ]))
     await writeFile(join(dir, 'text.jsonl'), header('text') + user([{ type: 'text', text: '看一下截图' }]))
     // An image-only message only lends the title while no text message follows it.
     await writeFile(join(dir, 'imgtext.jsonl'), header('imgtext') + user([{ type: 'image', mimeType: 'image/png', data: 'AAAA' }]) + user([{ type: 'text', text: '修登录按钮' }]))
 
     const sessions = (await listProject(cwd))?.sessions ?? []
     const image = sessions.find((session) => session.id === 'img')
+    const hintedImage = sessions.find((session) => session.id === 'img-hint')
+    const largeHintedImage = sessions.find((session) => session.id === 'img-hint-large')
     const text = sessions.find((session) => session.id === 'text')
     const imgtext = sessions.find((session) => session.id === 'imgtext')
     expect(image?.firstMessage).toBe('')
     expect(image?.firstMessageIsImage).toBe(true)
+    expect(hintedImage?.firstMessage).toBe('')
+    expect(hintedImage?.firstMessageIsImage).toBe(true)
+    expect(largeHintedImage?.firstMessage).toBe('')
+    expect(largeHintedImage?.firstMessageIsImage).toBe(true)
     expect(text?.firstMessage).toBe('看一下截图')
     expect(text?.firstMessageIsImage).toBeUndefined()
     expect(imgtext?.firstMessage).toBe('修登录按钮')
