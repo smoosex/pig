@@ -12,7 +12,7 @@ export function VerbLabel({ text, failed, active }: { text: string; failed?: boo
   return (
     <span className={cn('min-w-0 flex-1 truncate text-left', failed && 'text-destructive')}>
       <span className={cn(!failed && 'text-foreground')}>{text.slice(0, 2)}</span>
-      <span className={cn(active && !failed && 'shimmer')}>{text.slice(2)}</span>
+      <span className={cn(active && !failed && 'shimmer shimmer-once')}>{text.slice(2)}</span>
     </span>
   )
 }

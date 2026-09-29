@@ -230,6 +230,12 @@
   transform-box: view-box;
   transform-origin: center;
   animation: close-spin 0.75s linear infinite;
+  animation-play-state: paused;
+}
+
+.group\/tab:hover .close-spin,
+.group\/tab:focus-within .close-spin {
+  animation-play-state: running;
 }
 
 @keyframes close-spin {

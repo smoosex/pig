@@ -79,6 +79,7 @@ async function runFixture(name: string): Promise<void> {
       const [text] = shimmerText()
       assert.equal(text, '正在加班加点理解你的问题...')
       const label = container.querySelector('.shimmer')!
+      assert.ok(label.classList.contains('shimmer-once'))
       assert.equal(label.children.length, 0)
       assert.equal(label.getAttribute('style'), null)
       assert.ok(label.closest('[data-slot="marker-content"]'))
@@ -92,12 +93,14 @@ async function runFixture(name: string): Promise<void> {
       assert.ok(rotate)
       await act(async () => { rotate!() })
       assert.notEqual(shimmerText()[0], text)
+      assert.equal(container.querySelector('.shimmer'), label, 'rotating copy does not restart the sweep')
       await render(makeTurn({ errorMessage: 'aborted' }))
       assert.deepEqual(shimmerText(), [])
     } else if (name === 'thinking') {
       const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0 }]
       await render(makeTurn({ process }))
       assert.deepEqual(shimmerText(), ['思考中...'])
+      assert.ok(container.querySelector('.shimmer')!.classList.contains('shimmer-once'))
       assert.equal(container.querySelector('.shimmer')!.children.length, 0)
       assert.equal(container.querySelector('.shimmer svg'), null)
       assert.equal(container.querySelector('pre'), null)
@@ -154,6 +157,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(shimmerText().length, 1)
       assert.ok(shimmerText()[0]?.includes('current.ts'))
       const shimmer = container.querySelector('.shimmer')!
+      assert.ok(shimmer.classList.contains('shimmer-once'))
       assert.equal(shimmer.previousElementSibling?.textContent, '读取')
       assert.equal(shimmer.previousElementSibling?.classList.contains('shimmer'), false)
       assert.ok(shimmer.parentElement?.classList.contains('truncate'))
@@ -426,6 +430,7 @@ if (process.argv[2] === '--marker-fixture') {
       Bun.file(new URL('../src/renderer/src/components/TurnView.tsx', import.meta.url)).text()
     ])
     assert.match(native, /animation: tw-shimmer var\(--shimmer-duration, 2s\) linear infinite/)
+    assert.match(native, /@utility shimmer-once\s*\{\s*animation-iteration-count: 1/)
     assert.match(native, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.shimmer\s*\{\s*animation: none/)
     assert.doesNotMatch(styles + view, /think-wave|tool-wave|WaveText|ThinkLabel/)
     assert.doesNotMatch(view, /--shimmer-|shimmer-(?:duration|color|angle|spread)-|animationDelay/)

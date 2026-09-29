@@ -20,6 +20,8 @@ async function runFixture(name: string): Promise<void> {
     scrollToMessage: () => false
   }
   const noop = () => {}
+  const registrations: Array<{ key: string; element: HTMLDivElement | null }> = []
+  const registerTurn = (key: string, element: HTMLDivElement | null) => { registrations.push({ key, element }) }
   mock.module('../src/renderer/src/components/ui/message-scroller', () => {
     const Box = ({ children, ...rest }: { children?: unknown }) => h('div', rest, children as never)
     return {
@@ -40,7 +42,7 @@ async function runFixture(name: string): Promise<void> {
     hasMoreAbove: true,
     hasMoreBelow: false,
     onScroll: noop,
-    registerTurn: noop,
+    registerTurn,
     jumpToTurn: noop
   }
   mock.module('../src/renderer/src/components/chat/useConversationScroll', () => ({
@@ -135,7 +137,17 @@ async function runFixture(name: string): Promise<void> {
   }
 
   try {
-    if (name === 'memo') {
+    if (name === 'refs') {
+      const weights = summary(1, 40)
+      await paint({ turns: turns(1), windowStart: 0, summary: weights })
+      assert.deepEqual(registrations.map(({ key, element }) => [key, !!element]), [['t0', true]])
+      await paint({ turns: turns(1), windowStart: 0, summary: weights, loadError: 'boom' })
+      assert.equal(registrations.length, 1, 'updated row content must not detach its scroller ref')
+      await paint({ turns: [{ ...turns(1)[0], id: 't1' }], windowStart: 0, summary: weights })
+      assert.deepEqual(registrations.map(({ key, element }) => [key, !!element]), [
+        ['t0', true], ['t0', false], ['t1', true]
+      ])
+    } else if (name === 'memo') {
       const list = turns(80)
       const weights = summary(80, 40)
       await paint({ turns: list, windowStart: 0, summary: weights })
@@ -198,6 +210,7 @@ if (process.argv[2] === '--conversation-minimap-fixture') {
   for (const [name, title] of Object.entries({
     'jump-cap': 'a jump into the far past pages a bounded number of steps',
     memo: 'an unrelated pane render does not rebuild the minimap',
+    refs: 'updating a turn keeps its scroller ref until the row actually changes',
     weight: 'the minimap measures loaded and unloaded turns on one scale'
   })) {
     test(`conversation minimap: ${title}`, async () => {

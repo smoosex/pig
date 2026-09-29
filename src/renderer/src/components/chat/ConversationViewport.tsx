@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { chatColumn } from '../../chat/layout'
 import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
 import type { ScrollSnapshot } from '../../chat/scroll-state'
@@ -23,6 +23,35 @@ import { useConversationScroll } from './useConversationScroll'
 const measuredItem = '[content-visibility:visible] [contain-intrinsic-size:none]'
 /** A jump pages at most this far; a click further back grows the window and can be repeated. */
 const MAX_JUMP_PAGES = 32
+
+const VisibleTurnRow = memo(function VisibleTurnRow({
+  turn,
+  turnKey,
+  turnIndex,
+  registerTurn,
+  onNeedProcess,
+  onAbortBash
+}: {
+  turn: Turn
+  turnKey: string
+  turnIndex: number
+  registerTurn: (key: string, element: HTMLDivElement | null) => void
+  onNeedProcess: (turnId: string) => Promise<void>
+  onAbortBash: () => Promise<void>
+}) {
+  const ref = useCallback((element: HTMLDivElement | null) => registerTurn(turnKey, element), [registerTurn, turnKey])
+  return (
+    <MessageScrollerItem
+      messageId={turnKey}
+      ref={ref}
+      data-turn-key={turnKey}
+      data-turn-index={turnIndex}
+      className={cn(measuredItem, chatColumn)}
+    >
+      <TurnView turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
+    </MessageScrollerItem>
+  )
+})
 
 export function ConversationViewport({
   active,
@@ -175,16 +204,15 @@ export function ConversationViewport({
             </div>
           ) : null}
           {visibleTurns.map(({ turn, index, key }) => (
-            <MessageScrollerItem
+            <VisibleTurnRow
               key={key}
-              messageId={key}
-              ref={(element) => registerTurn(key, element)}
-              data-turn-key={key}
-              data-turn-index={windowStart + index}
-              className={cn(measuredItem, chatColumn)}
-            >
-              <TurnView turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
-            </MessageScrollerItem>
+              turn={turn}
+              turnKey={key}
+              turnIndex={windowStart + index}
+              registerTurn={registerTurn}
+              onNeedProcess={onNeedProcess}
+              onAbortBash={onAbortBash}
+            />
           ))}
           {hasMoreBelow ? (
             <div className={cn(chatColumn, 'py-3 text-center text-xs text-muted-foreground/60')}>
