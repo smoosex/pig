@@ -36,6 +36,7 @@ export function registerSettingsIpc(): void {
     return {
       sendShortcut: pig.sendShortcut,
       completionNotifications: pig.completionNotifications,
+      beamBorderEnabled: pig.beamBorderEnabled,
       localeSetting: pig.locale,
       systemLocale: systemLocale(),
       appearance: pig.appearance,
@@ -56,6 +57,11 @@ export function registerSettingsIpc(): void {
   ipcMain.handle('settings:set-completion-notifications', async (_event, enabled: boolean) => {
     if (typeof enabled !== 'boolean') throw new Error('Expected a boolean notification setting')
     return savePigSettings({ completionNotifications: enabled })
+  })
+
+  ipcMain.handle('settings:set-beam-border', async (_event, enabled: boolean) => {
+    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean beam border setting')
+    return savePigSettings({ beamBorderEnabled: enabled })
   })
 
   ipcMain.handle('settings:set-locale', async (_event, locale: LocaleSetting) => {

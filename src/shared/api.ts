@@ -462,6 +462,7 @@ export interface ThemePrefs {
 export interface AppSettings extends ThemePrefs {
   sendShortcut: SendShortcut
   completionNotifications: boolean
+  beamBorderEnabled: boolean
   /** The stored choice: a locale, or `system` to follow the OS language. */
   localeSetting: LocaleSetting
   /** The OS language resolved against the shipped locales, for the `system` option's label. */
@@ -725,6 +726,7 @@ export interface SessionApi {
   onPluginsChanged: (listener: () => void) => () => void
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
+  setBeamBorderEnabled: (enabled: boolean) => Promise<{ beamBorderEnabled: boolean }>
   setLocaleSetting: (
     locale: LocaleSetting
   ) => Promise<{ localeSetting: LocaleSetting; systemLocale: Locale }>

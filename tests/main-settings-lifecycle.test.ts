@@ -251,7 +251,7 @@ async function fixture(name: string): Promise<void> {
       ])
       assert.deepEqual(await loadPigSettings(), {
         appearance: 'dark', sendShortcut: 'shift-enter', locale: 'system',
-        completionNotifications: true, lightTheme: 'everforest', darkTheme: 'everforest'
+        completionNotifications: true, beamBorderEnabled: true, lightTheme: 'everforest', darkTheme: 'everforest'
       })
       const updating = savePigSettings({ appearance: 'light' })
       assert.equal((await loadPigSettings()).appearance, 'light')
@@ -264,6 +264,8 @@ async function fixture(name: string): Promise<void> {
       assert.equal((await savePigSettings({ appearance: 'system' })).sendShortcut, 'shift-enter')
       assert.equal((await savePigSettings({ completionNotifications: false })).completionNotifications, false)
       assert.equal((await loadPigSettings()).completionNotifications, false)
+      assert.equal((await savePigSettings({ beamBorderEnabled: false })).beamBorderEnabled, false)
+      assert.equal((await loadPigSettings()).beamBorderEnabled, false)
     } finally {
       if (previous === undefined) delete process.env.PIG_DIR
       else process.env.PIG_DIR = previous

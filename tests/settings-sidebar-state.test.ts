@@ -31,6 +31,7 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings {
     darkTheme: 'pig',
     sendShortcut: 'enter',
     completionNotifications: true,
+    beamBorderEnabled: true,
     localeSetting: 'zh-CN',
     systemLocale: 'zh-CN',
     defaultModel: null,
@@ -241,7 +242,25 @@ async function runFixture(name: string): Promise<void> {
   const root = createRoot(container)
   let unmounted = false
   try {
-    if (name === 'auth') {
+    if (name === 'beam-border-setting') {
+      let persisted = true
+      api.setBeamBorderEnabled = async (enabled) => {
+        persisted = enabled
+        return { beamBorderEnabled: enabled }
+      }
+      await useSettingsStore.getState().load()
+      const { GeneralPane } = await import('../src/renderer/src/components/settings/GeneralPane')
+      await act(async () => { root.render(createElement(GeneralPane)) })
+      const toggle = () => container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Beam 动态边框"]')!
+      assert.equal(toggle().getAttribute('aria-checked'), 'true')
+      await act(async () => { toggle().click() })
+      assert.equal(persisted, false)
+      assert.equal(useSettingsStore.getState().beamBorderEnabled, false)
+      assert.equal(toggle().getAttribute('aria-checked'), 'false')
+      await act(async () => { toggle().click() })
+      assert.equal(persisted, true)
+      assert.equal(toggle().getAttribute('aria-checked'), 'true')
+    } else if (name === 'auth') {
       const listeners = new Set<(event: SettingsAuthEvent) => void>()
       const requests: ReturnType<typeof deferred<SettingsProvider[]>>[] = []
       const replies: { id: string; value: string | null }[] = []
@@ -702,6 +721,7 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'load-race': 'a stale settings load cannot replace later edits or provider updates',
     locale: 'the language setting follows the system, persists and re-titles placeholders',
     'notification-setting': 'the completion notification setting persists through the settings store',
+    'beam-border-setting': 'the Beam border switch updates and persists its preference',
     'notification-navigation': 'notification clicks select only open session tabs across sidebar halves',
     auth: 'auth cancellation owns its prompts until completion and cleans up on unmount',
     sidebar: 'late preferences preserve user changes and writes remain ordered',

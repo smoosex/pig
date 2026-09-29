@@ -5,6 +5,7 @@ import { Folder, GitBranch } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
+import { useSettingsStore } from '../stores/settings'
 import { InputGroup } from './ui/input-group'
 import { Button } from './ui/button'
 import { Popover, PopoverAnchor } from './ui/popover'
@@ -31,6 +32,7 @@ export function Composer({
   const t = useT()
   const { sessionId, isDraftSession, isStreaming, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
   const appearance = useComposerAppearance()
+  const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -42,7 +44,7 @@ export function Composer({
           <div ref={boxRef} className="relative rounded-2xl shadow-md">
             <SteerHint visible={isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
-              <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={bashMode || focused || isStreaming} className="w-full">
+              <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
                 <InputGroup
                   className="min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
                   onFocus={() => setFocused(true)}

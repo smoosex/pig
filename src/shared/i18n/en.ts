@@ -204,6 +204,8 @@ export const en: Messages = {
     languageSystemWith: 'System ({language})',
     languageZh: '简体中文',
     languageEn: 'English',
+    beamBorder: 'Animated Beam border',
+    beamBorderDescription: 'Animate the composer border; turn off to reduce rendering overhead',
     send: 'Sending',
     sendShortcut: 'Send shortcut',
     sendShortcutDescription: '{key} inserts a newline',

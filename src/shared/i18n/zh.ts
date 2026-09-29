@@ -206,6 +206,8 @@ export const zh = {
     languageSystemWith: '跟随系统（{language}）',
     languageZh: '简体中文',
     languageEn: 'English',
+    beamBorder: 'Beam 动态边框',
+    beamBorderDescription: '输入框的动态光束边框，关闭可降低渲染负担',
     send: '发送',
     sendShortcut: '发送快捷键',
     sendShortcutDescription: '{key} 换行',

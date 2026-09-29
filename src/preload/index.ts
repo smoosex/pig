@@ -157,6 +157,7 @@ const api: SessionApi = {
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
   setCompletionNotifications: (enabled: boolean) =>
     ipcRenderer.invoke('settings:set-completion-notifications', enabled),
+  setBeamBorderEnabled: (enabled: boolean) => ipcRenderer.invoke('settings:set-beam-border', enabled),
   setLocaleSetting: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
   setTheme: (patch: unknown) => ipcRenderer.invoke('settings:set-theme', patch),
   setDefaultModelSetting: (provider: string, id: string) =>

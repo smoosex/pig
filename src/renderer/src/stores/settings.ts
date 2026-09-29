@@ -20,6 +20,7 @@ interface SettingsStore extends AppSettings {
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
   setCompletionNotifications: (enabled: boolean) => Promise<void>
+  setBeamBorderEnabled: (enabled: boolean) => Promise<void>
   setLocale: (locale: LocaleSetting) => Promise<void>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
   setDefaultModel: (provider: string, id: string) => Promise<void>
@@ -30,6 +31,7 @@ interface SettingsStore extends AppSettings {
 const empty: AppSettings = {
   sendShortcut: 'enter',
   completionNotifications: true,
+  beamBorderEnabled: true,
   localeSetting: 'system',
   // Until the first load the only hint is the locale of the last run, which the mirror holds.
   systemLocale: storedLocale(),
@@ -147,6 +149,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       save({ completionNotifications: enabled }, async () => {
         const next = await api.setCompletionNotifications(enabled)
         return { completionNotifications: next.completionNotifications }
+      }),
+
+    setBeamBorderEnabled: (enabled) =>
+      save({ beamBorderEnabled: enabled }, async () => {
+        const next = await api.setBeamBorderEnabled(enabled)
+        return { beamBorderEnabled: next.beamBorderEnabled }
       }),
 
     setLocale: (locale) =>

@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select'
+import { Switch } from '../ui/switch'
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
@@ -25,6 +26,8 @@ export function GeneralPane() {
   const localeSetting = useSettingsStore((s) => s.localeSetting)
   const systemLocale = useSettingsStore((s) => s.systemLocale)
   const setLocale = useSettingsStore((s) => s.setLocale)
+  const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
+  const setBeamBorderEnabled = useSettingsStore((s) => s.setBeamBorderEnabled)
   const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
@@ -68,6 +71,16 @@ export function GeneralPane() {
                 </SelectGroup>
               </SelectContent>
             </Select>
+          </SettingsRow>
+          <SettingsRow
+            title={t('settings.beamBorder')}
+            description={t('settings.beamBorderDescription')}
+          >
+            <Switch
+              aria-label={t('settings.beamBorder')}
+              checked={beamBorderEnabled}
+              onCheckedChange={(enabled) => void setBeamBorderEnabled(enabled)}
+            />
           </SettingsRow>
         </SettingsCard>
       </div>
