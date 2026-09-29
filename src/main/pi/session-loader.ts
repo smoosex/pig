@@ -2,6 +2,7 @@ import { open, readdir, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
+import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { compareGroupsByLatestSession } from '../../shared/session-order'
 import { t } from '../i18n'
 
@@ -112,8 +113,8 @@ function truncatedText(line: string): string {
       from = key + 1
       continue
     }
-    const value = readJsonString(line, i).trim()
-    if (value) return value
+    const value = readJsonString(line, i)
+    if (value.trim()) return value
     from = key + 1
   }
   return ''
@@ -155,7 +156,7 @@ function parseEntry(line: string): ScanEntry | null {
  * placeholder would freeze in whichever language happened to be active when the listing ran.
  */
 function previewText(content: unknown): { text: string; image: boolean } {
-  const text = contentText(content).trim()
+  const text = contentText(stripImageHintsFromContent(content)).trim()
   if (text) return { text: text.slice(0, 500), image: false }
   return { text: '', image: hasImage(content) }
 }

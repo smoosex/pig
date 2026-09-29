@@ -4,7 +4,8 @@ import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-
 import {
   batchQueueUpdates,
   bridgeEvents,
-  followUpMessagesForDisplay
+  followUpMessagesForDisplay,
+  queuePendingUserMessage
 } from '../src/main/pi/event-bridge'
 import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
 
@@ -117,6 +118,28 @@ describe('completion notifications', () => {
     state.emit({ type: 'agent_settled' })
     expect(state.notifications).toEqual([])
   })
+})
+
+test('live image messages hide the SDK note without changing the message given to pi', () => {
+  const state = fixture()
+  const hint = '[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]'
+  const text = `看图\n\n${hint}`
+  const content = [{ type: 'text', text }, { type: 'image', mimeType: 'image/png', data: 'QUJD' }]
+  const started: string[] = []
+  queuePendingUserMessage(state.session, '别的消息', undefined, () => started.push('other'))
+  queuePendingUserMessage(state.session, '看图', undefined, () => started.push('image'))
+  const message = { role: 'user', content, timestamp: 1 }
+
+  state.emit({ type: 'message_start', message } as AgentSessionEvent)
+  state.emit({ type: 'message_end', message } as AgentSessionEvent)
+
+  expect(started).toEqual(['image'])
+  expect(state.events).toMatchObject([
+    { type: 'message_start', message: { content: [{ type: 'text', text: '看图' }, content[1]] } },
+    { type: 'message_end', message: { content: [{ type: 'text', text: '看图' }, content[1]] } }
+  ])
+  expect(content[0].text).toBe(text)
+  state.unsubscribe()
 })
 
 describe('batched queue updates', () => {

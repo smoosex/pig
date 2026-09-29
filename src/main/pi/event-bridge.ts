@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
+import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
 const bridged = new WeakSet<AgentSession>()
@@ -124,12 +125,13 @@ export function bridgeEvents(
     }
     let metadata: PastedTextDisplayMetadata | undefined
     const message = 'message' in event ? event.message : undefined
+    const displayContent = message?.role === 'user' ? stripImageHintsFromContent(message.content) : undefined
     const queue = pendingUserMessages.get(session)
-    if (queue && message?.role === 'user') {
+    if (queue && message?.role === 'user' && displayContent !== undefined) {
       if (event.type === 'message_start') {
-        const messageText = typeof message.content === 'string'
-          ? message.content
-          : message.content
+        const messageText = typeof displayContent === 'string'
+          ? displayContent
+          : displayContent
             .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
             .map((block) => block.text)
             .join('')
@@ -152,14 +154,15 @@ export function bridgeEvents(
     }
     if (win.isDestroyed() || win.webContents.isDestroyed()) return
     const enriched =
-      metadata &&
       (event.type === 'message_start' || event.type === 'message_end') &&
-      message?.role === 'user'
+      message?.role === 'user' &&
+      (metadata || displayContent !== message.content)
         ? {
             ...event,
             message: {
               ...message,
-              pastedText: metadata
+              content: displayContent,
+              ...(metadata ? { pastedText: metadata } : {})
             }
           }
         : event

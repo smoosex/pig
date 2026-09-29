@@ -5,6 +5,7 @@
 import { homedir } from 'node:os'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { SessionTreeGutter, SessionTreeRow, SessionTreeView } from '../../shared/api'
+import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { SessionSource } from './session-source'
 
 type TreeNode = {
@@ -180,7 +181,7 @@ function labelOf(
 ): string {
   if (entry.type === 'message') {
     const role = entry.message?.role
-    if (role === 'user') return `user: ${extractContent(entry.message?.content)}`
+    if (role === 'user') return `user: ${extractContent(stripImageHintsFromContent(entry.message?.content))}`
     if (role === 'assistant') {
       const text = extractContent(entry.message?.content)
       if (text) return `assistant: ${text}`

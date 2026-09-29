@@ -6,6 +6,7 @@ import type {
   DisplayTurn,
   DisplayUser
 } from '../../shared/api'
+import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '../../shared/session-images'
 import {
   createInlinePastedTextDisplayMetadata,
@@ -131,7 +132,7 @@ function displayUser(
   pastedText?: PastedTextMetadata
 ): DisplayUser | undefined {
   if (message.role !== 'user') return undefined
-  const content = message.content
+  const content = stripImageHintsFromContent(message.content)
   const images: DisplayUser['images'] = []
   const text = typeof content === 'string'
     ? content
@@ -327,7 +328,13 @@ export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry
 }
 
 function messagesOfGroup(group: PathMessage[]): unknown[] {
-  return group.map((item) => withoutImages({ ...item.message, persistedAt: item.persistedAt }))
+  return group.map((item) => withoutImages({
+    ...item.message,
+    ...(item.message.role === 'user'
+      ? { content: stripImageHintsFromContent(item.message.content) }
+      : {}),
+    persistedAt: item.persistedAt
+  }))
 }
 
 export function turnMessagesByIdFromEntries(entries: SessionEntry[]): Map<string, unknown[]> {
