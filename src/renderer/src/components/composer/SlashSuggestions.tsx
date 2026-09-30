@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 import { useT } from '../../hooks/useT'
 import { Button } from '../ui/button'
 import { PopoverContent } from '../ui/popover'
-import { slashGroups } from './commands'
+import { builtinCommandKey, slashGroups } from './commands'
 import type { SlashCommands } from './useSlashCommands'
 
 export function SlashSuggestions({
@@ -37,32 +37,36 @@ export function SlashSuggestions({
       style={width > 0 ? { width } : undefined}
     >
       <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {filtered.map((command, index) => (
-          <Fragment key={`${command.source}:${command.name}`}>
-            {index === 0 || filtered[index - 1].source !== command.source ? (
-              <div className="px-3 pt-2 pb-1 text-[10px] font-medium text-muted-foreground">
-                {t(slashGroups[command.source].labelKey)}
-              </div>
-            ) : null}
-            <Button
-              ref={index === selectedIndex ? selectedRef : undefined}
-              type="button"
-              variant="ghost"
-              className={cn(
-                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent',
-                index === selectedIndex && 'bg-accent'
-              )}
-              onMouseEnter={() => commands.setIndex(index)}
-              onClick={() => commands.select(command)}
-            >
-              {command.source === 'skill' ? <BookOpen className="text-chart-4" /> : null}
-              <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium', command.source === 'skill' && 'text-chart-4')}>
-                /{command.name}
-              </span>
-              {command.description ? <span className="min-w-0 truncate font-normal text-muted-foreground">{command.description}</span> : null}
-            </Button>
-          </Fragment>
-        ))}
+        {filtered.map((command, index) => {
+          const descriptionKey = command.source === 'builtin' ? builtinCommandKey(command.name) : null
+          const description = descriptionKey ? t(descriptionKey) : command.description
+          return (
+            <Fragment key={`${command.source}:${command.name}`}>
+              {index === 0 || filtered[index - 1].source !== command.source ? (
+                <div className="px-3 pt-2 pb-1 text-[10px] font-medium text-muted-foreground">
+                  {t(slashGroups[command.source].labelKey)}
+                </div>
+              ) : null}
+              <Button
+                ref={index === selectedIndex ? selectedRef : undefined}
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent',
+                  index === selectedIndex && 'bg-accent'
+                )}
+                onMouseEnter={() => commands.setIndex(index)}
+                onClick={() => commands.select(command)}
+              >
+                {command.source === 'skill' ? <BookOpen className="text-chart-4" /> : null}
+                <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium', command.source === 'skill' && 'text-chart-4')}>
+                  /{command.name}
+                </span>
+                {description ? <span className="min-w-0 truncate font-normal text-muted-foreground">{description}</span> : null}
+              </Button>
+            </Fragment>
+          )
+        })}
       </div>
     </PopoverContent>
   )

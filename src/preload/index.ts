@@ -69,6 +69,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:execute-bash', sessionId, command, id),
   abortBash: (sessionId: string) => ipcRenderer.invoke('session:abort-bash', sessionId),
   abortCompaction: (sessionId: string) => ipcRenderer.invoke('session:abort-compaction', sessionId),
+  compactSession: (sessionId: string, instructions?: string) =>
+    ipcRenderer.invoke('session:compact', sessionId, instructions),
   getDisplayTurns: (sessionId: string) =>
     ipcRenderer.invoke('session:get-display-turns', sessionId),
   getTurnWindow: (sessionId: string, start: number, count: number) =>

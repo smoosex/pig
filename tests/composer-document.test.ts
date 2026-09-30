@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { composerUserMessage, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
-import { filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
+import { builtinCommandKey, compactInstructions, filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
 import type { SlashCommand } from '../src/shared/api'
 
 describe('composer document protocol', () => {
@@ -44,6 +44,17 @@ describe('composer document protocol', () => {
 })
 
 describe('composer commands', () => {
+  test('parses only the native compact command and its optional instructions', () => {
+    expect(compactInstructions('/compact')).toBe('')
+    expect(compactInstructions('/compact ')).toBe('')
+    expect(compactInstructions('/compact  Keep decisions\n and paths  ')).toBe('Keep decisions\n and paths')
+    for (const text of ['hello /compact', '/compact-other', '/compaction', '/compact\tinstructions']) {
+      expect(compactInstructions(text)).toBeNull()
+    }
+    expect(builtinCommandKey('compact')).toBe('commands.compact')
+    expect(builtinCommandKey('other')).toBeNull()
+  })
+
   test('only treats a single initial command token as a suggestion query', () => {
     expect(slashQuery('/')).toBe('')
     expect(slashQuery('/ex')).toBe('ex')

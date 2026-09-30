@@ -44,6 +44,8 @@ async function runFixture(): Promise<void> {
   api.onSessionNames(() => {})
   api.onNotificationClick(() => {})
   await api.setCompletionNotifications(false)
+  await api.compactSession('session-1', 'Preserve decisions')
+  await api.compactSession('session-2')
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
@@ -55,6 +57,8 @@ async function runFixture(): Promise<void> {
     { channel: 'diff:watch', args: ['/repo'] },
     { channel: 'diff:unwatch', args: ['/repo', 'lease-1'] },
     { channel: 'settings:set-completion-notifications', args: [false] },
+    { channel: 'session:compact', args: ['session-1', 'Preserve decisions'] },
+    { channel: 'session:compact', args: ['session-2', undefined] },
     {
       channel: 'system:select-open-project-workspace',
       args: ['/repo', 'session-1', 'diff:/repo']

@@ -662,6 +662,11 @@ export interface SessionApi {
   abortBash: (sessionId: string) => Promise<void>
   /** Cancels the compaction in progress without touching a running agent or its queued prompts. */
   abortCompaction: (sessionId: string) => Promise<void>
+  /**
+   * Compacts the session context on demand. Any run in progress is aborted first, and a manual
+   * compaction never resumes it. Failures reach the renderer as `compaction_end`, not as rejection.
+   */
+  compactSession: (sessionId: string, instructions?: string) => Promise<void>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>

@@ -84,7 +84,9 @@ AgentSession.subscribe(event)
 
 压缩中记录同样是会话级临时状态（`RuntimeState.liveCompactions`），不写进消息历史：摘要落盘后会以 `compactionSummary` 条目出现在历史投影里，临时记录随即被它替换（不处于运行状态时 `hydrateTurns` 丢掉已完成的记录，失败记录保留到用户关闭）。压缩不计入工作耗时——开始压缩时工作计时停在当时的数值，压缩本身单独计时，压缩结束后新的工作块从同一个数值继续；一轮里因此可以出现多个可独立展开收起的工作块。
 
-`result` 的值可以为 `undefined`。自动压缩可能发生在 `agent_end` 与 `agent_settled` 之间，前端此时仍保持运行状态，因此跳过此处刷新，最终由 `agent_settled` 刷新控制信息与历史；手动压缩没有完整 Agent 活动结束事件，仍在这里刷新。这里记录的是事件处理情况，不代表手动压缩调用的 Promise 错误也被忽略。
+`result` 的值可以为 `undefined`。自动压缩可能发生在 `agent_end` 与 `agent_settled` 之间，前端此时仍保持运行状态，因此跳过此处刷新，最终由 `agent_settled` 刷新控制信息与历史；手动压缩没有完整 Agent 活动结束事件，仍在这里刷新。
+
+Pig 的内建 `/compact [自定义指令]` 会调用 `AgentSession.compact()`，不作为用户消息写入历史，也不进入 follow-up/steer 队列。选中补全项后先插入文本，再按发送快捷键执行；如果当前正在输出，Pi 会先中止运行再压缩，不自动续跑。主进程与 Pi CLI 一样忽略压缩调用本身的 Promise 拒绝，失败统一由 `compaction_end.errorMessage` 展示，避免重复报错；会话准备或 IPC 失败仍显示在输入框错误区。
 
 ### 会话状态与直接 Bash 执行：5 类
 

@@ -14,6 +14,18 @@ export function slashQuery(text: string): string | null {
   return /\s/.test(rest) ? null : rest
 }
 
+const COMPACT = '/compact'
+
+export function compactInstructions(text: string): string | null {
+  const trimmed = text.trim()
+  if (trimmed !== COMPACT && !trimmed.startsWith(`${COMPACT} `)) return null
+  return trimmed.slice(COMPACT.length).trim()
+}
+
+export function builtinCommandKey(name: string): MessageKey | null {
+  return name === 'compact' ? 'commands.compact' : null
+}
+
 export function filterSlashCommands(commands: SlashCommand[], query: string | null): SlashCommand[] {
   if (query === null) return []
   const q = query.toLowerCase()

@@ -4,6 +4,7 @@ import type { JSONContent } from '@tiptap/core'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
+import { compactInstructions } from './commands'
 import { composerUserMessage, textToComposerDocument } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import type { PastedImage, useComposerImages } from './useComposerImages'
@@ -71,6 +72,11 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       if (hasAttachments || images.length > 0) setErrors((current) => ({ ...current, [target]: t('composer.bashAttachments') }))
       return
     }
+    const compact = bashMode ? null : compactInstructions(serialized.text)
+    if (compact !== null && (hasAttachments || images.length > 0)) {
+      setErrors((current) => ({ ...current, [target]: t('composer.compactAttachments') }))
+      return
+    }
 
     const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
@@ -97,6 +103,27 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
         report(errorKey, error)
         return
       }
+    }
+
+    if (compact !== null) {
+      const initial = useSessionsStore.getState().runtime[target]
+      if (!initial) return
+      const instanceId = initial.instanceId
+      const isCurrent = () => useSessionsStore.getState().runtime[target]?.instanceId === instanceId
+      let cleared = false
+      setErrors((current) => ({ ...current, [target]: undefined }))
+      try {
+        if (document.getDraft() === serialized) {
+          document.clear()
+          cleared = true
+        }
+        await api.compactSession(target, compact || undefined)
+      } catch (error) {
+        if (!isCurrent()) return
+        if (cleared) setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
+        report(target, error)
+      }
+      return
     }
 
     if (command !== null) {

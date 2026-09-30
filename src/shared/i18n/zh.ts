@@ -438,6 +438,7 @@ export const zh = {
     bashMode: 'Bash 模式',
     bashModeHint: '当前为 bash 模式，Esc 退出 bash 模式',
     bashAttachments: 'Bash 模式不支持图片或附件，请先移除。',
+    compactAttachments: '执行 /compact 前请先移除图片和附件。',
     bashBusy: '会话已经开始工作，命令未执行。',
     runBash: '运行命令',
     stopBash: '停止命令',
@@ -485,7 +486,8 @@ export const zh = {
     builtin: '内建',
     prompt: '模板',
     extension: '扩展',
-    skill: 'Skills'
+    skill: 'Skills',
+    compact: '手动压缩会话上下文'
   },
   thinking: {
     off: '关闭',

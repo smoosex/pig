@@ -436,6 +436,7 @@ export const en: Messages = {
     bashMode: 'Bash mode',
     bashModeHint: 'Bash mode · press Esc to exit',
     bashAttachments: 'Remove images and attachments before running a Bash command.',
+    compactAttachments: 'Remove images and attachments before running /compact.',
     bashBusy: 'The session started working; the command was not run.',
     runBash: 'Run command',
     stopBash: 'Stop command',
@@ -483,7 +484,8 @@ export const en: Messages = {
     builtin: 'Built-in',
     prompt: 'Template',
     extension: 'Extension',
-    skill: 'Skills'
+    skill: 'Skills',
+    compact: 'Manually compact the session context'
   },
   thinking: {
     off: 'Off',

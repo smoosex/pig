@@ -141,6 +141,14 @@ export function registerSessionIpc(): void {
     agentSession.abortCompaction()
   })
 
+  ipcMain.handle('session:compact', async (_event, sessionId: string, instructions?: unknown) => {
+    if (!sessionId) throw new Error('Session id is required')
+    const { agentSession } = await prepareSession(sessionId)
+    const customInstructions = typeof instructions === 'string' ? instructions.trim() : ''
+    // `compaction_end` carries the message the user needs, and the CLI drops this rejection the same way.
+    await agentSession.compact(customInstructions || undefined).catch(() => {})
+  })
+
   ipcMain.handle('session:get-display-turns', async (_event, sessionId: string) => {
     return getDisplayTurns(sessionId)
   })
