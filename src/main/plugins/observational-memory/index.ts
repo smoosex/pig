@@ -13,6 +13,9 @@ export default function observationalMemory(pi: ExtensionAPI) {
 	registerCompactionHook(pi, runtime);
 
 	pi.on('session_start', (_event, ctx) => registerMemoryRuntime(ctx.sessionManager.getSessionId(), runtime));
-	pi.on('session_shutdown', (_event, ctx) => registerMemoryRuntime(ctx.sessionManager.getSessionId()));
+	pi.on('session_shutdown', (_event, ctx) => {
+		runtime.cancelConsolidation();
+		registerMemoryRuntime(ctx.sessionManager.getSessionId());
+	});
 	registerRecallTool(pi);
 }

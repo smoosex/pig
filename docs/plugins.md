@@ -6,6 +6,8 @@ Open **Settings → Plugins** to enable the bundled Observational Memory extensi
 
 Observational Memory is maintained in Pig at `src/main/plugins/observational-memory/` (adapted from the local pi-observational-memory 3.1.3 source, MIT license). Its slash commands and terminal-only renderers are omitted; open the context-usage popover and use **Memory status** or **View memory** for dialog views. The view supports visible and full history. Settings are global to Pig only: use the built-in plugin’s settings button to edit `PIG_DIR/plugins/observational-memory/settings.json` (dev default: `./.pig`, packaged: `~/.pig`). Pig never reads Pi CLI's memory settings or `PI_OBSERVATIONAL_MEMORY_PASSIVE`. Changes reload idle project sessions (or wait until they finish); chat sessions are unaffected. The built-in plugin can be disabled, not uninstalled.
 
+Background observer, reflector, and dropper tasks are cancelled on session shutdown or reload. Late results are discarded before accessing session state or writing memory, and normal cancellation does not produce a worker-failed notification. Memory already written to the session remains intact.
+
 Extensions can use `ctx.ui.notify`, `setStatus`, `setWidget`, and `select`/`confirm`/`input`/`editor` dialogs. Pig does not provide a terminal TUI: `ctx.mode` is `rpc`; terminal-only widgets, themes, custom TUI, and editor manipulation are unavailable. Extensions should test `ctx.mode === 'tui'` before using terminal APIs.
 
 Keep extension imports to Node builtins and Pi packages (`@earendil-works/*`, `typebox`), which the loader aliases to the packaged app. Host modules such as `electron` resolve in development but fail to load from packaged resources, so extensions must not import them.

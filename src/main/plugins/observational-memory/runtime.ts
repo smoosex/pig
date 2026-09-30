@@ -95,6 +95,7 @@ function hasConfiguredProviderCredential(registry: unknown, model: unknown): boo
 }
 
 export interface ResolveCtx {
+	signal?: AbortSignal;
 	model: unknown;
 	modelRegistry: any;
 	hasUI: boolean;
@@ -111,6 +112,7 @@ export class Runtime {
 	configLoaded = false;
 	consolidationInFlight = false;
 	consolidationPromise: Promise<void> | null = null;
+	private consolidationAbortController: AbortController | undefined;
 	consolidationPhase: ConsolidationPhase | undefined;
 	compactInFlight = false;
 	compactHookInFlight = false;
@@ -148,6 +150,7 @@ export class Runtime {
 		}
 		if (!model) return { ok: false, reason: "no model available (session has no model and no observational-memory model configured)" };
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		ctx.signal?.throwIfAborted();
 		const provider = (model as { provider?: string }).provider ?? "unknown";
 		const isOAuth = ctx.modelRegistry.isUsingOAuth?.(model) === true;
 		// `auth.ok === false` is the only unambiguous failure: pi returns it when a
@@ -191,7 +194,7 @@ export class Runtime {
 		// Only attempted when everything else already looks like the ambient shape, so an
 		// ordinary unauthenticated provider still fails on the first call.
 		if (auth.ok === true && !usable && !isOAuth && !resolvedEmptyApiKey && !providerCredentialConfigured) {
-			providerCredentialConfigured = await this.recheckProviderCredential(ctx.modelRegistry, model, provider);
+			providerCredentialConfigured = await this.recheckProviderCredential(ctx.modelRegistry, model, provider, ctx.signal);
 		}
 		const signsAtRequestTime =
 			auth.ok === true && !isOAuth && !resolvedEmptyApiKey && providerCredentialConfigured;
@@ -237,9 +240,9 @@ export class Runtime {
 	 *
 	 * Implements the second half of pi's own auth gate for the only case that needs it: an
 	 * otherwise-ambient-looking resolution whose provider is missing from a stale or never
-	 * populated availability snapshot. Bounded and rate-limited; never throws.
+	 * populated availability snapshot. Bounded and rate-limited; only cancellation propagates.
 	 */
-	private async recheckProviderCredential(registry: unknown, model: unknown, provider: string): Promise<boolean> {
+	private async recheckProviderCredential(registry: unknown, model: unknown, provider: string, signal?: AbortSignal): Promise<boolean> {
 		const last = this.availabilityRecheckedAt.get(provider);
 		const now = Date.now();
 		if (last !== undefined && now - last < AVAILABILITY_RECHECK_REARM_MS) return false;
@@ -281,6 +284,7 @@ export class Runtime {
 
 		// Re-read even when the refresh reported an error or timed out: a scoped pass can
 		// update the snapshot for this provider and still fail elsewhere.
+		signal?.throwIfAborted();
 		const recovered = hasConfiguredProviderCredential(registry, model);
 		debugLog("resolve.availability_recheck", {
 			provider,
@@ -293,23 +297,32 @@ export class Runtime {
 		return recovered;
 	}
 
-	launchConsolidationTask(ctx: LaunchCtx, work: () => Promise<void>): Promise<void> {
+	cancelConsolidation(): void {
+		this.consolidationAbortController?.abort();
+	}
+
+	launchConsolidationTask(ctx: LaunchCtx, work: (signal: AbortSignal) => Promise<void>): Promise<void> {
+		const controller = new AbortController();
+		this.consolidationAbortController = controller;
 		this.consolidationInFlight = true;
 		this.consolidationPhase = undefined;
 		this.lastObserverError = undefined;
 		this.lastReflectorError = undefined;
 		this.lastDropperError = undefined;
-		const promise = this.launchTrackedTask(ctx, "consolidation", work, () => {
+		const promise = this.launchTrackedTask(ctx, "consolidation", () => work(controller.signal), () => {
+			if (this.consolidationAbortController !== controller) return;
 			this.consolidationInFlight = false;
 			this.consolidationPhase = undefined;
-			if (this.consolidationPromise === promise) this.consolidationPromise = null;
-		});
+			this.consolidationAbortController = undefined;
+			this.consolidationPromise = null;
+		}, controller.signal);
 		this.consolidationPromise = promise;
 		return promise;
 	}
 
 	recordConsolidationStageError(ctx: LaunchCtx, phase: ConsolidationPhase, error: unknown): string {
 		const message = error instanceof Error ? error.message : String(error);
+		if (this.consolidationAbortController?.signal.aborted) return message;
 		if (phase === "observer") this.lastObserverError = message;
 		if (phase === "reflector") this.lastReflectorError = message;
 		if (phase === "dropper") this.lastDropperError = message;
@@ -322,6 +335,7 @@ export class Runtime {
 		label: string,
 		work: () => Promise<void>,
 		onFinally: (error: string | undefined) => void,
+		signal: AbortSignal,
 	): Promise<void> {
 		const hasUI = ctx.hasUI;
 		const ui = ctx.ui;
@@ -331,7 +345,7 @@ export class Runtime {
 				await work();
 			} catch (error) {
 				errorMessage = error instanceof Error ? error.message : String(error);
-				if (hasUI && ui) ui.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
+				if (!signal.aborted && hasUI && ui) ui.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
 			} finally {
 				onFinally(errorMessage);
 			}
