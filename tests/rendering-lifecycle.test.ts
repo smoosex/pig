@@ -176,12 +176,12 @@ async function fixture(scenario: string): Promise<void> {
         useSessionsStore: store,
         selectActiveSessionId: () => 'one'
       }))
-      const { useWorkedMs } = await import('../src/renderer/src/components/turn/useWorkedMs')
+      const { useWorkBlockMs } = await import('../src/renderer/src/components/turn/useWorkBlockMs')
       let renders = 0
       function Probe() {
         renders++
-        const elapsed = useWorkedMs({ id: 'history', streaming: false, workedMs: 1200 } as any)
-        return createElement('span', null, elapsed)
+        const elapsed = useWorkBlockMs({ id: 'history', streaming: false, workedMs: 1200 } as any, [])
+        return createElement('span', null, elapsed.join(','))
       }
       await act(async () => { root.render(createElement(Probe)) })
       const before = renders

@@ -236,13 +236,24 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     if (rest[i].message.role === 'assistant') lastAssistant = i
   }
 
+  const timeOf = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isFinite(value) ? value : undefined
+
   let hasProcess = false
   let answer: DisplayAnswer[] = []
   const compactions: DisplayCompaction[] = []
   let errorMessage: string | undefined
+  // The work clock runs from the prompt to the next landmark and stops while a summary is written.
+  // Entry write times, not message stamps: every row the projection reads has one.
+  const workStart = userEntry.persistedAt || timeOf(userMsg?.timestamp) || rest[0]?.persistedAt || 0
+  let previousAt = workStart
+  let summarizedMs = 0
 
   rest.forEach((entry, i) => {
     const message = entry.message
+    // Every entry is timed against the one before it, including the branches that return early.
+    const precededAt = previousAt
+    if (entry.persistedAt) previousAt = entry.persistedAt
     if (message.role === 'assistant') {
       const isLast = i === lastAssistant
       const trailingIsAnswer =
@@ -292,18 +303,23 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
       hasProcess = true
     }
     if (message.role === 'compactionSummary') {
+      // Nothing is written while the summary is being written, so the gap between the entry before
+      // the summary and the summary itself is how long summarizing took.
+      const durationMs = Math.max(0, entry.persistedAt - precededAt)
+      const workMsBefore = Math.max(0, precededAt - workStart - summarizedMs)
+      summarizedMs += durationMs
       compactions.push({
         text: typeof message.summary === 'string' ? message.summary : '',
         tokensBefore: typeof message.tokensBefore === 'number' ? message.tokensBefore : 0,
         // Position, not the turn's state: an overflow error earlier in the chunk is followed by a
         // retried answer, and that compaction still belongs inside the work.
-        afterAnswer: i > lastAssistant
+        afterAnswer: i > lastAssistant,
+        workMsBefore,
+        durationMs
       })
     }
   })
 
-  const timeOf = (value: unknown): number | undefined =>
-    typeof value === 'number' && Number.isFinite(value) ? value : undefined
   const startedAt =
     timeOf(rest[0]?.message.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
   const endedAt = chunk[chunk.length - 1]?.persistedAt ?? startedAt

@@ -12,6 +12,7 @@ import type {
   ToolPartialResult,
   ToolResultMessage
 } from '../pi/types'
+import type { LiveCompaction } from './compactions'
 
 export interface ToolStep {
   id: string
@@ -45,7 +46,14 @@ export type ProcessItem =
  * it below the answer instead of inside the work that preceded it. It is decided by position, not
  * by the turn's state: an overflow that was compacted and retried leaves an earlier error behind.
  */
-export type CompactionItem = DisplayCompaction & { kind: 'compaction' }
+export type CompactionItem = DisplayCompaction & {
+  kind: 'compaction'
+  /**
+   * Set while the renderer has Pi's own compaction in hand rather than a written summary: a summary
+   * in progress has no entry yet, and a finished one is only replaced by history at settlement.
+   */
+  live?: LiveCompaction
+}
 
 export type AnswerBlock =
   | { type: 'text'; text: string }
@@ -232,6 +240,11 @@ export function buildTurn(
   const process: ProcessItem[] = []
   let answer: AnswerBlock[] = []
   let errorMessage: string | undefined
+  // Summarizing is not work: the clock runs from the prompt to the next landmark, and the blocks
+  // either side of a compaction keep the totals they had reached. Pi writes compactions as session
+  // entries rather than messages, so this only applies to a stream that carries one anyway.
+  const workStart = user?.timestamp ?? chunk[0]?.timestamp ?? 0
+  let summarizedMs = 0
 
   let lastAssistant = -1
   for (let i = 0; i < rest.length; i++) {
@@ -282,14 +295,20 @@ export function buildTurn(
       return
     }
     if (message.role === 'compactionSummary') {
+      // The summary is written while nothing else happens, so the entry before it is when it began.
+      const precededAt = rest[i - 1]?.timestamp ?? workStart
+      const durationMs = Math.max(0, message.timestamp - precededAt)
       process.push({
         kind: 'compaction',
         text: message.summary,
         tokensBefore: message.tokensBefore,
         // Position, not the turn's state: an overflow error earlier in the chunk is followed by a
         // retried answer, and that compaction still belongs inside the work.
-        afterAnswer: i > lastAssistant
+        afterAnswer: i > lastAssistant,
+        workMsBefore: Math.max(0, precededAt - workStart - summarizedMs),
+        durationMs
       })
+      summarizedMs += durationMs
     }
   })
 

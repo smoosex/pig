@@ -1,6 +1,7 @@
 import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { showsInTranscript, type LiveCompaction } from '../chat/compactions'
 import { toTurn } from '../chat/display-turns'
-import { groupTurns } from '../chat/turns'
+import { groupTurns, type CompactionItem } from '../chat/turns'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../stores/sessions'
 import type { RuntimeState } from '../stores/sessions/types'
@@ -11,6 +12,7 @@ import { MessageScrollerProvider } from './ui/message-scroller'
 const emptyTurns: RuntimeState['turns'] = []
 const emptySummary: RuntimeState['turnSummary'] = []
 const emptyMessages: RuntimeState['liveMessages'] = []
+const emptyCompactions: RuntimeState['liveCompactions'] = []
 const emptyToolUpdates: RuntimeState['toolUpdates'] = {}
 const emptyProcess: RuntimeState['processByTurnId'] = {}
 const emptyDurations: Record<string, number> = {}
@@ -21,6 +23,23 @@ type SnapshotCache = Map<string, ScrollSnapshot>
 
 function sameIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+/**
+ * The compaction Pi is running right now, as a landmark inside the live turn. It has no session
+ * entry until its summary is written, and the summary is not a message either: without this the
+ * turn's work would run straight through the compaction and only split at settlement.
+ */
+function liveCompactionItem(mark: LiveCompaction): CompactionItem {
+  return {
+    kind: 'compaction',
+    text: mark.summary ?? '',
+    tokensBefore: mark.tokensBefore ?? 0,
+    afterAnswer: false,
+    workMsBefore: mark.workMsBefore,
+    durationMs: mark.endedAt == null ? 0 : Math.max(0, mark.endedAt - mark.startedAt),
+    live: mark
+  }
 }
 
 /** Keep the active pane and the two most recently visited panes mounted. */
@@ -80,6 +99,7 @@ const SessionChatPane = memo(function SessionChatPane({
   const elapsedByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.elapsedByTurnId ?? emptyDurations)
   const streamElapsedMs = useSessionsStore((s) => s.runtime[sessionId]?.streamElapsedMs ?? null)
   const isStreaming = useSessionsStore((s) => s.runtime[sessionId]?.isStreaming ?? false)
+  const liveCompactions = useSessionsStore((s) => s.runtime[sessionId]?.liveCompactions ?? emptyCompactions)
 
   const historical = useMemo(
     () => turns.map((turn) => toTurn(turn, processByTurnId[turn.id] ?? [], elapsedByTurnId[turn.id])),
@@ -101,8 +121,13 @@ const SessionChatPane = memo(function SessionChatPane({
         workedMs: undefined
       })
     }
+    const last = turns[turns.length - 1]
+    const marks = liveCompactions.filter((mark) => showsInTranscript(mark, liveMessages.length > 0))
+    if (last && marks.length > 0) {
+      turns[turns.length - 1] = { ...last, process: [...last.process, ...marks.map(liveCompactionItem)] }
+    }
     return turns
-  }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs])
+  }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs, liveCompactions])
 
   const scrollKey = branchViewId ? `${sessionId}\u0000${branchViewId}` : null
   const saveScrollState = useCallback((state: ScrollSnapshot) => {

@@ -7,6 +7,16 @@ import { createThinkingTracker } from './thinking-tracker'
 
 const HYDRATE_DELAY_MS = 320
 
+/** A compaction result is an opaque payload on the wire; only its summary is worth keeping here. */
+function summaryFields(result: unknown): { summary?: string; tokensBefore?: number } {
+  if (typeof result !== 'object' || result === null) return {}
+  const record = result as Record<string, unknown>
+  return {
+    ...(typeof record.summary === 'string' ? { summary: record.summary } : {}),
+    ...(typeof record.tokensBefore === 'number' ? { tokensBefore: record.tokensBefore } : {})
+  }
+}
+
 /**
  * Bridges Pi events into the renderer projection. Subscription-owned timers are
  * released together, so remounting the application cannot duplicate delivery.
@@ -24,7 +34,8 @@ export function subscribeSessionEvents(): () => void {
   const actions = useSessionsStore.getState()
   const {
     setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage, setToolUpdates, appendBashOutput,
-    renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages, setRetryNotice
+    renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages, setRetryNotice,
+    startCompaction, updateCompaction, dropCompaction
   } = actions
   const thinking = createThinkingTracker(setThinkingDuration)
   const cancelFrame = () => {
@@ -264,10 +275,50 @@ export function subscribeSessionEvents(): () => void {
       case 'summarization_retry_finished':
         setRetryNotice(sessionId, null)
         break
+      case 'compaction_start': {
+        const reason = event.reason
+        if (reason !== 'manual' && reason !== 'threshold' && reason !== 'overflow') break
+        const startedAt = Date.now()
+        // Pi runs automatic compaction between the work and the summary, so the turn's work clock
+        // stops here: it is frozen at whatever the turn had worked out, summaries already excluded.
+        const summarized = current.liveCompactions.reduce(
+          (sum, mark) => sum + (mark.endedAt == null ? 0 : mark.endedAt - mark.startedAt),
+          0
+        )
+        startCompaction(sessionId, {
+          id: `compaction:${startedAt}`,
+          reason,
+          startedAt,
+          workMsBefore: current.streamStartedAt == null
+            ? 0
+            : Math.max(0, startedAt - current.streamStartedAt - summarized),
+          endedAt: null,
+          status: 'running'
+        })
+        break
+      }
       case 'compaction_end': {
+        const mark = current.liveCompactions.findLast((item) => item.status === 'running')
+        if (event.aborted === true) {
+          // A cancelled summary leaves no landmark and nothing to report.
+          if (mark) dropCompaction(sessionId, mark.id)
+          break
+        }
+        if (mark) {
+          const endedAt = Date.now()
+          // A result is a summary that reached disk; without one the attempt failed, whether Pi has
+          // an error message for it or not.
+          updateCompaction(sessionId, mark.id, event.result != null
+            ? { status: 'done', endedAt, ...summaryFields(event.result) }
+            : {
+                status: 'failed',
+                endedAt,
+                errorMessage: typeof event.errorMessage === 'string' ? event.errorMessage : ''
+              })
+        }
         // Automatic compaction can run between `agent_end` and `agent_settled`. Active runs refresh
         // at settlement; manual compaction has no settlement event and must refresh here.
-        if (event.result == null || event.aborted === true || current.isStreaming || event.willRetry === true) break
+        if (event.result == null || current.isStreaming || event.willRetry === true) break
         void loadControls(sessionId).catch(reportError('load session controls'))
         void hydrateTurns(sessionId, { keepOlderTurns: true }).catch(reportError('refresh session history'))
         break

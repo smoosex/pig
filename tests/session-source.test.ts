@@ -129,7 +129,9 @@ test('a command keeps its card when compaction follows it in the same turn', asy
       expect(turns[0].hasProcess).toBe(true)
       // The marker travels with the projection, not with the on-demand process disclosure. Pi wrote
       // it after the command but before the answer, so it belongs inside the work, not below it.
-      expect(turns[0].compactions).toEqual([{ text: 'compacted', tokensBefore: 1000, afterAnswer: false }])
+      expect(turns[0].compactions).toEqual([
+        { text: 'compacted', tokensBefore: 1000, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
+      ])
     }
   })
 })
@@ -158,7 +160,9 @@ test('a mid-turn compaction is not work, and the turn keeps its work flag for it
       const turns = displayWindow(source).turns
       expect(turns.map((turn) => turn.id)).toEqual(['u0'])
       expect(turns[0].answer).toEqual([{ type: 'text', text: 'second answer' }])
-      expect(turns[0].compactions).toEqual([{ text: 'compacted', tokensBefore: 1000, afterAnswer: false }])
+      expect(turns[0].compactions).toEqual([
+        { text: 'compacted', tokensBefore: 1000, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
+      ])
     }
   })
 })

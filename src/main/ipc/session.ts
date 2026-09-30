@@ -135,6 +135,12 @@ export function registerSessionIpc(): void {
     agentSession.abortBash()
   })
 
+  ipcMain.handle('session:abort-compaction', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    const { agentSession } = await prepareSession(sessionId)
+    agentSession.abortCompaction()
+  })
+
   ipcMain.handle('session:get-display-turns', async (_event, sessionId: string) => {
     return getDisplayTurns(sessionId)
   })

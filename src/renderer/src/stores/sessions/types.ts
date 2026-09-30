@@ -15,6 +15,7 @@ import type {
   ThinkingLevel,
   TurnSummary
 } from '../../ipc/api'
+import type { LiveCompaction } from '../../chat/compactions'
 import type { ProcessItem, ThinkingDurations, ToolUpdates } from '../../chat/turns'
 import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
@@ -86,6 +87,8 @@ export interface RuntimeState extends SessionControls {
   isStreaming: boolean
   streamStartedAt: number | null
   streamElapsedMs: number | null
+  /** Compactions Pi is running in this session, in the order they started. */
+  liveCompactions: LiveCompaction[]
   retryNotice: RetryNotice | null
   queuedEditText: string | null
 }
@@ -252,6 +255,9 @@ export interface SessionsStore {
   replaceLiveMessage: (sessionId: string, message: PiMessage) => void
   setToolUpdates: (sessionId: string, updates: ToolUpdates) => void
   setRetryNotice: (sessionId: string, notice: RetryNotice | null) => void
+  startCompaction: (sessionId: string, mark: LiveCompaction) => void
+  updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void
+  dropCompaction: (sessionId: string, id: string) => void
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 

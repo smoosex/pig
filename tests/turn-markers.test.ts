@@ -282,7 +282,7 @@ async function runFixture(name: string): Promise<void> {
     } else if (name === 'compaction') {
       const process: ProcessItem[] = [
         { kind: 'tools', tools: [readTool('done', true)] },
-        { kind: 'compaction', text: '- 保留这条记忆', tokensBefore: 523_400, afterAnswer: false }
+        { kind: 'compaction', text: '- 保留这条记忆', tokensBefore: 523_400, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
       ]
       await render(makeTurn({ process, streaming: false }))
       const markers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
@@ -303,7 +303,7 @@ async function runFixture(name: string): Promise<void> {
       assert.deepEqual([...box.classList].filter((name) => name.startsWith('bg-')), [])
       // A turn that carries nothing but a compaction has no work block to head.
       await render(makeTurn({
-        process: [{ kind: 'compaction', text: '只有压缩', tokensBefore: 1, afterAnswer: false }],
+        process: [{ kind: 'compaction', text: '只有压缩', tokensBefore: 1, afterAnswer: false, workMsBefore: 0, durationMs: 0 }],
         streaming: false,
         hasProcess: false
       }))
@@ -312,7 +312,7 @@ async function runFixture(name: string): Promise<void> {
       // While the run is live the landmark is not a substitute for the work block: the waiting line
       // lives in the work block the compaction would otherwise be the only segment of.
       await render(makeTurn({
-        process: [{ kind: 'compaction', text: '运行中压缩', tokensBefore: 1, afterAnswer: false }],
+        process: [{ kind: 'compaction', text: '运行中压缩', tokensBefore: 1, afterAnswer: false, workMsBefore: 0, durationMs: 0 }],
         streaming: true
       }))
       assert.deepEqual(shimmerText(), ['正在加班加点理解你的问题...'])
@@ -321,7 +321,7 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         process: [
           { kind: 'tools', tools: [readTool('before', true)] },
-          { kind: 'compaction', text: '尾压缩', tokensBefore: 999, afterAnswer: true }
+          { kind: 'compaction', text: '尾压缩', tokensBefore: 999, afterAnswer: true, workMsBefore: 0, durationMs: 0 }
         ],
         answer: [{ type: 'text', text: '回答正文' }],
         streaming: false
@@ -339,10 +339,10 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         process: [
           { kind: 'tools', tools: [readTool('loaded', true)] },
-          { kind: 'compaction', text: '流内压缩', tokensBefore: 42, afterAnswer: false }
+          { kind: 'compaction', text: '流内压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
         ],
         compactions: [
-          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false }
+          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
         ],
         streaming: false
       }))
@@ -357,7 +357,7 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         process: [{ kind: 'text', text: '读到的过程' }],
         compactions: [
-          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false }
+          { kind: 'compaction', text: '投影压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
         ],
         streaming: false
       }))
@@ -372,7 +372,7 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         process: [],
         compactions: [
-          { kind: 'compaction', text: '已落盘的压缩', tokensBefore: 42, afterAnswer: false }
+          { kind: 'compaction', text: '已落盘的压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
         ],
         hasProcess: true,
         streaming: false
@@ -389,7 +389,7 @@ async function runFixture(name: string): Promise<void> {
         streaming: true,
         process: [
           { kind: 'tools', tools: [readTool('first', true)] },
-          { kind: 'compaction', text: '中间压缩', tokensBefore: 42, afterAnswer: false },
+          { kind: 'compaction', text: '中间压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 },
           { kind: 'tools', tools: [readTool('second', true)] }
         ]
       }))
@@ -398,6 +398,74 @@ async function runFixture(name: string): Promise<void> {
       const controls = separator().getAttribute('aria-controls')
       assert.ok(controls)
       assert.equal(document.querySelectorAll(`[id="${controls}"]`).length, 1)
+    } else if (name === 'compaction-live') {
+      const running = {
+        kind: 'compaction' as const,
+        text: '',
+        tokensBefore: 0,
+        afterAnswer: false,
+        workMsBefore: 2_000,
+        durationMs: 0,
+        live: {
+          id: 'k1', reason: 'threshold' as const, startedAt: Date.now() - 3_000, workMsBefore: 2_000,
+          endedAt: null, status: 'running' as const
+        }
+      }
+      await render(makeTurn({
+        process: [{ kind: 'tools', tools: [readTool('before', true)] }, running]
+      }))
+      // While the summary is being written the work before it keeps the total it froze at, and the
+      // compaction itself is the one thing still counting.
+      const headers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+        .filter((button) => button.textContent?.includes('工作'))
+      assert.equal(headers().length, 1, 'the work before the summary has a header of its own')
+      assert.ok(headers()[0].textContent?.startsWith('已工作 2 秒'), headers()[0].textContent ?? '')
+      assert.deepEqual(shimmerText(), ['上下文接近上限，正在压缩'])
+      assert.equal(container.querySelectorAll('button[data-slot="marker"]').length, 1, 'a summary in progress has nothing to open')
+      const row = container.querySelector<HTMLElement>('[data-slot="marker"][data-variant="separator"]:not(button)')
+      assert.ok(row?.textContent?.includes('上下文接近上限，正在压缩'), row?.textContent ?? '')
+      assert.ok(row?.textContent?.includes('3 秒'), `the summary counts its own time: ${row?.textContent}`)
+
+      const done = {
+        ...running,
+        text: '- 保留这条记忆',
+        tokensBefore: 523_400,
+        durationMs: 1_000,
+        live: {
+          ...running.live, endedAt: 3_000, status: 'done' as const,
+          summary: '- 保留这条记忆', tokensBefore: 523_400
+        }
+      }
+      await render(makeTurn({
+        process: [
+          { kind: 'tools', tools: [readTool('before', true)] },
+          done,
+          { kind: 'tools', tools: [readTool('after', true)] }
+        ],
+        workedMs: 5_000,
+        streaming: false
+      }))
+      // Two blocks of work, each with a header of its own: the first keeps the time it ended at,
+      // the second carries on from it with the summary's own time left out.
+      assert.deepEqual(shimmerText(), [])
+      const [first, second] = headers()
+      assert.ok(first.textContent?.startsWith('工作耗时 2 秒'), first.textContent ?? '')
+      assert.ok(second.textContent?.startsWith('工作耗时 4 秒'), second.textContent ?? '')
+      assert.equal(first.getAttribute('aria-expanded'), 'false')
+      assert.equal(second.getAttribute('aria-expanded'), 'false')
+      await act(async () => { second.click(); await Bun.sleep(0) })
+      assert.equal(second.getAttribute('aria-expanded'), 'true')
+      assert.equal(first.getAttribute('aria-expanded'), 'false', 'each block opens on its own')
+      await act(async () => { first.click(); await Bun.sleep(0) })
+      assert.equal(first.getAttribute('aria-expanded'), 'true')
+      assert.equal(second.getAttribute('aria-expanded'), 'true')
+      // The landmark between them stays a landmark: it opens the summary, not the work.
+      const notice = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
+        .find((button) => button.textContent?.includes('上下文已压缩'))
+      assert.ok(notice)
+      assert.equal(container.textContent?.includes('保留这条记忆'), false)
+      await act(async () => { notice!.click(); await Bun.sleep(0) })
+      assert.ok(container.textContent?.includes('保留这条记忆'))
     } else if (name === 'disclosure') {
       let requested: string | undefined
       let release!: () => void
@@ -452,6 +520,7 @@ if (process.argv[2] === '--marker-fixture') {
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',
+    'compaction-live': 'a live compaction splits the turn into two blocks that time themselves alone',
     'compaction-unloaded': 'a persisted compaction shows before its work is read',
     'compaction-ids': 'each work block split by a compaction owns a unique content id',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'

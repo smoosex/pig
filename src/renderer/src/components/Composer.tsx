@@ -11,6 +11,7 @@ import { Button } from './ui/button'
 import { Popover, PopoverAnchor } from './ui/popover'
 import { FollowUpQueue } from './FollowUpQueue'
 import { ImagePreview } from './ImagePreview'
+import { CompactionStatus } from './composer/CompactionStatus'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
@@ -40,6 +41,7 @@ export function Composer({
   return (
     <div className={cn(chatColumn, 'relative isolate shrink-0 pb-3.5')}>
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
+      <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />
       <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>

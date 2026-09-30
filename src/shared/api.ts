@@ -308,6 +308,13 @@ export interface DisplayCompaction {
   text: string
   tokensBefore: number
   afterAnswer: boolean
+  /**
+   * Work done in the turn before this compaction, with earlier compactions of the same turn already
+   * subtracted: summarizing is not work, so each block of work ends where the next compaction began.
+   */
+  workMsBefore: number
+  /** How long the summary took, estimated from the entries written either side of it. */
+  durationMs: number
 }
 
 export interface DisplayTurn {
@@ -653,6 +660,8 @@ export interface SessionApi {
   abort: (sessionId: string) => Promise<void>
   executeBash: (sessionId: string, command: string, id: string) => Promise<BashExecutionResult>
   abortBash: (sessionId: string) => Promise<void>
+  /** Cancels the compaction in progress without touching a running agent or its queued prompts. */
+  abortCompaction: (sessionId: string) => Promise<void>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>

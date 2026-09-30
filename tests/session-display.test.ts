@@ -105,7 +105,9 @@ test('a turn that carries nothing but a compaction has no work of its own', () =
   ] as unknown as SessionEntry[]
 
   const [turn] = displayTurnsFromEntries('session-1', entries)
-  expect(turn.compactions).toEqual([{ text: '压缩了', tokensBefore: 42, afterAnswer: true }])
+  expect(turn.compactions).toEqual([
+    { text: '压缩了', tokensBefore: 42, afterAnswer: true, workMsBefore: 0, durationMs: 1_000 }
+  ])
   // The landmark is not the disclosure's reason to exist: no work behind it means no work header.
   expect(turn.hasProcess).toBe(false)
 })

@@ -24,7 +24,7 @@ AgentSession.subscribe(event)
 - **间接展示**：没有对应事件分支，相关内容由消息事件展示。
 - **未处理**：事件已转发，但没有对应的 GUI 消费逻辑。
 
-主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **18 类**直接处理分支（含部分处理）；其余 **5 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
+主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **19 类**直接处理分支（含部分处理）；其余 **4 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
 
 ## 顶层会话事件：23 类
 
@@ -79,8 +79,10 @@ AgentSession.subscribe(event)
 
 | 事件 | 含义 / 字段 | 主进程处理 | 前端处理 |
 | --- | --- | --- | --- |
-| `compaction_start` | 压缩开始；`reason` | 转发 | **未处理**：没有该事件驱动的压缩中状态 |
-| `compaction_end` | 压缩结束；`reason`、`result`、`aborted`、`willRetry`、`errorMessage?` | 转发 | **部分处理**：仅在 `result` 非空、未取消、当前不在运行且不准备重试时刷新控制信息与历史；不消费 `errorMessage` 或按 `reason` 展示状态 |
+| `compaction_start` | 压缩开始；`reason` | 转发 | **已处理**：记下一条压缩中记录（原因、开始时间、此前已工作多久），并冻结工作计时；运行中的轮次把它作为压缩中提示行插在工作块之间，轮次之外的压缩显示在输入框上方，可以取消 |
+| `compaction_end` | 压缩结束；`reason`、`result`、`aborted`、`willRetry`、`errorMessage?` | 转发 | **已处理**：取消时丢弃这条记录；成功时补全摘要，让工作计时从冻结的数值继续；失败时保留 `errorMessage` 并显示在输入框上方，直到用户关闭。仅在 `result` 非空、未取消、当前不在运行且不准备重试时刷新控制信息与历史 |
+
+压缩中记录同样是会话级临时状态（`RuntimeState.liveCompactions`），不写进消息历史：摘要落盘后会以 `compactionSummary` 条目出现在历史投影里，临时记录随即被它替换（不处于运行状态时 `hydrateTurns` 丢掉已完成的记录，失败记录保留到用户关闭）。压缩不计入工作耗时——开始压缩时工作计时停在当时的数值，压缩本身单独计时，压缩结束后新的工作块从同一个数值继续；一轮里因此可以出现多个可独立展开收起的工作块。
 
 `result` 的值可以为 `undefined`。自动压缩可能发生在 `agent_end` 与 `agent_settled` 之间，前端此时仍保持运行状态，因此跳过此处刷新，最终由 `agent_settled` 刷新控制信息与历史；手动压缩没有完整 Agent 活动结束事件，仍在这里刷新。这里记录的是事件处理情况，不代表手动压缩调用的 Promise 错误也被忽略。
 
@@ -124,7 +126,7 @@ AgentSession.subscribe(event)
 ## 已知缺口
 
 1. **重试的收尾信息有限**：`auto_retry_end.finalError` 不单独展示，`summarization_retry_finished` 也不说明摘要重试是成功还是失败——提示在事件到达时清除，成功与否只能从压缩事件或分支摘要调用的结果判断。
-2. **压缩状态不完整**：没有消费 `compaction_start`，`compaction_end.errorMessage` 也没有事件驱动的展示。
+2. **压缩的取消没有提示**：`compaction_end.aborted` 只是让提示消失，不区分手动取消与自动取消（CLI 会给出 “Compaction cancelled” 或 “Auto-compaction cancelled”）。轮次内的压缩开始时间也取自渲染进程的工作计时，压缩开始前的等待会被算进上一块工作。
 3. **部分状态字段未同步**：`queue_update.steering`、会话名称清空、没有 `id` 的直接 Bash 输出未处理；`entry_appended` 没有即时消费。
 4. **事件类型没有穷尽性检查**：前端的 `PiSessionEvent.type` 是普通 `string`，`SessionApi.onEvent` 接收 `unknown`，事件路由没有默认告警。SDK 新增事件不会因此触发穷尽性类型错误，可能被静默忽略。
 

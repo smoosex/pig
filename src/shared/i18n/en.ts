@@ -20,6 +20,7 @@ export const en: Messages = {
     holdToConfirm: '{label}, hold for {seconds}s to confirm',
     delete: 'Delete',
     rename: 'Rename',
+    dismiss: 'Dismiss {title}',
     // Joins sentence fragments: the gap sits in the separator so fragments carry no trailing space.
     sentenceSeparator: '. '
   },
@@ -346,7 +347,11 @@ export const en: Messages = {
   chat: {
     branchSummary: 'Branch summary',
     compacted: 'Context compacted',
-    compactedFrom: '{tokens} tokens before'
+    compactedFrom: '{tokens} tokens before',
+    compactingManual: 'Compacting the context',
+    compactingThreshold: 'Context is near its limit, compacting',
+    compactingOverflow: 'Context overflowed, compacting',
+    compactFailed: 'Compaction failed'
   },
   tool: {
     run: 'Run {command}',

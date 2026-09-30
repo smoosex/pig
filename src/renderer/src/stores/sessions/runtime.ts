@@ -36,6 +36,7 @@ export const emptyRuntime = (): RuntimeState => ({
   isStreaming: false,
   streamStartedAt: null,
   streamElapsedMs: null,
+  liveCompactions: [],
   retryNotice: null,
   model: null,
   models: [],

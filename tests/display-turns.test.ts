@@ -93,7 +93,9 @@ describe('display turn projection', () => {
     expect(turn.bash).toEqual({ command: 'pwd', exitCode: 0, cancelled: false })
     expect(turn.process.map((item) => item.kind)).toEqual(['bash', 'compaction'])
     // No assistant in the chunk, so the marker belongs below whatever the command rendered.
-    expect(turn.process[1]).toEqual({ kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true })
+    expect(turn.process[1]).toEqual({
+      kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true, workMsBefore: 0, durationMs: 1
+    })
   })
 
   test('splits a compaction onto the side of the answer it followed', () => {
@@ -106,7 +108,9 @@ describe('display turn projection', () => {
     const summary = { role: 'compactionSummary', summary: 'compacted', tokensBefore: 100, timestamp: 11 } as const
     const [turn] = groupTurns([user, assistant, summary] as never, false)
     expect(turn.answer).toEqual([{ type: 'text', text: 'done' }])
-    expect(turn.process).toEqual([{ kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true }])
+    expect(turn.process).toEqual([
+      { kind: 'compaction', text: 'compacted', tokensBefore: 100, afterAnswer: true, workMsBefore: 1, durationMs: 1 }
+    ])
     const [midTurn] = groupTurns([user, assistant, summary, { ...assistant, timestamp: 12 }] as never, false)
     expect(midTurn.process.find((item) => item.kind === 'compaction')).toMatchObject({ afterAnswer: false })
   })
@@ -145,8 +149,8 @@ describe('display turn projection', () => {
 
   test('carries a persisted compaction until the process is read', () => {
     const landmarks = [
-      { text: '中间压缩', tokensBefore: 523_400, afterAnswer: false },
-      { text: '尾压缩', tokensBefore: 7, afterAnswer: true }
+      { text: '中间压缩', tokensBefore: 523_400, afterAnswer: false, workMsBefore: 2_000, durationMs: 500 },
+      { text: '尾压缩', tokensBefore: 7, afterAnswer: true, workMsBefore: 3_000, durationMs: 250 }
     ]
     const unread = toTurn(display({ compactions: landmarks, hasProcess: true }), [])
     expect(unread.process).toEqual([])

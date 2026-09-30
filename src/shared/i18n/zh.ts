@@ -22,6 +22,7 @@ export const zh = {
     holdToConfirm: '{label}，长按 {seconds} 秒确认',
     delete: '删除',
     rename: '重命名',
+    dismiss: '关闭{title}',
     // Joins sentence fragments: Chinese needs no separator, English needs one.
     sentenceSeparator: '。'
   },
@@ -348,7 +349,11 @@ export const zh = {
   chat: {
     branchSummary: '分支摘要',
     compacted: '上下文已压缩',
-    compactedFrom: '压缩前 {tokens} tokens'
+    compactedFrom: '压缩前 {tokens} tokens',
+    compactingManual: '正在压缩上下文',
+    compactingThreshold: '上下文接近上限，正在压缩',
+    compactingOverflow: '上下文溢出，正在压缩',
+    compactFailed: '压缩失败'
   },
   tool: {
     run: '执行 {command}',

@@ -1,11 +1,13 @@
 /**
  * A compaction is a session landmark rather than work: the model's visible context was summarized,
  * so everything before it stops counting towards the window. It is rendered outside the collapsed
- * work block, keeping the summary one click away.
+ * work block, keeping the summary one click away — and while Pi is still writing that summary the
+ * same row reports the compaction itself, because there is nothing to expand yet.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Archive } from 'lucide-react'
-import type { CompactionItem } from '../../chat/turns'
+import { compactionReasonKey } from '../../chat/compactions'
+import { formatElapsed, type CompactionItem } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { formatTokens } from '../../lib/format'
 import { cn, hideScroll } from '../../lib/utils'
@@ -15,9 +17,38 @@ import { Marker, MarkerContent } from '../ui/marker'
 import { MarkdownText } from '../MarkdownText'
 import { Chevron } from './ProcessChrome'
 
+const landmarkRow = 'flex shrink-0 items-center gap-1.5'
+
+/** A running compaction counts up: it is work the reader is waiting on, just not the turn's own. */
+function useRunningMs(startedAt: number | null): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (startedAt == null) return
+    setNow(Date.now())
+    const id = window.setInterval(() => setNow(Date.now()), 200)
+    return () => window.clearInterval(id)
+  }, [startedAt])
+  return startedAt == null ? 0 : Math.max(0, now - startedAt)
+}
+
 export function CompactionNotice({ item }: { item: CompactionItem }) {
   const t = useT()
   const [open, setOpen] = useState(false)
+  const running = item.live?.status === 'running' ? item.live : undefined
+  const runningMs = useRunningMs(running?.startedAt ?? null)
+  if (running) {
+    return (
+      <Marker variant="separator">
+        <MarkerContent className={landmarkRow}>
+          <Archive className="size-3.5" />
+          <span className="shimmer">{t(compactionReasonKey(running.reason))}</span>
+          <span className="text-muted-foreground/70">{formatElapsed(runningMs, t)}</span>
+        </MarkerContent>
+      </Marker>
+    )
+  }
+  const text = item.live?.summary ?? item.text
+  const tokensBefore = item.live?.tokensBefore ?? item.tokensBefore
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <Marker variant="separator" asChild>
@@ -28,11 +59,11 @@ export function CompactionNotice({ item }: { item: CompactionItem }) {
             size="sm"
             className="h-7 justify-center gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent"
           >
-            <MarkerContent className="flex shrink-0 items-center gap-1.5">
+            <MarkerContent className={landmarkRow}>
               <Archive className="size-3.5" />
               <span>{t('chat.compacted')}</span>
               <span className="text-muted-foreground/70">
-                {t('chat.compactedFrom', { tokens: formatTokens(item.tokensBefore) })}
+                {t('chat.compactedFrom', { tokens: formatTokens(tokensBefore) })}
               </span>
               <Chevron open={open} />
             </MarkerContent>
@@ -41,7 +72,7 @@ export function CompactionNotice({ item }: { item: CompactionItem }) {
       </Marker>
       <CollapsibleContent className="duration-300">
         <div className={cn('mt-2 max-h-80 overflow-auto', hideScroll)}>
-          <MarkdownText className="text-xs text-muted-foreground" text={item.text} />
+          <MarkdownText className="text-xs text-muted-foreground" text={text} />
         </div>
       </CollapsibleContent>
     </Collapsible>

@@ -423,6 +423,78 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.deepEqual({ reads, controlReads }, { reads: 3, controlReads: 6 })
+    } else if (name === 'compaction-marks') {
+      // The runtime is plain data: place the prompt in the past instead of waiting for the clock.
+      const backdate = (startedAt: number) =>
+        store.setState((state) => ({
+          runtime: {
+            ...state.runtime,
+            session: { ...state.runtime.session, isStreaming: true, streamStartedAt: startedAt }
+          }
+        }))
+      // A compaction between the work and the summary: the work clock freezes where it had got to.
+      backdate(Date.now() - 5_000)
+      emit({ type: 'compaction_start', reason: 'threshold' } as PiSessionEvent)
+      const mark = () => runtime().liveCompactions[0]
+      assert.equal(runtime().liveCompactions.length, 1)
+      assert.equal(mark().status, 'running')
+      assert.equal(mark().reason, 'threshold')
+      assert.equal(mark().endedAt, null)
+      assert.ok(mark().workMsBefore >= 4_900, `froze the work clock at ${mark().workMsBefore}`)
+      emit({
+        type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false,
+        result: { summary: 'summarized', tokensBefore: 42 }
+      } as PiSessionEvent)
+      assert.equal(mark().status, 'done')
+      assert.equal(mark().summary, 'summarized')
+      assert.equal(mark().tokensBefore, 42)
+      assert.ok(mark().endedAt != null)
+      // The next block of work counts on from there, with the summary's own time left out of it.
+      const written = runtime().liveCompactions[0]
+      emit({ type: 'compaction_start', reason: 'manual' } as PiSessionEvent)
+      assert.ok(runtime().liveCompactions[1].workMsBefore >= written.workMsBefore)
+      assert.ok(runtime().liveCompactions[1].workMsBefore < written.workMsBefore + 200)
+      // A summary is an entry, so once history carries it the mark has nothing left to report —
+      // while the compaction that is still running has nothing to be replaced by.
+      emit({ type: 'agent_settled' })
+      drainTimers()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual(runtime().liveCompactions.map((item) => item.status), ['running'])
+      assert.equal(runtime().liveCompactions[0].reason, 'manual')
+      emit({ type: 'compaction_end', reason: 'manual', aborted: true, willRetry: false } as PiSessionEvent)
+      assert.deepEqual(runtime().liveCompactions, [])
+      // One that failed never becomes an entry: it stays until the reader dismisses it.
+      store.getState().beginPrompt('session', { role: 'user', content: 'again', timestamp: 400 })
+      backdate(Date.now() - 1_000)
+      emit({ type: 'compaction_start', reason: 'overflow' } as PiSessionEvent)
+      emit({
+        type: 'compaction_end', reason: 'overflow', aborted: false, willRetry: false,
+        errorMessage: 'Context overflow recovery failed: boom'
+      } as PiSessionEvent)
+      assert.equal(mark().status, 'failed')
+      assert.equal(mark().errorMessage, 'Context overflow recovery failed: boom')
+      store.getState().setStreaming('session', false)
+      await store.getState().hydrateTurns('session', { keepOlderTurns: true })
+      assert.equal(runtime().liveCompactions.length, 1, 'a failure is not history and must not vanish')
+      const failedId = mark().id
+      store.getState().dropCompaction('session', failedId)
+      assert.deepEqual(runtime().liveCompactions, [])
+      // A cancelled summary leaves no landmark and nothing to report.
+      store.getState().beginPrompt('session', { role: 'user', content: 'third', timestamp: 401 })
+      emit({ type: 'compaction_start', reason: 'manual' } as PiSessionEvent)
+      emit({ type: 'compaction_end', reason: 'manual', aborted: true, willRetry: false } as PiSessionEvent)
+      assert.deepEqual(runtime().liveCompactions, [])
+      // Between runs there is no settlement event to wait for, so the summary is read right away.
+      store.getState().setStreaming('session', false)
+      emit({ type: 'compaction_start', reason: 'manual' } as PiSessionEvent)
+      assert.equal(mark().status, 'running')
+      emit({
+        type: 'compaction_end', reason: 'manual', aborted: false, willRetry: false,
+        result: { summary: 'outside the run', tokensBefore: 7 }
+      } as PiSessionEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual(runtime().liveCompactions, [])
+      assert.equal(runtime().isStreaming, false)
     } else if (name === 'branch') {
       assert.equal(runtime().leafId, null)
       emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'old branch' }] } })
@@ -476,6 +548,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     'turn-end-controls': 'turns and final settlement refresh context usage, but agent end does not',
     'retry-settlement': 'retries preserve running state and elapsed time until final settlement',
     'retry-notice': 'retry notices track the attempt Pi reports and never outlive their activity',
+    'compaction-marks': 'a compaction freezes the work clock and is replaced by the entry it wrote',
     branch: 'an extension branch change rebinds the conversation to the new leaf',
     'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it',
     compaction: 'a finished compaction re-reads its turn and refreshes the context usage'

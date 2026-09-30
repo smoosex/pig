@@ -48,6 +48,9 @@ export const createConversationSlice: SessionSlice<
   | 'replaceLiveMessage'
   | 'setToolUpdates'
   | 'setRetryNotice'
+  | 'startCompaction'
+  | 'updateCompaction'
+  | 'dropCompaction'
   | 'viewBranch'
 > = (set, get) => {
   const historyRequests = new Map<number, object>()
@@ -130,6 +133,10 @@ export const createConversationSlice: SessionSlice<
             branchViews,
             liveMessages: rt.isStreaming ? rt.liveMessages : [],
             toolUpdates: rt.isStreaming ? rt.toolUpdates : {},
+            // Only a summary that was written is already in history; a failure never gets one.
+            liveCompactions: rt.isStreaming
+              ? rt.liveCompactions
+              : rt.liveCompactions.filter((mark) => mark.status !== 'done'),
             pendingUserMessage: rt.isStreaming && rt.pendingUserMessage,
             processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
             elapsedByTurnId
@@ -360,6 +367,7 @@ export const createConversationSlice: SessionSlice<
       streamElapsedMs: null,
       liveMessages: [...rt.liveMessages, message],
       toolUpdates: {},
+      liveCompactions: [],
       retryNotice: null,
       pendingUserMessage: true
     })),
@@ -367,6 +375,7 @@ export const createConversationSlice: SessionSlice<
     rollbackPrompt: (sessionId) => update(sessionId, (rt) => ({
       isStreaming: false,
       toolUpdates: {},
+      liveCompactions: [],
       retryNotice: null,
       streamStartedAt: null,
       streamElapsedMs: null,
@@ -449,11 +458,23 @@ export const createConversationSlice: SessionSlice<
 
     setRetryNotice: (sessionId, retryNotice) => update(sessionId, { retryNotice }),
 
+    startCompaction: (sessionId, mark) => update(sessionId, (rt) => ({
+      liveCompactions: [...rt.liveCompactions, mark]
+    })),
+
+    updateCompaction: (sessionId, id, patch) => update(sessionId, (rt) => ({
+      liveCompactions: rt.liveCompactions.map((mark) => (mark.id === id ? { ...mark, ...patch } : mark))
+    })),
+
+    dropCompaction: (sessionId, id) => update(sessionId, (rt) => ({
+      liveCompactions: rt.liveCompactions.filter((mark) => mark.id !== id)
+    })),
+
     viewBranch: async (sessionId, tipId) => {
       const initial = get().runtime[sessionId]
       if (!initial) return
       const branchRequest = initial.branchRequest + 1
-      update(sessionId, { branchRequest, toolUpdates: {}, retryNotice: null })
+      update(sessionId, { branchRequest, toolUpdates: {}, liveCompactions: [], retryNotice: null })
       const branch = await api.viewBranch(sessionId, tipId)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest) return
