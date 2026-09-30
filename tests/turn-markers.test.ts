@@ -161,13 +161,66 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(shimmer.previousElementSibling?.textContent, '读取')
       assert.equal(shimmer.previousElementSibling?.classList.contains('shimmer'), false)
       assert.ok(shimmer.parentElement?.classList.contains('truncate'))
-      assert.ok(shimmer.closest('[data-slot="marker"]'))
+      assert.equal(shimmer.closest('button')?.getAttribute('aria-expanded'), 'false')
       for (const header of container.querySelectorAll('[data-slot="marker-content"]')) {
         if (header.textContent === '正在使用工具') assert.equal(header.querySelector('.shimmer'), null)
       }
       await render(makeTurn({ process, errorMessage: 'request failed' }))
       assert.deepEqual(shimmerText(), [])
       assert.ok(container.textContent?.includes('current.ts'))
+    } else if (name === 'tool-live') {
+      let steps: ToolStep[] = [
+        { id: 'first', name: 'task', args: { command: 'echo first' } },
+        { id: 'second', name: 'task', args: { command: 'echo second' } }
+      ]
+      const buttons = () => [...container.querySelectorAll('button')].filter((button) => button.textContent?.includes('task'))
+      const update = (step: ToolStep, text: string): ToolStep => ({
+        ...step, partialResult: { content: [{ type: 'text', text }] }
+      })
+      const finish = (step: ToolStep, text: string, isError = false): ToolStep => ({
+        ...step,
+        result: {
+          role: 'toolResult', toolCallId: step.id, toolName: step.name,
+          content: text ? [{ type: 'text', text }] : [], isError, timestamp: 3_000
+        }
+      })
+      await render(makeTurn({ process: [{ kind: 'tools', tools: steps }] }))
+      const [first, second] = buttons()
+      assert.equal(first.getAttribute('aria-expanded'), 'false')
+      assert.equal(second.getAttribute('aria-expanded'), 'false')
+      await act(async () => { first.click(); second.click() })
+      assert.equal(first.getAttribute('aria-expanded'), 'true')
+      assert.equal(second.getAttribute('aria-expanded'), 'true')
+      assert.ok(container.textContent?.includes('$ echo first'))
+      assert.ok(container.textContent?.includes('$ echo second'))
+
+      steps = [update(steps[0], 'first output'), update(steps[1], 'second output')]
+      await render(makeTurn({ process: [{ kind: 'tools', tools: steps }] }))
+      steps = [update(steps[0], 'first output\nnext line'), steps[1]]
+      await render(makeTurn({ process: [{ kind: 'tools', tools: steps }] }))
+      assert.equal(buttons()[0], first)
+      assert.equal(first.getAttribute('aria-expanded'), 'true')
+      assert.equal(second.getAttribute('aria-expanded'), 'true')
+      assert.equal([...container.querySelectorAll('pre')].filter((element) => element.textContent === 'first output').length, 0)
+      assert.ok(container.textContent?.includes('first output\nnext line'))
+      assert.ok(container.textContent?.includes('second output'))
+
+      steps = [finish(steps[0], 'Command aborted', true), steps[1]]
+      await render(makeTurn({ process: [{ kind: 'tools', tools: steps }] }))
+      assert.equal(buttons()[0], first)
+      assert.equal(first.getAttribute('aria-expanded'), 'true')
+      assert.ok(first.querySelector('.text-destructive'))
+      assert.equal(first.querySelector('.shimmer'), null)
+      assert.ok(container.textContent?.includes('Command aborted'))
+      assert.equal(container.textContent?.includes('first output'), false)
+      steps = [steps[0], finish(steps[1], '')]
+      await render(makeTurn({ process: [{ kind: 'tools', tools: steps }, { kind: 'text', text: '继续回答' }] }))
+      assert.equal(buttons()[0], first)
+      assert.equal(buttons()[1], second)
+      assert.equal(first.getAttribute('aria-expanded'), 'true')
+      assert.equal(second.getAttribute('aria-expanded'), 'true')
+      assert.equal(container.textContent?.includes('second output'), false)
+      assert.deepEqual(shimmerText(), [])
     } else if (name === 'failure') {
       const running: ProcessItem = {
         kind: 'bash',
@@ -205,7 +258,7 @@ async function runFixture(name: string): Promise<void> {
     } else if (name === 'finish') {
       const turn = makeTurn({ process: [{ kind: 'tools', tools: [readTool('current')] }] })
       await render(turn)
-      const liveRow = container.querySelector('.shimmer')!.closest('[data-slot="marker"]')
+      const liveRow = container.querySelector('.shimmer')!.closest('button')
       const content = container.querySelector<HTMLElement>('[data-slot="collapsible-content"]')!
       await act(async () => { await Bun.sleep(30) })
       await render({ ...turn, streaming: false })
@@ -395,6 +448,7 @@ if (process.argv[2] === '--marker-fixture') {
     wait: 'wait marker uses native shimmer without animating the orb or splitting characters',
     thinking: 'thinking marker preserves the body and completed thinking remains expandable',
     tools: 'only the current tool text shimmers while its action prefix stays static',
+    'tool-live': 'running tools stay expandable through snapshots, final results and later assistant text',
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',

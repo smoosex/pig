@@ -40,6 +40,17 @@ async function runFixture(): Promise<void> {
     assert.ok(panels()[0].querySelector('.token'))
     assert.equal(panels()[0].classList.contains('bg-secondary'), true)
 
+    for (const text of ['first', 'first\nsecond']) {
+      await act(async () => {
+        root.render(createElement(ToolRow, {
+          step: { ...step, partialResult: { content: [{ type: 'text', text }] } }, active: true
+        }))
+      })
+      assert.equal(container.querySelector('button')?.getAttribute('aria-expanded'), 'true')
+      assert.deepEqual(panels().map((panel) => panel.textContent), ['echo done', text])
+      assert.ok(container.querySelector('.shimmer'))
+    }
+
     await act(async () => {
       root.render(createElement(ToolRow, {
         step: {

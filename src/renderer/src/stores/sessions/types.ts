@@ -15,7 +15,7 @@ import type {
   ThinkingLevel,
   TurnSummary
 } from '../../ipc/api'
-import type { ProcessItem, ThinkingDurations } from '../../chat/turns'
+import type { ProcessItem, ThinkingDurations, ToolUpdates } from '../../chat/turns'
 import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
 export interface RuntimeState extends SessionControls {
@@ -51,6 +51,7 @@ export interface RuntimeState extends SessionControls {
   branchViews: Record<string, string>
   branchRequest: number
   liveMessages: PiMessage[]
+  toolUpdates: ToolUpdates
   bashExecution: { id: string; message: BashExecutionMessage } | null
   pendingUserMessage: boolean
   processByTurnId: Record<string, ProcessItem[]>
@@ -222,6 +223,7 @@ export interface SessionsStore {
   ) => void
   appendLiveMessage: (sessionId: string, message: PiMessage) => void
   replaceLiveMessage: (sessionId: string, message: PiMessage) => void
+  setToolUpdates: (sessionId: string, updates: ToolUpdates) => void
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 

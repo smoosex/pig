@@ -11,6 +11,7 @@ import { MessageScrollerProvider } from './ui/message-scroller'
 const emptyTurns: RuntimeState['turns'] = []
 const emptySummary: RuntimeState['turnSummary'] = []
 const emptyMessages: RuntimeState['liveMessages'] = []
+const emptyToolUpdates: RuntimeState['toolUpdates'] = {}
 const emptyProcess: RuntimeState['processByTurnId'] = {}
 const emptyDurations: Record<string, number> = {}
 const MAX_SCROLL_SNAPSHOTS = 32
@@ -72,6 +73,7 @@ const SessionChatPane = memo(function SessionChatPane({
   const turnLoading = useSessionsStore((s) => s.runtime[sessionId]?.turnLoading ?? false)
   const turnError = useSessionsStore((s) => s.runtime[sessionId]?.turnError ?? null)
   const liveMessages = useSessionsStore((s) => s.runtime[sessionId]?.liveMessages ?? emptyMessages)
+  const toolUpdates = useSessionsStore((s) => s.runtime[sessionId]?.toolUpdates ?? emptyToolUpdates)
   const bashExecution = useSessionsStore((s) => s.runtime[sessionId]?.bashExecution ?? null)
   const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
   const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
@@ -84,7 +86,7 @@ const SessionChatPane = memo(function SessionChatPane({
     [turns, processByTurnId, elapsedByTurnId]
   )
   const live = useMemo(() => {
-    const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations)
+    const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations, toolUpdates)
     const turns = grouped.map((turn, index) => ({
       ...turn,
       id: turn.id ?? `live:${turn.renderKey ?? index}`,
@@ -100,7 +102,7 @@ const SessionChatPane = memo(function SessionChatPane({
       })
     }
     return turns
-  }, [liveMessages, bashExecution, isStreaming, thinkingDurations, streamElapsedMs])
+  }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs])
 
   const scrollKey = branchViewId ? `${sessionId}\u0000${branchViewId}` : null
   const saveScrollState = useCallback((state: ScrollSnapshot) => {

@@ -24,7 +24,7 @@ AgentSession.subscribe(event)
 - **间接展示**：没有对应事件分支，相关内容由消息事件展示。
 - **未处理**：事件已转发，但没有对应的 GUI 消费逻辑。
 
-主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **12 类**直接处理分支（含部分处理）；其余 **11 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
+主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **13 类**直接处理分支（含部分处理）；其余 **10 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
 
 ## 顶层会话事件：23 类
 
@@ -50,10 +50,12 @@ AgentSession.subscribe(event)
 | 事件 | 含义 / 字段 | 主进程处理 | 前端处理 |
 | --- | --- | --- | --- |
 | `tool_execution_start` | 工具开始；`toolCallId`、`toolName`、`args` | 转发 | **间接展示**：无事件分支，调用信息来自 Assistant 消息中的 `toolCall` 内容块 |
-| `tool_execution_update` | 工具中间输出；`toolCallId`、`toolName`、`args`、`partialResult` | 转发 | **未处理**：中间输出没有进入 GUI 消息或工具状态 |
+| `tool_execution_update` | 工具中间输出；`toolCallId`、`toolName`、`args`、`partialResult` | 转发 | **已处理**：按 `toolCallId` 缓存最新 `partialResult` 快照，按动画帧合批更新；投影到现有工具调用，展开后显示中间文本输出；最终 `toolResult` 替换并清理缓存 |
 | `tool_execution_end` | 工具结束；`toolCallId`、`toolName`、`result`、`isError` | 转发 | **间接展示**：无事件分支，最终结果及错误状态来自后续 `toolResult` 消息 |
 
-工具调用和最终结果能显示，不代表工具执行事件已被消费。当前工具 UI 由消息投影构建，不能据此判断工具真正开始的时刻，也没有消费 `partialResult` 的实时输出。
+工具开始和结束仍由消息投影间接呈现，不能据此判断工具真正开始的时刻。中间结果是临时展示缓存，不追加为消息或写入会话历史；内置 Bash 发出的是当前输出快照，因此覆盖更新，不拼接文本。最终结果、完整活动结束、切换分支及关闭会话会清理缓存。
+
+运行中的工具行也可展开，查看命令、参数及已有输出；同一实时工作块内按工具 ID 保持组件身份，更新和完成不会收起已展开的工具，后续 Assistant 文本也不会触发重新挂载。完整活动结束后，工作块仍按原逻辑自动折叠；历史工具仍保留聚簇展示。
 
 ### 自动重试与摘要重试：5 类
 
@@ -88,7 +90,7 @@ AgentSession.subscribe(event)
 | `thinking_level_changed` | 思考等级变化；`level` | 转发 | **已处理**：接受 `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` 并更新会话状态 |
 | `bash_execution_update` | 用户直接执行 Bash 的增量输出；`id?`、`delta` | 转发 | **部分处理**：只有 `id` 和 `delta` 均为字符串时，才按动画帧追加到对应 Bash 输出 |
 
-`bash_execution_update` 来自 `AgentSession.executeBash()`，不是 Agent 调用 Bash 工具的 `tool_execution_update`。前者有输出展示，不代表后者的中间输出也被处理。
+`bash_execution_update` 来自 `AgentSession.executeBash()`，不是 Agent 调用 Bash 工具的 `tool_execution_update`。前者拼接文本增量，后者覆盖工具提供的中间结果快照；两条路径均有输出展示。
 
 ## 底层模型流事件：12 类
 
@@ -119,9 +121,8 @@ AgentSession.subscribe(event)
 
 1. **重试详情缺失**：普通请求及摘要重试的五类事件都未消费；等待重试时已保持整体运行状态，但没有重试次数、等待时间、原因或事件驱动的最终结果展示。
 2. **压缩状态不完整**：没有消费 `compaction_start`，`compaction_end.errorMessage` 也没有事件驱动的展示。
-3. **工具中间输出缺失**：`tool_execution_update.partialResult` 未进入 GUI；工具开始和结束仅由消息间接呈现。
-4. **部分状态字段未同步**：`queue_update.steering`、会话名称清空、没有 `id` 的直接 Bash 输出未处理；`entry_appended` 没有即时消费。
-5. **事件类型没有穷尽性检查**：前端的 `PiSessionEvent.type` 是普通 `string`，`SessionApi.onEvent` 接收 `unknown`，事件路由没有默认告警。SDK 新增事件不会因此触发穷尽性类型错误，可能被静默忽略。
+3. **部分状态字段未同步**：`queue_update.steering`、会话名称清空、没有 `id` 的直接 Bash 输出未处理；`entry_appended` 没有即时消费。
+4. **事件类型没有穷尽性检查**：前端的 `PiSessionEvent.type` 是普通 `string`，`SessionApi.onEvent` 接收 `unknown`，事件路由没有默认告警。SDK 新增事件不会因此触发穷尽性类型错误，可能被静默忽略。
 
 未直接处理不等于一定需要新增 UI。例如 `turn_start` 可以不独立展示，工具最终结果也已有消息路径。应区分功能确实缺失、字段遗漏和有意使用其他事件投影。
 

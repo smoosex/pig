@@ -1,5 +1,5 @@
 import { api } from '../ipc/api'
-import { isPiMessage, type PiMessage, type PiSessionEvent } from '../pi/types'
+import { isPiMessage, type PiMessage, type PiSessionEvent, type ToolPartialResult } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
 import { MAX_LIVE_BASH_CHARS } from '../stores/sessions/conversation-slice'
 import { sameMessage } from '../stores/sessions/runtime'
@@ -14,16 +14,21 @@ const HYDRATE_DELAY_MS = 320
 export function subscribeSessionEvents(): () => void {
   const delays = new Map<string, number>()
   const updates = new Map<string, { instanceId: number; branchRequest: number; message: PiMessage }>()
+  const toolSnapshots = new Map<string, {
+    instanceId: number
+    branchRequest: number
+    results: Map<string, ToolPartialResult>
+  }>()
   const bashDeltas = new Map<string, { id: string; text: string }>()
   let frame: number | null = null
   const actions = useSessionsStore.getState()
   const {
-    setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage, appendBashOutput,
+    setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage, setToolUpdates, appendBashOutput,
     renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages
   } = actions
   const thinking = createThinkingTracker(setThinkingDuration)
   const cancelFrame = () => {
-    if (frame != null && updates.size === 0 && bashDeltas.size === 0) {
+    if (frame != null && updates.size === 0 && toolSnapshots.size === 0 && bashDeltas.size === 0) {
       window.cancelAnimationFrame(frame)
       frame = null
     }
@@ -50,13 +55,42 @@ export function subscribeSessionEvents(): () => void {
     appendBashOutput(sessionId, pending.id, pending.text)
     cancelFrame()
   }
+  const flushToolSnapshots = (sessionId: string) => {
+    const pending = toolSnapshots.get(sessionId)
+    if (!pending) return
+    toolSnapshots.delete(sessionId)
+    const current = useSessionsStore.getState().runtime[sessionId]
+    if (current?.instanceId === pending.instanceId && current.branchRequest === pending.branchRequest) {
+      setToolUpdates(sessionId, Object.fromEntries(pending.results))
+    }
+    cancelFrame()
+  }
+  const discardToolSnapshot = (sessionId: string, toolCallId: string) => {
+    const pending = toolSnapshots.get(sessionId)
+    if (!pending) return
+    pending.results.delete(toolCallId)
+    if (pending.results.size === 0) toolSnapshots.delete(sessionId)
+    cancelFrame()
+  }
   const scheduleFrame = () => {
     // Streaming snapshots and command output arrive per chunk; render the batches once per frame.
     frame ??= window.requestAnimationFrame(() => {
       frame = null
       for (const id of updates.keys()) flush(id)
+      for (const id of toolSnapshots.keys()) flushToolSnapshots(id)
       for (const id of bashDeltas.keys()) flushBash(id)
     })
+  }
+  const queueToolSnapshot = (sessionId: string, toolCallId: string, result: ToolPartialResult) => {
+    const current = useSessionsStore.getState().runtime[sessionId]
+    if (!current) return
+    let pending = toolSnapshots.get(sessionId)
+    if (pending?.instanceId !== current.instanceId || pending.branchRequest !== current.branchRequest) {
+      pending = { instanceId: current.instanceId, branchRequest: current.branchRequest, results: new Map() }
+      toolSnapshots.set(sessionId, pending)
+    }
+    pending.results.set(toolCallId, result)
+    scheduleFrame()
   }
   const queueBashDelta = (sessionId: string, id: string, delta: string) => {
     const pending = bashDeltas.get(sessionId)
@@ -86,6 +120,7 @@ export function subscribeSessionEvents(): () => void {
       if (state.runtime[tab.id]) continue
       cancelDelay(tab.id)
       updates.delete(tab.id)
+      toolSnapshots.delete(tab.id)
       bashDeltas.delete(tab.id)
       thinking.forgetSession(tab.id)
     }
@@ -96,6 +131,8 @@ export function subscribeSessionEvents(): () => void {
   const offBranch = api.onSessionBranchChanged((sessionId, leafId) => {
     const store = useSessionsStore.getState()
     if (!store.runtime[sessionId]) return
+    toolSnapshots.delete(sessionId)
+    cancelFrame()
     const refresh = leafId === null
       ? store.hydrateTurns(sessionId, { keepOlderTurns: true })
       : store.viewBranch(sessionId, leafId).catch(() => store.hydrateTurns(sessionId, { keepOlderTurns: true }))
@@ -117,6 +154,7 @@ export function subscribeSessionEvents(): () => void {
       case 'message_start':
         flush(sessionId)
         if (isPiMessage(event.message)) {
+          if (event.message.role === 'toolResult') discardToolSnapshot(sessionId, event.message.toolCallId)
           appendLiveMessage(sessionId, event.message)
         }
         break
@@ -126,6 +164,7 @@ export function subscribeSessionEvents(): () => void {
         break
       case 'message_end':
         if (isPiMessage(event.message)) {
+          if (event.message.role === 'toolResult') discardToolSnapshot(sessionId, event.message.toolCallId)
           const pending = updates.get(sessionId)
           if (pending && sameMessage(pending.message, event.message)) {
             updates.delete(sessionId)
@@ -137,17 +176,25 @@ export function subscribeSessionEvents(): () => void {
           replaceLiveMessage(sessionId, event.message)
         }
         break
+      case 'tool_execution_update':
+        if (typeof event.toolCallId === 'string' && event.partialResult && Array.isArray(event.partialResult.content)) {
+          queueToolSnapshot(sessionId, event.toolCallId, event.partialResult)
+        }
+        break
       case 'turn_end':
         void loadControls(sessionId).catch(reportError('load session controls'))
         break
       case 'agent_end':
         flush(sessionId)
+        flushToolSnapshots(sessionId)
         thinking.finishSession(sessionId, performance.now())
         break
       case 'agent_settled': {
         flush(sessionId)
         thinking.finishSession(sessionId, performance.now())
         cancelDelay(sessionId)
+        toolSnapshots.delete(sessionId)
+        cancelFrame()
         setStreaming(sessionId, false)
         void loadControls(sessionId).catch(reportError('load session controls'))
         delays.set(
@@ -207,6 +254,8 @@ export function subscribeSessionEvents(): () => void {
     for (const id of delays.values()) window.clearTimeout(id)
     delays.clear()
     updates.clear()
+    toolSnapshots.clear()
+    bashDeltas.clear()
     cancelFrame()
     thinking.clear()
   }

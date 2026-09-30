@@ -77,6 +77,8 @@ export type PiMessage =
   | BranchSummaryMessage
   | CompactionSummaryMessage
 
+export type ToolPartialResult = Pick<ToolResultMessage, 'content' | 'details'>
+
 export interface PiSessionEvent {
   type: string
   message?: PiMessage
@@ -85,6 +87,7 @@ export interface PiSessionEvent {
   toolCallId?: string
   toolName?: string
   args?: unknown
+  partialResult?: ToolPartialResult
   result?: unknown
   isError?: boolean
   [key: string]: unknown

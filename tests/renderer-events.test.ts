@@ -2,6 +2,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { PiMessage, PiSessionEvent } from '../src/renderer/src/pi/types'
 import type { SessionControls } from '../src/shared/api'
+import { groupTurns } from '../src/renderer/src/chat/turns'
 
 async function runFixture(name: string): Promise<void> {
   let nextId = 0
@@ -98,6 +99,66 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'message_end', message: assistant('complete') })
       flush()
       assert.deepEqual(runtime().liveMessages, [assistant('complete'), tool('first'), tool('second')])
+    } else if (name === 'tools') {
+      const partial = (text: string) => ({
+        content: [{ type: 'text' as const, text }], details: { progress: text }
+      })
+      const calls = {
+        ...assistant(''),
+        content: ['first', 'second'].map((id) => ({
+          type: 'toolCall', id, name: 'read', arguments: { path: id }
+        }))
+      } as PiMessage
+      const steps = () => groupTurns(runtime().liveMessages, runtime().isStreaming, {}, runtime().toolUpdates)[0]
+        .process.flatMap((item) => item.kind === 'tools' ? item.tools : [])
+      emit({ type: 'agent_start' })
+      emit({ type: 'message_start', message: calls })
+      let updates = 0
+      const off = store.subscribe((state, previous) => {
+        if (state.runtime.session.toolUpdates !== previous.runtime.session.toolUpdates) updates++
+      })
+      for (let i = 1; i <= 100; i++) {
+        emit({ type: 'tool_execution_update', toolCallId: 'first', partialResult: partial(String(i)) })
+        emit({ type: 'tool_execution_update', toolCallId: 'second', partialResult: partial(`second ${i}`) })
+      }
+      assert.equal(frames.size, 1)
+      assert.equal(updates, 0)
+      flush()
+      assert.equal(updates, 1)
+      off()
+      assert.deepEqual(runtime().toolUpdates, { first: partial('100'), second: partial('second 100') })
+      assert.deepEqual(runtime().liveMessages, [calls])
+      assert.deepEqual(steps().map((step) => step.partialResult), [partial('100'), partial('second 100')])
+      assert.ok(steps().every((step) => !step.result))
+
+      emit({ type: 'tool_execution_update', toolCallId: 'first', partialResult: partial('stale first') })
+      emit({ type: 'tool_execution_update', toolCallId: 'second', partialResult: partial('second 101') })
+      emit({ type: 'message_start', message: tool('first') })
+      emit({ type: 'message_end', message: tool('first') })
+      assert.equal(runtime().toolUpdates.first, undefined)
+      assert.equal(frames.size, 1)
+      flush()
+      assert.deepEqual(runtime().toolUpdates, { second: partial('second 101') })
+      assert.deepEqual(steps()[0].result, tool('first'))
+      assert.equal(steps()[0].partialResult, undefined)
+      assert.deepEqual(steps()[1].partialResult, partial('second 101'))
+
+      emit({ type: 'tool_execution_update', toolCallId: 'second', partialResult: partial('stale second') })
+      emit({ type: 'message_end', message: { ...tool('second'), isError: true } as PiMessage })
+      assert.deepEqual(runtime().toolUpdates, {})
+      assert.equal(frames.size, 0)
+      flush()
+      assert.equal(runtime().liveMessages.length, 3)
+      assert.ok(steps()[1].result?.isError)
+      assert.equal(steps()[1].partialResult, undefined)
+
+      emit({ type: 'tool_execution_update', toolCallId: 'unfinished', partialResult: partial('last output') })
+      flush()
+      assert.deepEqual(runtime().toolUpdates.unfinished, partial('last output'))
+      emit({ type: 'tool_execution_update', toolCallId: 'unfinished', partialResult: partial('queued output') })
+      emit({ type: 'agent_settled' })
+      assert.deepEqual(runtime().toolUpdates, {})
+      assert.equal(frames.size, 0)
     } else if (name === 'bash') {
       store.getState().beginBash('session', 'run-1', 'echo ready')
       let updates = 0
@@ -153,6 +214,7 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'message_update', message: assistant('old') })
       store.getState().beginBash('session', 'run-1', 'echo ready')
       emit({ type: 'bash_execution_update', id: 'run-1', delta: 'ready' })
+      emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'old output' }] } })
       assert.equal(frames.size, 1)
       store.getState().closeTab('session')
       assert.equal(frames.size, 0)
@@ -161,12 +223,15 @@ async function runFixture(name: string): Promise<void> {
       await store.getState().newSession('/project')
       flush()
       assert.deepEqual(runtime().liveMessages, [])
+      assert.deepEqual(runtime().toolUpdates, {})
       assert.equal(runtime().bashExecution, null)
     } else if (name === 'cleanup') {
       emit({ type: 'agent_settled' })
       assert.equal(timers.size, 1)
       emit({ type: 'message_start', message: assistant('') })
       emit({ type: 'message_update', message: assistant('pending') })
+      emit({ type: 'tool_execution_update', toolCallId: 'tool', partialResult: { content: [{ type: 'text', text: 'pending' }] } })
+      emit({ type: 'bash_execution_update', id: 'bash', delta: 'pending' })
       assert.equal(frames.size, 1)
       unsubscribe()
       assert.equal(listener, undefined)
@@ -312,9 +377,21 @@ async function runFixture(name: string): Promise<void> {
       assert.deepEqual({ reads, controlReads }, { reads: 3, controlReads: 6 })
     } else if (name === 'branch') {
       assert.equal(runtime().leafId, null)
+      emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'old branch' }] } })
+      flush()
+      assert.ok(runtime().toolUpdates['old-tool'])
+      emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'queued old branch' }] } })
       branchListener?.('session', 'leaf-1')
+      flush()
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.equal(runtime().leafId, 'leaf-1')
+      assert.deepEqual(runtime().toolUpdates, {})
+      emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'queued before root' }] } })
+      branchListener?.('session', null)
+      assert.equal(frames.size, 0)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runtime().leafId, null)
+      assert.deepEqual(runtime().toolUpdates, {})
     } else if (name === 'prompt-transition') {
       const oldUser: PiMessage = { role: 'user', content: 'old question', timestamp: 1 }
       emit({ type: 'agent_start' })
@@ -343,6 +420,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
   const cases = {
     burst: '100 token snapshots produce one state update per animation frame',
     boundaries: 'message boundaries preserve queued updates and distinct tool results',
+    tools: 'tool snapshots are batched independently and final messages clear pending updates',
     bash: 'command output is batched per frame and follows the active execution id',
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',

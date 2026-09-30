@@ -9,6 +9,7 @@ import type {
   PigUserMessage,
   TextContent,
   ToolCall,
+  ToolPartialResult,
   ToolResultMessage
 } from '../pi/types'
 
@@ -16,8 +17,11 @@ export interface ToolStep {
   id: string
   name: string
   args: Record<string, unknown>
+  partialResult?: ToolPartialResult
   result?: ToolResultMessage
 }
+
+export type ToolUpdates = Record<string, ToolPartialResult>
 
 export type ThinkingDurations = Record<string, number>
 
@@ -307,7 +311,8 @@ export function buildTurn(
 export function groupTurns(
   messages: PiMessage[],
   streaming: boolean,
-  thinkingDurations: ThinkingDurations = {}
+  thinkingDurations: ThinkingDurations = {},
+  toolUpdates: ToolUpdates = {}
 ): Turn[] {
   const chunks: PiMessage[][] = []
   let current: PiMessage[] = []
@@ -320,14 +325,21 @@ export function groupTurns(
     }
   }
   if (current.length) chunks.push(current)
-  return chunks.map((chunk, i) =>
-    buildTurn(
+  return chunks.map((chunk, i) => {
+    const turn = buildTurn(
       chunk,
       streaming && i === chunks.length - 1,
       thinkingDurations,
       renderKeyForMessages(chunk, i)
     )
-  )
+    for (const item of turn.process) {
+      if (item.kind !== 'tools') continue
+      for (const step of item.tools) {
+        if (!step.result && toolUpdates[step.id]) step.partialResult = toolUpdates[step.id]
+      }
+    }
+    return turn
+  })
 }
 
 export function formatElapsed(ms: number, t: Translate): string {
@@ -373,7 +385,7 @@ export function toolStepLabel(step: ToolStep, t: Translate): string {
   }
 }
 
-export function resultText(result?: ToolResultMessage): string {
+export function resultText(result?: Pick<ToolResultMessage, 'content'>): string {
   if (!result) return ''
   return result.content
     .filter((b): b is TextContent => b.type === 'text')

@@ -87,26 +87,27 @@ function BashToolPanel({ command, output }: { command: string; output?: string }
   )
 }
 
-export function ToolRow({ step }: { step: ToolStep }) {
+export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const failed = !!step.result?.isError
+  const output = resultText(step.result ?? step.partialResult)
   const edits = useMemo(() => (step.name === 'edit' ? editList(step.args) : []), [step])
   const path = typeof step.args.path === 'string' ? step.args.path : ''
   const writeCode = step.name === 'write' && typeof step.args.content === 'string' ? step.args.content : ''
   const bashCommand = step.name === 'bash' && typeof step.args.command === 'string' ? step.args.command : ''
-  const read = step.name === 'read' && !failed ? splitReadOutput(resultText(step.result)) : undefined
+  const read = step.name === 'read' && !failed ? splitReadOutput(output) : undefined
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <VerbLabel text={toolStepLabel(step, t)} failed={failed} />
+          <VerbLabel text={toolStepLabel(step, t)} failed={failed} active={active && !step.result} />
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="px-1 pt-1">
         {step.name === 'bash' && bashCommand ? (
-          <BashToolPanel command={bashCommand} output={resultText(step.result)} />
+          <BashToolPanel command={bashCommand} output={output} />
         ) : read?.code ? (
           <CodePanel path={path} code={read.code} notice={read.notice} fileListing />
         ) : writeCode && !failed ? (
@@ -116,7 +117,7 @@ export function ToolRow({ step }: { step: ToolStep }) {
             <EditDiffBody path={path} edits={edits} />
           </Suspense>
         ) : (
-          <ToolPanel input={toolInput(step)} output={resultText(step.result)} />
+          <ToolPanel input={toolInput(step)} output={output} />
         )}
       </CollapsibleContent>
     </Collapsible>

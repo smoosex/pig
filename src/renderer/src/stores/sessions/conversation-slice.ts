@@ -5,7 +5,7 @@
  */
 import { api } from '../../ipc/api'
 import { buildTurn, thinkingTimingKey } from '../../chat/turns'
-import { isPiMessage } from '../../pi/types'
+import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
 
@@ -15,6 +15,13 @@ const PAGE_TURNS = 40
 const MAX_PAGE_TURNS = 200
 /** Live command output is tailed at this size in both the pending batch and the store. */
 export const MAX_LIVE_BASH_CHARS = 64 * 1024
+
+function toolUpdatesAfterMessage(updates: RuntimeState['toolUpdates'], message: PiMessage): RuntimeState['toolUpdates'] {
+  if (message.role !== 'toolResult' || !updates[message.toolCallId]) return updates
+  const remaining = { ...updates }
+  delete remaining[message.toolCallId]
+  return remaining
+}
 
 export const createConversationSlice: SessionSlice<
   | 'runtime'
@@ -39,6 +46,7 @@ export const createConversationSlice: SessionSlice<
   | 'setThinkingDuration'
   | 'appendLiveMessage'
   | 'replaceLiveMessage'
+  | 'setToolUpdates'
   | 'viewBranch'
 > = (set, get) => {
   const historyRequests = new Map<number, object>()
@@ -120,6 +128,7 @@ export const createConversationSlice: SessionSlice<
             branchViewId,
             branchViews,
             liveMessages: rt.isStreaming ? rt.liveMessages : [],
+            toolUpdates: rt.isStreaming ? rt.toolUpdates : {},
             pendingUserMessage: rt.isStreaming && rt.pendingUserMessage,
             processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
             elapsedByTurnId
@@ -338,6 +347,7 @@ export const createConversationSlice: SessionSlice<
 
     setStreaming: (sessionId, streaming) => update(sessionId, (rt) => ({
       isStreaming: streaming,
+      toolUpdates: streaming ? rt.toolUpdates : {},
       streamStartedAt: streaming ? (rt.isStreaming ? rt.streamStartedAt : Date.now()) : null,
       streamElapsedMs: streaming ? null : rt.streamStartedAt != null
         ? Date.now() - rt.streamStartedAt : rt.streamElapsedMs
@@ -348,11 +358,13 @@ export const createConversationSlice: SessionSlice<
       streamStartedAt: rt.isStreaming ? rt.streamStartedAt : Date.now(),
       streamElapsedMs: null,
       liveMessages: [...rt.liveMessages, message],
+      toolUpdates: {},
       pendingUserMessage: true
     })),
 
     rollbackPrompt: (sessionId) => update(sessionId, (rt) => ({
       isStreaming: false,
+      toolUpdates: {},
       streamStartedAt: null,
       streamElapsedMs: null,
       liveMessages: rt.pendingUserMessage ? rt.liveMessages.slice(0, -1) : rt.liveMessages,
@@ -413,22 +425,30 @@ export const createConversationSlice: SessionSlice<
         ? liveMessages.findLastIndex((item) => item.role === 'user') : -1
       if (optimistic !== -1) liveMessages[optimistic] = message
       else liveMessages.push(message)
-      return { liveMessages, pendingUserMessage: rt.pendingUserMessage && message.role !== 'user' }
+      return {
+        liveMessages,
+        toolUpdates: toolUpdatesAfterMessage(rt.toolUpdates, message),
+        pendingUserMessage: rt.pendingUserMessage && message.role !== 'user'
+      }
     }),
 
     replaceLiveMessage: (sessionId, message) => update(sessionId, (rt) => {
       const index = rt.liveMessages.findLastIndex((item) => sameMessage(item, message))
-      if (index === -1) return { liveMessages: [...rt.liveMessages, message] }
       const liveMessages = [...rt.liveMessages]
-      liveMessages[index] = message
-      return { liveMessages }
+      if (index === -1) liveMessages.push(message)
+      else liveMessages[index] = message
+      return { liveMessages, toolUpdates: toolUpdatesAfterMessage(rt.toolUpdates, message) }
     }),
+
+    setToolUpdates: (sessionId, updates) => update(sessionId, (rt) => ({
+      toolUpdates: { ...rt.toolUpdates, ...updates }
+    })),
 
     viewBranch: async (sessionId, tipId) => {
       const initial = get().runtime[sessionId]
       if (!initial) return
       const branchRequest = initial.branchRequest + 1
-      update(sessionId, { branchRequest })
+      update(sessionId, { branchRequest, toolUpdates: {} })
       const branch = await api.viewBranch(sessionId, tipId)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest) return

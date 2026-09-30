@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import type { MessageKey } from '../../../../shared/i18n'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { BashExecutionMessage } from '../../pi/types'
-import { toolStepLabel, type ProcessItem, type ToolStep } from '../../chat/turns'
+import type { ProcessItem } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -107,17 +107,6 @@ function WaitLine({ streaming }: { streaming: boolean }) {
   )
 }
 
-function OutlineTool({ step, active }: { step: ToolStep; active?: boolean }) {
-  const t = useT()
-  return (
-    <Marker className={statusMarker}>
-      <MarkerContent className="flex min-w-0 flex-1">
-        <VerbLabel text={toolStepLabel(step, t)} failed={!!step.result?.isError} active={active} />
-      </MarkerContent>
-    </Marker>
-  )
-}
-
 function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
   const t = useT()
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
@@ -143,14 +132,11 @@ function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; str
     return <ThinkingRow text={row.text} durationMs={row.durationMs} />
   }
   if (row.kind === 'tools') {
-    if (!last) return <ToolCluster steps={row.steps} />
-    const done = row.steps.filter((step) => step.result)
-    const live = row.steps.filter((step) => !step.result)
+    const current = row.steps.findLastIndex((step) => !step.result)
     return (
       <>
-        {done.length === 1 ? <ToolRow step={done[0]} /> : done.length > 1 ? <ToolCluster steps={done} /> : null}
-        {live.map((step, i) => (
-          <OutlineTool key={step.id} step={step} active={streaming && i === live.length - 1} />
+        {row.steps.map((step, i) => (
+          <ToolRow key={step.id} step={step} active={last && streaming && i === current} />
         ))}
       </>
     )
