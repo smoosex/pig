@@ -163,7 +163,7 @@ async function runFixture(name: string): Promise<void> {
       assert.deepEqual(runtime().liveMessages, [])
       assert.equal(runtime().bashExecution, null)
     } else if (name === 'cleanup') {
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_settled' })
       assert.equal(timers.size, 1)
       emit({ type: 'message_start', message: assistant('') })
       emit({ type: 'message_update', message: assistant('pending') })
@@ -175,7 +175,10 @@ async function runFixture(name: string): Promise<void> {
     } else if (name === 'unaccepted-end') {
       store.getState().beginPrompt('session', { role: 'user', content: 'pending', timestamp: 300 })
       emit({ type: 'agent_start' })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: false })
+      assert.equal(runtime().isStreaming, true)
+      emit({ type: 'agent_settled' })
+      assert.equal(runtime().isStreaming, false)
       assert.equal(runtime().pendingUserMessage, true)
       store.getState().rollbackPrompt('session')
       assert.deepEqual(runtime().liveMessages, [])
@@ -194,12 +197,67 @@ async function runFixture(name: string): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.equal(runtime().contextUsage?.tokens, 100)
       emit({ type: 'turn_end', message: assistant('final answer'), toolResults: [] })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: false })
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.equal(runtime().contextUsage?.tokens, 200)
       assert.equal(controlReads, 2)
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(timers.size, 0)
+      emit({ type: 'agent_settled' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runtime().contextUsage?.tokens, 300)
+      assert.equal(controlReads, 3)
       assert.equal(runtime().isStreaming, false)
       assert.equal(timers.size, 1)
+    } else if (name === 'retry-settlement') {
+      let reads = 0
+      let controlReads = 0
+      api.getDisplayTurns = async () => {
+        reads++
+        return { leafId: null, turns: [] }
+      }
+      api.getControls = async () => {
+        controlReads++
+        return {
+          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          contextUsage: null, followUpMessages: []
+        }
+      }
+      emit({ type: 'agent_start' })
+      const startedAt = Date.now() - 2_500
+      store.setState((state) => ({
+        runtime: { ...state.runtime, session: { ...state.runtime.session, streamStartedAt: startedAt } }
+      }))
+      emit({ type: 'message_start', message: assistant('') })
+      emit({ type: 'message_update', message: assistant('failed attempt') })
+      emit({ type: 'agent_end', messages: [assistant('failed attempt')], willRetry: true })
+      assert.deepEqual(runtime().liveMessages, [assistant('failed attempt')])
+      assert.equal(frames.size, 0)
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(runtime().streamStartedAt, startedAt)
+      assert.equal(runtime().streamElapsedMs, null)
+      assert.equal(timers.size, 0)
+      emit({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: 'network error' })
+      drainTimers()
+      assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 0 })
+      emit({ type: 'agent_start' })
+      assert.equal(runtime().streamStartedAt, startedAt)
+      const answer = { ...assistant('final answer'), timestamp: 300 }
+      emit({ type: 'message_start', message: answer })
+      emit({ type: 'message_end', message: answer })
+      emit({ type: 'auto_retry_end', success: true, attempt: 1 })
+      emit({ type: 'agent_end', messages: [answer], willRetry: false })
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(timers.size, 0)
+      emit({ type: 'agent_settled' })
+      assert.equal(runtime().isStreaming, false)
+      assert.equal(runtime().streamStartedAt, null)
+      assert.ok((runtime().streamElapsedMs ?? 0) >= 2_500)
+      assert.equal(timers.size, 1)
+      assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 1 })
+      drainTimers()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 1 })
     } else if (name === 'compaction') {
       let reads = 0
       let controlReads = 0
@@ -218,38 +276,40 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'compaction_end', reason: 'manual', result: undefined, aborted: false, willRetry: false } as PiSessionEvent)
       emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: true, willRetry: false } as PiSessionEvent)
       assert.equal(reads, 0)
-      // A running turn refreshes controls at `turn_end` and history at `agent_end`.
       emit({ type: 'agent_start' })
       emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
       assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 0 })
-      // Automatic compaction finishes after the final `turn_end` and `agent_end`, so its entry and
-      // post-compaction context usage need their own refresh.
       emit({ type: 'turn_end' })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: false })
       assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 1 })
       emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 1 })
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(timers.size, 0)
+      emit({ type: 'agent_settled' })
+      drainTimers()
+      await new Promise((resolve) => setTimeout(resolve, 0))
       assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 2 })
-      // A retry leaves the refresh to the resumed run's `turn_end` and `agent_end`.
       emit({ type: 'agent_start' })
       emit({ type: 'turn_end' })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: true })
       emit({ type: 'compaction_end', reason: 'overflow', result: { tokensBefore: 1 }, aborted: false, willRetry: true } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 3 })
-      // That resumed run reads the finished turn on its own delayed `agent_end` hydrate, which is
-      // what lands the landmark this event deliberately skipped.
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(timers.size, 0)
       emit({ type: 'agent_start' })
       emit({ type: 'turn_end' })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: false })
+      emit({ type: 'agent_settled' })
       assert.equal(timers.size, 1)
       drainTimers()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      assert.deepEqual({ reads, controlReads }, { reads: 2, controlReads: 4 })
-      // A manual compaction ends no agent run: this event is the only notice the landmark gets.
+      assert.deepEqual({ reads, controlReads }, { reads: 2, controlReads: 5 })
       emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
-      assert.deepEqual({ reads, controlReads }, { reads: 3, controlReads: 5 })
+      assert.deepEqual({ reads, controlReads }, { reads: 3, controlReads: 6 })
     } else if (name === 'branch') {
       assert.equal(runtime().leafId, null)
       branchListener?.('session', 'leaf-1')
@@ -260,7 +320,8 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'agent_start' })
       emit({ type: 'message_start', message: oldUser })
       emit({ type: 'message_start', message: assistant('old answer') })
-      emit({ type: 'agent_end' })
+      emit({ type: 'agent_end', messages: [], willRetry: false })
+      emit({ type: 'agent_settled' })
       assert.equal(timers.size, 1)
       store.getState().beginPrompt('session', { role: 'user', content: 'optimistic', timestamp: 300 })
       emit({ type: 'agent_start' })
@@ -285,8 +346,9 @@ if (process.argv[2] === '--renderer-events-fixture') {
     bash: 'command output is batched per frame and follows the active execution id',
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
-    'unaccepted-end': 'agent end cannot acknowledge a user message that was never received',
-    'turn-end-controls': 'each turn refreshes context usage without another controls read at agent end',
+    'unaccepted-end': 'agent settlement cannot acknowledge a user message that was never received',
+    'turn-end-controls': 'turns and final settlement refresh context usage, but agent end does not',
+    'retry-settlement': 'retries preserve running state and elapsed time until final settlement',
     branch: 'an extension branch change rebinds the conversation to the new leaf',
     'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it',
     compaction: 'a finished compaction re-reads its turn and refreshes the context usage'

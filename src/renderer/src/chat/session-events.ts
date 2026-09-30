@@ -140,11 +140,16 @@ export function subscribeSessionEvents(): () => void {
       case 'turn_end':
         void loadControls(sessionId).catch(reportError('load session controls'))
         break
-      case 'agent_end': {
+      case 'agent_end':
+        flush(sessionId)
+        thinking.finishSession(sessionId, performance.now())
+        break
+      case 'agent_settled': {
         flush(sessionId)
         thinking.finishSession(sessionId, performance.now())
         cancelDelay(sessionId)
         setStreaming(sessionId, false)
+        void loadControls(sessionId).catch(reportError('load session controls'))
         delays.set(
           sessionId,
           window.setTimeout(() => {
@@ -158,10 +163,8 @@ export function subscribeSessionEvents(): () => void {
         break
       }
       case 'compaction_end': {
-        // Automatic compaction can finish after the final `turn_end` and `agent_end`, while manual
-        // compaction has no agent run. Refresh controls and history once the entry is persisted.
-        // During a running turn or retry, the resumed run refreshes controls at `turn_end` and
-        // history at `agent_end`; reading here would race that run.
+        // Automatic compaction can run between `agent_end` and `agent_settled`. Active runs refresh
+        // at settlement; manual compaction has no settlement event and must refresh here.
         if (event.result == null || event.aborted === true || current.isStreaming || event.willRetry === true) break
         void loadControls(sessionId).catch(reportError('load session controls'))
         void hydrateTurns(sessionId, { keepOlderTurns: true }).catch(reportError('refresh session history'))
