@@ -7,7 +7,7 @@ import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
-import { PluginUI } from './components/PluginUI'
+import { SystemPluginUI } from './components/SystemPluginUI'
 import { useSessionWindows } from './hooks/useSessionWindows'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
@@ -265,7 +265,7 @@ export default function App() {
     <TooltipProvider disableHoverableContent>
       <ThemeSync />
       <HighlighterWarmup />
-      <PluginUI activeSessionId={activeSessionId} />
+      <SystemPluginUI activeSessionId={activeSessionId} />
       <div className="flex h-full flex-col bg-background">
         <div className="drag flex h-10 shrink-0 items-center">
           <div className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>

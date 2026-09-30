@@ -20,7 +20,7 @@ import { assertProviderSelection, patchWebSearchSettings, webSearchSettingsState
 import { testWebSearchProvider } from '../pi/web-search-test'
 import { memoryStatus, memoryView } from '../plugins/observational-memory/details'
 import type { Entry } from '../plugins/observational-memory/session-ledger'
-import { replyPluginUI } from '../pi/plugin-ui'
+import { replyReviewUI } from '../pi/system-plugin-ui'
 
 function changed(): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -110,10 +110,10 @@ export function registerPluginIpc(): void {
     if (provider) assertProviderSelection(provider)
     return testWebSearchProvider(provider)
   })
-  ipcMain.handle('plugins:ui-reply', async (event, id: string, value: string | boolean | null) => {
-    if (typeof id !== 'string' || (typeof value !== 'string' && typeof value !== 'boolean' && value !== null)) {
-      throw new Error('Invalid plugin UI response')
+  ipcMain.handle('system-plugins:review-reply', async (event, id: string, value: string | null) => {
+    if (typeof id !== 'string' || (typeof value !== 'string' && value !== null)) {
+      throw new Error('Invalid review response')
     }
-    replyPluginUI(event.sender, id, value)
+    replyReviewUI(event.sender, id, value)
   })
 }

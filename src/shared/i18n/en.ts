@@ -487,6 +487,30 @@ export const en: Messages = {
     skill: 'Skills',
     compact: 'Manually compact the session context'
   },
+  systemUI: {
+    review: 'Code review', memory: 'Observational memory', host: 'Pig', details: 'Notification details'
+  },
+  reviewUI: {
+    preset: 'Review code', branch: 'Select a base branch', commit: 'Select a commit',
+    instructions: 'Custom review instructions', folders: 'Review files or folders', pr: 'Review a pull request',
+    start: 'Where should the review run?', finish: 'Finish review',
+    panelDescription: 'Choose the review scope and configure it here.',
+    search: 'Search options…', noMatches: 'No matching options', recommended: 'Recommended',
+    uncommitted: 'Uncommitted changes', uncommittedDescription: 'Review changes in your working tree.',
+    baseBranch: 'Compare with a base branch', baseBranchDescription: 'Review the diff against a local branch.',
+    commitOption: 'A specific commit', commitDescription: 'Choose a recent commit to review.',
+    pullRequest: 'GitHub pull request', pullRequestDescription: 'Check out and review a pull request.',
+    folder: 'Files or folders', folderDescription: 'Review a snapshot, not a diff.',
+    instructionsOption: 'Add custom instructions', instructionsDescription: 'Apply additional guidance to all review modes.',
+    removeInstructions: 'Remove custom instructions', removeInstructionsDescription: 'Clear the guidance currently configured.',
+    emptyBranch: 'Separate review branch', emptyBranchDescription: 'Keep the review separate and return with /end-review.',
+    currentSession: 'Current conversation', currentSessionDescription: 'Review without changing the conversation branch.',
+    returnOnly: 'Return', returnOnlyDescription: 'Return without a summary or follow-up.',
+    returnAndFix: 'Return and fix findings', returnAndFixDescription: 'Queue a follow-up to address the review findings.',
+    returnAndSummarize: 'Return with a summary', returnAndSummarizeDescription: 'Preserve the findings in a branch summary.',
+    prPlaceholder: 'PR number or GitHub pull request URL', foldersPlaceholder: 'Paths separated by spaces or newlines',
+    instructionsPlaceholder: 'What should the reviewer focus on?', active: 'Review branch active · /end-review to return'
+  },
   thinking: {
     off: 'Off',
     minimal: 'Minimal',

@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -18,7 +18,8 @@ async function fixture(): Promise<void> {
   const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
   try {
     const module = await import('../src/main/pi/plugins')
-    const ui = await import('../src/main/pi/plugin-ui')
+    const ui = await import('../src/main/pi/system-plugin-ui')
+    const { reviewUI } = await import('../src/main/plugins/pig-ui')
     const sdk = await import('@earendil-works/pi-coding-agent')
     const plugin = join(root, 'example')
     const marker = join(root, 'executed')
@@ -127,35 +128,40 @@ async function fixture(): Promise<void> {
     const requests: { channel: string; payload: any }[] = []
     const sender = { send: (channel: string, payload: any) => { requests.push({ channel, payload }) }, isDestroyed: () => false }
     const win = { webContents: sender, isDestroyed: () => false } as unknown as import('electron').BrowserWindow
-    const context = ui.createPluginUI('one', win)
-    const choice = context.select('Select', ['yes', 'no'])
+    ui.attachSystemUI('one', win)
+    const context = reviewUI({ sessionManager: { getSessionId: () => 'one' } })
+    const choice = context.choose('preset', [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }])
     const request = requests.at(-1)!.payload
-    ui.replyPluginUI({} as import('electron').WebContents, request.id, 'yes')
-    ui.replyPluginUI(sender as unknown as import('electron').WebContents, request.id, 'invalid')
+    ui.replyReviewUI({} as import('electron').WebContents, request.id, 'yes')
+    ui.replyReviewUI(sender as unknown as import('electron').WebContents, request.id, 'invalid')
     assert.equal(await choice, undefined)
-    const confirmation = context.confirm('Confirm', 'OK?')
-    ui.cancelPluginPrompts('one')
-    assert.equal(await confirmation, false)
-    const input = context.input('Input', 'hint', { timeout: 5 })
-    assert.equal(await input, undefined)
+    const pending = context.edit('instructions', 'prefill')
+    ui.cancelSystemPrompts('one')
+    assert.equal(await pending, undefined)
     assert.equal(requests.at(-1)?.payload.kind, 'dismiss')
-    const controller = new AbortController()
-    const aborted = context.confirm('Abort', 'Cancel?', { signal: controller.signal })
-    controller.abort()
-    assert.equal(await aborted, false)
-    assert.equal(requests.at(-1)?.payload.kind, 'dismiss')
+    ui.detachSystemUI('one')
+    assert.equal(context.available, false)
 
     await module.setPluginEnabled('observational-memory', true)
     assert.equal(await module.isMemoryPluginEnabled(), true)
-    const memoryLoader = await createNoExtensionsResourceLoader(root, await module.enabledPluginPaths())
+    const packagedPlugins = join(root, 'resources', 'system-plugins')
+    await mkdir(packagedPlugins, { recursive: true })
+    for (const name of ['observational-memory', 'pi-review', 'pig-ui.ts']) {
+      await cp(join(process.cwd(), 'src', 'main', 'plugins', name), join(packagedPlugins, name), { recursive: true })
+    }
+    assert.match(await readFile(join(process.cwd(), 'electron-builder.yml'), 'utf8'), /to: system-plugins\/pig-ui\.ts/)
+    const memoryLoader = await createNoExtensionsResourceLoader(root, [join(packagedPlugins, 'observational-memory', 'index.ts'), join(packagedPlugins, 'pi-review', 'index.ts')])
     assert.deepEqual(memoryLoader.getExtensions().errors, [])
     const { session } = await sdk.createAgentSession({
       cwd: root, agentDir: join(root, 'agent'), resourceLoader: memoryLoader,
       settingsManager: sdk.SettingsManager.inMemory({}), noTools: 'all'
     })
     try {
-      await session.bindExtensions({ mode: 'rpc', uiContext: context })
+      ui.attachSystemUI(session.sessionId, win)
+      await session.bindExtensions({ mode: 'rpc' })
+      assert.equal(session.extensionRunner.hasUI(), false)
       const commands = session.extensionRunner.getRegisteredCommands().map((command) => command.invocationName)
+      assert.equal(commands.includes('review'), true)
       assert.equal(commands.includes('om:status'), false)
       assert.equal(commands.includes('om:view'), false)
       const { memoryStatus, memoryView } = await import('../src/main/plugins/observational-memory/details')
@@ -172,11 +178,15 @@ async function fixture(): Promise<void> {
       const { memoryRuntime } = await import('../src/main/plugins/observational-memory/runtime')
       const runtime = memoryRuntime(session.sessionId)
       assert.ok(runtime)
+      runtime.notify('Memory host notification')
+      assert.equal(requests.at(-1)?.payload.plugin, 'memory')
+      assert.equal(requests.at(-1)?.payload.message, 'Memory host notification')
       runtime.lastObserverError = 'memory worker failed'
       assert.match(memoryStatus(session.sessionId, branch), /memory worker failed/)
       await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
       assert.equal(memoryRuntime(session.sessionId), undefined)
     } finally {
+      ui.detachSystemUI(session.sessionId)
       session.dispose()
     }
 

@@ -25,7 +25,7 @@ import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
 import { bridgeEvents } from './event-bridge'
 import { enabledPluginPaths } from './plugins'
-import { cancelPluginPrompts, createPluginUI } from './plugin-ui'
+import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
 import { startModelRuntime } from './model-settings'
 import {
   applyPendingControls,
@@ -157,16 +157,15 @@ async function build(
   }
   try {
     worktrees.assertAvailable(cwd)
-    const uiContext = createPluginUI(session.sessionId, win)
+    const notifications = attachSystemUI(session.sessionId, win)
     // Pig owns session lifecycle, so extension-driven replacement is refused rather than faked as a
     // user cancellation; the notification is the only signal an extension (or the user) gets.
     const unsupportedAction = (what: string): { cancelled: boolean } => {
-      uiContext.notify(`${what} is not supported in Pig`, 'warning')
+      notifications.notify(`${what} is not supported in Pig`, 'warning')
       return { cancelled: true }
     }
     await session.bindExtensions({
       mode: 'rpc',
-      uiContext,
       // Pi binds these actions only in its own hosts; without them ctx.navigateTree is a no-op that
       // reports success, which stranded extensions that switch branches (like code review).
       commandContextActions: {
@@ -185,7 +184,7 @@ async function build(
           await session.reload()
         }
       },
-      onError: (error) => uiContext.notify(`${error.extensionPath}: ${error.error}`, 'error')
+      onError: (error) => notifications.notify(`${error.extensionPath}: ${error.error}`, 'error')
     })
     worktrees.assertAvailable(cwd)
     await configure?.(session)
@@ -609,7 +608,7 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
       const next = await enabledPluginPaths()
       if (!mustReload && paths.length === next.length && paths.every((path, i) => path === next[i])) return
 
-      cancelPluginPrompts(session.sessionId)
+      resetSystemUI(session.sessionId)
       const previous = [...paths]
       paths.splice(0, paths.length, ...next)
       try {
@@ -625,8 +624,8 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
   } catch (error) {
     console.error('Could not reload session plugins:', error)
     if (session.win && !session.win.isDestroyed()) {
-      session.win.webContents.send('plugins:ui', {
-        kind: 'notify', sessionId: session.sessionId, level: 'error',
+      session.win.webContents.send('system-plugins:ui', {
+        kind: 'notify', sessionId: session.sessionId, plugin: 'host', level: 'error',
         message: error instanceof Error ? error.message : String(error)
       })
     }
@@ -713,7 +712,7 @@ export async function viewSessionBranch(sessionId: string, tipId: string): Promi
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {
-  cancelPluginPrompts(session.sessionId)
+  detachSystemUI(session.sessionId)
   session.unsubscribe()
   try {
     await session.agentSession.abort()

@@ -19,12 +19,10 @@ function observationsPoolMaxTokens(runtime: Runtime): number {
 export function registerCompactionHook(pi: ExtensionAPI, runtime: Runtime): void {
 	pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx: ExtensionContext) => {
 		if (runtime.compactHookInFlight) {
-			if (ctx.hasUI) {
-				ctx.ui.notify(
-					"Observational memory: another compaction is already in progress; cancelling duplicate",
-					"warning",
-				);
-			}
+			runtime.notify(
+				"Observational memory: another compaction is already in progress; cancelling duplicate",
+				"warning",
+			);
 			return { cancel: true };
 		}
 

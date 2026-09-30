@@ -36,8 +36,6 @@ type ResolvedModel = Extract<ResolveResult, { ok: true }>;
 type ConsolidationCtx = {
 	signal: AbortSignal;
 	cwd: string;
-	hasUI: boolean;
-	ui?: { notify: (message: string, type?: "warning" | "info" | "error") => void };
 	model: unknown;
 	modelRegistry: any;
 	getContextUsage?: () => { tokens?: number | null; contextWindow?: number } | undefined;
@@ -111,8 +109,8 @@ function anyStageDue(entries: Entry[], runtime: Runtime, currentTokens: number |
 		|| stageDue(entries, currentTokens, OM_REFLECTIONS_RECORDED, rawTokensSinceReflectionCoverage, runtime.config.reflectAfterTokens);
 }
 
-function shouldNotifyWorker(runtime: Runtime, ctx: ConsolidationCtx): boolean {
-	return runtime.config.showWorkerNotifications && ctx.hasUI;
+function shouldNotifyWorker(runtime: Runtime): boolean {
+	return runtime.config.showWorkerNotifications;
 }
 
 function makeModelResolver(runtime: Runtime, ctx: ConsolidationCtx): (stage: "observer" | "reflector" | "dropper") => Promise<ResolvedModel | undefined> {
@@ -121,8 +119,6 @@ function makeModelResolver(runtime: Runtime, ctx: ConsolidationCtx): (stage: "ob
 		cached ??= await runtime.resolveModel({
 			model: ctx.model,
 			modelRegistry: ctx.modelRegistry,
-			hasUI: ctx.hasUI,
-			ui: ctx.ui,
 			signal: ctx.signal,
 		});
 		ctx.signal.throwIfAborted();
@@ -147,8 +143,8 @@ function makeModelResolver(runtime: Runtime, ctx: ConsolidationCtx): (stage: "ob
 			return cached;
 		}
 		debugLog(`${stage}.model_unavailable`, { reason: cached.reason });
-		if (!runtime.resolveFailureNotified && ctx.hasUI && ctx.ui) {
-			ctx.ui.notify(`Observational memory: ${stage} skipped — ${cached.reason}`, "warning");
+		if (!runtime.resolveFailureNotified) {
+			runtime.notify(`Observational memory: ${stage} skipped — ${cached.reason}`, "warning");
 			runtime.resolveFailureNotified = true;
 		}
 		return undefined;
@@ -185,8 +181,6 @@ function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: Conso
 	const runId = `consolidation-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
 	const consolidationCtx = {
 		cwd: ctx.cwd,
-		hasUI: ctx.hasUI,
-		ui: ctx.ui,
 		model: ctx.model,
 		modelRegistry: ctx.modelRegistry,
 		getContextUsage: ctx.getContextUsage,
@@ -194,7 +188,7 @@ function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: Conso
 	};
 
 	const sessionMetadata = debugSessionMetadata(ctx);
-	void runtime.launchConsolidationTask(ctx, async (signal) => withDebugLogContext({
+	void runtime.launchConsolidationTask(async (signal) => withDebugLogContext({
 		enabled: runtime.config.debugLog === true,
 		cwd: ctx.cwd,
 		...sessionMetadata,
@@ -217,7 +211,7 @@ export async function runConsolidationPipeline(
 		if (observerOutcome === "abort") return;
 	} catch (error) {
 		if (ctx.signal.aborted) return;
-		debugLog("observer.error", { errorMessage: runtime.recordConsolidationStageError(ctx, "observer", error) });
+		debugLog("observer.error", { errorMessage: runtime.recordConsolidationStageError("observer", error) });
 		return;
 	}
 
@@ -228,7 +222,7 @@ export async function runConsolidationPipeline(
 		if (reflectorResult.outcome === "abort") return;
 	} catch (error) {
 		if (ctx.signal.aborted) return;
-		debugLog("reflector.error", { errorMessage: runtime.recordConsolidationStageError(ctx, "reflector", error) });
+		debugLog("reflector.error", { errorMessage: runtime.recordConsolidationStageError("reflector", error) });
 		return;
 	}
 
@@ -237,7 +231,7 @@ export async function runConsolidationPipeline(
 		await runDropperStage(pi, runtime, ctx, resolveModel, reflectorResult.sameRunReflections, reflectorResult.effectiveReflectionCoverageId);
 	} catch (error) {
 		if (ctx.signal.aborted) return;
-		debugLog("dropper.error", { errorMessage: runtime.recordConsolidationStageError(ctx, "dropper", error) });
+		debugLog("dropper.error", { errorMessage: runtime.recordConsolidationStageError("dropper", error) });
 	}
 }
 
@@ -315,7 +309,7 @@ async function runObserverStage(
 	const priorReflections = memory.reflections.map(reflectionToSummaryLine);
 	const priorObservations = memory.observations.map(observationToSummaryLine);
 
-	if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
+	if (shouldNotifyWorker(runtime)) runtime.notify(
 		`Observational memory: observer running on ~${chunkTokens.toLocaleString()}-token chunk`,
 		"info",
 	);
@@ -352,7 +346,7 @@ async function runObserverStage(
 		if (error instanceof ObserverStreamError) {
 			// API/stream failure is not a clean empty (#32): surface it as a real
 			// failure instead of the "no observations" path. Coverage stays put.
-			runtime.recordConsolidationStageError(ctx, "observer", error);
+			runtime.recordConsolidationStageError("observer", error);
 			return "abort";
 		}
 		throw error;
@@ -362,7 +356,7 @@ async function runObserverStage(
 		// over the same span (#23).
 		debugLog("observer.empty", { coversUpToId });
 		runtime.observerEmptyBackoff = { sessionIdentity, coverageId, tokensAtEmpty: tokens };
-		if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
+		if (shouldNotifyWorker(runtime)) runtime.notify(
 			"Observational memory: observer found nothing new in this chunk (coverage unchanged; will retry later)",
 			"info",
 		);
@@ -379,7 +373,7 @@ async function runObserverStage(
 	});
 	appendEntry(pi, OM_OBSERVATIONS_RECORDED, data);
 	debugLog("observer.appended", { count: observations.length, coversUpToId });
-	if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
+	if (shouldNotifyWorker(runtime)) runtime.notify(
 		`Observational memory: ${observations.length} observation${observations.length === 1 ? "" : "s"} recorded`,
 		"info",
 	);
@@ -402,7 +396,7 @@ async function runReflectorStage(
 	const observationCoverageId = latestCoverageMarkerId(entries, OM_OBSERVATIONS_RECORDED);
 	if (!observationCoverageId) return { outcome: "continue", sameRunReflections: [] };
 
-	if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
+	if (shouldNotifyWorker(runtime)) runtime.notify(
 		`Observational memory: reflector running (~${reflectionTokens.toLocaleString()} tokens)`,
 		"info",
 	);
@@ -480,7 +474,7 @@ async function runDropperStage(
 		maxDropsAllowed: metrics.maxDropsAllowed,
 	});
 
-	if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
+	if (shouldNotifyWorker(runtime)) runtime.notify(
 		`Observational memory: dropper running after reflection — active observation pool ~${metrics.observationTokens.toLocaleString()} / ${metrics.targetTokens.toLocaleString()} target tokens (${Math.round(metrics.fullness * 100).toLocaleString()}%)`,
 		"info",
 	);

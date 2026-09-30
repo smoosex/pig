@@ -26,11 +26,11 @@
  *
  * Note: PR review requires a clean working tree (no uncommitted changes to tracked files).
  *
- * Adapted for Pig: the TUI selectors, loader, and widget go through Pig's RPC UI (dialogs,
- * notifications, and the widget badge); review flows, targets, and prompts are unchanged.
+ * Pig owns the review command panel, notifications, and session review indicator.
  */
 
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { reviewUI } from "../pig-ui.js";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 
@@ -83,10 +83,8 @@ type ReviewSettingsState = {
 	customInstructions?: string;
 };
 
-function setReviewWidget(ctx: ExtensionContext, active: boolean) {
-	if (!ctx.hasUI) return;
-	// Pig renders widget lines as a floating badge, so the review warning must be plain text.
-	ctx.ui.setWidget("review", active ? ["Review session active, return with /end-review"] : undefined);
+function setReviewIndicator(ctx: ExtensionContext, active: boolean) {
+	reviewUI(ctx).setActive(active);
 }
 
 function getReviewState(ctx: ExtensionContext): ReviewSessionState | undefined {
@@ -105,12 +103,12 @@ function applyReviewState(ctx: ExtensionContext) {
 
 	if (state?.active && state.originId) {
 		setReviewOriginId(ctx, state.originId);
-		setReviewWidget(ctx, true);
+		setReviewIndicator(ctx, true);
 		return;
 	}
 
 	setReviewOriginId(ctx, undefined);
-	setReviewWidget(ctx, false);
+	setReviewIndicator(ctx, false);
 }
 
 function getReviewSettings(ctx: ExtensionContext): ReviewSettingsState {
@@ -596,7 +594,8 @@ const REVIEW_PRESETS = [
 const TOGGLE_CUSTOM_INSTRUCTIONS_VALUE = "toggleCustomInstructions" as const;
 type ReviewPresetValue =
 	| (typeof REVIEW_PRESETS)[number]["value"]
-	| typeof TOGGLE_CUSTOM_INSTRUCTIONS_VALUE;
+	| typeof TOGGLE_CUSTOM_INSTRUCTIONS_VALUE
+	| "removeInstructions";
 
 export default function reviewExtension(pi: ExtensionAPI) {
 	function persistReviewSettings(ctx: ExtensionContext) {
@@ -618,13 +617,13 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	async function ensureGithubCliReady(ctx: ExtensionContext): Promise<boolean> {
 		const ghVersion = await pi.exec("gh", ["--version"]);
 		if (ghVersion.code !== 0) {
-			ctx.ui.notify(`PR review requires GitHub CLI (\`gh\`). ${GH_SETUP_INSTRUCTIONS}`, "error");
+			reviewUI(ctx).notify(`PR review requires GitHub CLI (\`gh\`). ${GH_SETUP_INSTRUCTIONS}`, "error");
 			return false;
 		}
 
 		const ghAuthStatus = await pi.exec("gh", ["auth", "status"]);
 		if (ghAuthStatus.code !== 0) {
-			ctx.ui.notify(
+			reviewUI(ctx).notify(
 				"GitHub CLI is installed, but you're not signed in. Run `gh auth login`, then verify with `gh auth status`.",
 				"error",
 			);
@@ -644,21 +643,21 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		}
 
 		if (!options.skipInitialPendingChangesCheck && (await hasPendingChanges(pi))) {
-			ctx.ui.notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
+			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
 			return null;
 		}
 
 		const prNumber = parsePrReference(ref);
 		if (!prNumber) {
-			ctx.ui.notify("Invalid PR reference. Enter a number or GitHub PR URL.", "error");
+			reviewUI(ctx).notify("Invalid PR reference. Enter a number or GitHub PR URL.", "error");
 			return null;
 		}
 
-		ctx.ui.notify(`Fetching PR #${prNumber} info...`, "info");
+		reviewUI(ctx).notify(`Fetching PR #${prNumber} info...`, "info");
 		const prInfo = await getPrInfo(pi, prNumber);
 
 		if ("error" in prInfo) {
-			ctx.ui.notify(
+			reviewUI(ctx).notify(
 				`Could not fetch PR #${prNumber}: ${prInfo.error}. Make sure it exists and your GitHub auth has access (check with \`gh auth status\`).`,
 				"error",
 			);
@@ -667,19 +666,19 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 		// Re-check right before checkout to avoid switching branches with newly introduced changes.
 		if (await hasPendingChanges(pi)) {
-			ctx.ui.notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
+			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
 			return null;
 		}
 
-		ctx.ui.notify(`Checking out PR #${prNumber}...`, "info");
+		reviewUI(ctx).notify(`Checking out PR #${prNumber}...`, "info");
 		const checkoutResult = await checkoutPr(pi, prNumber);
 
 		if (!checkoutResult.success) {
-			ctx.ui.notify(`Failed to checkout PR: ${checkoutResult.error}`, "error");
+			reviewUI(ctx).notify(`Failed to checkout PR: ${checkoutResult.error}`, "error");
 			return null;
 		}
 
-		ctx.ui.notify(`Checked out PR #${prNumber} (${prInfo.headBranch})`, "info");
+		reviewUI(ctx).notify(`Checked out PR #${prNumber} (${prInfo.headBranch})`, "info");
 
 		return {
 			type: "pullRequest",
@@ -729,13 +728,13 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	 * Show the review preset selector
 	 */
 	async function showReviewSelector(ctx: ExtensionContext): Promise<ReviewTarget | null> {
-		// Pig selects are a flat list, so descriptions join the labels and the suggested preset is
-		// promoted to the top instead of being preselected the way the TUI list was.
 		const smartDefault = await getSmartDefault();
-		const presetItems: { value: ReviewPresetValue; label: string }[] = REVIEW_PRESETS
+		const presetItems = REVIEW_PRESETS
 			.map((preset) => ({
 				value: preset.value as ReviewPresetValue,
-				label: preset.description ? `${preset.label} ${preset.description}` : preset.label,
+				label: preset.label,
+				description: preset.description,
+				recommended: preset.value === smartDefault,
 			}))
 			.sort((a, b) => a.value === smartDefault ? -1 : b.value === smartDefault ? 1 : 0);
 
@@ -745,33 +744,29 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				: "Add custom review instructions (applies to all review modes)";
 			const items = [
 				...presetItems,
-				{ value: TOGGLE_CUSTOM_INSTRUCTIONS_VALUE as ReviewPresetValue, label: customInstructionsLabel },
+				{ value: getCustomReviewInstructions(ctx) ? "removeInstructions" : TOGGLE_CUSTOM_INSTRUCTIONS_VALUE, label: customInstructionsLabel },
 			];
 
-			const choice = await ctx.ui.select("Select a review preset", items.map((item) => item.label));
+			const choice = await reviewUI(ctx).choose("preset", items);
 			if (choice === undefined) return null;
-			const result = items.find((item) => item.label === choice)?.value;
-			if (result === undefined) return null;
+			const result = choice as ReviewPresetValue;
 
-			if (result === TOGGLE_CUSTOM_INSTRUCTIONS_VALUE) {
+			if (result === TOGGLE_CUSTOM_INSTRUCTIONS_VALUE || result === "removeInstructions") {
 				if (getCustomReviewInstructions(ctx)) {
 					updateReviewCustomInstructions(ctx, undefined);
-					ctx.ui.notify("Custom review instructions removed", "info");
+					reviewUI(ctx).notify("Custom review instructions removed", "info");
 					continue;
 				}
 
-				const customInstructions = await ctx.ui.editor(
-					"Enter custom review instructions (applies to all review modes):",
-					"",
-				);
+				const customInstructions = await reviewUI(ctx).edit("instructions", "");
 
 				if (!customInstructions?.trim()) {
-					ctx.ui.notify("Custom review instructions not changed", "info");
+					reviewUI(ctx).notify("Custom review instructions not changed", "info");
 					continue;
 				}
 
 				updateReviewCustomInstructions(ctx, customInstructions);
-				ctx.ui.notify("Custom review instructions saved", "info");
+				reviewUI(ctx).notify("Custom review instructions saved", "info");
 				continue;
 			}
 
@@ -822,7 +817,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const candidateBranches = currentBranch ? branches.filter((b) => b !== currentBranch) : branches;
 
 		if (candidateBranches.length === 0) {
-			ctx.ui.notify(
+			reviewUI(ctx).notify(
 				currentBranch ? `No other branches found (current branch: ${currentBranch})` : "No branches found",
 				"error",
 			);
@@ -836,10 +831,11 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			return a.localeCompare(b);
 		});
 
-		const labels = sortedBranches.map((branch) => branch === defaultBranch ? `${branch} (default)` : branch);
-		const choice = await ctx.ui.select("Select base branch", labels);
+		const choice = await reviewUI(ctx).choose("branch", sortedBranches.map((branch) => ({
+			value: branch, label: branch, recommended: branch === defaultBranch,
+		})));
 		if (choice === undefined) return null;
-		const branch = sortedBranches[labels.indexOf(choice)];
+		const branch = sortedBranches.find((branch) => branch === choice);
 		if (!branch) return null;
 		return { type: "baseBranch", branch };
 	}
@@ -851,14 +847,15 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const commits = await getRecentCommits(pi, 20);
 
 		if (commits.length === 0) {
-			ctx.ui.notify("No commits found", "error");
+			reviewUI(ctx).notify("No commits found", "error");
 			return null;
 		}
 
-		const labels = commits.map((commit) => `${commit.sha.slice(0, 7)} ${commit.title}`);
-		const choice = await ctx.ui.select("Select commit to review", labels);
+		const choice = await reviewUI(ctx).choose("commit", commits.map((commit) => ({
+			value: commit.sha, label: commit.title, description: commit.sha.slice(0, 7),
+		})));
 		if (choice === undefined) return null;
-		const commit = commits[labels.indexOf(choice)];
+		const commit = commits.find((commit) => commit.sha === choice);
 		if (!commit) return null;
 		return { type: "commit", sha: commit.sha, title: commit.title };
 	}
@@ -874,10 +871,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	 * Show folder input
 	 */
 	async function showFolderInput(ctx: ExtensionContext): Promise<ReviewTarget | null> {
-		const result = await ctx.ui.editor(
-			"Enter folders/files to review (space-separated or one per line):",
-			".",
-		);
+		const result = await reviewUI(ctx).edit("folders", ".");
 
 		if (!result?.trim()) return null;
 		const paths = parseReviewPaths(result);
@@ -892,15 +886,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	async function showPrInput(ctx: ExtensionContext): Promise<ReviewTarget | null> {
 		// First check for pending changes that would prevent branch switching
 		if (await hasPendingChanges(pi)) {
-			ctx.ui.notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
+			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
 			return null;
 		}
 
 		// Get PR reference from user
-		const prRef = await ctx.ui.editor(
-			"Enter PR number or URL (e.g. 123 or https://github.com/owner/repo/pull/123):",
-			"",
-		);
+		const prRef = await reviewUI(ctx).edit("pr", "");
 
 		if (!prRef?.trim()) return null;
 
@@ -918,12 +909,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	): Promise<boolean> {
 		// Check if we're already in a review
 		if (getReviewOriginId(ctx)) {
-			ctx.ui.notify("Already in a review. Use /end-review to finish first.", "warning");
+			reviewUI(ctx).notify("Already in a review. Use /end-review to finish first.", "warning");
 			return false;
 		}
 
 		// Prepare everything that can fail before touching review state, so a failure leaves the
-		// session (branch, anchor entry, widget) exactly as it was.
+		// session (branch, anchor entry, review indicator) exactly as it was.
 		const prompt = await buildReviewPrompt(pi, target);
 		const hint = getUserFacingHint(target);
 		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
@@ -938,7 +929,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				originId = ctx.sessionManager.getLeafId() ?? undefined;
 			}
 			if (!originId) {
-				ctx.ui.notify("Failed to determine review origin.", "error");
+				reviewUI(ctx).notify("Failed to determine review origin.", "error");
 				return false;
 			}
 			setReviewOriginId(ctx, originId);
@@ -965,7 +956,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				} catch (error) {
 					// Clean up state if navigation fails
 					setReviewOriginId(ctx, undefined);
-					ctx.ui.notify(`Failed to start review: ${error instanceof Error ? error.message : String(error)}`, "error");
+					reviewUI(ctx).notify(`Failed to start review: ${error instanceof Error ? error.message : String(error)}`, "error");
 					return false;
 				}
 			}
@@ -973,8 +964,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			// Restore origin after navigation events (session_tree can reset it)
 			setReviewOriginId(ctx, lockedOriginId);
 
-			// Show widget indicating review is active
-			setReviewWidget(ctx, true);
+			setReviewIndicator(ctx, true);
 
 			// Persist review state so tree navigation can restore/reset it
 			pi.appendEntry(REVIEW_STATE_TYPE, { active: true, originId: lockedOriginId });
@@ -996,7 +986,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		}
 
 		const modeHint = useFreshSession ? " (fresh session)" : "";
-		ctx.ui.notify(`Starting review: ${hint}${modeHint}`, "info");
+		reviewUI(ctx).notify(`Starting review: ${hint}${modeHint}`, "info");
 
 		// Send as a user message that triggers a turn
 		pi.sendUserMessage(fullPrompt);
@@ -1130,21 +1120,18 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	pi.registerCommand("review", {
 		description: "Review code changes (PR, uncommitted, branch, commit, or folder)",
 		handler: async (args, ctx) => {
-			if (!ctx.hasUI) {
-				ctx.ui.notify("Review requires interactive mode", "error");
-				return;
-			}
+			if (!reviewUI(ctx).available) return;
 
 			// Check if we're already in a review
 			if (getReviewOriginId(ctx)) {
-				ctx.ui.notify("Already in a review. Use /end-review to finish first.", "warning");
+				reviewUI(ctx).notify("Already in a review. Use /end-review to finish first.", "warning");
 				return;
 			}
 
 			// Check if we're in a git repository
 			const { code } = await pi.exec("git", ["rev-parse", "--git-dir"]);
 			if (code !== 0) {
-				ctx.ui.notify("Not a git repository", "error");
+				reviewUI(ctx).notify("Not a git repository", "error");
 				return;
 			}
 
@@ -1154,7 +1141,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			let extraInstruction: string | undefined;
 			const parsed = parseArgs(args);
 			if (parsed.error) {
-				ctx.ui.notify(parsed.error, "error");
+				reviewUI(ctx).notify(parsed.error, "error");
 				return;
 			}
 			extraInstruction = parsed.extraInstruction?.trim() || undefined;
@@ -1164,7 +1151,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 					// Handle PR checkout (async operation)
 					target = await resolvePullRequestTarget(ctx, parsed.target.ref);
 					if (!target) {
-						ctx.ui.notify("PR review failed. Returning to review menu.", "warning");
+						reviewUI(ctx).notify("PR review failed. Returning to review menu.", "warning");
 					}
 				} else {
 					target = parsed.target;
@@ -1182,7 +1169,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				if (!target) {
-					ctx.ui.notify("Review cancelled", "info");
+					reviewUI(ctx).notify("Review cancelled", "info");
 					return;
 				}
 
@@ -1196,18 +1183,21 @@ export default function reviewExtension(pi: ExtensionAPI) {
 
 				if (messageCount > 0) {
 					// Existing session - ask user which mode they want
-					const choice = await ctx.ui.select("Start review in:", ["Empty branch", "Current session"]);
+					const choice = await reviewUI(ctx).choose("start", [
+						{ value: "emptyBranch", label: "Empty branch" },
+						{ value: "currentSession", label: "Current session" },
+					]);
 
 					if (choice === undefined) {
 						if (fromSelector) {
 							target = null;
 							continue;
 						}
-						ctx.ui.notify("Review cancelled", "info");
+						reviewUI(ctx).notify("Review cancelled", "info");
 						return;
 					}
 
-					useFreshSession = choice === "Empty branch";
+					useFreshSession = choice === "emptyBranch";
 				}
 
 				await executeReview(ctx, target, useFreshSession, { extraInstruction });
@@ -1292,16 +1282,16 @@ Instructions:
 		}
 
 		if (state?.active) {
-			setReviewWidget(ctx, false);
+			setReviewIndicator(ctx, false);
 			pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
-			ctx.ui.notify("Review state was missing origin info; cleared review status.", "warning");
+			reviewUI(ctx).notify("Review state was missing origin info; cleared review status.", "warning");
 		}
 
 		return undefined;
 	}
 
 	function clearReviewState(ctx: ExtensionContext) {
-		setReviewWidget(ctx, false);
+		setReviewIndicator(ctx, false);
 		setReviewOriginId(ctx, undefined);
 		pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
 	}
@@ -1310,10 +1300,7 @@ Instructions:
 		ctx: ExtensionCommandContext,
 		originId: string,
 	): Promise<{ cancelled: boolean; error?: string } | null> {
-		if (ctx.hasUI) {
-			// Pig has no modal loader, so the wait is announced and the result reported afterwards.
-			ctx.ui.notify("Returning and summarizing review branch...", "info");
-		}
+		reviewUI(ctx).notify("Returning and summarizing review branch...", "info");
 
 		try {
 			return await ctx.navigateTree(originId, {
@@ -1334,7 +1321,7 @@ Instructions:
 		const originId = getActiveReviewOrigin(ctx);
 		if (!originId) {
 			if (!getReviewState(ctx)?.active) {
-				ctx.ui.notify("Not in a review branch (use /review first, or review was started in current session mode)", "info");
+				reviewUI(ctx).notify("Not in a review branch (use /review first, or review was started in current session mode)", "info");
 			}
 			return "error";
 		}
@@ -1345,34 +1332,34 @@ Instructions:
 			try {
 				const result = await ctx.navigateTree(originId, { summarize: false });
 				if (result.cancelled) {
-					ctx.ui.notify("Navigation cancelled. Use /end-review to try again.", "info");
+					reviewUI(ctx).notify("Navigation cancelled. Use /end-review to try again.", "info");
 					return "cancelled";
 				}
 			} catch (error) {
-				ctx.ui.notify(`Failed to return: ${error instanceof Error ? error.message : String(error)}`, "error");
+				reviewUI(ctx).notify(`Failed to return: ${error instanceof Error ? error.message : String(error)}`, "error");
 				return "error";
 			}
 
 			clearReviewState(ctx);
 			if (notifySuccess) {
-				ctx.ui.notify("Review complete! Returned to original position.", "info");
+				reviewUI(ctx).notify("Review complete! Returned to original position.", "info");
 			}
 			return "ok";
 		}
 
 		const summaryResult = await navigateWithSummary(ctx, originId);
 		if (summaryResult === null) {
-			ctx.ui.notify("Summarization cancelled. Use /end-review to try again.", "info");
+			reviewUI(ctx).notify("Summarization cancelled. Use /end-review to try again.", "info");
 			return "cancelled";
 		}
 
 		if (summaryResult.error) {
-			ctx.ui.notify(`Summarization failed: ${summaryResult.error}`, "error");
+			reviewUI(ctx).notify(`Summarization failed: ${summaryResult.error}`, "error");
 			return "error";
 		}
 
 		if (summaryResult.cancelled) {
-			ctx.ui.notify("Navigation cancelled. Use /end-review to try again.", "info");
+			reviewUI(ctx).notify("Navigation cancelled. Use /end-review to try again.", "info");
 			return "cancelled";
 		}
 
@@ -1380,48 +1367,45 @@ Instructions:
 
 		if (action === "returnAndSummarize") {
 			if (notifySuccess) {
-				ctx.ui.notify("Review complete! Returned and summarized.", "info");
+				reviewUI(ctx).notify("Review complete! Returned and summarized.", "info");
 			}
 			return "ok";
 		}
 
 		pi.sendUserMessage(REVIEW_FIX_FINDINGS_PROMPT, { deliverAs: "followUp" });
 		if (notifySuccess) {
-			ctx.ui.notify("Review complete! Returned and queued a follow-up to fix findings.", "info");
+			reviewUI(ctx).notify("Review complete! Returned and queued a follow-up to fix findings.", "info");
 		}
 		return "ok";
 	}
 
 	async function runEndReview(ctx: ExtensionCommandContext): Promise<void> {
-		if (!ctx.hasUI) {
-			ctx.ui.notify("End-review requires interactive mode", "error");
-			return;
-		}
+		if (!reviewUI(ctx).available) return;
 
 
 		if (endReviewInProgress.has(ctx.sessionManager.getSessionId())) {
-			ctx.ui.notify("/end-review is already running", "info");
+			reviewUI(ctx).notify("/end-review is already running", "info");
 			return;
 		}
 
 		const sessionId = ctx.sessionManager.getSessionId();
 		endReviewInProgress.add(sessionId);
 		try {
-			const choice = await ctx.ui.select("Finish review:", [
-				"Return only",
-				"Return and fix findings",
-				"Return and summarize",
+			const choice = await reviewUI(ctx).choose("finish", [
+				{ value: "returnOnly", label: "Return only" },
+				{ value: "returnAndFix", label: "Return and fix findings" },
+				{ value: "returnAndSummarize", label: "Return and summarize" },
 			]);
 
 			if (choice === undefined) {
-				ctx.ui.notify("Cancelled. Use /end-review to try again.", "info");
+				reviewUI(ctx).notify("Cancelled. Use /end-review to try again.", "info");
 				return;
 			}
 
 			const action: EndReviewAction =
-				choice === "Return and fix findings"
+				choice === "returnAndFix"
 					? "returnAndFix"
-					: choice === "Return and summarize"
+					: choice === "returnAndSummarize"
 						? "returnAndSummarize"
 						: "returnOnly";
 

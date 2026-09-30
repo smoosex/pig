@@ -18,6 +18,8 @@ files:
       - docs/**/*.md
       - examples/**/*
 extraResources:
+  - from: src/main/plugins/pig-ui.ts
+    to: system-plugins/pig-ui.ts
   - from: src/main/plugins/observational-memory
     to: system-plugins/observational-memory
     filter:

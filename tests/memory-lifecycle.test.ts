@@ -70,8 +70,8 @@ async function fixture(scenario: string): Promise<void> {
     }
   } as unknown as ExtensionAPI
   const ctx = {
-    cwd: '/project', hasUI: true,
-    ui: { notify: (message: string) => notifications.push(message) },
+    cwd: '/project', hasUI: false,
+    get ui(): never { throw new Error('Native plugin UI must not be used') },
     model: { provider: 'test', id: 'test', contextWindow: 100_000 },
     modelRegistry: {
       getApiKeyAndHeaders: async () => {
@@ -92,6 +92,12 @@ async function fixture(scenario: string): Promise<void> {
     },
     getContextUsage: () => { assertActive(); return undefined }
   }
+  const { registerSystemUI } = await import('../src/main/plugins/pig-ui')
+  registerSystemUI('session', {
+    send: () => {},
+    memory: { notify: (message) => notifications.push(message) },
+    review: { available: true, notify: () => {}, setActive: () => {}, choose: async () => undefined, edit: async () => undefined }
+  })
   const { default: plugin } = await import('../src/main/plugins/observational-memory/index')
   const { memoryRuntime } = await import('../src/main/plugins/observational-memory/runtime')
   const emit = async (event: string) => {

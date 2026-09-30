@@ -8,7 +8,15 @@ Observational Memory is maintained in Pig at `src/main/plugins/observational-mem
 
 Background observer, reflector, and dropper tasks are cancelled on session shutdown or reload. Late results are discarded before accessing session state or writing memory, and normal cancellation does not produce a worker-failed notification. Memory already written to the session remains intact.
 
-Extensions can use `ctx.ui.notify`, `setStatus`, `setWidget`, and `select`/`confirm`/`input`/`editor` dialogs. Pig does not provide a terminal TUI: `ctx.mode` is `rpc`; terminal-only widgets, themes, custom TUI, and editor manipulation are unavailable. Extensions should test `ctx.mode === 'tui'` before using terminal APIs.
+Pig does not adapt Pi extension UI or terminal TUI. Extensions run with `ctx.mode === 'rpc'` and `ctx.hasUI === false`; Pig does not supply a `ctx.ui` implementation. Third-party tools, commands, events, and custom messages still work, but their `ctx.ui` notifications, dialogs, widgets, and terminal renderers do not appear in Pig.
+
+The built-in plugins use Pig-owned surfaces instead:
+
+- **pi-review** uses a dedicated command panel with searchable, keyboard-selectable rows, separate descriptions, a recommended option, and in-panel PR/path/instruction inputs. The current session has its own review indicator. Selection responses use option IDs rather than displayed text.
+- **Observational Memory** sends session-scoped, non-blocking notifications through Pig's private system-plugin channel. Memory status and history keep their existing context-popover entry points. Worker cancellation remains tied to session shutdown.
+- **pi-web-access** has no terminal UI to migrate. Its tool results and background-fetch messages remain in the conversation; no extra activity widget or generic plugin dialog is installed.
+
+System notifications are shown only for the active session and expire eight seconds after receipt, including while a session is inactive. Pig retains at most five notifications per session and twenty across the window, dropping older notices first. Switching sessions does not renew their lifetime. Long messages never open a modal automatically; their notification has an explicit details action that consumes the notice while keeping its full text open. `src/main/plugins/pig-ui.ts` shares the system-plugin host registry across the SDK's jiti loader and Pig main, while `src/main/pi/system-plugin-ui.ts` owns pending review requests and window-bound replies. These are Pig implementation APIs, not a third-party `ctx.ui` compatibility layer.
 
 Keep extension imports to Node builtins and Pi packages (`@earendil-works/*`, `typebox`), which the loader aliases to the packaged app. Host modules such as `electron` resolve in development but fail to load from packaged resources, so extensions must not import them.
 

@@ -46,6 +46,8 @@ async function runFixture(): Promise<void> {
   await api.setCompletionNotifications(false)
   await api.compactSession('session-1', 'Preserve decisions')
   await api.compactSession('session-2')
+  await api.replyReviewUI('review-request', 'commit')
+  api.onSystemUI(() => {})
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
@@ -59,6 +61,7 @@ async function runFixture(): Promise<void> {
     { channel: 'settings:set-completion-notifications', args: [false] },
     { channel: 'session:compact', args: ['session-1', 'Preserve decisions'] },
     { channel: 'session:compact', args: ['session-2', undefined] },
+    { channel: 'system-plugins:review-reply', args: ['review-request', 'commit'] },
     {
       channel: 'system:select-open-project-workspace',
       args: ['/repo', 'session-1', 'diff:/repo']
@@ -67,6 +70,9 @@ async function runFixture(): Promise<void> {
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
   assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')
+  assert.ok(listeners.includes('system-plugins:ui'))
+  assert.equal('replyPluginUI' in api, false)
+  assert.equal('onPluginUI' in api, false)
 }
 
 if (process.argv[2] === '--preload-api-fixture') {

@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import reviewExtension from '../src/main/plugins/pi-review/index'
+import { registerSystemUI } from '../src/main/plugins/pig-ui'
 
 type Notification = { message: string; level?: string }
 
@@ -13,7 +14,7 @@ interface Session {
   commands: Map<string, (args: string, ctx: unknown) => Promise<void>>
   handlers: Map<string, ((event: unknown, ctx: unknown) => unknown)[]>
   notifications: Notification[]
-  widgetLines: (string[] | undefined)[]
+  reviewStates: boolean[]
   appended: unknown[]
   sent: string[]
 }
@@ -22,13 +23,13 @@ interface Session {
 // Calling the factory twice models two Pig sessions sharing that instance.
 function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-pig-review-workspace'): Session {
   const notifications: Notification[] = []
-  const widgetLines: (string[] | undefined)[] = []
+  const reviewStates: boolean[] = []
   const appended: unknown[] = []
   const sent: string[] = []
   const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>()
   const commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>()
   const ctx = {
-    hasUI: true,
+    hasUI: false,
     cwd,
     sessionManager: {
       getSessionId: () => id,
@@ -36,12 +37,7 @@ function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-p
       getEntries: () => branch,
       getLeafId: () => 'leaf-1'
     },
-    ui: {
-      select: async () => undefined,
-      editor: async () => undefined,
-      notify: (message: string, level?: string) => notifications.push({ message, level }),
-      setWidget: (_key: string, lines?: string[]) => widgetLines.push(lines)
-    },
+    get ui(): never { throw new Error('Native plugin UI must not be used') },
     navigateTree: async () => ({ cancelled: false })
   }
   const api = {
@@ -58,7 +54,15 @@ function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-p
     exec: async () => ({ stdout: '', stderr: '', code: 0 }),
     sendUserMessage: (content: string) => sent.push(content)
   }
-  return { api, ctx, commands, handlers, notifications, widgetLines, appended, sent }
+  registerSystemUI(id, {
+    send: () => {}, memory: { notify: () => {} },
+    review: {
+      available: true, choose: async () => undefined, edit: async () => undefined,
+      notify: (message, level) => notifications.push({ message, level }),
+      setActive: (active) => reviewStates.push(active)
+    }
+  })
+  return { api, ctx, commands, handlers, notifications, reviewStates, appended, sent }
 }
 
 function loadExtension(session: Session): void {
@@ -94,10 +98,9 @@ test('pi-review: an active review in one session does not block or leak into ano
   loadExtension(second)
 
   await emit(first, 'session_start')
-  assert.deepEqual(first.widgetLines.at(-1), ['Review session active, return with /end-review'])
+  assert.equal(first.reviewStates.at(-1), true)
   await emit(second, 'session_start')
-  assert.equal(second.widgetLines.length, 1)
-  assert.equal(second.widgetLines[0], undefined)
+  assert.deepEqual(second.reviewStates, [false])
 
   // The second session's own (empty) review state must not erase the first session's review.
   await runReview(first, 'uncommitted')
@@ -126,7 +129,7 @@ test('pi-review: unreadable guidelines abort the review before any state is writ
   await assert.rejects(() => runReview(session, 'uncommitted'), /Could not read .*REVIEW_GUIDELINES\.md/)
   assert.equal(session.sent.length, 0)
   // Only the session_start deactivation, no activation push.
-  assert.deepEqual(session.widgetLines, [undefined])
+  assert.deepEqual(session.reviewStates, [false])
   assert.deepEqual(session.appended, [])
 })
 
@@ -142,7 +145,7 @@ test('pi-review: guidelines that are not a regular file are ignored instead of f
   await runReview(session, 'uncommitted')
   assert.equal(session.sent.length, 1)
   assert.ok(!session.sent[0].includes('project has additional instructions'))
-  assert.deepEqual(session.widgetLines.at(-1), ['Review session active, return with /end-review'])
+  assert.equal(session.reviewStates.at(-1), true)
 })
 
 test('pi-review: custom review instructions are read from the asking session only', async () => {

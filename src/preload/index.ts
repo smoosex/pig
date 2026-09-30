@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, PluginUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -145,11 +145,11 @@ const api: SessionApi = {
   getWebSearchSettings: () => ipcRenderer.invoke('plugins:web-search-get'),
   setWebSearchSettings: (patch: WebSearchSettingsPatch) => ipcRenderer.invoke('plugins:web-search-set', patch),
   testWebSearch: (provider: string | null) => ipcRenderer.invoke('plugins:web-search-test', provider),
-  replyPluginUI: (id: string, value: string | boolean | null) => ipcRenderer.invoke('plugins:ui-reply', id, value),
-  onPluginUI: (listener: (event: PluginUIEvent) => void): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, value: PluginUIEvent) => listener(value)
-    ipcRenderer.on('plugins:ui', handler)
-    return () => ipcRenderer.off('plugins:ui', handler)
+  replyReviewUI: (id: string, value: string | null) => ipcRenderer.invoke('system-plugins:review-reply', id, value),
+  onSystemUI: (listener: (event: SystemUIEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: SystemUIEvent) => listener(value)
+    ipcRenderer.on('system-plugins:ui', handler)
+    return () => ipcRenderer.off('system-plugins:ui', handler)
   },
   onPluginsChanged: (listener: () => void): (() => void) => {
     const handler = () => listener()

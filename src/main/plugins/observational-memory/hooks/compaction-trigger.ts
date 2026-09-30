@@ -18,23 +18,25 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 		const threshold = resolveCompactAfterTokens(runtime.config, contextWindow);
 		if (progress < threshold) return;
 
-		// Capture ctx properties synchronously — the setTimeout + async work below
-		// may outlive the extension ctx (stale after session replacement/reload).
-		const hasUI = ctx.hasUI;
-		const ui = ctx.ui;
-		const showNotifications = hasUI && runtime.config.showCompactionNotifications;
+		// Shutdown clears the session notifier before deferred work may touch a stale ctx.
+		const notifications = runtime.notifications;
+		const showNotifications = runtime.config.showCompactionNotifications;
 
-		if (showNotifications) ui?.notify(
+		if (showNotifications) notifications?.notify(
 			`Observational memory: compaction threshold reached (~${progress.toLocaleString()} estimated source tokens); triggering compaction`,
 			"info",
 		);
 
 		runtime.compactInFlight = true;
 		setTimeout(() => {
+			if (runtime.notifications !== notifications) {
+				runtime.compactInFlight = false;
+				return;
+			}
 			try {
 				if (!ctx.isIdle()) {
 					runtime.compactInFlight = false;
-					if (showNotifications) ui?.notify(
+					if (showNotifications) notifications?.notify(
 						"Observational memory: compaction deferred — agent became busy before compaction",
 						"info",
 					);
@@ -48,7 +50,7 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 				const currentProgress = rawTokensSinceLastCompaction(currentEntries);
 				if (currentProgress < threshold) {
 					runtime.compactInFlight = false;
-					if (showNotifications) ui?.notify(
+					if (showNotifications) notifications?.notify(
 						"Observational memory: compaction skipped — another compaction already ran before deferred compaction",
 						"info",
 					);
@@ -57,7 +59,7 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 				ctx.compact({
 					onComplete: () => {
 						runtime.compactInFlight = false;
-						if (showNotifications) ui?.notify("Observational memory: compaction complete", "info");
+						if (runtime.notifications === notifications && showNotifications) notifications?.notify("Observational memory: compaction complete", "info");
 					},
 					onError: (error: { message: string }) => {
 						runtime.compactInFlight = false;
@@ -65,13 +67,13 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 							// We already notified the user with the real reason before returning { cancel: true }.
 							return;
 						}
-						if (hasUI) ui?.notify(`Observational memory: ${error.message}`, "error");
+						if (runtime.notifications === notifications) notifications?.notify(`Observational memory: ${error.message}`, "error");
 					},
 				});
 			} catch (error) {
 				runtime.compactInFlight = false;
 				const msg = error instanceof Error ? error.message : String(error);
-				if (hasUI) ui?.notify(`Observational memory: compact threw: ${msg}`, "error");
+				if (runtime.notifications === notifications) notifications?.notify(`Observational memory: compact threw: ${msg}`, "error");
 			}
 		}, 0);
 	});

@@ -1,4 +1,5 @@
 import { type Config, DEFAULTS, loadConfig } from "./config.js";
+import type { SystemNotifier } from "../pig-ui.js";
 
 const runtimesKey = Symbol.for('pig:observational-memory:runtimes');
 const runtimes = (globalThis as Record<symbol, Map<string, Runtime> | undefined>)[runtimesKey]
@@ -58,8 +59,6 @@ function countUsableHeaders(headers: unknown): number {
 const AVAILABILITY_RECHECK_TIMEOUT_MS = 5_000;
 const AVAILABILITY_RECHECK_REARM_MS = 60_000;
 
-type NotifyLevel = "warning" | "info" | "error";
-type Notify = (message: string, type?: NotifyLevel) => void;
 export type ConsolidationPhase = "observer" | "reflector" | "dropper";
 
 /**
@@ -98,16 +97,10 @@ export interface ResolveCtx {
 	signal?: AbortSignal;
 	model: unknown;
 	modelRegistry: any;
-	hasUI: boolean;
-	ui?: { notify: Notify };
-}
-
-export interface LaunchCtx {
-	hasUI: boolean;
-	ui?: { notify: Notify };
 }
 
 export class Runtime {
+	notifications: SystemNotifier | undefined;
 	config: Config = { ...DEFAULTS };
 	configLoaded = false;
 	consolidationInFlight = false;
@@ -129,6 +122,10 @@ export class Runtime {
 		tokensAtEmpty: number;
 	} | undefined;
 
+	notify(message: string, level: 'info' | 'warning' | 'error' = 'info'): void {
+		this.notifications?.notify(message, level);
+	}
+
 	ensureConfig(_cwd: string): void {
 		if (this.configLoaded) return;
 		this.config = loadConfig();
@@ -141,8 +138,8 @@ export class Runtime {
 			const configured = ctx.modelRegistry.find(this.config.model.provider, this.config.model.id);
 			if (configured) {
 				model = configured;
-			} else if (ctx.hasUI && ctx.ui) {
-				ctx.ui.notify(
+			} else {
+				this.notify(
 					`Observational memory: configured model ${this.config.model.provider}/${this.config.model.id} not found, using session model`,
 					"warning",
 				);
@@ -301,7 +298,7 @@ export class Runtime {
 		this.consolidationAbortController?.abort();
 	}
 
-	launchConsolidationTask(ctx: LaunchCtx, work: (signal: AbortSignal) => Promise<void>): Promise<void> {
+	launchConsolidationTask(work: (signal: AbortSignal) => Promise<void>): Promise<void> {
 		const controller = new AbortController();
 		this.consolidationAbortController = controller;
 		this.consolidationInFlight = true;
@@ -309,7 +306,7 @@ export class Runtime {
 		this.lastObserverError = undefined;
 		this.lastReflectorError = undefined;
 		this.lastDropperError = undefined;
-		const promise = this.launchTrackedTask(ctx, "consolidation", () => work(controller.signal), () => {
+		const promise = this.launchTrackedTask("consolidation", () => work(controller.signal), () => {
 			if (this.consolidationAbortController !== controller) return;
 			this.consolidationInFlight = false;
 			this.consolidationPhase = undefined;
@@ -320,32 +317,29 @@ export class Runtime {
 		return promise;
 	}
 
-	recordConsolidationStageError(ctx: LaunchCtx, phase: ConsolidationPhase, error: unknown): string {
+	recordConsolidationStageError(phase: ConsolidationPhase, error: unknown): string {
 		const message = error instanceof Error ? error.message : String(error);
 		if (this.consolidationAbortController?.signal.aborted) return message;
 		if (phase === "observer") this.lastObserverError = message;
 		if (phase === "reflector") this.lastReflectorError = message;
 		if (phase === "dropper") this.lastDropperError = message;
-		if (ctx.hasUI && ctx.ui) ctx.ui.notify(`Observational memory: ${phase} failed: ${message}`, "warning");
+		this.notify(`Observational memory: ${phase} failed: ${message}`, "warning");
 		return message;
 	}
 
 	private launchTrackedTask(
-		ctx: LaunchCtx,
 		label: string,
 		work: () => Promise<void>,
 		onFinally: (error: string | undefined) => void,
 		signal: AbortSignal,
 	): Promise<void> {
-		const hasUI = ctx.hasUI;
-		const ui = ctx.ui;
 		return (async () => {
 			let errorMessage: string | undefined;
 			try {
 				await work();
 			} catch (error) {
 				errorMessage = error instanceof Error ? error.message : String(error);
-				if (!signal.aborted && hasUI && ui) ui.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
+				if (!signal.aborted) this.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
 			} finally {
 				onFinally(errorMessage);
 			}

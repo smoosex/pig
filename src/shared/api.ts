@@ -507,12 +507,21 @@ export interface PluginInfo {
   settings?: PluginSettingsSchema
 }
 
-export type PluginUIEvent =
-  | { kind: 'prompt'; id: string; sessionId: string; method: 'select' | 'confirm' | 'input' | 'editor'; title: string; message?: string; options?: string[]; prefill?: string }
+export type ReviewStep = 'preset' | 'branch' | 'commit' | 'instructions' | 'folders' | 'pr' | 'start' | 'finish'
+
+export interface ReviewOption {
+  value: string
+  label: string
+  description?: string
+  recommended?: boolean
+}
+
+export type SystemUIEvent =
+  | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string }
   | { kind: 'dismiss'; id: string; sessionId: string }
-  | { kind: 'notify'; sessionId: string; message: string; level: 'info' | 'warning' | 'error' }
-  | { kind: 'status'; sessionId: string; key: string; text?: string }
-  | { kind: 'widget'; sessionId: string; key: string; lines?: string[] }
+  | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
+  | { kind: 'review-state'; sessionId: string; active: boolean }
+  | { kind: 'reset'; sessionId: string }
 
 export interface MemoryPluginSettings {
   observeAfterTokens?: number
@@ -735,8 +744,8 @@ export interface SessionApi {
   getWebSearchSettings: () => Promise<WebSearchSettingsState>
   setWebSearchSettings: (patch: WebSearchSettingsPatch) => Promise<WebSearchSettingsState>
   testWebSearch: (provider: string | null) => Promise<WebSearchTestResult>
-  replyPluginUI: (id: string, value: string | boolean | null) => Promise<void>
-  onPluginUI: (listener: (event: PluginUIEvent) => void) => () => void
+  replyReviewUI: (id: string, value: string | null) => Promise<void>
+  onSystemUI: (listener: (event: SystemUIEvent) => void) => () => void
   onPluginsChanged: (listener: () => void) => () => void
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>

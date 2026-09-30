@@ -489,6 +489,30 @@ export const zh = {
     skill: 'Skills',
     compact: '手动压缩会话上下文'
   },
+  systemUI: {
+    review: '代码审查', memory: '观测记忆', host: 'Pig', details: '通知详情'
+  },
+  reviewUI: {
+    preset: '审查代码', branch: '选择基准分支', commit: '选择提交',
+    instructions: '自定义审查指令', folders: '审查文件或目录', pr: '审查 Pull Request',
+    start: '在哪里执行审查？', finish: '结束审查',
+    panelDescription: '选择审查范围，并在这里完成配置。',
+    search: '搜索选项…', noMatches: '没有匹配的选项', recommended: '推荐',
+    uncommitted: '未提交的变更', uncommittedDescription: '审查当前工作区中的改动。',
+    baseBranch: '对比基准分支', baseBranchDescription: '审查相对于本地分支的差异。',
+    commitOption: '指定提交', commitDescription: '选择最近的一次提交进行审查。',
+    pullRequest: 'GitHub Pull Request', pullRequestDescription: '检出并审查一个 Pull Request。',
+    folder: '文件或目录', folderDescription: '审查当前代码快照，而不是差异。',
+    instructionsOption: '添加自定义指令', instructionsDescription: '为所有审查模式补充关注点。',
+    removeInstructions: '移除自定义指令', removeInstructionsDescription: '清除当前已配置的审查关注点。',
+    emptyBranch: '独立审查分支', emptyBranchDescription: '与当前对话分开，使用 /end-review 返回。',
+    currentSession: '当前对话', currentSessionDescription: '不切换会话分支，直接开始审查。',
+    returnOnly: '直接返回', returnOnlyDescription: '不生成摘要，也不继续修复。',
+    returnAndFix: '返回并修复问题', returnAndFixDescription: '追加一条任务，处理审查发现的问题。',
+    returnAndSummarize: '生成摘要后返回', returnAndSummarizeDescription: '将审查发现保存在分支摘要中。',
+    prPlaceholder: 'PR 编号或 GitHub Pull Request 链接', foldersPlaceholder: '用空格或换行分隔路径',
+    instructionsPlaceholder: '希望审查重点关注什么？', active: '正在审查分支中 · 使用 /end-review 返回'
+  },
   thinking: {
     off: '关闭',
     minimal: '最低',
