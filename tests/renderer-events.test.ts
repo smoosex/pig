@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { PiMessage, PiSessionEvent } from '../src/renderer/src/pi/types'
+import type { SessionControls } from '../src/shared/api'
 
 async function runFixture(name: string): Promise<void> {
   let nextId = 0
@@ -14,7 +15,7 @@ async function runFixture(name: string): Promise<void> {
     discardDraftSession: async () => {},
     closeSession: async () => {},
     selectOpenProjectWorkspace: async () => {},
-    getControls: async () => ({
+    getControls: async (): Promise<SessionControls> => ({
       model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
       contextUsage: null,
       followUpMessages: []
@@ -178,6 +179,27 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(runtime().pendingUserMessage, true)
       store.getState().rollbackPrompt('session')
       assert.deepEqual(runtime().liveMessages, [])
+    } else if (name === 'turn-end-controls') {
+      let controlReads = 0
+      api.getControls = async () => {
+        controlReads++
+        return {
+          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          contextUsage: { tokens: controlReads * 100, contextWindow: 1000, percent: controlReads * 10 },
+          followUpMessages: []
+        }
+      }
+      emit({ type: 'agent_start' })
+      emit({ type: 'turn_end', message: assistant('loop one'), toolResults: [] })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runtime().contextUsage?.tokens, 100)
+      emit({ type: 'turn_end', message: assistant('final answer'), toolResults: [] })
+      emit({ type: 'agent_end' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(runtime().contextUsage?.tokens, 200)
+      assert.equal(controlReads, 2)
+      assert.equal(runtime().isStreaming, false)
+      assert.equal(timers.size, 1)
     } else if (name === 'compaction') {
       let reads = 0
       let controlReads = 0
@@ -196,22 +218,21 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'compaction_end', reason: 'manual', result: undefined, aborted: false, willRetry: false } as PiSessionEvent)
       emit({ type: 'compaction_end', reason: 'manual', result: { tokensBefore: 1 }, aborted: true, willRetry: false } as PiSessionEvent)
       assert.equal(reads, 0)
-      // Pi also compacts between two turns of a running one, and that run reads the finished turn on
-      // its own `agent_end`: this event may not spend a read the resuming run would discard.
+      // A running turn refreshes controls at `turn_end` and history at `agent_end`.
       emit({ type: 'agent_start' })
       emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
-      assert.equal(reads, 0)
-      // Automatic compaction emits `compaction_end` after `agent_end`, whose own read ran before the
-      // landmark existed. This event is the one that re-reads the turn, and it also refreshes the
-      // context usage that `agent_end` read before the window shrank.
+      assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 0 })
+      // Automatic compaction finishes after the final `turn_end` and `agent_end`, so its entry and
+      // post-compaction context usage need their own refresh.
+      emit({ type: 'turn_end' })
       emit({ type: 'agent_end' })
       assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 1 })
       emit({ type: 'compaction_end', reason: 'threshold', result: { tokensBefore: 1 }, aborted: false, willRetry: false } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 2 })
-      // A retry continues the run, so the landmark is left to the `agent_end` of the run that
-      // resumes rather than read here and thrown away by its `agent_start`.
+      // A retry leaves the refresh to the resumed run's `turn_end` and `agent_end`.
       emit({ type: 'agent_start' })
+      emit({ type: 'turn_end' })
       emit({ type: 'agent_end' })
       emit({ type: 'compaction_end', reason: 'overflow', result: { tokensBefore: 1 }, aborted: false, willRetry: true } as PiSessionEvent)
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -219,6 +240,7 @@ async function runFixture(name: string): Promise<void> {
       // That resumed run reads the finished turn on its own delayed `agent_end` hydrate, which is
       // what lands the landmark this event deliberately skipped.
       emit({ type: 'agent_start' })
+      emit({ type: 'turn_end' })
       emit({ type: 'agent_end' })
       assert.equal(timers.size, 1)
       drainTimers()
@@ -264,6 +286,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
     'unaccepted-end': 'agent end cannot acknowledge a user message that was never received',
+    'turn-end-controls': 'each turn refreshes context usage without another controls read at agent end',
     branch: 'an extension branch change rebinds the conversation to the new leaf',
     'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it',
     compaction: 'a finished compaction re-reads its turn and refreshes the context usage'

@@ -137,12 +137,14 @@ export function subscribeSessionEvents(): () => void {
           replaceLiveMessage(sessionId, event.message)
         }
         break
+      case 'turn_end':
+        void loadControls(sessionId).catch(reportError('load session controls'))
+        break
       case 'agent_end': {
         flush(sessionId)
         thinking.finishSession(sessionId, performance.now())
         cancelDelay(sessionId)
         setStreaming(sessionId, false)
-        void loadControls(sessionId).catch(reportError('load session controls'))
         delays.set(
           sessionId,
           window.setTimeout(() => {
@@ -156,16 +158,10 @@ export function subscribeSessionEvents(): () => void {
         break
       }
       case 'compaction_end': {
-        // The entry is already persisted here, but Pi emits this after `agent_end` for automatic
-        // compaction and without any agent run at all for a manual one, so the hydrate above either
-        // read the turn before the landmark existed or never ran. Re-reading the turn is what makes
-        // the landmark appear, and it is what refreshes the context usage the pre-compaction
-        // `agent_end` left behind.
-        //
-        // A compaction that is still running its turn ends later: Pi compacts between turns, and a
-        // retry (`willRetry`) or a queued message continues the run right after this event. The run
-        // that resumes is the one whose `agent_end` reads the finished turn, so the read is skipped
-        // here rather than racing its `agent_start`.
+        // Automatic compaction can finish after the final `turn_end` and `agent_end`, while manual
+        // compaction has no agent run. Refresh controls and history once the entry is persisted.
+        // During a running turn or retry, the resumed run refreshes controls at `turn_end` and
+        // history at `agent_end`; reading here would race that run.
         if (event.result == null || event.aborted === true || current.isStreaming || event.willRetry === true) break
         void loadControls(sessionId).catch(reportError('load session controls'))
         void hydrateTurns(sessionId, { keepOlderTurns: true }).catch(reportError('refresh session history'))
