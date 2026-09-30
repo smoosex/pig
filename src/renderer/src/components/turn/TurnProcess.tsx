@@ -101,7 +101,7 @@ function WaitLine({ streaming }: { streaming: boolean }) {
     return () => window.clearInterval(id)
   }, [streaming])
   return (
-    <span className={cn(streaming && 'shimmer shimmer-once')}>
+    <span className={cn(streaming && 'shimmer')}>
       {t(WAIT_LINE_KEYS[index] ?? WAIT_LINE_KEYS[0])}
     </span>
   )

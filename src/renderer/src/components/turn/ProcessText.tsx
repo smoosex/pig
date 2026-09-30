@@ -64,7 +64,7 @@ export function ThinkingRow({
   }, [open, live, body])
 
   const label = (
-    <span className={cn('min-w-0 flex-1 truncate text-left', live && streaming && 'shimmer shimmer-once')}>{title}</span>
+    <span className={cn('min-w-0 flex-1 truncate text-left', live && streaming && 'shimmer')}>{title}</span>
   )
 
   if (live && !body) {
