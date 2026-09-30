@@ -20,26 +20,37 @@ import { useWorkBlockMs } from './turn/useWorkBlockMs'
  * the work block.
  */
 type ProcessSegment =
-  | { kind: 'work'; items: ProcessItem[] }
+  | { kind: 'work'; items: ProcessItem[]; block: number }
   | { kind: 'compaction'; item: Extract<ProcessItem, { kind: 'compaction' }> }
 
 function segmentProcess(items: ProcessItem[]): ProcessSegment[] {
   const segments: ProcessSegment[] = []
   let work: ProcessItem[] = []
+  let block = 0
   const flush = () => {
     if (work.length === 0) return
-    segments.push({ kind: 'work', items: work })
+    segments.push({ kind: 'work', items: work, block })
     work = []
   }
   for (const item of items) {
     if (item.kind === 'compaction') {
       flush()
       segments.push({ kind: 'compaction', item })
+      block++
       continue
     }
     work.push(item)
   }
   flush()
+  return segments
+}
+
+function projectedSegments(landmarks: CompactionItem[], workBlocks: boolean[]): ProcessSegment[] {
+  const segments: ProcessSegment[] = []
+  workBlocks.forEach((hasWork, block) => {
+    if (hasWork) segments.push({ kind: 'work', items: [], block })
+    if (landmarks[block]) segments.push({ kind: 'compaction', item: landmarks[block] })
+  })
   return segments
 }
 
@@ -75,16 +86,15 @@ function AgentTurnView({
     if (item.kind === 'compaction' && item.afterAnswer) trailing.push(item)
     else inline.push(item)
   }
-  const segments = segmentProcess(inline)
   const landmarks = inline.filter((item): item is CompactionItem => item.kind === 'compaction')
-  const hasWork = segments.some((segment) => segment.kind === 'work')
-  // A turn whose process is still on disk only knows that it has one: the header stands in for it.
-  const showHeader = hasWork || turn.streaming || (Boolean(turn.hasProcess) && turn.process.length === 0)
-  const showBody = showHeader || segments.length > 0
-  // An empty process still renders the body: while streaming it holds the waiting line, and the
-  // header needs a block to live in when a compaction is the only thing the turn carries.
-  const blocks: ProcessSegment[] = [...segments]
-  if (showHeader && !hasWork) blocks.unshift({ kind: 'work', items: [] })
+  // History already knows which intervals contain work; reading a body must not create its header.
+  const blocks = turn.process.length === 0 && turn.workBlocks
+    ? projectedSegments(landmarks, turn.workBlocks)
+    : segmentProcess(inline)
+  const hasWork = blocks.some((segment) => segment.kind === 'work')
+  const showHeader = hasWork || turn.streaming || (!turn.workBlocks && Boolean(turn.hasProcess) && turn.process.length === 0)
+  const showBody = showHeader || blocks.length > 0
+  if (showHeader && !hasWork) blocks.unshift({ kind: 'work', items: [], block: 0 })
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [liveOutline, setLiveOutline] = useState(turn.streaming)
   const [loading, setLoading] = useState(false)
@@ -94,9 +104,8 @@ function AgentTurnView({
   const identity = renderKeyForTurn(turn, turn.startedAt)
   // Every block of work carries the total the turn had reached when it ended; a running turn keeps
   // counting in its last one, and the blocks before a compaction keep the value it froze them at.
-  let ordinal = -1
-  const blockOrdinals = blocks.map((block) => (block.kind === 'work' ? ++ordinal : -1))
-  const openAt = (index: number) => open[index] ?? turn.streaming
+  // Empty intervals still advance the clock, so identity and timing use the compaction interval.
+  const openAt = (block: number) => open[block] ?? turn.streaming
 
   useEffect(() => {
     request.current++
@@ -153,9 +162,9 @@ function AgentTurnView({
               // One Collapsible per work block, each with its own header: they open independently,
               // and each gets its own content id (a single root reuses one id for every content).
               <Collapsible
-                key={`work-${index}`}
-                open={openAt(index)}
-                onOpenChange={(next) => void toggleProcess(index, next)}
+                key={`work-${block.block}`}
+                open={openAt(block.block)}
+                onOpenChange={(next) => void toggleProcess(block.block, next)}
               >
                 <Marker variant="separator" asChild>
                   <CollapsibleTrigger asChild>
@@ -169,9 +178,9 @@ function AgentTurnView({
                       )}
                     >
                       <MarkerContent className="flex shrink-0 items-center gap-1">
-                        <WorkedLabel turn={turn} landmarks={landmarks} block={blockOrdinals[index]} />
+                        <WorkedLabel turn={turn} landmarks={landmarks} block={block.block} />
                         <ChevronRight
-                          className={cn('size-3.5 transition-transform duration-150', openAt(index) && 'rotate-90')}
+                          className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
                         />
                       </MarkerContent>
                     </Button>

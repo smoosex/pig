@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { pastedTextFingerprint } from '../src/shared/pasted-text'
+import { buildTurn, type ProcessItem } from '../src/renderer/src/chat/turns'
 
 let displayTurnsFromEntries: typeof import('../src/main/pi/session-display-model')['displayTurnsFromEntries']
 let turnMessagesFromEntries: typeof import('../src/main/pi/session-display-model')['turnMessagesFromEntries']
@@ -110,6 +111,60 @@ test('a turn that carries nothing but a compaction has no work of its own', () =
   ])
   // The landmark is not the disclosure's reason to exist: no work behind it means no work header.
   expect(turn.hasProcess).toBe(false)
+  expect(turn.workBlocks).toEqual([false])
+})
+
+describe('work layout before process loading', () => {
+  const message = (id: string, time: number, content: unknown, role = 'assistant', errorMessage?: string) => ({
+    type: 'message', id, parentId: null, timestamp: new Date(time).toISOString(),
+    message: { role, content, timestamp: time, errorMessage }
+  }) as unknown as SessionEntry
+  const compaction = (id: string, time: number) => ({
+    type: 'compaction', id, parentId: null, timestamp: new Date(time).toISOString(),
+    summary: id, tokensBefore: 42
+  }) as unknown as SessionEntry
+  const user = message('user', 1_000, 'question', 'user')
+  const before = message('before', 2_000, [{ type: 'thinking', thinking: 'before' }])
+  const after = message('after', 5_000, [{ type: 'thinking', thinking: 'after' }])
+  const answer = message('answer', 6_000, [{ type: 'text', text: 'final answer' }])
+
+  test('projects both work blocks and preserves empty intervals between compactions', () => {
+    for (const [entries, expected] of [
+      [[user, before, compaction('k1', 3_000), after, answer], [true, true]],
+      [[user, before, compaction('k1', 3_000), compaction('k2', 4_000), after, answer, compaction('tail', 7_000)], [true, false, true]]
+    ] as Array<[SessionEntry[], boolean[]]>) {
+      const [turn] = displayTurnsFromEntries('session', entries)
+      expect(turn.workBlocks).toEqual(expected)
+      expect(turn.answer).toEqual([{ type: 'text', text: 'final answer' }])
+    }
+  })
+
+  test('does not invent work before compaction or after it when only a final answer follows', () => {
+    for (const [entries, expected] of [
+      [[user, before, compaction('k1', 3_000), answer], [true, false]],
+      [[user, compaction('k1', 3_000), after, answer], [false, true]],
+      [[user, compaction('k1', 3_000), answer], [false, false]]
+    ] as Array<[SessionEntry[], boolean[]]>) {
+      expect(displayTurnsFromEntries('session', entries)[0].workBlocks).toEqual(expected)
+    }
+  })
+
+  test('matches loaded text aggregation when a partial-text error is retried after compaction', () => {
+    const partial = [{ type: 'text', text: 'partial reply  ' }]
+    for (const [content, expectedBlocks, expectedProcess] of [
+      [[{ type: 'text', text: 'final answer' }], [true, false], ['thinking', 'compaction']],
+      [[{ type: 'thinking', thinking: 'retry work' }, { type: 'text', text: 'final answer' }], [true, true], ['thinking', 'compaction', 'text', 'thinking']]
+    ] as Array<[unknown[], boolean[], ProcessItem['kind'][]]>) {
+      const entries = [user, before, compaction('k1', 3_000), message('failed', 4_000, partial, 'assistant', 'overloaded'), message('answer', 6_000, content)]
+      const [display] = displayTurnsFromEntries('session', entries)
+      const loaded = buildTurn(turnMessagesFromEntries(entries, display.id) as Parameters<typeof buildTurn>[0], false)
+      expect(display.workBlocks).toEqual(expectedBlocks)
+      expect(loaded.process.map((item) => item.kind)).toEqual(expectedProcess)
+      expect(display.answer).toEqual([{ type: 'text', text: 'final answer' }])
+      expect(display.errorMessage).toBeUndefined()
+      expect(entries[3]).toMatchObject({ message: { content: partial, errorMessage: 'overloaded' } })
+    }
+  })
 })
 
 test('a retried failure is no longer the outcome once an answer followed it', () => {

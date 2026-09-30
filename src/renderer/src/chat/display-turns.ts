@@ -44,6 +44,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     bash: display.bash,
     process,
     compactions: display.compactions.map((landmark) => ({ kind: 'compaction' as const, ...landmark })),
+    workBlocks: display.workBlocks,
     answer: display.answer.map((block) =>
       block.type === 'text'
         ? block

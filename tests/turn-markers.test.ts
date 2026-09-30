@@ -365,25 +365,87 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(partial.length, 2, 'the work header and the projection landmark')
       await act(async () => { partial[1].click(); await Bun.sleep(0) })
       assert.ok(container.textContent?.includes('投影压缩'))
-    } else if (name === 'compaction-unloaded') {
-      // The projection ships the landmark with the turn, so a turn whose work is still on disk shows
-      // its compaction without the reader having to open the block that would have revealed it.
-      let requested: string | undefined
-      await render(makeTurn({
-        process: [],
-        compactions: [
-          { kind: 'compaction', text: '已落盘的压缩', tokensBefore: 42, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
-        ],
-        hasProcess: true,
-        streaming: false
-      }), async (id) => { requested = id })
-      assert.ok(container.textContent?.includes('上下文已压缩'))
-      assert.ok(container.textContent?.includes('工作耗时'))
-      assert.equal(container.querySelector('[data-slot="collapsible-content"]')?.getAttribute('data-state'), 'closed')
-      assert.equal(requested, undefined)
-      // The work is behind the header, and opening it is what asks for it.
-      await act(async () => { separator().click(); await Bun.sleep(0) })
-      assert.equal(requested, 'marker-test')
+    } else if (name === 'compaction-unloaded' || name === 'compaction-retry-text') {
+      const retryText = name === 'compaction-retry-text'
+      const { displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model')
+      const { toTurn } = await import('../src/renderer/src/chat/display-turns')
+      const { buildTurn } = await import('../src/renderer/src/chat/turns')
+      const message = (id: string, time: number, value: Record<string, unknown>) => ({
+        type: 'message', id, parentId: null, timestamp: new Date(time).toISOString(), message: { timestamp: time, ...value }
+      })
+      const call = (id: string) => ({ type: 'toolCall', id, name: 'read', arguments: { path: `/project/${id}.ts` } })
+      const result = (id: string) => ({ role: 'toolResult', toolCallId: id, toolName: 'read', content: [{ type: 'text', text: 'file contents' }], isError: false })
+      const entries = [
+        message('user', 1_000, { role: 'user', content: 'question' }),
+        message('a1', 2_000, { role: 'assistant', content: [call('before')] }),
+        message('r1', 2_000, result('before')),
+        { type: 'compaction', id: 'k1', parentId: null, timestamp: new Date(3_000).toISOString(), summary: '已落盘的压缩', tokensBefore: 42 },
+        ...(retryText ? [
+          message('a2', 4_000, { role: 'assistant', content: [{ type: 'text', text: '不完整的回答' }], errorMessage: 'overloaded' }),
+          message('a3', 6_000, { role: 'assistant', content: [{ type: 'text', text: '最后回答' }] })
+        ] : [
+          message('a2', 4_000, { role: 'assistant', content: [call('after')] }),
+          message('r2', 4_500, result('after')),
+          message('a3', 6_000, { role: 'assistant', content: [{ type: 'text', text: '最后回答' }] })
+        ])
+      ] as unknown as Parameters<typeof displayTurnsFromEntries>[1]
+      const [display] = displayTurnsFromEntries('session', entries)
+      const process = buildTurn(turnMessagesFromEntries(entries, display.id) as Parameters<typeof buildTurn>[0], false).process
+      const unloaded = () => toTurn(display, [])
+      const requested: string[] = []
+      const load = async (id: string) => {
+        requested.push(id)
+        root.render(createElement(TurnView, { turn: toTurn(display, process), onNeedProcess: load }))
+      }
+      const headers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+        .filter((button) => button.textContent?.includes('工作耗时'))
+      const assertUnloaded = () => {
+        assert.deepEqual(headers().map((button) => button.textContent), retryText ? ['工作耗时 1 秒'] : ['工作耗时 1 秒', '工作耗时 3 秒'])
+        assert.ok(headers().every((button) => button.getAttribute('aria-expanded') === 'false'))
+        assert.ok(container.textContent?.includes('上下文已压缩'))
+        assert.ok(container.textContent?.includes('最后回答'))
+      }
+      await render({ ...toTurn(display, process), streaming: true })
+      await render(unloaded(), load)
+      assertUnloaded()
+      assert.deepEqual(requested, [])
+      // Opening the last work block first must keep its header and reveal a nonempty body.
+      const original = headers()
+      const target = original.length - 1
+      await act(async () => { original[target].click(); await Bun.sleep(0) })
+      assert.deepEqual(requested, [display.id])
+      assert.equal(headers().length, original.length)
+      assert.ok(headers().every((button, index) => button === original[index]))
+      assert.deepEqual(headers().map((button) => button.getAttribute('aria-expanded')), original.map((_, index) => index === target ? 'true' : 'false'))
+      const body = document.getElementById(original[target].getAttribute('aria-controls')!)
+      assert.ok(body?.textContent?.trim())
+      if (original.length > 1) {
+        await act(async () => { original[0].click(); await Bun.sleep(0) })
+        assert.deepEqual(headers().map((button) => button.getAttribute('aria-expanded')), ['true', 'true'])
+        await act(async () => { original[0].click(); await Bun.sleep(0) })
+        assert.deepEqual(headers().map((button) => button.getAttribute('aria-expanded')), ['false', 'true'])
+      }
+      assert.equal(requested.length, 1)
+      // Reopening starts with no cached process, but the summary still has the complete layout.
+      await act(async () => { root.render(null) })
+      await render(unloaded(), load)
+      assertUnloaded()
+      assert.equal(requested.length, 1)
+    } else if (name === 'compaction-empty-blocks') {
+      const compaction = (workMsBefore: number) => ({ kind: 'compaction' as const, text: '压缩', tokensBefore: 42, afterAnswer: false, workMsBefore, durationMs: 1_000 })
+      const markers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+      await render(makeTurn({ streaming: false, hasProcess: true, workBlocks: [true, false], compactions: [compaction(1_000)] }))
+      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('工作耗时')), [true, false])
+      const landmarks = [compaction(0), compaction(1_000)]
+      const turn = makeTurn({ streaming: false, hasProcess: true, workBlocks: [false, false, true], compactions: landmarks, endedAt: 9_000 })
+      await render(turn)
+      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('工作耗时')), [false, false, true])
+      assert.equal(markers()[2].textContent, '工作耗时 6 秒')
+      await render({ ...turn, process: [...landmarks, { kind: 'tools', tools: [readTool('after', true)] }] })
+      assert.equal(markers()[2].textContent, '工作耗时 6 秒')
+      await render(makeTurn({ streaming: false, hasProcess: false, workBlocks: [false], compactions: [{ ...compaction(0), afterAnswer: true }] }))
+      assert.equal(markers().length, 1)
+      assert.equal(container.textContent?.includes('工作耗时'), false)
     } else if (name === 'compaction-ids') {
       await render(makeTurn({
         streaming: true,
@@ -521,7 +583,9 @@ if (process.argv[2] === '--marker-fixture') {
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',
     'compaction-live': 'a live compaction splits the turn into two blocks that time themselves alone',
-    'compaction-unloaded': 'a persisted compaction shows before its work is read',
+    'compaction-unloaded': 'all persisted work headers survive settlement, lazy loading and reopening',
+    'compaction-retry-text': 'partial-text retries after compaction create no empty or disappearing work header',
+    'compaction-empty-blocks': 'empty compaction intervals create no work header or timing offset',
     'compaction-ids': 'each work block split by a compaction owns a unique content id',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
   }

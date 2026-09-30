@@ -330,6 +330,12 @@ export interface DisplayTurn {
    * block is expanded is one the reader has to find first.
    */
   compactions: DisplayCompaction[]
+  /**
+   * Work presence in each interval separated by an inline compaction, including the final interval.
+   * Empty intervals stay false; trailing compactions and the standalone command card are excluded.
+   * This layout travels with the summary so its headers do not depend on loading process bodies.
+   */
+  workBlocks: boolean[]
   errorMessage?: string
   startedAt: number
   endedAt: number

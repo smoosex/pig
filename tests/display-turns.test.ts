@@ -6,7 +6,7 @@ import type { PigImageContent } from '../src/renderer/src/pi/types'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
-  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], compactions: [], ...patch
+  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], compactions: [], workBlocks: [patch.hasProcess ?? true], ...patch
 })
 
 describe('display turn projection', () => {
@@ -152,11 +152,14 @@ describe('display turn projection', () => {
       { text: '中间压缩', tokensBefore: 523_400, afterAnswer: false, workMsBefore: 2_000, durationMs: 500 },
       { text: '尾压缩', tokensBefore: 7, afterAnswer: true, workMsBefore: 3_000, durationMs: 250 }
     ]
-    const unread = toTurn(display({ compactions: landmarks, hasProcess: true }), [])
+    const projected = display({ compactions: landmarks, hasProcess: true, workBlocks: [true, true] })
+    const unread = toTurn(projected, [])
     expect(unread.process).toEqual([])
+    expect(unread.workBlocks).toBe(projected.workBlocks)
     expect(unread.compactions).toEqual(landmarks.map((landmark) => ({ kind: 'compaction', ...landmark })))
     // Once the disclosure is read, Pi's own stream is the one with the landmarks in position.
     const read: ProcessItem[] = [{ kind: 'text', text: '工作' }]
-    expect(toTurn(display({ compactions: landmarks }), read).process).toBe(read)
+    expect(toTurn(projected, read).process).toBe(read)
+    expect(toTurn(projected, read).workBlocks).toBe(projected.workBlocks)
   })
 })

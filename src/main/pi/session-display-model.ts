@@ -240,6 +240,13 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     typeof value === 'number' && Number.isFinite(value) ? value : undefined
 
   let hasProcess = false
+  const workBlocks = [false]
+  let blockHasNonTextWork = false
+  const markNonTextWork = () => {
+    hasProcess = true
+    workBlocks[workBlocks.length - 1] = true
+    blockHasNonTextWork = true
+  }
   let answer: DisplayAnswer[] = []
   const compactions: DisplayCompaction[] = []
   let errorMessage: string | undefined
@@ -267,23 +274,30 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
       content.forEach((block: Record<string, unknown>, index: number) => {
         const toAnswer = splitTrailing && trailingIsAnswer && index > splitAt
         if (block.type === 'thinking') {
-          if (typeof block.thinking === 'string' && block.thinking) hasProcess = true
+          if (typeof block.thinking === 'string' && block.thinking) markNonTextWork()
           return
         }
         if (block.type === 'toolCall') {
-          hasProcess = true
+          markNonTextWork()
           return
         }
         const item = asAnswer(block, sessionId, entry.id, index)
         if (!item) return
         if (toAnswer) blocks.push(item)
-        else pulled.push(item)
+        else {
+          pulled.push(item)
+          if (item.type === 'text' && item.text.trimEnd()) workBlocks[workBlocks.length - 1] = true
+        }
       })
 
       if (isLast && (trailingIsAnswer || splitAt < 0)) {
         if (blocks.length > 0) answer = blocks
-        else if (!splitTrailing) answer = pulled
-        else if (pulled.length > 0) hasProcess = true
+        else if (!splitTrailing) {
+          answer = pulled
+          // buildTurn merges adjacent text across replies, then pulls the entire trailing text into
+          // the answer. Only non-text work can keep this interval's header after that extraction.
+          workBlocks[workBlocks.length - 1] = blockHasNonTextWork
+        }
       } else if (pulled.length > 0 || blocks.length > 0 || !isLast) {
         hasProcess = true
       }
@@ -300,7 +314,9 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
       message.role === 'custom' ||
       message.role === 'branchSummary'
     ) {
-      hasProcess = true
+      // The leading standalone command has its own card, not an assistant work header.
+      if (bash && i === 0) hasProcess = true
+      else markNonTextWork()
     }
     if (message.role === 'compactionSummary') {
       // Nothing is written while the summary is being written, so the gap between the entry before
@@ -317,6 +333,10 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
         workMsBefore,
         durationMs
       })
+      if (i < lastAssistant) {
+        workBlocks.push(false)
+        blockHasNonTextWork = false
+      }
     }
   })
 
@@ -330,6 +350,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
     answer,
     compactions,
+    workBlocks,
     errorMessage,
     startedAt,
     endedAt,

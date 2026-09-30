@@ -1,4 +1,4 @@
-import type { DisplayCompaction } from '../../../shared/api'
+import type { DisplayCompaction, DisplayTurn } from '../../../shared/api'
 import type { MessageKey, Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -76,6 +76,8 @@ export interface Turn {
    * same stream as the work, so a loaded process carries its own copies and outranks these.
    */
   compactions?: CompactionItem[]
+  /** Persisted work layout, available before the process bodies are read. */
+  workBlocks?: DisplayTurn['workBlocks']
   answer: AnswerBlock[]
   errorMessage?: string
   startedAt: number

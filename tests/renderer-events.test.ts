@@ -202,7 +202,7 @@ async function runFixture(name: string): Promise<void> {
           ...state.runtime,
           session: {
             ...state.runtime.session,
-            turns: [{ id: 'bash-row', bash: { command: 'echo ready', exitCode: 0, cancelled: false }, answer: [], compactions: [], startedAt: 1, endedAt: 2, hasProcess: true }]
+            turns: [{ id: 'bash-row', bash: { command: 'echo ready', exitCode: 0, cancelled: false }, answer: [], compactions: [], workBlocks: [false], startedAt: 1, endedAt: 2, hasProcess: true }]
           }
         }
       }))

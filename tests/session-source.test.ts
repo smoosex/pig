@@ -127,6 +127,7 @@ test('a command keeps its card when compaction follows it in the same turn', asy
       expect(turns.map((turn) => turn.id)).toEqual(['b0'])
       expect(turns[0].bash?.command).toBe('pwd')
       expect(turns[0].hasProcess).toBe(true)
+      expect(turns[0].workBlocks).toEqual([false, false])
       // The marker travels with the projection, not with the on-demand process disclosure. Pi wrote
       // it after the command but before the answer, so it belongs inside the work, not below it.
       expect(turns[0].compactions).toEqual([
@@ -136,7 +137,7 @@ test('a command keeps its card when compaction follows it in the same turn', asy
   })
 })
 
-test('a mid-turn compaction is not work, and the turn keeps its work flag for its process', async () => {
+test('a mid-turn compaction ships both work blocks in file and live session summaries', async () => {
   const compaction = JSON.stringify({
     type: 'compaction', id: 'k0', parentId: 'a0', timestamp: STAMP,
     summary: 'compacted', tokensBefore: 1000
@@ -150,7 +151,10 @@ test('a mid-turn compaction is not work, and the turn keeps its work flag for it
     message('u0', null, 'user', 'q0'),
     answer('a0', 'u0', 'first answer'),
     compaction,
-    answer('a1', 'k0', 'second answer')
+    JSON.stringify({
+      type: 'message', id: 'a1', parentId: 'k0', timestamp: STAMP,
+      message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'after compaction' }, { type: 'text', text: 'second answer' }], timestamp: 2 }
+    })
   ]
   await withFile(lines, async (path) => {
     const index = indexSessionFile(path)
@@ -160,6 +164,7 @@ test('a mid-turn compaction is not work, and the turn keeps its work flag for it
       const turns = displayWindow(source).turns
       expect(turns.map((turn) => turn.id)).toEqual(['u0'])
       expect(turns[0].answer).toEqual([{ type: 'text', text: 'second answer' }])
+      expect(turns[0].workBlocks).toEqual([true, true])
       expect(turns[0].compactions).toEqual([
         { text: 'compacted', tokensBefore: 1000, afterAnswer: false, workMsBefore: 0, durationMs: 0 }
       ])
