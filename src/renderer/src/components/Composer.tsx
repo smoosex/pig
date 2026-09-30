@@ -14,6 +14,7 @@ import { ImagePreview } from './ImagePreview'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
+import { RetryNotice } from './composer/RetryNotice'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
 import { useComposer } from './composer/useComposer'
@@ -39,6 +40,7 @@ export function Composer({
   return (
     <div className={cn(chatColumn, 'relative isolate shrink-0 pb-3.5')}>
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
+      <RetryNotice sessionId={sessionId} />
       <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
           <div ref={boxRef} className="relative rounded-2xl shadow-md">

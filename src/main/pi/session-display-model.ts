@@ -277,9 +277,10 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
         hasProcess = true
       }
 
-      if (typeof message.errorMessage === 'string' && message.errorMessage) {
-        errorMessage = message.errorMessage
-      }
+      // Pi keeps a failed attempt in raw history while a retry continues past it. Only the last
+      // assistant message is still the turn's outcome, so an answer that recovered has no error.
+      errorMessage =
+        typeof message.errorMessage === 'string' && message.errorMessage ? message.errorMessage : undefined
       return
     }
     if (

@@ -110,6 +110,36 @@ test('a turn that carries nothing but a compaction has no work of its own', () =
   expect(turn.hasProcess).toBe(false)
 })
 
+test('a retried failure is no longer the outcome once an answer followed it', () => {
+  const entries = [
+    {
+      type: 'message',
+      id: 'user',
+      parentId: null,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'user', content: '问', timestamp: 1 }
+    },
+    {
+      type: 'message',
+      id: 'failed',
+      parentId: 'user',
+      timestamp: '2026-01-01T00:00:01.000Z',
+      message: { role: 'assistant', content: [], errorMessage: 'overloaded', timestamp: 2 }
+    },
+    {
+      type: 'message',
+      id: 'retried',
+      parentId: 'failed',
+      timestamp: '2026-01-01T00:00:02.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: '回答' }], timestamp: 3 }
+    }
+  ] as unknown as SessionEntry[]
+
+  const [turn] = displayTurnsFromEntries('session-1', entries)
+  expect(turn.answer).toEqual([{ type: 'text', text: '回答' }])
+  expect(turn.errorMessage).toBeUndefined()
+})
+
 describe('session display pasted text metadata', () => {
   test('restores attachment cards from the custom entry before a user message', () => {
     const entries = [

@@ -47,6 +47,7 @@ export const createConversationSlice: SessionSlice<
   | 'appendLiveMessage'
   | 'replaceLiveMessage'
   | 'setToolUpdates'
+  | 'setRetryNotice'
   | 'viewBranch'
 > = (set, get) => {
   const historyRequests = new Map<number, object>()
@@ -359,12 +360,14 @@ export const createConversationSlice: SessionSlice<
       streamElapsedMs: null,
       liveMessages: [...rt.liveMessages, message],
       toolUpdates: {},
+      retryNotice: null,
       pendingUserMessage: true
     })),
 
     rollbackPrompt: (sessionId) => update(sessionId, (rt) => ({
       isStreaming: false,
       toolUpdates: {},
+      retryNotice: null,
       streamStartedAt: null,
       streamElapsedMs: null,
       liveMessages: rt.pendingUserMessage ? rt.liveMessages.slice(0, -1) : rt.liveMessages,
@@ -444,11 +447,13 @@ export const createConversationSlice: SessionSlice<
       toolUpdates: { ...rt.toolUpdates, ...updates }
     })),
 
+    setRetryNotice: (sessionId, retryNotice) => update(sessionId, { retryNotice }),
+
     viewBranch: async (sessionId, tipId) => {
       const initial = get().runtime[sessionId]
       if (!initial) return
       const branchRequest = initial.branchRequest + 1
-      update(sessionId, { branchRequest, toolUpdates: {} })
+      update(sessionId, { branchRequest, toolUpdates: {}, retryNotice: null })
       const branch = await api.viewBranch(sessionId, tipId)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest) return

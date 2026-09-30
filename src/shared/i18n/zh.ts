@@ -447,6 +447,14 @@ export const zh = {
     pastedText: '粘贴的文本',
     imageReadFailed: '有图片读取失败，请重新粘贴。'
   },
+  retry: {
+    requestWaiting: '请求失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',
+    requestRetrying: '请求失败，正在重试（第 {attempt}/{total} 次）',
+    summaryWaiting: '总结失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',
+    summaryRetrying: '总结失败，正在重试（第 {attempt}/{total} 次）',
+    compactionRetrying: '正在重试压缩上下文（第 {attempt}/{total} 次）',
+    branchSummaryRetrying: '正在重试总结分支（第 {attempt}/{total} 次）'
+  },
   context: {
     usage: '上下文用量',
     window: '上下文窗口',

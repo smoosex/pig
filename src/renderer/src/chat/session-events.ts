@@ -24,7 +24,7 @@ export function subscribeSessionEvents(): () => void {
   const actions = useSessionsStore.getState()
   const {
     setStreaming, setThinkingDuration, appendLiveMessage, replaceLiveMessage, setToolUpdates, appendBashOutput,
-    renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages
+    renameTab, loadControls, hydrateTurns, setThinkingLevel, setFollowUpMessages, setRetryNotice
   } = actions
   const thinking = createThinkingTracker(setThinkingDuration)
   const cancelFrame = () => {
@@ -132,6 +132,7 @@ export function subscribeSessionEvents(): () => void {
     const store = useSessionsStore.getState()
     if (!store.runtime[sessionId]) return
     toolSnapshots.delete(sessionId)
+    setRetryNotice(sessionId, null)
     cancelFrame()
     const refresh = leafId === null
       ? store.hydrateTurns(sessionId, { keepOlderTurns: true })
@@ -194,6 +195,9 @@ export function subscribeSessionEvents(): () => void {
         thinking.finishSession(sessionId, performance.now())
         cancelDelay(sessionId)
         toolSnapshots.delete(sessionId)
+        // Settlement ends whatever the run was doing, retries included: a notice left standing here
+        // would outlive the failure it describes.
+        setRetryNotice(sessionId, null)
         cancelFrame()
         setStreaming(sessionId, false)
         void loadControls(sessionId).catch(reportError('load session controls'))
@@ -209,6 +213,57 @@ export function subscribeSessionEvents(): () => void {
         )
         break
       }
+      case 'auto_retry_start':
+        if (
+          typeof event.attempt === 'number' && typeof event.maxAttempts === 'number' &&
+          typeof event.errorMessage === 'string'
+        ) {
+          setRetryNotice(sessionId, {
+            kind: 'request',
+            attempt: event.attempt,
+            maxAttempts: event.maxAttempts,
+            errorMessage: event.errorMessage,
+            endsAt: Date.now() + (typeof event.delayMs === 'number' ? Math.max(0, event.delayMs) : 0)
+          })
+        }
+        break
+      case 'auto_retry_end':
+        // Success and final failure alike: the request is no longer pending, and a run that gave up
+        // still carries its error on the assistant message the turn renders.
+        setRetryNotice(sessionId, null)
+        break
+      case 'summarization_retry_scheduled':
+        if (
+          typeof event.attempt === 'number' && typeof event.maxAttempts === 'number' &&
+          typeof event.errorMessage === 'string'
+        ) {
+          setRetryNotice(sessionId, {
+            kind: 'summary',
+            source: 'summary',
+            attempt: event.attempt,
+            maxAttempts: event.maxAttempts,
+            errorMessage: event.errorMessage,
+            endsAt: Date.now() + (typeof event.delayMs === 'number' ? Math.max(0, event.delayMs) : 0)
+          })
+        }
+        break
+      case 'summarization_retry_attempt_start': {
+        // The attempt's own payload carries no budget, so it only sharpens the scheduled notice into
+        // "this attempt is running now"; an attempt nobody scheduled is not ours to invent.
+        const scheduled = current.retryNotice
+        if (scheduled?.kind !== 'summary') break
+        setRetryNotice(sessionId, {
+          ...scheduled,
+          source: event.source === 'branchSummary'
+            ? 'branchSummary'
+            : event.source === 'compaction' ? 'compaction' : scheduled.source,
+          endsAt: Date.now()
+        })
+        break
+      }
+      case 'summarization_retry_finished':
+        setRetryNotice(sessionId, null)
+        break
       case 'compaction_end': {
         // Automatic compaction can run between `agent_end` and `agent_settled`. Active runs refresh
         // at settlement; manual compaction has no settlement event and must refresh here.

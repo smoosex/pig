@@ -24,7 +24,7 @@ AgentSession.subscribe(event)
 - **间接展示**：没有对应事件分支，相关内容由消息事件展示。
 - **未处理**：事件已转发，但没有对应的 GUI 消费逻辑。
 
-主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **13 类**直接处理分支（含部分处理）；其余 **10 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
+主进程会转发全部 **23 类顶层事件**，但转发不等于业务处理。前端有 **18 类**直接处理分支（含部分处理）；其余 **5 类**没有专门的 GUI 处理分支，其中工具开始和结束由消息间接展示。
 
 ## 顶层会话事件：23 类
 
@@ -61,13 +61,17 @@ AgentSession.subscribe(event)
 
 | 事件 | 含义 / 字段 | 主进程处理 | 前端处理 |
 | --- | --- | --- | --- |
-| `auto_retry_start` | 模型请求准备重试，进入退避等待；`attempt`、`maxAttempts`、`delayMs`、`errorMessage` | 转发 | **未处理**：不显示重试次数、等待时间或错误原因 |
-| `auto_retry_end` | 自动重试成功、失败或取消；`success`、`attempt`、`finalError?` | 转发 | **未处理**：不消费重试结果或最终错误字段 |
-| `summarization_retry_scheduled` | 压缩或分支摘要准备重试；`attempt`、`maxAttempts`、`delayMs`、`errorMessage` | 转发 | **未处理** |
-| `summarization_retry_attempt_start` | 摘要重试实际开始；`source` 为 `branchSummary` 或 `compaction`，后者还包含 `reason` | 转发 | **未处理** |
-| `summarization_retry_finished` | 摘要重试流程结束；无其他字段 | 转发 | **未处理** |
+| `auto_retry_start` | 模型请求准备重试，进入退避等待；`attempt`、`maxAttempts`、`delayMs`、`errorMessage` | 转发 | **已处理**：在输入框上方显示会话级重试提示，包含第几次 / 共几次、剩余秒数与错误原因 |
+| `auto_retry_end` | 自动重试成功、失败或取消；`success`、`attempt`、`finalError?` | 转发 | **已处理**：清除重试提示。成功不留下痕迹，失败也不用该事件展示错误——本轮结果由最后一条 Assistant 消息的 `errorMessage` 呈现 |
+| `summarization_retry_scheduled` | 压缩或分支摘要准备重试；`attempt`、`maxAttempts`、`delayMs`、`errorMessage` | 转发 | **已处理**：显示摘要重试提示与倒计时；此时载荷没有 `source`，只标明是摘要重试 |
+| `summarization_retry_attempt_start` | 摘要重试实际开始；`source` 为 `branchSummary` 或 `compaction`，后者还包含 `reason` | 转发 | **已处理**：倒计时归零，并把提示细化为压缩或分支摘要重试 |
+| `summarization_retry_finished` | 摘要重试流程结束；无其他字段 | 转发 | **已处理**：清除摘要重试提示 |
 
 `summarization_retry_attempt_start` 在 SDK 类型中有两个载荷分支，但只有一个事件名，因此计为一类。
+
+重试提示是会话级临时状态（`RuntimeState.retryNotice`，渲染在 [RetryNotice](../src/renderer/src/components/composer/RetryNotice.tsx)），不属于消息历史。事件说什么时候开始重试，提示就在那时出现；说在哪结束，就在那时消失，因此成功的重试不会留下任何记录，提示也不会跨活动残留（`agent_settled`、切换分支、新的用户消息都会清掉它）。倒计时只在退避等待阶段显示，退避结束后的尝试只保留次数。
+
+失败尝试仍保留在会话 JSONL 中，但不再是本轮的结果：消息投影只保留最后一条 Assistant 消息的 `errorMessage`，所以重试成功的轮次不再显示先前的错误（`auto_retry_end` 也不单独展示 `finalError`）。上下文溢出等错误触发的重试属于同一条规则，例外只在工作块内部的压缩标记上体现。
 
 ### 上下文压缩：2 类
 
@@ -119,7 +123,7 @@ AgentSession.subscribe(event)
 
 ## 已知缺口
 
-1. **重试详情缺失**：普通请求及摘要重试的五类事件都未消费；等待重试时已保持整体运行状态，但没有重试次数、等待时间、原因或事件驱动的最终结果展示。
+1. **重试的收尾信息有限**：`auto_retry_end.finalError` 不单独展示，`summarization_retry_finished` 也不说明摘要重试是成功还是失败——提示在事件到达时清除，成功与否只能从压缩事件或分支摘要调用的结果判断。
 2. **压缩状态不完整**：没有消费 `compaction_start`，`compaction_end.errorMessage` 也没有事件驱动的展示。
 3. **部分状态字段未同步**：`queue_update.steering`、会话名称清空、没有 `id` 的直接 Bash 输出未处理；`entry_appended` 没有即时消费。
 4. **事件类型没有穷尽性检查**：前端的 `PiSessionEvent.type` 是普通 `string`，`SessionApi.onEvent` 接收 `unknown`，事件路由没有默认告警。SDK 新增事件不会因此触发穷尽性类型错误，可能被静默忽略。

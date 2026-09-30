@@ -18,6 +18,32 @@ import type {
 import type { ProcessItem, ThinkingDurations, ToolUpdates } from '../../chat/turns'
 import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
+/**
+ * A failure the session is recovering from. It is never part of the transcript: the retried request
+ * either replaces it with an answer, or leaves the last failed attempt as the turn's own outcome.
+ */
+export type RetryNotice =
+  | {
+      kind: 'request'
+      attempt: number
+      maxAttempts: number
+      errorMessage: string
+      /** Backoff deadline. Past it the retried request is already in flight and only the count is left. */
+      endsAt: number
+    }
+  | {
+      kind: 'summary'
+      /**
+       * Compaction and branch summaries share one retry budget and one payload shape. Only the
+       * attempt-start event says which of them is being retried.
+       */
+      source: 'summary' | 'compaction' | 'branchSummary'
+      attempt: number
+      maxAttempts: number
+      errorMessage: string
+      endsAt: number
+    }
+
 export interface RuntimeState extends SessionControls {
   instanceId: number
   controlsRevision: number
@@ -60,6 +86,7 @@ export interface RuntimeState extends SessionControls {
   isStreaming: boolean
   streamStartedAt: number | null
   streamElapsedMs: number | null
+  retryNotice: RetryNotice | null
   queuedEditText: string | null
 }
 
@@ -224,6 +251,7 @@ export interface SessionsStore {
   appendLiveMessage: (sessionId: string, message: PiMessage) => void
   replaceLiveMessage: (sessionId: string, message: PiMessage) => void
   setToolUpdates: (sessionId: string, updates: ToolUpdates) => void
+  setRetryNotice: (sessionId: string, notice: RetryNotice | null) => void
   viewBranch: (sessionId: string, tipId: string) => Promise<void>
 }
 

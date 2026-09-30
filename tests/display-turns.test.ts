@@ -123,8 +123,17 @@ describe('display turn projection', () => {
     const retry = { role: 'assistant', content: [{ type: 'text', text: 'retried answer' }], timestamp: 12 } as const
     const [turn] = groupTurns([user, overflow, summary, retry] as never, false)
     expect(turn.answer).toEqual([{ type: 'text', text: 'retried answer' }])
-    expect(turn.errorMessage).toBe('context length exceeded')
+    // The failed attempt stays in raw history, but the retry that followed is the turn's outcome.
+    expect(turn.errorMessage).toBeUndefined()
     expect(turn.process.find((item) => item.kind === 'compaction')).toMatchObject({ afterAnswer: false })
+  })
+
+  test('keeps the last failed attempt as the outcome when no retry recovered the turn', () => {
+    const user = { role: 'user', content: 'go', timestamp: 9 } as const
+    const first = { role: 'assistant', content: [], errorMessage: 'overloaded', timestamp: 10 } as const
+    const last = { role: 'assistant', content: [], errorMessage: 'still overloaded', timestamp: 11 } as const
+    const [turn] = groupTurns([user, first, last] as never, false)
+    expect(turn.errorMessage).toBe('still overloaded')
   })
 
   test('keeps assistant-only errors and history metadata intact', () => {

@@ -303,6 +303,12 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(runtime().streamElapsedMs, null)
       assert.equal(timers.size, 0)
       emit({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: 'network error' })
+      const notice = runtime().retryNotice
+      assert.equal(notice?.kind, 'request')
+      assert.equal(notice?.attempt, 1)
+      assert.equal(notice?.maxAttempts, 3)
+      assert.equal(notice?.errorMessage, 'network error')
+      assert.ok((notice?.endsAt ?? 0) > Date.now(), 'the notice counts down towards the retry')
       drainTimers()
       assert.deepEqual({ reads, controlReads }, { reads: 0, controlReads: 0 })
       emit({ type: 'agent_start' })
@@ -311,6 +317,7 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'message_start', message: answer })
       emit({ type: 'message_end', message: answer })
       emit({ type: 'auto_retry_end', success: true, attempt: 1 })
+      assert.equal(runtime().retryNotice, null)
       emit({ type: 'agent_end', messages: [answer], willRetry: false })
       assert.equal(runtime().isStreaming, true)
       assert.equal(timers.size, 0)
@@ -323,6 +330,47 @@ async function runFixture(name: string): Promise<void> {
       drainTimers()
       await new Promise((resolve) => setTimeout(resolve, 0))
       assert.deepEqual({ reads, controlReads }, { reads: 1, controlReads: 1 })
+    } else if (name === 'retry-notice') {
+      const scheduled = { type: 'summarization_retry_scheduled', attempt: 2, maxAttempts: 3, delayMs: 4_000, errorMessage: 'summary exploded' } as PiSessionEvent
+      // A payload that cannot describe a retry is not one to invent a notice from.
+      emit({ type: 'auto_retry_start', attempt: 1 } as PiSessionEvent)
+      assert.equal(runtime().retryNotice, null)
+      emit(scheduled)
+      const notice = runtime().retryNotice
+      assert.equal(notice?.kind, 'summary')
+      const noticeOf = () => {
+        const current = runtime().retryNotice
+        return current?.kind === 'summary' ? current : null
+      }
+      assert.equal(noticeOf()?.source, 'summary')
+      assert.deepEqual(
+        { attempt: notice?.attempt, maxAttempts: notice?.maxAttempts, errorMessage: notice?.errorMessage },
+        { attempt: 2, maxAttempts: 3, errorMessage: 'summary exploded' }
+      )
+      assert.ok((notice?.endsAt ?? 0) > Date.now())
+      // The attempt itself carries no budget: it sharpens the scheduled notice and starts the clock.
+      emit({ type: 'summarization_retry_attempt_start', source: 'compaction', reason: 'manual' })
+      assert.equal(noticeOf()?.source, 'compaction')
+      assert.equal(noticeOf()?.attempt, 2)
+      assert.ok((noticeOf()?.endsAt ?? 0) <= Date.now(), 'a running attempt has no countdown')
+      emit({ type: 'summarization_retry_finished' })
+      assert.equal(runtime().retryNotice, null)
+      emit({ type: 'summarization_retry_attempt_start', source: 'branchSummary' })
+      assert.equal(runtime().retryNotice, null, 'an attempt nobody scheduled stays unannounced')
+      emit(scheduled)
+      emit({ type: 'summarization_retry_attempt_start', source: 'branchSummary' })
+      assert.equal(noticeOf()?.source, 'branchSummary')
+      // Settlement, a new prompt and an extension branch change all end the session activity the
+      // notice describes, so none of them may leave it behind.
+      emit({ type: 'agent_settled' })
+      assert.equal(runtime().retryNotice, null)
+      emit(scheduled)
+      store.getState().beginPrompt('session', { role: 'user', content: 'next', timestamp: 400 })
+      assert.equal(runtime().retryNotice, null)
+      emit(scheduled)
+      branchListener?.('session', 'leaf-1')
+      assert.equal(runtime().retryNotice, null)
+      await new Promise((resolve) => setTimeout(resolve, 0))
     } else if (name === 'compaction') {
       let reads = 0
       let controlReads = 0
@@ -427,6 +475,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     'unaccepted-end': 'agent settlement cannot acknowledge a user message that was never received',
     'turn-end-controls': 'turns and final settlement refresh context usage, but agent end does not',
     'retry-settlement': 'retries preserve running state and elapsed time until final settlement',
+    'retry-notice': 'retry notices track the attempt Pi reports and never outlive their activity',
     branch: 'an extension branch change rebinds the conversation to the new leaf',
     'prompt-transition': 'a new prompt preserves the previous turn until persisted history replaces it',
     compaction: 'a finished compaction re-reads its turn and refreshes the context usage'

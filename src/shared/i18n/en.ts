@@ -445,6 +445,14 @@ export const en: Messages = {
     pastedText: 'Pasted text',
     imageReadFailed: 'An image could not be read; paste it again.'
   },
+  retry: {
+    requestWaiting: 'Request failed, retrying in {seconds}s (attempt {attempt}/{total})',
+    requestRetrying: 'Request failed, retrying (attempt {attempt}/{total})',
+    summaryWaiting: 'Summary failed, retrying in {seconds}s (attempt {attempt}/{total})',
+    summaryRetrying: 'Summary failed, retrying (attempt {attempt}/{total})',
+    compactionRetrying: 'Retrying context compaction (attempt {attempt}/{total})',
+    branchSummaryRetrying: 'Retrying branch summary (attempt {attempt}/{total})'
+  },
   context: {
     usage: 'Context usage',
     window: 'Context window',
