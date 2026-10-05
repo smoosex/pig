@@ -237,16 +237,55 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(listener, undefined)
       assert.equal(timers.size, 0)
       assert.equal(frames.size, 0)
+    } else if (name === 'command-rollback') {
+      const pending = { role: 'user' as const, content: '/end-review', timestamp: 300 }
+      const revision = runtime().agentRunRevision
+      store.getState().beginPrompt('session', pending)
+      emit({ type: 'agent_start' })
+      const status: PiMessage = { role: 'custom', customType: 'repair', content: 'Repair started', display: true, timestamp: 301 }
+      emit({ type: 'message_start', message: status })
+      emit({ type: 'tool_execution_update', toolCallId: 'repair-tool', partialResult: { content: [{ type: 'text', text: 'progress' }] } })
+      flush()
+      emit({ type: 'agent_end', messages: [], willRetry: false })
+      emit({ type: 'compaction_start', reason: 'threshold' })
+      emit({ type: 'summarization_retry_scheduled', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: 'summary retry' })
+      const active = runtime()
+      store.getState().rollbackPrompt('session', pending, revision)
+      assert.equal(runtime().isStreaming, true)
+      assert.equal(runtime().streamStartedAt, active.streamStartedAt)
+      assert.equal(runtime().streamElapsedMs, null)
+      assert.equal(runtime().toolUpdates, active.toolUpdates)
+      assert.equal(runtime().liveCompactions, active.liveCompactions)
+      assert.equal(runtime().retryNotice, active.retryNotice)
+      assert.deepEqual(runtime().liveMessages, [status])
+      assert.equal(runtime().pendingUserMessage, false)
+      emit({ type: 'message_start', message: { role: 'user', content: 'Implement findings', timestamp: 302 } })
+      assert.equal(runtime().isStreaming, true)
+      emit({ type: 'agent_settled' })
+      assert.equal(runtime().isStreaming, false)
+      const newer = { role: 'user' as const, content: 'next submission', timestamp: 400 }
+      const nextRevision = runtime().agentRunRevision
+      store.getState().beginPrompt('session', newer)
+      const next = runtime()
+      store.getState().rollbackPrompt('session', pending, revision)
+      assert.equal(runtime(), next, 'old cleanup cannot remove another submission')
+      store.getState().rollbackPrompt('session', newer, nextRevision)
+      assert.equal(runtime().isStreaming, false)
+      assert.equal(runtime().pendingUserMessage, false)
     } else if (name === 'unaccepted-end') {
-      store.getState().beginPrompt('session', { role: 'user', content: 'pending', timestamp: 300 })
+      const pending = { role: 'user' as const, content: 'pending', timestamp: 300 }
+      const revision = runtime().agentRunRevision
+      store.getState().beginPrompt('session', pending)
       emit({ type: 'agent_start' })
       emit({ type: 'agent_end', messages: [], willRetry: false })
       assert.equal(runtime().isStreaming, true)
       emit({ type: 'agent_settled' })
       assert.equal(runtime().isStreaming, false)
       assert.equal(runtime().pendingUserMessage, true)
-      store.getState().rollbackPrompt('session')
+      const elapsed = runtime().streamElapsedMs
+      store.getState().rollbackPrompt('session', pending, revision)
       assert.deepEqual(runtime().liveMessages, [])
+      assert.equal(runtime().streamElapsedMs, elapsed)
     } else if (name === 'turn-end-controls') {
       let controlReads = 0
       api.getControls = async () => {
@@ -545,6 +584,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',
     'unaccepted-end': 'agent settlement cannot acknowledge a user message that was never received',
+    'command-rollback': 'command cleanup preserves newer SDK activity and removes only its own optimistic message',
     'turn-end-controls': 'turns and final settlement refresh context usage, but agent end does not',
     'retry-settlement': 'retries preserve running state and elapsed time until final settlement',
     'retry-notice': 'retry notices track the attempt Pi reports and never outlive their activity',

@@ -354,6 +354,7 @@ export const createConversationSlice: SessionSlice<
     clearQueuedEditText: (sessionId) => update(sessionId, { queuedEditText: null }),
 
     setStreaming: (sessionId, streaming) => update(sessionId, (rt) => ({
+      agentRunRevision: rt.agentRunRevision + 1,
       isStreaming: streaming,
       toolUpdates: streaming ? rt.toolUpdates : {},
       streamStartedAt: streaming ? (rt.isStreaming ? rt.streamStartedAt : Date.now()) : null,
@@ -372,16 +373,24 @@ export const createConversationSlice: SessionSlice<
       pendingUserMessage: true
     })),
 
-    rollbackPrompt: (sessionId) => update(sessionId, (rt) => ({
-      isStreaming: false,
-      toolUpdates: {},
-      liveCompactions: [],
-      retryNotice: null,
-      streamStartedAt: null,
-      streamElapsedMs: null,
-      liveMessages: rt.pendingUserMessage ? rt.liveMessages.slice(0, -1) : rt.liveMessages,
-      pendingUserMessage: false
-    })),
+    rollbackPrompt: (sessionId, message, agentRunRevision) => update(sessionId, (rt) => {
+      const index = rt.pendingUserMessage ? rt.liveMessages.indexOf(message) : -1
+      if (index < 0) return null
+      // An extension command can start a real run before its IPC reply. Remove its optimistic
+      // message without erasing newer SDK activity, including a run that has already settled.
+      return {
+        ...(rt.agentRunRevision === agentRunRevision ? {
+          isStreaming: false,
+          toolUpdates: {},
+          liveCompactions: [],
+          retryNotice: null,
+          streamStartedAt: null,
+          streamElapsedMs: null
+        } : {}),
+        liveMessages: [...rt.liveMessages.slice(0, index), ...rt.liveMessages.slice(index + 1)],
+        pendingUserMessage: false
+      }
+    }),
 
     beginBash: (sessionId, id, command) => update(sessionId, {
       bashExecution: {

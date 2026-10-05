@@ -34,6 +34,7 @@ export const emptyRuntime = (): RuntimeState => ({
   thinkingDurations: {},
   elapsedByTurnId: {},
   isStreaming: false,
+  agentRunRevision: 0,
   streamStartedAt: null,
   streamElapsedMs: null,
   liveCompactions: [],

@@ -15,12 +15,15 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
   const prompt = normalizeSessionPrompt(input)
   worktrees.assertAvailable(cwd)
   if (agentSession.isBashRunning) throw new Error('Session is running a bash command')
+  // Pi decides whether to start or queue after its input hooks; a preflight busy snapshot can be stale.
   const streamingBehavior =
-    agentSession.isStreaming &&
-    (input.streamingBehavior === 'steer' || input.streamingBehavior === 'followUp')
+    input.streamingBehavior === 'steer' || input.streamingBehavior === 'followUp'
       ? input.streamingBehavior
       : undefined
-  const cancelPending = queuePendingUserMessage(
+  // Extension commands execute directly in Pi; this input never becomes a queued user message.
+  const isExtensionCommand = prompt.modelText.startsWith('/') &&
+    agentSession.extensionRunner.getCommand(prompt.modelText.slice(1).split(' ', 1)[0]) !== undefined
+  const cancelPending = isExtensionCommand ? undefined : queuePendingUserMessage(
     agentSession,
     prompt.modelText,
     prompt.displayMetadata,
@@ -46,7 +49,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
         : undefined
     )
   } catch (error) {
-    cancelPending()
+    cancelPending?.()
     throw error
   }
 }

@@ -1311,8 +1311,10 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime().pendingUserMessage, false)
     assert.deepEqual(runtime().liveMessages.map((message) => message.timestamp), [1, 11])
     state().setStreaming(meta.id, false)
-    state().beginPrompt(meta.id, { role: 'user', content: 'failed', timestamp: 20 })
-    state().rollbackPrompt(meta.id)
+    const failed = { role: 'user' as const, content: 'failed', timestamp: 20 }
+    const revision = runtime().agentRunRevision
+    state().beginPrompt(meta.id, failed)
+    state().rollbackPrompt(meta.id, failed, revision)
     assert.deepEqual(runtime().liveMessages.map((message) => message.timestamp), [1, 11])
   } else if (name === 'selection-order') {
     const response = deferred<OpenSessionRef>()

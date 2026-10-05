@@ -195,6 +195,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const instanceId = runtime.instanceId
     const isCurrent = () => useSessionsStore.getState().runtime[target]?.instanceId === instanceId
     const streaming = runtime.isStreaming
+    const agentRunRevision = runtime.agentRunRevision
     setErrors((current) => ({ ...current, [target]: undefined }))
 
     const optimistic = composerUserMessage(text, payload, serialized.attachments)
@@ -209,7 +210,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       const prepared = await api.prepareSession(target)
       if (!isCurrent()) return
       if (stopEpoch(target) !== startedAt) {
-        if (!streaming) useSessionsStore.getState().rollbackPrompt(target)
+        if (!streaming) useSessionsStore.getState().rollbackPrompt(target, optimistic, agentRunRevision)
         setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
         return
       }
@@ -224,7 +225,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
         text,
         payload.length > 0 ? payload : undefined,
         hasAttachments ? serialized.attachments : undefined,
-        streaming ? streamingBehavior : undefined
+        streamingBehavior
       )
     } catch (error) {
       if (!isCurrent()) return
@@ -232,7 +233,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       const activeRuntime = current.runtime[target]
       const unaccepted = streaming || activeRuntime?.pendingUserMessage
       if (unaccepted) {
-        if (!streaming) current.rollbackPrompt(target)
+        if (!streaming) current.rollbackPrompt(target, optimistic, agentRunRevision)
         setFailedDrafts((current) => ({ ...current, [target]: [...(current[target] ?? []), saved] }))
       }
       report(target, error)
@@ -242,7 +243,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     if (!isCurrent()) return
     const current = useSessionsStore.getState()
     const consumedCommand = !streaming && current.runtime[target]?.pendingUserMessage
-    if (consumedCommand) current.rollbackPrompt(target)
+    if (consumedCommand) current.rollbackPrompt(target, optimistic, agentRunRevision)
     const results = await Promise.allSettled([
       useSessionsStore.getState().refreshCwd(cwd),
       useSessionsStore.getState().loadControls(target),

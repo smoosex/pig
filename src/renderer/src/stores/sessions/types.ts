@@ -85,6 +85,8 @@ export interface RuntimeState extends SessionControls {
   thinkingDurations: ThinkingDurations
   elapsedByTurnId: Record<string, number>
   isStreaming: boolean
+  /** SDK lifecycle changes outrank cleanup of an older optimistic submission. */
+  agentRunRevision: number
   streamStartedAt: number | null
   streamElapsedMs: number | null
   /** Compactions Pi is running in this session, in the order they started. */
@@ -241,7 +243,7 @@ export interface SessionsStore {
 
   setStreaming: (sessionId: string, streaming: boolean) => void
   beginPrompt: (sessionId: string, message: PiMessage) => void
-  rollbackPrompt: (sessionId: string) => void
+  rollbackPrompt: (sessionId: string, message: PiMessage, agentRunRevision: number) => void
   beginBash: (sessionId: string, id: string, command: string) => void
   appendBashOutput: (sessionId: string, id: string, delta: string) => void
   endBash: (sessionId: string, id: string, result?: BashExecutionResult, turnId?: string) => void

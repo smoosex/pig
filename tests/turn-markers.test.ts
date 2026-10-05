@@ -279,6 +279,72 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { separator().click() })
       assert.equal(separator().getAttribute('aria-expanded'), 'true')
       assert.deepEqual(shimmerText(), [])
+    } else if (name === 'command-continuation') {
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
+      const { groupTurns } = await import('../src/renderer/src/chat/turns')
+      useSessionsStore.setState({
+        activeTabId: 'repair',
+        openTabs: [{ id: 'repair', cwd: '/project', title: 'repair', kind: 'project', loadState: 'ready' }],
+        runtime: { repair: emptyRuntime() }
+      })
+      const actions = useSessionsStore.getState()
+      const ticks = new Map<number, () => void>()
+      const originalNow = Date.now
+      const originalInterval = window.setInterval.bind(window)
+      const originalClear = window.clearInterval.bind(window)
+      let now = 10_000
+      let timerId = 100_000
+      Date.now = () => now
+      window.setInterval = ((callback: () => void, delay: number) => {
+        if (delay !== 200) return originalInterval(callback, delay)
+        const id = ++timerId
+        ticks.set(id, callback)
+        return id
+      }) as typeof window.setInterval
+      window.clearInterval = ((id: number) => {
+        if (!ticks.delete(id)) originalClear(id)
+      }) as typeof window.clearInterval
+      try {
+        const command = { role: 'user' as const, content: '/end-review', timestamp: now }
+        const revision = useSessionsStore.getState().runtime.repair.agentRunRevision
+        actions.beginPrompt('repair', command)
+        actions.setStreaming('repair', true)
+        function LiveTurn() {
+          const state = useSessionsStore((s) => s.runtime.repair)
+          const [turn] = groupTurns(state.liveMessages, state.isStreaming, state.thinkingDurations, state.toolUpdates)
+          return turn ? createElement(TurnView, { turn: { ...turn, id: 'live:repair', workedMs: state.streamElapsedMs ?? undefined } }) : null
+        }
+        await act(async () => { root.render(createElement(LiveTurn)) })
+        await act(async () => {
+          actions.rollbackPrompt('repair', command, revision)
+          actions.appendLiveMessage('repair', { role: 'user', content: 'Implement findings', timestamp: now })
+          actions.appendLiveMessage('repair', { role: 'assistant', timestamp: now, content: [{ type: 'thinking', thinking: 'Planning the repair' }] } as Parameters<typeof actions.appendLiveMessage>[1])
+        })
+        assert.equal(ticks.size, 1)
+        assert.equal(separator().getAttribute('aria-expanded'), 'true')
+        assert.ok(separator().classList.contains('pointer-events-none'))
+        assert.deepEqual(shimmerText(), ['思考中...'])
+        await act(async () => { separator().click() })
+        assert.equal(separator().getAttribute('aria-expanded'), 'true')
+        now += 1_400
+        await act(async () => { for (const tick of ticks.values()) tick() })
+        assert.equal(separator().textContent, '已工作 1 秒')
+        now += 3_000
+        await act(async () => { for (const tick of ticks.values()) tick() })
+        assert.equal(separator().textContent, '已工作 4 秒')
+        await act(async () => { actions.setStreaming('repair', false) })
+        assert.equal(ticks.size, 0)
+        assert.deepEqual(shimmerText(), [])
+        assert.equal(separator().getAttribute('aria-expanded'), 'false')
+        now += 5_000
+        await act(async () => { await Bun.sleep(0) })
+        assert.equal(separator().textContent, '工作耗时 4 秒')
+      } finally {
+        Date.now = originalNow
+        window.setInterval = originalInterval
+        window.clearInterval = originalClear
+      }
     } else if (name === 'compaction') {
       const process: ProcessItem[] = [
         { kind: 'tools', tools: [readTool('done', true)] },
@@ -581,6 +647,7 @@ if (process.argv[2] === '--marker-fixture') {
     'tool-live': 'running tools stay expandable through snapshots, final results and later assistant text',
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
+    'command-continuation': 'a command continuation keeps live thinking, locked work headers and a ticking clock until settlement',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',
     'compaction-live': 'a live compaction splits the turn into two blocks that time themselves alone',
     'compaction-unloaded': 'all persisted work headers survive settlement, lazy loading and reopening',
