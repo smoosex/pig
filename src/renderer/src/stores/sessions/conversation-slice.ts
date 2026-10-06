@@ -382,12 +382,18 @@ export const createConversationSlice: SessionSlice<
         ...(rt.agentRunRevision === agentRunRevision ? {
           isStreaming: false,
           toolUpdates: {},
-          liveCompactions: [],
           retryNotice: null,
           streamStartedAt: null,
           streamElapsedMs: null
         } : {}),
         liveMessages: [...rt.liveMessages.slice(0, index), ...rt.liveMessages.slice(index + 1)],
+        liveCompactions: rt.agentRunRevision === agentRunRevision
+          ? []
+          : rt.liveCompactions.some((mark) => mark.afterMessageCount > index)
+            ? rt.liveCompactions.map((mark) => mark.afterMessageCount > index
+              ? { ...mark, afterMessageCount: mark.afterMessageCount - 1 }
+              : mark)
+            : rt.liveCompactions,
         pendingUserMessage: false
       }
     }),

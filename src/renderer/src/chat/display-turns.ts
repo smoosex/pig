@@ -57,6 +57,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     startedAt: display.startedAt,
     endedAt: display.endedAt,
     streaming: false,
+    waitingForModel: false,
     hasProcess: display.hasProcess,
     workedMs,
     renderKey: user && display.user

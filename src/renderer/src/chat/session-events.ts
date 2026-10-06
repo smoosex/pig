@@ -289,6 +289,7 @@ export function subscribeSessionEvents(): () => void {
           id: `compaction:${startedAt}`,
           reason,
           startedAt,
+          afterMessageCount: current.liveMessages.length,
           workMsBefore: current.streamStartedAt == null
             ? 0
             : Math.max(0, startedAt - current.streamStartedAt - summarized),

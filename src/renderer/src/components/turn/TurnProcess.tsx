@@ -207,17 +207,21 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
   )
 }
 
-export function ProcessOutline({ items, streaming }: { items: ProcessItem[]; streaming: boolean }) {
+export function ProcessOutline({ items, streaming, waitingForModel }: {
+  items: ProcessItem[]
+  streaming: boolean
+  waitingForModel: boolean
+}) {
   const segments = processSegments(items)
   if (segments.length === 0) {
-    return (
+    return streaming && waitingForModel ? (
       <Marker className={statusMarker}>
-        <ThinkingOrb state="shaping" size={20} theme="auto" className="shrink-0" />
+        <ThinkingOrb state="working" size={20} theme="auto" className="shrink-0" />
         <MarkerContent className="flex-1 truncate">
           <WaitLine streaming={streaming} />
         </MarkerContent>
       </Marker>
-    )
+    ) : null
   }
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -228,6 +232,11 @@ export function ProcessOutline({ items, streaming }: { items: ProcessItem[]; str
           <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} streaming={streaming} />
         )
       )}
+      {streaming && waitingForModel ? (
+        <Marker className={statusMarker}>
+          <ThinkingOrb state="working" size={20} theme="auto" className="shrink-0" />
+        </Marker>
+      ) : null}
     </div>
   )
 }

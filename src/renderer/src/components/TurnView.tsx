@@ -94,7 +94,19 @@ function AgentTurnView({
   const hasWork = blocks.some((segment) => segment.kind === 'work')
   const showHeader = hasWork || turn.streaming || (!turn.workBlocks && Boolean(turn.hasProcess) && turn.process.length === 0)
   const showBody = showHeader || blocks.length > 0
-  if (showHeader && !hasWork) blocks.unshift({ kind: 'work', items: [], block: 0 })
+  const modelActive = turn.streaming && !turn.errorMessage &&
+    !landmarks.some((item) => item.live?.status === 'running')
+  let activeWorkIndex = -1
+  if (modelActive) {
+    // An empty current interval still owns the live clock; never resume work before a landmark.
+    const last = blocks[blocks.length - 1]
+    if (last?.kind !== 'work' || last.block !== landmarks.length) {
+      blocks.push({ kind: 'work', items: [], block: landmarks.length })
+    }
+    activeWorkIndex = blocks.length - 1
+  } else if (showHeader && !hasWork && blocks.length === 0) {
+    blocks.push({ kind: 'work', items: [], block: 0 })
+  }
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [liveOutline, setLiveOutline] = useState(turn.streaming)
   const [loading, setLoading] = useState(false)
@@ -188,7 +200,11 @@ function AgentTurnView({
                 </Marker>
                 <CollapsibleContent className="duration-300">
                   {liveOutline ? (
-                    <ProcessOutline items={block.items} streaming={turn.streaming && !turn.errorMessage} />
+                    <ProcessOutline
+                      items={block.items}
+                      streaming={index === activeWorkIndex}
+                      waitingForModel={index === activeWorkIndex && turn.waitingForModel}
+                    />
                   ) : (
                     <ProcessList items={block.items} />
                   )}

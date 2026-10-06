@@ -31,7 +31,7 @@ async function runFixture(): Promise<void> {
   document.body.append(container)
   const root = createRoot(container)
   const running = (patch: Partial<LiveCompaction> = {}): LiveCompaction => ({
-    id: 'k1', reason: 'manual', startedAt: Date.now() - 3_000, workMsBefore: 0,
+    id: 'k1', reason: 'manual', startedAt: Date.now() - 3_000, afterMessageCount: 0, workMsBefore: 0,
     endedAt: null, status: 'running', ...patch
   })
   const show = async (

@@ -1,7 +1,7 @@
 import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { showsInTranscript, type LiveCompaction } from '../chat/compactions'
+import { showsInTranscript } from '../chat/compactions'
 import { toTurn } from '../chat/display-turns'
-import { groupTurns, type CompactionItem } from '../chat/turns'
+import { groupTurns } from '../chat/turns'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../stores/sessions'
 import type { RuntimeState } from '../stores/sessions/types'
@@ -25,22 +25,6 @@ function sameIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
 
-/**
- * The compaction Pi is running right now, as a landmark inside the live turn. It has no session
- * entry until its summary is written, and the summary is not a message either: without this the
- * turn's work would run straight through the compaction and only split at settlement.
- */
-function liveCompactionItem(mark: LiveCompaction): CompactionItem {
-  return {
-    kind: 'compaction',
-    text: mark.summary ?? '',
-    tokensBefore: mark.tokensBefore ?? 0,
-    afterAnswer: false,
-    workMsBefore: mark.workMsBefore,
-    durationMs: mark.endedAt == null ? 0 : Math.max(0, mark.endedAt - mark.startedAt),
-    live: mark
-  }
-}
 
 /** Keep the active pane and the two most recently visited panes mounted. */
 function useRetainedSessionIds(openTabs: OpenTab[], activeSessionId: string | null): string[] {
@@ -106,7 +90,8 @@ const SessionChatPane = memo(function SessionChatPane({
     [turns, processByTurnId, elapsedByTurnId]
   )
   const live = useMemo(() => {
-    const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations, toolUpdates)
+    const marks = liveCompactions.filter((mark) => showsInTranscript(mark, liveMessages.length > 0))
+    const grouped = groupTurns(liveMessages, isStreaming, thinkingDurations, toolUpdates, marks)
     const turns = grouped.map((turn, index) => ({
       ...turn,
       id: turn.id ?? `live:${turn.renderKey ?? index}`,
@@ -120,11 +105,6 @@ const SessionChatPane = memo(function SessionChatPane({
         bashRunning: true,
         workedMs: undefined
       })
-    }
-    const last = turns[turns.length - 1]
-    const marks = liveCompactions.filter((mark) => showsInTranscript(mark, liveMessages.length > 0))
-    if (last && marks.length > 0) {
-      turns[turns.length - 1] = { ...last, process: [...last.process, ...marks.map(liveCompactionItem)] }
     }
     return turns
   }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs, liveCompactions])

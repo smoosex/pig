@@ -83,6 +83,8 @@ export interface Turn {
   startedAt: number
   endedAt: number
   streaming: boolean
+  /** Message-order state: text emitted before a tool result is not output from the next request. */
+  waitingForModel: boolean
   hasProcess?: boolean
   workedMs?: number
   /** Stable UI identity shared by the live and persisted versions of a turn. */
@@ -234,7 +236,9 @@ export function buildTurn(
   chunk: PiMessage[],
   streaming: boolean,
   thinkingDurations: ThinkingDurations = {},
-  renderKey?: string
+  renderKey?: string,
+  liveCompactions: readonly LiveCompaction[] = [],
+  messageOffset = 0
 ): Turn {
   const user = chunk[0]?.role === 'user' ? (chunk[0] as PigUserMessage) : undefined
   const bash = chunk[0]?.role === 'bashExecution' ? chunk[0] : undefined
@@ -247,6 +251,37 @@ export function buildTurn(
   // entries rather than messages, so this only applies to a stream that carries one anyway.
   const workStart = user?.timestamp ?? chunk[0]?.timestamp ?? 0
   let summarizedMs = 0
+  let waitingForModel = true
+  // Failed attempts stay in process, but their unexecuted calls cannot block a later request.
+  let pendingToolCalls: Set<string> | undefined
+  let compactionIndex = 0
+  while (
+    messageOffset > 0 && compactionIndex < liveCompactions.length &&
+    liveCompactions[compactionIndex].afterMessageCount <= messageOffset
+  ) compactionIndex++
+
+  // Boundaries belong to the source message array, including its user messages. A later output
+  // stays after its compaction even while the landmark still has no persisted session entry.
+  const appendCompactionsThrough = (messageCount: number) => {
+    while (
+      compactionIndex < liveCompactions.length &&
+      liveCompactions[compactionIndex].afterMessageCount <= messageCount
+    ) {
+      const mark = liveCompactions[compactionIndex++]
+      const durationMs = mark.endedAt == null ? 0 : Math.max(0, mark.endedAt - mark.startedAt)
+      process.push({
+        kind: 'compaction',
+        text: mark.summary ?? '',
+        tokensBefore: mark.tokensBefore ?? 0,
+        afterAnswer: false,
+        workMsBefore: mark.workMsBefore,
+        durationMs,
+        live: mark
+      })
+      waitingForModel = mark.status === 'done'
+      summarizedMs += durationMs
+    }
+  }
 
   let lastAssistant = -1
   for (let i = 0; i < rest.length; i++) {
@@ -254,7 +289,20 @@ export function buildTurn(
   }
 
   rest.forEach((message, i) => {
+    appendCompactionsThrough(messageOffset + (user ? 1 : 0) + i)
     if (message.role === 'assistant') {
+      if (streaming) {
+        waitingForModel = true
+        const failed = !!message.errorMessage || message.stopReason === 'error' || message.stopReason === 'aborted'
+        for (const block of message.content) {
+          if (block.type === 'toolCall') {
+            waitingForModel = false
+            if (!failed) (pendingToolCalls ??= new Set<string>()).add(block.id)
+          } else if (block.type === 'thinking' ? !!block.thinking : !!block.text.trimEnd()) {
+            waitingForModel = false
+          }
+        }
+      }
       const isLast = i === lastAssistant
       const trailingIsAnswer = isLast && rest.slice(i + 1).every((m) => m.role !== 'toolResult')
       const splitTrailing = isLast && lastToolCallIndex(message.content) >= 0
@@ -282,10 +330,13 @@ export function buildTurn(
     }
     if (message.role === 'toolResult') {
       addToolResult(process, message)
+      pendingToolCalls?.delete(message.toolCallId)
+      waitingForModel = true
       return
     }
     if (message.role === 'bashExecution') {
       process.push({ kind: 'bash', message })
+      waitingForModel = false
       return
     }
     if (message.role === 'custom') {
@@ -311,8 +362,10 @@ export function buildTurn(
         durationMs
       })
       summarizedMs += durationMs
+      waitingForModel = true
     }
   })
+  appendCompactionsThrough(messageOffset + chunk.length)
 
   const startedAt = rest[0]?.timestamp ?? user?.timestamp ?? 0
   const endedAt = rest[rest.length - 1]?.timestamp ?? startedAt
@@ -326,6 +379,7 @@ export function buildTurn(
     startedAt,
     endedAt,
     streaming,
+    waitingForModel: streaming && !errorMessage && waitingForModel && !pendingToolCalls?.size,
     hasProcess: process.length > 0 || streaming,
     ...(renderKey ? { renderKey } : {})
   }
@@ -335,7 +389,8 @@ export function groupTurns(
   messages: PiMessage[],
   streaming: boolean,
   thinkingDurations: ThinkingDurations = {},
-  toolUpdates: ToolUpdates = {}
+  toolUpdates: ToolUpdates = {},
+  liveCompactions: readonly LiveCompaction[] = []
 ): Turn[] {
   const chunks: PiMessage[][] = []
   let current: PiMessage[] = []
@@ -348,13 +403,17 @@ export function groupTurns(
     }
   }
   if (current.length) chunks.push(current)
+  let messageOffset = 0
   return chunks.map((chunk, i) => {
     const turn = buildTurn(
       chunk,
       streaming && i === chunks.length - 1,
       thinkingDurations,
-      renderKeyForMessages(chunk, i)
+      renderKeyForMessages(chunk, i),
+      liveCompactions,
+      messageOffset
     )
+    messageOffset += chunk.length
     for (const item of turn.process) {
       if (item.kind !== 'tools') continue
       for (const step of item.tools) {

@@ -132,6 +132,21 @@ describe('display turn projection', () => {
     expect(turn.process.find((item) => item.kind === 'compaction')).toMatchObject({ afterAnswer: false })
   })
 
+  test('keeps live compaction boundaries in their original turn when a follow-up starts', () => {
+    const messages: Parameters<typeof groupTurns>[0] = [
+      { role: 'user', content: 'first request', timestamp: 1 },
+      { role: 'custom', customType: 'status', content: 'before compaction', display: true, timestamp: 2 },
+      { role: 'user', content: 'follow-up request', timestamp: 4 },
+      { role: 'custom', customType: 'status', content: 'after compaction', display: true, timestamp: 5 }
+    ]
+    const turns = groupTurns(messages, true, {}, {}, [{
+      id: 'k1', reason: 'threshold', startedAt: 2, endedAt: 3, afterMessageCount: 2,
+      workMsBefore: 1, status: 'done', summary: 'preserved context', tokensBefore: 42
+    }])
+    expect(turns[0].process.map((item) => item.kind)).toEqual(['custom', 'compaction'])
+    expect(turns[1].process.map((item) => item.kind)).toEqual(['custom'])
+  })
+
   test('keeps the last failed attempt as the outcome when no retry recovered the turn', () => {
     const user = { role: 'user', content: 'go', timestamp: 9 } as const
     const first = { role: 'assistant', content: [], errorMessage: 'overloaded', timestamp: 10 } as const

@@ -20,6 +20,22 @@ isolated Electron utility process with the pi SDK, no tools, and no saved sessio
 The renderer is sandboxed (`nodeIntegration: false`, `contextIsolation: true`,
 `sandbox: true`) and reaches Node solely through `window.api`.
 
+During a live turn, the current work block shows a `ThinkingOrb` in `working`
+state while waiting for the first model output or after all pending tools have
+results. Waiting follows message order: trailing text from the tool-call message
+does not count as new model output. Completed tool rows stay settled. Visible
+thinking, text, or another tool call in the next assistant message replaces the
+indicator; settlement, errors, and active compaction clear it.
+
+Unexecuted calls from failed or aborted assistant attempts stay visible as history
+without blocking later model waiting. Calls from non-failed attempts still block
+waiting until their results arrive, including when a retry reuses a failed call's
+ID.
+
+Live compaction landmarks keep their source-message position. Once compaction
+finishes, an empty work block after the landmark owns waiting and resumed output;
+the earlier block's clock stays frozen.
+
 ## Layout
 
 ```

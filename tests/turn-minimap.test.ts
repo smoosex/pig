@@ -46,7 +46,7 @@ async function fixture(): Promise<void> {
     { answer: [{ type: 'text', text: '模型的回复' }] }
   ]
   const turns: Turn[] = rows.map((item, index) => ({
-    id: String(index), process: [], answer: [], startedAt: 0, endedAt: 1, streaming: false, ...item
+    id: String(index), process: [], answer: [], startedAt: 0, endedAt: 1, streaming: false, waitingForModel: false, ...item
   }))
   // A row the renderer never loaded keeps its bar through the summary alone.
   const items = [

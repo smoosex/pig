@@ -13,7 +13,7 @@ import {
 } from '../src/renderer/src/chat/compactions'
 
 const running = (workMsBefore: number, patch: Partial<LiveCompaction> = {}): LiveCompaction => ({
-  id: 'k', reason: 'manual', startedAt: 0, workMsBefore, endedAt: null, status: 'running', ...patch
+  id: 'k', reason: 'manual', startedAt: 0, afterMessageCount: 0, workMsBefore, endedAt: null, status: 'running', ...patch
 })
 
 test('a turn with no summary is one block of work', () => {

@@ -30,7 +30,7 @@ async function fixture(): Promise<void> {
   const turn: Turn = {
     id: 'command-1', bash: { command, exitCode: 0, cancelled: false },
     user: undefined, process: [], answer: [], startedAt: 1, endedAt: 2,
-    streaming: false, hasProcess: true
+    streaming: false, waitingForModel: false, hasProcess: true
   }
   let loads = 0
   let stops = 0

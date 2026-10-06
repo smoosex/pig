@@ -208,7 +208,8 @@ async function fixture(scenario: string): Promise<void> {
       window.setInterval = ((callback: () => void) => { ticks.push(callback); return ticks.length }) as typeof window.setInterval
       window.clearInterval = () => {}
       const { TurnView } = await import('../src/renderer/src/components/TurnView')
-      const turn = { id: 'history', streaming: scenario === 'turn-timer', hasProcess: true, process: [], answer: [], startedAt: 0, endedAt: 1000 }
+      const streaming = scenario === 'turn-timer'
+      const turn = { id: 'history', streaming, waitingForModel: streaming, hasProcess: true, process: [], answer: [], startedAt: 0, endedAt: 1000 }
       let requested = deferred<void>()
       const load = () => requested.promise
       try {

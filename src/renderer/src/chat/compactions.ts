@@ -15,6 +15,8 @@ export interface LiveCompaction {
   id: string
   reason: CompactionReason
   startedAt: number
+  /** Boundary in the renderer's liveMessages array, captured when compaction starts. */
+  afterMessageCount: number
   /** Work time the turn had reached when the summary began: where the next block picks up. */
   workMsBefore: number
   endedAt: number | null

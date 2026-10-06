@@ -1,5 +1,6 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { buildTurn, groupTurns } from '../src/renderer/src/chat/turns'
 import type { ProcessItem, ToolStep, Turn } from '../src/renderer/src/chat/turns'
 
 async function runFixture(name: string): Promise<void> {
@@ -7,6 +8,7 @@ async function runFixture(name: string): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   Object.defineProperty(window, 'api', { value: {}, configurable: true })
+  // Renderer modules must evaluate after DOM/IPC installation and the ThinkingOrb mock.
   const { act, createElement } = await import('react')
   mock.module('thinking-orbs', () => ({
     ThinkingOrb: ({ size, state, theme, className }: Record<string, unknown>) =>
@@ -23,6 +25,21 @@ async function runFixture(name: string): Promise<void> {
   // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { TurnView } = await import('../src/renderer/src/components/TurnView')
+  type Message = Parameters<typeof groupTurns>[0][number]
+  const sourceUser: Message = { role: 'user', content: 'run tools', timestamp: 1_000 }
+  const sourceRequest: Extract<Message, { role: 'assistant' }> = {
+    role: 'assistant', timestamp: 1_500, api: 'openai-completions', provider: 'synthetic', model: 'synthetic',
+    stopReason: 'toolUse',
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    content: [
+      { type: 'toolCall', id: 'completed', name: 'read', arguments: { path: '/project/completed.ts' } },
+      { type: 'text', text: 'pre-tool text' }
+    ]
+  }
+  const sourceResult: Extract<Message, { role: 'toolResult' }> = {
+    role: 'toolResult', timestamp: 2_000, toolCallId: 'completed', toolName: 'read',
+    content: [{ type: 'text', text: 'file contents' }], isError: false
+  }
   const style = document.createElement('style')
   style.textContent = `
     [data-slot="collapsible-content"] { animation-duration: 0.3s; }
@@ -40,6 +57,7 @@ async function runFixture(name: string): Promise<void> {
     startedAt: 1_000,
     endedAt: 4_000,
     streaming: true,
+    waitingForModel: false,
     ...patch
   })
   const render = async (turn: Turn, onNeedProcess?: (id: string) => Promise<void>) => {
@@ -69,33 +87,12 @@ async function runFixture(name: string): Promise<void> {
 
   try {
     if (name === 'wait') {
-      let rotate: (() => void) | undefined
-      const setInterval = window.setInterval.bind(window)
-      window.setInterval = ((callback: () => void, delay: number) => {
-        if (delay === 2_800) rotate = callback
-        return setInterval(callback, delay)
-      }) as typeof window.setInterval
-      await render(makeTurn())
-      const [text] = shimmerText()
-      assert.equal(text, '正在加班加点理解你的问题...')
-      const label = container.querySelector('.shimmer')!
-      assert.equal(label.classList.contains('shimmer-once'), false)
-      assert.equal(label.children.length, 0)
-      assert.equal(label.getAttribute('style'), null)
-      assert.ok(label.closest('[data-slot="marker-content"]'))
-      assert.ok(label.closest('[data-slot="marker"]')?.classList.contains('text-xs'))
-      const orb = container.querySelector('[data-testid="thinking-orb"]')!
-      assert.equal(orb.closest('.shimmer'), null)
-      assert.equal(orb.getAttribute('data-size'), '20')
-      assert.equal(orb.getAttribute('data-state'), 'shaping')
-      assert.equal(orb.getAttribute('data-theme'), 'auto')
-      assert.equal(separator().querySelector('.shimmer'), null)
-      assert.ok(rotate)
-      await act(async () => { rotate!() })
-      assert.notEqual(shimmerText()[0], text)
-      assert.equal(container.querySelector('.shimmer'), label, 'rotating copy does not restart the sweep')
+      await render(makeTurn({ waitingForModel: true }))
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
       await render(makeTurn({ errorMessage: 'aborted' }))
-      assert.deepEqual(shimmerText(), [])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+      await render(makeTurn({ streaming: false }))
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
     } else if (name === 'thinking') {
       const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0 }]
       await render(makeTurn({ process }))
@@ -168,6 +165,141 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({ process, errorMessage: 'request failed' }))
       assert.deepEqual(shimmerText(), [])
       assert.ok(container.textContent?.includes('current.ts'))
+    } else if (name === 'tool-wait') {
+      const messages: Message[] = [sourceUser, sourceRequest]
+      await render(groupTurns(messages, true)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+      messages.push(sourceResult)
+      await render(groupTurns(messages, true)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
+      assert.deepEqual(shimmerText(), [], 'completed tools and their old trailing text stay settled')
+      assert.ok(container.textContent?.includes('pre-tool text'))
+
+      const nextAssistant = { ...sourceRequest, timestamp: 4_000, content: [] }
+      await render(groupTurns([...messages, nextAssistant], true)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
+      const newOutputs: typeof sourceRequest.content = [
+        { type: 'thinking', thinking: 'new reasoning' },
+        { type: 'text', text: 'new assistant output' },
+        { type: 'toolCall', id: 'next', name: 'read', arguments: { path: '/project/next.ts' } }
+      ]
+      for (const output of newOutputs) {
+        await render(groupTurns([...messages, { ...nextAssistant, content: [output] }], true)[0])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null, `new ${output.type} replaces waiting`)
+      }
+      const parallel: typeof sourceRequest = {
+        ...sourceRequest,
+        content: [
+          { type: 'toolCall', id: 'slow', name: 'bash', arguments: { command: 'slow' } },
+          { type: 'toolCall', id: 'fast', name: 'read', arguments: { path: '/project/fast.ts' } }
+        ]
+      }
+      await render(groupTurns([sourceUser, parallel, { ...sourceResult, toolCallId: 'fast' }], true)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null, 'another pending tool is not a model wait')
+      await render(groupTurns([...messages, { ...nextAssistant, errorMessage: 'aborted' }], true)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+      await render(groupTurns(messages, false)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+    } else if (name === 'retry-tool-wait') {
+      const failed: typeof sourceRequest = {
+        ...sourceRequest, stopReason: 'error', errorMessage: 'context length exceeded',
+        content: [{ type: 'toolCall', id: 'reused', name: 'read', arguments: { path: '/project/failed.ts' } }]
+      }
+      const retried: typeof sourceRequest = {
+        ...sourceRequest, timestamp: 4_000,
+        content: [
+          { type: 'toolCall', id: 'reused', name: 'read', arguments: { path: '/project/retry-slow.ts' } },
+          { type: 'toolCall', id: 'fast', name: 'read', arguments: { path: '/project/retry-fast.ts' } },
+          { type: 'text', text: 'retry trailing text' }
+        ]
+      }
+      const compactions: Parameters<typeof groupTurns>[4] = [{
+        id: 'k1', reason: 'threshold', startedAt: 2_500, endedAt: 3_500, afterMessageCount: 2,
+        workMsBefore: 1_500, status: 'done', summary: 'preserved context', tokensBefore: 42
+      }]
+      const fast = { ...sourceResult, timestamp: 4_500, toolCallId: 'fast' }
+      const messages: Message[] = [sourceUser, failed, retried, fast]
+      await render(groupTurns(messages, true, {}, {}, compactions)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null, 'the reused ID still belongs to a pending retry tool')
+
+      messages.push({ ...sourceResult, timestamp: 5_000, toolCallId: 'reused' })
+      await render(groupTurns(messages, true, {}, {}, compactions)[0])
+      const orb = container.querySelector('[data-testid="thinking-orb"]')
+      assert.equal(orb?.getAttribute('data-state'), 'working')
+      assert.deepEqual(shimmerText(), [])
+      const headers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+      assert.equal(headers[0].parentElement?.contains(orb), false, 'the failed attempt is not active')
+      assert.ok(headers.at(-1)?.parentElement?.contains(orb), 'waiting belongs to the retry interval')
+      if (headers[0].getAttribute('aria-expanded') === 'false') await act(async () => { headers[0].click() })
+      assert.ok(container.textContent?.includes('failed.ts'), 'the unexecuted call remains visible as history')
+      assert.deepEqual(shimmerText(), [], 'opening the failed attempt does not reactivate its calls')
+
+      await render(groupTurns([...messages, { ...sourceRequest, timestamp: 6_000, content: [] }], true, {}, {}, compactions)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
+      for (const stopReason of ['error', 'aborted'] as const) {
+        await render(groupTurns([
+          sourceUser, { ...failed, errorMessage: undefined, stopReason }, ...messages.slice(2)
+        ], true, {}, {}, compactions)[0])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working', `${stopReason} calls are unexecuted even without an error message`)
+      }
+      const healthy: typeof sourceRequest = {
+        ...failed, errorMessage: undefined, stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 'prior-healthy', name: 'read', arguments: { path: '/project/prior-healthy.ts' } }]
+      }
+      await render(groupTurns([sourceUser, healthy, ...messages.slice(2)], true, {}, {}, compactions)[0])
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null, 'compaction does not abandon unfinished healthy calls')
+    } else if (name === 'compaction-wait') {
+      const originalNow = Date.now
+      const originalInterval = window.setInterval.bind(window)
+      const originalClear = window.clearInterval.bind(window)
+      const ticks = new Map<number, () => void>()
+      let now = 10_000
+      let timerId = 100_000
+      Date.now = () => now
+      window.setInterval = ((callback: () => void, delay: number) => {
+        if (delay !== 200) return originalInterval(callback, delay)
+        const id = ++timerId
+        ticks.set(id, callback)
+        return id
+      }) as typeof window.setInterval
+      window.clearInterval = ((id: number) => {
+        if (!ticks.delete(id)) originalClear(id)
+      }) as typeof window.clearInterval
+      try {
+        const messages = [sourceUser, sourceRequest, sourceResult]
+        const running = {
+          id: 'k1', reason: 'threshold' as const, startedAt: 5_000, afterMessageCount: messages.length,
+          workMsBefore: 2_000, endedAt: null, status: 'running' as const
+        }
+        await render(groupTurns(messages, true, {}, {}, [running])[0])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        const done = { ...running, endedAt: 7_000, status: 'done' as const, summary: 'preserved context', tokensBefore: 42 }
+        await render(groupTurns(messages, true, {}, {}, [done])[0])
+        const orb = container.querySelector('[data-testid="thinking-orb"]')
+        assert.equal(orb?.getAttribute('data-state'), 'working')
+        const headers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
+        assert.equal(headers.length, 3, 'old work, compaction, and the empty current interval')
+        assert.ok(orb && headers[1].compareDocumentPosition(orb) & Node.DOCUMENT_POSITION_FOLLOWING)
+        assert.ok(headers[2].parentElement?.contains(orb), 'waiting belongs to the interval after compaction')
+        const frozenTitle = headers[0].textContent
+        const liveTitle = headers[2].textContent
+        now += 3_000
+        await act(async () => { for (const tick of ticks.values()) tick() })
+        assert.equal(headers[0].textContent, frozenTitle)
+        assert.notEqual(headers[2].textContent, liveTitle, 'only the current interval clock advances')
+
+        const next = { ...sourceRequest, timestamp: 8_000, content: [{ type: 'text' as const, text: 'new assistant output' }] }
+        await render(groupTurns([...messages, next], true, {}, {}, [done])[0])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        assert.ok(headers[2].parentElement?.textContent?.includes('new assistant output'))
+        assert.equal(headers[0].textContent, frozenTitle)
+        await render(groupTurns([...messages, next], false, {}, {}, [done])[0])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+      } finally {
+        Date.now = originalNow
+        window.setInterval = originalInterval
+        window.clearInterval = originalClear
+      }
     } else if (name === 'tool-live') {
       let steps: ToolStep[] = [
         { id: 'first', name: 'task', args: { command: 'echo first' } },
@@ -282,7 +414,6 @@ async function runFixture(name: string): Promise<void> {
     } else if (name === 'command-continuation') {
       const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
       const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
-      const { groupTurns } = await import('../src/renderer/src/chat/turns')
       useSessionsStore.setState({
         activeTabId: 'repair',
         openTabs: [{ id: 'repair', cwd: '/project', title: 'repair', kind: 'project', loadState: 'ready' }],
@@ -375,14 +506,13 @@ async function runFixture(name: string): Promise<void> {
       }))
       assert.equal(container.textContent?.includes('工作耗时'), false)
       assert.ok(container.textContent?.includes('上下文已压缩'))
-      // While the run is live the landmark is not a substitute for the work block: the waiting line
-      // lives in the work block the compaction would otherwise be the only segment of.
+      // A completed compaction does not settle the run: an otherwise empty turn still waits for model output.
       await render(makeTurn({
-        process: [{ kind: 'compaction', text: '运行中压缩', tokensBefore: 1, afterAnswer: false, workMsBefore: 0, durationMs: 0 }],
-        streaming: true
+        process: [{ kind: 'compaction', text: '已整理上下文', tokensBefore: 1, afterAnswer: false, workMsBefore: 0, durationMs: 0 }],
+        streaming: true,
+        waitingForModel: true
       }))
-      assert.deepEqual(shimmerText(), ['正在加班加点理解你的问题...'])
-      assert.ok(container.textContent?.includes('上下文已压缩'))
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
       // A compaction that arrived after the answer reads below it, not above the work.
       await render(makeTurn({
         process: [
@@ -435,7 +565,6 @@ async function runFixture(name: string): Promise<void> {
       const retryText = name === 'compaction-retry-text'
       const { displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model')
       const { toTurn } = await import('../src/renderer/src/chat/display-turns')
-      const { buildTurn } = await import('../src/renderer/src/chat/turns')
       const message = (id: string, time: number, value: Record<string, unknown>) => ({
         type: 'message', id, parentId: null, timestamp: new Date(time).toISOString(), message: { timestamp: time, ...value }
       })
@@ -535,7 +664,7 @@ async function runFixture(name: string): Promise<void> {
         workMsBefore: 2_000,
         durationMs: 0,
         live: {
-          id: 'k1', reason: 'threshold' as const, startedAt: Date.now() - 3_000, workMsBefore: 2_000,
+          id: 'k1', reason: 'threshold' as const, startedAt: Date.now() - 3_000, afterMessageCount: 0, workMsBefore: 2_000,
           endedAt: null, status: 'running' as const
         }
       }
@@ -641,9 +770,12 @@ if (process.argv[2] === '--marker-fixture') {
   await runFixture(process.argv[3])
 } else {
   const fixtures = {
-    wait: 'wait marker uses native shimmer without animating the orb or splitting characters',
+    wait: 'initial model waiting shows a working orb and clears on failure or settlement',
     thinking: 'thinking marker preserves the body and completed thinking remains expandable',
     tools: 'only the current tool text shimmers while its action prefix stays static',
+    'tool-wait': 'completed tools show model waiting until visible work resumes, without overlapping execution or old blocks',
+    'retry-tool-wait': 'failed unexecuted calls remain history without blocking retries or hiding genuinely pending tools',
+    'compaction-wait': 'waiting and resumed output belong after compaction while the old work clock stays frozen',
     'tool-live': 'running tools stay expandable through snapshots, final results and later assistant text',
     failure: 'completed, failed and cancelled commands stop shimmering',
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
@@ -677,16 +809,4 @@ if (process.argv[2] === '--marker-fixture') {
     }, 15_000)
   }
 
-  test('uses the installed shimmer defaults and removes custom animation definitions', async () => {
-    const [native, styles, view] = await Promise.all([
-      Bun.file(new URL('../node_modules/shadcn/dist/tailwind.css', import.meta.url)).text(),
-      Bun.file(new URL('../src/renderer/src/styles.css', import.meta.url)).text(),
-      Bun.file(new URL('../src/renderer/src/components/TurnView.tsx', import.meta.url)).text()
-    ])
-    assert.match(native, /animation: tw-shimmer var\(--shimmer-duration, 2s\) linear infinite/)
-    assert.match(native, /@utility shimmer-once\s*\{\s*animation-iteration-count: 1/)
-    assert.match(native, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.shimmer\s*\{\s*animation: none/)
-    assert.doesNotMatch(styles + view, /think-wave|tool-wave|WaveText|ThinkLabel/)
-    assert.doesNotMatch(view, /--shimmer-|shimmer-(?:duration|color|angle|spread)-|animationDelay/)
-  })
 }
