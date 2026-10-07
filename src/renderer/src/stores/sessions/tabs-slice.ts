@@ -3,19 +3,16 @@ import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../.
 import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
 import { newSessionId } from '../../lib/session-id'
+import { changesTabId } from '../../../../shared/tab-ids'
 import { t } from '../../lib/i18n'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
 import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './session-title'
+import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs } from './tab-order'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
 
 /** The scope a changes tab starts on, and what a workspace restored without one shows. */
 const DEFAULT_SCOPE: DiffScope = 'all'
-
-/** One changes tab per worktree, so its id is the worktree: it is never parsed, only compared. */
-function changesTabId(cwd: string): string {
-  return `diff:${cwd}`
-}
 
 /** One file tab per worktree and path: two worktrees hold a `src/main.ts` each, and they are not the same. */
 function fileTabId(cwd: string, path: string): string {
@@ -70,6 +67,8 @@ export const createTabsSlice: SessionSlice<
   | 'newSession'
   | 'newChat'
   | 'closeTab'
+  | 'reorderTabs'
+  | 'persistOpenChatTabs'
   | 'setActive'
   | 'renameTab'
   | 'relabelTabs'
@@ -91,6 +90,8 @@ export const createTabsSlice: SessionSlice<
   let restoreProjectAfterSwitch = false
   let selectionVersion = 0
   let persistenceVersion = 0
+  const closedChatIdsBeforeRestore = new Set<string>()
+  let lastActiveChatTabId: string | null = null
 
   const describeError = (error: unknown) => error instanceof Error ? error.message : String(error)
 
@@ -166,6 +167,26 @@ export const createTabsSlice: SessionSlice<
   }
 
   /**
+   * The chats half's open tabs, with their order and which of them the pane was showing. Unlike a
+   * worktree's, this list is both membership and arrangement: no other record says a chat was open at
+   * all. Nothing here waits for the write — a chat whose id outlives its directory is dropped by the
+   * restore rather than reported, so a delete that lands before this does can only leave a stale id.
+   */
+  function persistChatTabs(closedIds: string[] = []): void {
+    const state = get()
+    const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
+    if (active?.kind === 'chat') lastActiveChatTabId = active.id
+    // Until a successful scan merges saved membership, record intent without replacing the saved list.
+    // These tombstones survive failed scans so a retry cannot reopen a tab the reader already closed.
+    if (!state.workspaceRestoreReady) {
+      for (const id of closedIds) closedChatIdsBeforeRestore.add(id)
+      return
+    }
+    const ids = state.openTabs.filter((tab) => tab.kind === 'chat').map((tab) => tab.id)
+    persist(api.saveOpenChatTabs(ids, ids.includes(lastActiveChatTabId ?? '') ? lastActiveChatTabId : null))
+  }
+
+  /**
    * The strip and the per-worktree memory move together: every place a tab becomes active goes through
    * here, so a worktree switched away from and back again returns to the tab it was left on — a changes
    * tab included, which no session id can stand in for. `selectProjectCwd` reads the memory back, guarded
@@ -208,6 +229,10 @@ export const createTabsSlice: SessionSlice<
           : { ...state.runtime, [tab.id]: emptyRuntime() }
       }
     })
+    if (tab.kind === 'chat') {
+      closedChatIdsBeforeRestore.delete(tab.id)
+      persistChatTabs()
+    }
     return added
   }
 
@@ -290,7 +315,10 @@ export const createTabsSlice: SessionSlice<
       initializeRequest = (async () => {
         const [persisted] = await Promise.all([
           api.getOpenProjectSessions(),
-          get().loadProjects()
+          get().loadProjects(),
+          // The chats half's tabs are restored here too, and a chat tab needs its listing for a title and
+          // a path to load from: one scan for both halves is what keeps the restore a single step.
+          get().loadChats()
         ])
         const projects = get().projects
         const worktreeCwds = new Set<string>()
@@ -302,6 +330,7 @@ export const createTabsSlice: SessionSlice<
             for (const meta of worktree.sessions) metas.set(meta.id, meta)
           }
         }
+        const chatMetas = new Map(get().chats.flatMap((chat) => chat.sessions.map((meta) => [meta.id, meta] as const)))
 
         const workspaces = persisted.workspaces.flatMap((workspace) => {
           if (!worktreeCwds.has(workspace.cwd)) return []
@@ -314,35 +343,63 @@ export const createTabsSlice: SessionSlice<
             activeSessionId: sessionIds.includes(workspace.activeSessionId ?? '')
               ? workspace.activeSessionId
               : sessionIds.at(-1) ?? null,
-            activeTabId: workspace.activeTabId
+            activeTabId: workspace.activeTabId,
+            tabOrder: workspace.tabOrder ?? []
           }]
         })
         const currentProjectCwd = persisted.currentCwd && worktreeCwds.has(persisted.currentCwd)
           ? persisted.currentCwd
           : null
-        const restoredTabs: OpenTab[] = workspaces.flatMap((workspace) => [
-          ...workspace.sessionIds.flatMap((id) => {
+        const restoredTabs: OpenTab[] = workspaces.flatMap((workspace) => {
+          const byId = new Map<string, OpenTab>()
+          for (const id of workspace.sessionIds) {
             const meta = metas.get(id)
-            return meta ? [{
-              id,
-              cwd: workspace.cwd,
-              title: sessionTitle(meta),
-              kind: 'project' as const,
-              loadState: 'cold' as const,
-              meta
-            }] : []
-          }),
-          ...(workspace.changesOpen
-            ? [{
-                id: changesTabId(workspace.cwd),
+            if (meta) {
+              byId.set(id, {
+                id,
                 cwd: workspace.cwd,
-                title: scopeLabel(t, DEFAULT_SCOPE),
-                kind: 'diff' as const,
-                loadState: 'ready' as const,
-                diffScope: DEFAULT_SCOPE
-              }]
-            : [])
-        ])
+                title: sessionTitle(meta),
+                kind: 'project' as const,
+                loadState: 'cold' as const,
+                meta
+              })
+            }
+          }
+          if (workspace.changesOpen) {
+            byId.set(changesTabId(workspace.cwd), {
+              id: changesTabId(workspace.cwd),
+              cwd: workspace.cwd,
+              title: scopeLabel(t, DEFAULT_SCOPE),
+              kind: 'diff' as const,
+              loadState: 'ready' as const,
+              diffScope: DEFAULT_SCOPE
+            })
+          }
+          // The dragged order leads, and whatever it never mentions follows in its own arrival order —
+          // which for a worktree nobody has ever dragged is sessions then changes, as it always was.
+          const ordered = [...new Set(workspace.tabOrder.filter((id) => byId.has(id)))]
+          return [...ordered, ...[...byId.keys()].filter((id) => !ordered.includes(id))]
+            .map((id) => byId.get(id)!)
+        })
+        // A chat whose directory is gone has no listing to give it a title or a file to open, so the
+        // sweep at startup and a deleted chat leave this list shorter and nobody the wiser.
+        const restoredChatTabs: OpenTab[] = persisted.chatOrder.flatMap((id) => {
+          if (closedChatIdsBeforeRestore.has(id)) return []
+          const meta = chatMetas.get(id)
+          return meta ? [{
+            id,
+            cwd: meta.cwd,
+            title: sessionTitle(meta),
+            kind: 'chat' as const,
+            loadState: 'cold' as const,
+            meta
+          }] : []
+        })
+        const restoredChatIds = new Set(restoredChatTabs.map((tab) => tab.id))
+        const restoredActiveChatTabId =
+          persisted.activeChatTabId && restoredChatIds.has(persisted.activeChatTabId)
+            ? persisted.activeChatTabId
+            : null
         const activeSessionByCwd = Object.fromEntries(
           workspaces.map((workspace) => [workspace.cwd, workspace.activeSessionId])
         )
@@ -360,17 +417,22 @@ export const createTabsSlice: SessionSlice<
           )
         )
         const restoredActiveTabId = currentProjectCwd ? restoredActiveTabs[currentProjectCwd] : undefined
-        const activeTabId = restoredActiveTabId ?? activeSessionId
+        const activeProjectTabId = restoredActiveTabId ?? activeSessionId
+        // The chats half restores a tab the way a worktree does: the one it was left on, if it came back.
+        // Only with none to show does it fall to its home, so `startInChatHome` now means "the chats half
+        // was showing something", not "it was showing the greeting" — a restored chat takes the pane.
+        const restoreChats = restoreInChatHome || currentProjectCwd === null
+        const restoredTabId = restoreChats ? restoredActiveChatTabId : activeProjectTabId
 
         const selectionUnchanged = restoreSelection === selectionVersion
-        const chatHome = restoreInChatHome
         const restoreSelectedProject = selectionUnchanged || (
-          !chatHome && restoreProjectAfterSwitch && !get().currentProjectCwd && !get().activeTabId
+          !restoreInChatHome && restoreProjectAfterSwitch && !get().currentProjectCwd && !get().activeTabId
         )
         set((state) => {
+          const liveTabs = new Map(state.openTabs.map((tab) => [tab.id, tab]))
           const restoredIds = new Set(restoredTabs.map((tab) => tab.id))
           const projectTabs = [
-            ...restoredTabs,
+            ...restoredTabs.map((tab) => liveTabs.get(tab.id) ?? tab),
             ...state.openTabs.filter(
               (tab) =>
                 (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file') &&
@@ -378,7 +440,11 @@ export const createTabsSlice: SessionSlice<
             )
           ]
           return {
-            openTabs: [...state.openTabs.filter((tab) => tab.kind === 'chat'), ...projectTabs],
+            openTabs: [
+              ...restoredChatTabs.map((tab) => liveTabs.get(tab.id) ?? tab),
+              ...state.openTabs.filter((tab) => tab.kind === 'chat' && !restoredChatIds.has(tab.id)),
+              ...projectTabs
+            ],
             activeSessionByCwd: selectionUnchanged
               ? activeSessionByCwd
               : { ...activeSessionByCwd, ...state.activeSessionByCwd },
@@ -387,18 +453,28 @@ export const createTabsSlice: SessionSlice<
               : { ...restoredActiveTabs, ...state.activeTabByCwd },
             restoredProjectCwd: currentProjectCwd,
             currentProjectCwd: restoreSelectedProject
-              ? (chatHome ? null : currentProjectCwd)
+              ? (restoreChats ? null : currentProjectCwd)
               : state.currentProjectCwd,
-            activeTabId: restoreSelectedProject
-              ? (chatHome ? null : activeTabId)
-              : state.activeTabId,
+            activeTabId: restoreSelectedProject ? restoredTabId : state.activeTabId,
             workspaceRestoreReady: true,
             workspaceRestoreError: null
           }
         })
 
-        if (restoreSelectedProject && !chatHome && activeTabId) {
-          await get().activateTab(activeTabId)
+        closedChatIdsBeforeRestore.clear()
+        lastActiveChatTabId ??= restoredActiveChatTabId
+        const activeChat = get().openTabs.find((tab) => tab.id === get().activeTabId && tab.kind === 'chat')
+        if (activeChat) lastActiveChatTabId = activeChat.id
+        // Membership, order and selection can all change while writes are gated by the scan.
+        // Write the merged state before hydration, which is not a prerequisite for remembering a tab.
+        const mergedChats = get().openTabs.filter((tab) => tab.kind === 'chat').map((tab) => tab.id)
+        const mergedActiveChatId = mergedChats.includes(lastActiveChatTabId ?? '') ? lastActiveChatTabId : null
+        const changedWhileScanning = mergedChats.length !== persisted.chatOrder.length ||
+          mergedChats.some((id, index) => persisted.chatOrder[index] !== id) ||
+          mergedActiveChatId !== persisted.activeChatTabId
+        if (changedWhileScanning) persistChatTabs()
+        if (restoreSelectedProject && restoredTabId) {
+          await get().activateTab(restoredTabId)
         }
       })().catch((error: unknown) => {
         // A failed scan stays retryable: the restore only counts as done once it actually succeeded.
@@ -484,6 +560,8 @@ export const createTabsSlice: SessionSlice<
         )
       }))
       if (tab.kind === 'project') persistSelection(tab.cwd, tab.id, tab.id)
+      // A chat half has no per-worktree memory to mirror, so the strip's own choice is written whole.
+      else if (tab.kind === 'chat') persistChatTabs()
       if (tab.loadState === 'ready' || tab.loadState === 'opening') return
       if (!tab.meta) {
         set((state) => ({
@@ -820,9 +898,11 @@ export const createTabsSlice: SessionSlice<
       const tab = get().openTabs.find((item) => item.id === tabId)
       if (!tab) return
       if (tab.kind === 'diff') {
-        // A diff tab owns no session: closing it hands the strip back to the worktree's session.
-        const fallback = get().activeSessionByCwd[tab.cwd] ?? null
-        const wasActive = get().activeTabId === tab.id
+        // A diff tab owns no session: closing it hands the strip back to a neighbour, and the worktree's
+        // session is the last one standing when nothing else of it is open.
+        const strip = get()
+        const fallback = neighbourTab(strip.openTabs, tab)?.id ?? strip.activeSessionByCwd[tab.cwd] ?? null
+        const wasActive = strip.activeTabId === tab.id
         set((state) => ({
           openTabs: state.openTabs.filter((item) => item.id !== tabId),
           ...(wasActive ? activeTabPatch(state, fallback, tab.cwd) : {})
@@ -833,9 +913,9 @@ export const createTabsSlice: SessionSlice<
       }
       if (tab.kind === 'file') {
         // No session to close: the tab goes, the file store keeps a draft nobody has saved yet and lets
-        // a clean document go. The strip falls back to a tab of the same worktree, or to its session.
+        // a clean document go. The strip falls back to its neighbour, or to the worktree's session.
         const state = get()
-        const fallback = state.openTabs.filter((item) => item.id !== tabId && item.cwd === tab.cwd).at(-1)?.id
+        const fallback = neighbourTab(state.openTabs, tab)?.id
           ?? state.activeSessionByCwd[tab.cwd]
           ?? null
         const wasActive = state.activeTabId === tab.id
@@ -849,18 +929,19 @@ export const createTabsSlice: SessionSlice<
       }
       if (closing.has(tabId)) return
       const state = get()
-      const remainingInScope = state.openTabs.filter((item) =>
-        item.id !== tabId && item.kind === tab.kind &&
-        (tab.kind === 'chat' || item.cwd === tab.cwd)
-      )
-      const fallback = remainingInScope.at(-1)?.id ?? null
+      // Two memories, two rules. The strip falls to the neighbour it sat next to, whatever kind of tab
+      // that is; the worktree's session memory only ever holds a session, so it falls to the neighbour
+      // among the sessions — a changes tab cannot stand in for one when `selectProjectCwd` reads it back
+      // or main records it as this worktree's active session.
+      const fallback = neighbourTab(state.openTabs, tab)?.id ?? null
+      const fallbackSession = neighbourAmong(state.openTabs, tab, (item) => item.kind === tab.kind)?.id ?? null
       if (state.activeTabId === tabId) selectionVersion++
       set((current) => {
         const openTabs = current.openTabs.filter((item) => item.id !== tabId)
         const runtime = { ...current.runtime }
         delete runtime[tabId]
         const activeSessionByCwd = tab.kind === 'project' && current.activeSessionByCwd[tab.cwd] === tabId
-          ? { ...current.activeSessionByCwd, [tab.cwd]: fallback }
+          ? { ...current.activeSessionByCwd, [tab.cwd]: fallbackSession }
           : current.activeSessionByCwd
         return {
           openTabs,
@@ -888,7 +969,39 @@ export const createTabsSlice: SessionSlice<
       }).finally(() => {
         if (closing.get(sessionId) === request) closing.delete(sessionId)
       })
+      if (tab.kind === 'chat') persistChatTabs([tab.id])
       if (fallback && state.activeTabId === tabId) void get().activateTab(fallback)
+    },
+
+    /**
+     * The chats half's list is written whole by whoever holds it, so a membership change made elsewhere —
+     * a deleted session, a removed chat — has to hand the strip's new shape over here.
+     */
+    persistOpenChatTabs: (closedIds) => persistChatTabs(closedIds),
+
+    /**
+     * Writes back a dragged half-strip. The ids are the visible sequence in its new arrangement, which
+     * lands in the flat list by slot so the other half keeps the positions it has always had; only the
+     * persistable ones are handed to main, because a file tab has no record to be ordered in.
+     */
+    reorderTabs: (visibleIds) => {
+      const state = get()
+      const openTabs = applyVisibleOrder(state.openTabs, visibleIds)
+      if (openTabs === state.openTabs) return
+      set({ openTabs })
+      // The whole sequence is one half of the strip, so any tab still in it says which one to write.
+      const scope = visibleIds
+        .map((id) => openTabs.find((tab) => tab.id === id))
+        .find((tab) => tab !== undefined)
+      if (!scope) return
+      if (scope.kind === 'chat') {
+        persistChatTabs()
+        return
+      }
+      persist(api.saveOpenProjectTabOrder(
+        scope.cwd,
+        persistableIds(sameScopeTabs(openTabs, scope))
+      ))
     },
 
     setActive: (tabId) => {

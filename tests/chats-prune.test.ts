@@ -6,7 +6,8 @@
 import { afterAll, beforeAll, expect, mock, test } from 'bun:test'
 
 mock.module('electron', () => ({ app: { isPackaged: false } }))
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import assert from 'node:assert/strict'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -35,6 +36,11 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+test('a confirmed missing chats directory is an empty catalog', async () => {
+  expect(await chats.listChats()).toEqual([])
+  expect(await loader.listJsonlFiles(join(root, 'missing-sessions'))).toEqual([])
+})
+
 test('the sweep takes chat directories without a session and leaves the ones that have one', async () => {
   // Nothing to sweep yet: a first launch must not fail on a missing chats directory.
   await chats.pruneEmptyChatDirs()
@@ -55,4 +61,29 @@ test('the sweep takes chat directories without a session and leaves the ones tha
   expect(await stat(abandoned).catch(() => null)).toBeNull()
   expect(await stat(used).catch(() => null)).not.toBeNull()
   expect((await chats.listChats()).map((group) => group.cwd)).toEqual([used])
+})
+
+test('unreadable chat directories and session files fail the scan instead of hiding chats', async () => {
+  const [group] = await chats.listChats()
+  const sessionDir = loader.sessionDirForCwd(group.cwd)
+  for (const path of [chats.chatsDir(), sessionDir, group.sessions[0].path]) {
+    await chmod(path, 0o000)
+    try {
+      await assert.rejects(chats.listChats(), { code: 'EACCES' })
+      if (path !== group.sessions[0].path) {
+        await assert.rejects(chats.pruneEmptyChatDirs(), { code: 'EACCES' })
+      }
+    } finally {
+      await chmod(path, path === group.sessions[0].path ? 0o600 : 0o700)
+    }
+  }
+  expect((await chats.listChats()).map((item) => item.cwd)).toEqual([group.cwd])
+})
+
+test('a malformed complete JSONL record fails the chat scan', async () => {
+  const cwd = await chats.createChatDir()
+  const sessions = loader.sessionDirForCwd(cwd)
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'broken.jsonl'), '{broken JSON}\n')
+  await assert.rejects(chats.listChats(), SyntaxError)
 })

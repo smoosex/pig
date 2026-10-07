@@ -1,5 +1,6 @@
 import type { ProjectGroup, ProjectWorktreeDiscovery, SessionMeta, SessionPreviewFallback } from '../../ipc/api'
 import type { OpenTab, SessionsStore } from './types'
+import { neighbourAmong } from './tab-order'
 import { sessionTitle } from './session-title'
 
 export function mapGroupSessions(
@@ -137,15 +138,28 @@ export function removeCwdSessions(
   const activeWasRemoved = Boolean(
     state.activeTabId && removedTabIds.has(state.activeTabId)
   )
+  // Several tabs go at once here — a chat, or a worktree with its changes and file tabs — so the tab the
+  // strip was on has to be asked for its neighbour among the ones that survive, rather than the array
+  // falling back on a tail the reader has since rearranged by hand. A worktree going out from under the
+  // strip has no neighbour left in its own half, and it leaves the chats half showing, so that half's
+  // leftmost tab is what the strip falls to: the reader put what matters there.
+  const removedActiveTab = activeWasRemoved
+    ? state.openTabs.find((tab) => tab.id === state.activeTabId)
+    : undefined
+  const neighbour = removedActiveTab
+    ? neighbourAmong(state.openTabs, removedActiveTab, (tab) => !removedTabIds.has(tab.id))
+    : null
+  const chatsLeftShowing = currentProjectCwd === null
+  const fallback = chatsLeftShowing
+    ? neighbour?.kind === 'chat'
+      ? neighbour.id
+      : openTabs.find((tab) => tab.kind === 'chat' && !removedTabIds.has(tab.id))?.id ?? null
+    : null
   return {
     openTabs,
     runtime,
     currentProjectCwd,
     activeSessionByCwd,
-    activeTabId: activeWasRemoved
-      ? currentProjectCwd === null
-        ? openTabs.findLast((tab) => tab.kind === 'chat')?.id ?? null
-        : null
-      : state.activeTabId
+    activeTabId: activeWasRemoved ? fallback : state.activeTabId
   }
 }

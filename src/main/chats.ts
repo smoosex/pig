@@ -36,8 +36,10 @@ export async function listChats(): Promise<ProjectGroup[]> {
     names = (await readdir(chatsDir(), { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
-  } catch {
-    return []
+  } catch (error) {
+    // A first launch has no chats directory; an unreadable one must not look like deleted chats.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
   const groups = await Promise.all(names.map((name) => listProject(join(chatsDir(), name))))
   const chats = groups.filter((group): group is ProjectGroup => (group?.sessions.length ?? 0) > 0)
@@ -61,14 +63,15 @@ export async function pruneEmptyChatDirs(): Promise<void> {
     names = (await readdir(chatsDir(), { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
-  } catch {
-    return
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
   }
   await Promise.all(
     names.map(async (name) => {
       const cwd = join(chatsDir(), name)
       if ((await listJsonlFiles(sessionDirForCwd(cwd))).length > 0) return
-      await rm(cwd, { recursive: true, force: true }).catch(() => {})
+      await rm(cwd, { recursive: true, force: true })
     })
   )
 }

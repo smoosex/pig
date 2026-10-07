@@ -130,6 +130,10 @@ const api: SessionApi = {
     ipcRenderer.invoke('system:save-open-project-changes-tab', cwd, open, activeTabId),
   selectOpenProjectWorkspace: (cwd: string, sessionId: string | null, activeTabId: string | null) =>
     ipcRenderer.invoke('system:select-open-project-workspace', cwd, sessionId, activeTabId),
+  saveOpenProjectTabOrder: (cwd: string, tabIds: string[]) =>
+    ipcRenderer.invoke('system:save-open-project-tab-order', cwd, tabIds),
+  saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) =>
+    ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
   installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),

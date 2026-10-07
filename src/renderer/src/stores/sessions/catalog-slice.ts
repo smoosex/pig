@@ -14,6 +14,7 @@ import {
   renameGroupSession,
   upsertGroup
 } from './catalog'
+import { neighbourAmong } from './tab-order'
 import { sessionTitle } from './session-title'
 import type { SessionSlice } from './types'
 
@@ -46,6 +47,12 @@ export const createCatalogSlice: SessionSlice<
   const worktreeSessionLoads = new Map<string, Promise<void>>()
   let chatMembershipVersion = 0
   let chatLoadVersion = 0
+  /**
+   * The chats scan in flight. The restore and the sidebar both ask at launch, and a chat tab needs the
+   * listing for its title and the file to open, so one scan has to serve both — but only while it is the
+   * same question: a membership change takes the next caller to a fresh scan.
+   */
+  let chatLoad: { membership: number; request: Promise<void> } | null = null
   const refreshRequests = new Map<string, object>()
 
   async function waitForLatestProjectLoad(started: Promise<void>): Promise<void> {
@@ -138,15 +145,22 @@ export const createCatalogSlice: SessionSlice<
       return tracked
     },
 
-    loadChats: async () => {
+    loadChats: () => {
+      if (chatLoad && chatLoad.membership === chatMembershipVersion) return chatLoad.request
       const request = ++chatLoadVersion
       const membership = chatMembershipVersion
-      const chats = await api.listChats()
-      if (request !== chatLoadVersion || membership !== chatMembershipVersion) return
-      set((s) => ({
-        chats,
-        openTabs: patchTabsFromGroups(s.openTabs, chats)
-      }))
+      const operation = (async () => {
+        const chats = await api.listChats()
+        if (request !== chatLoadVersion || membership !== chatMembershipVersion) return
+        set((s) => ({
+          chats,
+          openTabs: patchTabsFromGroups(s.openTabs, chats)
+        }))
+      })().finally(() => {
+        if (chatLoad?.request === operation) chatLoad = null
+      })
+      chatLoad = { membership, request: operation }
+      return operation
     },
 
     openProject: async () => {
@@ -325,16 +339,25 @@ export const createCatalogSlice: SessionSlice<
     deleteChat: async (cwd) => {
       await api.deleteChat(cwd)
       chatMembershipVersion++
+      const closedIds = new Set([
+        ...get().openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd === cwd).map((tab) => tab.id),
+        ...get().chats.filter((chat) => chat.cwd === cwd).flatMap((chat) => chat.sessions.map((meta) => meta.id))
+      ])
       set((s) => ({
         chats: s.chats.filter((chat) => chat.cwd !== cwd),
         ...removeCwdSessions(s, new Set([cwd]), s.chats.flatMap((chat) => chat.sessions))
       }))
+      get().persistOpenChatTabs([...closedIds])
+      const next = get().openTabs.find((tab) => tab.id === get().activeTabId)
+      if (next?.loadState === 'cold') await get().activateTab(next.id)
     },
 
     deleteSession: async (meta) => {
       await api.deleteSession(meta.id, meta.path, meta.cwd)
       projectMembershipVersion++
       chatMembershipVersion++
+      const deletedChatTab = get().openTabs.some((tab) => tab.id === meta.id && tab.kind === 'chat') ||
+        get().chats.some((chat) => chat.sessions.some((session) => session.id === meta.id))
 
       set((s) => {
         const deletedTab = s.openTabs.find((tab) => tab.id === meta.id)
@@ -342,10 +365,15 @@ export const createCatalogSlice: SessionSlice<
         const runtime = { ...s.runtime }
         delete runtime[meta.id]
         const activeSessionByCwd = { ...s.activeSessionByCwd }
+        // A deleted session hands the strip to the neighbour it sat next to, not to whatever was opened
+        // last: the order the reader arranged has no "end of the list means newest" in it any more. The
+        // neighbour has to be a session of the same half rather than any surviving tab, since a changes or
+        // file tab cannot stand in for a worktree's remembered session.
+        const neighbourSession = deletedTab
+          ? neighbourAmong(s.openTabs, deletedTab, (tab) => tab.kind === deletedTab.kind)
+          : null
         if (deletedTab?.kind === 'project' && activeSessionByCwd[deletedTab.cwd] === meta.id) {
-          activeSessionByCwd[deletedTab.cwd] = openTabs.findLast((tab) =>
-            tab.kind === 'project' && tab.cwd === deletedTab.cwd
-          )?.id ?? null
+          activeSessionByCwd[deletedTab.cwd] = neighbourSession?.id ?? null
         }
         const activeWasDeleted = s.activeTabId === meta.id
         const projects = s.projects.map((project) =>
@@ -362,10 +390,11 @@ export const createCatalogSlice: SessionSlice<
           activeTabId: activeWasDeleted
             ? deletedTab?.kind === 'project'
               ? activeSessionByCwd[deletedTab.cwd] ?? null
-              : openTabs.findLast((tab) => tab.kind === 'chat')?.id ?? null
+              : neighbourSession?.id ?? null
             : s.activeTabId
         }
       })
+      if (deletedChatTab) get().persistOpenChatTabs([meta.id])
       const next = get().activeTabId
       if (next && !get().runtime[next]) await get().activateTab(next)
     },

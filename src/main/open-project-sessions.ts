@@ -2,12 +2,31 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { OpenProjectSessionsState, OpenProjectWorkspace } from '../shared/api'
 import { pigDir, pigPath } from './pig-dir'
+import { changesTabId } from '../shared/tab-ids'
 
 interface OpenProjectSessionsFile extends OpenProjectSessionsState {
-  version: 3
+  version: 4
 }
 
-const emptyState = (): OpenProjectSessionsState => ({ currentCwd: null, workspaces: [] })
+/**
+ * The strip's order, kept a permutation of the tabs that can actually come back: an id in the order is
+ * a member placed there, a member the order never mentions is appended in its own arrival order, and an
+ * id with no member behind it is dropped. A file tab is never a member, so it cannot be written here.
+ * A worktree nobody has ever dragged reads back the shape it had before ordering existed.
+ */
+function normalizeOrder(order: unknown, members: string[]): string[] {
+  const known = Array.isArray(order)
+    ? [...new Set(order.filter((id): id is string => typeof id === 'string' && members.includes(id)))]
+    : []
+  return [...known, ...members.filter((id) => !known.includes(id))]
+}
+
+const emptyState = (): OpenProjectSessionsState => ({
+  currentCwd: null,
+  workspaces: [],
+  chatOrder: [],
+  activeChatTabId: null
+})
 
 function filePath(): string {
   return pigPath('open-project-sessions.json')
@@ -31,7 +50,35 @@ function normalizeWorkspace(value: unknown): OpenProjectWorkspace | null {
   const activeTabId = typeof item.activeTabId === 'string' && item.activeTabId
     ? item.activeTabId
     : activeSessionId
-  return { cwd: resolve(item.cwd), sessionIds, activeSessionId, changesOpen, activeTabId }
+  const cwd = resolve(item.cwd)
+  // The changes tab takes part in the order only while it is open, which is what `changesOpen` records.
+  const members = changesOpen ? [...sessionIds, changesTabId(cwd)] : sessionIds
+  return {
+    cwd,
+    sessionIds,
+    activeSessionId,
+    changesOpen,
+    activeTabId,
+    tabOrder: normalizeOrder(item.tabOrder, members)
+  }
+}
+
+/**
+ * Which chats the strip was holding open, and which one it was showing. The list is both membership and
+ * order here: nothing else records that a chat was open at all. An id whose directory has since been
+ * taken back is dropped by the restore, not reported.
+ */
+function normalizeChatState(raw: Partial<OpenProjectSessionsFile>): Pick<
+  OpenProjectSessionsState,
+  'chatOrder' | 'activeChatTabId'
+> {
+  const chatOrder = Array.isArray(raw.chatOrder)
+    ? [...new Set(raw.chatOrder.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : []
+  const activeChatTabId = typeof raw.activeChatTabId === 'string' && chatOrder.includes(raw.activeChatTabId)
+    ? raw.activeChatTabId
+    : null
+  return { chatOrder, activeChatTabId }
 }
 
 /** A file that cannot be parsed is kept aside so the next write cannot silently drop it. */
@@ -52,9 +99,9 @@ async function readState(): Promise<OpenProjectSessionsState> {
   let parsed: unknown
   try {
     parsed = JSON.parse(contents)
-  } catch {
+  } catch (error) {
     await setAsideCorruptFile()
-    return emptyState()
+    throw new Error(`Invalid open-project-sessions JSON: ${filePath()}`, { cause: error })
   }
   const raw = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<OpenProjectSessionsFile>
   const workspaces = Array.isArray(raw.workspaces)
@@ -67,7 +114,8 @@ async function readState(): Promise<OpenProjectSessionsState> {
     : null
   return {
     currentCwd: current,
-    workspaces: [...byCwd.values()]
+    workspaces: [...byCwd.values()],
+    ...normalizeChatState(raw)
   }
 }
 
@@ -75,7 +123,7 @@ async function writeState(state: OpenProjectSessionsState): Promise<void> {
   await mkdir(pigDir(), { recursive: true })
   const path = filePath()
   const temporary = `${path}.${process.pid}.tmp`
-  const body: OpenProjectSessionsFile = { version: 3, ...state }
+  const body: OpenProjectSessionsFile = { version: 4, ...state }
   try {
     await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`)
     await rename(temporary, path)
@@ -107,12 +155,17 @@ export function rememberOpenProjectSession(cwd: string, sessionId: string): Prom
   return mutate((state) => {
     let workspace = state.workspaces.find((item) => item.cwd === target)
     if (!workspace) {
-      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null }
+      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null, tabOrder: [] }
       state.workspaces.push(workspace)
     }
     if (!workspace.sessionIds.includes(sessionId)) workspace.sessionIds.push(sessionId)
     workspace.activeSessionId ??= sessionId
     workspace.activeTabId ??= sessionId
+    // A session main just learned about belongs at the end of the strip, which is where the renderer
+    // appends it too; keeping the two in step is what makes an un-dragged order invisible on restore.
+    workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspace.changesOpen
+      ? [...workspace.sessionIds, changesTabId(target)]
+      : workspace.sessionIds)
   })
 }
 
@@ -153,7 +206,8 @@ export function selectOpenProjectWorkspace(
         sessionIds: [sessionId],
         activeSessionId: sessionId,
         changesOpen: false,
-        activeTabId: activeTabId ?? sessionId
+        activeTabId: activeTabId ?? sessionId,
+        tabOrder: [sessionId]
       }
       state.workspaces.push(workspace)
     } else if (workspace) {
@@ -177,11 +231,48 @@ export function saveOpenProjectChangesTab(
     state.currentCwd = target
     let workspace = state.workspaces.find((item) => item.cwd === target)
     if (!workspace) {
-      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null }
+      workspace = { cwd: target, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null, tabOrder: [] }
       state.workspaces.push(workspace)
     }
     workspace.changesOpen = open
     workspace.activeTabId = activeTabId
+    workspace.tabOrder = normalizeOrder(workspace.tabOrder, open
+      ? [...workspace.sessionIds, changesTabId(target)]
+      : workspace.sessionIds)
+  })
+}
+
+/**
+ * The order a worktree's strip was dragged into. Membership is not this call's to decide: the ids are
+ * arranged over the sessions already recorded, so a reorder cannot open a tab or close one.
+ */
+export function saveOpenProjectTabOrder(cwd: string, tabIds: string[]): Promise<void> {
+  const target = resolve(cwd)
+  return mutate((state) => {
+    const workspace = state.workspaces.find((item) => item.cwd === target)
+    if (!workspace) return
+    workspace.tabOrder = normalizeOrder(tabIds, workspace.changesOpen
+      ? [...workspace.sessionIds, changesTabId(target)]
+      : workspace.sessionIds)
+  })
+}
+
+/**
+ * The chats half's open tabs and which was showing. Unlike a worktree's, this list is written whole by
+ * the renderer: a chat has no worktree to accumulate its sessions under, so membership and order are the
+ * same list, and an empty one is a strip with nothing open rather than a read that failed.
+ *
+ * A `null` active id means the reader was looking at something else — the worktree's tab, or nothing at
+ * all — which is not a new choice about chats, so the chat the half was last left on keeps its place
+ * while it stays open. Only a list that no longer holds it falls back to the home.
+ */
+export function saveOpenChatTabs(tabIds: string[], activeTabId: string | null): Promise<void> {
+  const next = normalizeChatState({ chatOrder: tabIds }).chatOrder
+  return mutate((state) => {
+    const chosen = typeof activeTabId === 'string' && next.includes(activeTabId) ? activeTabId : null
+    state.chatOrder = next
+    state.activeChatTabId = chosen
+      ?? (state.activeChatTabId && next.includes(state.activeChatTabId) ? state.activeChatTabId : null)
   })
 }
 

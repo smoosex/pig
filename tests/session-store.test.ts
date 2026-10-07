@@ -50,7 +50,14 @@ async function runFixture(name: string): Promise<void> {
   let chatDeletes = 0
   const renameCalls: Array<{ sessionId: string; name: string; path?: string }> = []
   const createdIds: string[] = []
-  let persistedOpenProjectSessions: OpenProjectSessionsState = { currentCwd: null, workspaces: [] }
+  const tabOrders: Array<{ cwd: string; tabIds: string[] }> = []
+  const chatTabWrites: Array<{ tabIds: string[]; activeTabId: string | null }> = []
+  let persistedOpenProjectSessions: OpenProjectSessionsState = {
+    currentCwd: null,
+    workspaces: [],
+    chatOrder: [],
+    activeChatTabId: null
+  }
   const api: SessionApi = {
     // Main answers with the session it made. This mock keeps one fixed id for every fixture and only
     // records the id the renderer hands over, which the draft cases below assert on.
@@ -92,6 +99,12 @@ async function runFixture(name: string): Promise<void> {
         workspace.activeTabId = activeTabId
       }
     },
+    saveOpenProjectTabOrder: async (cwd: string, tabIds: string[]) => {
+      tabOrders.push({ cwd, tabIds })
+    },
+    saveOpenChatTabs: async (tabIds: string[], activeTabId: string | null) => {
+      chatTabWrites.push({ tabIds, activeTabId })
+    },
     listChats: async (): Promise<ProjectGroup[]> => [],
     createChat: async (): Promise<SessionRef> => ({ sessionId: 'chat', cwd: '/chats/0' }),
     listProjects: async (): Promise<ProjectGroup[]> => [],
@@ -112,6 +125,102 @@ async function runFixture(name: string): Promise<void> {
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const state = () => store.getState()
   const runtime = () => state().runtime[meta.id]
+
+  if (name === 'chat-new-controls-failure') {
+    store.setState({ workspaceRestoreReady: true })
+    const failure = new Error('controls failed')
+    api.getControls = async () => {
+      assert.deepEqual(chatTabWrites, [{ tabIds: ['chat'], activeTabId: 'chat' }])
+      throw failure
+    }
+    await assert.rejects(state().newChat(), (error) => error === failure)
+    assert.equal(state().openTabs[0]?.loadState, 'ready')
+    assert.deepEqual(chatTabWrites, [{ tabIds: ['chat'], activeTabId: 'chat' }])
+    return
+  }
+
+  if (name.startsWith('chat-restore-') || name === 'chat-delete-cold-successor') {
+    const first: SessionMeta = { ...meta, id: 'c1', cwd: '/chats/c1', path: '/chats/c1/s.jsonl' }
+    const second: SessionMeta = { ...meta, id: 'c2', cwd: '/chats/c2', path: '/chats/c2/s.jsonl' }
+    const catalog: ProjectGroup[] = [first, second].map((item) => ({
+      cwd: item.cwd, name: item.id, sessions: [item]
+    }))
+    const saved: OpenProjectSessionsState = {
+      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c1'
+    }
+    api.getOpenProjectSessions = async () => saved
+    api.listChats = async () => catalog
+    api.openSession = async (path) => {
+      openCalls++
+      const selected = [first, second].find((item) => item.path === path)!
+      return { sessionId: selected.id, cwd: selected.cwd, display: history(selected.id) }
+    }
+    if (name === 'chat-restore-scan-failure') {
+      api.listChats = async () => { throw Object.assign(new Error('cannot scan chats'), { code: 'EACCES' }) }
+      await state().initializeProjectWorkspaces(true)
+      assert.equal(state().workspaceRestoreReady, false)
+      assert.equal(state().workspaceRestoreError, 'cannot scan chats')
+      assert.deepEqual(chatTabWrites, [], 'failed scans must not prune saved membership')
+      assert.deepEqual(saved.chatOrder, ['c1', 'c2'])
+      api.listChats = async () => []
+      await state().initializeProjectWorkspaces(true)
+      assert.equal(state().workspaceRestoreReady, true)
+      assert.deepEqual(chatTabWrites.at(-1), { tabIds: [], activeTabId: null }, 'a successful empty scan can prune')
+      return
+    }
+    if (name === 'chat-restore-no-workspace' || name === 'chat-delete-cold-successor') {
+      await state().initializeProjectWorkspaces(false)
+      assert.equal(state().activeTabId, 'c1', 'Projects without a worktree shows the restored chats scope')
+      assert.equal(state().openTabs[0]?.loadState, 'ready')
+      assert.equal(state().openTabs[1]?.loadState, 'cold')
+      assert.equal(openCalls, 1)
+      if (name === 'chat-delete-cold-successor') {
+        await state().deleteChat(first.cwd)
+        assert.equal(state().activeTabId, 'c2')
+        assert.equal(state().openTabs[0]?.loadState, 'ready', 'the cold successor is hydrated after deletion')
+        assert.ok(state().runtime.c2)
+        assert.equal(openCalls, 2)
+        assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c2'], activeTabId: 'c2' })
+      }
+      return
+    }
+
+    const projectScan = deferred<ProjectGroup[]>()
+    api.listProjects = () => projectScan.promise
+    const restoring = state().initializeProjectWorkspaces(true)
+    if (name === 'chat-restore-selection') {
+      await state().openExisting(first, 'chat')
+      await state().openExisting(second, 'chat')
+      await state().activateTab('c1')
+      await state().activateTab('c2')
+      await state().selectProjectCwd('/other')
+    } else if (name === 'chat-restore-closed' || name === 'chat-restore-deleted') {
+      await state().openExisting(first, 'chat')
+      if (name === 'chat-restore-closed') state().closeTab('c1')
+      else await state().deleteChat(first.cwd)
+    } else {
+      assert.equal(name, 'chat-restore-live')
+      await state().openExisting(second, 'chat')
+    }
+    assert.deepEqual(chatTabWrites, [], 'startup mutations cannot overwrite membership before merging')
+    const live = state().openTabs.find((tab) => tab.id === 'c2')
+    const liveRuntime = state().runtime.c2
+    projectScan.resolve([])
+    await restoring
+    assert.equal(state().workspaceRestoreReady, true)
+    if (name === 'chat-restore-closed' || name === 'chat-restore-deleted') {
+      assert.deepEqual(state().openTabs.map((tab) => tab.id), ['c2'], 'a closure during scanning is not resurrected')
+      assert.equal(state().runtime.c1, undefined)
+      assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c2'], activeTabId: null })
+    } else {
+      assert.equal(state().openTabs.find((tab) => tab.id === 'c2'), live, 'restoration preserves the live tab object')
+      assert.equal(state().openTabs.find((tab) => tab.id === 'c2')?.loadState, 'ready')
+      assert.equal(state().runtime.c2, liveRuntime, 'restoration does not discard loaded history')
+      assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c1', 'c2'], activeTabId: 'c2' })
+      assert.equal(state().activeTabId, name === 'chat-restore-live' ? 'c2' : null)
+    }
+    return
+  }
 
   if (name === 'workspace-restore-lazy') {
     const first = { ...meta, id: 'first', path: '/project/first.jsonl', firstMessage: '' }
@@ -135,10 +244,12 @@ async function runFixture(name: string): Promise<void> {
     persistedOpenProjectSessions = {
       currentCwd: '/project',
       workspaces: [
-        { cwd: '/project', sessionIds: ['first', 'missing', 'second'], activeSessionId: 'second', changesOpen: false, activeTabId: 'second' },
-        { cwd: '/other', sessionIds: ['other'], activeSessionId: 'other', changesOpen: false, activeTabId: 'other' },
-        { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable', changesOpen: false, activeTabId: 'unavailable' }
-      ]
+        { cwd: '/project', sessionIds: ['first', 'missing', 'second'], activeSessionId: 'second', changesOpen: false, activeTabId: 'second', tabOrder: [] },
+        { cwd: '/other', sessionIds: ['other'], activeSessionId: 'other', changesOpen: false, activeTabId: 'other', tabOrder: [] },
+        { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable', changesOpen: false, activeTabId: 'unavailable', tabOrder: [] }
+      ],
+      chatOrder: [],
+      activeChatTabId: null
     }
     api.openSession = async (path: string) => {
       openCalls++
@@ -197,7 +308,9 @@ async function runFixture(name: string): Promise<void> {
     }
     api.getOpenProjectSessions = async () => ({
       currentCwd: '/project',
-      workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first', changesOpen: false, activeTabId: 'first' }]
+      workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first', changesOpen: false, activeTabId: 'first', tabOrder: [] }],
+      chatOrder: [],
+      activeChatTabId: null
     })
     api.openSession = async () => ({ sessionId: 'first', cwd: '/project', display: history('first') })
 
@@ -236,8 +349,9 @@ async function runFixture(name: string): Promise<void> {
       currentCwd: meta.cwd,
       workspaces: [{
         cwd: meta.cwd, sessionIds: [meta.id], activeSessionId: meta.id,
-        changesOpen: false, activeTabId: meta.id
-      }]
+        changesOpen: false, activeTabId: meta.id, tabOrder: []
+      }],
+      chatOrder: [], activeChatTabId: null
     }
     if (name !== 'chat-home-restore') {
       const persisted = deferred<OpenProjectSessionsState>()
@@ -464,9 +578,11 @@ async function runFixture(name: string): Promise<void> {
     persistedOpenProjectSessions = {
       currentCwd: '/project',
       workspaces: [
-        { cwd: '/project', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/project' },
-        { cwd: '/other', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/other' }
-      ]
+        { cwd: '/project', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/project', tabOrder: [] },
+        { cwd: '/other', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/other', tabOrder: [] }
+      ],
+      chatOrder: [],
+      activeChatTabId: null
     }
 
     await state().initializeProjectWorkspaces()
@@ -494,8 +610,11 @@ async function runFixture(name: string): Promise<void> {
         sessionIds: ['other'],
         activeSessionId: 'other',
         changesOpen: true,
-        activeTabId: 'other'
-      }]
+        activeTabId: 'other',
+        tabOrder: []
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     }
     store.setState({
       projects: [],
@@ -631,8 +750,11 @@ async function runFixture(name: string): Promise<void> {
         sessionIds: [meta.id],
         activeSessionId: meta.id,
         changesOpen: false,
-        activeTabId: meta.id
-      }]
+        activeTabId: meta.id,
+        tabOrder: []
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
     scan.resolve([{
       cwd: meta.cwd,
@@ -1423,6 +1545,234 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(selectActiveSessionId(state()), meta.id, 'the session is back behind the strip')
     assert.equal(state().activeTabByCwd['/project'], meta.id)
     assert.equal(closes, 0, 'a file tab owns no session to close')
+
+  // The chats half's tabs are the strip's whole list, so a new chat, a read and a closed chat all have to
+  // reach the file: each writes the list as it stands, and a chat that left the strip is gone next launch.
+  } else if (name === 'chat-tabs-written') {
+    const first: SessionMeta = { ...meta, id: 'c1', cwd: '/chats/c1', path: '/chats/c1/s.jsonl', firstMessage: 'One' }
+    const second: SessionMeta = { ...meta, id: 'c2', cwd: '/chats/c2', path: '/chats/c2/s.jsonl', firstMessage: 'Two' }
+    const group = (item: SessionMeta): ProjectGroup => ({
+      cwd: item.cwd, name: item.firstMessage, sessions: [item],
+      worktrees: [{
+        cwd: item.cwd, branch: item.firstMessage, isPrimary: true, locked: false, missing: false,
+        managed: false, sessions: [item]
+      }]
+    })
+    api.listChats = async () => [group(first), group(second)]
+    api.getOpenProjectSessions = async () => ({
+      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c2'
+    })
+    api.createChat = async () => ({ sessionId: 'c3', cwd: '/chats/c3' })
+    api.openSession = async () => ({ sessionId: 'c2', cwd: '/chats/c2', display: history('c2') })
+
+    await state().initializeProjectWorkspaces(true)
+    await Bun.sleep(0)
+    assert.deepEqual(state().openTabs.filter((t) => t.kind === 'chat').map((t) => t.id), ['c1', 'c2'])
+    // Hydrating the chat the pane came back to is the only write the restore makes, and it repeats the
+    // list it read: a merge with nothing to add cannot leave a file that disagrees with the strip.
+
+    // The + button: a chat nobody has sent to yet, on the strip and reading.
+    await state().newChat()
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c1', 'c2', 'c3'], activeTabId: 'c3' })
+    assert.deepEqual(chatTabWrites[0], { tabIds: ['c1', 'c2'], activeTabId: 'c2' })
+
+    // Reading it makes it the chats half's answer for next launch.
+    await state().activateTab('c1')
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c1', 'c2', 'c3'], activeTabId: 'c1' })
+
+    state().closeTab('c1')
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c2', 'c3'], activeTabId: 'c2' })
+
+    // A chat taken back from the sidebar leaves the list too, since the next launch cannot open it, and
+    // the strip it was on falls to its neighbour rather than to whatever was appended last.
+    await state().deleteChat('/chats/c2')
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['c3'], activeTabId: 'c3' })
+    assert.equal(state().activeTabId, 'c3')
+  } else if (name === 'tab-reorder') {
+    // One flat array, two halves: a chat and another worktree's session sit among this worktree's tabs,
+    // so what the reader drags is the sequence the strip lists, never a contiguous slice of the array.
+    const project = (id: string, cwd = '/project') => ({
+      id, cwd, title: id, kind: 'project' as const, loadState: 'ready' as const
+    })
+    const chatTab = (id: string) => ({
+      id, cwd: `/chats/${id}`, title: id, kind: 'chat' as const, loadState: 'ready' as const
+    })
+    const strip = [
+      project('one'), chatTab('c1'), project('two'),
+      { id: 'diff:/project', cwd: '/project', title: '全部变更', kind: 'diff' as const, loadState: 'ready' as const },
+      project('three'), chatTab('c2'), project('other-a', '/other'), project('other-b', '/other')
+    ]
+    store.setState({
+      openTabs: strip,
+      activeTabId: 'three',
+      currentProjectCwd: '/project',
+      workspaceRestoreReady: true,
+      activeSessionByCwd: { '/project': 'one' },
+      activeTabByCwd: { '/project': 'three' }
+    })
+
+    // The reader drags 'three' past 全部变更 to the front of the projects strip.
+    state().reorderTabs(['three', 'one', 'two', 'diff:/project'])
+    assert.deepEqual(tabOrders, [{ cwd: '/project', tabIds: ['three', 'one', 'two', 'diff:/project'] }])
+    assert.equal(state().openTabs.length, strip.length, 'reordering opens no tab and closes none')
+    assert.equal(state().activeTabId, 'three', 'the tab being read stays the tab being read')
+    assert.equal(state().openTabs[1].id, 'c1', 'the chats half keeps the slot it had')
+    // The visible sequence's slots are 0, 2, 3 and 4; the tab dragged to the front takes the first of
+    // them, which is why the chat sitting at index 1 is what proves the slots were not positions.
+    assert.equal(state().openTabs.findIndex((t) => t.id === 'three'), 0, 'the visible sequence moved in its own slots')
+
+    // A file tab is draggable but has no record to be ordered in, so it stays out of what main is told.
+    tabOrders.length = 0
+    await state().openFileTab('/project', 'src/a.ts')
+    const fileTabId = 'file:/project\u0000src/a.ts'
+    state().reorderTabs(['one', fileTabId, 'three', 'two', 'diff:/project'])
+    assert.deepEqual(tabOrders, [{ cwd: '/project', tabIds: ['one', 'three', 'two', 'diff:/project'] }])
+    assert.equal(
+      state().openTabs.filter((t) => t.cwd === '/project' && t.kind !== 'chat').findIndex((t) => t.id === fileTabId),
+      1,
+      'the file tab still moved where the reader put it, this run'
+    )
+
+    // Dragging a tab that belongs to another worktree writes that worktree's order instead.
+    tabOrders.length = 0
+    store.setState({ currentProjectCwd: '/other' })
+    state().reorderTabs(['other-b', 'other-a'])
+    assert.deepEqual(tabOrders, [{ cwd: '/other', tabIds: ['other-b', 'other-a'] }])
+    assert.equal(chatTabWrites.length, 0, 'a worktree reorder never touches the chats list')
+    assert.deepEqual(
+      state().openTabs.filter((t) => t.cwd === '/project' && t.kind !== 'chat').map((t) => t.id),
+      ['one', 'file:/project\u0000src/a.ts', 'three', 'two', 'diff:/project'],
+      'and the worktree whose tabs were not dragged keeps the order it was given'
+    )
+
+    // And a reorder of the chats half is that half's whole list, membership included.
+    store.setState({ currentProjectCwd: null, activeTabId: 'c2' })
+    state().reorderTabs(['c2', 'c1'])
+    assert.deepEqual(chatTabWrites, [{ tabIds: ['c2', 'c1'], activeTabId: 'c2' }])
+    assert.deepEqual(state().openTabs.filter((t) => t.kind === 'chat').map((t) => t.id), ['c2', 'c1'])
+  } else if (name === 'tab-close-neighbour') {
+    const project = (id: string, cwd = '/project') => ({
+      id, cwd, title: id, kind: 'project' as const, loadState: 'ready' as const
+    })
+    let closes = 0
+    api.closeSession = async () => { closes++ }
+    store.setState({
+      openTabs: [
+        project('one'),
+        { id: 'c1', cwd: '/chats/c1', title: 'c1', kind: 'chat' as const, loadState: 'ready' as const },
+        project('two'),
+        project('three'),
+        { id: 'diff:/project', cwd: '/project', title: '全部变更', kind: 'diff' as const, loadState: 'ready' as const }
+      ],
+      activeTabId: 'two',
+      currentProjectCwd: '/project',
+      workspaceRestoreReady: true,
+      activeSessionByCwd: { '/project': 'one' },
+      activeTabByCwd: { '/project': 'two' }
+    })
+
+    // The order is the reader's now, so the tail of the array has no special meaning: closing the middle
+    // of the strip has to land on what sits next to it, not on whatever was appended last.
+    state().closeTab('two')
+    assert.equal(state().activeTabId, 'three', 'the neighbour to the right takes the strip')
+    assert.equal(state().currentProjectCwd, '/project', 'the worktree is not left behind')
+
+    // Closing the last of the visible sequence falls left instead.
+    state().closeTab('three')
+    assert.equal(state().activeTabId, 'diff:/project', 'with nothing to the right, the left neighbour')
+
+    // A chat closed from the chats half falls to its own neighbour, never to a worktree tab.
+    state().closeTab('diff:/project')
+    assert.equal(state().activeTabId, 'one')
+    store.setState({ currentProjectCwd: null, activeTabId: 'c1' })
+    state().closeTab('c1')
+    assert.equal(state().activeTabId, null, 'the last chat of the half leaves the strip empty')
+    assert.equal(closes, 3, 'a session tab closed is a session closed, a changes tab is not')
+
+    // The two memories do not share a rule. The strip fell to the changes tab above, but a worktree's
+    // session memory holds sessions only: handing it a changes tab would have `selectProjectCwd` open the
+    // review column as the worktree's session, and main would record one as its active session.
+    const diffTab = { id: 'diff:/p', cwd: '/p', title: '全部变更', kind: 'diff' as const, loadState: 'ready' as const }
+    store.setState({
+      openTabs: [project('a', '/p'), diffTab, project('b', '/p')],
+      activeTabId: 'a',
+      currentProjectCwd: '/p',
+      activeSessionByCwd: { '/p': 'a' },
+      activeTabByCwd: { '/p': 'a' }
+    })
+    state().closeTab('a')
+    assert.equal(state().activeTabId, 'diff:/p', 'the strip takes the neighbour it sat next to')
+    assert.equal(
+      state().activeSessionByCwd['/p'],
+      'b',
+      'while the worktree remembers the neighbour that is a session'
+    )
+  } else if (name === 'chat-tabs-restored') {
+    const older: SessionMeta = {
+      ...meta, id: 'chat-old', cwd: '/chats/old', path: '/chats/old/s.jsonl', firstMessage: 'Old'
+    }
+    const newer: SessionMeta = {
+      ...meta, id: 'chat-new', cwd: '/chats/new', path: '/chats/new/s.jsonl', firstMessage: 'New'
+    }
+    const catalog: ProjectGroup[] = [{
+      cwd: '/chats/new', name: 'New', sessions: [newer],
+      worktrees: [{
+        cwd: '/chats/new', branch: 'New', isPrimary: true, locked: false, missing: false,
+        managed: false, sessions: [newer]
+      }]
+    }, {
+      cwd: '/chats/old', name: 'Old', sessions: [older],
+      worktrees: [{
+        cwd: '/chats/old', branch: 'Old', isPrimary: true, locked: false, missing: false,
+        managed: false, sessions: [older]
+      }]
+    }]
+    api.listChats = async () => catalog
+    store.setState({ openTabs: [], activeTabId: null, workspaceRestoreReady: false })
+    api.getOpenProjectSessions = async () => ({
+      currentCwd: null,
+      workspaces: [],
+      // 'gone' is a chat whose directory the startup sweep took back; the order is also the chats half's
+      // membership, so a chat left out of it was never open and gets no tab.
+      chatOrder: ['chat-old', 'gone', 'chat-new'],
+      activeChatTabId: 'chat-new'
+    })
+    api.listProjects = async () => []
+    api.openSession = async (path: string) => {
+      openCalls++
+      const selected = [older, newer].find((item) => item.path === path)!
+      return { sessionId: selected.id, cwd: selected.cwd, display: history(selected.id) }
+    }
+
+    await state().initializeProjectWorkspaces(true)
+    assert.deepEqual(
+      state().openTabs.map((t) => [t.id, t.kind, t.loadState]),
+      [['chat-old', 'chat', 'cold'], ['chat-new', 'chat', 'ready']],
+      'the dragged order arrives as it was left, and an id whose directory is gone leaves without a word'
+    )
+    assert.equal(state().activeTabId, 'chat-new', 'the chat the pane was showing comes back showing')
+    assert.equal(state().currentProjectCwd, null)
+    assert.equal(openCalls, 1, 'only the chat the pane shows is opened; the rest stay cold')
+
+    // The merged strip is written back once the restore lands, which is what takes the dead id out of the
+    // file and keeps a chat the reader made during the scan from being lost at the next launch.
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: ['chat-old', 'chat-new'], activeTabId: 'chat-new' })
+
+    // Nothing restored to the chats half, and its home is still what comes up.
+    store.setState({ openTabs: [], activeTabId: null, workspaceRestoreReady: false, restoredProjectCwd: null })
+    api.getOpenProjectSessions = async () => ({
+      currentCwd: null, workspaces: [], chatOrder: ['gone'], activeChatTabId: 'gone'
+    })
+    await state().initializeProjectWorkspaces(true)
+    assert.equal(state().openTabs.length, 0)
+    assert.equal(state().activeTabId, null, 'a chats half with nothing to show keeps its home')
+    await Bun.sleep(0)
+    assert.deepEqual(chatTabWrites.at(-1), { tabIds: [], activeTabId: null }, 'the dead id leaves the file with the tab')
   } else {
     throw new Error(`Unknown fixture: ${name}`)
   }
@@ -1432,6 +1782,14 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'chat-restore-scan-failure': 'failed chat scans preserve saved membership until a successful retry',
+    'chat-restore-live': 'restoration preserves chat tabs opened while project scanning is pending',
+    'chat-restore-closed': 'restoration respects a chat opened and closed during scanning',
+    'chat-restore-deleted': 'restoration respects a chat deleted during scanning',
+    'chat-restore-selection': 'chat selection changes during scanning persist without membership changes',
+    'chat-restore-no-workspace': 'Projects without a workspace restores the active chat selection',
+    'chat-delete-cold-successor': 'deleting the active chat hydrates its cold successor',
+    'chat-new-controls-failure': 'new chat membership persists before control loading can fail',
     'workspace-restore-lazy': 'restored workspaces open only the selected active session',
     'workspace-restore-retry': 'a failed workspace restore stays retryable',
     'chat-home-restore': 'restoring Chats starts a new conversation instead of opening the last project',
@@ -1488,6 +1846,10 @@ if (process.argv[2] === '--session-store-fixture') {
     'chat-refresh-order': 'refreshing a chat moves it to its modified-time position immediately',
     'chat-session-delete-keeps-diff': 'deleting a chat or session does not clear worktree diff state',
     'file-tabs': 'a file tab opens no session and is remembered per worktree',
+    'tab-reorder': 'a dragged half of the strip is written back without disturbing the other',
+    'chat-tabs-written': 'every change to the chats half reaches the list the next launch restores',
+    'tab-close-neighbour': 'closing a tab lands on its neighbour, not on the end of the list',
+    'chat-tabs-restored': 'the chats half comes back with the tabs it had and the one it showed',
     'project-load-order': 'a slow project scan cannot replace a newer list'
   }
   for (const [name, description] of Object.entries(cases)) {

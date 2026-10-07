@@ -107,11 +107,25 @@ export interface OpenProjectWorkspace {
   changesOpen: boolean
   /** The tab the workbench shows for this workspace: a session id or the changes tab id. */
   activeTabId: string | null
+  /**
+   * The strip's own order: every session of this worktree plus its changes tab, file tabs excluded.
+   * `sessionIds` stays the membership — this only arranges it, so a reorder cannot open or close
+   * anything. A permutation of the members, which main re-derives on every read and write.
+   */
+  tabOrder: string[]
 }
 
 export interface OpenProjectSessionsState {
   currentCwd: string | null
   workspaces: OpenProjectWorkspace[]
+  /**
+   * The chats half's open chat tabs, in strip order. Unlike a worktree's, this list is also its
+   * membership: nothing else persists which chats were open, and an id whose directory is gone is
+   * dropped at restore rather than reported.
+   */
+  chatOrder: string[]
+  /** The chat the strip was left on, or null when the chats half was showing its home. */
+  activeChatTabId: string | null
 }
 
 export interface SessionRef {
@@ -738,6 +752,10 @@ export interface SessionApi {
     activeTabId: string | null
   ) => Promise<void>
   saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
+  /** Records a worktree's strip order: its sessions and changes tab, never its file tabs. */
+  saveOpenProjectTabOrder: (cwd: string, tabIds: string[]) => Promise<void>
+  /** Records the chats half's open chat tabs and which of them was showing. */
+  saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) => Promise<void>
   getSettings: () => Promise<AppSettings>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>

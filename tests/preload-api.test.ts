@@ -51,6 +51,9 @@ async function runFixture(): Promise<void> {
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
+  // Both take a whole sequence: a reorder replaces the arrangement rather than editing one tab out of it.
+  await api.saveOpenProjectTabOrder('/repo', ['diff:/repo', 'session-1'])
+  await api.saveOpenChatTabs(['chat-1', 'chat-2'], 'chat-2')
   await api.retryWorktreeNaming('/repo', '/repo-worktree')
 
   assert.deepEqual(invokes, [
@@ -66,6 +69,14 @@ async function runFixture(): Promise<void> {
     {
       channel: 'system:select-open-project-workspace',
       args: ['/repo', 'session-1', 'diff:/repo']
+    },
+    {
+      channel: 'system:save-open-project-tab-order',
+      args: ['/repo', ['diff:/repo', 'session-1']]
+    },
+    {
+      channel: 'system:save-open-chat-tabs',
+      args: [['chat-1', 'chat-2'], 'chat-2']
     },
     { channel: 'project:retry-worktree-naming', args: ['/repo', '/repo-worktree'] }
   ])

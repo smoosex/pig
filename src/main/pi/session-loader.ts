@@ -138,10 +138,12 @@ type ScanEntry = {
   message?: { role?: string; content?: unknown }
 }
 
-function parseEntry(line: string): ScanEntry | null {
+function parseEntry(line: string, truncated = false): ScanEntry | null {
   try {
     return JSON.parse(line) as ScanEntry
-  } catch {
+  } catch (error) {
+    // Only the prefix's byte limit may cut valid JSON short. Complete JSONL records remain strict.
+    if (!truncated) throw error
     const type = line.match(/"type"\s*:\s*"([^"]+)"/)?.[1]
     if (type === 'session_info') {
       const quote = line.search(/"name"\s*:\s*"/)
@@ -283,9 +285,9 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
     let firstMessage = ''
     let firstMessageIsImage = false
 
-    for (const line of lines) {
+    for (const [index, line] of lines.entries()) {
       if (!line.trim()) continue
-      const entry = parseEntry(line)
+      const entry = parseEntry(line, index === lines.length - 1 && st.size > PREFIX_BYTES)
       if (!entry) continue
       if (!id && entry.type === 'session' && typeof entry.id === 'string') {
         id = entry.id
@@ -323,8 +325,10 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
       firstMessage,
       firstMessageIsImage: firstMessageIsImage || undefined
     }
-  } catch {
-    return null
+  } catch (error) {
+    // A file removed during the scan is absent, not unreadable. Other IO failures invalidate the scan.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
   }
 }
 
@@ -332,8 +336,10 @@ export async function listJsonlFiles(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true })
     return entries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map((entry) => join(dir, entry.name))
-  } catch {
-    return []
+  } catch (error) {
+    // A chat never sent to has no session directory yet.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
 }
 
@@ -361,8 +367,9 @@ async function collectAllFiles(): Promise<string[]> {
       dirs.filter((entry) => entry.isDirectory()).map((entry) => listJsonlFiles(join(root, entry.name)))
     )
     return groups.flat()
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
 }
 

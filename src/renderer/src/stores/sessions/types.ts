@@ -236,6 +236,13 @@ export interface SessionsStore {
    */
   applySessionNames: (updates: SessionNameUpdate[]) => void
   closeTab: (tabId: string) => void
+  /**
+   * Writes back a dragged half of the strip: the visible ids in their new arrangement, which the store
+   * places into the slots those tabs already held so the other half is not disturbed.
+   */
+  reorderTabs: (visibleIds: string[]) => void
+  /** Mirrors the chats half's open tabs to disk: membership, order, and which one the pane shows. */
+  persistOpenChatTabs: (closedIds?: string[]) => void
   setActive: (tabId: string) => void
   renameTab: (tabId: string, title: string) => void
   relabelTabs: () => void

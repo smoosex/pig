@@ -44,8 +44,11 @@ describe('open project sessions', () => {
         sessionIds: ['one', 'two'],
         activeSessionId: 'two',
         changesOpen: false,
-        activeTabId: 'two'
-      }]
+        activeTabId: 'two',
+        tabOrder: ['one', 'two']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -63,8 +66,11 @@ describe('open project sessions', () => {
         sessionIds: ['one'],
         activeSessionId: 'one',
         changesOpen: false,
-        activeTabId: 'one'
-      }]
+        activeTabId: 'one',
+        tabOrder: ['one']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -83,8 +89,11 @@ describe('open project sessions', () => {
         sessionIds: ['two'],
         activeSessionId: 'two',
         changesOpen: false,
-        activeTabId: 'two'
-      }]
+        activeTabId: 'two',
+        tabOrder: ['two']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -102,8 +111,11 @@ describe('open project sessions', () => {
         sessionIds: ['one'],
         activeSessionId: 'one',
         changesOpen: false,
-        activeTabId: `diff:${resolve(cwd)}`
-      }]
+        activeTabId: `diff:${resolve(cwd)}`,
+        tabOrder: ['one']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -124,8 +136,11 @@ describe('open project sessions', () => {
         sessionIds: ['one'],
         activeSessionId: 'one',
         changesOpen: false,
-        activeTabId: 'one'
-      }]
+        activeTabId: 'one',
+        tabOrder: ['one']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -144,8 +159,11 @@ describe('open project sessions', () => {
         sessionIds: ['one'],
         activeSessionId: 'one',
         changesOpen: false,
-        activeTabId: 'one'
-      }]
+        activeTabId: 'one',
+        tabOrder: ['one']
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -160,7 +178,8 @@ describe('open project sessions', () => {
       sessionIds: [],
       activeSessionId: null,
       changesOpen: true,
-      activeTabId: `diff:${cwd}`
+      activeTabId: `diff:${cwd}`,
+      tabOrder: [`diff:${resolve(cwd)}`]
     }])
 
     await state.forgetOpenProjectSession('nothing')
@@ -182,7 +201,9 @@ describe('open project sessions', () => {
         activeSessionId: null,
         diffTabs: [{ path: 'src/a.ts', scope: 'unstaged' }],
         activeTabId: 'diff:unstaged:src/a.ts'
-      }]
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     }))
 
     expect(await state.loadOpenProjectSessions()).toEqual({
@@ -192,8 +213,11 @@ describe('open project sessions', () => {
         sessionIds: [],
         activeSessionId: null,
         changesOpen: true,
-        activeTabId: 'diff:unstaged:src/a.ts'
-      }]
+        activeTabId: 'diff:unstaged:src/a.ts',
+        tabOrder: [`diff:${resolve(cwd)}`]
+      }],
+      chatOrder: [],
+      activeChatTabId: null
     })
   })
 
@@ -206,11 +230,94 @@ describe('open project sessions', () => {
     expect((await stat(path)).isDirectory()).toBe(true)
   })
 
-  test('a corrupt file is set aside rather than silently overwritten', async () => {
+  // The order a strip was dragged into is only an arrangement of the tabs that can come back: writing it
+  // must never be a way to open or close one, and a file never written here must not disturb the rest.
+  test('a dragged order arranges the members it has and ignores the ones it does not', async () => {
+    const cwd = join(root, 'project')
+    await state.rememberOpenProjectSession(cwd, 'one')
+    await state.rememberOpenProjectSession(cwd, 'two')
+    await state.saveOpenProjectChangesTab(cwd, true, null)
+    await state.saveOpenProjectTabOrder(cwd, ['two', 'file:' + resolve(cwd) + '\u0000src/a.ts', 'ghost', `diff:${resolve(cwd)}`, 'one'])
+
+    expect((await state.loadOpenProjectSessions()).workspaces[0].tabOrder).toEqual([
+      'two',
+      `diff:${resolve(cwd)}`,
+      'one'
+    ])
+
+    // A member the order never mentioned is appended rather than dropped, so a stale drag cannot close a tab.
+    await state.rememberOpenProjectSession(cwd, 'three')
+    expect((await state.loadOpenProjectSessions()).workspaces[0]).toMatchObject({
+      sessionIds: ['one', 'two', 'three'],
+      tabOrder: ['two', `diff:${resolve(cwd)}`, 'one', 'three']
+    })
+  })
+
+  test('a worktree nobody dragged reads back the shape ordering never existed in', async () => {
+    const cwd = join(root, 'legacy-order')
+    await writeFile(join(root, 'open-project-sessions.json'), JSON.stringify({
+      version: 3,
+      currentCwd: cwd,
+      workspaces: [{
+        cwd,
+        sessionIds: ['one', 'two'],
+        activeSessionId: 'one',
+        changesOpen: true,
+        activeTabId: `diff:${cwd}`
+      }]
+    }))
+
+    expect(await state.loadOpenProjectSessions()).toEqual({
+      currentCwd: resolve(cwd),
+      workspaces: [{
+        cwd: resolve(cwd),
+        sessionIds: ['one', 'two'],
+        activeSessionId: 'one',
+        changesOpen: true,
+        activeTabId: `diff:${resolve(cwd)}`,
+        // sessions in arrival order, then the changes tab: exactly what the restore built before dragging.
+        tabOrder: ['one', 'two', `diff:${resolve(cwd)}`]
+      }],
+      chatOrder: [],
+      activeChatTabId: null
+    })
+  })
+
+    test('closing a worktree’s changes tab takes it out of the order with it', async () => {
+    const cwd = join(root, 'project')
+    await state.rememberOpenProjectSession(cwd, 'one')
+    await state.saveOpenProjectChangesTab(cwd, true, `diff:${resolve(cwd)}`)
+    await state.saveOpenProjectTabOrder(cwd, [`diff:${resolve(cwd)}`, 'one'])
+    await state.saveOpenProjectChangesTab(cwd, false, 'one')
+
+    expect((await state.loadOpenProjectSessions()).workspaces[0].tabOrder).toEqual(['one'])
+  })
+
+  test('the chats half keeps its order, its membership and the chat it was showing', async () => {
+    await state.saveOpenChatTabs(['b', 'a', 'b'], 'a')
+    expect(await state.loadOpenProjectSessions()).toMatchObject({
+      chatOrder: ['b', 'a'],
+      activeChatTabId: 'a'
+    })
+
+    // An active tab that is not among the open ones is no active tab: the half falls to its home instead
+    // of restoring a pane for a chat that has no place on the strip.
+    await state.saveOpenChatTabs(['b'], 'gone')
+    expect(await state.loadOpenProjectSessions()).toMatchObject({
+      chatOrder: ['b'],
+      activeChatTabId: null
+    })
+
+    // An empty list is a strip with nothing open, which is what lets the last chat be closed for good.
+    await state.saveOpenChatTabs([], null)
+    expect(await state.loadOpenProjectSessions()).toMatchObject({ chatOrder: [], activeChatTabId: null })
+  })
+
+  test('a corrupt file is reported and set aside rather than silently overwritten', async () => {
     const path = join(root, 'open-project-sessions.json')
     await writeFile(path, '{"version": 1, "workspaces": [')
 
-    expect(await state.loadOpenProjectSessions()).toEqual({ currentCwd: null, workspaces: [] })
+    await expect(state.loadOpenProjectSessions()).rejects.toThrow('Invalid open-project-sessions JSON')
     expect((await readFile(`${path}.corrupt`, 'utf8')).startsWith('{"version": 1')).toBe(true)
 
     await state.rememberOpenProjectSession(join(root, 'project'), 'one')
@@ -219,7 +326,8 @@ describe('open project sessions', () => {
       sessionIds: ['one'],
       activeSessionId: 'one',
       changesOpen: false,
-      activeTabId: 'one'
+      activeTabId: 'one',
+      tabOrder: ['one']
     }])
   })
 })
