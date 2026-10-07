@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { composePromptText } from '../src/shared/pasted-text'
 import type { DisplayTurn } from '../src/shared/api'
 import { renderKeyForUser, turnImageSrc, groupTurns, type ProcessItem } from '../src/renderer/src/chat/turns'
-import type { PigImageContent } from '../src/renderer/src/pi/types'
+import type { AssistantMessage, PigImageContent, PiMessage } from '../src/renderer/src/pi/types'
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
@@ -10,6 +10,77 @@ const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
 })
 
 describe('display turn projection', () => {
+  test('merges adjacent thinking pieces without mutating messages or crossing visible boundaries', () => {
+    const user: PiMessage = { role: 'user', content: 'question', timestamp: 1 }
+    const first = {
+      role: 'assistant', timestamp: 2,
+      content: [{ type: 'thinking', thinking: 'first' }, { type: 'thinking', thinking: 'second' }]
+    } as AssistantMessage
+    const next = {
+      ...first, timestamp: 3, content: [{ type: 'thinking', thinking: 'third' }]
+    } as AssistantMessage
+    const before = structuredClone([first, next])
+    const durations = { '2:0': 15_000, '2:1': 13_000, '3:0': 2_000 }
+    const [turn] = groupTurns([user, first, next], false, durations)
+    expect(turn.process).toEqual([{
+      kind: 'thinking', text: 'first\n\nsecond\n\nthird', durationMs: 30_000, live: false
+    }])
+    expect([first, next]).toEqual(before)
+    const boundaries: PiMessage[] = [
+      { ...next, content: [{ type: 'text', text: 'intervening text' }] },
+      { role: 'toolResult', timestamp: 3, toolCallId: 'read', toolName: 'read', isError: false, content: [] },
+      { role: 'compactionSummary', timestamp: 3, summary: 'context', tokensBefore: 42 }
+    ]
+    for (const boundary of boundaries) {
+      const [separated] = groupTurns([user, first, boundary, { ...next, timestamp: 4 }], false, durations)
+      expect(separated.process.filter((item) => item.kind === 'thinking')).toHaveLength(2)
+    }
+  })
+
+  test('keeps thinking before and after a matched tool result in separate rows', () => {
+    const user: PiMessage = { role: 'user', content: 'question', timestamp: 1 }
+    const request = {
+      role: 'assistant', timestamp: 2,
+      content: [
+        { type: 'toolCall', id: 'read', name: 'read', arguments: { path: 'file.ts' } },
+        { type: 'thinking', thinking: 'before tool result' }
+      ]
+    } as AssistantMessage
+    const result: PiMessage = {
+      role: 'toolResult', timestamp: 3, toolCallId: 'read', toolName: 'read', isError: false,
+      content: [{ type: 'text', text: 'file contents' }]
+    }
+    const next = {
+      ...request, timestamp: 4, content: [{ type: 'thinking', thinking: 'after tool result' }]
+    } as AssistantMessage
+    const messages = [user, request, result, next]
+    const before = structuredClone(messages)
+    for (const streaming of [false, true]) {
+      const [turn] = groupTurns(messages, streaming, { '2:1': 15_000, '4:0': 13_000 })
+      expect(turn.process).toEqual([
+        { kind: 'tools', tools: [{ id: 'read', name: 'read', args: { path: 'file.ts' }, result }] },
+        { kind: 'thinking', text: 'before tool result', durationMs: 15_000, live: false },
+        { kind: 'thinking', text: 'after tool result', durationMs: 13_000, live: false }
+      ])
+      expect(messages).toEqual(before)
+    }
+  })
+
+  test('sums raw measured thinking durations without replacing zero-length spans with persistence timing', () => {
+    const message: AssistantMessage & { persistedAt: number } = {
+      role: 'assistant', timestamp: 2, persistedAt: 2_002,
+      api: 'openai-completions', provider: 'synthetic', model: 'synthetic', stopReason: 'stop',
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      content: [{ type: 'thinking', thinking: 'first' }, { type: 'thinking', thinking: 'second' }]
+    }
+    for (const durationMs of [100, 0]) {
+      const [turn] = groupTurns([message], false, { '2:0': durationMs, '2:1': durationMs })
+      expect(turn.process).toEqual([{
+        kind: 'thinking', text: 'first\n\nsecond', durationMs: durationMs * 2, live: false
+      }])
+    }
+  })
+
   test('preserves live render keys across text normalization and image projection', () => {
     const image = { type: 'image' as const, mimeType: 'image/png', data: 'AA==' }
     // Persisted turns carry the URL; the key only has to count the image either way.

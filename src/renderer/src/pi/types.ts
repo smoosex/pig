@@ -1,6 +1,6 @@
 import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import type {
-  AssistantMessage,
+  AssistantMessage as SdkAssistantMessage,
   ImageContent,
   TextContent,
   ThinkingContent,
@@ -23,8 +23,15 @@ export interface PigUserMessage extends Omit<UserMessage, 'content'> {
   pastedText?: PastedTextDisplayMetadata
 }
 
+export interface AssistantStreamEvent {
+  type: string
+  contentIndex?: number
+}
+
+/** Renderer-only stream position; kept with its snapshot, never written into Pi history. */
+export type AssistantMessage = SdkAssistantMessage & { streamEvent?: AssistantStreamEvent }
+
 export type {
-  AssistantMessage,
   ImageContent,
   TextContent,
   ThinkingContent,
@@ -91,6 +98,19 @@ export interface PiSessionEvent {
   result?: unknown
   isError?: boolean
   [key: string]: unknown
+}
+
+export function assistantStreamEvent(event: PiSessionEvent): AssistantStreamEvent | null {
+  const value = event.assistantMessageEvent
+  if (!value || typeof value !== 'object') return null
+  const nested = value as { type?: unknown; contentIndex?: unknown }
+  if (
+    typeof nested.type !== 'string' ||
+    typeof nested.contentIndex !== 'number' ||
+    !Number.isInteger(nested.contentIndex) ||
+    nested.contentIndex < 0
+  ) return null
+  return { type: nested.type, contentIndex: nested.contentIndex }
 }
 
 export function isPiMessage(value: unknown): value is PiMessage {

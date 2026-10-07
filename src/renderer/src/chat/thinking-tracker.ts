@@ -1,28 +1,11 @@
 import { thinkingTimingKey } from './turns'
-import { isPiMessage, type PiSessionEvent } from '../pi/types'
+import { assistantStreamEvent, isPiMessage, type PiSessionEvent } from '../pi/types'
 
 interface ThinkingSpan {
   sessionId: string
   messageTimestamp: number
   contentIndex: number
   startedAt: number
-}
-
-function assistantStreamEvent(
-  event: PiSessionEvent
-): { type: string; contentIndex: number } | null {
-  const value = event.assistantMessageEvent
-  if (!value || typeof value !== 'object') return null
-  const nested = value as { type?: unknown; contentIndex?: unknown }
-  if (
-    typeof nested.type !== 'string' ||
-    typeof nested.contentIndex !== 'number' ||
-    !Number.isInteger(nested.contentIndex) ||
-    nested.contentIndex < 0
-  ) {
-    return null
-  }
-  return { type: nested.type, contentIndex: nested.contentIndex }
 }
 
 /** Tracks thinking spans using a monotonic clock, independently of React renders. */
@@ -46,7 +29,7 @@ export function createThinkingTracker(
       entry.sessionId,
       entry.messageTimestamp,
       entry.contentIndex,
-      Math.max(1000, endedAt - entry.startedAt)
+      endedAt - entry.startedAt
     )
   }
 

@@ -1,5 +1,5 @@
 import { api } from '../ipc/api'
-import { isPiMessage, type PiMessage, type PiSessionEvent, type ToolPartialResult } from '../pi/types'
+import { assistantStreamEvent, isPiMessage, type PiMessage, type PiSessionEvent, type ToolPartialResult } from '../pi/types'
 import { useSessionsStore } from '../stores/sessions'
 import { MAX_LIVE_BASH_CHARS } from '../stores/sessions/conversation-slice'
 import { sameMessage } from '../stores/sessions/runtime'
@@ -170,10 +170,16 @@ export function subscribeSessionEvents(): () => void {
           appendLiveMessage(sessionId, event.message)
         }
         break
-      case 'message_update':
+      case 'message_update': {
         thinking.record(sessionId, event)
-        if (isPiMessage(event.message)) queueUpdate(sessionId, event.message)
+        if (isPiMessage(event.message)) {
+          const streamEvent = assistantStreamEvent(event)
+          queueUpdate(sessionId, event.message.role === 'assistant' && streamEvent
+            ? { ...event.message, streamEvent }
+            : event.message)
+        }
         break
+      }
       case 'message_end':
         if (isPiMessage(event.message)) {
           if (event.message.role === 'toolResult') discardToolSnapshot(sessionId, event.message.toolCallId)
@@ -185,7 +191,9 @@ export function subscribeSessionEvents(): () => void {
           if (event.message.role === 'assistant') {
             thinking.finishMessage(sessionId, event.message.timestamp, performance.now())
           }
-          replaceLiveMessage(sessionId, event.message)
+          replaceLiveMessage(sessionId, event.message.role === 'assistant'
+            ? { ...event.message, streamEvent: { type: 'done' } }
+            : event.message)
         }
         break
       case 'tool_execution_update':

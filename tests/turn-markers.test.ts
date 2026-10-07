@@ -94,7 +94,7 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({ streaming: false }))
       assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
     } else if (name === 'thinking') {
-      const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0 }]
+      const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0, live: true }]
       await render(makeTurn({ process }))
       assert.deepEqual(shimmerText(), ['思考中...'])
       assert.equal(container.querySelector('.shimmer')!.classList.contains('shimmer-once'), false)
@@ -126,7 +126,7 @@ async function runFixture(name: string): Promise<void> {
       })
       await render(makeTurn({ process: [{ ...process[0], text: '完整思考正文，继续推理。' } as ProcessItem] }))
       assert.equal(container.querySelector('pre')!.scrollTop, 2_000)
-      await render(makeTurn({ process: [{ ...process[0], durationMs: 1_000 } as ProcessItem] }))
+      await render(makeTurn({ process: [{ ...process[0], durationMs: 1_000, live: false } as ProcessItem] }))
       assert.deepEqual(shimmerText(), [])
       const thinking = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('已思考'))!
       assert.ok(thinking)
@@ -144,6 +144,76 @@ async function runFixture(name: string): Promise<void> {
       )
       await act(async () => { thinking.click() })
       assert.equal(container.querySelector('pre')?.textContent, '完整思考正文')
+    } else if (name === 'thinking-segments') {
+      const first = { type: 'thinking' as const, thinking: '第一段思考' }
+      const second = { type: 'thinking' as const, thinking: '第二段思考' }
+      const thoughts = () => [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .filter((button) => /^(思考中|已思考)/.test(button.textContent ?? ''))
+      for (const withTools of [false, true]) {
+        const prefix: Message[] = withTools
+          ? [sourceUser, { ...sourceRequest, content: sourceRequest.content.slice(0, 1) }, sourceResult]
+          : [sourceUser]
+        const show = async (
+          content: typeof sourceRequest.content,
+          type: string,
+          contentIndex: number,
+          durations: Record<string, number>
+        ) => {
+          await render(groupTurns([...prefix, {
+            ...sourceRequest, timestamp: 4_000, stopReason: 'stop', content,
+            streamEvent: { type, contentIndex }
+          }], true, durations)[0])
+          assert.equal(thoughts().length, 1)
+        }
+        await show([first], 'thinking_delta', 0, {})
+        assert.deepEqual(shimmerText(), ['思考中...'])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        await show([first], 'thinking_end', 0, { '4000:0': 15_000 })
+        assert.equal(thoughts()[0].textContent, '已思考 15 秒')
+        assert.deepEqual(shimmerText(), [])
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        await show([first, { type: 'thinking', thinking: '' }], 'thinking_start', 1, { '4000:0': 15_000 })
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        await show([first, second], 'thinking_delta', 1, { '4000:0': 15_000 })
+        assert.deepEqual(shimmerText(), ['思考中...'], 'elapsed time from the first piece cannot settle the second')
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        if (thoughts()[0].getAttribute('aria-expanded') === 'false') {
+          await act(async () => { thoughts()[0].click() })
+        }
+        assert.equal(container.querySelector('pre')?.textContent, '第一段思考\n\n第二段思考')
+        const durations = { '4000:0': 15_000, '4000:1': 13_000 }
+        await show([first, second], 'thinking_end', 1, durations)
+        assert.equal(thoughts()[0].textContent, '已思考 28 秒')
+        assert.deepEqual(shimmerText(), [])
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        await show([first, second], 'thinking_end', 1, { '4000:0': 100, '4000:1': 100 })
+        assert.equal(thoughts()[0].textContent, '已思考 1 秒', 'the duration floor applies once to the merged row')
+        const invisible = { type: 'thinking' as const, thinking: '' }
+        await show([first, second, invisible], 'thinking_start', 2, durations)
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'), 'invisible thoughts still need a waiting indicator')
+        await show([first, second, invisible], 'thinking_end', 2, durations)
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        const reasoning = [first, second, invisible, invisible]
+        await show(reasoning, 'thinking_start', 3, durations)
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        await show([...reasoning, { type: 'text', text: '' }], 'text_start', 4, durations)
+        assert.ok(container.querySelector('[data-testid="thinking-orb"]'))
+        const content: typeof sourceRequest.content = [...reasoning, { type: 'text', text: '最终回答' }]
+        await show(content, 'text_delta', 4, durations)
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        await render(groupTurns([...prefix, { ...sourceRequest, timestamp: 4_000, content }], false, durations)[0])
+        await act(async () => { await Bun.sleep(350); separator().click() })
+        if (withTools) {
+          const group = [...container.querySelectorAll<HTMLButtonElement>('button')]
+            .find((button) => button.textContent?.startsWith('使用了'))
+          assert.ok(group)
+          await act(async () => { group.click() })
+        }
+        assert.equal(thoughts().length, 1, 'the historical process keeps the same merged row')
+        assert.equal(thoughts()[0].textContent, '已思考 28 秒')
+        assert.deepEqual(shimmerText(), [])
+        assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+      }
     } else if (name === 'tools') {
       const process: ProcessItem[] = [
         { kind: 'tools', tools: [readTool('previous', true)] },
@@ -772,6 +842,7 @@ if (process.argv[2] === '--marker-fixture') {
   const fixtures = {
     wait: 'initial model waiting shows a working orb and clears on failure or settlement',
     thinking: 'thinking marker preserves the body and completed thinking remains expandable',
+    'thinking-segments': 'adjacent thoughts merge while stream gaps and invisible reasoning keep a waiting orb',
     tools: 'only the current tool text shimmers while its action prefix stays static',
     'tool-wait': 'completed tools show model waiting until visible work resumes, without overlapping execution or old blocks',
     'retry-tool-wait': 'failed unexecuted calls remain history without blocking retries or hiding genuinely pending tools',

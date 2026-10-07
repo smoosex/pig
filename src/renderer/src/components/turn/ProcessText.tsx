@@ -54,7 +54,7 @@ export function ThinkingRow({
   const title = live
     ? t('turn.thinkingNow')
     : durationMs > 0
-      ? t('turn.thoughtFor', { duration: formatElapsed(durationMs, t) })
+      ? t('turn.thoughtFor', { duration: formatElapsed(Math.max(1000, durationMs), t) })
       : t('turn.thought')
 
   useEffect(() => {

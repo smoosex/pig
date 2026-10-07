@@ -31,6 +31,30 @@ test('thinking duration is recorded once while later text snapshots repeat the c
   assert.deepEqual(durations, [2_500])
 })
 
+test('adjacent thinking spans retain raw sub-second and zero durations without counting the gap', () => {
+  const update = (type: string, index: number): PiSessionEvent => ({
+    type: 'message_update',
+    assistantMessageEvent: { type, contentIndex: index },
+    message: {
+      role: 'assistant', timestamp: 100,
+      content: Array.from({ length: index + 1 }, () => ({ type: 'thinking', thinking: 'thinking' }))
+    } as PiSessionEvent['message']
+  })
+  for (const durationMs of [100, 0]) {
+    let clock = 0
+    const durations: number[] = []
+    const tracker = createThinkingTracker((_id, _timestamp, _index, duration) => durations.push(duration), () => clock)
+    for (const index of [0, 1]) {
+      tracker.record('a', update('thinking_start', index))
+      clock += durationMs
+      tracker.record('a', update('thinking_end', index))
+      clock += 400
+    }
+    tracker.finishMessage('a', 100, clock)
+    assert.deepEqual(durations, [durationMs, durationMs])
+  }
+})
+
 test('closing one session discards its spans without completing another session with the same timestamp', () => {
   let clock = 0
   const durations: Array<[string, number]> = []

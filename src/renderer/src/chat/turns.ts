@@ -32,7 +32,7 @@ export function thinkingTimingKey(messageTimestamp: number, contentIndex: number
 
 export type ProcessItem =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string; durationMs: number }
+  | { kind: 'thinking'; text: string; durationMs: number; live: boolean }
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
@@ -83,7 +83,7 @@ export interface Turn {
   startedAt: number
   endedAt: number
   streaming: boolean
-  /** Message-order state: text emitted before a tool result is not output from the next request. */
+  /** Latest stream position within a request, and message order across tool/result boundaries. */
   waitingForModel: boolean
   hasProcess?: boolean
   workedMs?: number
@@ -138,6 +138,24 @@ function pushText(process: ProcessItem[], text: string): void {
   process.push({ kind: 'text', text: trimmed })
 }
 
+/** Adjacent thoughts share a row, but only the newest piece owns its live state. */
+function pushThinking(
+  process: ProcessItem[],
+  text: string,
+  durationMs: number,
+  live: boolean,
+  thinkingBoundary: number
+): void {
+  const last = process[process.length - 1]
+  if (last?.kind === 'thinking' && process.length > thinkingBoundary) {
+    last.text += `\n\n${text}`
+    last.durationMs += durationMs
+    last.live = live
+    return
+  }
+  process.push({ kind: 'thinking', text, durationMs, live })
+}
+
 function lastTools(process: ProcessItem[]): ToolStep[] | undefined {
   const last = process[process.length - 1]
   return last?.kind === 'tools' ? last.tools : undefined
@@ -189,11 +207,27 @@ function thinkingFallbackMs(message: AssistantMessage): number {
   return persist > message.timestamp ? persist - message.timestamp : 0
 }
 
+/** Stream end events describe a gap; old content in the same snapshot is not current output. */
+function assistantWaitingForModel(message: AssistantMessage, thinkingDurations: ThinkingDurations): boolean {
+  const event = message.streamEvent
+  if (event?.type === 'done') return false
+  if (event?.type === 'thinking_end' || event?.type === 'text_end') return true
+  const index = event?.contentIndex ?? message.content.length - 1
+  const block = message.content[index]
+  if (!block) return true
+  if (block.type === 'thinking') {
+    return !block.thinking || (!event && thinkingDurations[thinkingTimingKey(message.timestamp, index)] !== undefined)
+  }
+  return block.type === 'text' && !block.text.trimEnd()
+}
+
 function consumeAssistant(
   process: ProcessItem[],
   message: AssistantMessage,
   splitTrailingText: boolean,
-  thinkingDurations: ThinkingDurations
+  thinkingDurations: ThinkingDurations,
+  active: boolean,
+  thinkingBoundary: number
 ): AnswerBlock[] {
   const answer: AnswerBlock[] = []
   const splitAt = splitTrailingText ? lastToolCallIndex(message.content) : -1
@@ -204,17 +238,16 @@ function consumeAssistant(
     const toAnswer = splitTrailingText && i > splitAt
     if (block.type === 'thinking') {
       if (block.thinking) {
-        const measured = thinkingDurations[thinkingTimingKey(message.timestamp, i)] ?? 0
-        let durationMs = measured
-        if (durationMs <= 0 && !usedFallback && fallbackMs > 0) {
+        const measured = thinkingDurations[thinkingTimingKey(message.timestamp, i)]
+        let durationMs = measured ?? 0
+        if (measured === undefined && !usedFallback && fallbackMs > 0) {
           durationMs = fallbackMs
           usedFallback = true
         }
-        process.push({
-          kind: 'thinking',
-          text: block.thinking,
-          durationMs
-        })
+        const event = message.streamEvent
+        const live = active && i === (event?.contentIndex ?? message.content.length - 1) &&
+          (event ? event.type === 'thinking_start' || event.type === 'thinking_delta' : measured === undefined)
+        pushThinking(process, block.thinking, durationMs, live, thinkingBoundary)
       }
       return
     }
@@ -244,6 +277,7 @@ export function buildTurn(
   const bash = chunk[0]?.role === 'bashExecution' ? chunk[0] : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
+  let thinkingBoundary = 0
   let answer: AnswerBlock[] = []
   let errorMessage: string | undefined
   // Summarizing is not work: the clock runs from the prompt to the next landmark, and the blocks
@@ -292,15 +326,10 @@ export function buildTurn(
     appendCompactionsThrough(messageOffset + (user ? 1 : 0) + i)
     if (message.role === 'assistant') {
       if (streaming) {
-        waitingForModel = true
+        waitingForModel = assistantWaitingForModel(message, thinkingDurations)
         const failed = !!message.errorMessage || message.stopReason === 'error' || message.stopReason === 'aborted'
         for (const block of message.content) {
-          if (block.type === 'toolCall') {
-            waitingForModel = false
-            if (!failed) (pendingToolCalls ??= new Set<string>()).add(block.id)
-          } else if (block.type === 'thinking' ? !!block.thinking : !!block.text.trimEnd()) {
-            waitingForModel = false
-          }
+          if (block.type === 'toolCall' && !failed) (pendingToolCalls ??= new Set<string>()).add(block.id)
         }
       }
       const isLast = i === lastAssistant
@@ -310,7 +339,9 @@ export function buildTurn(
         process,
         message,
         splitTrailing && trailingIsAnswer,
-        thinkingDurations
+        thinkingDurations,
+        streaming && i === rest.length - 1,
+        thinkingBoundary
       )
       if (!streaming && isLast && (trailingIsAnswer || lastToolCallIndex(message.content) < 0)) {
         if (blocks.length) answer = blocks
@@ -330,6 +361,8 @@ export function buildTurn(
     }
     if (message.role === 'toolResult') {
       addToolResult(process, message)
+      // Matched results update earlier tools instead of appending a visible boundary.
+      thinkingBoundary = process.length
       pendingToolCalls?.delete(message.toolCallId)
       waitingForModel = true
       return

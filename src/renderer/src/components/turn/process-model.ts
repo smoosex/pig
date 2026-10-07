@@ -34,7 +34,7 @@ export function iconKinds(items: ProcessItem[]): IconKind[] {
 }
 
 export type WorkRow =
-  | { kind: 'thinking'; text: string; durationMs: number }
+  | Extract<ProcessItem, { kind: 'thinking' }>
   | { kind: 'tools'; steps: ToolStep[] }
   | { kind: 'bash'; messages: BashExecutionMessage[] }
   | { kind: 'custom'; message: CustomMessage }
@@ -46,7 +46,7 @@ export function clusterWork(items: ProcessItem[]): WorkRow[] {
     // Compactions are lifted out of the work list by the turn view.
     if (item.kind === 'compaction') continue
     if (item.kind === 'thinking') {
-      rows.push({ kind: 'thinking', text: item.text, durationMs: item.durationMs })
+      rows.push({ ...item })
       continue
     }
     if (item.kind === 'tools') {

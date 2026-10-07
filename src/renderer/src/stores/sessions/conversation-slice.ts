@@ -440,7 +440,7 @@ export const createConversationSlice: SessionSlice<
     setThinkingDuration: (sessionId, timestamp, index, durationMs) => update(sessionId, (rt) => {
       const key = thinkingTimingKey(timestamp, index)
       return rt.thinkingDurations[key] != null ? null : {
-        thinkingDurations: { ...rt.thinkingDurations, [key]: Math.max(1000, durationMs) }
+        thinkingDurations: { ...rt.thinkingDurations, [key]: durationMs }
       }
     }),
 

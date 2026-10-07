@@ -98,7 +98,52 @@ async function runFixture(name: string): Promise<void> {
       emit({ type: 'message_update', message: assistant('late partial') })
       emit({ type: 'message_end', message: assistant('complete') })
       flush()
-      assert.deepEqual(runtime().liveMessages, [assistant('complete'), tool('first'), tool('second')])
+      assert.deepEqual(runtime().liveMessages, [
+        { ...assistant('complete'), streamEvent: { type: 'done' } }, tool('first'), tool('second')
+      ])
+    } else if (name === 'thinking-segments') {
+      let clock = 0
+      Object.defineProperty(performance, 'now', { value: () => clock })
+      const snapshot = (content: Extract<PiMessage, { role: 'assistant' }>['content']) => ({
+        ...assistant(''), content
+      }) as Extract<PiMessage, { role: 'assistant' }>
+      const first = snapshot([{ type: 'thinking', thinking: 'first thought' }])
+      const second = snapshot([...first.content, { type: 'thinking', thinking: 'second thought' }])
+      const turn = () => groupTurns(runtime().liveMessages, runtime().isStreaming, runtime().thinkingDurations)[0]
+      const update = (type: string, contentIndex: number, message: PiMessage) => {
+        emit({ type: 'message_update', message, assistantMessageEvent: { type, contentIndex } })
+        flush()
+      }
+      emit({ type: 'agent_start' })
+      emit({ type: 'message_start', message: snapshot([]) })
+      update('thinking_delta', 0, first)
+      assert.equal(turn().waitingForModel, false)
+      assert.deepEqual(turn().process.map((item) => item.kind), ['thinking'])
+      clock = 100
+      update('thinking_end', 0, first)
+      assert.equal(turn().waitingForModel, true)
+      assert.equal(runtime().thinkingDurations['100:0'], 100)
+      clock = 500
+      update('thinking_start', 1, snapshot([...first.content, { type: 'thinking', thinking: '' }]))
+      assert.equal(turn().waitingForModel, true)
+      update('thinking_delta', 1, second)
+      assert.equal(turn().waitingForModel, false)
+      assert.equal(turn().process.length, 1)
+      assert.equal(turn().process.some((item) => item.kind === 'thinking' && item.live), true)
+      clock = 600
+      update('thinking_end', 1, second)
+      assert.equal(turn().waitingForModel, true)
+      assert.equal(runtime().thinkingDurations['100:1'], 100)
+      assert.deepEqual(turn().process, [{
+        kind: 'thinking', text: 'first thought\n\nsecond thought', durationMs: 200, live: false
+      }])
+      emit({ type: 'message_end', message: second })
+      assert.equal(turn().waitingForModel, false)
+      assert.equal(turn().process.some((item) => item.kind === 'thinking' && item.live), false)
+      assert.equal(first.streamEvent, undefined)
+      assert.equal(second.streamEvent, undefined)
+      emit({ type: 'agent_settled' })
+      assert.equal(turn().streaming, false)
     } else if (name === 'tools') {
       const partial = (text: string) => ({
         content: [{ type: 'text' as const, text }], details: { progress: text }
@@ -580,6 +625,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
   const cases = {
     burst: '100 token snapshots produce one state update per animation frame',
     boundaries: 'message boundaries preserve queued updates and distinct tool results',
+    'thinking-segments': 'thinking snapshots retain their latest stream event without mutating Pi messages',
     tools: 'tool snapshots are batched independently and final messages clear pending updates',
     bash: 'command output is batched per frame and follows the active execution id',
     closed: 'queued frames and late events cannot affect a closed or reopened session',

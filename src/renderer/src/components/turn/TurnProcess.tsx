@@ -126,7 +126,7 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
 function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
   const t = useT()
   if (row.kind === 'thinking') {
-    if (last && row.durationMs <= 0) {
+    if (last && streaming && row.live) {
       return <ThinkingRow text={row.text} live streaming={streaming} />
     }
     return <ThinkingRow text={row.text} durationMs={row.durationMs} />
@@ -180,7 +180,7 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
       <>
         {items.map((item, i) => {
           if (item.kind === 'thinking') {
-            const live = active && i === items.length - 1 && item.durationMs <= 0
+            const live = streaming && active && i === items.length - 1 && item.live
             if (live) {
               return <ThinkingRow key={i} text={item.text} live stacked streaming={streaming} />
             }
