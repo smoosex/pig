@@ -128,18 +128,22 @@ test('a timeout stops trying other shells and falls back', async () => {
 
 test('a shell that answers without a PATH is a failure', async () => {
   const previousPath = process.env.PATH
-  process.env.PATH = '/usr/bin:/bin'
+  const previousKey = process.env.PIG_SHELL_ENV_TEST_KEY
   try {
+    process.env.PATH = '/usr/bin:/bin'
+    delete process.env.PIG_SHELL_ENV_TEST_KEY
     const result = await importShellEnvironment({
       shell: '/bin/zsh',
-      probe: async () => probeOutput('EXA_API_KEY=secret')
+      probe: async () => probeOutput('PIG_SHELL_ENV_TEST_KEY=must-not-import')
     })
     assert.equal(result.imported, 0, 'the partial answer is not imported')
-    assert.equal(process.env.EXA_API_KEY, undefined)
+    assert.equal(process.env.PIG_SHELL_ENV_TEST_KEY, undefined)
     assert.ok(result.pathEntries > 0, 'the fallback PATH stands in')
   } finally {
     if (previousPath === undefined) delete process.env.PATH
     else process.env.PATH = previousPath
+    if (previousKey === undefined) delete process.env.PIG_SHELL_ENV_TEST_KEY
+    else process.env.PIG_SHELL_ENV_TEST_KEY = previousKey
   }
 })
 
