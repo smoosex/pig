@@ -12,7 +12,7 @@ import { api } from '../../ipc/api'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useT } from '../../hooks/useT'
 import { TreeNav } from '../spectrumui/tree-nav'
-import { SquaresSpinner } from '../RunningSpinners'
+import { SessionCloseButton } from './SessionCloseButton'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 
@@ -55,6 +55,7 @@ function ChatRow({
   active: boolean
 }) {
   const openExisting = useSessionsStore((state) => state.openExisting)
+  const closeTab = useSessionsStore((state) => state.closeTab)
   const deleteChat = useSessionsStore((state) => state.deleteChat)
   const t = useT()
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
@@ -67,7 +68,7 @@ function ChatRow({
         <ContextMenuTrigger asChild disabled={rename.editing}>
           <div
             data-sidebar-hover-row
-            className="group/chat relative flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2"
+            className="close-reveal group/session relative flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2"
           >
             {rename.editing ? (
               <SessionRenameField
@@ -90,7 +91,12 @@ function ChatRow({
               </Button>
             )}
             {streaming ? (
-              <SquaresSpinner />
+              <SessionCloseButton
+                streaming
+                ariaLabel={t('sessions.close', { title })}
+                disabled={pending !== null}
+                onClose={() => closeTab(session.id)}
+              />
             ) : (
               <SessionDeleteButton
                 ariaLabel={t('sessions.deleteChat', { title })}

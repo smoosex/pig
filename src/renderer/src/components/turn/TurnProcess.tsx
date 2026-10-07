@@ -9,6 +9,7 @@ import type { BashExecutionMessage } from '../../pi/types'
 import type { ProcessItem } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
+import { useDarkMode } from '../../lib/useDarkMode'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Marker, MarkerContent } from '../ui/marker'
@@ -213,10 +214,13 @@ export function ProcessOutline({ items, streaming, waitingForModel }: {
   waitingForModel: boolean
 }) {
   const segments = processSegments(items)
+  // Pig pins the scheme with the root `dark` class only; `auto` would fall back to
+  // prefers-color-scheme, which a forced appearance overrides, and paint the wrong ink.
+  const theme = useDarkMode() ? 'dark' : 'light'
   if (segments.length === 0) {
     return streaming && waitingForModel ? (
       <Marker className={statusMarker}>
-        <ThinkingOrb state="working" size={20} theme="auto" className="shrink-0" />
+        <ThinkingOrb state="working" size={20} theme={theme} className="shrink-0" />
         <MarkerContent className="flex-1 truncate">
           <WaitLine streaming={streaming} />
         </MarkerContent>
@@ -234,7 +238,7 @@ export function ProcessOutline({ items, streaming, waitingForModel }: {
       )}
       {streaming && waitingForModel ? (
         <Marker className={statusMarker}>
-          <ThinkingOrb state="working" size={20} theme="auto" className="shrink-0" />
+          <ThinkingOrb state="working" size={20} theme={theme} className="shrink-0" />
         </Marker>
       ) : null}
     </div>

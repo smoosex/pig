@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleAlert, Download, FileDiff, LoaderCircle, PenLine, Plus, SquareText, X } from 'lucide-react'
+import { CircleAlert, Download, FileDiff, LoaderCircle, PenLine, Plus, SquareText } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { api } from '../ipc/api'
 import { useProjectAction } from './sidebar/project-action'
@@ -15,7 +15,7 @@ import {
 import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
-import { CloseSpin } from './RunningSpinners'
+import { CloseButton } from './CloseButton'
 import { FileTypeIcon } from './files/FileTypeIcon'
 import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
@@ -140,7 +140,7 @@ function Tab({
   const body = (
     <div
       className={cn(
-        'group/tab no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
+        'close-reveal group/tab no-drag relative flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
         active
           ? 'bg-card text-foreground before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
           : 'text-muted-foreground'
@@ -148,30 +148,20 @@ function Tab({
       title={failure}
       onClick={onSelect}
     >
-      <span className="relative flex size-6 shrink-0 items-center justify-center">
+      <span className="group/close-slot relative flex size-6 shrink-0 items-center justify-center">
         {kind === 'diff' ? (
-          <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+          <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
         ) : kind === 'file' ? (
-          <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" />
+          <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" />
         ) : (
-          <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0" aria-hidden />
+          <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="no-drag absolute opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100 text-muted-foreground hover:text-foreground"
-          aria-label={t('sessions.close', { title })}
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-        >
-          <span className="relative inline-flex size-3.5 items-center justify-center">
-            {streaming ? <CloseSpin /> : null}
-            <X className="size-2.5" />
-          </span>
-        </Button>
+        <CloseButton
+          streaming={streaming}
+          ariaLabel={t('sessions.close', { title })}
+          className="no-drag transition-opacity group-hover/tab:opacity-100 group-focus-within/close-slot:opacity-100 text-muted-foreground hover:text-foreground"
+          onClose={onClose}
+        />
       </span>
       {rename.editing ? (
         <SessionRenameField

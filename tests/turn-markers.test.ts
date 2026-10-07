@@ -89,6 +89,13 @@ async function runFixture(name: string): Promise<void> {
     if (name === 'wait') {
       await render(makeTurn({ waitingForModel: true }))
       assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-state'), 'working')
+      // Pig themes with the root `dark` class alone; an orb resolved from prefers-color-scheme
+      // would paint dark ink on a light palette when the appearance is forced to light.
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-theme'), 'light')
+      document.documentElement.classList.add('dark')
+      await act(async () => {})
+      assert.equal(container.querySelector('[data-testid="thinking-orb"]')?.getAttribute('data-theme'), 'dark')
+      document.documentElement.classList.remove('dark')
       await render(makeTurn({ errorMessage: 'aborted' }))
       assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
       await render(makeTurn({ streaming: false }))

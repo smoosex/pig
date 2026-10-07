@@ -1,4 +1,4 @@
-import { CircleAlert, Download, LoaderCircle, PenLine, X } from 'lucide-react'
+import { CircleAlert, Download, LoaderCircle, PenLine } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../../stores/sessions'
 import { api } from '../../ipc/api'
 import { useProjectAction } from './project-action'
@@ -12,7 +12,7 @@ import {
 } from '../ui/context-menu'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { HookSidebar } from '../ui/hook-sidebar'
-import { SquaresSpinner } from '../RunningSpinners'
+import { SessionCloseButton } from './SessionCloseButton'
 import { useT } from '../../hooks/useT'
 
 export function SessionList({ sessions }: { sessions: OpenTab[] }) {
@@ -50,7 +50,7 @@ function SessionRow({ session }: { session: OpenTab }) {
           <div
             data-sidebar-hover-row
             className={cn(
-              'group/session relative flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors',
+              'close-reveal group/session relative flex min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors',
               active && 'bg-sidebar-accent'
             )}
           >
@@ -72,19 +72,13 @@ function SessionRow({ session }: { session: OpenTab }) {
                 <span className="min-w-0 truncate">{session.title}</span>
               </Button>
             )}
-            {streaming ? <SquaresSpinner /> : null}
             {session.loadState === 'opening' ? <LoaderCircle className="animate-spin" /> : null}
             {session.loadState === 'error' ? <CircleAlert className="text-destructive" /> : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="pointer-events-none shrink-0 opacity-0 transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
-              aria-label={t('sessions.close', { title: session.title })}
-              onClick={() => closeTab(session.id)}
-            >
-              <X />
-            </Button>
+            <SessionCloseButton
+              streaming={streaming}
+              ariaLabel={t('sessions.close', { title: session.title })}
+              onClose={() => closeTab(session.id)}
+            />
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>

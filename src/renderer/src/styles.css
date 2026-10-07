@@ -233,8 +233,8 @@
   animation-play-state: paused;
 }
 
-.group\/tab:hover .close-spin,
-.group\/tab:focus-within .close-spin {
+.close-reveal:hover .close-spin,
+.close-reveal:focus-within .close-spin {
   animation-play-state: running;
 }
 
