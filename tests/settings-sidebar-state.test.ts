@@ -10,7 +10,8 @@ import type {
   SidebarPrefs,
   ThemePrefs,
   WorktreeCreateInfo,
-  WorktreeDeletionInfo
+  WorktreeDeletionInfo,
+  WorktreeGroup
 } from '../src/shared/api'
 import type { OpenTab } from '../src/renderer/src/stores/sessions'
 
@@ -599,6 +600,82 @@ async function runFixture(name: string): Promise<void> {
         confirm.click()
       })
       assert.deepEqual(deletions, [true, false])
+    } else if (name === 'worktree-naming-retry') {
+      class NoopResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+      Object.assign(globalThis, { ResizeObserver: NoopResizeObserver })
+      Object.assign(window, { ResizeObserver: NoopResizeObserver })
+      const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+      const { WorktreeRow } =
+        await import('../src/renderer/src/components/sidebar/WorktreeRow')
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const retried: string[][] = []
+      let answering: ReturnType<typeof deferred<void>> | null = null
+      api.retryWorktreeNaming = (projectCwd, cwd) => {
+        retried.push([projectCwd, cwd])
+        answering = deferred<void>()
+        return answering.promise
+      }
+      useSessionsStore.setState({ projects: [], openTabs: [], activeTabId: null, currentProjectCwd: null })
+      const row = (patch: Partial<WorktreeGroup> = {}) => ({
+        cwd: '/project-worktree',
+        branch: 'b4e4a1f0-0000-0000-0000-000000000000',
+        isPrimary: false,
+        locked: false,
+        missing: false,
+        managed: true,
+        naming: 'failed' as const,
+        namingError: '命名模型未返回有效的 conventional 分支名',
+        sessions: [],
+        ...patch
+      })
+      const renderRow = (patch: Partial<WorktreeGroup> = {}) =>
+        root.render(
+          createElement(TooltipProvider, null, createElement(Probe, patch))
+        )
+      const { useProjectAction } =
+        await import('../src/renderer/src/components/sidebar/project-action')
+      let action!: ReturnType<typeof useProjectAction>
+      function Probe(patch: Partial<WorktreeGroup>) {
+        action = useProjectAction()
+        return createElement(WorktreeRow, {
+          projectCwd: '/project',
+          worktree: row(patch),
+          open: false,
+          onOpenChange: () => {},
+          pending: action.pending,
+          runAction: action.runAction
+        })
+      }
+      const retry = () =>
+        container.querySelector<HTMLButtonElement>('[aria-label^="重新命名 "]')
+      await act(async () => {
+        renderRow()
+      })
+      // The failed row drops the error label in favour of the retry; a healthy row offers neither.
+      assert.equal(document.body.textContent?.includes('命名失败'), false)
+      const button = retry()
+      assert.ok(button, 'a failed naming offers a retry')
+      assert.equal(button.disabled, false)
+      assert.equal(button.getAttribute('aria-busy'), 'false')
+      await act(async () => {
+        button.click()
+      })
+      assert.deepEqual(retried, [['/project', '/project-worktree']])
+      assert.equal(button.getAttribute('aria-busy'), 'true', 'the retry spins while it is in flight')
+      await act(async () => {
+        answering?.resolve()
+      })
+      assert.equal(button.getAttribute('aria-busy'), 'false')
+      await act(async () => {
+        renderRow({ naming: undefined, namingError: undefined, branch: 'feat/done' })
+      })
+      assert.equal(retry(), null, 'a named worktree has nothing to retry')
+      assert.deepEqual(retried, [['/project', '/project-worktree']], 'no retry was sent for it')
+      assert.equal(action.error, null, 'the retry never failed')
     } else if (name === 'reveal-active-session') {
       class NoopResizeObserver {
         observe() {}
@@ -730,6 +807,8 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     worktree: 'worktree inspection is guarded and failures never start creation',
     'worktree-delete':
       'failed deletion checks never delete and dirty worktrees require explicit force',
+    'worktree-naming-retry':
+      'a failed branch naming offers a retry instead of only naming the error',
     'reveal-active-session':
       'opening a session unfolds its project and branch, and leaving never folds back'
   })) {

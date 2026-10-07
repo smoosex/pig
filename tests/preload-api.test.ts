@@ -51,6 +51,7 @@ async function runFixture(): Promise<void> {
   // The trailing argument is the one a short signature silently drops: the changes tab it names is what
   // the workspace records as its active tab.
   await api.selectOpenProjectWorkspace('/repo', 'session-1', 'diff:/repo')
+  await api.retryWorktreeNaming('/repo', '/repo-worktree')
 
   assert.deepEqual(invokes, [
     { channel: 'diff:read-worktree', args: ['/repo'] },
@@ -65,7 +66,8 @@ async function runFixture(): Promise<void> {
     {
       channel: 'system:select-open-project-workspace',
       args: ['/repo', 'session-1', 'diff:/repo']
-    }
+    },
+    { channel: 'project:retry-worktree-naming', args: ['/repo', '/repo-worktree'] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')

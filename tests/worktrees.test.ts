@@ -185,6 +185,91 @@ describe('first prompt naming', () => {
     expect((await reload.discover(project))[1].namingError).toContain('有效')
   })
 
+  test('retry names a failed worktree again and a named one refuses', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project)
+    await service.nameOnFirstPrompt(tree.cwd, 'task', async () => 'not-a-branch')
+    expect((await service.discover(project))[1].naming).toBe('failed')
+    const started = deferred<void>()
+    const answer = deferred<string>()
+    const { attempt } = await service.retryNaming(tree.cwd, async () => 'Add search again', async (text) => {
+      expect(text).toBe('Add search again')
+      started.resolve()
+      return answer.promise
+    })
+    await started.promise
+    // The record goes back into the queue as soon as the attempt is accepted, before any answer.
+    expect((await service.discover(project))[1].naming).toBe('naming')
+    answer.resolve('feat/add-search')
+    await attempt
+    const named = (await service.discover(project))[1]
+    expect(named.branch).toBe('feat/add-search')
+    expect(named.naming).toBeUndefined()
+    expect(named.namingError).toBeUndefined()
+    await expect(service.retryNaming(tree.cwd, async () => 'x', async () => 'docs/later')).rejects.toThrow('已经命名过')
+  })
+
+  test('a retry that fails again keeps the failure and the UUID branch', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project)
+    await service.nameOnFirstPrompt(tree.cwd, 'task', async () => 'still-wrong')
+    await (await service.retryNaming(tree.cwd, async () => 'task', async () => 'also-wrong')).attempt
+    expect((await service.discover(project))[1]).toMatchObject({ branch: tree.branch, naming: 'failed' })
+  })
+
+  test('overlapping retries share preparation and remain retryable after cancellation and restart', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project)
+    await service.nameOnFirstPrompt(tree.cwd, 'original task', async () => 'invalid')
+    const reading = deferred<void>()
+    const history = deferred<string>()
+    const started = deferred<void>()
+    let reads = 0
+    let calls = 0
+    const task = async () => {
+      reads++
+      reading.resolve()
+      return history.promise
+    }
+    const generate = async (_text: string, signal: AbortSignal) => {
+      calls++
+      started.resolve()
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    const first = service.retryNaming(tree.cwd, task, generate)
+    await reading.promise
+    const second = service.retryNaming(tree.cwd, task, generate)
+    history.resolve('original task')
+    const [a, b] = await Promise.all([first, second])
+    await started.promise
+    expect(reads).toBe(1)
+    expect(calls).toBe(1)
+    expect(b.attempt).toBe(a.attempt)
+    const live = await service.retryNaming(tree.cwd, async () => { throw new Error('must not read') }, generate)
+    expect(live.attempt).toBe(a.attempt)
+    expect((await service.discover(project))[1].naming).toBe('naming')
+    await service.withBlockedCwds([tree.cwd], () => a.attempt)
+    await service.shutdown()
+    const restarted = new WorktreeService(service.root)
+    services.push(restarted)
+    expect((await restarted.discover(project))[1].naming).toBe('failed')
+    await (await restarted.retryNaming(tree.cwd, async () => 'original task', async () => 'feat/recovered')).attempt
+    expect((await restarted.discover(project))[1].branch).toBe('feat/recovered')
+  })
+
+  test('a worktree that cannot be retried refuses without starting a job', async () => {
+    const { project, service } = await fixture()
+    await expect(service.retryNaming(join(project, 'missing'), async () => 'x', async () => 'docs/x')).rejects.toThrow('不属于已打开项目')
+    const tree = await service.create(project)
+    // Still waiting for its first prompt: nothing has been lost, so there is nothing to retry.
+    await expect(service.retryNaming(tree.cwd, async () => 'x', async () => 'docs/x')).rejects.toThrow('已经命名过')
+    await expect(service.retryNaming(tree.cwd, async () => { throw new Error('never read') }, async () => 'docs/x')).rejects.toThrow()
+    // A refused attempt changes nothing, and the task is never read.
+    expect((await service.discover(project))[1].naming).toBe('pending')
+  })
+
   test('does not rename a user-switched branch', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
@@ -313,6 +398,48 @@ describe('deletion protection and cleanup', () => {
     const restarted = new WorktreeService(service.root)
     services.push(restarted)
     expect((await restarted.discover(project))[1]).toMatchObject({ branch: tree.branch, naming: 'failed' })
+  })
+
+  test('shutdown aborts active naming before waiting for retry history and leaves the retry unqueued', async () => {
+    const { project, service } = await fixture()
+    const active = await service.create(project)
+    const retryable = await service.create(project)
+    await service.nameOnFirstPrompt(retryable.cwd, 'retry task', async () => 'invalid')
+    const started = deferred<AbortSignal>()
+    const naming = service.nameOnFirstPrompt(active.cwd, 'active task', async (_text, signal) => {
+      started.resolve(signal)
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+    const signal = await started.promise
+    const reading = deferred<void>()
+    const history = deferred<string>()
+    let calls = 0
+    const preparing = service.retryNaming(retryable.cwd, async () => {
+      reading.resolve()
+      return history.promise
+    }, async () => { calls++; return 'feat/too-late' })
+    await reading.promise
+    const refusal = preparing.then(() => null, (error: unknown) => error)
+    let finished = false
+    const shutdown = service.shutdown().then(() => { finished = true })
+    try {
+      expect(signal.aborted).toBe(true)
+      await naming
+      expect(finished).toBe(false)
+    } finally {
+      history.resolve('retry task')
+      await shutdown
+    }
+    expect(await refusal).toMatchObject({ message: 'Worktree 正在删除或应用正在退出' })
+    expect(calls).toBe(0)
+    const restarted = new WorktreeService(service.root)
+    services.push(restarted)
+    const item = (await restarted.discover(project)).find((tree) => tree.cwd === retryable.cwd)
+    expect(item).toMatchObject({ branch: retryable.branch, naming: 'failed' })
+    await (await restarted.retryNaming(retryable.cwd, async () => 'retry task', async () => 'feat/recovered')).attempt
+    expect((await restarted.discover(project)).find((tree) => tree.cwd === retryable.cwd)?.branch).toBe('feat/recovered')
   })
 
   test('deleting during naming aborts the temporary job without recreating the branch', async () => {

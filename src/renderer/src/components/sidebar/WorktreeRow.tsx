@@ -1,9 +1,11 @@
 import { useMemo } from 'react'
-import { AlertCircle, ChevronRight, LoaderCircle, LockKeyhole, Plus } from 'lucide-react'
+import { AlertCircle, ChevronRight, LoaderCircle, LockKeyhole, Plus, RefreshCw } from 'lucide-react'
+import { api } from '../../ipc/api'
 import { useSessionsStore, type WorktreeGroup } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { WorktreeDeleteButton } from './WorktreeActions'
 import { SessionList } from './SessionList'
 import { SessionHistoryPopover } from '../SessionHistoryPopover'
@@ -40,9 +42,8 @@ export function WorktreeRow({
       ? t('worktree.namingPending')
       : worktree.naming === 'naming'
         ? t('worktree.naming')
-        : worktree.naming === 'failed'
-          ? t('worktree.namingFailed')
-          : null
+        : null
+  const retrying = pending === `retry-naming:${worktree.cwd}`
   const branchButton = (
     <Button
       variant="ghost"
@@ -61,18 +62,37 @@ export function WorktreeRow({
       <span className="min-w-0 truncate">{worktree.branch}</span>
       {worktree.locked && <LockKeyhole className="text-muted-foreground" />}
       {worktree.missing && <AlertCircle className="text-destructive" />}
-      {namingLabel && (
-        <span
-          className={cn(
-            'shrink-0 text-muted-foreground',
-            worktree.naming === 'failed' && 'text-destructive'
-          )}
-        >
-          {namingLabel}
-        </span>
-      )}
+      {namingLabel && <span className="shrink-0 text-muted-foreground">{namingLabel}</span>}
     </Button>
   )
+
+  // A failed name is a retryable state, so the row offers the retry next to the other row actions
+  // instead of only naming the error; the reason stays one hover away.
+  const retryButton = worktree.naming === 'failed' ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0 text-destructive hover:text-destructive !bg-transparent"
+          aria-label={t('worktree.retryNamingAria', { branch: worktree.branch })}
+          disabled={pending !== null || worktree.missing}
+          aria-busy={retrying}
+          onClick={() =>
+            void runAction(`retry-naming:${worktree.cwd}`, () =>
+              api.retryWorktreeNaming(projectCwd, worktree.cwd)
+            )
+          }
+        >
+          {retrying ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-60 flex-col items-start gap-0.5">
+        <span>{t('worktree.retryNaming')}</span>
+        {worktree.namingError && <span className="break-words">{worktree.namingError}</span>}
+      </TooltipContent>
+    </Tooltip>
+  ) : null
 
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
@@ -87,6 +107,7 @@ export function WorktreeRow({
           {sessions.length > 0 ? (
             <CollapsibleTrigger asChild>{branchButton}</CollapsibleTrigger>
           ) : branchButton}
+          {retryButton}
           {!worktree.isPrimary && (
             <WorktreeDeleteButton
               branch={worktree.branch}

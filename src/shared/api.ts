@@ -661,6 +661,11 @@ export interface SessionApi {
   worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
+  /**
+   * Names a worktree whose first attempt failed, from the earliest session's first message. Returns
+   * as soon as the attempt is recorded; the outcome arrives through `onProjectsChanged` like the first try.
+   */
+  retryWorktreeNaming: (projectCwd: string, cwd: string) => Promise<void>
   onProjectsChanged: (listener: (projectCwd: string) => void) => () => void
   onSessionNames: (listener: (updates: SessionNameUpdate[]) => void) => () => void
   deleteSession: (sessionId: string, path: string, cwd: string) => Promise<void>

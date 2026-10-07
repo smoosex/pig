@@ -101,7 +101,8 @@ export const en: Messages = {
     newSessionAria: 'New session in {branch}',
     namingPending: 'Naming queued',
     naming: 'Naming…',
-    namingFailed: 'Naming failed'
+    retryNaming: 'Name again',
+    retryNamingAria: 'Name {branch} again'
   },
   diff: {
     scopeAll: 'All changes',
@@ -217,7 +218,7 @@ export const en: Messages = {
     notificationsOff: 'Off',
     model: 'Model',
     defaultModel: 'Default model',
-    defaultModelDescription: 'Model used by new conversations',
+    defaultModelDescription: 'Model used by new conversations, and by worktree branch naming',
     defaultThinking: 'Default thinking effort',
     defaultThinkingDescription: 'Reasoning effort used by new conversations',
     thinkingUnsupported: 'Not supported by this model',
@@ -595,6 +596,8 @@ export const en: Messages = {
     deleteIncomplete: 'Deletion did not finish. Delete again to clean up the branch and sessions.',
     branchMoved: 'The branch was switched or renamed by hand, so pig stops naming it',
     branchNameTaken: 'The generated branch name is already taken',
+    worktreeNotRenamable: 'That worktree has been named already',
+    worktreeNoNamingText: 'That worktree has no message with text to name it from',
     projectNotOpen: 'That project is not open',
     projectMissing: 'That project does not exist',
     worktreeNotOpen: 'That worktree does not belong to an open project',

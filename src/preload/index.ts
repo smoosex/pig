@@ -33,6 +33,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('project:worktree-deletion-info', projectCwd, cwd),
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) =>
     ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd, force),
+  retryWorktreeNaming: (projectCwd: string, cwd: string) =>
+    ipcRenderer.invoke('project:retry-worktree-naming', projectCwd, cwd),
   onProjectsChanged: (listener: (projectCwd: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, cwd: string) => listener(cwd)
     ipcRenderer.on('projects:changed', handler)

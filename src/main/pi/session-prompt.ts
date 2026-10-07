@@ -1,8 +1,7 @@
 import { PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
 import { worktrees } from '../project-worktrees'
-import { runBranchNamer } from './branch-namer'
+import { nameWorktreeBranch } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
-import { getDefaultSessionSettings } from './model-settings'
 import { normalizeSessionPrompt, type SessionPromptInput } from './prompt-input'
 import { activateSession } from './session-registry'
 
@@ -31,10 +30,8 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
       if (prompt.metadata) {
         agentSession.sessionManager.appendCustomEntry(PASTED_TEXT_CUSTOM_TYPE, prompt.metadata)
       }
-      void worktrees.nameOnFirstPrompt(cwd, prompt.namingText, async (task, signal) => {
-        const settings = await getDefaultSessionSettings()
-        return runBranchNamer(task, settings.model, signal)
-      }).catch((error) => console.error('Worktree naming failed:', error))
+      void worktrees.nameOnFirstPrompt(cwd, prompt.namingText, nameWorktreeBranch)
+        .catch((error) => console.error('Worktree naming failed:', error))
     },
     streamingBehavior
   )

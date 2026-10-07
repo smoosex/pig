@@ -4,7 +4,14 @@ import { basename, join, resolve, sep } from 'node:path'
 import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { compareGroupsByLatestSession } from '../../shared/session-order'
+import {
+  isPastedTextMetadata,
+  pastedTextFingerprint,
+  PASTED_TEXT_CUSTOM_TYPE,
+  type PastedTextMetadata
+} from '../../shared/pasted-text'
 import { t } from '../i18n'
+import { normalizeSessionPrompt } from './prompt-input'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
@@ -126,6 +133,8 @@ type ScanEntry = {
   timestamp?: string
   cwd?: string
   name?: string
+  customType?: string
+  data?: unknown
   message?: { role?: string; content?: unknown }
 }
 
@@ -367,6 +376,74 @@ export async function listProject(cwd: string): Promise<ProjectGroup | null> {
     (meta) => !meta.cwd || resolve(meta.cwd) === resolved
   )
   return projectGroup(resolved, metas)
+}
+
+/**
+ * Legacy worktree retries recover the actual first user prompt, not the truncated title preview.
+ * These reads are strict: a corrupt or unreadable session must not silently select another task.
+ */
+export async function readProjectNamingText(cwd: string): Promise<string | undefined> {
+  const resolved = resolve(cwd)
+  const dir = sessionDirForCwd(resolved)
+  let files: string[]
+  try {
+    const entries = await readdir(dir, { withFileTypes: true })
+    files = entries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map((entry) => join(dir, entry.name))
+  } catch (error) {
+    // A worktree never prompted in has no session directory; all other IO failures are errors.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw new Error(`Cannot read session directory: ${dir}`, { cause: error })
+  }
+  const tasks = await mapPool(files, SCAN_CONCURRENCY, async (filePath) => {
+    const handle = await open(filePath, 'r')
+    try {
+      let created: string | undefined
+      let pendingPastedText: PastedTextMetadata | undefined
+      for await (const line of handle.readLines()) {
+        if (!line.trim()) continue
+        const entry = JSON.parse(line) as ScanEntry
+        if (entry.type === 'session') {
+          if (typeof entry.cwd !== 'string' || typeof entry.timestamp !== 'string') {
+            throw new Error(`Invalid session header: ${filePath}`)
+          }
+          if (resolve(entry.cwd) !== resolved) return undefined
+          created = new Date(entry.timestamp).toISOString()
+          continue
+        }
+        if (!created) throw new Error(`Missing session header: ${filePath}`)
+        if (entry.type === 'custom' && entry.customType === PASTED_TEXT_CUSTOM_TYPE) {
+          if (!isPastedTextMetadata(entry.data)) throw new Error(`Invalid pasted-text metadata: ${filePath}`)
+          pendingPastedText = entry.data
+          continue
+        }
+        if (entry.type === 'message' && entry.message?.role === 'user') {
+          const pastedText = pendingPastedText
+          const text = contentText(stripImageHintsFromContent(entry.message.content))
+          if (pastedText && (
+            text.length !== pastedText.contentLength ||
+            pastedTextFingerprint(text) !== pastedText.contentHash ||
+            pastedText.attachments.some((attachment) => attachment.end > text.length)
+          )) throw new Error(`Pasted-text metadata does not match the first user message: ${filePath}`)
+          if (!text.trim() && !hasImage(entry.message.content) && !pastedText?.attachments.length) return undefined
+          const prompt = normalizeSessionPrompt({
+            text: pastedText?.version === 1 ? text.slice(0, pastedText.bodyLength) : text,
+            textAttachments: pastedText?.attachments.map((attachment) => ({
+              id: attachment.id,
+              text: text.slice(attachment.start, attachment.end),
+              ...(pastedText.version === 2 ? { start: attachment.start, end: attachment.end } : {})
+            }))
+          })
+          return { created, text: prompt.namingText }
+        }
+        pendingPastedText = undefined
+      }
+      if (!created) throw new Error(`Missing session header: ${filePath}`)
+      return undefined
+    } finally {
+      await handle.close()
+    }
+  })
+  return tasks.filter((task) => task !== undefined).sort((a, b) => a.created.localeCompare(b.created))[0]?.text
 }
 
 export async function listProjects(): Promise<ProjectGroup[]> {

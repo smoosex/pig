@@ -1,12 +1,32 @@
 import { ipcMain } from 'electron'
-import { basename } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
 import { git, isGitProject } from '../worktrees'
+import { nameWorktreeBranch } from '../pi/branch-namer'
 import { closeSessionsForCwd } from '../pi/session-registry'
-import { removeProjectDir } from '../pi/session-loader'
+import { readProjectNamingText, removeProjectDir } from '../pi/session-loader'
 import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 import { t } from '../i18n'
+
+/** Replay the saved task, or recover the first prompt of the earliest task-bearing legacy session. */
+async function namingTextFor(cwd: string): Promise<string> {
+  const kept = await worktrees.namingTask(cwd)
+  if (kept?.trim()) return kept
+  const text = await readProjectNamingText(cwd)
+  if (text) return text
+  throw new Error(t('error.worktreeNoNamingText'))
+}
+
+async function retryWorktreeNaming(projectCwd: string, cwd: string): Promise<void> {
+  const path = resolve(cwd)
+  const topology = await worktrees.discover(projectCwd)
+  if (!topology.some((item) => item.cwd === path)) throw new Error(t('error.worktreeNotOpen'))
+  const { attempt } = await worktrees.retryNaming(path, () => namingTextFor(path), nameWorktreeBranch)
+  // The rename itself is not awaited: a model call can run for minutes, while the row follows the
+  // record through the same pushes the first attempt used. Only refusing it reaches the renderer.
+  attempt.catch((error) => console.error('Worktree naming retry failed:', error))
+}
 
 async function createInfo(project: string): Promise<{ hasGit: boolean; hasHead: boolean }> {
   const hasGit = await isGitProject(project)
@@ -31,6 +51,12 @@ export function registerWorktreeIpc(): void {
     }
     const created = await worktrees.create(project)
     return { cwd: created.cwd, project: await loadWorktreeProject(project) }
+  })
+
+  ipcMain.handle('project:retry-worktree-naming', async (_event, projectCwd: string, cwd: string) => {
+    const project = await requireOpenedProject(projectCwd)
+    if (typeof cwd !== 'string' || !cwd || isChatCwd(cwd) || isChatsRoot(cwd)) throw new Error('Invalid worktree cwd')
+    await retryWorktreeNaming(project, cwd)
   })
 
   ipcMain.handle('project:worktree-deletion-info', async (_event, projectCwd: string, cwd: string) => {

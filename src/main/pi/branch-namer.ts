@@ -2,6 +2,15 @@ import { utilityProcess } from 'electron'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { t } from '../i18n'
+import { getDefaultSessionSettings } from './model-settings'
+
+/**
+ * The branch name for a task, using the app's default model.
+ * Shared by the first-prompt path and an explicit retry, so both name with the same settings.
+ */
+export function nameWorktreeBranch(task: string, signal: AbortSignal): Promise<string> {
+  return getDefaultSessionSettings().then((settings) => runBranchNamer(task, settings.model, signal))
+}
 
 export function runBranchNamer(
   text: string,

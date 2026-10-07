@@ -39,6 +39,8 @@ interface WorktreeRecord {
   detached?: boolean
   naming?: 'pending' | 'naming' | 'failed'
   namingError?: string
+  /** The task the attempt was given, kept so a retry is given the same one. */
+  namingText?: string
   deleting?: boolean
 }
 
@@ -98,6 +100,9 @@ export async function canonicalProject(cwd: string): Promise<string> {
   return worktrees[0].cwd
 }
 
+/** The task a naming attempt is given: the model sees no more, and a retry replays no more. */
+const NAMING_TASK_CHARS = 12_000
+
 export function validateBranchName(value: string): string {
   const name = value.trim()
   if (name.length > 80 || !/^(feat|fix|chore|docs|refactor|test|ci|perf|style|build)\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
@@ -110,6 +115,8 @@ export class WorktreeService {
   private locks = new Map<string, Promise<unknown>>()
   private stateLock: Promise<unknown> = Promise.resolve()
   private namingJobs = new Map<string, { controller: AbortController; done: Promise<void> }>()
+  /** One preparation per cwd; shutdown also waits for any queued-state rollback it owes. */
+  private preps = new Map<string, Promise<{ attempt: Promise<void> }>>()
   private blocked = new Set<string>()
   private stopped = false
 
@@ -304,19 +311,80 @@ export class WorktreeService {
     return done
   }
 
+  /**
+   * A second attempt at a worktree whose naming failed. The record goes back to `pending` so
+   * `name()` accepts it again. Refusing the attempt (already named, nothing to name from) rejects
+   * this call, while `attempt` settles only when the rename does: a model call can run for minutes
+   * and the row follows the record through the pushes the first try used. `attempt` is a field
+   * rather than the return value because awaiting this call must not await the rename.
+   * The task is read lazily: a worktree that cannot be retried never pays for that read.
+   */
+  retryNaming(
+    cwd: string,
+    task: () => Promise<string>,
+    generate: (text: string, signal: AbortSignal) => Promise<string>
+  ): Promise<{ attempt: Promise<void> }> {
+    const path = resolve(cwd)
+    const preparing = this.preps.get(path)
+    if (preparing) return preparing
+    const prep = this.prepareRetry(path, task, generate).finally(() => this.preps.delete(path))
+    this.preps.set(path, prep)
+    return prep
+  }
+
+  /** The task the last attempt was given; undefined for a record written before it was kept. */
+  async namingTask(cwd: string): Promise<string | undefined> {
+    const path = resolve(cwd)
+    return (await this.records()).find((r) => r.cwd === path && !r.deleting)?.namingText
+  }
+
+  private async prepareRetry(
+    path: string,
+    task: () => Promise<string>,
+    generate: (text: string, signal: AbortSignal) => Promise<string>
+  ): Promise<{ attempt: Promise<void> }> {
+    this.assertAvailable(path)
+    const running = this.namingJobs.get(path)
+    if (running) return { attempt: running.done }
+    const record = (await this.records()).find((r) => r.cwd === path && !r.deleting)
+    if (!record) throw new Error(t('error.worktreeNotOpen'))
+    // A `naming` record without a live job is one a crashed run left behind, and `discover()` already
+    // shows it as failed, so it is retryable too. `pending` is not: that name has not been lost yet.
+    if (record.naming !== 'failed' && record.naming !== 'naming') {
+      throw new Error(t('error.worktreeNotRenamable'))
+    }
+    const text = await task()
+    // Reading the task is the slow step here, and a quit or a deletion can land inside it. Only
+    // `failed` offers a retry and only a prompt re-queues `pending`, so a queued name nothing will
+    // ever run strands the row for good: the check before the write refuses it, and the one after
+    // unwinds a write it raced.
+    this.assertAvailable(path)
+    await this.update((records) => records.map((r) => r.cwd === path ? { ...r, naming: 'pending', namingError: undefined } : r))
+    if (this.stopped || this.blocked.has(path)) {
+      await this.update((records) => records.map((r) => r.cwd === path
+        ? { ...r, naming: record.naming, namingError: record.namingError }
+        : r))
+      this.onChange(record.projectCwd)
+      throw new Error(t('error.worktreeBusy'))
+    }
+    this.onChange(record.projectCwd)
+    return { attempt: this.nameOnFirstPrompt(path, text, generate) }
+  }
+
   private async name(cwd: string, text: string, generate: (text: string, signal: AbortSignal) => Promise<string>, signal: AbortSignal): Promise<void> {
     const record = (await this.records()).find((r) => r.cwd === cwd && r.naming === 'pending' && !r.deleting)
     if (!record || signal.aborted) return
+    const task = text.slice(0, NAMING_TASK_CHARS)
     try {
       await this.exclusive(record.projectCwd, async () => {
         this.assertAvailable(cwd)
         signal.throwIfAborted()
         const branch = (await git(cwd, ['symbolic-ref', '--short', 'HEAD'])).trim()
         if (branch !== record.initialBranch) throw new Error(t('error.branchMoved'))
-        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, naming: 'naming', namingError: undefined } : r))
+        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, naming: 'naming', namingText: task, namingError: undefined } : r))
       })
       this.onChange(record.projectCwd)
-      const requested = validateBranchName(await generate(text.slice(0, 12_000), signal))
+      const requested = validateBranchName(await generate(task, signal))
       await this.exclusive(record.projectCwd, async () => {
         signal.throwIfAborted()
         this.assertAvailable(cwd)
@@ -330,9 +398,10 @@ export class WorktreeService {
         const hasHead = await git(cwd, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
         if (hasHead) await git(cwd, ['branch', '-m', branch])
         else await git(cwd, ['symbolic-ref', 'HEAD', `refs/heads/${branch}`])
-        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, branch, naming: undefined, namingError: undefined } : r))
+        await this.update((records) => records.map((r) => r.cwd === cwd ? { ...r, branch, naming: undefined, namingText: undefined, namingError: undefined } : r))
       })
     } catch (error) {
+      // This background boundary reports model/Git failures through the persisted row.
       if (!signal.aborted) {
         await this.update((records) => records.map((r) => r.cwd === cwd && !r.deleting
           ? { ...r, naming: 'failed', namingError: error instanceof Error ? error.message : String(error) }
@@ -346,6 +415,8 @@ export class WorktreeService {
   async shutdown(): Promise<void> {
     this.stopped = true
     for (const job of this.namingJobs.values()) job.controller.abort()
+    // Preparation rechecks `stopped` after reading and writing, so it cannot register another job.
+    await Promise.allSettled([...this.preps.values()])
     await Promise.allSettled([...this.namingJobs.values()].map((job) => job.done))
     await Promise.allSettled([...this.locks.values()])
     await this.stateLock

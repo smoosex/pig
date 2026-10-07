@@ -103,7 +103,8 @@ export const zh = {
     newSessionAria: '在 {branch} 中新建会话',
     namingPending: '待命名',
     naming: '命名中',
-    namingFailed: '命名失败'
+    retryNaming: '重新命名',
+    retryNamingAria: '重新命名 {branch}'
   },
   diff: {
     scopeAll: '全部变更',
@@ -219,7 +220,7 @@ export const zh = {
     notificationsOff: '关闭',
     model: '模型',
     defaultModel: '默认模型',
-    defaultModelDescription: '新建对话时使用的模型',
+    defaultModelDescription: '新建对话时使用的模型，也用来给 Worktree 分支命名',
     defaultThinking: '默认思考强度',
     defaultThinkingDescription: '新建对话时使用的推理强度',
     thinkingUnsupported: '当前模型不支持',
@@ -597,6 +598,8 @@ export const zh = {
     deleteIncomplete: '删除未完成，重试删除以清理分支和会话',
     branchMoved: '分支已手动切换或重命名，不再自动命名',
     branchNameTaken: '生成的分支名已存在',
+    worktreeNotRenamable: '这个 Worktree 已经命名过，无需重试',
+    worktreeNoNamingText: '这个 Worktree 还没有任何带文字的消息，无法命名',
     projectNotOpen: '只能操作已打开的项目',
     projectMissing: '项目不存在',
     worktreeNotOpen: 'Worktree 不属于已打开项目',

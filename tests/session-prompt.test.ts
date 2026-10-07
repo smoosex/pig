@@ -25,8 +25,7 @@ async function fixture(): Promise<void> {
   mock.module('../src/main/project-worktrees', () => ({
     worktrees: { assertAvailable: () => {}, nameOnFirstPrompt: () => { throw new Error('Message not yet accepted') } }
   }))
-  mock.module('../src/main/pi/branch-namer', () => ({ runBranchNamer: () => {} }))
-  mock.module('../src/main/pi/model-settings', () => ({ getDefaultSessionSettings: () => {} }))
+  mock.module('../src/main/pi/branch-namer', () => ({ nameWorktreeBranch: () => {}, runBranchNamer: () => {} }))
   mock.module('../src/main/i18n', () => ({ t: (key: string) => key }))
   mock.module('../src/main/pi/event-bridge', () => ({
     queuePendingUserMessage: (_session: unknown, _text: unknown, _metadata: unknown, _onStart: unknown, mode: unknown) => {
@@ -95,8 +94,7 @@ async function metadataFixture(action: 'dismiss' | 'steer'): Promise<void> {
   mock.module('../src/main/project-worktrees', () => ({
     worktrees: { assertAvailable: () => {}, nameOnFirstPrompt: async (_cwd: string, text: string) => { named.push(text) } }
   }))
-  mock.module('../src/main/pi/branch-namer', () => ({ runBranchNamer: () => {} }))
-  mock.module('../src/main/pi/model-settings', () => ({ getDefaultSessionSettings: () => {} }))
+  mock.module('../src/main/pi/branch-namer', () => ({ nameWorktreeBranch: () => {}, runBranchNamer: () => {} }))
   mock.module('../src/main/i18n', () => ({ t: (key: string) => key }))
 
   const { bridgeEvents } = await import('../src/main/pi/event-bridge')
