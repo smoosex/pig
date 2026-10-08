@@ -168,7 +168,7 @@ export function bridgeEvents(
         : event
     win.webContents.send('pi:event', { sessionId, event: enriched })
     if (event.type === 'agent_settled') {
-      if (runActive && lastAnswerSucceeded) {
+      if (runActive && lastAnswerSucceeded && !event.aborted) {
         void notify(sessionId, win, lifetime.signal).catch((error: unknown) => {
           console.error('Could not send completion notification:', error)
         })

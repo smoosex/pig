@@ -38,12 +38,13 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
   try {
     await agentSession.prompt(
       prompt.modelText,
-      prompt.images.length > 0 || streamingBehavior
-        ? {
-            ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
-            ...(streamingBehavior ? { streamingBehavior } : {})
-          }
-        : undefined
+      {
+        ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
+        ...(streamingBehavior ? { streamingBehavior } : {}),
+        preflightResult: (disposition) => {
+          if (disposition === 'handled') cancelPending?.()
+        }
+      }
     )
   } catch (error) {
     cancelPending?.()

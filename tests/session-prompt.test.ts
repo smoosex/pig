@@ -52,7 +52,8 @@ async function fixture(): Promise<void> {
   assert.equal(cancelled, 2)
 }
 
-async function metadataFixture(action: 'dismiss' | 'steer'): Promise<void> {
+async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise<void> {
+  let handleNextInput = action === 'handled'
   let followUp: string[] = []
   let steering: string[] = []
   const listeners = new Set<(event: AgentSessionEvent) => void>()
@@ -83,9 +84,18 @@ async function metadataFixture(action: 'dismiss' | 'steer'): Promise<void> {
     async followUp(text: string) { followUp.push(text); emitQueue() },
     async prompt(text: string, options?: Parameters<AgentSession['prompt']>[1]) {
       assert.equal(options?.streamingBehavior, 'followUp', 'commands must keep their SDK delivery intent too')
-      if (text === '/end-review') return
+      if (text === '/end-review') {
+        options?.preflightResult?.('handled')
+        return
+      }
       assert.equal(this.isStreaming, true)
+      if (handleNextInput) {
+        handleNextInput = false
+        options?.preflightResult?.('handled')
+        return
+      }
       await this.followUp(text)
+      options?.preflightResult?.('queued')
     }
   }
   mock.module('../src/main/pi/session-registry', () => ({
@@ -122,10 +132,10 @@ async function metadataFixture(action: 'dismiss' | 'steer'): Promise<void> {
     assert.equal(first.modelText, second.modelText)
     await promptSession('session', inputs[0])
     await promptSession('session', inputs[1])
-    assert.deepEqual(followUp, [first.modelText, second.modelText])
+    assert.deepEqual(followUp, action === 'handled' ? [second.modelText] : [first.modelText, second.modelText])
     assert.deepEqual(persisted, [], 'queued metadata cannot be written before delivery')
-    const expected = action === 'dismiss' ? second : first
-    await updateFollowUpMessage(sdkSession, 0, action)
+    const expected = action === 'steer' ? first : second
+    if (action !== 'handled') await updateFollowUpMessage(sdkSession, 0, action)
     if (action === 'steer') {
       assert.deepEqual(steering, [first.modelText])
       await updateFollowUpMessage(sdkSession, 0, 'dismiss')
@@ -151,13 +161,14 @@ async function metadataFixture(action: 'dismiss' | 'steer'): Promise<void> {
 if (process.argv[2] === '--prompt-fixture') {
   const scenario = process.argv[3] ?? 'delivery'
   if (scenario === 'delivery') await fixture()
-  else if (scenario === 'dismiss' || scenario === 'steer') await metadataFixture(scenario)
+  else if (scenario === 'dismiss' || scenario === 'steer' || scenario === 'handled') await metadataFixture(scenario)
   else throw new Error(`Unknown prompt fixture: ${scenario}`)
 } else {
   const cases = {
     delivery: 'prompt delivery intent survives an idle snapshot and real SDK failures still propagate',
     dismiss: 'a cancelled idle command cannot shift duplicate follow-up attachment metadata on dismissal',
-    steer: 'a cancelled idle command cannot shift promoted follow-up metadata when the other duplicate is dismissed'
+    steer: 'a cancelled idle command cannot shift promoted follow-up metadata when the other duplicate is dismissed',
+    handled: 'extension-handled input cannot shift attachment metadata onto a later identical follow-up'
   }
   for (const [scenario, name] of Object.entries(cases)) test(name, async () => {
     const child = Bun.spawn([process.execPath, import.meta.path, '--prompt-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
