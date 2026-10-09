@@ -1,13 +1,13 @@
 /** Added server rows and discovery share one pane; management details open without expanding rows. */
 import { useEffect, useState } from 'react'
 import {
-  LogIn,
   LogOut,
-  PlugZap,
   Plus,
+  Radar,
   Search,
-  Settings2,
+  Settings,
   Trash2,
+  Verified,
   type LucideIcon
 } from 'lucide-react'
 import {
@@ -36,12 +36,14 @@ import { ToolSettingsFeedback } from './ToolSettingsFields'
 
 function McpAction({
   label,
+  name,
   hint,
   icon: Icon,
   disabled,
   onClick
 }: {
   label: string
+  name: string
   hint?: string
   icon: LucideIcon
   disabled: boolean
@@ -53,7 +55,7 @@ function McpAction({
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label={label}
+          aria-label={`${label} ${name}`}
           disabled={disabled}
           onClick={onClick}
         >
@@ -210,21 +212,23 @@ export function McpPane() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <McpAction
-                    label={`${t('mcp.edit')} ${server.name}`}
-                    icon={Settings2}
+                    label={t('mcp.edit')}
+                    name={server.name}
+                    icon={Settings}
                     disabled={busy}
                     onClick={() => setDialog({ server })}
                   />
                   <McpAction
-                    label={`${t('mcp.test')} ${server.name}`}
-                    hint={t('mcp.testDescription')}
-                    icon={PlugZap}
+                    label={t('mcp.test')}
+                    name={server.name}
+                    icon={Radar}
                     disabled={busy}
                     onClick={() => probe(server.name)}
                   />
                   {server.authenticated ? (
                     <McpAction
-                      label={`${t('mcp.logout')} ${server.name}`}
+                      label={t('mcp.logout')}
+                      name={server.name}
                       hint={t('mcp.authenticated')}
                       icon={LogOut}
                       disabled={busy}
@@ -241,14 +245,16 @@ export function McpPane() {
                     />
                   ) : oauth ? (
                     <McpAction
-                      label={`${t('mcp.login')} ${server.name}`}
-                      icon={LogIn}
+                      label={t('mcp.login')}
+                      name={server.name}
+                      icon={Verified}
                       disabled={busy}
                       onClick={() => probe(server.name, true)}
                     />
                   ) : null}
                   <McpAction
-                    label={`${t('mcp.remove')} ${server.name}`}
+                    label={t('mcp.remove')}
+                    name={server.name}
                     icon={Trash2}
                     disabled={busy}
                     onClick={() => setRemoving(server.name)}

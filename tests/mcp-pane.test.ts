@@ -164,10 +164,31 @@ async function fixture(): Promise<void> {
         'Globally enabled docs'
       ]
     )
-    for (const control of controls.slice(0, -1)) {
-      assert.ok(control.querySelector('svg'))
+    const icons = ['settings', 'radar', 'badge-check', 'trash-2']
+    for (const [index, control] of controls.slice(0, -1).entries()) {
+      assert.ok(control.querySelector(`svg.lucide-${icons[index]}`))
       assert.equal(control.textContent, '')
     }
+    for (const [locale, labels] of [
+      ['en', ['Edit configuration', 'Test connection', 'OAuth sign in', 'Remove']],
+      ['zh-CN', ['编辑配置', '测试连接', 'OAuth 登录', '移除']]
+    ] as const) {
+      await act(async () => {
+        useSettingsStore.setState({ localeSetting: locale, locale })
+      })
+      for (const [index, label] of labels.entries()) {
+        await act(async () => {
+          controls[index].focus()
+        })
+        assert.equal(document.querySelector('[role="tooltip"]')?.textContent, label)
+        await act(async () => {
+          controls[index].blur()
+        })
+      }
+    }
+    await act(async () => {
+      useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
+    })
     assert.equal(controls.at(-1)!.getAttribute('role'), 'switch')
     assert.equal(installed.querySelectorAll('[role="switch"]').length, 2)
     assert.ok(installed.textContent?.includes('npx -y files@latest /work'))
