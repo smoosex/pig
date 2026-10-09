@@ -240,10 +240,10 @@ export function AddMcpDialog({
       <DialogContent className="sm:max-w-2xl" showCloseButton={!recipe}>
         {recipe ? (
           <DialogHeader className="-mx-4 -mt-4 flex-row items-center gap-3 border-b p-4">
-            <McpIcon source={recipe.icon} name={recipe.title || recipe.name} className="size-11" />
+            <McpIcon source={recipe.icon} name={recipe.title || recipe.name} className="size-10" />
             <div className="flex min-w-0 flex-col gap-1">
-              <DialogTitle className="truncate">{recipe.title}</DialogTitle>
-              <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+              <DialogTitle className="truncate text-sm">{recipe.title}</DialogTitle>
+              <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                 {recipe.publisher ? <span className="truncate">{recipe.publisher}</span> : null}
                 <Badge variant="secondary">
                   {'url' in recipe.config ? t('mcp.remote') : recipe.config.command}
@@ -418,10 +418,7 @@ export function AddMcpDialog({
           ) : null}
           {conflictBlock}
         </div>
-        <DialogFooter className="items-center">
-          <span className="mr-auto truncate font-mono text-xs text-muted-foreground">
-            {name.trim()}
-          </span>
+        <DialogFooter className="items-center py-3">
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t('common.cancel')}
           </Button>
