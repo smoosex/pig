@@ -321,7 +321,7 @@ export function McpPane() {
                   <CardContent className="line-clamp-2 text-sm text-muted-foreground">
                     {listingText(t, server.descriptionKey, server.description)}
                   </CardContent>
-                  <CardFooter className="justify-between gap-2">
+                  <CardFooter className="mt-auto justify-between gap-2">
                     <span className="truncate font-mono text-xs text-muted-foreground">
                       {server.name}
                     </span>
