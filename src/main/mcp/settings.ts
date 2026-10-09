@@ -72,6 +72,19 @@ function document(): Record<string, unknown> {
   object(raw.mcpServers ?? {})
   return raw
 }
+/** Catalog icons by server name; Pig's own map, so a non-standard key never enters `mcp.json`. */
+function iconDocument(): Record<string, string> {
+  const raw = object(readJson(pigPath('mcp-icons.json'), {}))
+  const icons: Record<string, string> = {}
+  for (const [name, source] of Object.entries(object(raw.servers ?? {}))) {
+    if (typeof source !== 'string') throw new Error(`Invalid MCP icon entry: ${name}`)
+    icons[name] = source
+  }
+  return icons
+}
+export function mcpIcons(): Record<string, string> {
+  return iconDocument()
+}
 export async function configuredServers() {
   const { config } = await mcpSdk()
   const loaded = config.loadMcpConfig({ agentDir: pigDir(), cwd: pigDir(), projectTrusted: false })
@@ -131,11 +144,13 @@ export async function previewMcpImport(json: string, name?: string): Promise<Mcp
 export function importMcpServers(
   json: string,
   replaceNames: string[],
-  name?: string
+  name?: string,
+  icon?: string
 ): Promise<void> {
   return serialize(async () => {
     const entries = await previewMcpImport(json, name)
     const raw = document()
+    const icons = iconDocument()
     const servers: Record<string, unknown> = Object.assign(
       Object.create(null),
       object(raw.mcpServers ?? {})
@@ -167,12 +182,15 @@ export function importMcpServers(
         ...entry.config,
         enabled: entry.conflict ? entry.config.enabled === true : false
       }
+      // Only the catalog knows an icon, and only for the single entry it was added as.
+      if (icon && entries.length === 1) icons[entry.name] = icon
     }
     await withMcpAuthMutation(
       obsolete.map((entry) => entry.name),
       async () => {
         if (preferencesChanged) privateJson(pigPath('tool-settings.json'), preferences)
         privateJson(pigPath('mcp.json'), { ...raw, mcpServers: servers, autoEnableCodemode: false })
+        if (icon && entries.length === 1) privateJson(pigPath('mcp-icons.json'), { servers: icons })
         if (obsolete.length) {
           const credentials = await mcpCredentials()
           for (const entry of obsolete) credentials.remove(entry.name, entry.url)
@@ -184,9 +202,15 @@ export function importMcpServers(
 export async function saveMcpServer(
   name: string,
   config: McpConfig,
-  replace: boolean
+  replace: boolean,
+  icon?: string
 ): Promise<void> {
-  await importMcpServers(JSON.stringify({ mcpServers: { [name]: config } }), replace ? [name] : [])
+  await importMcpServers(
+    JSON.stringify({ mcpServers: { [name]: config } }),
+    replace ? [name] : [],
+    name,
+    icon
+  )
 }
 export function removeMcpServer(name: string): Promise<void> {
   return serialize(async () => {
@@ -199,6 +223,11 @@ export function removeMcpServer(name: string): Promise<void> {
       const entries = object(raw.mcpServers ?? {})
       delete entries[name]
       privateJson(pigPath('mcp.json'), { ...raw, mcpServers: entries })
+      const icons = iconDocument()
+      if (Object.hasOwn(icons, name)) {
+        delete icons[name]
+        privateJson(pigPath('mcp-icons.json'), { servers: icons })
+      }
       for (const project of Object.values(preferences.projects)) delete project.mcp[name]
       privateJson(pigPath('tool-settings.json'), preferences)
     })

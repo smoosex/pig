@@ -47,9 +47,13 @@ export async function withMcpAuthMutation<T>(
     }
   }
 }
-export function createMcpConnections(runtime: Runtime, authorize?: AuthorizeLocal) {
+export function createMcpConnections(
+  runtime: Runtime,
+  authorize?: AuthorizeLocal,
+  exempt?: () => string[]
+) {
   const versions = new Map(generations)
-  const network = createMcpNetwork(authorize)
+  const network = createMcpNetwork(authorize, undefined, exempt)
   const handles = new Set<{ name: string; close(): Promise<void> }>()
   const scope = {
     async retire(names: Set<string>) {

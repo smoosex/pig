@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Cable, LogIn, Plus, Search, Trash2 } from 'lucide-react'
+import { LogIn, Plus, Search, Trash2 } from 'lucide-react'
 import {
   api,
   type McpMarketResult,
@@ -29,6 +29,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '../ui/input-group'
 import { Switch } from '../ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { AddMcpDialog } from './AddMcpDialog'
+import { McpIcon } from './McpIcon'
 import { ToolSettingsFeedback } from './ToolSettingsFields'
 
 export function McpPane() {
@@ -138,7 +139,10 @@ export function McpPane() {
               <Card key={server.name}>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle>{server.name}</CardTitle>
+                    <CardTitle className="flex min-w-0 items-center gap-2">
+                      <McpIcon source={server.icon} name={server.name} />
+                      <span className="truncate">{server.name}</span>
+                    </CardTitle>
                     <Switch
                       checked={server.config.enabled === true}
                       disabled={busy}
@@ -295,9 +299,9 @@ export function McpPane() {
               return (
                 <Card key={server.id}>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Cable />
-                      {server.title}
+                    <CardTitle className="flex min-w-0 items-center gap-2">
+                      <McpIcon source={server.icon} name={server.title || server.name} />
+                      <span className="truncate">{server.title}</span>
                     </CardTitle>
                     <CardDescription>
                       {server.publisher ||

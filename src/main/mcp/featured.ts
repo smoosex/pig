@@ -43,6 +43,36 @@ const key = (name: string): McpMarketInput => ({
   required: true,
   secret: true
 })
+const ownerAvatar = (owner: string): string => `https://github.com/${owner}.png?size=96`
+/** Icon sources carried over from Magpie's featured list; a listing without one falls back to initials. */
+const featuredIcons: Record<string, string> = {
+  context7: ownerAvatar('upstash'),
+  playwright: 'https://playwright.dev/img/playwright-logo.svg',
+  'chrome-devtools': ownerAvatar('ChromeDevTools'),
+  github: ownerAvatar('github'),
+  deepwiki: ownerAvatar('CognitionAI'),
+  exa: ownerAvatar('exa-labs'),
+  filesystem: ownerAvatar('modelcontextprotocol'),
+  fetch: ownerAvatar('modelcontextprotocol'),
+  memory: ownerAvatar('modelcontextprotocol'),
+  'sequential-thinking': ownerAvatar('modelcontextprotocol'),
+  git: ownerAvatar('modelcontextprotocol'),
+  time: ownerAvatar('modelcontextprotocol'),
+  sentry: ownerAvatar('getsentry'),
+  linear: ownerAvatar('linear'),
+  notion: ownerAvatar('makenotion'),
+  atlassian: ownerAvatar('atlassian'),
+  supabase: ownerAvatar('supabase'),
+  stripe: ownerAvatar('stripe'),
+  vercel: ownerAvatar('vercel'),
+  neon: ownerAvatar('neondatabase'),
+  'cloudflare-docs': ownerAvatar('cloudflare'),
+  'microsoft-learn': ownerAvatar('microsoft'),
+  huggingface: ownerAvatar('huggingface'),
+  'brave-search': ownerAvatar('brave'),
+  firecrawl: ownerAvatar('firecrawl'),
+  tavily: ownerAvatar('tavily-ai')
+}
 export const featuredMcpServers: McpMarketServer[] = [
   remote(
     'context7',
@@ -246,4 +276,4 @@ export const featuredMcpServers: McpMarketServer[] = [
     'Search and extract web content with Tavily.',
     [key('TAVILY_API_KEY')]
   )
-]
+].map((server) => ({ ...server, icon: featuredIcons[server.name] }))

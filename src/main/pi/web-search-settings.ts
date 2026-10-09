@@ -110,6 +110,9 @@ type Config = Record<string, unknown>
 
 const configPath = (): string => pigPath('web-search.json')
 
+/** Path of the settings file the bundled web-access plugin reads; shared with the icon cache. */
+export const webSearchConfigPath = configPath
+
 function isRecord(value: unknown): value is Config {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }

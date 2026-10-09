@@ -9,6 +9,8 @@ import { t } from '../i18n'
 import { configuredServers, deleteMcpCredentials, flushToolMutations } from './settings'
 import { assertMcpAuthCurrent, createMcpConnections, onMcpAuthRetire } from './connections'
 import { mcpCredentials, mcpSdk, type McpConnection } from './sdk'
+import { loadAllowedRanges } from '../network-address'
+import { webSearchConfigPath } from '../pi/web-search-settings'
 
 interface Operation {
   name: string
@@ -43,15 +45,20 @@ async function connection(
   const credentials = await mcpCredentials()
   operation.controller.signal.throwIfAborted()
   assertMcpAuthCurrent(name)
-  const connections = createMcpConnections(runtime, async (origin, addresses, signal) => {
-    if (!win) return false
-    const ui = await createExtensionUI(win, operation.owner)
-    return ui.confirm(
-      t('mcp.localAccessTitle'),
-      t('mcp.localAccessDescription', { origin, addresses: addresses.join(', ') }),
-      { signal: AbortSignal.any([signal, operation.controller.signal]) }
-    )
-  })
+  const connections = createMcpConnections(
+    runtime,
+    async (origin, addresses, signal) => {
+      if (!win) return false
+      const ui = await createExtensionUI(win, operation.owner)
+      return ui.confirm(
+        t('mcp.localAccessTitle'),
+        t('mcp.localAccessDescription', { origin, addresses: addresses.join(', ') }),
+        { signal: AbortSignal.any([signal, operation.controller.signal]) }
+      )
+    },
+    // Management connections answer to the same proxy-owned ranges as sessions.
+    () => loadAllowedRanges(webSearchConfigPath())
+  )
   operation.connections = connections
   return new runtime.McpServerConnection({
     entry,

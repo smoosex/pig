@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import type { Agent } from 'undici'
-import { isBlockedAddress } from '../network-address.ts'
+import { isAllowedAddress, isBlockedAddress, isProxyFakeAddress } from '../network-address.ts'
 
 export type McpFetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 export type McpLookup = (hostname: string) => Promise<{ address: string; family: number }[]>
@@ -23,7 +23,8 @@ const redirects = new Set([301, 302, 303, 307, 308])
 
 export function createMcpNetwork(
   authorize?: AuthorizeLocal,
-  resolve: McpLookup = (host) => lookup(host, { all: true, verbatim: true })
+  resolve: McpLookup = (host) => lookup(host, { all: true, verbatim: true }),
+  exempt?: () => string[]
 ) {
   const context = new AsyncLocalStorage<RequestContext>()
   const shutdown = new AbortController()
@@ -31,10 +32,20 @@ export function createMcpNetwork(
   const approvals = new Map<string, Promise<boolean>>()
   let agent: Agent | undefined
   let transport: Promise<typeof import('undici')> | undefined
-  const validate = async ({ url, signal }: RequestContext, addresses: string[]) => {
+  const validate = async (
+    { url, signal }: RequestContext,
+    addresses: string[],
+    resolved = false
+  ) => {
     signal.throwIfAborted()
+    // Ranges the user declared as proxy fake-IP space are proxy-owned, not internal services.
+    const ranges = exempt?.() ?? []
     const denied = addresses.filter(
-      (address) => isBlockedAddress(address) && !grants.has(`${url.origin}|${address}`)
+      (address) =>
+        isBlockedAddress(address) &&
+        !(resolved && isProxyFakeAddress(address)) &&
+        !isAllowedAddress(address, ranges) &&
+        !grants.has(`${url.origin}|${address}`)
     )
     if (!denied.length) return
     if (denied.some((address) => !isIP(address)))
@@ -71,7 +82,8 @@ export function createMcpNetwork(
                 if (!addresses.length) throw new McpNetworkError(`No DNS addresses for ${hostname}`)
                 await validate(
                   request,
-                  addresses.map(({ address }) => address)
+                  addresses.map(({ address }) => address),
+                  true
                 )
                 const selected = options.family
                   ? addresses.filter(({ family }) => family === options.family)

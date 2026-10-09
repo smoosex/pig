@@ -27,6 +27,11 @@ test('catalog defaults and password values cannot become Pi shell/env expression
 test('Registry conversion supports HTTP headers and required stdio inputs, but not legacy SSE', () => {
   const remote = registryMcpServer({
     name: 'dev.example/docs',
+    icons: [
+      { src: 'http://example.invalid/insecure.png' },
+      { src: 'https://example.invalid/icon.png' }
+    ],
+    repository: { url: 'https://github.com/example/docs' },
     remotes: [
       {
         type: 'streamable-http',
@@ -41,6 +46,7 @@ test('Registry conversion supports HTTP headers and required stdio inputs, but n
       }
     ]
   })!
+  assert.equal(remote.icon, 'https://example.invalid/icon.png', 'only an HTTPS icon is offered')
   assert.equal(remote.config.enabled, false)
   assert.equal(remote.config.exposure, 'deferred')
   assert.throws(() => fillMarketConfig(remote, {}), /required/)
@@ -73,6 +79,31 @@ test('Registry conversion supports HTTP headers and required stdio inputs, but n
   assert.deepEqual(config.args, ['-y', 'example-mcp@latest', '/test folder'])
   assert.deepEqual(config.env, { TOKEN: 'private' })
   assert.ok(featuredMcpServers.every((server) => server.config.enabled === false))
+  // Every listing the market shows carries an icon source, and the renderer only sees the scheme URL.
+  for (const server of featuredMcpServers)
+    assert.ok(server.icon?.startsWith('https://'), `${server.name} needs an icon source`)
+  assert.equal(
+    featuredMcpServers.some((server) => /magpie/i.test(server.name)),
+    false
+  )
+  // Without a declared icon a GitHub listing falls back to its owner's avatar; others have none.
+  const transport = [{ type: 'streamable-http', url: 'https://example.invalid/mcp' }]
+  assert.equal(
+    registryMcpServer({
+      name: 'io.github.acme/tool',
+      repository: { url: 'https://github.com/acme/tool' },
+      remotes: transport
+    })?.icon,
+    'https://github.com/acme.png?size=96'
+  )
+  assert.equal(
+    registryMcpServer({ name: 'io.github.other/tool', remotes: transport })?.icon,
+    'https://github.com/other.png?size=96'
+  )
+  assert.equal(
+    registryMcpServer({ name: 'dev.example/plain', remotes: transport })?.icon,
+    undefined
+  )
   assert.ok(
     featuredMcpServers.every(
       (server) =>

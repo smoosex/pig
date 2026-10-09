@@ -11,6 +11,7 @@ import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
+import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
 import { flushOpenProjectSessions } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
@@ -26,8 +27,10 @@ process.env.PIG_DIR ??= pigDir()
 // imported before anything reads process.env. Started here to overlap Electron's own boot.
 const shellEnvironment = importShellEnvironment()
 
-// The renderer loads persisted images through this scheme, so it must be granted before ready.
+// The renderer loads persisted images and cached catalog icons through these schemes, so both
+// must be granted before ready.
 registerSessionImageScheme()
+registerMcpIconScheme()
 
 // Dev keeps its Electron profile and instance lock beside its project data, separate from the
 // packaged app's profile. setPath requires the directory to exist and must precede the lock.
@@ -53,7 +56,10 @@ app.whenReady().then(async () => {
   })
 
   handleSessionImages()
-  void startModelRuntime().catch((error) => console.error('Model runtime initialization failed:', error))
+  handleMcpIcons()
+  void startModelRuntime().catch((error) =>
+    console.error('Model runtime initialization failed:', error)
+  )
   registerIpc()
   await initLocale((await loadPigSettings()).locale)
   // Before the window can make one: a chat the last run left behind is nobody's.
@@ -91,9 +97,16 @@ app.on('before-quit', (event) => {
   if (isDisposing) return
   event.preventDefault()
   isDisposing = true
-  const teardown = Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions(), cancelMcpOperations(), flushToolMutations()])
+  const teardown = Promise.allSettled([
+    worktrees.shutdown(),
+    flushOpenProjectSessions(),
+    cancelMcpOperations(),
+    flushToolMutations()
+  ])
     .then(() => disposeAll())
     .catch(() => {})
-  void Promise.race([teardown, new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))])
-    .finally(() => app.exit(0))
+  void Promise.race([
+    teardown,
+    new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))
+  ]).finally(() => app.exit(0))
 })

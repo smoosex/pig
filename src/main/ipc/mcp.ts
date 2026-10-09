@@ -8,6 +8,7 @@ import {
   configuredServers,
   flushToolMutations,
   importMcpServers,
+  mcpIcons,
   previewMcpImport,
   readToolPreferences,
   removeMcpServer,
@@ -31,12 +32,14 @@ import { replyExtensionUI } from '../extension-ui'
 export async function mcpSettingsState(): Promise<McpSettingsState> {
   await flushToolMutations()
   const credentials = await mcpCredentials()
+  const icons = mcpIcons()
   return {
     ...readToolPreferences(),
     pendingSessions: pendingToolSessions(),
     servers: (await configuredServers()).map(({ name, config }) => ({
       name,
       config,
+      icon: icons[name],
       authenticated: 'url' in config && !!credentials.tokens(name, config.url)
     }))
   }
@@ -74,10 +77,10 @@ export function registerMcpIpc(): void {
   )
   ipcMain.handle(
     'mcp:save',
-    async (_event, server: string, config: McpConfig, replace: boolean) => {
+    async (_event, server: string, config: McpConfig, replace: boolean, icon?: string) => {
       name(server)
       await cancelMcpOperations(server)
-      await saveMcpServer(server, config, replace === true)
+      await saveMcpServer(server, config, replace === true, icon)
       return changed()
     }
   )
@@ -97,12 +100,12 @@ export function registerMcpIpc(): void {
   )
   ipcMain.handle(
     'mcp:import',
-    async (_event, json: string, replaceNames: string[], server?: string) => {
+    async (_event, json: string, replaceNames: string[], server?: string, icon?: string) => {
       if (!Array.isArray(replaceNames) || !replaceNames.every((key) => typeof key === 'string'))
         throw new Error('Expected replacement names')
       const entries = await previewMcpImport(json, server)
       await Promise.all(entries.map((entry) => cancelMcpOperations(entry.name)))
-      await importMcpServers(json, replaceNames, server)
+      await importMcpServers(json, replaceNames, server, icon)
       return changed()
     }
   )

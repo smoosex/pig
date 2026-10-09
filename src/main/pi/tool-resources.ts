@@ -12,6 +12,8 @@ import { mcpCredentials, mcpSdk } from '../mcp/sdk'
 import { createMcpConnections } from '../mcp/connections'
 import { t } from '../i18n'
 import { openMcpUrl } from '../extension-ui'
+import { loadAllowedRanges } from '../network-address'
+import { webSearchConfigPath } from './web-search-settings'
 
 export function sessionToolFactory(cwd: string, project: string | null): ExtensionFactory {
   return async (pi) => {
@@ -21,14 +23,19 @@ export function sessionToolFactory(cwd: string, project: string | null): Extensi
       context = ctx
     })
     const { runtime } = await mcpSdk()
-    const connections = createMcpConnections(runtime, async (origin, addresses, signal) => {
-      if (!context?.hasUI) return false
-      return context.ui.confirm(
-        t('mcp.localAccessTitle'),
-        t('mcp.localAccessDescription', { origin, addresses: addresses.join(', ') }),
-        { signal }
-      )
-    })
+    const connections = createMcpConnections(
+      runtime,
+      async (origin, addresses, signal) => {
+        if (!context?.hasUI) return false
+        return context.ui.confirm(
+          t('mcp.localAccessTitle'),
+          t('mcp.localAccessDescription', { origin, addresses: addresses.join(', ') }),
+          { signal }
+        )
+      },
+      // A user-declared proxy fake-IP range is proxy-owned space, not an internal service.
+      () => loadAllowedRanges(webSearchConfigPath())
+    )
     if (snapshot.codemode) await createCodemodeExtension({ mode: 'on' })(pi)
     await createToolSearchExtension()(pi)
     await createMcpExtension({

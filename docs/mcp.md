@@ -17,6 +17,8 @@ Pig owns these files under `PIG_DIR` (development: `cwd/.pig`; packaged: `$HOME/
 | File | Contents |
 | --- | --- |
 | `mcp.json` | Standard `mcpServers` configuration and global enable flags |
+| `mcp-icons.json` | Catalog icon sources by server name, kept out of `mcp.json` |
+| `mcp-icons/` | Fetched icon bytes, keyed by source |
 | `tool-settings.json` | Global Codemode default and canonical project overrides |
 | `mcp-auth.json` | Pi-managed OAuth credentials and client registration |
 | `mcp.log` | Pi MCP diagnostic log |
@@ -24,6 +26,8 @@ Pig owns these files under `PIG_DIR` (development: `cwd/.pig`; packaged: `$HOME/
 Configuration and credential files are written with owner-only permissions on Unix. Pig does not read/write terminal Pi's MCP configuration or automatically load repository `.pi/mcp.json`. Repository configuration must be explicitly imported. MCP processes run with the user's permissions, not inside the Codemode sandbox.
 
 Local recipes use `npx` or `uvx` with latest package specifications; the launcher owns resolution and caching. Install the launcher separately and make it available in the login shell's `PATH`. Adding a recipe only saves configuration; enabling or testing can launch a process and download its package. Docker-backed Registry entries require Docker. Supported remote transport is streamable HTTP, not legacy SSE.
+
+Marketplace icons come from the listing: the Registry's own HTTPS `icons`, else a GitHub owner's avatar, plus Magpie's featured sources. The renderer only ever holds a `pig-mcp-icon` URL; main resolves and checks the source, follows at most three redirects under the same rule, and caches the bytes under `PIG_DIR`. A blocked address yields the listing's initial instead. Fake IPs that a TUN proxy hands out for every name are treated as proxy-owned space, while naming such an address outright stays blocked; a `ssrf.allowRanges` entry in `web-search.json` exempts ranges explicitly, for MCP connections and icons alike.
 
 HTTP and OAuth requests validate the actual connection's DNS answers, not just the URL before connecting. Loopback, private, link-local and reserved addresses require an explicit dialog grant bound to the origin and exact resolved addresses, for this runtime only. Redirect destinations are checked again; credentials do not cross origins. A changed DNS address needs another grant. Unsupported HTTP transports fail closed rather than falling back to unprotected fetch.
 

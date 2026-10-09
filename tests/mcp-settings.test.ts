@@ -100,6 +100,25 @@ async function fixture(): Promise<void> {
       true
     )
     await settings.saveMcpServer('foo-bar', { command: 'not-run' }, false)
+    // A catalog icon is remembered per server name, outside mcp.json, and dies with the server.
+    await settings.saveMcpServer(
+      'docs',
+      { url: 'https://example.invalid/mcp' },
+      true,
+      'https://example.invalid/icon.png'
+    )
+    assert.equal(settings.mcpIcons().docs, 'https://example.invalid/icon.png')
+    const stored = JSON.parse(await readFile(join(process.env.PIG_DIR, 'mcp.json'), 'utf8'))
+    assert.equal(JSON.stringify(stored).includes('example.invalid/icon.png'), false)
+    // An icon only ever belongs to the single entry it was added as.
+    await settings.importMcpServers(
+      JSON.stringify({ mcpServers: { a: { command: 'not-run' }, b: { command: 'not-run' } } }),
+      [],
+      undefined,
+      'https://example.invalid/icon.png'
+    )
+    assert.equal(settings.mcpIcons().a, undefined)
+    assert.equal(settings.mcpIcons().b, undefined)
     await assert.rejects(
       settings.previewMcpImport('{"mcpServers":{"foo_bar":{"command":"not-run"}}}'),
       /collide/
@@ -140,6 +159,7 @@ async function fixture(): Promise<void> {
     await settings.setProjectToolSettings(project, { mcp: { docs: true } })
     await settings.removeMcpServer('docs')
     assert.equal(credentials.tokens('docs', url), undefined)
+    assert.equal(settings.mcpIcons().docs, undefined)
     assert.equal(Object.hasOwn(settings.readToolPreferences().projects[project].mcp, 'docs'), false)
     assert.equal(
       (await settings.configuredServers()).some((entry) => entry.name === 'docs'),

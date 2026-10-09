@@ -20,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Switch } from '../ui/switch'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { HighlightedCode } from '../HighlightedCode'
+import { McpIcon } from './McpIcon'
 
 function ConfigField({
   label,
@@ -178,7 +179,8 @@ export function AddMcpDialog({
     >
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {recipe ? <McpIcon source={recipe.icon} name={recipe.title || recipe.name} /> : null}
             {t(server ? 'mcp.edit' : importJson ? 'mcp.import' : 'mcp.add')}
           </DialogTitle>
           <DialogDescription>{t('mcp.safety')}</DialogDescription>
@@ -356,7 +358,8 @@ export function AddMcpDialog({
                   api.importMcpServers(
                     preview.json,
                     preview.entries.filter((entry) => entry.conflict).map((entry) => entry.name),
-                    name.trim()
+                    name.trim(),
+                    recipe?.icon
                   )
                 ).then((result) => {
                   if (result) onClose()

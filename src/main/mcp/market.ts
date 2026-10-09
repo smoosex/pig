@@ -22,6 +22,7 @@ interface RegistryServer {
   description?: string
   websiteUrl?: string
   repository?: { url?: string }
+  icons?: { src?: string }[]
   remotes?: { type: string; url: string; headers?: Variable[] }[]
   packages?: {
     registryType: string
@@ -33,6 +34,19 @@ interface RegistryServer {
   }[]
 }
 const placeholder = /\{[^{}]+\}/g
+/** GitHub owner of a repository URL, used for the owner's avatar when a listing carries no icon. */
+function githubOwner(repository?: string): string | undefined {
+  const match = repository?.match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)/i)
+  return match?.[1]
+}
+/** The listing's own HTTPS icon, else its owner's avatar; never a source the renderer loads directly. */
+function registryIcon(server: RegistryServer): string | undefined {
+  const declared = server.icons?.find((icon) => icon.src?.startsWith('https://'))?.src
+  if (declared) return declared
+  const owner =
+    githubOwner(server.repository?.url) ?? server.name.match(/^io\.github\.([^/]+)\//)?.[1]
+  return owner ? `https://github.com/${owner}.png?size=96` : undefined
+}
 const input = (value: Variable, where: McpMarketInput['where'], key: string): McpMarketInput => ({
   key,
   where,
@@ -57,6 +71,7 @@ export function registryMcpServer(server: RegistryServer): McpMarketServer | nul
     description: server.description || '',
     publisher: server.name.split('/')[0],
     homepage: server.websiteUrl || server.repository?.url,
+    icon: registryIcon(server),
     featured: false
   }
   for (const remote of server.remotes ?? []) {

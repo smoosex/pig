@@ -15,6 +15,8 @@ export interface McpServerView {
   name: string
   config: McpConfig
   authenticated: boolean
+  /** HTTPS icon source remembered from the catalog entry this server was added from. */
+  icon?: string
 }
 export interface McpSettingsState extends ToolPreferences {
   servers: McpServerView[]
@@ -37,6 +39,8 @@ export interface McpMarketServer {
   publisher?: string
   homepage?: string
   featured: boolean
+  /** HTTPS source of the listing's icon, shown through the `pig-mcp-icon` scheme. */
+  icon?: string
   config: McpConfig
   inputs: McpMarketInput[]
 }
@@ -75,11 +79,11 @@ export interface ToolSettingsApi {
     cwd: string,
     patch: { codemode?: ToolOverride; mcp?: Record<string, ToolOverride> }
   ): Promise<McpSettingsState>
-  saveMcpServer(name: string, config: McpConfig, replace: boolean): Promise<McpSettingsState>
+  saveMcpServer(name: string, config: McpConfig, replace: boolean, icon?: string): Promise<McpSettingsState>
   removeMcpServer(name: string): Promise<McpSettingsState>
   setMcpEnabled(name: string, enabled: boolean): Promise<McpSettingsState>
   previewMcpImport(json: string, name?: string): Promise<McpImportEntry[]>
-  importMcpServers(json: string, replaceNames: string[], name?: string): Promise<McpSettingsState>
+  importMcpServers(json: string, replaceNames: string[], name?: string, icon?: string): Promise<McpSettingsState>
   searchMcpMarket(query: string): Promise<McpMarketResult>
   testMcpServer(name: string): Promise<McpProbeResult>
   loginMcpServer(name: string): Promise<McpProbeResult>
