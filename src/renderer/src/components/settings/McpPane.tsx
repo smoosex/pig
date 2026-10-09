@@ -283,7 +283,6 @@ export function McpPane() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </InputGroup>
-          <p className="text-xs text-muted-foreground">{t('mcp.source')}</p>
           {market.error ? (
             <Alert>
               <AlertDescription>{market.error}</AlertDescription>
@@ -306,9 +305,9 @@ export function McpPane() {
                     <McpIcon
                       source={server.icon}
                       name={server.title || server.name}
-                      className="row-span-2 size-9"
+                      className="mt-1 row-span-2 size-10"
                     />
-                    <CardTitle className="truncate">{server.title}</CardTitle>
+                    <CardTitle className="truncate text-sm">{server.title}</CardTitle>
                     <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                       {server.publisher ? (
                         <span className="truncate">{server.publisher}</span>
@@ -321,7 +320,7 @@ export function McpPane() {
                   <CardContent className="line-clamp-2 text-sm text-muted-foreground">
                     {listingText(t, server.descriptionKey, server.description)}
                   </CardContent>
-                  <CardFooter className="mt-auto justify-between gap-2">
+                  <CardFooter className="mt-auto justify-between gap-2 py-3">
                     <span className="truncate font-mono text-xs text-muted-foreground">
                       {server.name}
                     </span>
