@@ -2,7 +2,7 @@
 
 ## Settings
 
-- **Settings → MCP** manages servers, connection tests, API keys and browser OAuth. The market combines Magpie-inspired featured recipes (without Magpie Image) with explicit searches of the official MCP Registry.
+- **Settings → MCP** shows added servers as compact rows above the marketplace. Icon actions edit, test, sign in/out and remove; the rightmost switch controls global enablement. The market combines Magpie-inspired featured recipes (without Magpie Image) with explicit searches of the official MCP Registry.
 - Add a server using the HTTP/stdio form, one server's JSON, or a complete `mcpServers` object. A JSON import is validated as you save it: a same-name server is shown and only replaced after you confirm it.
 - New servers are disabled. Enable them globally or only for a project. Removal deletes Pig configuration, project overrides and saved OAuth credentials, not system runtimes or shared package caches.
 - **Settings → General → Codemode** controls the global default, initially off. Enabled Codemode uses `on`, preserving direct tools rather than forcing every operation through scripts.
