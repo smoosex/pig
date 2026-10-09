@@ -310,7 +310,7 @@ export function AddMcpDialog({
                           setValues((old) => ({ ...old, [input.key]: event.target.value }))
                         }
                       />
-                      <FieldDescription>
+                      <FieldDescription className="text-xs">
                         {[
                           input.descriptionKey
                             ? listingText(t, input.descriptionKey, input.description ?? '')

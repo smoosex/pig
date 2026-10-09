@@ -12,7 +12,7 @@ export const zh = {
     installed: '已添加', market: '商店', add: '添加 MCP', import: '导入 JSON', edit: '编辑配置', remove: '移除',
     search: '搜索官方 MCP Registry', source: '精选参考 Magpie；搜索来自官方 MCP Registry。发现不代表安全审查。',
     loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
-    addRecipe: '添加 {name}', addServer: '添加到 Pig', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
+    addRecipe: '添加 {name}', addServer: '添加', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
     test: '测试连接', testDescription: '测试会连接远程服务或启动本地进程，不调用模型或业务工具。', ready: '测试成功', needsAuth: '需要认证', failed: '连接失败',
     login: 'OAuth 登录', logout: '退出登录', authenticated: '已保存 OAuth 认证', cancelLogin: '取消登录', oauth: 'OAuth 登录', oauthRedirect: '如果浏览器回调无法到达 Pig，请粘贴跳转后的完整 URL。',
     localAccessTitle: '允许 MCP 访问本地网络？',
