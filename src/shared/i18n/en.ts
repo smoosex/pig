@@ -10,7 +10,7 @@ export const en: Messages = {
     installed: 'Added', market: 'Marketplace', add: 'Add MCP', edit: 'Edit configuration', remove: 'Remove',
     search: 'Search the official MCP Registry', loading: 'Loading…', empty: 'No MCP servers added', emptyDescription: 'Choose a server from the marketplace or add a configuration manually.', noMatches: 'No compatible servers found',
     addRecipe: 'Add {name}', addServer: 'Add', optional: '(optional)', remote: 'Remote', homepage: 'Homepage', added: 'Added', enabled: 'Globally enabled', configured: 'New entries are saved disabled; replacements keep their existing enable state.',
-    test: 'Test connection', testDescription: 'Testing connects a remote service or starts a local process, without calling a model or business tool.', ready: 'Test passed', needsAuth: 'Authentication required', failed: 'Connection failed',
+    test: 'Test connection', testing: 'Testing', testDescription: 'Testing connects a remote service or starts a local process, without calling a model or business tool.', ready: 'Test passed', needsAuth: 'Authentication required', failed: 'Connection failed',
     login: 'OAuth sign in', logout: 'Sign out', authenticated: 'OAuth credentials saved', cancelLogin: 'Cancel sign in', oauth: 'OAuth sign in', oauthRedirect: 'If the browser callback cannot reach Pig, paste the complete redirected URL.',
     localAccessTitle: 'Allow MCP local-network access?',
     localAccessDescription: '{origin} resolves to local or reserved addresses: {addresses}. Allowing grants access to services at these addresses for this connection runtime only.',

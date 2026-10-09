@@ -12,7 +12,7 @@ export const zh = {
     installed: '已添加', market: '商店', add: '添加 MCP', edit: '编辑配置', remove: '移除',
     search: '搜索官方 MCP Registry', loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
     addRecipe: '添加 {name}', addServer: '添加', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
-    test: '测试连接', testDescription: '测试会连接远程服务或启动本地进程，不调用模型或业务工具。', ready: '测试成功', needsAuth: '需要认证', failed: '连接失败',
+    test: '测试连接', testing: '正在测试', testDescription: '测试会连接远程服务或启动本地进程，不调用模型或业务工具。', ready: '测试成功', needsAuth: '需要认证', failed: '连接失败',
     login: 'OAuth 登录', logout: '退出登录', authenticated: '已保存 OAuth 认证', cancelLogin: '取消登录', oauth: 'OAuth 登录', oauthRedirect: '如果浏览器回调无法到达 Pig，请粘贴跳转后的完整 URL。',
     localAccessTitle: '允许 MCP 访问本地网络？',
     localAccessDescription: '{origin} 解析到本地或保留地址：{addresses}。允许后可访问这些地址上的服务；授权仅在当前连接运行时有效。',

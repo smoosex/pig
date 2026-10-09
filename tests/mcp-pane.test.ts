@@ -305,6 +305,24 @@ async function fixture(): Promise<void> {
       docsTests + 1,
       'same-server clicks cannot start overlapping connections'
     )
+    const filesRow = installed.querySelectorAll('[data-slot="card"]')[1]!
+    const loadingDocs = row.querySelector('[role="status"]')!
+    assert.equal(loadingDocs.getAttribute('aria-label'), 'Testing docs')
+    assert.equal(loadingDocs.textContent, 'Testing')
+    await act(async () => {
+      useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
+    })
+    assert.equal(loadingDocs.getAttribute('aria-label'), '正在测试 docs')
+    assert.equal(loadingDocs.textContent, '正在测试')
+    await act(async () => {
+      useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
+    })
+    assert.ok(loadingDocs.querySelector('svg.animate-spin'))
+    assert.equal(
+      loadingDocs.parentElement,
+      row.querySelector('[data-slot="card-title"]')!.parentElement
+    )
+    assert.equal(filesRow.querySelector('[role="status"]'), null)
     assert.equal(store.getState().busy, false, 'a probe never takes the global lock')
     for (const action of ['Edit configuration', 'Test connection', 'Remove', 'Globally enabled']) {
       assert.equal(button(`${action} docs`).disabled, true)
@@ -315,6 +333,7 @@ async function fixture(): Promise<void> {
     await click('Test connection files')
     assert.ok(button('Test connection docs').disabled)
     assert.ok(button('Test connection files').disabled)
+    assert.equal(installed.querySelectorAll('[role="status"]').length, 2)
 
     let finishWrite!: () => void
     let write!: Promise<void | undefined>
@@ -338,18 +357,23 @@ async function fixture(): Promise<void> {
     assert.equal(button('Test connection docs').disabled, false)
     assert.equal(button('Test connection files').disabled, true, 'only files is still testing')
     assert.ok(button('Test passed · 0 tools · docs'))
+    assert.equal(row.querySelector('[role="status"]'), null)
+    assert.ok(filesRow.querySelector('[role="status"]'))
 
     let finishLogin!: () => void
     pendingLogin = new Promise<void>((resolve) => {
       finishLogin = resolve
     })
     await click('OAuth sign in docs')
+    assert.ok(row.querySelector('[role="status"]'), 'retesting replaces the previous result')
+    assert.equal(row.querySelector('[aria-label="Test passed · 0 tools · docs"]'), null)
     assert.ok(button('Cancel sign in'))
     await act(async () => {
       failFiles(new Error('Probe exploded'))
     })
     await flush()
     assert.match(store.getState().error ?? '', /Probe exploded/)
+    assert.equal(filesRow.querySelector('[role="status"]'), null, 'failure clears loading')
     assert.equal(store.getState().busy, true, 'a failed probe cannot release the login lock')
     assert.ok(button('Cancel sign in'), 'finishing another probe cannot hide login cancellation')
     pendingProbes.clear()
@@ -359,6 +383,7 @@ async function fixture(): Promise<void> {
     await flush()
     assert.equal(store.getState().busy, false)
     assert.equal(button('Test connection files').disabled, false, 'errors release the row lock')
+    assert.equal(installed.querySelector('[role="status"]'), null)
     await click('Test connection files')
     assert.ok(button('Authentication required · 0 tools · files'))
     await click('Sign out docs')

@@ -1,6 +1,7 @@
 /** Added server rows and discovery share one pane; management details open without expanding rows. */
 import { useEffect, useRef, useState } from 'react'
 import {
+  LoaderCircle,
   LogOut,
   Plus,
   Radar,
@@ -224,7 +225,8 @@ export function McpPane() {
               ? server.config.url
               : [server.config.command, ...(server.config.args ?? [])].join(' ')
           const result = probes[server.name]
-          const rowBusy = busy || testing.has(server.name)
+          const isTesting = testing.has(server.name)
+          const rowBusy = busy || isTesting
           return (
             <Card key={server.name} className="gap-3 py-3">
               <CardHeader className="flex flex-row items-center gap-3">
@@ -232,7 +234,24 @@ export function McpPane() {
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <CardTitle className="min-w-0 truncate text-sm">{server.name}</CardTitle>
-                    {result ? <McpProbeStatus name={server.name} result={result} /> : null}
+                    {isTesting ? (
+                      <span
+                        role="status"
+                        aria-label={`${t('mcp.testing')} ${server.name}`}
+                        className="inline-flex h-6 shrink-0 items-center border border-transparent px-2"
+                      >
+                        <Badge variant="secondary">
+                          <LoaderCircle
+                            data-icon="inline-start"
+                            aria-hidden="true"
+                            className="animate-spin"
+                          />
+                          {t('mcp.testing')}
+                        </Badge>
+                      </span>
+                    ) : result ? (
+                      <McpProbeStatus name={server.name} result={result} />
+                    ) : null}
                   </div>
                   <CardDescription className="truncate text-xs" title={invocation}>
                     {invocation}
