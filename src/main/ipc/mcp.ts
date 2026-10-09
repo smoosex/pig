@@ -19,6 +19,7 @@ import {
 } from '../mcp/settings'
 import { mcpCredentials } from '../mcp/sdk'
 import { searchMcpMarket } from '../mcp/market'
+import { featuredRecipe } from '../mcp/featured'
 import {
   cancelMcpLogin,
   cancelMcpOperations,
@@ -40,6 +41,9 @@ export async function mcpSettingsState(): Promise<McpSettingsState> {
       name,
       config,
       icon: icons[name],
+      // An installed server shows the recipe's copy in the app language while its description is
+      // still the recipe's own; one the user rewrote keeps their words.
+      descriptionKey: featuredRecipe(config)?.descriptionKey,
       authenticated: 'url' in config && !!credentials.tokens(name, config.url)
     }))
   }

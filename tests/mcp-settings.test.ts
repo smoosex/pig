@@ -125,6 +125,11 @@ async function fixture(): Promise<void> {
     )
     await assert.rejects(settings.previewMcpImport('[]'), /JSON object/)
     await assert.rejects(settings.previewMcpImport('{"url":"https://example.invalid"}', ''), /name/)
+    // The SDK accepts a stdio config whose command is only a string, so an empty one is rejected here.
+    await assert.rejects(
+      settings.previewMcpImport('{"mcpServers":{"blank":{"command":"  "}}}'),
+      /command must not be empty/
+    )
     await settings.saveMcpServer('constructor', { command: 'not-run' }, false)
     assert.equal(
       effectiveMcpEnabled(

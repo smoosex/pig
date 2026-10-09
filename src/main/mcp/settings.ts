@@ -129,6 +129,10 @@ export async function previewMcpImport(json: string, name?: string): Promise<Mcp
   return Object.entries(entries).map(([key, value]) => {
     const config = core.validateMcpServerConfig(key, value)
     if (typeof config === 'string') throw new Error(config)
+    // The SDK only checks that a stdio command is a string, so an empty one would be saved and fail
+    // later at launch. Reject it here, where every add/import path passes through.
+    if ('command' in config && !config.command.trim())
+      throw new Error(`server "${key}": command must not be empty`)
     const namespace = core.mcpNamespace(key)
     const other = namespaces.get(namespace)
     if (other && other !== key) throw new Error(`MCP names collide: ${key} / ${other}`)

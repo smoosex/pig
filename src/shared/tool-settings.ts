@@ -1,5 +1,6 @@
 /** Pig-owned tool configuration and management DTOs; credentials never enter session history. */
 import type { McpServerConfig } from '@earendil-works/pi-coding-agent'
+import type { MessageKey } from './i18n'
 
 export type McpConfig = McpServerConfig
 export type ToolOverride = boolean | null
@@ -17,6 +18,8 @@ export interface McpServerView {
   authenticated: boolean
   /** HTTPS icon source remembered from the catalog entry this server was added from. */
   icon?: string
+  /** The recipe's description in the dictionary, when this server is one the catalog offers. */
+  descriptionKey?: MessageKey
 }
 export interface McpSettingsState extends ToolPreferences {
   servers: McpServerView[]
@@ -24,9 +27,14 @@ export interface McpSettingsState extends ToolPreferences {
 }
 export interface McpMarketInput {
   key: string
-  where: 'env' | 'header' | 'arg' | 'url'
+  where: 'env' | 'header' | 'arg'
   label: string
   description?: string
+  /** Sample value shown as the input's placeholder; never saved. */
+  placeholder?: string
+  /** Dictionary keys for the featured listing's own copy; a Registry listing ships English only. */
+  labelKey?: MessageKey
+  descriptionKey?: MessageKey
   required?: boolean
   secret?: boolean
   format?: string
@@ -36,6 +44,8 @@ export interface McpMarketServer {
   name: string
   title: string
   description: string
+  /** The featured listing's description in the dictionary; the Registry writes its own text. */
+  descriptionKey?: MessageKey
   publisher?: string
   homepage?: string
   featured: boolean

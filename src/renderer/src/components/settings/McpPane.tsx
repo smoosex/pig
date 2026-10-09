@@ -8,6 +8,7 @@ import {
   type McpServerView
 } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
+import { listingText } from '../../lib/i18n'
 import { useToolSettingsStore } from '../../stores/tool-settings'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Badge } from '../ui/badge'
@@ -153,8 +154,11 @@ export function McpPane() {
                     />
                   </div>
                   <CardDescription>
-                    {server.config.description ||
-                      ('url' in server.config ? 'HTTP' : server.config.command)}
+                    {server.config.description
+                      ? listingText(t, server.descriptionKey, server.config.description)
+                      : 'url' in server.config
+                        ? t('mcp.remote')
+                        : server.config.command}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2">
@@ -297,24 +301,33 @@ export function McpPane() {
             {market.servers.map((server) => {
               const added = state.servers.some((entry) => entry.name === server.name)
               return (
-                <Card key={server.id}>
-                  <CardHeader>
-                    <CardTitle className="flex min-w-0 items-center gap-2">
-                      <McpIcon source={server.icon} name={server.title || server.name} />
-                      <span className="truncate">{server.title}</span>
-                    </CardTitle>
-                    <CardDescription>
-                      {server.publisher ||
-                        ('url' in server.config ? 'HTTP' : server.config.command)}
-                    </CardDescription>
+                <Card key={server.id} className="gap-3">
+                  <CardHeader className="grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    <McpIcon
+                      source={server.icon}
+                      name={server.title || server.name}
+                      className="row-span-2 size-9"
+                    />
+                    <CardTitle className="truncate">{server.title}</CardTitle>
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      {server.publisher ? (
+                        <span className="truncate">{server.publisher}</span>
+                      ) : null}
+                      <Badge variant="secondary">
+                        {'url' in server.config ? t('mcp.remote') : server.config.command}
+                      </Badge>
+                    </div>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">{server.description}</p>
+                  <CardContent className="line-clamp-2 text-sm text-muted-foreground">
+                    {listingText(t, server.descriptionKey, server.description)}
                   </CardContent>
-                  <CardFooter>
+                  <CardFooter className="justify-between gap-2">
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {server.name}
+                    </span>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant={added ? 'ghost' : 'outline'}
                       disabled={busy || added}
                       onClick={() => setDialog({ recipe: server })}
                       aria-label={t('mcp.addRecipe', { name: server.title })}

@@ -1,6 +1,6 @@
 /** Featured recipes work offline; explicit searches augment them with compatible official Registry entries. */
-import type { McpConfig, McpMarketInput, McpMarketResult, McpMarketServer } from '../../shared/api'
-import { literalMcpValue } from '../../shared/mcp-market'
+import type { McpMarketInput, McpMarketResult, McpMarketServer } from '../../shared/api'
+import { literalMcpValue, mcpConfigIdentity } from '../../shared/mcp-market'
 import { featuredMcpServers } from './featured'
 
 interface Variable {
@@ -174,10 +174,24 @@ export function registryMcpServer(server: RegistryServer): McpMarketServer | nul
   }
   return null
 }
-function identity(config: McpConfig): string {
-  if ('url' in config) return config.url.replace(/\/$/, '')
-  const pkg = config.args?.find((value) => !value.startsWith('-') && value !== 'run') || ''
-  return `${config.command}:${pkg.replace(/@[^/@]+$/, '')}`
+/**
+ * What a market search matches: the words a listing shows, not every field it carries. Serializing
+ * the listing would also match dictionary key paths, icon URLs and homepages, so a search for "key"
+ * or "homepage" would return the whole catalog.
+ */
+function searchText(server: McpMarketServer): string {
+  return [
+    server.name,
+    server.title,
+    server.publisher,
+    server.description,
+    ...server.inputs.map((input) => input.label),
+    'url' in server.config ? server.config.url : server.config.command,
+    ...('url' in server.config ? [] : (server.config.args ?? []))
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
 }
 const cache = new Map<string, { expires: number; servers: McpMarketServer[] }>()
 export async function searchMcpMarket(
@@ -185,9 +199,7 @@ export async function searchMcpMarket(
   fetcher: (input: URL, init: RequestInit) => Promise<Response> = fetch
 ): Promise<McpMarketResult> {
   const q = query.trim().toLowerCase()
-  const featured = featuredMcpServers.filter(
-    (server) => !q || JSON.stringify(server).toLowerCase().includes(q)
-  )
+  const featured = featuredMcpServers.filter((server) => !q || searchText(server).includes(q))
   if (!q) return { servers: featured }
   try {
     let found = cache.get(q)
@@ -218,12 +230,12 @@ export async function searchMcpMarket(
       if (cache.size >= 64) cache.delete(cache.keys().next().value!)
       cache.set(q, found)
     }
-    const seen = new Set(featured.map((server) => identity(server.config)))
+    const seen = new Set(featured.map((server) => mcpConfigIdentity(server.config)))
     return {
       servers: [
         ...featured,
         ...found.servers.filter((server) => {
-          const key = identity(server.config)
+          const key = mcpConfigIdentity(server.config)
           if (seen.has(key)) return false
           seen.add(key)
           return true

@@ -1,4 +1,4 @@
-import { translate, type Translate } from '../../../shared/i18n'
+import { translate, type MessageKey, type Translate } from '../../../shared/i18n'
 import { useSettingsStore } from '../stores/settings'
 
 /**
@@ -8,3 +8,19 @@ import { useSettingsStore } from '../stores/settings'
  */
 export const t: Translate = (key, params) =>
   translate(useSettingsStore.getState().locale, key, params)
+
+/**
+ * Catalog copy for a featured listing: the dictionary wins so the sheet follows the app language,
+ * and the English text the listing shipped falls back when the entry is missing. A Registry listing
+ * carries no key, so its author's own wording is shown as written.
+ */
+export function listingText(
+  format: Translate,
+  key: MessageKey | undefined,
+  fallback: string
+): string {
+  if (!key) return fallback
+  const text = format(key)
+  // The keys are built from template strings, so a malformed path resolves to the key itself.
+  return text === key ? fallback : text
+}
