@@ -19,6 +19,7 @@ import {
 } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { listingText } from '../../lib/i18n'
+import { cn } from '../../lib/utils'
 import { useToolSettingsStore } from '../../stores/tool-settings'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Badge } from '../ui/badge'
@@ -73,12 +74,26 @@ function McpAction({
 function McpProbeStatus({ name, result }: { name: string; result: McpProbeResult }) {
   const t = useT()
   const status = t(result.state === 'needs-auth' ? 'mcp.needsAuth' : `mcp.${result.state}`)
+  const tools = t('mcp.toolsCount', { n: result.tools.length })
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button size="xs" variant="ghost" aria-label={`${t('mcp.tools')} ${name}`}>
-          <Badge variant={result.state === 'failed' ? 'destructive' : 'secondary'}>
-            {status} · {t('mcp.toolsCount', { n: result.tools.length })}
+        <Button
+          size="xs"
+          variant="ghost"
+          className="hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent"
+          aria-label={`${status} · ${tools} · ${name}`}
+        >
+          <Badge variant="secondary">
+            <span
+              aria-hidden="true"
+              className={cn('size-1.5 shrink-0 rounded-full', {
+                'bg-success': result.state === 'ready',
+                'bg-destructive': result.state === 'failed',
+                'bg-warning': result.state === 'needs-auth'
+              })}
+            />
+            {tools}
           </Badge>
         </Button>
       </PopoverTrigger>

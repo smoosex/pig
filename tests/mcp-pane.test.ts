@@ -34,6 +34,7 @@ async function fixture(): Promise<void> {
     inputs: []
   }))
   const calls: Array<[string, ...unknown[]]> = []
+  let probeState: 'failed' | 'needs-auth' = 'failed'
   const service = {
     getMcpSettings: async () => state,
     searchMcpMarket: async (query: string) => {
@@ -47,7 +48,11 @@ async function fixture(): Promise<void> {
     },
     testMcpServer: async (name: string) => {
       calls.push(['test', name])
-      return { state: 'failed' as const, message: 'Connection refused', tools: [] }
+      return {
+        state: probeState,
+        message: probeState === 'needs-auth' ? 'Sign in required' : 'Connection refused',
+        tools: []
+      }
     },
     loginMcpServer: async (name: string) => {
       calls.push(['login', name])
@@ -217,22 +222,41 @@ async function fixture(): Promise<void> {
       null,
       'test results keep the row compact'
     )
-    await click('Tools docs')
+    const probeBadge = () => row.querySelector('[data-slot="badge"]')!
+    assert.equal(probeBadge().textContent, '0 tools')
+    assert.equal(probeBadge().getAttribute('data-variant'), 'secondary')
+    assert.ok(probeBadge().firstElementChild!.classList.contains('bg-destructive'))
+    const probeTrigger = button('Connection failed · 0 tools · docs')
+    for (const override of [
+      'hover:bg-transparent',
+      'aria-expanded:bg-transparent',
+      'dark:hover:bg-transparent'
+    ]) {
+      assert.ok(probeTrigger.classList.contains(override))
+    }
+    await click('Connection failed · 0 tools · docs')
     assert.ok(
       document
         .querySelector('[data-slot="popover-content"]')
         ?.textContent?.includes('Connection refused')
     )
-    await click('Tools docs')
+    await click('Connection failed · 0 tools · docs')
+    probeState = 'needs-auth'
+    await click('Test connection docs')
+    assert.equal(probeBadge().textContent, '0 tools')
+    assert.ok(probeBadge().firstElementChild!.classList.contains('bg-warning'))
+    assert.ok(button('Authentication required · 0 tools · docs'))
     assert.ok(market.querySelector('input'), 'test details do not hide discovery')
     await click('OAuth sign in docs')
     assert.ok(calls.some(([kind, name]) => kind === 'login' && name === 'docs'))
     assert.ok(button('Sign out docs').querySelector('svg'))
-    await click('Tools docs')
+    assert.equal(probeBadge().textContent, '1 tools')
+    assert.ok(probeBadge().firstElementChild!.classList.contains('bg-success'))
+    await click('Test passed · 1 tools · docs')
     assert.ok(
       document.querySelector('[data-slot="popover-content"]')?.textContent?.includes('lookup')
     )
-    await click('Tools docs')
+    await click('Test passed · 1 tools · docs')
     await click('Sign out docs')
     assert.ok(calls.some(([kind, name]) => kind === 'logout' && name === 'docs'))
     assert.equal(row.querySelector('[data-slot="card-content"]'), null)
