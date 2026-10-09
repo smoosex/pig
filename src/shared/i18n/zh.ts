@@ -9,7 +9,7 @@ export const zh = {
     projects: '项目设置', projectDescription: '继承全局工具配置，或为该项目单独覆盖；同一项目的 worktree 共用设置。',
     tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',
     inherit: '继承', on: '开启', off: '关闭', effective: '实际状态：{state}', pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
-    installed: '已添加', market: '商店', add: '添加 MCP', import: '导入 JSON', edit: '编辑配置', remove: '移除',
+    installed: '已添加', market: '商店', add: '添加 MCP', edit: '编辑配置', remove: '移除',
     search: '搜索官方 MCP Registry', loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
     addRecipe: '添加 {name}', addServer: '添加', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
     test: '测试连接', testDescription: '测试会连接远程服务或启动本地进程，不调用模型或业务工具。', ready: '测试成功', needsAuth: '需要认证', failed: '连接失败',

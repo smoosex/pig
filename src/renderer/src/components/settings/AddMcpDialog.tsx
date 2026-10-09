@@ -66,12 +66,10 @@ function ConfigField({
 export function AddMcpDialog({
   recipe,
   server,
-  importJson,
   onClose
 }: {
   recipe?: McpMarketServer
   server?: McpServerView
-  importJson?: boolean
   onClose(): void
 }) {
   const t = useT()
@@ -80,7 +78,7 @@ export function AddMcpDialog({
   const error = useToolSettingsStore((s) => s.error)
   const initial = server?.config ?? recipe?.config
   const [base, setBase] = useState<Record<string, unknown>>({ ...initial })
-  const [mode, setMode] = useState(server || importJson ? 'json' : 'form')
+  const [mode, setMode] = useState(server ? 'json' : 'form')
   const [name, setName] = useState(server?.name ?? recipe?.name ?? '')
   const [transport, setTransport] = useState(initial && 'command' in initial ? 'stdio' : 'http')
   const [url, setUrl] = useState(initial && 'url' in initial ? initial.url : '')
@@ -95,9 +93,7 @@ export function AddMcpDialog({
   const [headers, setHeaders] = useState(
     JSON.stringify(initial && 'url' in initial ? (initial.headers ?? {}) : {}, null, 2)
   )
-  const [json, setJson] = useState(
-    JSON.stringify(initial ?? (importJson ? { mcpServers: {} } : { url: '' }), null, 2)
-  )
+  const [json, setJson] = useState(JSON.stringify(initial ?? { url: '' }, null, 2))
   const [values, setValues] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState<McpImportEntry[]>()
   const [replace, setReplace] = useState(false)
@@ -264,9 +260,7 @@ export function AddMcpDialog({
           </DialogHeader>
         ) : (
           <DialogHeader>
-            <DialogTitle>
-              {t(server ? 'mcp.edit' : importJson ? 'mcp.import' : 'mcp.add')}
-            </DialogTitle>
+            <DialogTitle>{t(server ? 'mcp.edit' : 'mcp.add')}</DialogTitle>
           </DialogHeader>
         )}
         <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto px-1">

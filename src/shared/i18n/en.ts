@@ -7,7 +7,7 @@ export const en: Messages = {
     projects: 'Project settings', projectDescription: 'Inherit global tools or override them for this project. Its worktrees share these preferences.',
     tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',
     inherit: 'Inherit', on: 'On', off: 'Off', effective: 'Effective: {state}', pending: '{n} running sessions will apply changes after their current task finishes.',
-    installed: 'Added', market: 'Marketplace', add: 'Add MCP', import: 'Import JSON', edit: 'Edit configuration', remove: 'Remove',
+    installed: 'Added', market: 'Marketplace', add: 'Add MCP', edit: 'Edit configuration', remove: 'Remove',
     search: 'Search the official MCP Registry', loading: 'Loading…', empty: 'No MCP servers added', emptyDescription: 'Choose a server from the marketplace or add a configuration manually.', noMatches: 'No compatible servers found',
     addRecipe: 'Add {name}', addServer: 'Add', optional: '(optional)', remote: 'Remote', homepage: 'Homepage', added: 'Added', enabled: 'Globally enabled', configured: 'New entries are saved disabled; replacements keep their existing enable state.',
     test: 'Test connection', testDescription: 'Testing connects a remote service or starts a local process, without calling a model or business tool.', ready: 'Test passed', needsAuth: 'Authentication required', failed: 'Connection failed',

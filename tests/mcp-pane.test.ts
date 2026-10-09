@@ -71,18 +71,16 @@ async function fixture(): Promise<void> {
     AddMcpDialog: ({
       server,
       recipe,
-      importJson,
       onClose
     }: {
       server?: { name: string }
       recipe?: { name: string }
-      importJson?: boolean
       onClose(): void
     }) =>
       h(
         'button',
         {
-          'data-dialog-mode': server?.name ?? recipe?.name ?? (importJson ? 'json' : 'form'),
+          'data-dialog-mode': server?.name ?? recipe?.name ?? 'form',
           onClick: onClose
         },
         'Close fixture'
@@ -123,6 +121,20 @@ async function fixture(): Promise<void> {
     const installed = host.querySelector('section[aria-labelledby="mcp-installed"]')!
     const market = host.querySelector('section[aria-labelledby="mcp-market"]')!
     assert.ok(installed)
+    const add = button('Add MCP')
+    assert.equal(add.parentElement, installed.firstElementChild, 'add stays in the top action row')
+    assert.ok(add.querySelector('svg'))
+    assert.equal(add.getAttribute('data-variant'), 'ghost')
+    assert.equal(
+      [...installed.querySelectorAll('button')].filter(
+        (element) => element.textContent === 'Add MCP'
+      ).length,
+      1
+    )
+    assert.equal(
+      [...host.querySelectorAll('button')].some((element) => element.textContent === 'Import JSON'),
+      false
+    )
     assert.ok(market.querySelector('input'), 'discovery is visible without changing tabs')
     assert.equal(host.querySelector('[data-slot="toggle-group"]'), null)
     assert.equal(installed.querySelectorAll('[data-slot="card"]').length, 2)
@@ -162,9 +174,6 @@ async function fixture(): Promise<void> {
     assert.equal(button('Add docs').disabled, true)
     await click('Edit configuration docs')
     assert.equal(host.querySelector('[data-dialog-mode]')!.getAttribute('data-dialog-mode'), 'docs')
-    await click('Close fixture')
-    await click('Import JSON')
-    assert.equal(host.querySelector('[data-dialog-mode]')!.getAttribute('data-dialog-mode'), 'json')
     await click('Close fixture')
     await click('Add MCP')
     assert.equal(host.querySelector('[data-dialog-mode]')!.getAttribute('data-dialog-mode'), 'form')

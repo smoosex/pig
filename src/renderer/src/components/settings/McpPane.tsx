@@ -117,7 +117,6 @@ export function McpPane() {
   const [dialog, setDialog] = useState<{
     recipe?: McpMarketServer
     server?: McpServerView
-    importJson?: boolean
   }>()
   const [removing, setRemoving] = useState<string>()
   const [login, setLogin] = useState<string>()
@@ -162,13 +161,9 @@ export function McpPane() {
           <h3 id="mcp-installed" className="text-xs font-medium text-muted-foreground">
             {t('mcp.installed')}
           </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => setDialog({ importJson: true })}
-          >
-            {t('mcp.import')}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDialog({})}>
+            <Plus data-icon="inline-start" />
+            {t('mcp.add')}
           </Button>
         </div>
         {login ? (
@@ -272,16 +267,6 @@ export function McpPane() {
             </Card>
           )
         })}
-        <Button
-          className="self-start"
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          onClick={() => setDialog({})}
-        >
-          <Plus data-icon="inline-start" />
-          {t('mcp.add')}
-        </Button>
       </section>
       <section className="flex flex-col gap-3" aria-labelledby="mcp-market">
         <h3 id="mcp-market" className="text-xs font-medium text-muted-foreground">
