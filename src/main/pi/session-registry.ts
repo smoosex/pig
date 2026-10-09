@@ -23,7 +23,6 @@ import { normalizeWorktreePath as resolve } from '../worktrees'
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
-import { canonicalProject } from '../worktrees'
 import { sessionToolFactory } from './tool-resources'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
@@ -168,9 +167,8 @@ async function build(
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
   const pluginPaths = isChatCwd(cwd) ? undefined : await enabledPluginPaths()
-  const toolProject = isChatCwd(cwd) ? null : await canonicalProject(cwd)
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
-  const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd, toolProject)] }
+  const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd)] }
   const resourceLoader = pluginPaths
     ? await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
     : await createChatResourceLoader(cwd, resources)
@@ -189,7 +187,6 @@ async function build(
     agentSession: session,
     unsubscribe: () => {},
     pluginPaths,
-    toolProject,
     win
   }
   try {
@@ -648,9 +645,9 @@ function canReloadResources(session: LiveSession): boolean {
   return session.agentSession.isIdle && !session.agentSession.isBashRunning && !isSessionRunActive(session.agentSession)
 }
 
-export async function refreshToolSessions(project?: string): Promise<void> {
+export async function refreshToolSessions(): Promise<void> {
   await Promise.all([...preparing.values()].map((item) => item.promise.catch(() => undefined)))
-  const sessions = [...live.values()].filter((session) => !project || session.toolProject === project)
+  const sessions = [...live.values()]
   for (const session of sessions) pendingToolRefresh.add(session.sessionId)
   emitToolSettingsChanged()
   await Promise.all(sessions.map((session) => {

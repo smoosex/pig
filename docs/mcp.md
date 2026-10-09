@@ -5,11 +5,10 @@
 - **Settings → MCP** shows added servers as compact rows above the marketplace. Icon actions edit, test, sign in/out and remove; the rightmost switch controls global enablement. Connection tests run independently by server and only lock their own row; OAuth sign-in and configuration changes retain global locks. The market combines Magpie-inspired featured recipes (without Magpie Image) with explicit searches of the official MCP Registry.
 - Use **Add MCP** above the server list to open the manual form: name, command/HTTP, a quoted command line or URL, and editable environment/header rows. Paste a single server's JSON or a named entry anywhere in the form to fill it in; a multi-server `mcpServers` object opens the JSON editor. The header's JSON/Form segmented switch selects the editor; JSON mode keeps advanced options available. Blank examples are placeholders, while existing configuration and filled form values remain editable content. Pasting never saves automatically; configuration is validated as you save it and same-name replacements require confirmation.
 - Command lines are split into executable and arguments, not run through a shell. New environment/header values are literal except a whole `${NAME}` environment-variable reference; existing and JSON-authored values retain Pi configuration expressions. Legacy SSE is not supported.
-- New servers are disabled. Enable them globally or only for a project. Removal deletes Pig configuration, project overrides and saved OAuth credentials, not system runtimes or shared package caches.
-- **Settings → General → Codemode** controls the global default, initially off. Enabled Codemode uses `on`, preserving direct tools rather than forcing every operation through scripts.
-- **Settings → Project settings → project** overrides global MCP enablement and Codemode. Unset overrides inherit; a project's worktrees share the original project's settings.
+- New servers are disabled. Enabling a server applies to all projects, worktrees and ordinary chats. Removal deletes Pig configuration and saved OAuth credentials, not system runtimes or shared package caches.
+- **Settings → General → Codemode** controls the global setting for all user sessions, initially off. Enabled Codemode uses `on`, preserving direct tools rather than forcing every operation through scripts.
 
-Idle sessions reload immediately; active tasks finish before their tool resources reload. Settings show pending sessions. New inputs wait for runtime replacement, including further changes queued during reload. Parsing, IO and inline-extension errors keep the affected session unavailable until a successful reload; they never silently restore defaults or permit prompts against an incomplete runtime. Internal naming/search-test sessions never load these capabilities; ordinary chats inherit global defaults without gaining permission to inspect their scratch directory.
+Idle sessions reload immediately; active tasks finish before their tool resources reload. Settings show pending sessions. New inputs wait for runtime replacement, including further changes queued during reload. Parsing, IO and inline-extension errors keep the affected session unavailable until a successful reload; they never silently restore defaults or permit prompts against an incomplete runtime. Internal naming/search-test sessions never load these capabilities; ordinary chats use the same global tools without gaining permission to inspect their scratch directory.
 
 ## Storage and security
 
@@ -20,11 +19,11 @@ Pig owns these files under `PIG_DIR` (development: `cwd/.pig`; packaged: `$HOME/
 | `mcp.json` | Standard `mcpServers` configuration and global enable flags |
 | `mcp-icons.json` | Catalog icon sources by server name, kept out of `mcp.json` |
 | `mcp-icons/` | Fetched icon bytes, keyed by source |
-| `tool-settings.json` | Global Codemode default and canonical project overrides |
+| `tool-settings.json` | Global Codemode enable flag |
 | `mcp-auth.json` | Pi-managed OAuth credentials and client registration |
 | `mcp.log` | Pi MCP diagnostic log |
 
-Configuration and credential files are written with owner-only permissions on Unix. Pig does not read/write terminal Pi's MCP configuration or automatically load repository `.pi/mcp.json`. Repository configuration must be explicitly imported. MCP processes run with the user's permissions, not inside the Codemode sandbox.
+Configuration and credential files are written with owner-only permissions on Unix. Legacy project overrides in `tool-settings.json` are ignored and discarded when Codemode is saved; they do not change global enablement. Pig does not read/write terminal Pi's MCP configuration or automatically load repository `.pi/mcp.json`. Repository configuration must be explicitly imported. MCP processes run with the user's permissions, not inside the Codemode sandbox.
 
 Local recipes use `npx` or `uvx` with latest package specifications; the launcher owns resolution and caching. Install the launcher separately and make it available in the login shell's `PATH`. Adding a recipe only saves configuration; enabling or testing can launch a process and download its package. Docker-backed Registry entries require Docker. Supported remote transport is streamable HTTP, not legacy SSE.
 
@@ -44,4 +43,4 @@ QuickJS has no Node, filesystem, network or timer APIs. Scripts access tools thr
 
 Nested calls appear in a collapsed list under the parent tool, not as synthetic transcript messages. Live events show parameters, state, duration and errors; replay uses Pi's bounded `nestedCalls` records and indicates omitted/incomplete metadata. Child result bodies are not persisted in those records.
 
-Validation covers configuration isolation and inheritance, serial writes, input/reload races, cancellation, real SDK discovery/direct MCP invocation and QuickJS execution without an external model. A macOS packaged-SDK smoke check also executes QuickJS from ASAR. Real-provider OAuth and UI end-to-end flows require manual verification.
+Validation covers configuration isolation and global enablement, serial writes, input/reload races, cancellation, real SDK discovery/direct MCP invocation and QuickJS execution without an external model. A macOS packaged-SDK smoke check also executes QuickJS from ASAR. Real-provider OAuth and UI end-to-end flows require manual verification.

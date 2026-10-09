@@ -3,10 +3,9 @@ import type { Messages } from './zh'
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
   mcp: {
-    title: 'MCP', description: 'Manage external tool servers, authentication and global defaults.',
-    projects: 'Project settings', projectDescription: 'Inherit global tools or override them for this project. Its worktrees share these preferences.',
+    title: 'MCP', description: 'Manage external tool servers, authentication and global enablement.',
     tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',
-    inherit: 'Inherit', on: 'On', off: 'Off', effective: 'Effective: {state}', pending: '{n} running sessions will apply changes after their current task finishes.',
+    pending: '{n} running sessions will apply changes after their current task finishes.',
     installed: 'Added', market: 'Marketplace', add: 'Add MCP', edit: 'Edit configuration', remove: 'Remove',
     search: 'Search the official MCP Registry', loading: 'Loading…', empty: 'No MCP servers added', emptyDescription: 'Choose a server from the marketplace or add a configuration manually.', noMatches: 'No compatible servers found',
     addRecipe: 'Add {name}', addServer: 'Add', optional: '(optional)', remote: 'Remote', homepage: 'Homepage', added: 'Added', enabled: 'Globally enabled', configured: 'New entries are saved disabled; replacements keep their existing enable state.',
@@ -14,7 +13,7 @@ export const en: Messages = {
     login: 'OAuth sign in', logout: 'Sign out', authenticated: 'OAuth credentials saved', cancelLogin: 'Cancel sign in', oauth: 'OAuth sign in', oauthRedirect: 'If the browser callback cannot reach Pig, paste the complete redirected URL.',
     localAccessTitle: 'Allow MCP local-network access?',
     localAccessDescription: '{origin} resolves to local or reserved addresses: {addresses}. Allowing grants access to services at these addresses for this connection runtime only.',
-    removeTitle: 'Remove {name}?', removeDescription: 'Remove Pig configuration and project overrides, and close connections. System runtimes and shared caches are kept.',
+    removeTitle: 'Remove {name}?', removeDescription: 'Remove Pig configuration and saved OAuth credentials, and close connections. System runtimes and shared caches are kept.',
     newServer: 'New MCP server', editorMode: 'Editor mode', pasteFailed: 'Cannot read the pasted MCP configuration: {error}',
     form: 'Form', json: 'JSON', name: 'Name', namePlaceholder: 'e.g. github', nameDescription: 'Letters, digits, underscores and hyphens only.', transport: 'Runs as', http: 'HTTP', stdio: 'Command',
     url: 'URL', command: 'Command', env: 'Environment', headers: 'Headers', commandDescription: 'The executable and its arguments; quote arguments that contain spaces.', commandQuote: 'The command contains an unclosed quote.',
@@ -24,7 +23,6 @@ export const en: Messages = {
     config: 'MCP configuration', configHint: 'Accepts one server or a complete mcpServers object. Advanced OAuth options can be configured in JSON.',
     formSingle: 'The form edits one server at a time. Keep JSON mode to import multiple entries.',
     save: 'Save', conflicts: 'A server with this name exists. Continuing replaces its configuration: {names}', confirmReplace: 'Confirm replacing these configurations',
-    projectMcp: 'MCP enable overrides', globalDefault: 'Global default: {state}', noProjects: 'No projects open',
     featured: {
       context7: { description: 'Current library documentation and code examples.', input: { CONTEXT7_API_KEY: { label: 'API key', description: 'Optional — raises the rate limit. Get one at context7.com/dashboard' } } },
       playwright: { description: 'Browser automation through the accessibility tree.' },

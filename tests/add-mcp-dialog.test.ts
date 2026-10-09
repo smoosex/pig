@@ -15,7 +15,6 @@ async function fixture(): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const state: McpSettingsState = {
     codemode: false,
-    projects: {},
     pendingSessions: [],
     servers: []
   }

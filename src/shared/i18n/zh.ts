@@ -6,9 +6,8 @@
 export const zh = {
   mcp: {
     title: 'MCP', description: '管理外部工具服务器、认证和全局启用状态。',
-    projects: '项目设置', projectDescription: '继承全局工具配置，或为该项目单独覆盖；同一项目的 worktree 共用设置。',
     tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',
-    inherit: '继承', on: '开启', off: '关闭', effective: '实际状态：{state}', pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
+    pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
     installed: '已添加', market: '商店', add: '添加 MCP', edit: '编辑配置', remove: '移除',
     search: '搜索官方 MCP Registry', loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
     addRecipe: '添加 {name}', addServer: '添加', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
@@ -16,7 +15,7 @@ export const zh = {
     login: 'OAuth 登录', logout: '退出登录', authenticated: '已保存 OAuth 认证', cancelLogin: '取消登录', oauth: 'OAuth 登录', oauthRedirect: '如果浏览器回调无法到达 Pig，请粘贴跳转后的完整 URL。',
     localAccessTitle: '允许 MCP 访问本地网络？',
     localAccessDescription: '{origin} 解析到本地或保留地址：{addresses}。允许后可访问这些地址上的服务；授权仅在当前连接运行时有效。',
-    removeTitle: '移除 {name}？', removeDescription: '删除 Pig 的配置和项目覆盖，关闭对应连接；不会删除系统运行时或共享缓存。',
+    removeTitle: '移除 {name}？', removeDescription: '删除 Pig 配置和已保存的 OAuth 认证，关闭对应连接；不会删除系统运行时或共享缓存。',
     newServer: '新的 MCP 服务器', editorMode: '编辑方式', pasteFailed: '无法读取粘贴的 MCP 配置：{error}',
     form: '表单', json: 'JSON', name: '名称', namePlaceholder: '例如 github', nameDescription: '仅支持字母、数字、下划线和连字符。', transport: '运行方式', http: 'HTTP', stdio: '命令',
     url: 'URL', command: '命令', env: '环境变量', headers: '请求头', commandDescription: '可执行文件及参数；含空格的参数请加引号。', commandQuote: '命令中有未闭合的引号。',
@@ -26,7 +25,6 @@ export const zh = {
     config: 'MCP 配置', configHint: '支持单条配置或完整的 mcpServers 对象；OAuth 高级参数可在 JSON 中配置。',
     formSingle: '表单仅能编辑单个服务器，请继续用 JSON 导入多个条目。',
     save: '保存', conflicts: '已有同名服务器，继续将替换其配置：{names}', confirmReplace: '确认替换上述同名配置',
-    projectMcp: 'MCP 启用覆盖', globalDefault: '全局默认：{state}', noProjects: '尚未打开项目',
     featured: {
       context7: { description: '任意库的最新文档与代码示例，直接送进提示词。', input: { CONTEXT7_API_KEY: { label: 'API 密钥', description: '可选 — 提高速率限制。在 context7.com/dashboard 获取' } } },
       playwright: { description: '驱动真实浏览器：打开页面、点击、输入，并通过无障碍树读取页面。' },

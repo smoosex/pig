@@ -136,7 +136,6 @@ const api: SessionApi = {
     ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
   getMcpSettings: () => ipcRenderer.invoke('mcp:get'),
   setCodemode: (enabled) => ipcRenderer.invoke('mcp:codemode', enabled),
-  setProjectToolSettings: (cwd, patch) => ipcRenderer.invoke('mcp:project', cwd, patch),
   saveMcpServer: (name, config, replace, icon) => ipcRenderer.invoke('mcp:save', name, config, replace, icon),
   removeMcpServer: (name) => ipcRenderer.invoke('mcp:remove', name),
   setMcpEnabled: (name, enabled) => ipcRenderer.invoke('mcp:enable', name, enabled),

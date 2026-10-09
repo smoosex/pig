@@ -15,9 +15,9 @@ import { openMcpUrl } from '../extension-ui'
 import { loadAllowedRanges } from '../network-address'
 import { webSearchConfigPath } from './web-search-settings'
 
-export function sessionToolFactory(cwd: string, project: string | null): ExtensionFactory {
+export function sessionToolFactory(cwd: string): ExtensionFactory {
   return async (pi) => {
-    const snapshot = await sessionMcpConfig(cwd, project)
+    const snapshot = await sessionMcpConfig(cwd)
     let context: ExtensionContext | undefined
     pi.on('session_start', (_event, ctx) => {
       context = ctx

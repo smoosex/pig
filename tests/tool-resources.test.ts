@@ -21,7 +21,7 @@ async function fixture(): Promise<void> {
   const settingsManager = sessionResourceSettings(root, getAgentDir())
   const loader = await createNoExtensionsResourceLoader(root, [], {
     settingsManager,
-    extensionFactories: [sessionToolFactory(root, root)]
+    extensionFactories: [sessionToolFactory(root)]
   })
   assert.deepEqual(loader.getExtensions().errors, [])
   const { session } = await createAgentSession({

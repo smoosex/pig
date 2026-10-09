@@ -3,14 +3,8 @@ import type { McpServerConfig } from '@earendil-works/pi-coding-agent'
 import type { MessageKey } from './i18n'
 
 export type McpConfig = McpServerConfig
-export type ToolOverride = boolean | null
-export interface ProjectToolSettings {
-  codemode?: boolean
-  mcp: Record<string, boolean>
-}
 export interface ToolPreferences {
   codemode: boolean
-  projects: Record<string, ProjectToolSettings>
 }
 export interface McpServerView {
   name: string
@@ -85,10 +79,6 @@ export type ExtensionUIEvent =
 export interface ToolSettingsApi {
   getMcpSettings(): Promise<McpSettingsState>
   setCodemode(enabled: boolean): Promise<McpSettingsState>
-  setProjectToolSettings(
-    cwd: string,
-    patch: { codemode?: ToolOverride; mcp?: Record<string, ToolOverride> }
-  ): Promise<McpSettingsState>
   saveMcpServer(name: string, config: McpConfig, replace: boolean, icon?: string): Promise<McpSettingsState>
   removeMcpServer(name: string): Promise<McpSettingsState>
   setMcpEnabled(name: string, enabled: boolean): Promise<McpSettingsState>
@@ -102,25 +92,4 @@ export interface ToolSettingsApi {
   replyExtensionUI(id: string, value: string | null): Promise<void>
   onExtensionUI(listener: (event: ExtensionUIEvent) => void): () => void
   onMcpChanged(listener: () => void): () => void
-}
-
-export function effectiveCodemode(settings: ToolPreferences, project?: string | null): boolean {
-  return (project ? settings.projects[project]?.codemode : undefined) ?? settings.codemode
-}
-export function projectMcpOverride(
-  project: ProjectToolSettings | undefined,
-  name: string
-): boolean | undefined {
-  return project && Object.hasOwn(project.mcp, name) ? project.mcp[name] : undefined
-}
-export function effectiveMcpEnabled(
-  config: McpConfig,
-  settings: ToolPreferences,
-  name: string,
-  project?: string | null
-): boolean {
-  return (
-    projectMcpOverride(project ? settings.projects[project] : undefined, name) ??
-    config.enabled === true
-  )
 }

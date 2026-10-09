@@ -1,8 +1,7 @@
-/** Pig owns configuration and scope decisions; Pi owns MCP transport, OAuth and tool execution. */
+/** Pig owns global configuration; Pi owns MCP transport, OAuth and tool execution. */
 import { BrowserWindow, ipcMain } from 'electron'
-import type { McpConfig, McpSettingsState, ToolOverride } from '../../shared/api'
+import type { McpConfig, McpSettingsState } from '../../shared/api'
 import { windowForEvent } from './window'
-import { requireOpenedProject } from '../project-worktrees'
 import { pendingToolSessions, refreshToolSessions } from '../pi/session-registry'
 import {
   configuredServers,
@@ -14,8 +13,7 @@ import {
   removeMcpServer,
   saveMcpServer,
   setCodemode,
-  setMcpEnabled,
-  setProjectToolSettings
+  setMcpEnabled
 } from '../mcp/settings'
 import { mcpCredentials } from '../mcp/sdk'
 import { searchMcpMarket } from '../mcp/market'
@@ -48,8 +46,8 @@ export async function mcpSettingsState(): Promise<McpSettingsState> {
     }))
   }
 }
-async function changed(project?: string): Promise<McpSettingsState> {
-  await refreshToolSessions(project)
+async function changed(): Promise<McpSettingsState> {
+  await refreshToolSessions()
   emitToolSettingsChanged()
   return mcpSettingsState()
 }
@@ -67,18 +65,6 @@ export function registerMcpIpc(): void {
     await setCodemode(enabled)
     return changed()
   })
-  ipcMain.handle(
-    'mcp:project',
-    async (
-      _event,
-      cwd: string,
-      patch: { codemode?: ToolOverride; mcp?: Record<string, ToolOverride> }
-    ) => {
-      const project = await requireOpenedProject(cwd)
-      await setProjectToolSettings(project, patch)
-      return changed(project)
-    }
-  )
   ipcMain.handle(
     'mcp:save',
     async (_event, server: string, config: McpConfig, replace: boolean, icon?: string) => {

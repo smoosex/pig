@@ -1,13 +1,6 @@
-/** Atomic Pig-only configuration. Project preferences contain enable overrides, never commands or credentials. */
+/** Atomic Pig-only global configuration; repository MCP files are never loaded automatically. */
 import { pigDir, pigPath } from '../pig-dir'
-import type {
-  McpConfig,
-  McpImportEntry,
-  ProjectToolSettings,
-  ToolOverride,
-  ToolPreferences
-} from '../../shared/tool-settings'
-import { effectiveCodemode, effectiveMcpEnabled } from '../../shared/tool-settings'
+import type { McpConfig, McpImportEntry, ToolPreferences } from '../../shared/tool-settings'
 import { mcpCredentials, mcpSdk, privateJson, readJson } from './sdk'
 import { withMcpAuthMutation } from './connections'
 
@@ -48,24 +41,7 @@ export function readToolPreferences(): ToolPreferences {
   const raw = object(readJson(pigPath('tool-settings.json'), {}))
   if (Object.hasOwn(raw, 'codemode') && typeof raw.codemode !== 'boolean')
     throw new ToolConfigurationError('tool-settings.json: codemode must be a boolean')
-  const projects: ToolPreferences['projects'] = {}
-  for (const [cwd, value] of Object.entries(object(raw.projects ?? {}))) {
-    const project = object(value)
-    if (Object.hasOwn(project, 'codemode') && typeof project.codemode !== 'boolean')
-      throw new ToolConfigurationError(
-        `tool-settings.json: projects[${cwd}].codemode must be a boolean`
-      )
-    const mcp: Record<string, boolean> = Object.create(null)
-    for (const [name, enabled] of Object.entries(object(project.mcp ?? {}))) {
-      if (typeof enabled !== 'boolean') throw new Error(`Invalid MCP override: ${name}`)
-      mcp[name] = enabled
-    }
-    projects[cwd] = {
-      mcp,
-      ...(typeof project.codemode === 'boolean' ? { codemode: project.codemode } : {})
-    }
-  }
-  return { codemode: raw.codemode === true, projects }
+  return { codemode: raw.codemode === true }
 }
 function document(): Record<string, unknown> {
   const raw = object(readJson(pigPath('mcp.json'), { mcpServers: {} }))
@@ -91,7 +67,7 @@ export async function configuredServers() {
   if (loaded.errors.length) throw new Error(loaded.errors.join('\n'))
   return loaded.servers
 }
-export async function sessionMcpConfig(cwd: string, project: string | null) {
+export async function sessionMcpConfig(cwd: string) {
   await flushToolMutations()
   const preferences = readToolPreferences()
   return {
@@ -101,7 +77,7 @@ export async function sessionMcpConfig(cwd: string, project: string | null) {
       ...entry,
       config: {
         ...entry.config,
-        enabled: effectiveMcpEnabled(entry.config, preferences, entry.name, project),
+        enabled: entry.config.enabled === true,
         // Keep MCP reachable by tool_search even when codemode is disabled; honor hidden/direct tools.
         exposure:
           entry.config.exposure === 'codemode' || !entry.config.exposure
@@ -115,7 +91,7 @@ export async function sessionMcpConfig(cwd: string, project: string | null) {
         )
       }
     })),
-    codemode: effectiveCodemode(preferences, project),
+    codemode: preferences.codemode,
     cwd
   }
 }
@@ -163,19 +139,9 @@ export function importMcpServers(
       if (entry.conflict && !replaceNames.includes(entry.name))
         throw new Error(`Confirm replacement: ${entry.name}`)
     }
-    const preferences = readToolPreferences()
-    let preferencesChanged = false
     const obsolete: { name: string; url: string }[] = []
     for (const entry of entries) {
       const previous = servers[entry.name] as McpConfig | undefined
-      if (!entry.conflict) {
-        for (const project of Object.values(preferences.projects)) {
-          if (Object.hasOwn(project.mcp, entry.name)) {
-            delete project.mcp[entry.name]
-            preferencesChanged = true
-          }
-        }
-      }
       if (
         previous &&
         'url' in previous &&
@@ -192,7 +158,6 @@ export function importMcpServers(
     await withMcpAuthMutation(
       obsolete.map((entry) => entry.name),
       async () => {
-        if (preferencesChanged) privateJson(pigPath('tool-settings.json'), preferences)
         privateJson(pigPath('mcp.json'), { ...raw, mcpServers: servers, autoEnableCodemode: false })
         if (icon && entries.length === 1) privateJson(pigPath('mcp-icons.json'), { servers: icons })
         if (obsolete.length) {
@@ -220,7 +185,6 @@ export function removeMcpServer(name: string): Promise<void> {
   return serialize(async () => {
     const server = (await configuredServers()).find((entry) => entry.name === name)
     if (!server) throw new Error(`MCP server not found: ${name}`)
-    const preferences = readToolPreferences()
     await withMcpAuthMutation([name], async () => {
       if ('url' in server.config) (await mcpCredentials()).remove(name, server.config.url)
       const raw = document()
@@ -232,8 +196,6 @@ export function removeMcpServer(name: string): Promise<void> {
         delete icons[name]
         privateJson(pigPath('mcp-icons.json'), { servers: icons })
       }
-      for (const project of Object.values(preferences.projects)) delete project.mcp[name]
-      privateJson(pigPath('tool-settings.json'), preferences)
     })
   })
 }
@@ -260,49 +222,5 @@ export function setCodemode(enabled: boolean): Promise<void> {
   return serialize(() => {
     if (typeof enabled !== 'boolean') throw new Error('Expected a boolean')
     privateJson(pigPath('tool-settings.json'), { ...readToolPreferences(), codemode: enabled })
-  })
-}
-function applyOverride(
-  value: ToolOverride,
-  put: (enabled: boolean) => void,
-  remove: () => void
-): void {
-  if (value === null) remove()
-  else if (typeof value === 'boolean') put(value)
-  else throw new Error('Expected inherit, enabled or disabled')
-}
-export function setProjectToolSettings(
-  cwd: string,
-  patch: { codemode?: ToolOverride; mcp?: Record<string, ToolOverride> }
-): Promise<void> {
-  return serialize(async () => {
-    const servers = await configuredServers()
-    const preferences = readToolPreferences()
-    const project: ProjectToolSettings = preferences.projects[cwd] ?? { mcp: Object.create(null) }
-    if (patch.codemode !== undefined)
-      applyOverride(
-        patch.codemode,
-        (value) => {
-          project.codemode = value
-        },
-        () => {
-          delete project.codemode
-        }
-      )
-    for (const [name, value] of Object.entries(patch.mcp ?? {})) {
-      if (!servers.some((entry) => entry.name === name))
-        throw new Error(`MCP server not found: ${name}`)
-      applyOverride(
-        value,
-        (enabled) => {
-          project.mcp[name] = enabled
-        },
-        () => {
-          delete project.mcp[name]
-        }
-      )
-    }
-    preferences.projects[cwd] = project
-    privateJson(pigPath('tool-settings.json'), preferences)
   })
 }

@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { useT } from '../../hooks/useT'
 import { useToolSettingsStore } from '../../stores/tool-settings'
-import { api, type ToolOverride } from '../../ipc/api'
+import { api } from '../../ipc/api'
 import { Alert, AlertDescription } from '../ui/alert'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Switch } from '../ui/switch'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
@@ -24,43 +23,6 @@ export function ToolSettingsFeedback() {
         </Alert>
       ) : null}
     </>
-  )
-}
-export function ToolOverrideControl({
-  value,
-  inherited,
-  disabled,
-  onChange,
-  label
-}: {
-  value?: boolean
-  inherited: boolean
-  disabled?: boolean
-  onChange(value: ToolOverride): void
-  label: string
-}) {
-  const t = useT()
-  return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        aria-label={label}
-        disabled={disabled}
-        value={value === undefined ? 'inherit' : value ? 'on' : 'off'}
-        onValueChange={(next) => {
-          if (next) onChange(next === 'inherit' ? null : next === 'on')
-        }}
-      >
-        <ToggleGroupItem value="inherit">{t('mcp.inherit')}</ToggleGroupItem>
-        <ToggleGroupItem value="on">{t('mcp.on')}</ToggleGroupItem>
-        <ToggleGroupItem value="off">{t('mcp.off')}</ToggleGroupItem>
-      </ToggleGroup>
-      <span className="text-xs text-muted-foreground">
-        {t('mcp.effective', { state: t((value ?? inherited) ? 'mcp.on' : 'mcp.off') })}
-      </span>
-    </div>
   )
 }
 export function CodemodeSetting() {
