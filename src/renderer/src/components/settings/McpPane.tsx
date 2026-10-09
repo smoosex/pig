@@ -1,5 +1,5 @@
 /** Added server rows and discovery share one pane; management details open without expanding rows. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   LogOut,
   Plus,
@@ -138,6 +138,8 @@ export function McpPane() {
   const [removing, setRemoving] = useState<string>()
   const [login, setLogin] = useState<string>()
   const [probes, setProbes] = useState<Record<string, McpProbeResult>>({})
+  const activeProbes = useRef(new Set<string>())
+  const [testing, setTesting] = useState(() => new Set<string>())
   useEffect(() => {
     let current = true
     const timer = window.setTimeout(
@@ -163,12 +165,22 @@ export function McpPane() {
     }
   }, [query])
   const probe = (name: string, authenticate = false) => {
+    // Claim synchronously; repeat clicks can arrive before React disables the row.
+    if (activeProbes.current.has(name) || useToolSettingsStore.getState().busy) return
+    activeProbes.current.add(name)
+    setTesting(new Set(activeProbes.current))
     if (authenticate) setLogin(name)
-    void run(() => (authenticate ? api.loginMcpServer(name) : api.testMcpServer(name)))
+    void run(() => (authenticate ? api.loginMcpServer(name) : api.testMcpServer(name)), {
+      blocking: authenticate
+    })
       .then((result) => {
         if (result) setProbes((old) => ({ ...old, [name]: result }))
       })
-      .finally(() => setLogin(undefined))
+      .finally(() => {
+        activeProbes.current.delete(name)
+        setTesting(new Set(activeProbes.current))
+        if (authenticate) setLogin(undefined)
+      })
   }
   return (
     <div className="flex flex-col gap-5">
@@ -212,6 +224,7 @@ export function McpPane() {
               ? server.config.url
               : [server.config.command, ...(server.config.args ?? [])].join(' ')
           const result = probes[server.name]
+          const rowBusy = busy || testing.has(server.name)
           return (
             <Card key={server.name} className="gap-3 py-3">
               <CardHeader className="flex flex-row items-center gap-3">
@@ -230,14 +243,14 @@ export function McpPane() {
                     label={t('mcp.edit')}
                     name={server.name}
                     icon={Settings}
-                    disabled={busy}
+                    disabled={rowBusy}
                     onClick={() => setDialog({ server })}
                   />
                   <McpAction
                     label={t('mcp.test')}
                     name={server.name}
                     icon={Radar}
-                    disabled={busy}
+                    disabled={rowBusy}
                     onClick={() => probe(server.name)}
                   />
                   {server.authenticated ? (
@@ -246,7 +259,7 @@ export function McpPane() {
                       name={server.name}
                       hint={t('mcp.authenticated')}
                       icon={LogOut}
-                      disabled={busy}
+                      disabled={rowBusy}
                       onClick={() =>
                         void run(() => api.logoutMcpServer(server.name)).then((result) => {
                           if (result)
@@ -263,7 +276,7 @@ export function McpPane() {
                       label={t('mcp.login')}
                       name={server.name}
                       icon={Verified}
-                      disabled={busy}
+                      disabled={rowBusy}
                       onClick={() => probe(server.name, true)}
                     />
                   ) : null}
@@ -271,13 +284,13 @@ export function McpPane() {
                     label={t('mcp.remove')}
                     name={server.name}
                     icon={Trash2}
-                    disabled={busy}
+                    disabled={rowBusy}
                     onClick={() => setRemoving(server.name)}
                   />
                   <Switch
                     className="ml-2"
                     checked={server.config.enabled === true}
-                    disabled={busy}
+                    disabled={rowBusy}
                     aria-label={`${t('mcp.enabled')} ${server.name}`}
                     onCheckedChange={(value) =>
                       void run(() => api.setMcpEnabled(server.name, value))

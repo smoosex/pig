@@ -1,4 +1,7 @@
-/** One configuration snapshot for all settings panes; invalidate stale reads after writes and main pushes. */
+/**
+ * Shared settings snapshot, refreshed after operations and main pushes without committing stale reads.
+ * Mutations take the global UI lock; read-only probes may opt out and use row locks in the pane.
+ */
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import { api, type McpSettingsState } from '../ipc/api'
@@ -9,7 +12,7 @@ interface Store {
   busy: boolean
   error: string | null
   load(): Promise<void>
-  run<T>(operation: () => Promise<T>): Promise<T | undefined>
+  run<T>(operation: () => Promise<T>, options?: { blocking?: boolean }): Promise<T | undefined>
 }
 export const useToolSettingsStore = create<Store>((set) => {
   let reading: Promise<void> | undefined
@@ -46,10 +49,10 @@ export const useToolSettingsStore = create<Store>((set) => {
     busy: false,
     error: null,
     load,
-    async run<T>(operation: () => Promise<T>) {
+    async run<T>(operation: () => Promise<T>, { blocking = true }: { blocking?: boolean } = {}) {
       revision++
-      operations++
-      set({ busy: true, error: null })
+      if (blocking) operations++
+      set({ busy: operations > 0, error: null })
       try {
         const result = await operation()
         revision++
@@ -61,7 +64,7 @@ export const useToolSettingsStore = create<Store>((set) => {
         toast.error(message)
         return undefined
       } finally {
-        operations--
+        if (blocking) operations--
         set({ busy: operations > 0 })
       }
     }

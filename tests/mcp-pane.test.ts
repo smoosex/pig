@@ -1,7 +1,12 @@
 /** The unified pane retains management actions while discovery remains visible. */
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { McpMarketServer, McpSettingsState, SessionApi } from '../src/shared/api'
+import type {
+  McpMarketServer,
+  McpProbeResult,
+  McpSettingsState,
+  SessionApi
+} from '../src/shared/api'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -35,6 +40,8 @@ async function fixture(): Promise<void> {
   }))
   const calls: Array<[string, ...unknown[]]> = []
   let probeState: 'failed' | 'needs-auth' = 'failed'
+  const pendingProbes = new Map<string, Promise<McpProbeResult>>()
+  let pendingLogin: Promise<void> | undefined
   const service = {
     getMcpSettings: async () => state,
     searchMcpMarket: async (query: string) => {
@@ -48,6 +55,8 @@ async function fixture(): Promise<void> {
     },
     testMcpServer: async (name: string) => {
       calls.push(['test', name])
+      const pending = pendingProbes.get(name)
+      if (pending) return pending
       return {
         state: probeState,
         message: probeState === 'needs-auth' ? 'Sign in required' : 'Connection refused',
@@ -56,6 +65,7 @@ async function fixture(): Promise<void> {
     },
     loginMcpServer: async (name: string) => {
       calls.push(['login', name])
+      if (pendingLogin) await pendingLogin
       state.servers.find((server) => server.name === name)!.authenticated = true
       return { state: 'ready' as const, tools: [{ name: 'lookup', description: 'Find docs' }] }
     },
@@ -271,6 +281,87 @@ async function fixture(): Promise<void> {
     await act(async () => {
       store.setState({ busy: false })
     })
+    let finishDocs!: (result: McpProbeResult) => void
+    let failFiles!: (error: Error) => void
+    pendingProbes.set(
+      'docs',
+      new Promise((resolve) => {
+        finishDocs = resolve
+      })
+    )
+    pendingProbes.set(
+      'files',
+      new Promise((_, reject) => {
+        failFiles = reject
+      })
+    )
+    const docsTests = calls.filter(([kind, name]) => kind === 'test' && name === 'docs').length
+    await act(async () => {
+      button('Test connection docs').click()
+      button('Test connection docs').click()
+    })
+    assert.equal(
+      calls.filter(([kind, name]) => kind === 'test' && name === 'docs').length,
+      docsTests + 1,
+      'same-server clicks cannot start overlapping connections'
+    )
+    assert.equal(store.getState().busy, false, 'a probe never takes the global lock')
+    for (const action of ['Edit configuration', 'Test connection', 'Remove', 'Globally enabled']) {
+      assert.equal(button(`${action} docs`).disabled, true)
+      assert.equal(button(`${action} files`).disabled, false)
+    }
+    assert.equal(button('OAuth sign in docs').disabled, true)
+    assert.equal(button('Add MCP').disabled, false)
+    await click('Test connection files')
+    assert.ok(button('Test connection docs').disabled)
+    assert.ok(button('Test connection files').disabled)
+
+    let finishWrite!: () => void
+    let write!: Promise<void | undefined>
+    await act(async () => {
+      write = store.getState().run(
+        () =>
+          new Promise<void>((resolve) => {
+            finishWrite = resolve
+          })
+      )
+    })
+    await act(async () => {
+      finishDocs({ state: 'ready', tools: [] })
+    })
+    await flush()
+    assert.equal(store.getState().busy, true, 'finishing a probe cannot release a write lock')
+    await act(async () => {
+      finishWrite()
+      await write
+    })
+    assert.equal(button('Test connection docs').disabled, false)
+    assert.equal(button('Test connection files').disabled, true, 'only files is still testing')
+    assert.ok(button('Test passed · 0 tools · docs'))
+
+    let finishLogin!: () => void
+    pendingLogin = new Promise<void>((resolve) => {
+      finishLogin = resolve
+    })
+    await click('OAuth sign in docs')
+    assert.ok(button('Cancel sign in'))
+    await act(async () => {
+      failFiles(new Error('Probe exploded'))
+    })
+    await flush()
+    assert.match(store.getState().error ?? '', /Probe exploded/)
+    assert.equal(store.getState().busy, true, 'a failed probe cannot release the login lock')
+    assert.ok(button('Cancel sign in'), 'finishing another probe cannot hide login cancellation')
+    pendingProbes.clear()
+    await act(async () => {
+      finishLogin()
+    })
+    await flush()
+    assert.equal(store.getState().busy, false)
+    assert.equal(button('Test connection files').disabled, false, 'errors release the row lock')
+    await click('Test connection files')
+    assert.ok(button('Authentication required · 0 tools · files'))
+    await click('Sign out docs')
     await click('Remove docs')
     await flush()
     assert.equal(
