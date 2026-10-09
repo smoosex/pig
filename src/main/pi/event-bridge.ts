@@ -4,6 +4,20 @@ import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
 const bridged = new WeakSet<AgentSession>()
+const activeRuns = new WeakSet<AgentSession>()
+const activeInputs = new WeakMap<AgentSession, number>()
+// Pi remains idle during async input hooks/auth checks; a host input lease covers that preflight.
+export function beginSessionInput(session: AgentSession): () => void {
+  activeInputs.set(session, (activeInputs.get(session) ?? 0) + 1)
+  return () => {
+    const remaining = (activeInputs.get(session) ?? 1) - 1
+    if (remaining) activeInputs.set(session, remaining)
+    else activeInputs.delete(session)
+  }
+}
+export function isSessionRunActive(session: AgentSession): boolean {
+  return activeRuns.has(session) || (activeInputs.get(session) ?? 0) > 0
+}
 
 async function notifyOnCompletion(sessionId: string, win: BrowserWindow, signal: AbortSignal): Promise<void> {
   const { sendCompletionNotification } = await import('../completion-notification')
@@ -118,6 +132,7 @@ export function bridgeEvents(
   const forward = (event: AgentSessionEvent) => {
     if (!subscribed) return
     if (event.type === 'agent_start') {
+      activeRuns.add(session)
       runActive = true
       lastAnswerSucceeded = false
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
@@ -168,6 +183,7 @@ export function bridgeEvents(
         : event
     win.webContents.send('pi:event', { sessionId, event: enriched })
     if (event.type === 'agent_settled') {
+      activeRuns.delete(session)
       if (runActive && lastAnswerSucceeded && !event.aborted) {
         void notify(sessionId, win, lifetime.signal).catch((error: unknown) => {
           console.error('Could not send completion notification:', error)

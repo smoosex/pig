@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import net from "node:net";
+import { isBlockedAddress } from "../../network-address.ts";
 import type * as Undici from "undici";
 import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl } from "./utils.ts";
 
@@ -456,13 +457,13 @@ function assertPublicAddress(address: string, hostname: string, allowRanges: Par
 	// Explicitly-allowed ranges bypass the private/reserved checks below. This lets
 	// users exempt synthetic ranges produced by TUN/fake-IP proxies (e.g. 198.18/15).
 	if (isInAllowedRange(normalized, ipVersion, allowRanges)) return;
-	if (ipVersion === 4 && isBlockedIPv4(normalized)) {
+	if (ipVersion === 4 && isBlockedAddress(normalized)) {
 		const hint = isFakeIpProxyAddress(normalized)
 			? '. This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure ssrf.allowRanges with ["198.18.0.0/15"] in web-search.json.'
 			: "";
 		throw new Error(`Blocked internal address for ${hostname}: ${normalized}${hint}`);
 	}
-	if (ipVersion === 6 && isBlockedIPv6(normalized)) {
+	if (ipVersion === 6 && isBlockedAddress(normalized)) {
 		throw new Error(`Blocked internal address for ${hostname}: ${normalized}`);
 	}
 }
@@ -470,40 +471,6 @@ function assertPublicAddress(address: string, hostname: string, allowRanges: Par
 function isFakeIpProxyAddress(address: string): boolean {
 	const [a, b] = address.split(".").map(part => Number(part));
 	return a === 198 && (b === 18 || b === 19);
-}
-
-function isBlockedIPv4(address: string): boolean {
-	const parts = address.split(".").map(part => Number(part));
-	if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-	const [a, b] = parts;
-	return a === 0 ||
-		a === 10 ||
-		a === 127 ||
-		(a === 100 && b >= 64 && b <= 127) ||
-		(a === 169 && b === 254) ||
-		(a === 172 && b >= 16 && b <= 31) ||
-		(a === 192 && b === 168) ||
-		isFakeIpProxyAddress(address) ||
-		a >= 224;
-}
-
-function isBlockedIPv6(address: string): boolean {
-	const groups = parseIPv6(address);
-	if (!groups) return true;
-
-	const first = groups[0];
-	if (groups.every(group => group === 0)) return true;
-	if (groups.slice(0, 7).every(group => group === 0) && groups[7] === 1) return true;
-	if ((first & 0xfe00) === 0xfc00) return true;
-	if ((first & 0xffc0) === 0xfe80) return true;
-
-	const isMappedIPv4 = groups.slice(0, 5).every(group => group === 0) && groups[5] === 0xffff;
-	if (isMappedIPv4) {
-		const ipv4 = [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join(".");
-		return isBlockedIPv4(ipv4);
-	}
-
-	return false;
 }
 
 function parseIPv6(address: string): number[] | null {

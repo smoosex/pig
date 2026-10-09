@@ -2,6 +2,31 @@ import type { Messages } from './zh'
 
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
+  mcp: {
+    title: 'MCP', description: 'Manage external tool servers, authentication and global defaults.',
+    projects: 'Project settings', projectDescription: 'Inherit global tools or override them for this project. Its worktrees share these preferences.',
+    tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',
+    inherit: 'Inherit', on: 'On', off: 'Off', effective: 'Effective: {state}', pending: '{n} running sessions will apply changes after their current task finishes.',
+    installed: 'Added', market: 'Marketplace', add: 'Add MCP', import: 'Import JSON', edit: 'Edit configuration', remove: 'Remove',
+    search: 'Search the official MCP Registry', source: 'Featured recipes reference Magpie; search uses the official MCP Registry. Listings are not a security review.',
+    loading: 'Loading…', empty: 'No MCP servers added', emptyDescription: 'Choose a server from the marketplace or add a configuration manually.', noMatches: 'No compatible servers found',
+    addRecipe: 'Add {name}', added: 'Added', enabled: 'Globally enabled', configured: 'New entries are saved disabled; replacements keep their existing enable state.',
+    test: 'Test connection', testDescription: 'Testing connects a remote service or starts a local process, without calling a model or business tool.', ready: 'Test passed', needsAuth: 'Authentication required', failed: 'Connection failed',
+    login: 'OAuth sign in', logout: 'Sign out', authenticated: 'OAuth credentials saved', cancelLogin: 'Cancel sign in', oauth: 'OAuth sign in', oauthRedirect: 'If the browser callback cannot reach Pig, paste the complete redirected URL.',
+    localAccessTitle: 'Allow MCP local-network access?',
+    localAccessDescription: '{origin} resolves to local or reserved addresses: {addresses}. Allowing grants access to services at these addresses for this connection runtime only.',
+    removeTitle: 'Remove {name}?', removeDescription: 'Remove Pig configuration and project overrides, and close connections. System runtimes and shared caches are kept.',
+    form: 'Form', json: 'JSON', name: 'Server name', nameDescription: 'Letters, digits, underscores and hyphens only.', transport: 'Transport', http: 'Remote HTTP', stdio: 'Local stdio',
+    url: 'Server URL', command: 'Executable', args: 'Arguments (JSON array)', env: 'Environment (JSON object)', apiKey: 'API key (Bearer, optional)', headers: 'Headers (JSON object)',
+    config: 'MCP configuration', configHint: 'Accepts one server or a complete mcpServers object. Advanced OAuth options can be configured in JSON.',
+    keepJson: 'Configuration was edited in JSON. Keep JSON mode to preserve your changes.',
+    formSingle: 'The form edits one server at a time. Keep JSON mode to import multiple entries.',
+    preview: 'Preview merge', save: 'Save', conflicts: 'Existing configurations will be replaced: {names}', confirmReplace: 'Confirm replacing these configurations',
+    safety: 'Commands run with your system permissions. New entries are disabled; check their source and arguments before enabling or testing.',
+    projectMcp: 'MCP enable overrides', globalDefault: 'Global default: {state}', noProjects: 'No projects open',
+    nested: 'Nested tool calls ({n})', incomplete: 'Some calls or arguments were not saved.', running: 'Running', success: 'Succeeded', error: 'Failed', unfinished: 'Unfinished',
+    duration: '{ms} ms', argumentsOmitted: 'Arguments omitted ({n} bytes)', promptDescription: 'An extension is requesting your input.', toolsCount: '{n} tools'
+  },
   common: {
     cancel: 'Cancel',
     continue: 'Continue',

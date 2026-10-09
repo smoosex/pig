@@ -1,10 +1,12 @@
 import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
+import type { LiveNestedCalls } from '../chat/nested-tools'
 import type {
   AssistantMessage as SdkAssistantMessage,
   ImageContent,
   TextContent,
   ThinkingContent,
   ToolCall,
+  SystemMessage,
   ToolResultMessage,
   UserMessage
 } from '@earendil-works/pi-ai'
@@ -79,12 +81,13 @@ export type PiMessage =
   | PigUserMessage
   | AssistantMessage
   | ToolResultMessage
+  | SystemMessage
   | BashExecutionMessage
   | CustomMessage
   | BranchSummaryMessage
   | CompactionSummaryMessage
 
-export type ToolPartialResult = Pick<ToolResultMessage, 'content' | 'details'>
+export type ToolPartialResult = Pick<ToolResultMessage, 'content' | 'details'> & { nestedCalls?: LiveNestedCalls }
 
 export interface PiSessionEvent {
   type: string
@@ -93,6 +96,8 @@ export interface PiSessionEvent {
   name?: string
   toolCallId?: string
   toolName?: string
+  parentToolCallId?: string
+  durationMs?: number
   args?: unknown
   partialResult?: ToolPartialResult
   result?: unknown

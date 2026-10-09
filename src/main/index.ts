@@ -15,6 +15,8 @@ import { flushOpenProjectSessions } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
 import { importShellEnvironment } from './shell-env'
+import { cancelMcpOperations } from './mcp/manager'
+import { flushToolMutations } from './mcp/settings'
 
 // Pig-dir resolution needs Electron, but bundled extensions load through a module loader that
 // cannot resolve 'electron'. Publish the resolved directory so extensions stay dependency-free.
@@ -89,7 +91,7 @@ app.on('before-quit', (event) => {
   if (isDisposing) return
   event.preventDefault()
   isDisposing = true
-  const teardown = Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions()])
+  const teardown = Promise.allSettled([worktrees.shutdown(), flushOpenProjectSessions(), cancelMcpOperations(), flushToolMutations()])
     .then(() => disposeAll())
     .catch(() => {})
   void Promise.race([teardown, new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))])

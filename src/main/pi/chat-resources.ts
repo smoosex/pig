@@ -5,13 +5,14 @@ import {
   DefaultResourceLoader,
   getAgentDir,
   SettingsManager,
-  type ResourceLoader
+  type ResourceLoader,
+  type ExtensionFactory
 } from '@earendil-works/pi-coding-agent'
 
 const CHAT_APPEND_PROMPT = `This session is a conversation, not a software project.
 The current working directory is an empty scratch folder for this chat. It is not the user's project.
 Do not list, read, search, or otherwise inspect the working directory or parent directories unless the user explicitly asks you to use files or commands.
-Answer from the conversation. Only use tools when the user asks for file, command, or workspace work.`
+Answer from the conversation. Enabled external services and Codemode may help with the user's request, but they do not authorize inspecting this scratch folder or parent directories.`
 
 function isInside(file: string, root: string): boolean {
   const base = resolve(root)
@@ -41,12 +42,18 @@ export function sessionResourceSettings(cwd: string, agentDir: string): Settings
   })
 }
 
-export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = []): Promise<ResourceLoader> {
+interface SessionResourceOptions {
+  settingsManager?: SettingsManager
+  extensionFactories?: ExtensionFactory[]
+}
+
+export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager: sessionResourceSettings(cwd, agentDir),
+    settingsManager: options.settingsManager ?? sessionResourceSettings(cwd, agentDir),
+    extensionFactories: options.extensionFactories,
     noExtensions: true,
     additionalExtensionPaths: pluginPaths
   })
@@ -54,13 +61,14 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
   return loader
 }
 
-export async function createChatResourceLoader(cwd: string): Promise<ResourceLoader> {
+export async function createChatResourceLoader(cwd: string, options: SessionResourceOptions = {}): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
   const userAgents = resolve(homedir(), '.agents')
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    settingsManager: sessionResourceSettings(cwd, agentDir),
+    settingsManager: options.settingsManager ?? sessionResourceSettings(cwd, agentDir),
+    extensionFactories: options.extensionFactories,
     noExtensions: true,
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))

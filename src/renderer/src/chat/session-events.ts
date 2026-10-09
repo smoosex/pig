@@ -4,6 +4,7 @@ import { useSessionsStore } from '../stores/sessions'
 import { MAX_LIVE_BASH_CHARS } from '../stores/sessions/conversation-slice'
 import { sameMessage } from '../stores/sessions/runtime'
 import { createThinkingTracker } from './thinking-tracker'
+import { nestedCallsForEvent } from './nested-tools'
 
 const HYDRATE_DELAY_MS = 320
 
@@ -92,6 +93,12 @@ export function subscribeSessionEvents(): () => void {
       for (const id of bashDeltas.keys()) flushBash(id)
     })
   }
+  const toolSnapshot = (sessionId: string, toolCallId: string): ToolPartialResult | undefined => {
+    const current = useSessionsStore.getState().runtime[sessionId]
+    const pending = toolSnapshots.get(sessionId)
+    return (pending?.instanceId === current?.instanceId && pending?.branchRequest === current?.branchRequest
+      ? pending?.results.get(toolCallId) : undefined) ?? current?.toolUpdates[toolCallId]
+  }
   const queueToolSnapshot = (sessionId: string, toolCallId: string, result: ToolPartialResult) => {
     const current = useSessionsStore.getState().runtime[sessionId]
     if (!current) return
@@ -100,7 +107,8 @@ export function subscribeSessionEvents(): () => void {
       pending = { instanceId: current.instanceId, branchRequest: current.branchRequest, results: new Map() }
       toolSnapshots.set(sessionId, pending)
     }
-    pending.results.set(toolCallId, result)
+    const nestedCalls = result.nestedCalls ?? toolSnapshot(sessionId, toolCallId)?.nestedCalls
+    pending.results.set(toolCallId, nestedCalls ? { ...result, nestedCalls } : result)
     scheduleFrame()
   }
   const queueBashDelta = (sessionId: string, id: string, delta: string) => {
@@ -196,8 +204,23 @@ export function subscribeSessionEvents(): () => void {
             : event.message)
         }
         break
+      case 'tool_execution_start':
+      case 'tool_execution_end': {
+        if (typeof event.parentToolCallId !== 'string') break
+        // Pi scopes deeper calls as <caller>/<n> but persists all descendants on the model-issued
+        // parent. Match against actual transcript IDs instead of assuming those IDs contain no '/'.
+        const parent = current.liveMessages.flatMap((message) => message.role === 'assistant'
+          ? message.content.filter((item) => item.type === 'toolCall') : [])
+          .sort((a, b) => b.id.length - a.id.length)
+          .find((call) => call.id === event.parentToolCallId || event.parentToolCallId!.startsWith(`${call.id}/`))
+        if (!parent || current.liveMessages.some((message) => message.role === 'toolResult' && message.toolCallId === parent.id)) break
+        const snapshot = toolSnapshot(sessionId, parent.id) ?? { content: [] }
+        const nestedCalls = nestedCallsForEvent(snapshot.nestedCalls, event)
+        if (nestedCalls) queueToolSnapshot(sessionId, parent.id, { ...snapshot, nestedCalls })
+        break
+      }
       case 'tool_execution_update':
-        if (typeof event.toolCallId === 'string' && event.partialResult && Array.isArray(event.partialResult.content)) {
+        if (!event.parentToolCallId && typeof event.toolCallId === 'string' && event.partialResult && Array.isArray(event.partialResult.content)) {
           queueToolSnapshot(sessionId, event.toolCallId, event.partialResult)
         }
         break

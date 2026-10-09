@@ -12,6 +12,7 @@ import { Separator } from '../ui/separator'
 import { Chevron, disclosureButton, VerbLabel } from './ProcessChrome'
 import { useT } from '../../hooks/useT'
 import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
+import { NestedToolCalls } from './NestedToolCalls'
 
 const EditDiffBody = lazy(() => import('../diff/EditDiffBody'))
 
@@ -97,6 +98,7 @@ export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) 
   const writeCode = step.name === 'write' && typeof step.args.content === 'string' ? step.args.content : ''
   const bashCommand = step.name === 'bash' && typeof step.args.command === 'string' ? step.args.command : ''
   const read = step.name === 'read' && !failed ? splitReadOutput(output) : undefined
+  const nested = step.result?.nestedCalls ?? step.partialResult?.nestedCalls
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger asChild>
@@ -119,6 +121,7 @@ export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) 
         ) : (
           <ToolPanel input={toolInput(step)} output={output} />
         )}
+        {nested ? <NestedToolCalls record={nested} /> : null}
       </CollapsibleContent>
     </Collapsible>
   )

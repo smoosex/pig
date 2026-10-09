@@ -144,6 +144,33 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(second.streamEvent, undefined)
       emit({ type: 'agent_settled' })
       assert.equal(turn().streaming, false)
+    } else if (name === 'nested-tools') {
+      const parent = 'parent/with/slash'
+      const calls = { ...assistant(''), content: [{ type: 'toolCall', id: parent, name: 'codemode', arguments: { code: 'return tools.read(...)' } }] } as PiMessage
+      emit({ type: 'agent_start' })
+      emit({ type: 'message_start', message: calls })
+      emit({ type: 'tool_execution_start', toolCallId: `${parent}/1`, parentToolCallId: parent, toolName: 'read', args: { path: 'a' } })
+      emit({ type: 'tool_execution_start', toolCallId: `${parent}/1/1`, parentToolCallId: `${parent}/1`, toolName: 'other', args: { n: 2 } })
+      emit({ type: 'tool_execution_update', toolCallId: parent, partialResult: { content: [{ type: 'text', text: 'parent progress' }] } })
+      emit({ type: 'tool_execution_update', toolCallId: `${parent}/1`, parentToolCallId: parent, partialResult: { content: [{ type: 'text', text: 'must not be a child result body' }] } })
+      flush()
+      assert.deepEqual(runtime().liveMessages, [calls])
+      assert.deepEqual(Object.keys(runtime().toolUpdates), [parent])
+      assert.equal(runtime().toolUpdates[parent].nestedCalls?.calls.length, 2)
+      assert.equal(runtime().toolUpdates[parent].nestedCalls?.calls[0].status, 'running')
+      emit({ type: 'tool_execution_end', toolCallId: `${parent}/1`, parentToolCallId: parent, toolName: 'read', durationMs: 30, isError: true, result: { content: [{ type: 'text', text: 'missing file' }] } })
+      flush()
+      assert.deepEqual(runtime().toolUpdates[parent].nestedCalls?.calls[0], { id: `${parent}/1`, name: 'read', arguments: { path: 'a' }, status: 'error', durationMs: 30, error: 'missing file' })
+      const final = { ...tool(parent), toolName: 'codemode', nestedCalls: { calls: [{ id: `${parent}/1`, name: 'read', arguments: { path: 'a' }, status: 'error' as const, durationMs: 30, error: 'missing file' }], complete: true } }
+      emit({ type: 'message_start', message: final })
+      emit({ type: 'message_end', message: final })
+      flush()
+      assert.deepEqual(runtime().toolUpdates, {})
+      const step = groupTurns(runtime().liveMessages, true)[0].process.flatMap((item) => item.kind === 'tools' ? item.tools : [])[0]
+      assert.deepEqual(step.result?.nestedCalls, final.nestedCalls)
+      emit({ type: 'tool_execution_end', toolCallId: `${parent}/1/1`, parentToolCallId: `${parent}/1`, toolName: 'other', isError: false })
+      flush()
+      assert.deepEqual(runtime().toolUpdates, {}, 'late descendants must not replace persisted parent metadata')
     } else if (name === 'tools') {
       const partial = (text: string) => ({
         content: [{ type: 'text' as const, text }], details: { progress: text }
@@ -627,6 +654,7 @@ if (process.argv[2] === '--renderer-events-fixture') {
     boundaries: 'message boundaries preserve queued updates and distinct tool results',
     'thinking-segments': 'thinking snapshots retain their latest stream event without mutating Pi messages',
     tools: 'tool snapshots are batched independently and final messages clear pending updates',
+    'nested-tools': 'nested calls remain bounded parent metadata and replay from the SDK result, never messages',
     bash: 'command output is batched per frame and follows the active execution id',
     closed: 'queued frames and late events cannot affect a closed or reopened session',
     cleanup: 'unsubscribing cancels frames, hydration timers, and subscriptions',

@@ -21,7 +21,7 @@ async function fixture(): Promise<void> {
   mock.module(modulePath('../src/main/i18n.ts'), () => ({ t: (key: string) => key }))
   mock.module(modulePath('../src/main/pi/session-registry.ts'), () => ({
     ...Object.fromEntries([
-      'activateSession', 'closeSession', 'createPendingSession', 'discardDraftSession', 'exportSession',
+      'activateSession', 'activateSessionInput', 'closeSession', 'createPendingSession', 'discardDraftSession', 'exportSession',
       'getSessionControls', 'getSessionTokenStats', 'getSessionTrees', 'listSessionCommands', 'openSession',
       'promoteDraftSession', 'refreshSessionModels', 'renameSession', 'setSessionLabel', 'setSessionModel',
       'setSessionThinking', 'updateFollowUpMessage', 'viewSessionBranch'

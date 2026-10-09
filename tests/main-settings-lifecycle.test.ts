@@ -33,6 +33,7 @@ async function fixture(name: string): Promise<void> {
     }
     mock.module('electron', () => ({ app: { isPackaged: false } }))
     const sdk = await import('@earendil-works/pi-coding-agent')
+    const resourceSettings = sdk.SettingsManager.fromStorage({ withLock(_scope, fn) { assert.equal(fn('{"packages":[]}'), undefined) } })
     mock.module('@earendil-works/pi-coding-agent', () => ({
       ...sdk,
       createAgentSession: async () => ({ session }),
@@ -50,7 +51,9 @@ async function fixture(name: string): Promise<void> {
       tokenStatsFor: () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 })
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
-      createChatResourceLoader: async () => undefined, createNoExtensionsResourceLoader: async () => undefined
+      sessionResourceSettings: () => resourceSettings,
+      createChatResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
+      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) })
     }))
     mock.module(fileURLToPath(new URL('../src/main/chats.ts', import.meta.url)), () => ({ isChatCwd: () => false }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: { assertAvailable() {} } }))

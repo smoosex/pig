@@ -4,6 +4,31 @@
  * Placeholders are `{name}` and are filled by `translate`.
  */
 export const zh = {
+  mcp: {
+    title: 'MCP', description: '管理外部工具服务器、认证和全局启用状态。',
+    projects: '项目设置', projectDescription: '继承全局工具配置，或为该项目单独覆盖；同一项目的 worktree 共用设置。',
+    tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',
+    inherit: '继承', on: '开启', off: '关闭', effective: '实际状态：{state}', pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
+    installed: '已添加', market: '商店', add: '添加 MCP', import: '导入 JSON', edit: '编辑配置', remove: '移除',
+    search: '搜索官方 MCP Registry', source: '精选参考 Magpie；搜索来自官方 MCP Registry。发现不代表安全审查。',
+    loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
+    addRecipe: '添加 {name}', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
+    test: '测试连接', testDescription: '测试会连接远程服务或启动本地进程，不调用模型或业务工具。', ready: '测试成功', needsAuth: '需要认证', failed: '连接失败',
+    login: 'OAuth 登录', logout: '退出登录', authenticated: '已保存 OAuth 认证', cancelLogin: '取消登录', oauth: 'OAuth 登录', oauthRedirect: '如果浏览器回调无法到达 Pig，请粘贴跳转后的完整 URL。',
+    localAccessTitle: '允许 MCP 访问本地网络？',
+    localAccessDescription: '{origin} 解析到本地或保留地址：{addresses}。允许后可访问这些地址上的服务；授权仅在当前连接运行时有效。',
+    removeTitle: '移除 {name}？', removeDescription: '删除 Pig 的配置和项目覆盖，关闭对应连接；不会删除系统运行时或共享缓存。',
+    form: '表单', json: 'JSON', name: '服务器名称', nameDescription: '仅支持字母、数字、下划线和连字符。', transport: '连接方式', http: '远程 HTTP', stdio: '本地 stdio',
+    url: '服务器 URL', command: '可执行程序', args: '参数（JSON 数组）', env: '环境变量（JSON 对象）', apiKey: 'API Key（Bearer，可选）', headers: '请求头（JSON 对象）',
+    config: 'MCP 配置', configHint: '支持单条配置或完整的 mcpServers 对象；OAuth 高级参数可在 JSON 中配置。',
+    keepJson: '配置已在 JSON 中修改，请保留 JSON 模式以免丢失更改。',
+    formSingle: '表单仅能编辑单个服务器，请继续用 JSON 导入多个条目。',
+    preview: '预览合并', save: '保存', conflicts: '同名配置将被替换：{names}', confirmReplace: '确认替换上述同名配置',
+    safety: '配置中的命令会以你的系统权限运行。新增条目默认关闭，启用或测试前请检查来源和参数。',
+    projectMcp: 'MCP 启用覆盖', globalDefault: '全局默认：{state}', noProjects: '尚未打开项目',
+    nested: '子工具调用（{n}）', incomplete: '部分子调用或参数未保存。', running: '执行中', success: '成功', error: '失败', unfinished: '未完成',
+    duration: '{ms} 毫秒', argumentsOmitted: '参数未保存（{n} 字节）', promptDescription: '扩展请求与你交互。', toolsCount: '{n} 个工具'
+  },
   common: {
     cancel: '取消',
     continue: '继续',

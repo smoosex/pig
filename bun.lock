@@ -5,7 +5,7 @@
     "": {
       "name": "pig",
       "dependencies": {
-        "@earendil-works/pi-coding-agent": "^1.1.0",
+        "@earendil-works/pi-coding-agent": "1.1.0",
         "@electron-toolkit/utils": "^4.0.0",
       },
       "devDependencies": {
@@ -86,6 +86,7 @@
   ],
   "patchedDependencies": {
     "@shadcn/react@0.3.1": "patches/@shadcn%2Freact@0.3.1.patch",
+    "@earendil-works/pi-coding-agent@1.1.0": "patches/@earendil-works%2Fpi-coding-agent@1.1.0.patch",
   },
   "packages": {
     "@antfu/install-pkg": ["@antfu/install-pkg@2.0.1", "", { "dependencies": { "package-manager-detector": "^1.7.0", "tinyexec": "^1.2.4" } }, "sha512-iCKVQcIC0e3oDxEfs3SHQGW+ovhBMZmS1TE+bTk50rVyMCBmCfClv7Qi3HQKlumYwvjb/iIMeWCW2i67q6kFfQ=="],

@@ -9,6 +9,7 @@ async function fixture(): Promise<void> {
   const accepted: Array<Parameters<AgentSession['prompt']>[1]> = []
   const pendingModes: unknown[] = []
   let cancelled = 0
+  let released = 0
   const session = {
     isStreaming: false,
     isBashRunning: false,
@@ -20,7 +21,7 @@ async function fixture(): Promise<void> {
     }
   }
   mock.module('../src/main/pi/session-registry', () => ({
-    activateSession: async () => ({ session: { cwd: '/project', agentSession: session } })
+    activateSessionInput: async () => ({ session: { cwd: '/project', agentSession: session }, releaseInput: () => { released++ } })
   }))
   mock.module('../src/main/project-worktrees', () => ({
     worktrees: { assertAvailable: () => {}, nameOnFirstPrompt: () => { throw new Error('Message not yet accepted') } }
@@ -50,6 +51,7 @@ async function fixture(): Promise<void> {
   }
   assert.equal(accepted.length, 2)
   assert.equal(cancelled, 2)
+  assert.equal(released, 4)
 }
 
 async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise<void> {
@@ -99,7 +101,7 @@ async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise
     }
   }
   mock.module('../src/main/pi/session-registry', () => ({
-    activateSession: async () => ({ session: { cwd: '/project', agentSession: session } })
+    activateSessionInput: async () => ({ session: { cwd: '/project', agentSession: session }, releaseInput: () => {} })
   }))
   mock.module('../src/main/project-worktrees', () => ({
     worktrees: { assertAvailable: () => {}, nameOnFirstPrompt: async (_cwd: string, text: string) => { named.push(text) } }

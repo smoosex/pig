@@ -5,6 +5,7 @@ import { registerSystemIpc } from './system'
 import { registerDiffIpc } from './diff'
 import { registerFilesIpc } from './files'
 import { registerPluginIpc } from './plugins'
+import { registerMcpIpc } from './mcp'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -14,4 +15,5 @@ export function registerIpc(): void {
   registerDiffIpc()
   registerFilesIpc()
   registerPluginIpc()
+  registerMcpIpc()
 }

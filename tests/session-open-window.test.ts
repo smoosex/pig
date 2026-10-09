@@ -108,8 +108,9 @@ async function runFixture(): Promise<void> {
       worktrees: { assertAvailable() {} }
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
-      createChatResourceLoader: async () => undefined,
-      createNoExtensionsResourceLoader: async () => undefined
+      sessionResourceSettings: () => resourceSettings,
+      createChatResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
+      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) })
     }))
     // Bun rebinds the module's exports when a mock is registered, so the real function has to be
     // captured as a value before the mock replaces it.
@@ -129,6 +130,7 @@ async function runFixture(): Promise<void> {
       { id: 'plain', provider: 'test', name: 'Plain', reasoning: false, contextWindow: 200 }
     ]
     const sdk = await import('@earendil-works/pi-coding-agent')
+    const resourceSettings = sdk.SettingsManager.fromStorage({ withLock(_scope, fn) { assert.equal(fn('{"packages":[]}'), undefined) } })
     mock.module('@earendil-works/pi-coding-agent', () => ({
       ...sdk,
       ModelRuntime: { create: async () => ({

@@ -7,7 +7,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
-import { createAgentSession, SessionManager, type AgentSession, type SessionEntry } from '@earendil-works/pi-coding-agent'
+import { createAgentSession, getAgentDir, SessionManager, type AgentSession, type SessionEntry, type ResourceLoader } from '@earendil-works/pi-coding-agent'
 import { t } from '../i18n'
 import type {
   DisplayTurnsResult,
@@ -22,8 +22,12 @@ import type {
 import { normalizeWorktreePath as resolve } from '../worktrees'
 import { isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
-import { createChatResourceLoader, createNoExtensionsResourceLoader } from './chat-resources'
-import { bridgeEvents } from './event-bridge'
+import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
+import { canonicalProject } from '../worktrees'
+import { sessionToolFactory } from './tool-resources'
+import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
+import { emitToolSettingsChanged } from '../mcp/events'
+import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
 import { enabledPluginPaths } from './plugins'
 import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
 import { startModelRuntime } from './model-settings'
@@ -108,6 +112,37 @@ const pending = new Map<string, PendingSession>()
 const drafts = new Map<string, string>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
+const resourceFailures = new Map<string, Error>()
+class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
+function assertExtensionResources(loader: ResourceLoader): void {
+  const errors = loader.getExtensions().errors
+  if (errors.length) throw new SessionResourceError(errors.map((item) => `${item.path}: ${item.error}`).join('\n'))
+}
+async function reloadSessionResources(session: LiveSession): Promise<void> {
+  try {
+    await session.agentSession.reload({ beforeSessionStart: async () => assertExtensionResources(session.agentSession.resourceLoader) })
+    assertExtensionResources(session.agentSession.resourceLoader)
+    resourceFailures.delete(session.sessionId)
+  } catch (error) {
+    // SDK IO failures and loader-recorded factory errors both leave a replaced, unusable runtime.
+    const failure = new SessionResourceError(`Session resources unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    resourceFailures.set(session.sessionId, failure)
+    pendingToolRefresh.add(session.sessionId)
+    throw failure
+  }
+}
+function reportBackgroundReload(session: LiveSession, promise: Promise<void>): void {
+  void promise.catch((error) => {
+    // Background settings updates have no invoke caller; retain the blocked session and notify its owner.
+    console.error('Could not reload session resources:', error)
+    if (session.win && !session.win.isDestroyed() && !session.win.webContents.isDestroyed()) {
+      session.win.webContents.send('system-plugins:ui', {
+        kind: 'notify', sessionId: session.sessionId, plugin: 'host', level: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
+  })
+}
 
 function trackPreparation(
   sessionId: string,
@@ -133,17 +168,18 @@ async function build(
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
   const pluginPaths = isChatCwd(cwd) ? undefined : await enabledPluginPaths()
+  const toolProject = isChatCwd(cwd) ? null : await canonicalProject(cwd)
+  const settingsManager = sessionResourceSettings(cwd, getAgentDir())
+  const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd, toolProject)] }
   const resourceLoader = pluginPaths
-    ? await createNoExtensionsResourceLoader(cwd, pluginPaths)
-    : await createChatResourceLoader(cwd)
-  const extensionErrors = resourceLoader?.getExtensions().errors ?? []
-  if (extensionErrors.length) {
-    throw new Error(extensionErrors.map((item) => `${item.path}: ${item.error}`).join('\n'))
-  }
+    ? await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
+    : await createChatResourceLoader(cwd, resources)
+  assertExtensionResources(resourceLoader)
   const result = await createAgentSession({
     cwd,
     sessionManager,
     modelRuntime: await startModelRuntime(),
+    settingsManager,
     ...(resourceLoader ? { resourceLoader } : {})
   })
   const session = result.session
@@ -153,6 +189,7 @@ async function build(
     agentSession: session,
     unsubscribe: () => {},
     pluginPaths,
+    toolProject,
     win
   }
   try {
@@ -166,6 +203,7 @@ async function build(
     }
     await session.bindExtensions({
       mode: 'rpc',
+      uiContext: await createExtensionUI(win, session.sessionId),
       // Pi binds these actions only in its own hosts; without them ctx.navigateTree is a no-op that
       // reports success, which stranded extensions that switch branches (like code review).
       commandContextActions: {
@@ -181,7 +219,7 @@ async function build(
         },
         switchSession: async () => unsupportedAction('Switching sessions'),
         reload: async () => {
-          await session.reload()
+          await reloadSessionResources(created)
         }
       },
       onError: (error) => notifications.notify(`${error.extensionPath}: ${error.error}`, 'error')
@@ -375,12 +413,26 @@ export async function activateSession(
   }
 }
 
+export async function activateSessionInput(sessionId: string) {
+  const activated = await activateSession(sessionId)
+  while (resourceReloads.has(sessionId)) await prepareSession(sessionId)
+  if (closing.has(sessionId) || live.get(sessionId) !== activated.session) throw new Error(`Session is closing: ${sessionId}`)
+  const failure = resourceFailures.get(sessionId)
+  if (failure) throw failure
+  return { ...activated, releaseInput: beginSessionInput(activated.session.agentSession) }
+}
+
 export function prepareSession(sessionId: string): Promise<LiveSession> {
   if (closing.has(sessionId)) throw new Error(`Session is closing: ${sessionId}`)
   const existing = live.get(sessionId)
   if (existing) {
     worktrees.assertAvailable(existing.cwd)
-    return Promise.resolve(existing)
+    return (resourceReloads.get(sessionId) ?? Promise.resolve()).then(() => {
+      if (closing.has(sessionId) || live.get(sessionId) !== existing) throw new Error(`Session is closing: ${sessionId}`)
+      const failure = resourceFailures.get(sessionId)
+      if (failure) throw failure
+      return existing
+    })
   }
 
   const running = preparing.get(sessionId)
@@ -588,55 +640,82 @@ export function sessionCwd(sessionId: string): string {
 const refreshingPlugins = new Set<string>()
 const queuedPluginRefresh = new Map<string, boolean>()
 
+const resourceReloads = new Map<string, Promise<void>>()
+const pendingToolRefresh = new Set<string>()
+
+export function pendingToolSessions(): string[] { return [...pendingToolRefresh] }
+function canReloadResources(session: LiveSession): boolean {
+  return session.agentSession.isIdle && !session.agentSession.isBashRunning && !isSessionRunActive(session.agentSession)
+}
+
+export async function refreshToolSessions(project?: string): Promise<void> {
+  await Promise.all([...preparing.values()].map((item) => item.promise.catch(() => undefined)))
+  const sessions = [...live.values()].filter((session) => !project || session.toolProject === project)
+  for (const session of sessions) pendingToolRefresh.add(session.sessionId)
+  emitToolSettingsChanged()
+  await Promise.all(sessions.map((session) => {
+    const refresh = refreshLivePlugins(session, true)
+    if (canReloadResources(session)) return refresh
+    reportBackgroundReload(session, refresh)
+    return Promise.resolve()
+  }))
+}
+
 async function refreshLivePlugins(session: LiveSession, force = false): Promise<void> {
   const paths = session.pluginPaths
-  if (!paths) return
+  if (!paths && !force) return
   if (refreshingPlugins.has(session.sessionId)) {
     queuedPluginRefresh.set(session.sessionId, force || queuedPluginRefresh.get(session.sessionId) === true)
     return
   }
   refreshingPlugins.add(session.sessionId)
+  let releaseReload: (() => void) | undefined
   try {
-    let mustReload = force
     let delay = 300
     while (live.get(session.sessionId) === session) {
-      if (!session.agentSession.isIdle || session.agentSession.isBashRunning) {
+      if (!canReloadResources(session)) {
         await new Promise((resolve) => setTimeout(resolve, delay))
         delay = Math.min(delay * 2, 2000)
         continue
       }
-      const next = await enabledPluginPaths()
-      if (!mustReload && paths.length === next.length && paths.every((path, i) => path === next[i])) return
-
+      const next = paths ? await enabledPluginPaths() : []
+      if (!force && (!paths || (paths.length === next.length && paths.every((path, i) => path === next[i])))) return
+      // Filesystem awaits above may let a prompt start. Once published, the reload promise gates
+      // prepareSession so a new prompt cannot enter an extension runtime being replaced.
+      if (!canReloadResources(session)) continue
       resetSystemUI(session.sessionId)
-      const previous = [...paths]
-      paths.splice(0, paths.length, ...next)
+      cancelExtensionUI(session.sessionId)
+      const previous = [...(paths ?? [])]
+      paths?.splice(0, paths.length, ...next)
+      if (!resourceReloads.has(session.sessionId)) {
+        resourceReloads.set(session.sessionId, new Promise<void>((resolve) => { releaseReload = resolve }))
+      }
       try {
-        await session.agentSession.reload()
+        await reloadSessionResources(session)
       } catch (error) {
-        paths.splice(0, paths.length, ...previous)
+        paths?.splice(0, paths.length, ...previous)
         throw error
       }
-      mustReload = false
-      delay = 300
       if (session.win && !session.win.isDestroyed()) session.win.webContents.send('plugins:changed')
-    }
-  } catch (error) {
-    console.error('Could not reload session plugins:', error)
-    if (session.win && !session.win.isDestroyed()) {
-      session.win.webContents.send('system-plugins:ui', {
-        kind: 'notify', sessionId: session.sessionId, plugin: 'host', level: 'error',
-        message: error instanceof Error ? error.message : String(error)
-      })
+      return
     }
   } finally {
     refreshingPlugins.delete(session.sessionId)
-    if (queuedPluginRefresh.has(session.sessionId) && live.get(session.sessionId) === session) {
-      const forceNext = queuedPluginRefresh.get(session.sessionId) === true
-      queuedPluginRefresh.delete(session.sessionId)
-      void refreshLivePlugins(session, forceNext)
-    } else {
-      queuedPluginRefresh.delete(session.sessionId)
+    try {
+      if (queuedPluginRefresh.has(session.sessionId) && live.get(session.sessionId) === session) {
+        const forceNext = queuedPluginRefresh.get(session.sessionId) === true
+        queuedPluginRefresh.delete(session.sessionId)
+        await refreshLivePlugins(session, forceNext)
+      } else {
+        queuedPluginRefresh.delete(session.sessionId)
+        if (!resourceFailures.has(session.sessionId)) pendingToolRefresh.delete(session.sessionId)
+        emitToolSettingsChanged()
+      }
+    } finally {
+      if (releaseReload) {
+        resourceReloads.delete(session.sessionId)
+        releaseReload()
+      }
     }
   }
 }
@@ -647,17 +726,17 @@ export async function refreshPluginSessions(force = false, cwd?: string): Promis
     .map((item) => item.promise.catch(() => undefined))
   await Promise.all(building)
   await Promise.all([...live.values()].filter((session) => !cwd || resolve(session.cwd) === resolve(cwd)).map(async (session) => {
-    if (session.pluginPaths && session.agentSession.isIdle && !session.agentSession.isBashRunning) {
+    if (session.pluginPaths && canReloadResources(session)) {
       await refreshLivePlugins(session, force)
     } else if (session.pluginPaths) {
-      void refreshLivePlugins(session, force)
+      reportBackgroundReload(session, refreshLivePlugins(session, force))
     }
   }))
 }
 
 export function hasBusyPluginSessions(): boolean {
   return [...live.values()].some((session) => session.pluginPaths &&
-    (!session.agentSession.isIdle || session.agentSession.isBashRunning || refreshingPlugins.has(session.sessionId)))
+    (!canReloadResources(session) || refreshingPlugins.has(session.sessionId)))
 }
 
 /** A file session's source needs its index, which is why this waits on the deferred build. */
@@ -712,8 +791,12 @@ export async function viewSessionBranch(sessionId: string, tipId: string): Promi
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {
+  cancelExtensionUI(session.sessionId)
   detachSystemUI(session.sessionId)
   session.unsubscribe()
+  await resourceReloads.get(session.sessionId)?.catch(() => {})
+  pendingToolRefresh.delete(session.sessionId)
+  resourceFailures.delete(session.sessionId)
   try {
     await session.agentSession.abort()
   } catch {

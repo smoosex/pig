@@ -19,7 +19,14 @@ function observe<T>(promise: Promise<T>) {
   )
 }
 
+function mockExtensionUI(): void {
+  mock.module(fileURLToPath(new URL('../src/main/extension-ui.ts', import.meta.url)), () => ({
+    createExtensionUI: async () => ({}), cancelExtensionUI: () => {}, openMcpUrl: () => {}
+  }))
+}
+
 async function reproduce(stage: string, useAlias: boolean): Promise<void> {
+  mockExtensionUI()
   const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-session-registry-race-')))
   const cwd = join(root, 'worktree')
   const alias = join(root, 'alias')
@@ -159,6 +166,7 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
 }
 
 async function reproduceReopen(): Promise<void> {
+  mockExtensionUI()
   const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-session-reopen-')))
   const cwd = join(root, 'worktree')
   const service = new WorktreeService(join(root, 'state'))
@@ -246,7 +254,8 @@ async function reproduceReopen(): Promise<void> {
     assert.equal(buildCalls, 1)
 
     release.resolve()
-    assert.equal((await preparing).status, 'fulfilled')
+    const prepared = await preparing
+    assert.equal(prepared.status, 'fulfilled', prepared.status === 'rejected' ? String(prepared.error) : '')
     assert.equal((await opening).status, 'fulfilled')
     await new Promise<void>((resolve) => setImmediate(resolve))
 

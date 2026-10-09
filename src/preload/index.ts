@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -134,6 +134,30 @@ const api: SessionApi = {
     ipcRenderer.invoke('system:save-open-project-tab-order', cwd, tabIds),
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) =>
     ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
+  getMcpSettings: () => ipcRenderer.invoke('mcp:get'),
+  setCodemode: (enabled) => ipcRenderer.invoke('mcp:codemode', enabled),
+  setProjectToolSettings: (cwd, patch) => ipcRenderer.invoke('mcp:project', cwd, patch),
+  saveMcpServer: (name, config, replace) => ipcRenderer.invoke('mcp:save', name, config, replace),
+  removeMcpServer: (name) => ipcRenderer.invoke('mcp:remove', name),
+  setMcpEnabled: (name, enabled) => ipcRenderer.invoke('mcp:enable', name, enabled),
+  previewMcpImport: (json, name) => ipcRenderer.invoke('mcp:preview', json, name),
+  importMcpServers: (json, replaceNames, name) => ipcRenderer.invoke('mcp:import', json, replaceNames, name),
+  searchMcpMarket: (query) => ipcRenderer.invoke('mcp:search', query),
+  testMcpServer: (name) => ipcRenderer.invoke('mcp:test', name),
+  loginMcpServer: (name) => ipcRenderer.invoke('mcp:login', name),
+  logoutMcpServer: (name) => ipcRenderer.invoke('mcp:logout', name),
+  cancelMcpLogin: () => ipcRenderer.invoke('mcp:cancel-login'),
+  replyExtensionUI: (id, value) => ipcRenderer.invoke('extensions:reply', id, value),
+  onExtensionUI: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: ExtensionUIEvent) => listener(value)
+    ipcRenderer.on('extensions:ui', handler)
+    return () => ipcRenderer.off('extensions:ui', handler)
+  },
+  onMcpChanged: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on('mcp:changed', handler)
+    return () => ipcRenderer.off('mcp:changed', handler)
+  },
   getSettings: () => ipcRenderer.invoke('settings:get'),
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
   installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),

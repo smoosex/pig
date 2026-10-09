@@ -122,6 +122,12 @@ exit without calling an external model API.
 Manage trusted Pi extensions and the bundled Observational Memory extension in
 **Settings → Plugins**. See [plugin loading, configuration and package metadata](docs/plugins.md).
 
+## MCP and Codemode
+
+Manage servers and the MCP market in **Settings → MCP**, the global Codemode switch
+in **General**, and inherited overrides in each **Project settings** submenu.
+Both new servers and Codemode start disabled. See [configuration, security and runtime behavior](docs/mcp.md).
+
 ## Authentication
 
 Open **设置 → 供应商** in Pig to log in to a provider account or add an API key.

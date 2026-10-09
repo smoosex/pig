@@ -3,6 +3,8 @@
  * SDK objects stay in main; only these data shapes cross the IPC boundary.
  */
 import type { Locale, LocaleSetting } from './i18n'
+import type { ToolSettingsApi } from './tool-settings'
+export type * from './tool-settings'
 import type {
   PastedTextAttachment,
   PastedTextAttachmentInput,
@@ -652,7 +654,7 @@ export interface BashExecutionResult {
   truncated: boolean
 }
 
-export interface SessionApi {
+export interface SessionApi extends ToolSettingsApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
   listWorktreeSessions: (projectCwd: string, cwd: string) => Promise<SessionMeta[]>
