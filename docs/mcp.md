@@ -3,7 +3,8 @@
 ## Settings
 
 - **Settings → MCP** shows added servers as compact rows above the marketplace. Icon actions edit, test, sign in/out and remove; the rightmost switch controls global enablement. The market combines Magpie-inspired featured recipes (without Magpie Image) with explicit searches of the official MCP Registry.
-- Use **Add MCP** above the server list to open the HTTP/stdio form. Add/edit dialogs also offer JSON mode for one server's configuration or a complete `mcpServers` object; there is no separate JSON import button. Configuration is validated as you save it: a same-name server is shown and only replaced after you confirm it.
+- Use **Add MCP** above the server list to open the manual form: name, command/HTTP, a quoted command line or URL, and editable environment/header rows. Paste a single server's JSON or a named entry anywhere in the form to fill it in; a multi-server `mcpServers` object opens the JSON editor. The header's JSON/Form segmented switch selects the editor; JSON mode keeps advanced options available. Blank examples are placeholders, while existing configuration and filled form values remain editable content. Pasting never saves automatically; configuration is validated as you save it and same-name replacements require confirmation.
+- Command lines are split into executable and arguments, not run through a shell. New environment/header values are literal except a whole `${NAME}` environment-variable reference; existing and JSON-authored values retain Pi configuration expressions. Legacy SSE is not supported.
 - New servers are disabled. Enable them globally or only for a project. Removal deletes Pig configuration, project overrides and saved OAuth credentials, not system runtimes or shared package caches.
 - **Settings → General → Codemode** controls the global default, initially off. Enabled Codemode uses `on`, preserving direct tools rather than forcing every operation through scripts.
 - **Settings → Project settings → project** overrides global MCP enablement and Codemode. Unset overrides inherit; a project's worktrees share the original project's settings.
@@ -33,7 +34,7 @@ HTTP and OAuth requests validate the actual connection's DNS answers, not just t
 
 Signing out, removing an HTTP server or replacing its URL revokes old authentication capabilities immediately, waits for outstanding SDK refreshes, then deletes credentials. Old runtimes and delayed sign-in callbacks cannot write tokens back. These security operations may interrupt affected requests even when ordinary configuration reloads are deferred.
 
-The HTTP form's optional API key creates a Bearer authorization header. Custom headers, environment values and advanced OAuth settings can be edited in JSON. Explicit JSON keeps Pi's `$ENV` and `!command` value syntax; catalog defaults and password inputs are escaped as literal values. Check imported commands and expressions before enabling or testing.
+API keys go in the HTTP form's header rows, for example `Authorization: Bearer <token>` or the service's `X-API-Key` header. Environment values also use key/value rows; advanced OAuth settings remain available in JSON. Explicit JSON keeps Pi's `$ENV` and `!command` value syntax; catalog inputs and newly typed form values are escaped as literals except explicit `${NAME}` references. Check imported commands and expressions before enabling or testing.
 
 ## Runtime and display
 

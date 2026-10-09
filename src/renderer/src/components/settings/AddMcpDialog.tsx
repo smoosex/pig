@@ -3,15 +3,16 @@
  *
  * A catalog recipe gets its own sheet: the listing fixes the transport and the name, so the form
  * only collects the inputs that listing declares, and saving validates before it writes. Manual
- * entry, editing and JSON import keep the generic form plus a JSON escape hatch, because a
- * configuration can carry fields no form models.
+ * entry uses an argv command line and key/value rows. Pasting a single JSON configuration fills
+ * the form; several entries remain in the JSON editor. JSON also preserves unmodeled fields.
  */
-import { useEffect, useId, useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { useEffect, useState, type ClipboardEvent } from 'react'
+import { ExternalLink, Globe, SquareTerminal } from 'lucide-react'
 import { api, type McpImportEntry, type McpMarketServer, type McpServerView } from '../../ipc/api'
-import { fillMarketConfig, literalMcpValue, marketInvocation } from '../../../../shared/mcp-market'
+import { fillMarketConfig, marketInvocation } from '../../../../shared/mcp-market'
 import { useT } from '../../hooks/useT'
 import { listingText } from '../../lib/i18n'
+import { mcpFormFromConfig, mcpConfigFromForm, parseMcpPaste } from '../../lib/mcp-form'
 import { useToolSettingsStore } from '../../stores/tool-settings'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Badge } from '../ui/badge'
@@ -19,49 +20,13 @@ import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '../ui/field'
 import { Input } from '../ui/input'
-import { Textarea } from '../ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { Avatar, AvatarFallback } from '../ui/avatar'
 import { Switch } from '../ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { HighlightedCode } from '../HighlightedCode'
 import { McpIcon } from './McpIcon'
-
-function ConfigField({
-  label,
-  value,
-  change,
-  multiline,
-  disabled
-}: {
-  label: string
-  value: string
-  change(value: string): void
-  multiline?: boolean
-  disabled: boolean
-}) {
-  const id = useId()
-  return (
-    <Field data-disabled={disabled}>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      {multiline ? (
-        <Textarea
-          id={id}
-          disabled={disabled}
-          value={value}
-          rows={3}
-          onChange={(event) => change(event.target.value)}
-        />
-      ) : (
-        <Input
-          id={id}
-          disabled={disabled}
-          value={value}
-          onChange={(event) => change(event.target.value)}
-        />
-      )}
-    </Field>
-  )
-}
+import { ManualMcpFields } from './ManualMcpFields'
 
 export function AddMcpDialog({
   recipe,
@@ -80,20 +45,8 @@ export function AddMcpDialog({
   const [base, setBase] = useState<Record<string, unknown>>({ ...initial })
   const [mode, setMode] = useState(server ? 'json' : 'form')
   const [name, setName] = useState(server?.name ?? recipe?.name ?? '')
-  const [transport, setTransport] = useState(initial && 'command' in initial ? 'stdio' : 'http')
-  const [url, setUrl] = useState(initial && 'url' in initial ? initial.url : '')
-  const [command, setCommand] = useState(initial && 'command' in initial ? initial.command : '')
-  const [args, setArgs] = useState(
-    JSON.stringify(initial && 'command' in initial ? (initial.args ?? []) : [])
-  )
-  const [env, setEnv] = useState(
-    JSON.stringify(initial && 'command' in initial ? (initial.env ?? {}) : {}, null, 2)
-  )
-  const [apiKey, setApiKey] = useState('')
-  const [headers, setHeaders] = useState(
-    JSON.stringify(initial && 'url' in initial ? (initial.headers ?? {}) : {}, null, 2)
-  )
-  const [json, setJson] = useState(JSON.stringify(initial ?? { url: '' }, null, 2))
+  const [form, setForm] = useState(() => mcpFormFromConfig({ ...(initial ?? { command: '' }) }, t))
+  const [json, setJson] = useState(initial ? JSON.stringify(initial, null, 2) : '')
   const [values, setValues] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState<McpImportEntry[]>()
   const [replace, setReplace] = useState(false)
@@ -101,54 +54,61 @@ export function AddMcpDialog({
   useEffect(() => {
     setPreview(undefined)
     setReplace(false)
-  }, [mode, name, transport, url, command, args, env, headers, apiKey, json, values])
+  }, [mode, name, form, json, values])
   const payload = (): string => {
     if (mode === 'json') return json
     if (recipe) return JSON.stringify(fillMarketConfig(recipe, values), null, 2)
-    const config = { ...base }
-    if (transport === 'http') {
-      for (const key of ['command', 'args', 'env', 'cwd']) delete config[key]
-      const nextHeaders = JSON.parse(headers) as Record<string, string>
-      if (apiKey.trim()) {
-        delete config.auth
-        for (const key of Object.keys(nextHeaders))
-          if (key.toLowerCase() === 'authorization') delete nextHeaders[key]
-        nextHeaders.Authorization = literalMcpValue(`Bearer ${apiKey.trim()}`)
-      }
-      Object.assign(config, { type: 'http', url, headers: nextHeaders })
-    } else {
-      for (const key of ['url', 'headers', 'oauth', 'auth']) delete config[key]
-      Object.assign(config, {
-        type: 'stdio',
-        command,
-        args: JSON.parse(args),
-        env: JSON.parse(env)
-      })
-    }
-    return JSON.stringify(config, null, 2)
+    return JSON.stringify(mcpConfigFromForm(base, form, t), null, 2)
   }
-  const changeMode = (next: string) => {
-    if (!next) return
+  const fillForm = (config: Record<string, unknown>, nextName?: string) => {
+    const nextForm = mcpFormFromConfig(config, t)
+    setBase(config)
+    setForm(nextForm)
+    if (nextName !== undefined && !server) setName(nextName)
+  }
+  const changeMode = (next: 'form' | 'json') => {
     try {
-      if (next === 'json') setJson(payload())
-      else {
-        const config = JSON.parse(json) as Record<string, unknown>
-        if (!config || typeof config !== 'object' || Array.isArray(config))
-          throw new Error(t('mcp.configHint'))
-        if (config.mcpServers) throw new Error(t('mcp.formSingle'))
-        setBase(config)
-        setTransport(typeof config.command === 'string' ? 'stdio' : 'http')
-        setUrl(typeof config.url === 'string' ? config.url : '')
-        setCommand(typeof config.command === 'string' ? config.command : '')
-        setArgs(JSON.stringify(config.args ?? []))
-        setEnv(JSON.stringify(config.env ?? {}, null, 2))
-        setHeaders(JSON.stringify(config.headers ?? {}, null, 2))
-        setApiKey('')
+      if (next === 'json') {
+        const rows = form.transport === 'http' ? form.headers : form.env
+        const hasConfig =
+          Object.keys(base).length > 0 ||
+          !!(form.transport === 'http' ? form.url.trim() : form.commandLine.trim()) ||
+          rows.some((row) => row.key || row.value)
+        setJson(hasConfig ? payload() : '')
+      } else if (json.trim()) {
+        const pasted = parseMcpPaste(json, t)
+        if (pasted.kind === 'multiple') throw new Error(t('mcp.formSingle'))
+        fillForm(pasted.config, pasted.name)
       }
       setMode(next)
       setLocalError(undefined)
     } catch (error) {
+      // Invalid JSON/argv must stay editable; no form state is changed until conversion succeeds.
       setLocalError(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const pasteConfig = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (recipe || busy || (event.target instanceof HTMLElement && event.target.id === 'mcp-json'))
+      return
+    const text = event.clipboardData.getData('text/plain').trim()
+    if (!text.startsWith('{') && !text.startsWith('[')) return
+    event.preventDefault()
+    try {
+      const pasted = parseMcpPaste(text, t)
+      if (pasted.kind === 'single') {
+        fillForm(pasted.config, pasted.name)
+        setMode('form')
+      } else {
+        setJson(JSON.stringify(pasted.document, null, 2))
+        setMode('json')
+      }
+      setLocalError(undefined)
+    } catch (error) {
+      // A configuration-looking paste is intercepted, so malformed JSON needs a visible error
+      // instead of silently disappearing or overwriting whichever field happened to have focus.
+      setLocalError(
+        t('mcp.pasteFailed', { error: error instanceof Error ? error.message : String(error) })
+      )
     }
   }
   const missing = recipe?.inputs.find((input) => input.required && !values[input.key]?.trim())
@@ -176,20 +136,6 @@ export function AddMcpDialog({
       if (result) onClose()
     })
   }
-  const field = (
-    label: string,
-    value: string,
-    change: (value: string) => void,
-    multiline = false
-  ) => (
-    <ConfigField
-      label={label}
-      value={value}
-      change={change}
-      multiline={multiline}
-      disabled={busy}
-    />
-  )
   const conflictBlock = preview ? (
     <div className="flex flex-col gap-2">
       {preview.map((entry) => (
@@ -233,7 +179,7 @@ export function AddMcpDialog({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-2xl" showCloseButton={!recipe}>
+      <DialogContent className="sm:max-w-2xl" showCloseButton={false} onPaste={pasteConfig}>
         {recipe ? (
           <DialogHeader className="-mx-4 -mt-4 flex-row items-center gap-3 border-b p-4">
             <McpIcon source={recipe.icon} name={recipe.title || recipe.name} className="size-10" />
@@ -259,11 +205,33 @@ export function AddMcpDialog({
             ) : null}
           </DialogHeader>
         ) : (
-          <DialogHeader>
-            <DialogTitle>{t(server ? 'mcp.edit' : 'mcp.add')}</DialogTitle>
+          <DialogHeader className="-mx-4 -mt-4 flex-row items-center gap-3 border-b p-4">
+            <Avatar size="sm" className="rounded-lg after:rounded-lg after:border-0">
+              <AvatarFallback className="rounded-lg [&>svg]:size-3.5">
+                {form.transport === 'stdio' ? <SquareTerminal /> : <Globe />}
+              </AvatarFallback>
+            </Avatar>
+            <DialogTitle className="min-w-0 truncate text-sm">
+              {server ? server.name : t('mcp.newServer')}
+            </DialogTitle>
+            <ToggleGroup
+              type="single"
+              spacing={0.5}
+              size="xs"
+              className="ml-auto shrink-0 border p-px"
+              value={mode}
+              disabled={busy}
+              onValueChange={(next) => {
+                if ((next === 'json' || next === 'form') && next !== mode) changeMode(next)
+              }}
+              aria-label={t('mcp.editorMode')}
+            >
+              <ToggleGroupItem value="form">{t('mcp.form')}</ToggleGroupItem>
+              <ToggleGroupItem value="json">{t('mcp.json')}</ToggleGroupItem>
+            </ToggleGroup>
           </DialogHeader>
         )}
-        <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto px-1">
+        <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto p-1">
           {recipe ? (
             <>
               {recipe.description ? (
@@ -327,83 +295,15 @@ export function AddMcpDialog({
               </FieldGroup>
             </>
           ) : (
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="mcp-name">{t('mcp.name')}</FieldLabel>
-                <Input
-                  id="mcp-name"
-                  disabled={busy}
-                  readOnly={!!server}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-                <FieldDescription>{t('mcp.nameDescription')}</FieldDescription>
-              </Field>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                value={mode}
-                disabled={busy}
-                onValueChange={changeMode}
-              >
-                <ToggleGroupItem value="form">{t('mcp.form')}</ToggleGroupItem>
-                <ToggleGroupItem value="json">JSON</ToggleGroupItem>
-              </ToggleGroup>
-              {mode === 'json' ? (
-                <Field data-disabled={busy}>
-                  <FieldLabel htmlFor="mcp-json">{t('mcp.config')}</FieldLabel>
-                  <Textarea
-                    id="mcp-json"
-                    disabled={busy}
-                    rows={10}
-                    value={json}
-                    onChange={(event) => setJson(event.target.value)}
-                  />
-                  <FieldDescription>{t('mcp.configHint')}</FieldDescription>
-                </Field>
-              ) : (
-                <>
-                  <Field>
-                    <FieldLabel>{t('mcp.transport')}</FieldLabel>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      value={transport}
-                      disabled={busy}
-                      onValueChange={(value) => {
-                        if (value) setTransport(value)
-                      }}
-                    >
-                      <ToggleGroupItem value="http">{t('mcp.http')}</ToggleGroupItem>
-                      <ToggleGroupItem value="stdio">{t('mcp.stdio')}</ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field>
-                  {transport === 'http' ? (
-                    <>
-                      {field(t('mcp.url'), url, setUrl)}
-                      <Field data-disabled={busy}>
-                        <FieldLabel htmlFor="mcp-api-key">{t('mcp.apiKey')}</FieldLabel>
-                        <Input
-                          id="mcp-api-key"
-                          type="password"
-                          autoComplete="off"
-                          disabled={busy}
-                          value={apiKey}
-                          onChange={(event) => setApiKey(event.target.value)}
-                        />
-                      </Field>
-                      {field(t('mcp.headers'), headers, setHeaders, true)}
-                    </>
-                  ) : (
-                    <>
-                      {field(t('mcp.command'), command, setCommand)}
-                      {field(t('mcp.args'), args, setArgs, true)}
-                      {field(t('mcp.env'), env, setEnv, true)}
-                    </>
-                  )}
-                </>
-              )}
-            </FieldGroup>
+            <ManualMcpFields
+              form={form}
+              change={setForm}
+              name={name}
+              changeName={setName}
+              editing={!!server}
+              disabled={busy}
+              json={mode === 'json' ? { value: json, change: setJson } : undefined}
+            />
           )}
           {feedback ? (
             <Alert variant="destructive">
@@ -421,12 +321,18 @@ export function AddMcpDialog({
               busy ||
               !!missing ||
               (!!conflicts.length && !replace) ||
+              (!recipe && mode === 'json' && !json.trim()) ||
               // A form entry with no address could never connect; JSON may still hold a full object.
-              (!recipe && mode === 'form' && !(transport === 'http' ? url.trim() : command.trim()))
+              (!recipe &&
+                mode === 'form' &&
+                !(
+                  name.trim() &&
+                  (form.transport === 'http' ? form.url.trim() : form.commandLine.trim())
+                ))
             }
             onClick={save}
           >
-            {t(recipe ? 'mcp.addServer' : 'mcp.save')}
+            {t(server ? 'mcp.save' : 'mcp.addServer')}
           </Button>
         </DialogFooter>
       </DialogContent>
