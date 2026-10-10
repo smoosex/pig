@@ -1,5 +1,5 @@
 import { useState, type HTMLAttributes, type Ref } from 'react'
-import { CircleAlert, Download, FileDiff, LoaderCircle, PenLine, Plus, SquareText } from 'lucide-react'
+import { CircleAlert, Dog, Download, FileDiff, LoaderCircle, PenLine, Plus } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -208,7 +208,7 @@ function TabFace({
         ) : kind === 'file' ? (
           <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" />
         ) : (
-          <SquareText className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
+          <Dog className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
         )}
         {onClose ? (
           <CloseButton
