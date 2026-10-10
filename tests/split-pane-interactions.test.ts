@@ -13,10 +13,17 @@ async function fixture(scenario: string): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const queries: string[] = []
   const orders: string[][] = []
+  const closed: string[] = []
   Object.assign(window, {
     api: {
       getCommands: async () => [],
       onPluginsChanged: () => () => {},
+      closeSession: async (id: string) => {
+        closed.push(id)
+      },
+      selectOpenProjectWorkspace: async () => {},
+      saveOpenProjectChangesTab: async () => {},
+      saveOpenChatTabs: async () => {},
       suggestFiles: async (cwd: string) => {
         queries.push(cwd)
         return []
@@ -300,17 +307,15 @@ async function fixture(scenario: string): Promise<void> {
       let hit: Element[] = [source, host]
       document.elementsFromPoint = () => hit
       const down = () =>
-        source
-          .querySelector('[data-pane-header]')!
-          .dispatchEvent(
-            new PointerEvent('pointerdown', {
-              bubbles: true,
-              button: 0,
-              pointerId: 1,
-              clientX: 100,
-              clientY: 200
-            })
-          )
+        source.querySelector('[data-pane-header]')!.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            button: 0,
+            pointerId: 1,
+            clientX: 100,
+            clientY: 200
+          })
+        )
       const pointer = (type: string, x = 110, y = 200) =>
         window.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, clientY: y }))
       const original = split.getState().root
@@ -377,6 +382,12 @@ async function fixture(scenario: string): Promise<void> {
         'closing the active pane selects a surviving pane'
       )
       assert.deepEqual(tabIds(), ['B', 'A'])
+      assert.deepEqual(closed, ['C'])
+      assert.equal(
+        sessions.getState().openTabs.some((tab) => tab.id === 'C'),
+        false
+      )
+      assert.equal(sessions.getState().runtime.C, undefined)
       const layout = split.getState().root!
       assert.ok(isSplitNode(layout))
       await act(async () => {
@@ -409,6 +420,99 @@ async function fixture(scenario: string): Promise<void> {
         )
       })
       assert.deepEqual((split.getState().root! as { sizes: number[] }).sizes, [70, 30])
+    } else if (scenario.startsWith('close-')) {
+      const a = split.getState().initLayout('A')
+      const b = split.getState().splitPane(a, 'B', 'right')
+      if (scenario === 'close-collapse') {
+        sessions.setState({ activeTabId: 'B', activeSessionByCwd: { '/p': 'B' } })
+        await act(async () => {
+          sessions.getState().closeTab(sessions.getState().activeTabId!)
+        })
+        assert.deepEqual(tabIds(), ['A'])
+        assert.equal(sessions.getState().activeTabId, 'A')
+        await act(async () => {
+          sessions.getState().closeTab('A')
+        })
+        assert.equal(split.getState().root, null)
+        assert.equal(sessions.getState().activeTabId, 'C')
+        assert.deepEqual(closed, ['B', 'A'])
+      } else if (scenario === 'close-cross-scope') {
+        sessions.setState({
+          openTabs: tabs.map((tab) =>
+            tab.id === 'B' ? { ...tab, kind: 'chat', cwd: '/chats/B' } : tab
+          ),
+          activeTabId: 'A',
+          activeSessionByCwd: { '/p': 'A' }
+        })
+        split.getState().setActivePane(a)
+        await act(async () => {
+          sessions.getState().closeTab('A')
+        })
+        assert.deepEqual(tabIds(), ['B'])
+        assert.equal(sessions.getState().activeTabId, 'B')
+        assert.equal(sessions.getState().currentProjectCwd, null)
+        assert.equal(sessions.getState().activeSessionByCwd['/p'], 'C')
+        assert.deepEqual(closed, ['A'])
+      } else if (scenario === 'close-file' || scenario === 'close-diff') {
+        const kind = scenario === 'close-file' ? 'file' : 'diff'
+        sessions.setState({
+          openTabs: tabs.map((tab) =>
+            tab.id === 'B' ? { ...tab, kind, path: kind === 'file' ? 'x.ts' : undefined } : tab
+          ),
+          activeTabId: 'B',
+          activeSessionByCwd: { '/p': 'C' }
+        })
+        split.getState().splitPane(b, 'C', 'bottom')
+        split.getState().setActivePane(b)
+        await act(async () => {
+          sessions.getState().closeTab('B')
+        })
+        assert.deepEqual(tabIds(), ['A', 'C'])
+        assert.equal(sessions.getState().activeTabId, 'A')
+        assert.equal(sessions.getState().activeSessionByCwd['/p'], 'A')
+        assert.deepEqual(closed, [], 'file and diff panes do not own an SDK session')
+      } else {
+        const c = split.getState().splitPane(b, 'C', 'bottom')
+        const selected =
+          scenario === 'close-hidden' ? 'D' : scenario === 'close-inactive' ? 'A' : 'C'
+        split.getState().setActivePane(selected === 'A' ? a : c)
+        sessions.setState({ activeTabId: selected, activeSessionByCwd: { '/p': selected } })
+        if (scenario === 'close-sidebar') {
+          const { SessionList } = await import('../src/renderer/src/components/sidebar/SessionList')
+          function SidebarPane() {
+            const openTabs = sessions((state) => state.openTabs)
+            return h(
+              Fragment,
+              null,
+              h('div', { 'data-test-sidebar': true }, h(SessionList, { sessions: openTabs })),
+              h(SplitPaneContainer, { renderPane: (node) => h('div', null, node.tabId) })
+            )
+          }
+          await act(async () => {
+            root.render(h(SidebarPane))
+          })
+          await act(async () => {
+            host
+              .querySelector<HTMLButtonElement>('[data-test-sidebar] button[aria-label="Close C"]')!
+              .click()
+          })
+          assert.equal(host.querySelector('[data-test-sidebar] button[aria-label="Close C"]'), null)
+        } else
+          await act(async () => {
+            sessions.getState().closeTab('C')
+          })
+        assert.deepEqual(tabIds(), ['A', 'B'])
+        assert.equal(sessions.getState().activeTabId, selected === 'D' ? 'D' : 'A')
+        assert.equal(sessions.getState().activeSessionByCwd['/p'], selected === 'D' ? 'D' : 'A')
+        assert.deepEqual(closed, ['C'])
+        assert.equal(sessions.getState().runtime.C, undefined)
+        assert.equal(
+          sessions.getState().openTabs.some((tab) => tab.id === 'C'),
+          false
+        )
+        if (selected !== 'D') assert.equal(split.getState().activePaneId, a)
+      }
+      assert.equal(sessions.getState().workspaceError, null)
     } else if (scenario === 'tab-dnd') {
       const core = await import('@dnd-kit/core')
       const OriginalContext = core.DndContext
@@ -538,7 +642,21 @@ async function fixture(scenario: string): Promise<void> {
 
 if (process.argv[2] === '--fixture') await fixture(process.argv[3])
 else
-  for (const scenario of ['loading', 'drafts', 'headers', 'tab-dnd', 'timers']) {
+  for (const scenario of [
+    'loading',
+    'drafts',
+    'headers',
+    'close-active',
+    'close-sidebar',
+    'close-inactive',
+    'close-hidden',
+    'close-collapse',
+    'close-cross-scope',
+    'close-file',
+    'close-diff',
+    'tab-dnd',
+    'timers'
+  ]) {
     test(`split pane regressions: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', scenario], {
         stdout: 'pipe',

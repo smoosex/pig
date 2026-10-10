@@ -36,7 +36,7 @@ export function SplitPaneContainer({
   const storeRoot = useSplitLayoutStore((state) => state.root)
   const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
   const setActivePane = useSplitLayoutStore((state) => state.setActivePane)
-  const closePane = useSplitLayoutStore((state) => state.closePane)
+  const closeTab = useSessionsStore((state) => state.closeTab)
   const dragOver = useSplitLayoutStore((state) => state.dragOver)
   const openTabs = useSessionsStore((state) => state.openTabs)
   const cancelDrag = useRef<(() => void) | null>(null)
@@ -208,14 +208,7 @@ export function SplitPaneContainer({
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              closePane(node.id)
-              if (isActive) {
-                const layout = useSplitLayoutStore.getState()
-                const next = layout.activePaneId
-                  ? findPaneNode(layout.root, layout.activePaneId)
-                  : null
-                if (next) useSessionsStore.getState().setActive(next.tabId)
-              }
+              closeTab(node.tabId)
             }}
             aria-label={t('sessions.close', { title: tabTitle })}
           >

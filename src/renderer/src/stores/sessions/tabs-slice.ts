@@ -3,6 +3,7 @@ import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../.
 import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
 import { useComposerDraftsStore } from '../composer-drafts'
+import { useSplitLayoutStore, collectPaneNodes, findPaneNode } from '../split-layout'
 import { newSessionId } from '../../lib/session-id'
 import { changesTabId } from '../../../../shared/tab-ids'
 import { t } from '../../lib/i18n'
@@ -899,17 +900,41 @@ export const createTabsSlice: SessionSlice<
 
     closeTab: (tabId) => {
       const tab = get().openTabs.find((item) => item.id === tabId)
-      if (!tab) return
+      if (!tab || closing.has(tabId)) return
       useComposerDraftsStore.getState().discard(tabId)
+      // All close entry points remove the pane and prefer the split's surviving selection.
+      const layout = useSplitLayoutStore.getState()
+      const pane = collectPaneNodes(layout.root).find((item) => item.tabId === tabId)
+      let splitFallback: OpenTab | undefined
+      if (pane) {
+        layout.closePane(pane.id)
+        const remaining = useSplitLayoutStore.getState()
+        const activePane = remaining.activePaneId
+          ? findPaneNode(remaining.root, remaining.activePaneId)
+          : null
+        splitFallback = get().openTabs.find((item) => item.id === activePane?.tabId)
+      }
+      const state = get()
+      const wasActive = state.activeTabId === tabId
+      const fallback =
+        splitFallback?.id ?? neighbourTab(state.openTabs, tab)?.id ??
+        (tab.kind === 'diff' || tab.kind === 'file' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
+      const fallbackCwd = splitFallback
+        ? (splitFallback.kind === 'chat' ? null : splitFallback.cwd)
+        : (tab.kind === 'chat' ? null : tab.cwd)
+      const fallbackSelection = (current: SessionsStore): Partial<SessionsStore> => ({
+        ...activeTabPatch(current, fallback, fallbackCwd),
+        currentProjectCwd: fallbackCwd,
+        ...(splitFallback?.kind === 'project'
+          ? { activeSessionByCwd: { ...current.activeSessionByCwd, [splitFallback.cwd]: splitFallback.id } }
+          : {})
+      })
       if (tab.kind === 'diff') {
         // A diff tab owns no session: closing it hands the strip back to a neighbour, and the worktree's
         // session is the last one standing when nothing else of it is open.
-        const strip = get()
-        const fallback = neighbourTab(strip.openTabs, tab)?.id ?? strip.activeSessionByCwd[tab.cwd] ?? null
-        const wasActive = strip.activeTabId === tab.id
         set((state) => ({
           openTabs: state.openTabs.filter((item) => item.id !== tabId),
-          ...(wasActive ? activeTabPatch(state, fallback, tab.cwd) : {})
+          ...(wasActive ? fallbackSelection(state) : {})
         }))
         persistChangesTab(tab.cwd)
         if (wasActive && fallback) void get().activateTab(fallback)
@@ -918,27 +943,22 @@ export const createTabsSlice: SessionSlice<
       if (tab.kind === 'file') {
         // No session to close: the tab goes, the file store keeps a draft nobody has saved yet and lets
         // a clean document go. The strip falls back to its neighbour, or to the worktree's session.
-        const state = get()
-        const fallback = neighbourTab(state.openTabs, tab)?.id
-          ?? state.activeSessionByCwd[tab.cwd]
-          ?? null
-        const wasActive = state.activeTabId === tab.id
         set((current) => ({
           openTabs: current.openTabs.filter((item) => item.id !== tabId),
-          ...(wasActive ? activeTabPatch(current, fallback, tab.cwd) : {})
+          ...(wasActive ? fallbackSelection(current) : {})
         }))
         if (tab.path) useFilesStore.getState().releaseDocument(tab.cwd, tab.path)
         if (wasActive && fallback) void get().activateTab(fallback)
         return
       }
-      if (closing.has(tabId)) return
-      const state = get()
-      // Two memories, two rules. The strip falls to the neighbour it sat next to, whatever kind of tab
+      // Two memories, two rules. The strip prefers a surviving pane, then its neighbour, whatever kind of tab
       // that is; the worktree's session memory only ever holds a session, so it falls to the neighbour
       // among the sessions — a changes tab cannot stand in for one when `selectProjectCwd` reads it back
       // or main records it as this worktree's active session.
-      const fallback = neighbourTab(state.openTabs, tab)?.id ?? null
-      const fallbackSession = neighbourAmong(state.openTabs, tab, (item) => item.kind === tab.kind)?.id ?? null
+      const fallbackSession =
+        splitFallback?.kind === tab.kind && (tab.kind === 'chat' || splitFallback.cwd === tab.cwd)
+          ? splitFallback.id
+          : neighbourAmong(state.openTabs, tab, (item) => item.kind === tab.kind)?.id ?? null
       if (state.activeTabId === tabId) selectionVersion++
       set((current) => {
         const openTabs = current.openTabs.filter((item) => item.id !== tabId)
@@ -952,7 +972,7 @@ export const createTabsSlice: SessionSlice<
           runtime,
           activeSessionByCwd,
           ...(current.activeTabId === tabId
-            ? activeTabPatch(current, fallback, tab.kind === 'project' ? tab.cwd : null)
+            ? fallbackSelection({ ...current, activeSessionByCwd })
             : {})
         }
       })
