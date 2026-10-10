@@ -83,8 +83,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex min-h-0 flex-1">
       <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
-        <ScrollArea className="min-h-0 flex-1">
-          <SidebarHoverHighlight activeKey={section} className="flex flex-col gap-1">
+        <ScrollArea className="-mx-1.5 -mt-1.5 min-h-0 flex-1">
+          <SidebarHoverHighlight activeKey={section} className="flex flex-col gap-1 p-1.5">
             {sections.map(({ id, title, description, icon: SectionIcon }) => {
               const active = section === id
               return (
