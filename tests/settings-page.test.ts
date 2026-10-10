@@ -45,7 +45,7 @@ async function fixture(): Promise<void> {
     const buttons = [...navigation.querySelectorAll<HTMLButtonElement>('button')]
     assert.deepEqual(
       buttons.map((button) => button.textContent),
-      [translate('en', 'settings.back'), 'esc', ...panes.map(([, key]) => translate('en', key))]
+      [...panes.map(([, key]) => translate('en', key)), translate('en', 'settings.back')]
     )
     assert.equal(navigation.querySelector('[data-slot="collapsible"]'), null)
     for (const [name, key] of panes) {

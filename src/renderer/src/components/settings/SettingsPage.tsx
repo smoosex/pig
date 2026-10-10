@@ -80,16 +80,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2">
-        <div className="flex items-center gap-2 py-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-            <ChevronLeft data-icon="inline-start" />
-            {t('settings.back')}
-          </Button>
-          <Button type="button" variant="outline" size="xs" onClick={onClose}>
-            esc
-          </Button>
-        </div>
+      <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-1">
             {sections.map(({ id, title, icon: SectionIcon }) => (
@@ -106,6 +97,18 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </ScrollArea>
+        <div className="pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            onClick={onClose}
+          >
+            <ChevronLeft data-icon="inline-start" />
+            {t('settings.back')}
+          </Button>
+        </div>
       </nav>
       <div className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-card">
         <ScrollArea className="h-full [&>[data-slot=scroll-area-scrollbar]]:hidden">
