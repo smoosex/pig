@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Cable, ChevronLeft, KeyRound, Palette, Puzzle, Settings2 } from 'lucide-react'
+import { ChevronLeft, Component, GamepadDirectional, Rainbow, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
@@ -17,35 +17,35 @@ const sections = [
     id: 'general',
     title: 'settings.sectionGeneral',
     description: 'settings.sectionGeneralDescription',
-    icon: Settings2,
+    icon: Snowflake,
     component: GeneralPane
   },
   {
     id: 'theme',
     title: 'settings.sectionTheme',
     description: 'settings.sectionThemeDescription',
-    icon: Palette,
+    icon: Rainbow,
     component: ThemePane
   },
   {
     id: 'providers',
     title: 'settings.sectionProviders',
     description: 'settings.sectionProvidersDescription',
-    icon: KeyRound,
+    icon: GamepadDirectional,
     component: ProvidersPane
   },
   {
     id: 'mcp',
     title: 'mcp.title',
     description: 'mcp.description',
-    icon: Cable,
+    icon: Webhook,
     component: McpPane
   },
   {
     id: 'plugins',
     title: 'settings.sectionPlugins',
     description: 'settings.sectionPluginsDescription',
-    icon: Puzzle,
+    icon: Component,
     component: PluginsPane
   }
 ] as const
@@ -58,7 +58,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const load = useSettingsStore((s) => s.load)
   const error = useSettingsStore((s) => s.error)
   const currentSection = sections.find((item) => item.id === section)!
-  const Icon = currentSection.icon
 
   useEffect(() => {
     void load()
@@ -83,6 +82,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex min-h-0 flex-1">
       <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
+        <div className="flex h-8 shrink-0 items-center px-2.5 text-xs font-normal text-muted-foreground">
+          {t('sidebar.settings')}
+        </div>
         <ScrollArea className="-mx-1.5 -mt-1.5 min-h-0 flex-1">
           <SidebarHoverHighlight activeKey={section} className="flex flex-col gap-1 p-1.5">
             {sections.map(({ id, title, description, icon: SectionIcon }) => {
@@ -130,12 +132,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       <div className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-card">
         <ScrollArea className="h-full [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <div className="mx-auto flex max-w-3xl flex-col gap-8 px-8 py-8">
-            <div className="flex items-start gap-2">
-              <Icon className="mt-0.5" />
-              <div>
-                <h1 className="text-lg font-medium">{t(currentSection.title)}</h1>
-                <p className="text-sm text-muted-foreground">{t(currentSection.description)}</p>
-              </div>
+            <div>
+              <h1 className="text-base font-medium">{t(currentSection.title)}</h1>
+              <p className="text-xs text-muted-foreground">{t(currentSection.description)}</p>
             </div>
             {error ? (
               <p role="alert" className="text-sm text-destructive">

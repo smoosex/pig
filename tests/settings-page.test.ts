@@ -42,6 +42,7 @@ async function fixture(): Promise<void> {
       root.render(h(SettingsPage, { onClose: () => {} }))
     })
     const navigation = host.querySelector('nav')!
+    assert.equal(navigation.firstElementChild?.textContent?.trim(), translate('en', 'sidebar.settings'))
     const buttons = [...navigation.querySelectorAll<HTMLButtonElement>('button')]
     assert.deepEqual(
       buttons.map((button) => button.textContent),
