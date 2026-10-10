@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Cable, ChevronLeft, KeyRound, Palette, Puzzle, Settings2 } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
+import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { ScrollArea } from '../ui/scroll-area'
+import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { GeneralPane } from './GeneralPane'
 import { ThemePane } from './ThemePane'
 import { ProvidersPane } from './ProvidersPane'
@@ -82,27 +84,42 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     <div className="flex min-h-0 flex-1">
       <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-1">
-            {sections.map(({ id, title, icon: SectionIcon }) => (
-              <Button
-                key={id}
-                type="button"
-                variant={section === id ? 'secondary' : 'ghost'}
-                className="w-full justify-start"
-                onClick={() => setSection(id)}
-              >
-                <SectionIcon data-icon="inline-start" />
-                {t(title)}
-              </Button>
-            ))}
-          </div>
+          <SidebarHoverHighlight activeKey={section} className="flex flex-col gap-1">
+            {sections.map(({ id, title, description, icon: SectionIcon }) => {
+              const active = section === id
+              return (
+                <Button
+                  key={id}
+                  type="button"
+                  variant="ghost"
+                  data-sidebar-hover-row
+                  data-hover-highlight-active={active ? '' : undefined}
+                  className={cn(
+                    'relative h-auto w-full items-start justify-start gap-2.5 px-2.5 py-2 text-left hover:bg-transparent!',
+                    active
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground hover:text-sidebar-accent-foreground'
+                  )}
+                  onClick={() => setSection(id)}
+                >
+                  <SectionIcon className="mt-0.5 size-4 shrink-0" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm font-normal leading-tight">{t(title)}</span>
+                    <span className="text-xs font-normal text-muted-foreground leading-normal">
+                      {t(description)}
+                    </span>
+                  </span>
+                </Button>
+              )
+            })}
+          </SidebarHoverHighlight>
         </ScrollArea>
         <div className="pt-1">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            className="w-full justify-start text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             onClick={onClose}
           >
             <ChevronLeft data-icon="inline-start" />

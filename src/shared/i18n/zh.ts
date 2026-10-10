@@ -5,7 +5,7 @@
  */
 export const zh = {
   mcp: {
-    title: 'MCP', description: '管理外部工具服务器、认证和全局启用状态。',
+    title: 'MCP', description: '管理 MCP 服务',
     tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',
     pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
     installed: '已添加', market: '商店', add: '添加 MCP', edit: '编辑配置', remove: '移除',
@@ -246,15 +246,15 @@ export const zh = {
   },
   settings: {
     back: '返回',
-    sectionGeneral: '通用',
+    sectionGeneral: '通用设置',
     sectionGeneralDescription: '核心行为和快捷键',
     sectionInterface: '界面',
-    sectionTheme: '主题',
-    sectionThemeDescription: '外观和配色',
+    sectionTheme: '外观',
+    sectionThemeDescription: '主题与字体',
     sectionProviders: '供应商',
-    sectionProvidersDescription: '登录订阅账号，或保存 API 密钥',
-    sectionPlugins: '插件',
-    sectionPluginsDescription: '管理 Pi 扩展与记忆设置',
+    sectionProvidersDescription: '订阅和 API Key',
+    sectionPlugins: '扩展',
+    sectionPluginsDescription: '核心插件和外部插件',
     language: '语言',
     languageDescription: '界面显示语言',
     languageSystemWith: '跟随系统（{language}）',

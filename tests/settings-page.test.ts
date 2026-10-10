@@ -9,11 +9,11 @@ async function fixture(): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const { act, createElement: h } = await import('react')
   const panes = [
-    ['GeneralPane', 'settings.sectionGeneral'],
-    ['ThemePane', 'settings.sectionTheme'],
-    ['ProvidersPane', 'settings.sectionProviders'],
-    ['McpPane', 'mcp.title'],
-    ['PluginsPane', 'settings.sectionPlugins']
+    ['GeneralPane', 'settings.sectionGeneral', 'settings.sectionGeneralDescription'],
+    ['ThemePane', 'settings.sectionTheme', 'settings.sectionThemeDescription'],
+    ['ProvidersPane', 'settings.sectionProviders', 'settings.sectionProvidersDescription'],
+    ['McpPane', 'mcp.title', 'mcp.description'],
+    ['PluginsPane', 'settings.sectionPlugins', 'settings.sectionPluginsDescription']
   ] as const
   for (const [name] of panes) {
     mock.module(`../src/renderer/src/components/settings/${name}`, () => ({
@@ -45,12 +45,16 @@ async function fixture(): Promise<void> {
     const buttons = [...navigation.querySelectorAll<HTMLButtonElement>('button')]
     assert.deepEqual(
       buttons.map((button) => button.textContent),
-      [...panes.map(([, key]) => translate('en', key)), translate('en', 'settings.back')]
+      [
+        ...panes.map(([, key, desc]) => `${translate('en', key)}${translate('en', desc)}`),
+        translate('en', 'settings.back')
+      ]
     )
     assert.equal(navigation.querySelector('[data-slot="collapsible"]'), null)
-    for (const [name, key] of panes) {
+    for (const [name, key, desc] of panes) {
       await act(async () => {
-        buttons.find((button) => button.textContent === translate('en', key))!.click()
+        const text = `${translate('en', key)}${translate('en', desc)}`
+        buttons.find((button) => button.textContent === text)!.click()
       })
       assert.equal(host.querySelector('h1')!.textContent, translate('en', key))
       assert.equal(

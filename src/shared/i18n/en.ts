@@ -3,7 +3,7 @@ import type { Messages } from './zh'
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
   mcp: {
-    title: 'MCP', description: 'Manage external tool servers, authentication and global enablement.',
+    title: 'MCP', description: 'Manage MCP servers',
     tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',
     pending: '{n} running sessions will apply changes after their current task finishes.',
     installed: 'Added', market: 'Marketplace', add: 'Add MCP', edit: 'Edit configuration', remove: 'Remove',
@@ -247,12 +247,12 @@ export const en: Messages = {
     sectionGeneral: 'General',
     sectionGeneralDescription: 'Core behaviour and shortcuts',
     sectionInterface: 'Interface',
-    sectionTheme: 'Theme',
-    sectionThemeDescription: 'Look and palette',
-    sectionProviders: 'Providers',
-    sectionProvidersDescription: 'Sign in to a subscription, or store API keys',
-    sectionPlugins: 'Plugins',
-    sectionPluginsDescription: 'Manage Pi extensions and memory settings',
+    sectionTheme: 'Appearance',
+    sectionThemeDescription: 'Theme and font',
+    sectionProviders: 'Provider',
+    sectionProvidersDescription: 'Subscription and API Key',
+    sectionPlugins: 'Extension',
+    sectionPluginsDescription: 'Core and external extensions',
     language: 'Language',
     languageDescription: 'Language of the interface',
     languageSystemWith: 'System ({language})',
