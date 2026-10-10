@@ -60,7 +60,7 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     const close = row.querySelector<HTMLButtonElement>('button[aria-label]')!
     assert.ok(close)
     assert.equal(close.getAttribute('aria-label'), `关闭 ${tab.title}`)
-    const orb = row.querySelector<HTMLElement>('[data-orb="weaving"]')!
+    const orb = row.querySelector<HTMLElement>('[data-orb="breathing"]')!
     assert.ok(orb)
     assert.equal(orb.getAttribute('data-size'), '20')
     assert.equal(orb.getAttribute('data-theme'), 'light')
@@ -129,7 +129,7 @@ if (process.argv[2] === '--sidebar-actions-fixture') {
   await runFixture(kind)
 } else {
   for (const kind of ['project', 'chat'] as const) {
-    test(`sidebar ${kind}: weaving shares the close slot and hover/focus reveals the tab-style close ring`, async () => {
+    test(`sidebar ${kind}: breathing shares the close slot and hover/focus reveals the tab-style close ring`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--sidebar-actions-fixture', kind], {
         stdout: 'pipe', stderr: 'pipe'
       })
