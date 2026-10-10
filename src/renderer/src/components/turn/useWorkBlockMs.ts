@@ -8,8 +8,8 @@ import { useSessionsStore, selectActiveSessionId } from '../../stores/sessions'
  * compaction has a single block; each compaction closes one at the work time it began, and the live
  * clock stops while the summary is written, so the block after it carries on from the same value.
  */
-export function useWorkBlockMs(turn: Turn, landmarks: CompactionItem[]): number[] {
-  const sessionId = useSessionsStore(selectActiveSessionId)
+export function useWorkBlockMs(turn: Turn, landmarks: CompactionItem[], explicitSessionId?: string): number[] {
+  const sessionId = useSessionsStore((state) => explicitSessionId ?? selectActiveSessionId(state))
   const streamStartedAt = useSessionsStore((s) =>
     turn.streaming && sessionId ? (s.runtime[sessionId]?.streamStartedAt ?? null) : null
   )

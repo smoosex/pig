@@ -1,5 +1,5 @@
 import { useState, type HTMLAttributes, type Ref } from 'react'
-import { CircleAlert, Dog, Download, FileDiff, LoaderCircle, PenLine, Plus } from 'lucide-react'
+import { ArrowUpToLine, CircleAlert, Dog, Download, FileDiff, LoaderCircle, PenLine, Plus } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -23,6 +23,7 @@ import { FileTypeIcon } from './files/FileTypeIcon'
 import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
+import { useSplitLayoutStore, collectPaneNodes } from '../stores/split-layout'
 
 /** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
  * worktree's tabs, the chats half the chats, and outside a project it falls back to chats. */
@@ -38,14 +39,77 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const newChat = useSessionsStore((state) => state.newChat)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+
+  const root = useSplitLayoutStore((state) => state.root)
+  const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
+  const reintegratingTab = useSplitLayoutStore((state) => state.reintegratingTab)
+  const ghostTab = reintegratingTab
+    ? openTabs.find((t) => t.id === reintegratingTab.tabId)
+    : undefined
+
+  const paneNodes = root ? collectPaneNodes(root) : []
+  const isMultiPane = paneNodes.length > 1
+  const splitTabIds = paneNodes.map((p) => p.tabId)
+  const splitTabIdSet = new Set(splitTabIds)
+
   const visibleTabs = visibleTabsFor(openTabs, sidebarTab, currentProjectCwd)
+
+  const uniqueSplitTabs: OpenTab[] = []
+  if (isMultiPane) {
+    for (const p of paneNodes) {
+      const tab = openTabs.find((t) => t.id === p.tabId)
+      if (tab && !uniqueSplitTabs.some((u) => u.id === tab.id)) {
+        uniqueSplitTabs.push(tab)
+      }
+    }
+  }
+
+  const splitVisibleTabs = visibleTabs.filter((tab) => splitTabIdSet.has(tab.id))
+  const isSplit = isMultiPane && splitVisibleTabs.length > 0
+  const activePane = paneNodes.find((p) => p.id === activePaneId)
+  const focusedTabId = activePane?.tabId ?? activeTabId
+  const representativeTab = isSplit
+    ? (splitVisibleTabs.find((tab) => tab.id === focusedTabId) ?? splitVisibleTabs[0])
+    : undefined
+
+  const combinedTitle = uniqueSplitTabs.length > 0
+    ? uniqueSplitTabs.map((t) => t.title).join(' / ')
+    : ''
+  const splitDogCount = isSplit ? Math.max(2, uniqueSplitTabs.length) : undefined
+
+  let displayTabs: OpenTab[] = visibleTabs
+  if (isSplit && representativeTab) {
+    let representativePlaced = false
+    displayTabs = []
+    for (const tab of visibleTabs) {
+      if (splitTabIdSet.has(tab.id)) {
+        if (!representativePlaced) {
+          displayTabs.push(representativeTab)
+          representativePlaced = true
+        }
+      } else {
+        displayTabs.push(tab)
+      }
+    }
+  }
+
   const { sensors, activeTab, clickGuard, handleDragStart, handleDragEnd, handleDragCancel } =
-    useTabStripDnd(visibleTabs)
+    useTabStripDnd(displayTabs, representativeTab
+      ? { [representativeTab.id]: splitVisibleTabs.map((tab) => tab.id) }
+      : {})
   // The pointer released at the end of a drag belongs to whatever tab the strip moved under it, so that
   // one click is not a selection; a click that never moved the tab still is.
   const selectTab = (tabId: string) => {
     if (clickGuard.current) return
     setActive(tabId)
+    const { root, setActivePane } = useSplitLayoutStore.getState()
+    if (root) {
+      const paneNodes = collectPaneNodes(root)
+      const existingPane = paneNodes.find((p) => p.tabId === tabId)
+      if (existingPane) {
+        setActivePane(existingPane.id)
+      }
+    }
   }
 
   const createTab = async () => {
@@ -65,7 +129,12 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-1 items-stretch">
+    <div
+      className={cn(
+        'flex h-full min-w-0 flex-1 items-stretch transition-colors',
+        reintegratingTab && 'bg-primary/5 ring-1 ring-inset ring-primary/30 rounded-md'
+      )}
+    >
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -75,38 +144,76 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
         onDragCancel={handleDragCancel}
       >
         <SortableContext
-          items={visibleTabs.map((tab) => tab.id)}
+          items={displayTabs.map((tab) => tab.id)}
           strategy={horizontalListSortingStrategy}
         >
           <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {visibleTabs.map((tab) => (
-              <Tab
-                key={tab.id}
-                tabId={tab.id}
-                cwd={tab.cwd}
-                title={tab.title}
-                kind={tab.kind}
-                path={tab.path}
-                sessionPath={tab.meta?.path}
-                active={tab.id === activeTabId}
-                loading={tab.loadState === 'opening'}
-                error={tab.loadState === 'error' ? tab.loadError : undefined}
-                onSelect={() => selectTab(tab.id)}
-                onClose={() => {
-                  // The same released pointer can land on the neighbour's close slot, which the drag it
-                  // just ended has revealed by hovering it: that click closes nothing.
-                  if (clickGuard.current) return
-                  closeTab(tab.id)
-                }}
-              />
-            ))}
+            {displayTabs.map((tab) => {
+              const isCombined = isSplit && tab.id === representativeTab?.id
+              return (
+                <Tab
+                  key={tab.id}
+                  tabId={tab.id}
+                  cwd={tab.cwd}
+                  title={isCombined ? combinedTitle : tab.title}
+                  kind={tab.kind}
+                  path={tab.path}
+                  sessionPath={tab.meta?.path}
+                  active={
+                    isCombined
+                      ? Boolean(activeTabId && splitTabIdSet.has(activeTabId))
+                      : tab.id === activeTabId
+                  }
+                  loading={
+                    isCombined
+                      ? uniqueSplitTabs.some((t) => t.loadState === 'opening')
+                      : tab.loadState === 'opening'
+                  }
+                  error={
+                    isCombined
+                      ? uniqueSplitTabs.find((t) => t.loadState === 'error')?.loadError
+                      : (tab.loadState === 'error' ? tab.loadError : undefined)
+                  }
+                  splitDogCount={isCombined ? splitDogCount : undefined}
+                  splitTabIds={isCombined ? splitTabIds : undefined}
+                  onSelect={() => selectTab(tab.id)}
+                  onClose={() => {
+                    // The same released pointer can land on the neighbour's close slot, which the drag it
+                    // just ended has revealed by hovering it: that click closes nothing.
+                    if (clickGuard.current) return
+                    if (isCombined) {
+                      for (const splitTab of uniqueSplitTabs) {
+                        closeTab(splitTab.id)
+                      }
+                      useSplitLayoutStore.getState().reset()
+                    } else {
+                      closeTab(tab.id)
+                    }
+                  }}
+                />
+              )
+            })}
+            {reintegratingTab ? (
+              <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-dashed border-primary/60 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary animate-pulse select-none">
+                <ArrowUpToLine className="size-3.5" />
+                <span>{ghostTab?.title ?? t('tabBar.reintegrate')}</span>
+              </div>
+            ) : null}
           </div>
         </SortableContext>
         {/* The floating tab is drawn outside the strip, so its width follows the name rather than the
             strip's limit: a tab held in the hand should say what it is. `w-max` is what lets it outgrow
             the overlay's own box, which is measured from the tab the pointer grabbed. */}
-        <DragOverlay dropAnimation={null}>
-          {activeTab ? <TabFace label={activeTab.title} kind={activeTab.kind} path={activeTab.path} dragging /> : null}
+        <DragOverlay dropAnimation={null} className="pointer-events-none">
+          {activeTab ? (
+            <TabFace
+              label={isSplit && activeTab.id === representativeTab?.id ? combinedTitle : activeTab.title}
+              kind={activeTab.kind}
+              path={activeTab.path}
+              splitDogCount={isSplit && activeTab.id === representativeTab?.id ? splitDogCount : undefined}
+              dragging
+            />
+          ) : null}
         </DragOverlay>
       </DndContext>
       <div className="no-drag relative flex shrink-0 items-center gap-0.5 px-1.5 before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-border">
@@ -150,6 +257,7 @@ interface TabFaceProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onSelect'> 
   dragging?: boolean
   editing?: boolean
   error?: string
+  splitDogCount?: number
   onSelect?: () => void
   onClose?: () => void
   onRenameCommit?: (name: string) => void
@@ -172,6 +280,7 @@ function TabFace({
   dragging = false,
   editing = false,
   error,
+  splitDogCount,
   className,
   onSelect,
   onClose,
@@ -190,7 +299,7 @@ function TabFace({
         // card background so it reads above the strip, but not the active underline, which on a ghost
         // would claim the tab had become the selection while it is still in the air.
         dragging
-          ? 'w-max rounded-t bg-card text-foreground shadow-md'
+          ? 'pointer-events-none w-max rounded-t bg-card text-foreground shadow-md'
           : [
             'cursor-pointer',
             active
@@ -202,8 +311,23 @@ function TabFace({
       onClick={onSelect}
       {...rest}
     >
-      <span className="group/close-slot relative flex size-6 shrink-0 items-center justify-center">
-        {kind === 'diff' ? (
+      <span
+        className={cn(
+          'group/close-slot relative flex shrink-0 items-center justify-center',
+          splitDogCount && splitDogCount > 1 ? 'h-6 min-w-6' : 'size-6'
+        )}
+      >
+        {splitDogCount && splitDogCount > 1 ? (
+          <span className="flex items-center transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0">
+            {Array.from({ length: splitDogCount }).map((_, index) => (
+              <Dog
+                key={index}
+                className={cn('size-3.5', index > 0 && '-ml-1.5')}
+                aria-hidden
+              />
+            ))}
+          </span>
+        ) : kind === 'diff' ? (
           <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
         ) : kind === 'file' ? (
           <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" />
@@ -228,7 +352,7 @@ function TabFace({
           onCancel={onRenameCancel}
         />
       ) : (
-        <span className={dragging ? 'max-w-60 truncate' : 'max-w-35 truncate'}>{label}</span>
+        <span className={dragging || (splitDogCount && splitDogCount > 1) ? 'max-w-60 truncate' : 'max-w-35 truncate'}>{label}</span>
       )}
       {dirty ? <span role="img" aria-label={t('tabBar.unsaved')} className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
       {loading ? <LoaderCircle className="animate-spin" aria-label={t('tabBar.loading')} /> : null}
@@ -247,6 +371,8 @@ function Tab({
   active,
   loading,
   error,
+  splitDogCount,
+  splitTabIds,
   onSelect,
   onClose
 }: {
@@ -259,10 +385,17 @@ function Tab({
   active: boolean
   loading: boolean
   error?: string
+  splitDogCount?: number
+  splitTabIds?: string[]
   onSelect: () => void
   onClose: () => void
 }) {
-  const streaming = useSessionsStore((state) => state.runtime[tabId]?.isStreaming ?? false)
+  const streaming = useSessionsStore((state) => {
+    if (splitTabIds && splitTabIds.length > 0) {
+      return splitTabIds.some((id) => state.runtime[id]?.isStreaming ?? false)
+    }
+    return state.runtime[tabId]?.isStreaming ?? false
+  })
   const t = useT()
   const dirty = useFilesStore((state) => {
     const document = path ? state.documents[fileKey(cwd, path)] : undefined
@@ -292,9 +425,10 @@ function Tab({
       loading={loading}
       dirty={dirty}
       streaming={streaming}
+      splitDogCount={splitDogCount}
       editing={rename.editing}
       error={failure}
-      title={failure}
+      title={failure ?? title}
       onSelect={onSelect}
       onClose={onClose}
       onRenameCommit={rename.commit}

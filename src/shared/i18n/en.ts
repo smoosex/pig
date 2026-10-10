@@ -121,7 +121,8 @@ export const en: Messages = {
   tabBar: {
     new: 'New tab',
     unsaved: 'Unsaved',
-    loading: 'Loading'
+    loading: 'Loading',
+    reintegrate: 'Move to separate tab'
   },
   project: {
     menu: 'More actions for {name}',

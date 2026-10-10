@@ -156,11 +156,43 @@ const SessionChatPane = memo(function SessionChatPane({
   )
 })
 
-/** Projects open conversations while retaining a bounded set of mounted panes. */
-export function ChatView() {
-  const openTabs = useSessionsStore((s) => s.openTabs)
-  const activeSessionId = useSessionsStore(selectActiveSessionId)
+function RetainedChatPanes({
+  openTabs,
+  activeSessionId,
+  snapshots,
+  newlyOpenedIds
+}: {
+  openTabs: OpenTab[]
+  activeSessionId: string | null
+  snapshots: SnapshotCache
+  newlyOpenedIds: Set<string>
+}) {
   const retainedSessionIds = useRetainedSessionIds(openTabs, activeSessionId)
+
+  return (
+    <>
+      {retainedSessionIds.map((sessionId) => (
+        <Activity
+          key={sessionId}
+          name={`session-${sessionId}`}
+          mode={sessionId === activeSessionId ? 'visible' : 'hidden'}
+        >
+          <SessionChatPane
+            sessionId={sessionId}
+            active={sessionId === activeSessionId}
+            snapshots={snapshots}
+            forceInitialBottom={newlyOpenedIds.has(sessionId)}
+          />
+        </Activity>
+      ))}
+    </>
+  )
+}
+
+/** Projects open conversations while retaining a bounded set of mounted panes. */
+export function ChatView({ explicitSessionId }: { explicitSessionId?: string } = {}) {
+  const openTabs = useSessionsStore((s) => s.openTabs)
+  const storeActiveSessionId = useSessionsStore(selectActiveSessionId)
   const snapshots = useRef<SnapshotCache>(new Map()).current
   const openIds = useMemo(
     () => new Set(openTabs.filter((tab) => tab.kind !== 'diff').map((tab) => tab.id)),
@@ -181,21 +213,22 @@ export function ChatView() {
   }, [openIds, snapshots])
 
   return (
-    <div className="relative min-h-0 flex-1">
-      {retainedSessionIds.map((sessionId) => (
-        <Activity
-          key={sessionId}
-          name={`session-${sessionId}`}
-          mode={sessionId === activeSessionId ? 'visible' : 'hidden'}
-        >
-          <SessionChatPane
-            sessionId={sessionId}
-            active={sessionId === activeSessionId}
-            snapshots={snapshots}
-             forceInitialBottom={newlyOpenedIds.has(sessionId)}
-          />
-        </Activity>
-      ))}
+    <div className="relative flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden">
+      {explicitSessionId ? (
+        <SessionChatPane
+          sessionId={explicitSessionId}
+          active={true}
+          snapshots={snapshots}
+          forceInitialBottom={newlyOpenedIds.has(explicitSessionId)}
+        />
+      ) : (
+        <RetainedChatPanes
+          openTabs={openTabs}
+          activeSessionId={storeActiveSessionId}
+          snapshots={snapshots}
+          newlyOpenedIds={newlyOpenedIds}
+        />
+      )}
     </div>
   )
 }

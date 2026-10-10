@@ -123,7 +123,8 @@ export const zh = {
   tabBar: {
     new: '新建标签页',
     unsaved: '未保存',
-    loading: '正在加载'
+    loading: '正在加载',
+    reintegrate: '移至独立标签'
   },
   project: {
     menu: '项目 {name} 更多操作',

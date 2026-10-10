@@ -54,14 +54,15 @@ function projectedSegments(landmarks: CompactionItem[], workBlocks: boolean[]): 
   return segments
 }
 
-function WorkedLabel({ turn, landmarks, block }: {
+function WorkedLabel({ turn, landmarks, block, sessionId }: {
+  sessionId?: string
   turn: Turn
   landmarks: CompactionItem[]
   block: number
 }) {
   const t = useT()
   // The clock lives in the label so a ticking timer re-renders this row and not the work below it.
-  const workedMs = useWorkBlockMs(turn, landmarks)
+  const workedMs = useWorkBlockMs(turn, landmarks, sessionId)
   return (
     <>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</>
   )
@@ -70,8 +71,10 @@ function WorkedLabel({ turn, landmarks, block }: {
 /** Coordinates lazy process loading and the transition from live work to an answer. */
 function AgentTurnView({
   turn,
+  sessionId,
   onNeedProcess
 }: {
+  sessionId?: string
   turn: Turn
   onNeedProcess?: (turnId: string) => Promise<void>
 }) {
@@ -190,7 +193,7 @@ function AgentTurnView({
                       )}
                     >
                       <MarkerContent className="flex shrink-0 items-center gap-1">
-                        <WorkedLabel turn={turn} landmarks={landmarks} block={block.block} />
+                        <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={block.block} />
                         <ChevronRight
                           className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
                         />
@@ -231,19 +234,21 @@ function withoutCommand(turn: Turn): Turn | null {
 
 export const TurnView = memo(function TurnView({
   turn,
+  sessionId,
   onNeedProcess,
   onAbortBash
 }: {
+  sessionId?: string
   turn: Turn
   onNeedProcess?: (turnId: string) => Promise<void>
   onAbortBash?: () => Promise<void>
 }) {
-  if (!turn.bash) return <AgentTurnView turn={turn} onNeedProcess={onNeedProcess} />
+  if (!turn.bash) return <AgentTurnView sessionId={sessionId} turn={turn} onNeedProcess={onNeedProcess} />
   const rest = withoutCommand(turn)
   return (
     <>
       <BashTurn turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
-      {rest ? <AgentTurnView turn={rest} onNeedProcess={onNeedProcess} /> : null}
+      {rest ? <AgentTurnView sessionId={sessionId} turn={rest} onNeedProcess={onNeedProcess} /> : null}
     </>
   )
 })

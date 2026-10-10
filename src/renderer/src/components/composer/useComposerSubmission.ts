@@ -1,18 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { t } from '../../lib/i18n'
-import type { JSONContent } from '@tiptap/core'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
 import { compactInstructions } from './commands'
 import { composerUserMessage, textToComposerDocument } from './document'
 import type { useComposerEditor } from './useComposerEditor'
-import type { PastedImage, useComposerImages } from './useComposerImages'
-
-interface FailedDraft {
-  content: JSONContent
-  images: PastedImage[]
-}
+import type { useComposerImages } from './useComposerImages'
+import { useComposerDraftsStore } from '../../stores/composer-drafts'
 
 interface SubmissionOptions {
   sessionId: string | null
@@ -24,9 +19,13 @@ interface SubmissionOptions {
   onBashSubmitted?: () => void
 }
 
+/** IPC failures are a UI boundary: report them per session and retain unaccepted drafts.
+ * Runtime-instance checks keep late failures from resurrecting closed or replaced sessions. */
 export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, document, attachments, bashMode = false, onBashSubmitted }: SubmissionOptions) {
-  const [errors, setErrors] = useState<Record<string, string | undefined>>({})
-  const [failedDrafts, setFailedDrafts] = useState<Record<string, FailedDraft[]>>({})
+  const errors = useComposerDraftsStore((state) => state.errors)
+  const failedDrafts = useComposerDraftsStore((state) => state.failedDrafts)
+  const setErrors = useComposerDraftsStore((state) => state.setErrors)
+  const setFailedDrafts = useComposerDraftsStore((state) => state.setFailedDrafts)
   const bashInFlight = useRef(new Set<string>())
   const stopEpochs = useRef(new Map<string, number>())
   const recoverable = sessionId ? failedDrafts[sessionId] : undefined
@@ -78,7 +77,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
       return
     }
 
-    const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images }
+    const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images: images.map(({ id, mimeType, data }) => ({ id, mimeType, data })) }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const titleText = hasAttachments ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim() : trimmed
     // An attachments/images-only first message has no text to show: the title is a marker the store

@@ -6,12 +6,19 @@ import { useComposerImages } from './useComposerImages'
 import { useFileMentions } from './useFileMentions'
 import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
+import { useComposerDraftsStore } from '../../stores/composer-drafts'
 
-/** Coordinates a draft with the active Pi session; editor and attachment state stay local. */
-export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
+/** Coordinates session-owned drafts with pane-local editors and attachment previews. */
+export function useComposer(
+  draftCwd?: string,
+  draftSessionId?: string | null,
+  explicitSessionId?: string | null,
+  isActive = true
+) {
   const activeSessionId = useSessionsStore(selectActiveSessionId)
-  const sessionId = activeSessionId ?? draftSessionId ?? null
-  const isDraftSession = Boolean(!activeSessionId && draftCwd && draftSessionId)
+  const effectiveActiveSessionId = (explicitSessionId != null && explicitSessionId !== '') ? explicitSessionId : activeSessionId
+  const sessionId = effectiveActiveSessionId ?? draftSessionId ?? null
+  const isDraftSession = Boolean(!effectiveActiveSessionId && draftCwd && draftSessionId)
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)
@@ -20,13 +27,15 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
   // session's id on both sides; keying the home by cwd alone would clear the editor on promote.
   const draftKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
   const attachments = useComposerImages(draftKey)
-  const document = useComposerEditor({ sessionId: draftKey, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
+  const document = useComposerEditor({ sessionId: draftKey, isActive, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
-  const [bashModeKey, setBashModeKey] = useState<string | null>(null)
-  const [dismissedBashKey, setDismissedBashKey] = useState<string | null>(null)
+  const [bashModeKey, setBashModeKey] = useState<string | null>(() =>
+    draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashMode ? draftKey : null)
+  const [dismissedBashKey, setDismissedBashKey] = useState<string | null>(() =>
+    draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashDismissed ? draftKey : null)
   useEffect(() => {
-    setBashModeKey(null)
-    setDismissedBashKey(null)
+    setBashModeKey(draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashMode ? draftKey : null)
+    setDismissedBashKey(draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashDismissed ? draftKey : null)
   }, [draftKey])
   const enteringBash = Boolean(
     draftKey && draft.text.startsWith('!') && draft.attachments[0]?.start !== 0 &&
@@ -34,23 +43,34 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
   )
   const bashMode = (bashModeKey === draftKey && draftKey !== null) || enteringBash
   useLayoutEffect(() => {
-    if (!enteringBash || !editor) return
+    // Hydration ran earlier in layout effects; this render can still describe the previous session.
+    if (!enteringBash || !editor || document.getDraft() !== draft) return
     setBashModeKey(draftKey)
+    if (draftKey) useComposerDraftsStore.getState().setBashMode(draftKey, true)
     editor.chain().deleteRange({ from: 1, to: 2 }).run()
-  }, [draftKey, editor, enteringBash])
+  }, [draftKey, editor, enteringBash, draft])
   useEffect(() => {
-    if (!draft.text.startsWith('!')) setDismissedBashKey(null)
-  }, [draft.text])
+    if (document.getDraft() !== draft || draft.text.startsWith('!')) return
+    setDismissedBashKey(null)
+    if (draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashDismissed) {
+      useComposerDraftsStore.getState().setBashMode(draftKey, false)
+    }
+  }, [draft, draftKey])
   const submission = useComposerSubmission({
     sessionId, draftCwd, isDraftSession, document, attachments, bashMode,
-    onBashSubmitted: () => setBashModeKey(null)
+    onBashSubmitted: () => {
+      setBashModeKey(null)
+      if (draftKey) useComposerDraftsStore.getState().setBashMode(draftKey, false)
+    }
   })
   const commands = useSlashCommands(sessionId, draft.text, (command) => {
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
   }, bashMode)
   // A draft is its own workspace; a tab reads the workspace off the session behind it.
-  const activeCwd = useSessionsStore(selectActiveSessionCwd)
+  const activeCwd = useSessionsStore((state) => explicitSessionId
+    ? state.openTabs.find((tab) => tab.id === explicitSessionId)?.cwd ?? null
+    : selectActiveSessionCwd(state))
   const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
   const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
@@ -67,6 +87,7 @@ export function useComposer(draftCwd?: string, draftSessionId?: string | null) {
       event.preventDefault()
       setDismissedBashKey(draftKey)
       setBashModeKey(null)
+      if (draftKey) useComposerDraftsStore.getState().setBashMode(draftKey, false, true)
       document.restoreBashPrefix()
       return true
     }

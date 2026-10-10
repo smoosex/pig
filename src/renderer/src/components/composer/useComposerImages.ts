@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { t } from '../../lib/i18n'
+import { useComposerDraftsStore, type DraftImage } from '../../stores/composer-drafts'
 
 export interface PastedImage {
   id: string
@@ -66,17 +67,30 @@ export function useComposerImages(sessionId: string | null) {
     currentImages.current = []
   }, [])
 
+  const save = () => {
+    const target = currentSession.current
+    if (target) useComposerDraftsStore.getState().setImages(target,
+      currentImages.current.map(({ id, mimeType, data }) => ({ id, mimeType, data })))
+  }
+
   const clear = useCallback(() => {
     release()
+    save()
     setImages([])
     setPreview(null)
     setError(null)
   }, [release])
 
   useEffect(() => {
-    clear()
+    const saved = sessionId ? useComposerDraftsStore.getState().drafts[sessionId]?.images : undefined
+    currentImages.current = (saved ?? []).map((image) => ({
+      ...image, url: `data:${image.mimeType};base64,${image.data}`
+    }))
+    setImages(currentImages.current)
+    setPreview(null)
+    setError(null)
     return release
-  }, [sessionId, clear, release])
+  }, [sessionId, release])
 
   const add = useCallback(async (files: File[]) => {
     const startedFor = currentSession.current
@@ -90,6 +104,7 @@ export function useComposerImages(sessionId: string | null) {
       return
     }
     currentImages.current = [...currentImages.current, ...added]
+    save()
     setImages(currentImages.current)
     setError(results.some((result) => result.status === 'rejected') ? t('composer.imageReadFailed') : null)
   }, [])
@@ -99,16 +114,18 @@ export function useComposerImages(sessionId: string | null) {
     if (!image) return
     URL.revokeObjectURL(image.url)
     currentImages.current = currentImages.current.filter((item) => item.id !== id)
+    save()
     setImages(currentImages.current)
     setPreview((current) => current === image.url ? null : current)
   }, [])
 
-  const restore = useCallback((saved: PastedImage[]) => {
+  const restore = useCallback((saved: (DraftImage | PastedImage)[]) => {
     const restored = saved.map((image) => ({
       ...image,
       url: `data:${image.mimeType};base64,${image.data}`
     }))
     currentImages.current = [...restored, ...currentImages.current]
+    save()
     setImages(currentImages.current)
   }, [])
 

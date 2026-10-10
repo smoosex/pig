@@ -25,14 +25,18 @@ import { useComposerAppearance } from './composer/useComposerAppearance'
 export function Composer({
   draftCwd,
   draftSessionId,
+  explicitSessionId,
+  isActive = true,
   workspace
 }: {
   draftCwd?: string
   draftSessionId?: string | null
+  explicitSessionId?: string | null
+  isActive?: boolean
   workspace?: { project: string; branch: string } | null
 } = {}) {
   const t = useT()
-  const { sessionId, isDraftSession, isStreaming, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId)
+  const { sessionId, isDraftSession, isStreaming, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
   const appearance = useComposerAppearance()
   const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const [focused, setFocused] = useState(false)

@@ -169,9 +169,13 @@ async function fixture(scenario: string): Promise<void> {
     if (scenario === 'draft-failure') await render('one')
     if (scenario === 'stopped') await act(async () => { await state.abort() })
     if (scenario === 'switch') await render('two')
+    if (scenario === 'remount') {
+      await act(async () => { root.render(null) })
+      await render('one')
+    }
     if (scenario === 'reopened') store.runtime.one.instanceId++
     await act(async () => {
-      if (['newer-draft', 'switch', 'reopened', 'draft-failure', 'compact-error'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
+      if (['newer-draft', 'switch', 'remount', 'reopened', 'draft-failure', 'compact-error'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
       else prepared.resolve()
       await sending
       await duplicate
@@ -245,6 +249,13 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(editor.getDraft().text, '原文附件')
       assert.equal(editor.getDraft().attachments.length, 1)
       assert.equal(images.images.length, 1)
+      assert.equal(state.canRestore, false)
+    } else if (scenario === 'remount') {
+      assert.equal(rollbackCalls, 1)
+      assert.equal(editor.getDraft().text, '原文附件')
+      assert.equal(editor.getDraft().attachments.length, 1)
+      assert.equal(images.images.length, 1)
+      assert.match(state.error ?? '', /Prepare failed/)
       assert.equal(state.canRestore, false)
     } else if (scenario === 'reopened') {
       assert.equal(rollbackCalls, 0)
@@ -327,7 +338,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments']) {
+  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

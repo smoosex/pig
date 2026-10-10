@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useEditor } from '@tiptap/react'
 import { selectionToInsertionEnd, type JSONContent } from '@tiptap/core'
 import { Fragment, Slice, type Node as ProseMirrorNode, type Schema } from '@tiptap/pm/model'
@@ -11,9 +11,11 @@ import { useT } from '../../hooks/useT'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
+import { useComposerDraftsStore } from '../../stores/composer-drafts'
 
 interface ComposerEditorOptions {
   sessionId: string | null
+  isActive?: boolean
   onKeyDown: (event: KeyboardEvent) => boolean
   onPasteImages: (files: File[]) => Promise<void>
 }
@@ -93,6 +95,8 @@ export function useComposerEditor(options: ComposerEditorOptions) {
       const next = serializeComposerDocument(nextEditor.getJSON())
       currentDraft.current = next
       setDraft(next)
+      const sessionId = callbacks.current.sessionId
+      if (sessionId) useComposerDraftsStore.getState().setContent(sessionId, nextEditor.getJSON())
     },
     editorProps: {
       attributes: {
@@ -156,6 +160,8 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     currentDraft.current = EMPTY_COMPOSER
     setDraft(EMPTY_COMPOSER)
     editor?.commands.clearContent(false)
+    const sessionId = callbacks.current.sessionId
+    if (sessionId) useComposerDraftsStore.getState().setContent(sessionId, textToComposerDocument(''))
   }, [editor])
 
   const replaceText = useCallback((text: string) => {
@@ -177,13 +183,20 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     view.dispatch(transaction)
   }, [editor])
 
-  useEffect(() => {
-    clear()
+  useLayoutEffect(() => {
+    const content = (options.sessionId
+      ? useComposerDraftsStore.getState().drafts[options.sessionId]?.content
+      : undefined) ?? textToComposerDocument('')
+    editor?.commands.setContent(content, { emitUpdate: false })
+    const next = serializeComposerDocument(content)
+    currentDraft.current = next
+    setDraft(next)
     editor?.setEditable(Boolean(options.sessionId))
-  }, [options.sessionId, editor, clear])
+  }, [options.sessionId, editor])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (callbacks.current.isActive === false) return
       if (
         !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
         event.key.toLowerCase() !== 'l' || event.isComposing || event.keyCode === 229 ||

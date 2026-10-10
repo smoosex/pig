@@ -33,6 +33,10 @@ import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
 
+import { useSplitLayoutStore, collectPaneNodes, type PaneNode } from './stores/split-layout'
+import { SplitPaneContainer } from './components/chat/SplitPaneContainer'
+import { SplitPaneOverlay } from './components/chat/SplitPaneOverlay'
+
 // The editor is the heaviest thing a tab can pull in, so it arrives with the first file that is opened.
 const FileView = lazy(() => import('./components/files/FileView'))
 
@@ -84,6 +88,72 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
   )
 }
 
+export function PaneViewContent({
+  node,
+  isActive,
+  composerWorkspace
+}: {
+  node: PaneNode
+  isActive: boolean
+  composerWorkspace: { project: string; branch: string } | null
+}) {
+  const t = useT()
+  const paneTab = useSessionsStore((s) => s.openTabs.find((item) => item.id === node.tabId))
+  const runtime = useSessionsStore((s) => s.runtime[node.tabId])
+  const isDiff = paneTab?.kind === 'diff'
+  const isFile = paneTab?.kind === 'file'
+
+  useEffect(() => {
+    if (
+      paneTab &&
+      !isDiff &&
+      !isFile &&
+      paneTab.loadState === 'cold'
+    ) {
+      void useSessionsStore.getState().activateTab(node.tabId)
+    }
+  }, [paneTab, isDiff, isFile, node.tabId])
+
+  if (paneTab?.loadState === 'error') {
+    return (
+      <Empty>
+        <EmptyDescription role="alert">{paneTab.loadError || t('app.loadFailed')}</EmptyDescription>
+        <Button variant="outline" size="xs" onClick={() => void useSessionsStore.getState().activateTab(node.tabId)}>
+          <RefreshCw data-icon="inline-start" />
+          {t('common.retry')}
+        </Button>
+      </Empty>
+    )
+  }
+
+  return (
+    <div className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col">
+      {isDiff ? (
+        <ChangesView cwd={paneTab.cwd} />
+      ) : isFile && paneTab.path ? (
+        <Suspense
+          fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
+        >
+          <FileView cwd={paneTab.cwd} path={paneTab.path} />
+        </Suspense>
+      ) : (
+        <>
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {paneTab?.loadState === 'opening' || (paneTab?.loadState === 'cold' && !runtime) ? (
+              <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+                {t('app.loadingSession')}
+              </div>
+            ) : (
+              <ChatView explicitSessionId={node.tabId} />
+            )}
+          </div>
+          <Composer explicitSessionId={node.tabId} isActive={isActive} workspace={composerWorkspace} />
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const t = useT()
   const initializeProjectWorkspaces = useSessionsStore((s) => s.initializeProjectWorkspaces)
@@ -118,6 +188,20 @@ export default function App() {
   )
   const loadSettings = useSettingsStore((s) => s.load)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
+  const splitRoot = useSplitLayoutStore((s) => s.root)
+  const splitDragOver = useSplitLayoutStore((s) => s.dragOver)
+  const splitPaneNodes = splitRoot ? collectPaneNodes(splitRoot) : []
+  const splitTabIdSet = new Set(splitPaneNodes.map((p) => p.tabId))
+  const isMultiPane = splitPaneNodes.length > 1 && Boolean(activeTabId && splitTabIdSet.has(activeTabId))
+
+  useEffect(() => {
+    const openTabIds = new Set(openTabs.map((t) => t.id))
+    for (const pane of splitPaneNodes) {
+      if (!openTabIds.has(pane.tabId)) {
+        useSplitLayoutStore.getState().closePane(pane.id)
+      }
+    }
+  }, [openTabs, splitRoot])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -325,71 +409,88 @@ export default function App() {
           ) : (
             <>
               <div className="m-2 flex min-w-0 flex-1 flex-col rounded-xl bg-chat-background shadow-md">
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
-                <div className="flex h-9 shrink-0 items-center overflow-hidden">
-                  {currentProjectCwd || activeTabId ? <TabBar sidebarTab={sidebarTab} /> : <div className="flex-1" />}
-                </div>
-                {diffTab ? (
-                  <ChangesView cwd={diffTab.cwd} />
-                ) : fileTab?.path ? (
-                  <Suspense
-                    fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
+                  <div className="flex h-9 shrink-0 items-center overflow-hidden" data-tab-strip="true">
+                    {currentProjectCwd || activeTabId ? <TabBar sidebarTab={sidebarTab} /> : <div className="flex-1" />}
+                  </div>
+                  <div
+                    className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                    data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}
                   >
-                    <FileView cwd={fileTab.cwd} path={fileTab.path} />
-                  </Suspense>
-                ) : sessionReady || projectHome || chatHome ? (
-                  <>
-                    {sessionReady ? <ChatView /> : <SessionGreeting />}
-                    {chatHome && (chatDraftError || workspaceError) ? (
-                      <div
-                        role="alert"
-                        className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
+                    {isMultiPane ? (
+                      <SplitPaneContainer
+                        className="flex-1 min-h-0 min-w-0"
+                        renderPane={(node: PaneNode, isActive) => (
+                          <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
+                        )}
+                      />
+                    ) : diffTab ? (
+                      <ChangesView cwd={diffTab.cwd} />
+                    ) : fileTab?.path ? (
+                      <Suspense
+                        fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
                       >
-                        {chatDraftError ? (
-                          <span className="flex items-center gap-2">
-                            {chatDraftError}
-                            <Button variant="outline" size="xs" onClick={retryChatDraft}>
-                              <RefreshCw />
-                              {t('common.retry')}
-                            </Button>
-                          </span>
+                        <FileView cwd={fileTab.cwd} path={fileTab.path} />
+                      </Suspense>
+                    ) : sessionReady || projectHome || chatHome ? (
+                      <>
+                        {sessionReady ? <ChatView /> : <SessionGreeting />}
+                        {chatHome && (chatDraftError || workspaceError) ? (
+                          <div
+                            role="alert"
+                            className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
+                          >
+                            {chatDraftError ? (
+                              <span className="flex items-center gap-2">
+                                {chatDraftError}
+                                <Button variant="outline" size="xs" onClick={retryChatDraft}>
+                                  <RefreshCw />
+                                  {t('common.retry')}
+                                </Button>
+                              </span>
+                            ) : null}
+                            {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
+                            {workspaceError ? <span>{workspaceError}</span> : null}
+                          </div>
                         ) : null}
-                        {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
-                        {workspaceError ? <span>{workspaceError}</span> : null}
-                      </div>
-                    ) : null}
-                    <Composer
-                      draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
-                      draftSessionId={
-                        projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
-                      }
-                      workspace={composerWorkspace}
-                    />
-                    {projectHome ? <ProjectSessionHome cwd={currentProjectCwd!} /> : null}
-                  </>
-                ) : (
-                  <Empty className="gap-4">
-                    <EmptyDescription>
-                      {restoreError
-                        ? t('app.restoreFailed', { error: restoreError })
-                        : activeTab?.loadState === 'error'
-                          ? activeTab.loadError || t('app.loadFailed')
-                          : t('app.loadingSession')}
-                    </EmptyDescription>
-                    {restoreError ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
-                      >
-                        <RefreshCw />
-                        {t('app.retryRestore')}
-                      </Button>
-                    ) : null}
-                  </Empty>
-                )}
+                        <Composer
+                          draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
+                          draftSessionId={
+                            projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
+                          }
+                          workspace={composerWorkspace}
+                        />
+                        {projectHome ? <ProjectSessionHome cwd={currentProjectCwd!} /> : null}
+                      </>
+                    ) : (
+                      <Empty className="gap-4">
+                        <EmptyDescription>
+                          {restoreError
+                            ? t('app.restoreFailed', { error: restoreError })
+                            : activeTab?.loadState === 'error'
+                              ? activeTab.loadError || t('app.loadFailed')
+                              : t('app.loadingSession')}
+                        </EmptyDescription>
+                        {restoreError ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
+                          >
+                            <RefreshCw />
+                            {t('app.retryRestore')}
+                          </Button>
+                        ) : null}
+                      </Empty>
+                    )}
+                    {!isMultiPane && (
+                      <SplitPaneOverlay
+                        position={splitDragOver?.paneId === (activeTabId ?? 'single') ? splitDragOver.position : null}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
             {currentProjectCwd ? <WorkspacePanel cwd={currentProjectCwd} hidden={!reviewOpen} /> : null}
             </>
           )}

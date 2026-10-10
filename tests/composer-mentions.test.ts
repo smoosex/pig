@@ -83,7 +83,11 @@ async function releaseDom(): Promise<void> {
   domReady = false
   domOurs = false
 }
-afterEach(async () => { await releaseDom() })
+afterEach(async () => {
+  const { useComposerDraftsStore } = await import('../src/renderer/src/stores/composer-drafts')
+  useComposerDraftsStore.getState().discard('mentions')
+  await releaseDom()
+})
 
 describe('file mention dismissal', () => {
   test('the menu reopens after completing once', async () => {

@@ -25,6 +25,7 @@ const measuredItem = '[content-visibility:visible] [contain-intrinsic-size:none]
 const MAX_JUMP_PAGES = 32
 
 const VisibleTurnRow = memo(function VisibleTurnRow({
+  sessionId,
   turn,
   turnKey,
   turnIndex,
@@ -32,6 +33,7 @@ const VisibleTurnRow = memo(function VisibleTurnRow({
   onNeedProcess,
   onAbortBash
 }: {
+  sessionId: string
   turn: Turn
   turnKey: string
   turnIndex: number
@@ -48,7 +50,7 @@ const VisibleTurnRow = memo(function VisibleTurnRow({
       data-turn-index={turnIndex}
       className={cn(measuredItem, chatColumn)}
     >
-      <TurnView turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
+      <TurnView sessionId={sessionId} turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
     </MessageScrollerItem>
   )
 })
@@ -206,6 +208,7 @@ export function ConversationViewport({
           {visibleTurns.map(({ turn, index, key }) => (
             <VisibleTurnRow
               key={key}
+              sessionId={sessionId}
               turn={turn}
               turnKey={key}
               turnIndex={windowStart + index}

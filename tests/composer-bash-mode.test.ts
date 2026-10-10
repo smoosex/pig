@@ -98,8 +98,8 @@ async function fixture(): Promise<void> {
     await act(async () => { root.render(createElement(Probe, { sessionId: 'draft-other' })) })
     assert.equal(state.bashMode, false)
     await act(async () => { root.render(createElement(Probe, { sessionId: 'draft-bash' })) })
-    assert.equal(state.bashMode, false)
-    assert.equal(state.editor?.getText(), '')
+    assert.equal(state.bashMode, true, 'returning restores the session-owned Bash draft')
+    assert.equal(state.editor?.getText(), '!pwd')
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

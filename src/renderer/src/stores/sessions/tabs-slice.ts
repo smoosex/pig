@@ -2,6 +2,7 @@
 import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
 import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
+import { useComposerDraftsStore } from '../composer-drafts'
 import { newSessionId } from '../../lib/session-id'
 import { changesTabId } from '../../../../shared/tab-ids'
 import { t } from '../../lib/i18n'
@@ -26,6 +27,7 @@ function dropDraftSlot(
 ): (state: SessionsStore) => Partial<Pick<SessionsStore, 'draftSessionByCwd' | 'runtime'>> {
   return (state) => {
     if (state.draftSessionByCwd[cwd] !== sessionId) return {}
+    useComposerDraftsStore.getState().discard(sessionId)
     const draftSessionByCwd = { ...state.draftSessionByCwd }
     const runtime = { ...state.runtime }
     delete draftSessionByCwd[cwd]
@@ -755,6 +757,7 @@ export const createTabsSlice: SessionSlice<
       // A chat that was sent to is a tab by then, and the slot is what says a draft is still to take
       // back: nothing here can reach a chat the reader has kept.
       if (!draft) return
+      useComposerDraftsStore.getState().discard(draft.sessionId)
       set((state) => {
         const runtime = { ...state.runtime }
         delete runtime[draft.sessionId]
@@ -897,6 +900,7 @@ export const createTabsSlice: SessionSlice<
     closeTab: (tabId) => {
       const tab = get().openTabs.find((item) => item.id === tabId)
       if (!tab) return
+      useComposerDraftsStore.getState().discard(tabId)
       if (tab.kind === 'diff') {
         // A diff tab owns no session: closing it hands the strip back to a neighbour, and the worktree's
         // session is the last one standing when nothing else of it is open.
