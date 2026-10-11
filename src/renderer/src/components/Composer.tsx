@@ -16,6 +16,7 @@ import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
 import { RetryNotice } from './composer/RetryNotice'
+import { ReviewStatus } from './composer/ReviewStatus'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
 import { useComposer } from './composer/useComposer'
@@ -99,16 +100,21 @@ export function Composer({
         {commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
         {mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
       </Popover>
-      {workspace ? (
-        <div className="flex min-w-0 items-center gap-5 px-3.5 pt-2 text-xs text-muted-foreground">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <Folder className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate" title={workspace.project}>{workspace.project}</span>
-          </span>
-          <span className="flex min-w-0 items-center gap-1.5">
-            <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate" title={workspace.branch}>{workspace.branch}</span>
-          </span>
+      {workspace || sessionId ? (
+        <div className="flex min-w-0 items-center gap-3 px-3.5 pt-2 text-xs text-muted-foreground empty:hidden">
+          {workspace ? (
+            <div className="flex min-w-0 items-center gap-5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate" title={workspace.project}>{workspace.project}</span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate" title={workspace.branch}>{workspace.branch}</span>
+              </span>
+            </div>
+          ) : null}
+          <ReviewStatus key={sessionId ?? 'none'} sessionId={sessionId} />
         </div>
       ) : null}
       <ImagePreview src={attachments.preview} onClose={() => attachments.setPreview(null)} />

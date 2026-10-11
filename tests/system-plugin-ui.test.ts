@@ -31,9 +31,11 @@ async function fixture(scenario: Scenario): Promise<void> {
   }
   let listener: ((event: SystemUIEvent) => void) | undefined
   const replies: Array<[string, string | null]> = []
+  const submittedPrompts: Array<[string, string]> = []
   window.api = {
     onSystemUI: (callback: typeof listener) => { listener = callback; return () => { listener = undefined } },
-    replyReviewUI: async (id: string, value: string | null) => { replies.push([id, value]) }
+    replyReviewUI: async (id: string, value: string | null) => { replies.push([id, value]) },
+    prompt: async (sessionId: string, text: string) => { submittedPrompts.push([sessionId, text]) }
   } as unknown as typeof window.api
   const React = await import('react')
   const { act } = React
@@ -41,10 +43,16 @@ async function fixture(scenario: Scenario): Promise<void> {
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ locale: 'en', appearance: 'light' })
   const { SystemPluginUI } = await import('../src/renderer/src/components/SystemPluginUI')
+  const { ReviewStatus } = await import('../src/renderer/src/components/composer/ReviewStatus')
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
-  const render = async (session: string) => { await act(async () => root.render(React.createElement(SystemPluginUI, { activeSessionId: session }))) }
+  const render = async (session: string) => {
+    await act(async () => root.render(React.createElement(React.Fragment, null,
+      React.createElement(SystemPluginUI, { activeSessionId: session }),
+      React.createElement('div', { className: '@container/composer-column' }, React.createElement(ReviewStatus, { sessionId: session }))
+    )))
+  }
   const emit = async (event: SystemUIEvent) => { await act(async () => listener!(event)) }
   try {
     await render('one')
@@ -156,14 +164,17 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.ok(document.documentElement.classList.contains('dark'))
       assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), 'dark')
       await emit({ kind: 'review-state', sessionId: 'one', active: true })
-      const indicator = document.querySelector<HTMLElement>('[role="alert"]')!.parentElement!
-      assert.equal(getComputedStyle(indicator).position, 'fixed')
-      assert.equal(getComputedStyle(indicator).zIndex, '40')
+      const reviewStatus = document.querySelector<HTMLElement>('[data-review-status]')!
+      assert.match(reviewStatus.textContent ?? '', /Review active/)
+      await act(async () => reviewStatus.querySelector('button')!.click())
+      assert.deepEqual(submittedPrompts, [['one', '/end-review']])
       await act(async () => document.querySelector<HTMLButtonElement>('[data-action]')!.click())
       assert.ok(document.body.textContent?.includes(message))
       await act(async () => [...document.querySelectorAll('button')].find((button) => button.textContent === 'Continue')!.click())
       await render('two')
+      assert.equal(document.querySelector('[data-review-status]'), null)
       await render('one')
+      assert.ok(document.querySelector('[data-review-status]'))
       await flush()
       assert.equal(document.querySelector('[data-sonner-toast]:not([data-removed="true"])'), null)
       return
@@ -226,7 +237,7 @@ if (process.argv[2] === '--system-ui-fixture') {
     ['base', 'system UI uses searchable review choices and consumes notification details'],
     ['bounds', 'system UI bounds inactive notices per session and across sessions'],
     ['expiry', 'system UI expires inactive notices and never renews them on activation'],
-    ['theme', 'real system toasts follow Pig themes with readable child colors and floating review state']
+    ['theme', 'real system toasts follow Pig themes and review state stays with its session']
   ]
   for (const [scenario, name] of cases) test(name, async () => {
     const child = Bun.spawn([process.execPath, import.meta.path, '--system-ui-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })

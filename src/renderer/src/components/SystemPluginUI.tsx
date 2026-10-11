@@ -5,12 +5,12 @@ import { api, type SystemUIEvent, type ReviewOption } from '../ipc/api'
 import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../hooks/useT'
 import { useSettingsStore } from '../stores/settings'
+import { useSystemUIStore } from '../stores/system-ui'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command'
 import { InputGroup, InputGroupInput, InputGroupTextarea } from './ui/input-group'
-import { Alert, AlertDescription } from './ui/alert'
 
 type Prompt = Extract<SystemUIEvent, { kind: 'review-prompt' }>
 type Notice = Extract<SystemUIEvent, { kind: 'notify' }> & { id: string; expiresAt: number }
@@ -105,7 +105,6 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
   const appearance = useSettingsStore((state) => state.appearance)
   const [prompts, setPrompts] = useState<Prompt[]>([])
   const [notices, setNotices] = useState<Notice[]>([])
-  const [reviewSessions, setReviewSessions] = useState<string[]>([])
   const [detail, setDetail] = useState<Notice | null>(null)
   const visible = useRef(new Set<string>())
   const prompt = prompts.find((item) => item.sessionId === activeSessionId)
@@ -124,11 +123,11 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
         return [...fresh.filter((item) => item.sessionId !== event.sessionId || retained.has(item.id)), notice].slice(-MAX_NOTICES)
       })
     }
-    if (event.kind === 'review-state') setReviewSessions((items) => [...items.filter((id) => id !== event.sessionId), ...(event.active ? [event.sessionId] : [])])
+    if (event.kind === 'review-state') useSystemUIStore.getState().setReviewActive(event.sessionId, event.active)
     if (event.kind === 'reset') {
       setPrompts((items) => items.filter((item) => item.sessionId !== event.sessionId))
       setNotices((items) => items.filter((item) => item.sessionId !== event.sessionId))
-      setReviewSessions((items) => items.filter((id) => id !== event.sessionId))
+      useSystemUIStore.getState().setReviewActive(event.sessionId, false)
       setDetail((item) => item?.sessionId === event.sessionId ? null : item)
     }
   }), [])
@@ -182,11 +181,6 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
         } as CSSProperties}
         toastOptions={{ classNames: { description: 'text-muted-foreground!', closeButton: 'hover:bg-accent! hover:border-border!' } }}
       />
-      {reviewSessions.includes(activeSessionId ?? '') ? (
-        <div className="fixed right-4 bottom-24 z-40 max-w-sm">
-          <Alert><GitPullRequest /><AlertDescription>{t('reviewUI.active')}</AlertDescription></Alert>
-        </div>
-      ) : null}
       {prompt ? <ReviewPanel key={prompt.id} prompt={prompt} reply={reply} /> : null}
       <Dialog open={!!activeDetail} onOpenChange={(open) => { if (!open) setDetail(null) }}>
         <DialogContent className="sm:max-w-2xl">

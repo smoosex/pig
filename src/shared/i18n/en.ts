@@ -565,7 +565,8 @@ export const en: Messages = {
     returnAndFix: 'Return and fix findings', returnAndFixDescription: 'Queue a follow-up to address the review findings.',
     returnAndSummarize: 'Return with a summary', returnAndSummarizeDescription: 'Preserve the findings in a branch summary.',
     prPlaceholder: 'PR number or GitHub pull request URL', foldersPlaceholder: 'Paths separated by spaces or newlines',
-    instructionsPlaceholder: 'What should the reviewer focus on?', active: 'Review branch active · /end-review to return'
+    instructionsPlaceholder: 'What should the reviewer focus on?', active: 'Review active', activeCompact: 'Review',
+    endReview: 'Return to conversation', endFailed: 'Could not end review'
   },
   thinking: {
     off: 'Off',

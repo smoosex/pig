@@ -567,7 +567,8 @@ export const zh = {
     returnAndFix: '返回并修复问题', returnAndFixDescription: '追加一条任务，处理审查发现的问题。',
     returnAndSummarize: '生成摘要后返回', returnAndSummarizeDescription: '将审查发现保存在分支摘要中。',
     prPlaceholder: 'PR 编号或 GitHub Pull Request 链接', foldersPlaceholder: '用空格或换行分隔路径',
-    instructionsPlaceholder: '希望审查重点关注什么？', active: '正在审查分支中 · 使用 /end-review 返回'
+    instructionsPlaceholder: '希望审查重点关注什么？', active: 'Review 中', activeCompact: 'Review',
+    endReview: '返回原对话', endFailed: '无法结束 Review'
   },
   thinking: {
     off: '关闭',
