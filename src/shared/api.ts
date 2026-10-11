@@ -412,8 +412,20 @@ export interface SessionNameUpdate {
   name: string
 }
 
-/** Switching a branch answers with the new window, so the renderer needs no second round trip. */
-export type SessionBranchRef = DisplayTurnsResult
+export interface SessionBranchOptions {
+  /** Tree restoration stops before a user message and returns it as unsent input. */
+  restoreUserInput?: boolean
+}
+
+export interface RestoredSessionPrompt {
+  text: string
+  images: Array<{ mimeType: string; data: string }>
+}
+
+/** Switching a branch answers with the new window and any input restored from the selected node. */
+export interface SessionBranchRef extends DisplayTurnsResult {
+  restoredPrompt?: RestoredSessionPrompt
+}
 
 export interface SessionTreeGutter {
   position: number
@@ -711,7 +723,7 @@ export interface SessionApi extends ToolSettingsApi {
     views?: SessionTreeView[]
   ) => Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>
   setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) => Promise<void>
-  viewBranch: (sessionId: string, tipId: string) => Promise<SessionBranchRef>
+  viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<SessionBranchRef>
   getControls: (sessionId: string) => Promise<SessionControls>
   getTokenStats: (sessionId: string) => Promise<SessionTokenStats>
   getCommands: (sessionId: string) => Promise<SlashCommand[]>

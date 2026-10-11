@@ -7,6 +7,7 @@ import type {
   FollowUpAction,
   ProjectGroup,
   SessionControls,
+  SessionBranchOptions,
   SessionMeta,
   SessionNameUpdate,
   SessionPreviewFallback,
@@ -267,7 +268,7 @@ export interface SessionsStore {
   startCompaction: (sessionId: string, mark: LiveCompaction) => void
   updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void
   dropCompaction: (sessionId: string, id: string) => void
-  viewBranch: (sessionId: string, tipId: string) => Promise<void>
+  viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<void>
 }
 
 export type SessionSlice<Keys extends keyof SessionsStore> = StateCreator<

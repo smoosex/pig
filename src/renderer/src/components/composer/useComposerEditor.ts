@@ -183,6 +183,8 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     view.dispatch(transaction)
   }, [editor])
 
+  const restoreVersion = useComposerDraftsStore((state) => options.sessionId
+    ? state.drafts[options.sessionId]?.restoreVersion ?? 0 : 0)
   useLayoutEffect(() => {
     const content = (options.sessionId
       ? useComposerDraftsStore.getState().drafts[options.sessionId]?.content
@@ -192,7 +194,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     currentDraft.current = next
     setDraft(next)
     editor?.setEditable(Boolean(options.sessionId))
-  }, [options.sessionId, editor])
+  }, [options.sessionId, editor, restoreVersion])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

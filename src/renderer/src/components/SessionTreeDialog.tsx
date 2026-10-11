@@ -378,7 +378,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             )}
                             onClick={() => {
                               if (!activeSessionId) return
-                              viewBranch(activeSessionId, row.id).then(
+                              viewBranch(activeSessionId, row.id, { restoreUserInput: true }).then(
                                 () => setOpen(false),
                                 (reason: unknown) =>
                                   setError(reason instanceof Error ? reason.message : String(reason))

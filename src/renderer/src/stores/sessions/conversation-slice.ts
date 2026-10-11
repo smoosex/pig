@@ -8,6 +8,8 @@ import { buildTurn, thinkingTimingKey } from '../../chat/turns'
 import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
+import { useComposerDraftsStore } from '../composer-drafts'
+import { textToComposerDocument } from '../../components/composer/document'
 
 /** Turns fetched when the reader scrolls above the loaded window. */
 const PAGE_TURNS = 40
@@ -485,12 +487,12 @@ export const createConversationSlice: SessionSlice<
       liveCompactions: rt.liveCompactions.filter((mark) => mark.id !== id)
     })),
 
-    viewBranch: async (sessionId, tipId) => {
+    viewBranch: async (sessionId, tipId, options) => {
       const initial = get().runtime[sessionId]
       if (!initial) return
       const branchRequest = initial.branchRequest + 1
       update(sessionId, { branchRequest, toolUpdates: {}, liveCompactions: [], retryNotice: null })
-      const branch = await api.viewBranch(sessionId, tipId)
+      const branch = await api.viewBranch(sessionId, tipId, options)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest) return
       const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
@@ -502,6 +504,12 @@ export const createConversationSlice: SessionSlice<
         display: branch
       })
       if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
+      if (branch.restoredPrompt) {
+        useComposerDraftsStore.getState().restoreDraft(sessionId, {
+          content: textToComposerDocument(branch.restoredPrompt.text),
+          images: branch.restoredPrompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
+        })
+      }
       await get().loadControls(sessionId)
     }
   }

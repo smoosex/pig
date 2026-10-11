@@ -13,6 +13,7 @@ import type {
   DisplayTurnsResult,
   FollowUpAction,
   SessionControls,
+  SessionBranchOptions,
   SessionTokenStats,
   SessionTreeRow,
   SessionTreeView,
@@ -44,6 +45,7 @@ import {
   updateFollowUpMessage as updateFollowUp
 } from './session-actions'
 import { buildSessionTreeViews, SESSION_TREE_VIEWS } from './session-tree'
+import { switchSessionBranch } from './session-branch'
 import {
   displayWindow,
   fileSource,
@@ -764,27 +766,9 @@ export function sessionEntryLookup(sessionId: string, entryId: string): Promise<
   })
 }
 
-export async function viewSessionBranch(sessionId: string, tipId: string): Promise<string | null> {
+export async function viewSessionBranch(sessionId: string, tipId: string, options?: SessionBranchOptions) {
   const ls = await prepareSession(sessionId)
-  if (ls.agentSession.isStreaming || ls.agentSession.isBashRunning) throw new Error('Session is busy')
-  const sm = ls.agentSession.sessionManager
-  if (!sm.getEntry(tipId)) throw new Error(`Entry not found: ${tipId}`)
-  if (sm.getLeafId() !== tipId) {
-    const oldLeafId = sm.getLeafId()
-    sm.branch(tipId)
-    // Every request is built from the session manager now, so the branch takes effect either way;
-    // refreshing the finalized transcript is what keeps the public state and the message-to-entry
-    // map on the branch we just moved to.
-    ls.agentSession.refreshContext()
-    // Extensions track the leaf through session_tree; without the event a plugin bound to the old
-    // branch (for example an active review) keeps acting on the branch the user left.
-    await ls.agentSession.extensionRunner.emit({
-      type: 'session_tree',
-      newLeafId: sm.getLeafId(),
-      oldLeafId
-    })
-  }
-  return sm.getLeafId()
+  return switchSessionBranch(ls.agentSession, tipId, options)
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {

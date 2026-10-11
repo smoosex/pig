@@ -10,6 +10,7 @@ import type {
   SessionRef,
   SessionApi,
   SessionControls,
+  SessionBranchRef,
   SessionMeta
 } from '../src/shared/api'
 
@@ -993,7 +994,39 @@ async function runFixture(name: string): Promise<void> {
 
   await state().newSession(meta.cwd)
 
-  if (name === 'open-lazy') {
+  if (name === 'branch-restores-prompt') {
+    const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+    const { textToComposerDocument, serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
+    drafts.getState().setContent(meta.id, textToComposerDocument('未发送的旧草稿'))
+    drafts.getState().setImages(meta.id, [{ id: 'old', mimeType: 'image/jpeg', data: 'old-image' }])
+    const restoredPrompt = { text: '恢复的输入\n完整内容', images: [{ mimeType: 'image/png', data: 'image' }] }
+    api.viewBranch = async (id, tip, options) => {
+      assert.deepEqual([id, tip, options], [meta.id, 'user-node', { restoreUserInput: true }])
+      return { ...history('previous-turn'), restoredPrompt }
+    }
+    await state().viewBranch(meta.id, 'user-node', { restoreUserInput: true })
+    assert.deepEqual(runtime().turns.map((turn) => turn.id), ['previous-turn'])
+    const draft = drafts.getState().drafts[meta.id]!
+    assert.equal(serializeComposerDocument(draft.content!).text, restoredPrompt.text)
+    assert.deepEqual(draft.images?.map(({ mimeType, data }) => ({ mimeType, data })), restoredPrompt.images)
+    assert.equal(draft.restoreVersion, 1)
+    assert.equal(draft.bashMode, false)
+
+    api.viewBranch = async () => history('assistant-node')
+    await state().viewBranch(meta.id, 'assistant-node', { restoreUserInput: true })
+    assert.equal(drafts.getState().drafts[meta.id], draft, 'a non-user node preserves unsent input')
+  } else if (name === 'branch-restore-stale') {
+    const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+    const response = deferred<SessionBranchRef>()
+    api.viewBranch = () => response.promise
+    const restoring = state().viewBranch(meta.id, 'user-node', { restoreUserInput: true })
+    api.viewBranch = async () => history('newer-node')
+    await state().viewBranch(meta.id, 'newer-node')
+    response.resolve({ ...history('old-node'), restoredPrompt: { text: '过期输入', images: [] } })
+    await restoring
+    assert.equal(runtime().leafId, 'newer-node')
+    assert.equal(drafts.getState().drafts[meta.id], undefined, 'a superseded restoration cannot overwrite the draft')
+  } else if (name === 'open-lazy') {
     state().closeTab(meta.id)
     await state().openExisting(meta)
     // Opening renders the persisted projection without paying for the SDK build.
@@ -1782,6 +1815,8 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'branch-restores-prompt': 'tree restoration replaces unsent text and images without replaying the selected turn',
+    'branch-restore-stale': 'a stale tree restoration cannot replace the current draft',
     'chat-restore-scan-failure': 'failed chat scans preserve saved membership until a successful retry',
     'chat-restore-live': 'restoration preserves chat tabs opened while project scanning is pending',
     'chat-restore-closed': 'restoration respects a chat opened and closed during scanning',

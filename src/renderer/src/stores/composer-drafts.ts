@@ -17,6 +17,8 @@ type DraftErrors = Record<string, string | undefined>
 type FailedDrafts = Record<string, FailedDraft[] | undefined>
 
 interface ComposerDraft {
+  /** External replacements rehydrate mounted editors without replaying their own keystrokes. */
+  restoreVersion?: number
   content?: JSONContent
   images?: DraftImage[]
   bashMode?: boolean
@@ -31,6 +33,7 @@ interface ComposerDraftsState {
   setFailedDrafts: (update: (current: FailedDrafts) => FailedDrafts) => void
   setContent: (sessionId: string, content: JSONContent) => void
   setImages: (sessionId: string, images: DraftImage[]) => void
+  restoreDraft: (sessionId: string, draft: FailedDraft) => void
   setBashMode: (sessionId: string, bashMode: boolean, bashDismissed?: boolean) => void
   discard: (sessionId: string) => void
 }
@@ -48,6 +51,19 @@ export const useComposerDraftsStore = create<ComposerDraftsState>((set) => ({
   setImages: (sessionId, images) =>
     set((state) => ({
       drafts: { ...state.drafts, [sessionId]: { ...state.drafts[sessionId], images } }
+    })),
+  restoreDraft: (sessionId, draft) =>
+    set((state) => ({
+      drafts: {
+        ...state.drafts,
+        [sessionId]: {
+          ...draft,
+          restoreVersion: (state.drafts[sessionId]?.restoreVersion ?? 0) + 1,
+          bashMode: false,
+          bashDismissed: true
+        }
+      },
+      errors: { ...state.errors, [sessionId]: undefined }
     })),
   setBashMode: (sessionId, bashMode, bashDismissed = false) =>
     set((state) => ({

@@ -53,6 +53,8 @@ function readImage(file: File): Promise<PastedImage> {
 
 /** Owns preview URLs and rejects paste results that belong to a cleared draft. */
 export function useComposerImages(sessionId: string | null) {
+  const restoreVersion = useComposerDraftsStore((state) => sessionId
+    ? state.drafts[sessionId]?.restoreVersion ?? 0 : 0)
   const [images, setImages] = useState<PastedImage[]>([])
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,7 +92,7 @@ export function useComposerImages(sessionId: string | null) {
     setPreview(null)
     setError(null)
     return release
-  }, [sessionId, release])
+  }, [sessionId, release, restoreVersion])
 
   const add = useCallback(async (files: File[]) => {
     const startedFor = currentSession.current

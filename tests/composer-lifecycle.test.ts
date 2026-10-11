@@ -123,6 +123,12 @@ async function runFixture(name: string): Promise<void> {
 
       await act(async () => { state.replaceText('编辑\n队列') })
       assert.equal(state.getDraft().text, '编辑\n队列')
+      const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+      const { textToComposerDocument } = await import('../src/renderer/src/components/composer/document')
+      await act(async () => {
+        drafts.getState().restoreDraft('one', { content: textToComposerDocument('树中恢复\n待发送'), images: [] })
+      })
+      assert.equal(state.getDraft().text, '树中恢复\n待发送', 'restoration updates an already mounted editor')
       await act(async () => {
         state.clear()
         assert.equal(state.getDraft().text, '')
@@ -180,6 +186,19 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(state.images.length, 0)
       assert.equal(state.error, '有图片读取失败，请重新粘贴。')
       assert.equal(revoked.length, 3)
+
+      const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+      const { textToComposerDocument } = await import('../src/renderer/src/components/composer/document')
+      const beforeRestore = state.add([file()])
+      await act(async () => {
+        drafts.getState().restoreDraft('two', {
+          content: textToComposerDocument('恢复图片'),
+          images: [{ id: 'restored', mimeType: 'image/png', data: 'restored-data' }]
+        })
+      })
+      assert.deepEqual(state.images.map(({ id, data }) => ({ id, data })), [{ id: 'restored', data: 'restored-data' }])
+      await act(async () => { reads[5].finish(); await beforeRestore })
+      assert.equal(state.images.length, 1, 'a pending paste cannot escape the replaced draft')
     }
   } finally {
     await act(async () => { root.unmount() })

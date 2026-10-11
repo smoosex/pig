@@ -83,8 +83,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:get-trees', sessionId, views),
   setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) =>
     ipcRenderer.invoke('session:set-label', sessionId, targetId, label, path),
-  viewBranch: (sessionId: string, tipId: string) =>
-    ipcRenderer.invoke('session:view-branch', sessionId, tipId),
+  viewBranch: (sessionId: string, tipId: string, options?: Parameters<SessionApi['viewBranch']>[2]) =>
+    ipcRenderer.invoke('session:view-branch', sessionId, tipId, options),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
   getTokenStats: (sessionId: string) =>

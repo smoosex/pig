@@ -171,10 +171,10 @@ export function registerSessionIpc(): void {
     return getSessionTrees(sessionId, views)
   })
 
-  ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string) => {
+  ipcMain.handle('session:view-branch', async (_event, sessionId: string, tipId: string, options?: Parameters<typeof viewSessionBranch>[2]) => {
     if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
-    await viewSessionBranch(sessionId, tipId)
-    return getDisplayTurns(sessionId)
+    const branch = await viewSessionBranch(sessionId, tipId, options)
+    return { ...await getDisplayTurns(sessionId), ...branch }
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {

@@ -29,14 +29,16 @@ export function useComposer(
   const attachments = useComposerImages(draftKey)
   const document = useComposerEditor({ sessionId: draftKey, isActive, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
+  const restoreVersion = useComposerDraftsStore((state) => draftKey
+    ? state.drafts[draftKey]?.restoreVersion ?? 0 : 0)
   const [bashModeKey, setBashModeKey] = useState<string | null>(() =>
     draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashMode ? draftKey : null)
   const [dismissedBashKey, setDismissedBashKey] = useState<string | null>(() =>
     draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashDismissed ? draftKey : null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     setBashModeKey(draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashMode ? draftKey : null)
     setDismissedBashKey(draftKey && useComposerDraftsStore.getState().drafts[draftKey]?.bashDismissed ? draftKey : null)
-  }, [draftKey])
+  }, [draftKey, restoreVersion])
   const enteringBash = Boolean(
     draftKey && draft.text.startsWith('!') && draft.attachments[0]?.start !== 0 &&
     bashModeKey !== draftKey && dismissedBashKey !== draftKey
