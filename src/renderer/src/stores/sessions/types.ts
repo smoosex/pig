@@ -5,6 +5,7 @@ import type {
   DisplayTurn,
   DisplayTurnsResult,
   FollowUpAction,
+  PromptStreamingBehavior,
   ProjectGroup,
   SessionControls,
   SessionBranchOptions,
@@ -186,8 +187,8 @@ export interface SessionsStore {
     sessionId: string,
     status: Partial<Pick<RuntimeState, 'controlsPending' | 'controlsError'>>
   ) => void
-  setFollowUpMessages: (sessionId: string, messages: string[]) => void
-  queueFollowUpAction: (sessionId: string, index: number, action: FollowUpAction) => Promise<void>
+  setFollowUpMessages: (sessionId: string, messages: string[], steeringMessages?: string[]) => void
+  queueFollowUpAction: (sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) => Promise<void>
   clearQueuedEditText: (sessionId: string) => void
   setThinkingLevel: (sessionId: string, thinkingLevel: ThinkingLevel) => void
 

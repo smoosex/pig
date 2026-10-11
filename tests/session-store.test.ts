@@ -24,7 +24,7 @@ function deferred<T>() {
 const controls = (_input = 0): SessionControls => ({
   model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
   contextUsage: null,
-  followUpMessages: []
+  followUpMessages: [], steeringMessages: []
 })
 
 const tokenStats = (input: number) => ({ input, output: 1, cacheRead: 2, cacheWrite: 0, total: input + 3 })
@@ -994,7 +994,30 @@ async function runFixture(name: string): Promise<void> {
 
   await state().newSession(meta.cwd)
 
-  if (name === 'branch-restores-prompt') {
+  if (name === 'queued-edit-draft') {
+    const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+    const { serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
+    const prompt = { text: '撤回的插话', images: [{ mimeType: 'image/png', data: 'restored-image' }] }
+    api.followUpAction = async (id, index, action, mode) => {
+      assert.deepEqual([id, index, action, mode], [meta.id, 1, 'edit', 'steer'])
+      return prompt
+    }
+    await state().queueFollowUpAction(meta.id, 1, 'edit', 'steer')
+    const draft = drafts.getState().drafts[meta.id]!
+    assert.equal(serializeComposerDocument(draft.content!).text, prompt.text)
+    assert.deepEqual(draft.images?.map(({ mimeType, data }) => ({ mimeType, data })), prompt.images)
+    assert.equal(runtime().queuedEditText, prompt.text)
+
+    const response = deferred<Awaited<ReturnType<SessionApi['followUpAction']>>>()
+    api.followUpAction = () => response.promise
+    const oldEdit = state().queueFollowUpAction(meta.id, 0, 'edit', 'steer')
+    state().closeTab(meta.id)
+    await state().openExisting(meta)
+    response.resolve({ text: '过期的撤回', images: [] })
+    await oldEdit
+    assert.equal(drafts.getState().drafts[meta.id], undefined)
+    assert.equal(runtime().queuedEditText, null)
+  } else if (name === 'branch-restores-prompt') {
     const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
     const { textToComposerDocument, serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
     drafts.getState().setContent(meta.id, textToComposerDocument('未发送的旧草稿'))
@@ -1231,10 +1254,11 @@ async function runFixture(name: string): Promise<void> {
     const next = deferred<SessionControls>()
     api.getControls = () => next.promise
     const reloading = state().loadControls(meta.id)
-    state().setFollowUpMessages(meta.id, ['new queue'])
+    state().setFollowUpMessages(meta.id, ['new queue'], ['pending steer'])
     next.resolve(controls(100))
     await reloading
     assert.deepEqual(runtime().followUpMessages, ['new queue'])
+    assert.deepEqual(runtime().steeringMessages, ['pending steer'])
   } else if (name === 'duplicate-open') {
     state().closeTab(meta.id)
     const response = deferred<OpenSessionRef>()
@@ -1815,6 +1839,7 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'queued-edit-draft': 'withdrawn steering prompts retain their images and cannot overwrite a reopened session',
     'branch-restores-prompt': 'tree restoration replaces unsent text and images without replaying the selected turn',
     'branch-restore-stale': 'a stale tree restoration cannot replace the current draft',
     'chat-restore-scan-failure': 'failed chat scans preserve saved membership until a successful retry',

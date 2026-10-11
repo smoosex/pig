@@ -31,7 +31,10 @@ async function fixture(): Promise<void> {
   mock.module('../src/main/pi/event-bridge', () => ({
     queuePendingUserMessage: (_session: unknown, _text: unknown, _metadata: unknown, _onStart: unknown, mode: unknown) => {
       pendingModes.push(mode)
-      return () => { cancelled++ }
+      return {
+        cancel: () => { cancelled++ },
+        submit: (task: () => Promise<unknown>) => task()
+      }
     }
   }))
   const { promptSession } = await import('../src/main/pi/session-prompt')
@@ -145,6 +148,9 @@ async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise
     } else {
       assert.deepEqual(followUp, [second.modelText])
     }
+    if (action === 'steer') steering.shift()
+    else followUp.shift()
+    emitQueue()
     const message = { role: 'user' as const, content: expected.modelText, timestamp: 1 }
     emit({ type: 'message_start', message })
     emit({ type: 'message_end', message })

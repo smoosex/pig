@@ -481,6 +481,8 @@ export const zh = {
     deleteAria: '删除待发送消息',
     edit: '编辑',
     steer: '插话',
+    pendingSteer: '待插入',
+    pendingFollowUp: '本轮结束后',
     failed: '操作失败，请重试'
   },
   minimap: {

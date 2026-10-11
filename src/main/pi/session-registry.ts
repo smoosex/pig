@@ -12,6 +12,7 @@ import { t } from '../i18n'
 import type {
   DisplayTurnsResult,
   FollowUpAction,
+  PromptStreamingBehavior,
   SessionControls,
   SessionBranchOptions,
   SessionTokenStats,
@@ -864,9 +865,9 @@ export function refreshSessionModels(sessionId: string) {
   return retryAfterIndexFallback(sessionId, () => refreshModels(sessionState(sessionId)))
 }
 
-export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction) {
+export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) {
   const session = await prepareSession(sessionId)
-  return updateFollowUp(session.agentSession, index, action)
+  return updateFollowUp(session.agentSession, index, action, mode)
 }
 
 export async function listSessionCommands(sessionId: string) {

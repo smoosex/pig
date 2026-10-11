@@ -19,7 +19,7 @@ async function runFixture(name: string): Promise<void> {
     getControls: async (): Promise<SessionControls> => ({
       model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
       contextUsage: null,
-      followUpMessages: []
+      followUpMessages: [], steeringMessages: []
     }),
     getDisplayTurns: async () => ({ leafId: null, turns: [] }),
     viewBranch: async (_sessionId: string, tipId: string) => ({ leafId: tipId, turns: [], startIndex: 0, totalTurns: 0 }),
@@ -366,7 +366,7 @@ async function runFixture(name: string): Promise<void> {
         return {
           model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
           contextUsage: { tokens: controlReads * 100, contextWindow: 1000, percent: controlReads * 10 },
-          followUpMessages: []
+          followUpMessages: [], steeringMessages: []
         }
       }
       emit({ type: 'agent_start' })
@@ -397,9 +397,14 @@ async function runFixture(name: string): Promise<void> {
         controlReads++
         return {
           model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
-          contextUsage: null, followUpMessages: []
+          contextUsage: null, followUpMessages: [], steeringMessages: []
         }
       }
+      emit({ type: 'queue_update', followUp: ['之后再做'], steering: ['先停一下方向'] })
+      assert.deepEqual(runtime().followUpMessages, ['之后再做'])
+      assert.deepEqual(runtime().steeringMessages, ['先停一下方向'])
+      emit({ type: 'queue_update', followUp: ['之后再做'], steering: [] })
+      assert.deepEqual(runtime().steeringMessages, [])
       emit({ type: 'agent_start' })
       const startedAt = Date.now() - 2_500
       store.setState((state) => ({
@@ -494,7 +499,7 @@ async function runFixture(name: string): Promise<void> {
         controlReads++
         return {
           model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
-          contextUsage: null, followUpMessages: []
+          contextUsage: null, followUpMessages: [], steeringMessages: []
         }
       }
       // A failed or cancelled compaction wrote no entry, so there is nothing to re-read.

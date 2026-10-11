@@ -51,7 +51,8 @@ async function fixture(): Promise<void> {
   }))
   mock.module(modulePath('../src/main/ipc/window.ts'), () => ({ windowForEvent: () => ({}) }))
   mock.module(modulePath('../src/main/pi/event-bridge.ts'), () => ({
-    batchQueueUpdates: () => {}, removePendingUserMessage: () => {}, updatePendingUserMessageMode: () => {}
+    batchQueueUpdates: () => {}, queuedUserImages: () => [],
+    removePendingUserMessage: () => {}, updatePendingUserMessageMode: () => {}
   }))
 
   const { registerSessionIpc } = await import('../src/main/ipc/session')

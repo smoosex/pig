@@ -479,6 +479,8 @@ export const en: Messages = {
     deleteAria: 'Delete queued message',
     edit: 'Edit',
     steer: 'Steer',
+    pendingSteer: 'Next response',
+    pendingFollowUp: 'After this task',
     failed: 'That did not work, try again'
   },
   minimap: {

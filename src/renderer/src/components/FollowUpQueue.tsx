@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useIsPresent, usePresenceData, useReducedMotion } from 'motion/react'
-import { Clock3, CornerDownRight, Trash2 } from 'lucide-react'
-import { followUpRowsMatch, reconcileFollowUpRows, type FollowUpRow } from '../chat/follow-ups'
+import { Clock3, CornerDownRight, SquarePen, Trash2 } from 'lucide-react'
+import { queuedRowsMatch, reconcileQueuedRows, type QueuedMessageRow, type QueueRowChange } from '../chat/follow-ups'
 import type { FollowUpAction } from '../ipc/api'
 import { useSessionsStore } from '../stores/sessions'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
+import { Badge } from './ui/badge'
 import { ScrollArea } from './ui/scroll-area'
 
 const EMPTY_MESSAGES: string[] = []
@@ -28,17 +29,18 @@ function QueueRow({
   onAction,
   onExitComplete
 }: {
-  row: FollowUpRow
+  row: QueuedMessageRow
   colorIndex: number
   busy: boolean
   error?: string
-  onAction: (row: FollowUpRow, action: FollowUpAction) => void
+  onAction: (row: QueuedMessageRow, action: FollowUpAction) => void
   onExitComplete: () => void
 }) {
   const t = useT()
   const present = useIsPresent()
   const reducedMotion = useReducedMotion()
   const dismissedRows = usePresenceData() as ReadonlySet<string> | undefined
+  const StatusIcon = row.mode === 'steer' ? CornerDownRight : Clock3
 
   return (
     <motion.li
@@ -60,13 +62,15 @@ function QueueRow({
       transition={{ duration: reducedMotion ? 0 : 0.24, ease: EASE }}
       inert={!present}
       aria-hidden={!present}
+      data-queue-id={row.id}
+      data-queue-mode={row.mode}
       className={cn(
         'group flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors duration-150 motion-reduce:transition-none',
         ROW_BACKGROUNDS[colorIndex % ROW_BACKGROUNDS.length]
       )}
     >
       <span className="relative flex size-6 shrink-0 items-center justify-center">
-        <Clock3
+        <StatusIcon
           className="size-3.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 motion-reduce:transition-none"
           aria-hidden="true"
         />
@@ -85,6 +89,9 @@ function QueueRow({
           </Button>
         </span>
       </span>
+      <Badge variant={row.mode === 'steer' ? 'secondary' : 'outline'}>
+        {t(row.mode === 'steer' ? 'followUp.pendingSteer' : 'followUp.pendingFollowUp')}
+      </Badge>
       <span
         className="min-w-0 flex-1 truncate"
         title={error ?? row.text}
@@ -96,25 +103,28 @@ function QueueRow({
         <Button
           type="button"
           variant="ghost"
-          size="xs"
-          className="px-1.5 font-normal"
+          size="icon-xs"
+          aria-label={t('followUp.edit')}
+          title={t('followUp.edit')}
           disabled={busy || !present}
           onClick={() => onAction(row, 'edit')}
         >
-          {t('followUp.edit')}
+          <SquarePen />
         </Button>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="px-1.5 font-normal"
-        disabled={busy || !present}
-        onClick={() => onAction(row, 'steer')}
-      >
-        <CornerDownRight data-icon="inline-start" />
-        {t('followUp.steer')}
-      </Button>
+      {row.mode === 'followUp' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t('followUp.steer')}
+          title={t('followUp.steer')}
+          disabled={busy || !present}
+          onClick={() => onAction(row, 'steer')}
+        >
+          <CornerDownRight />
+        </Button>
+      ) : null}
     </motion.li>
   )
 }
@@ -123,30 +133,34 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
   const messages = useSessionsStore((state) =>
     sessionId ? (state.runtime[sessionId]?.followUpMessages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
   )
+  const steering = useSessionsStore((state) =>
+    sessionId ? (state.runtime[sessionId]?.steeringMessages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
+  )
   const queueAction = useSessionsStore((state) => state.queueFollowUpAction)
   const nextId = useRef(0)
-  const removedId = useRef<string | undefined>(undefined)
+  const rowChange = useRef<QueueRowChange | undefined>(undefined)
   const dismissedRows = useRef(new Set<string>())
   const actionInFlight = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ id: string; message: string } | null>(null)
-  const [rows, setRows] = useState<FollowUpRow[]>([])
+  const [rows, setRows] = useState<QueuedMessageRow[]>([])
   const listRef = useRef<HTMLUListElement>(null)
   const [listHeight, setListHeight] = useState(0)
   const reducedMotion = useReducedMotion()
   const t = useT()
 
   useLayoutEffect(() => {
-    if (busy || followUpRowsMatch(rows, messages)) return
-    const discardedId = removedId.current
-    removedId.current = undefined
-    setRows((previous) => reconcileFollowUpRows(
+    if (busy || queuedRowsMatch(rows, steering, messages)) return
+    const change = rowChange.current
+    rowChange.current = undefined
+    setRows((previous) => reconcileQueuedRows(
       previous,
+      steering,
       messages,
-      () => `follow-up-${++nextId.current}`,
-      discardedId
+      () => `queued-message-${++nextId.current}`,
+      change
     ))
-  }, [messages, busy, rows])
+  }, [messages, steering, busy, rows])
 
   useLayoutEffect(() => {
     const list = listRef.current
@@ -158,19 +172,19 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
     return () => observer.disconnect()
   }, [])
 
-  const runAction = async (row: FollowUpRow, action: FollowUpAction) => {
+  const runAction = async (row: QueuedMessageRow, action: FollowUpAction) => {
     if (!sessionId || actionInFlight.current) return
-    const current = useSessionsStore.getState().runtime[sessionId]?.followUpMessages ?? EMPTY_MESSAGES
-    const index = rows.findIndex((item) => item.id === row.id)
-    if (index < 0 || !followUpRowsMatch(rows, current)) return
+    const current = useSessionsStore.getState().runtime[sessionId]
+    const index = rows.filter((item) => item.mode === row.mode).findIndex((item) => item.id === row.id)
+    if (index < 0 || !queuedRowsMatch(rows, current?.steeringMessages ?? EMPTY_MESSAGES, current?.followUpMessages ?? EMPTY_MESSAGES)) return
 
     actionInFlight.current = true
     setBusy(true)
     setError(null)
     try {
-      await queueAction(sessionId, index, action)
-      if (action === 'dismiss') dismissedRows.current.add(row.id)
-      removedId.current = row.id
+      await queueAction(sessionId, index, action, row.mode)
+      if (action === 'dismiss' || action === 'edit') dismissedRows.current.add(row.id)
+      rowChange.current = action === 'steer' ? { promotedId: row.id } : { removedId: row.id }
     } catch (reason) {
       setError({ id: row.id, message: reason instanceof Error ? reason.message : t('followUp.failed') })
     } finally {
@@ -183,7 +197,7 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
 
   return (
     <motion.div
-      className="relative w-1/2 shrink-0"
+      className="relative w-full shrink-0 @min-2xl/composer-column:w-1/2"
       initial={{ height: 0 }}
       animate={{ height: visible ? listHeight + 22 : 0 }}
       transition={{ duration: reducedMotion ? 0 : 0.26, ease: EASE }}

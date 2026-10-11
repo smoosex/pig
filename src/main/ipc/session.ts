@@ -226,8 +226,8 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle(
     'session:follow-up-action',
-    async (_event, sessionId: string, index: number, action: 'steer' | 'edit' | 'dismiss') => {
-      return updateFollowUpMessage(sessionId, index, action)
+    async (_event, sessionId: string, index: number, action: Parameters<typeof updateFollowUpMessage>[2], mode?: Parameters<typeof updateFollowUpMessage>[3]) => {
+      return updateFollowUpMessage(sessionId, index, action, mode)
     }
   )
 }

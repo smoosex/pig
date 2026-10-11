@@ -43,7 +43,7 @@ export function Composer({
   const boxRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div className={cn(chatColumn, 'relative isolate shrink-0 pb-3.5')}>
+    <div className={cn(chatColumn, '@container/composer-column relative isolate shrink-0 pb-3.5')}>
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
       <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />

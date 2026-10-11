@@ -48,6 +48,7 @@ export const emptyRuntime = (): RuntimeState => ({
   tokensLoading: false,
   tokensError: null,
   followUpMessages: [],
+  steeringMessages: [],
   queuedEditText: null
 })
 

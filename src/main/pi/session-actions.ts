@@ -1,33 +1,42 @@
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
-import type { FollowUpAction, SlashCommand as SessionSlashCommand } from '../../shared/api'
-import { batchQueueUpdates, removePendingUserMessage, updatePendingUserMessageMode } from './event-bridge'
+import type { FollowUpAction, PromptStreamingBehavior, RestoredSessionPrompt, SlashCommand as SessionSlashCommand } from '../../shared/api'
+import { batchQueueUpdates, queuedUserImages, removePendingUserMessage, updatePendingUserMessageMode } from './event-bridge'
 
 const BUILTIN_COMMANDS: SessionSlashCommand[] = [{ name: 'compact', source: 'builtin' }]
 
 export async function updateFollowUpMessage(
   session: AgentSession,
   index: number,
-  action: FollowUpAction
-): Promise<string | null> {
+  action: FollowUpAction,
+  mode: PromptStreamingBehavior = 'followUp'
+): Promise<RestoredSessionPrompt | null> {
   if (!Number.isInteger(index) || index < 0) throw new Error('Invalid follow-up index')
   if (action !== 'steer' && action !== 'edit' && action !== 'dismiss') {
     throw new Error('Invalid follow-up action')
   }
-  const queued = [...session.getFollowUpMessages()]
-  const target = queued[index]
-  if (target === undefined) throw new Error('Follow-up message is no longer queued')
-  if (action === 'steer') {
-    updatePendingUserMessageMode(session, 'followUp', index, 'steer')
-  } else {
-    removePendingUserMessage(session, 'followUp', index)
-  }
+  if (mode !== 'steer' && mode !== 'followUp') throw new Error('Invalid queue mode')
+  const queues = { steer: [...session.getSteeringMessages()], followUp: [...session.getFollowUpMessages()] }
+  const images = { steer: queuedUserImages(session, 'steer'), followUp: queuedUserImages(session, 'followUp') }
+  const target = queues[mode][index]
+  if (target === undefined) throw new Error('Message is no longer queued')
+  if (action === 'steer' && mode === 'steer') return null
+  const targetImages = images[mode][index]
   return batchQueueUpdates(session, async () => {
-    const { steering } = session.clearQueue()
-    const remaining = queued.filter((_message, queuedIndex) => queuedIndex !== index)
-    for (const message of steering) await session.steer(message)
-    if (action === 'steer') await session.steer(target)
-    for (const message of remaining) await session.followUp(message)
-    return action === 'edit' ? target : null
+    if (action === 'steer') updatePendingUserMessageMode(session, mode, index, 'steer')
+    else removePendingUserMessage(session, mode, index)
+    queues[mode].splice(index, 1)
+    images[mode].splice(index, 1)
+    if (action === 'steer') {
+      queues.steer.push(target)
+      images.steer.push(targetImages)
+    }
+    session.clearQueue()
+    for (const [i, text] of queues.steer.entries()) await session.steer(text, images.steer[i])
+    for (const [i, text] of queues.followUp.entries()) await session.followUp(text, images.followUp[i])
+    return action === 'edit' ? {
+      text: target,
+      images: (targetImages ?? []).map(({ mimeType, data }) => ({ mimeType, data }))
+    } : null
   })
 }
 

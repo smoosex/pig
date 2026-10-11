@@ -362,7 +362,9 @@ export function subscribeSessionEvents(): () => void {
         break
       case 'queue_update':
         if (Array.isArray(event.followUp) && event.followUp.every((item) => typeof item === 'string')) {
-          setFollowUpMessages(sessionId, [...event.followUp] as string[])
+          setFollowUpMessages(sessionId, [...event.followUp] as string[],
+            Array.isArray(event.steering) && event.steering.every((item) => typeof item === 'string')
+              ? [...event.steering] as string[] : undefined)
         }
         break
       case 'thinking_level_changed':

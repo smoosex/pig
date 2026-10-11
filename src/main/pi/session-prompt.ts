@@ -28,7 +28,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
       prompt.modelText.startsWith('/') &&
       agentSession.extensionRunner.getCommand(prompt.modelText.slice(1).split(' ', 1)[0]) !==
         undefined
-    const cancelPending = isExtensionCommand
+    const pending = isExtensionCommand
       ? undefined
       : queuePendingUserMessage(
           agentSession,
@@ -45,18 +45,20 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
               .nameOnFirstPrompt(cwd, prompt.namingText, nameWorktreeBranch)
               .catch((error) => console.error('Worktree naming failed:', error))
           },
-          streamingBehavior
+          streamingBehavior,
+          prompt.images
         )
     try {
-      await agentSession.prompt(prompt.modelText, {
+      const submit = () => agentSession.prompt(prompt.modelText, {
         ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
         ...(streamingBehavior ? { streamingBehavior } : {}),
         preflightResult: (disposition) => {
-          if (disposition === 'handled') cancelPending?.()
+          if (disposition === 'handled') pending?.cancel()
         }
       })
+      await (pending ? pending.submit(submit) : submit())
     } catch (error) {
-      cancelPending?.()
+      pending?.cancel()
       throw error
     }
   } finally {

@@ -5,6 +5,7 @@ import {
   batchQueueUpdates,
   bridgeEvents,
   followUpMessagesForDisplay,
+  steeringMessagesForDisplay,
   queuePendingUserMessage
 } from '../src/main/pi/event-bridge'
 import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
@@ -130,25 +131,41 @@ describe('completion notifications', () => {
   })
 })
 
-test('live image messages hide the SDK note without changing the message given to pi', () => {
-  const state = fixture()
+test('live image messages hide the SDK note without changing the message given to pi', async () => {
+  const state = fixture([])
+  state.session.clearQueue()
   const hint = '[Image: original 2992x1868, displayed at 2000x1249. Multiply coordinates by 1.50 to map to original image.]'
   const text = `看图\n\n${hint}`
   const content = [{ type: 'text', text }, { type: 'image', mimeType: 'image/png', data: 'QUJD' }]
   const started: string[] = []
-  queuePendingUserMessage(state.session, '别的消息', undefined, () => started.push('other'))
-  queuePendingUserMessage(state.session, '看图', undefined, () => started.push('image'))
+  const pending = queuePendingUserMessage(state.session, '看图', undefined, () => started.push('image'), 'steer')
+  await pending.submit(() => state.session.steer('看图'))
+  state.session.clearQueue()
   const message = { role: 'user', content, timestamp: 1 }
 
   state.emit({ type: 'message_start', message } as AgentSessionEvent)
   state.emit({ type: 'message_end', message } as AgentSessionEvent)
 
   expect(started).toEqual(['image'])
-  expect(state.events).toMatchObject([
+  expect(state.events.filter((event) => event.type === 'message_start' || event.type === 'message_end')).toMatchObject([
     { type: 'message_start', message: { content: [{ type: 'text', text: '看图' }, content[1]] } },
     { type: 'message_end', message: { content: [{ type: 'text', text: '看图' }, content[1]] } }
   ])
   expect(content[0].text).toBe(text)
+  state.unsubscribe()
+})
+
+test('a directly started prompt binds metadata without passing through a queue', async () => {
+  const state = fixture([])
+  state.session.clearQueue()
+  const started: string[] = []
+  const pending = queuePendingUserMessage(state.session, 'source command', undefined, () => started.push('started'))
+  await pending.submit(async () => {
+    const message = { role: 'user' as const, content: 'expanded prompt', timestamp: 1 }
+    state.emit({ type: 'message_start', message } as AgentSessionEvent)
+    state.emit({ type: 'message_end', message } as AgentSessionEvent)
+  })
+  expect(started).toEqual(['started'])
   state.unsubscribe()
 })
 
@@ -201,6 +218,7 @@ describe('batched queue updates', () => {
     await batchQueueUpdates(session, async () => {
       session.clearQueue()
       expect(followUpMessagesForDisplay(session)).toEqual(['第一条', '第二条', '第三条'])
+      expect(steeringMessagesForDisplay(session)).toEqual(['已有插话'])
       await session.followUp('第一条')
       expect(followUpMessagesForDisplay(session)).toEqual(['第一条', '第二条', '第三条'])
       const snapshot = followUpMessagesForDisplay(session)
@@ -208,6 +226,7 @@ describe('batched queue updates', () => {
       expect(followUpMessagesForDisplay(session)).toHaveLength(3)
     })
     expect(followUpMessagesForDisplay(session)).toEqual(['第一条'])
+    expect(steeringMessagesForDisplay(session)).toEqual([])
   })
 
   test('normal delivery and non-queue events still publish immediately', async () => {

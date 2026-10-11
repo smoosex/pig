@@ -173,6 +173,7 @@ export interface SessionControls {
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
   followUpMessages: string[]
+  steeringMessages: string[]
 }
 
 export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
@@ -731,7 +732,7 @@ export interface SessionApi extends ToolSettingsApi {
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   refreshModels: (sessionId: string) => Promise<SessionControls>
-  followUpAction: (sessionId: string, index: number, action: FollowUpAction) => Promise<string | null>
+  followUpAction: (sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) => Promise<RestoredSessionPrompt | null>
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>

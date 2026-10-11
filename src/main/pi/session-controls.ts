@@ -21,7 +21,7 @@ import type {
 import type { MemorySession, PendingSession, SessionFileSession, SessionState } from './session-state'
 import { readEntryById, readRows, readRowsStrict, type SessionFileEntry, type SessionFileIndex } from './session-jsonl'
 import { sessionIndex } from './session-source'
-import { followUpMessagesForDisplay } from './event-bridge'
+import { followUpMessagesForDisplay, steeringMessagesForDisplay } from './event-bridge'
 import {
   availableModels,
   clampThinking,
@@ -128,7 +128,8 @@ function pendingControls(
     ),
     thinkingLevels: picker,
     contextUsage: persistedContextUsage(model, context.messages, branch),
-    followUpMessages: []
+    followUpMessages: [],
+    steeringMessages: []
   }
 }
 
@@ -256,7 +257,8 @@ function fileControls(
     ),
     thinkingLevels: picker,
     contextUsage: fileContextUsage(file, model),
-    followUpMessages: []
+    followUpMessages: [],
+    steeringMessages: []
   }
 }
 
@@ -322,7 +324,8 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
             percent: usage.percent
           }
         : null,
-      followUpMessages: followUpMessagesForDisplay(session.agentSession)
+      followUpMessages: followUpMessagesForDisplay(session.agentSession),
+      steeringMessages: steeringMessagesForDisplay(session.agentSession)
     }
   }
 

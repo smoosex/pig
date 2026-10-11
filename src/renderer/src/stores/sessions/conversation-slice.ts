@@ -3,13 +3,20 @@
  * Requests belong to a runtime instance, so closing/reopening the same session
  * cannot let an old response replace the new view.
  */
-import { api } from '../../ipc/api'
+import { api, type RestoredSessionPrompt } from '../../ipc/api'
 import { buildTurn, thinkingTimingKey } from '../../chat/turns'
 import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
 import { useComposerDraftsStore } from '../composer-drafts'
 import { textToComposerDocument } from '../../components/composer/document'
+
+function restorePromptDraft(sessionId: string, prompt: RestoredSessionPrompt): void {
+  useComposerDraftsStore.getState().restoreDraft(sessionId, {
+    content: textToComposerDocument(prompt.text),
+    images: prompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
+  })
+}
 
 /** Turns fetched when the reader scrolls above the loaded window. */
 const PAGE_TURNS = 40
@@ -326,6 +333,8 @@ export const createConversationSlice: SessionSlice<
           // Queue and thinking events may be newer than this controls snapshot.
           followUpMessages: current.followUpMessages !== initial.followUpMessages
             ? current.followUpMessages : controls.followUpMessages,
+          steeringMessages: current.steeringMessages !== initial.steeringMessages
+            ? current.steeringMessages : controls.steeringMessages,
           thinkingLevel: current.thinkingLevel !== initial.thinkingLevel
             ? current.thinkingLevel : controls.thinkingLevel
         })
@@ -342,14 +351,18 @@ export const createConversationSlice: SessionSlice<
     setControlsStatus: (sessionId, status) => update(sessionId, status),
 
     setThinkingLevel: (sessionId, thinkingLevel) => update(sessionId, { thinkingLevel }),
-    setFollowUpMessages: (sessionId, followUpMessages) => update(sessionId, { followUpMessages }),
+    setFollowUpMessages: (sessionId, followUpMessages, steeringMessages) => update(sessionId, {
+      followUpMessages,
+      ...(steeringMessages ? { steeringMessages } : {})
+    }),
 
-    queueFollowUpAction: async (sessionId, index, action) => {
+    queueFollowUpAction: async (sessionId, index, action, mode) => {
       const initial = get().runtime[sessionId]
       if (!initial) return
-      const text = await api.followUpAction(sessionId, index, action)
-      if (action === 'edit' && text != null && currentInstance(sessionId, initial)) {
-        update(sessionId, { queuedEditText: text })
+      const prompt = await api.followUpAction(sessionId, index, action, mode)
+      if (action === 'edit' && prompt != null && currentInstance(sessionId, initial)) {
+        restorePromptDraft(sessionId, prompt)
+        update(sessionId, { queuedEditText: prompt.text })
       }
     },
 
@@ -505,10 +518,7 @@ export const createConversationSlice: SessionSlice<
       })
       if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
       if (branch.restoredPrompt) {
-        useComposerDraftsStore.getState().restoreDraft(sessionId, {
-          content: textToComposerDocument(branch.restoredPrompt.text),
-          images: branch.restoredPrompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
-        })
+        restorePromptDraft(sessionId, branch.restoredPrompt)
       }
       await get().loadControls(sessionId)
     }

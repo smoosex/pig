@@ -1,11 +1,45 @@
 import { describe, expect, test } from 'bun:test'
-import { reconcileFollowUpRows, type FollowUpRow } from '../src/renderer/src/chat/follow-ups'
+import { reconcileFollowUpRows, reconcileQueuedRows, queuedRowsMatch, type FollowUpRow } from '../src/renderer/src/chat/follow-ups'
 
 function queue() {
   let nextId = 0
   return (previous: FollowUpRow[], messages: string[], removedId?: string) =>
     reconcileFollowUpRows(previous, messages, () => String(++nextId), removedId)
 }
+
+describe('combined pending message queue', () => {
+  test('steering precedes follow-ups, and only delivered rows leave the queue', () => {
+    let nextId = 0
+    const createId = () => String(++nextId)
+    const first = reconcileQueuedRows([], ['先检查'], ['稍后测试'], createId)
+    expect(first.map(({ mode, text }) => ({ mode, text }))).toEqual([
+      { mode: 'steer', text: '先检查' }, { mode: 'followUp', text: '稍后测试' }
+    ])
+    expect(queuedRowsMatch(first, ['先检查'], ['稍后测试'])).toBe(true)
+    expect(reconcileQueuedRows(first, ['先检查'], ['稍后测试'], createId)).toBe(first)
+    expect(reconcileQueuedRows(first, [], ['稍后测试'], createId)).toEqual([first[1]])
+  })
+
+  test('promotion keeps the selected duplicate mounted and changes its label', () => {
+    let nextId = 0
+    const createId = () => String(++nextId)
+    const first = reconcileQueuedRows([], ['已有插话'], ['重复', '重复', '最后一条'], createId)
+    const promoted = first[2]
+    const next = reconcileQueuedRows(first, ['已有插话', '重复'], ['重复', '最后一条'], createId, { promotedId: promoted.id })
+    expect(next.map((row) => row.id)).toEqual([first[0].id, promoted.id, first[1].id, first[3].id])
+    expect(next[1].mode).toBe('steer')
+    expect(next[2]).toBe(first[1])
+    expect(next[3]).toBe(first[3])
+  })
+
+  test('withdrawal targets the selected steering duplicate without removing a follow-up', () => {
+    let nextId = 0
+    const createId = () => String(++nextId)
+    const first = reconcileQueuedRows([], ['重复', '重复'], ['重复'], createId)
+    const next = reconcileQueuedRows(first, ['重复'], ['重复'], createId, { removedId: first[1].id })
+    expect(next).toEqual([first[0], first[2]])
+  })
+})
 
 describe('follow-up queue row identity', () => {
   test('appends new messages below existing rows without replaying their entrances', () => {

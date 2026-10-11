@@ -99,8 +99,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:set-thinking', sessionId, level),
   refreshModels: (sessionId: string) =>
     ipcRenderer.invoke('session:refresh-models', sessionId),
-  followUpAction: (sessionId: string, index: number, action: string) =>
-    ipcRenderer.invoke('session:follow-up-action', sessionId, index, action),
+  followUpAction: (sessionId, index, action, mode) =>
+    ipcRenderer.invoke('session:follow-up-action', sessionId, index, action, mode),
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
   readDirectory: (cwd: string, path: string) => ipcRenderer.invoke('files:read-directory', cwd, path),
