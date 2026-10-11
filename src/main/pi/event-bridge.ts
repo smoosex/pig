@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { BrowserWindow } from 'electron'
 import type { ImageContent } from '@earendil-works/pi-ai'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
+import type { GenerationStats } from '../../shared/api'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
@@ -263,7 +264,8 @@ export function bridgeEvents(
   session: AgentSession,
   sessionId: string,
   win: BrowserWindow,
-  notify: typeof notifyOnCompletion = notifyOnCompletion
+  notify: typeof notifyOnCompletion = notifyOnCompletion,
+  now: () => number = () => performance.now()
 ): () => void {
   if (bridged.has(session)) return () => {}
   bridged.add(session)
@@ -271,6 +273,7 @@ export function bridgeEvents(
   let subscribed = true
   let runActive = false
   let lastAnswerSucceeded = false
+  let generationTiming: { timestamp: number; firstOutputAt?: number; lastOutputAt?: number } | undefined
   const lifetime = new AbortController()
   const forward = (event: AgentSessionEvent, metadataChanged = false) => {
     if (!subscribed) return
@@ -279,8 +282,33 @@ export function bridgeEvents(
       activeRuns.add(session)
       runActive = true
       lastAnswerSucceeded = false
-    } else if (event.type === 'message_end' && event.message.role === 'assistant') {
+    } else if (event.type === 'message_start' && event.message.role === 'assistant') {
+      generationTiming = { timestamp: event.message.timestamp }
+    } else if (event.type === 'message_update' && event.message.role === 'assistant') {
+      const output = event.assistantMessageEvent
+      if (
+        (output.type === 'text_delta' || output.type === 'thinking_delta' || output.type === 'toolcall_delta') &&
+        output.delta.length > 0
+      ) {
+        if (!generationTiming || generationTiming.timestamp !== event.message.timestamp) {
+          throw new Error('Assistant output delta arrived without its message_start')
+        }
+        const at = now()
+        generationTiming.firstOutputAt ??= at
+        generationTiming.lastOutputAt = at
+      }
+    }
+    let generation: GenerationStats | undefined
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
       lastAnswerSucceeded = event.message.stopReason === 'stop' || event.message.stopReason === 'length'
+      const timing = generationTiming?.timestamp === event.message.timestamp ? generationTiming : undefined
+      const first = timing?.firstOutputAt
+      const last = timing?.lastOutputAt
+      const outputTokens = event.message.usage?.output ?? 0
+      if (first !== undefined && last !== undefined && last > first && outputTokens > 0) {
+        generation = { outputTokens, durationMs: last - first }
+      }
+      generationTiming = undefined
     }
     let metadata: PastedTextDisplayMetadata | undefined
     const message = 'message' in event ? event.message : undefined
@@ -325,19 +353,23 @@ export function bridgeEvents(
       }
     }
     if (win.isDestroyed() || win.webContents.isDestroyed()) return
-    const enriched =
+    let enriched: object = event
+    if (event.type === 'message_end' && message?.role === 'assistant' && generation) {
+      enriched = { ...event, message: { ...message, generation } }
+    } else if (
       (event.type === 'message_start' || event.type === 'message_end') &&
       message?.role === 'user' &&
       (metadata || displayContent !== message.content)
-        ? {
-            ...event,
-            message: {
-              ...message,
-              content: displayContent,
-              ...(metadata ? { pastedText: metadata } : {})
-            }
-          }
-        : event
+    ) {
+      enriched = {
+        ...event,
+        message: {
+          ...message,
+          content: displayContent,
+          ...(metadata ? { pastedText: metadata } : {})
+        }
+      }
+    }
     win.webContents.send('pi:event', { sessionId, event: enriched })
     if (event.type === 'agent_settled') {
       activeRuns.delete(session)

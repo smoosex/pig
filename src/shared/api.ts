@@ -166,6 +166,12 @@ export interface SessionTokenStats {
   total: number
 }
 
+/** Provider-reported output tokens measured over active model decoding time. */
+export interface GenerationStats {
+  outputTokens: number
+  durationMs: number
+}
+
 export interface SessionControls {
   model: SessionModelInfo | null
   models: SessionModelInfo[]

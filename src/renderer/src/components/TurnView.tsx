@@ -54,6 +54,13 @@ function projectedSegments(landmarks: CompactionItem[], workBlocks: boolean[]): 
   return segments
 }
 
+function turnTps(turn: Turn): string | null {
+  const generation = turn.generation
+  return generation && generation.outputTokens >= 8 && generation.durationMs > 0
+    ? (generation.outputTokens / (generation.durationMs / 1_000)).toFixed(1)
+    : null
+}
+
 function WorkedLabel({ turn, landmarks, block, sessionId }: {
   sessionId?: string
   turn: Turn
@@ -63,8 +70,16 @@ function WorkedLabel({ turn, landmarks, block, sessionId }: {
   const t = useT()
   // The clock lives in the label so a ticking timer re-renders this row and not the work below it.
   const workedMs = useWorkBlockMs(turn, landmarks, sessionId)
+  const tps = block === landmarks.length ? turnTps(turn) : null
   return (
-    <>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</>
+    <span className="flex items-center gap-1">
+      <span>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</span>
+      {tps ? (
+        <span className="tabular-nums" title={t('turn.tpsDescription')}>
+          · {t('turn.tps', { value: tps })}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
@@ -110,6 +125,9 @@ function AgentTurnView({
   } else if (showHeader && !hasWork && blocks.length === 0) {
     blocks.push({ kind: 'work', items: [], block: 0 })
   }
+  const needsTrailingTps = Boolean(turnTps(turn)) && !blocks.some(
+    (segment) => segment.kind === 'work' && segment.block === landmarks.length
+  )
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [liveOutline, setLiveOutline] = useState(turn.streaming)
   const [loading, setLoading] = useState(false)
@@ -165,6 +183,14 @@ function AgentTurnView({
     setOpen((current) => ({ ...current, [index]: true }))
   }
 
+  const trailingTps = needsTrailingTps ? (
+    <Marker variant="separator" className="text-xs text-muted-foreground">
+      <MarkerContent>
+        <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} />
+      </MarkerContent>
+    </Marker>
+  ) : null
+
   return (
     <div className="mb-4">
       {turn.user ? <UserBubble message={turn.user} /> : null}
@@ -215,9 +241,10 @@ function AgentTurnView({
               </Collapsible>
             )
           )}
+          {trailingTps}
           {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
         </div>
-      ) : null}
+      ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
       {trailing.map((item, index) => <CompactionNotice key={`trailing-${index}`} item={item} />)}
     </div>

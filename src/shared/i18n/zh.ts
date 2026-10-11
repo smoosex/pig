@@ -444,6 +444,8 @@ export const zh = {
     thoughtFor: '已思考 {duration}',
     worked: '已工作 {duration}',
     workedFor: '工作耗时 {duration}',
+    tps: '{value} tok/s',
+    tpsDescription: '输出速度，不包含首字等待和工具执行时间',
     usingTool: '正在使用工具',
     imageMessage: '图片消息',
     imageReply: '图片回复',

@@ -442,6 +442,8 @@ export const en: Messages = {
     thoughtFor: 'Thought for {duration}',
     worked: 'Worked {duration}',
     workedFor: 'Worked for {duration}',
+    tps: '{value} tok/s',
+    tpsDescription: 'Output speed, excluding time to first token and tool execution',
     usingTool: 'Using a tool',
     imageMessage: 'Image message',
     imageReply: 'Image reply',

@@ -4,7 +4,8 @@
  * cannot let an old response replace the new view.
  */
 import { api, type RestoredSessionPrompt } from '../../ipc/api'
-import { buildTurn, thinkingTimingKey } from '../../chat/turns'
+import { renderKeyForDisplayTurn } from '../../chat/display-turns'
+import { buildTurn, groupTurns, thinkingTimingKey } from '../../chat/turns'
 import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
@@ -114,9 +115,40 @@ export const createConversationSlice: SessionSlice<
             branchViews[result.leafId] = branchViewId
           }
           const elapsedByTurnId = { ...rt.elapsedByTurnId }
+          const generationByTurnId = { ...rt.generationByTurnId }
           const last = result.turns[result.turns.length - 1]
           if (!rt.isStreaming && rt.streamElapsedMs != null && last) {
             elapsedByTurnId[last.id] = rt.streamElapsedMs
+          }
+          if (!rt.isStreaming && rt.liveMessages.length > 0) {
+            const liveTurns = groupTurns(rt.liveMessages, false, rt.thinkingDurations)
+            const liveUserTurns = liveTurns.filter((turn) =>
+              turn.user && (
+                turn.generation || turn.answer.length > 0 || turn.process.length > 0 || turn.errorMessage
+              )
+            )
+            const persistedUserTurns = result.turns.filter((turn) => turn.user).slice(-liveUserTurns.length)
+            if (
+              liveUserTurns.some((turn) => turn.generation) &&
+              (
+                persistedUserTurns.length !== liveUserTurns.length ||
+                liveUserTurns.some((turn, index) =>
+                  turn.renderKey !== renderKeyForDisplayTurn(persistedUserTurns[index])
+                )
+              )
+            ) {
+              throw Object.assign(
+                new Error('Could not associate generation statistics with persisted turns'),
+                { code: 'GENERATION_TURN_MISMATCH' as const }
+              )
+            }
+            liveUserTurns.forEach((turn, index) => {
+              if (turn.generation) generationByTurnId[persistedUserTurns[index].id] = turn.generation
+            })
+            const liveLast = liveTurns.at(-1)
+            if (liveLast?.generation && !liveLast.user && last && !last.user) {
+              generationByTurnId[last.id] = liveLast.generation
+            }
           }
           // A refresh of the same branch replaces the window with the tail. A reader who paged up
           // still holds turns the fetch no longer covers, and dropping them would lose their place.
@@ -148,7 +180,8 @@ export const createConversationSlice: SessionSlice<
               : rt.liveCompactions.filter((mark) => mark.status !== 'done'),
             pendingUserMessage: rt.isStreaming && rt.pendingUserMessage,
             processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
-            elapsedByTurnId
+            elapsedByTurnId,
+            generationByTurnId
           }
         })
         return true

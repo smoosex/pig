@@ -10,7 +10,10 @@ import {
 } from '../src/main/pi/event-bridge'
 import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
 
-function fixture(initial: string[] = ['第一条', '第二条', '第三条']) {
+function fixture(
+  initial: string[] = ['第一条', '第二条', '第三条'],
+  now: () => number = () => performance.now()
+) {
   let followUp = [...initial]
   let steering = ['已有插话']
   let destroyed = false
@@ -55,7 +58,7 @@ function fixture(initial: string[] = ['第一条', '第二条', '第三条']) {
   } as unknown as BrowserWindow
   const unsubscribe = bridgeEvents(session, 'test-session', win, async (sessionId) => {
     notifications.push(sessionId)
-  })
+  }, now)
   return { session, events, notifications, emit, unsubscribe, destroy: () => { destroyed = true } }
 }
 
@@ -129,6 +132,41 @@ describe('completion notifications', () => {
     state.emit({ type: 'agent_settled', aborted: false })
     expect(state.notifications).toEqual([])
   })
+})
+
+test('assistant output carries provider usage measured over active decoding time', () => {
+  const timestamps = [100, 600]
+  const state = fixture([], () => timestamps.shift()!)
+  const message = {
+    role: 'assistant' as const,
+    timestamp: 10,
+    api: 'test',
+    provider: 'test',
+    model: 'test',
+    stopReason: 'toolUse' as const,
+    content: [],
+    usage: {
+      input: 10, output: 25, cacheRead: 0, cacheWrite: 0, totalTokens: 35,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
+  }
+  state.emit({ type: 'message_start', message } as AgentSessionEvent)
+  state.emit({
+    type: 'message_update', message,
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello', partial: message }
+  } as AgentSessionEvent)
+  state.emit({
+    type: 'message_update', message,
+    assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 1, delta: '{"path":"x"}', partial: message }
+  } as AgentSessionEvent)
+  state.emit({ type: 'message_end', message } as AgentSessionEvent)
+
+  expect(state.events.at(-1)).toMatchObject({
+    type: 'message_end',
+    message: { generation: { outputTokens: 25, durationMs: 500 } }
+  })
+  expect(message).not.toHaveProperty('generation')
+  state.unsubscribe()
 })
 
 test('live image messages hide the SDK note without changing the message given to pi', async () => {

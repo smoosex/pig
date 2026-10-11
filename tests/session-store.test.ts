@@ -994,7 +994,55 @@ async function runFixture(name: string): Promise<void> {
 
   await state().newSession(meta.cwd)
 
-  if (name === 'queued-edit-draft') {
+  if (name === 'generation-hydration') {
+    const assistant = (timestamp: number, outputTokens: number, durationMs: number) => ({
+      role: 'assistant' as const,
+      timestamp, api: 'test', provider: 'test', model: 'test', stopReason: 'stop' as const,
+      content: [{ type: 'text' as const, text: 'done' }],
+      usage: {
+        input: 10, output: outputTokens, cacheRead: 0, cacheWrite: 0, totalTokens: 10 + outputTokens,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+      },
+      generation: { outputTokens, durationMs }
+    })
+    state().appendLiveMessage(meta.id, { role: 'user', content: 'same prompt', timestamp: 100 })
+    state().appendLiveMessage(meta.id, assistant(200, 20, 500))
+    state().appendLiveMessage(meta.id, { role: 'user', content: 'same prompt', timestamp: 100 })
+    state().appendLiveMessage(meta.id, assistant(300, 30, 600))
+    const display: DisplayTurnsResult = {
+      leafId: 'second', startIndex: 0, totalTurns: 2,
+      turns: [
+        {
+          id: 'first', user: { text: 'same prompt', images: [], textAttachments: [] }, userTimestamp: 100,
+          answer: [{ type: 'text', text: 'done' }], compactions: [], workBlocks: [true],
+          startedAt: 100, endedAt: 200, hasProcess: true
+        },
+        {
+          id: 'second', user: { text: 'same prompt', images: [], textAttachments: [] }, userTimestamp: 100,
+          answer: [{ type: 'text', text: 'done' }], compactions: [], workBlocks: [true],
+          startedAt: 100, endedAt: 300, hasProcess: true
+        }
+      ]
+    }
+    api.getDisplayTurns = async () => ({
+      ...display,
+      turns: [display.turns[0], {
+        ...display.turns[1],
+        user: { ...display.turns[1].user!, text: 'different prompt' }
+      }]
+    })
+    await assert.rejects(state().hydrateTurns(meta.id), (error: unknown) =>
+      (error as { code?: unknown }).code === 'GENERATION_TURN_MISMATCH'
+    )
+    assert.deepEqual(runtime().generationByTurnId, {})
+    api.getDisplayTurns = async () => display
+    await state().hydrateTurns(meta.id)
+    assert.deepEqual(runtime().generationByTurnId, {
+      first: { outputTokens: 20, durationMs: 500 },
+      second: { outputTokens: 30, durationMs: 600 }
+    })
+    assert.deepEqual(runtime().liveMessages, [])
+  } else if (name === 'queued-edit-draft') {
     const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
     const { serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
     const prompt = { text: '撤回的插话', images: [{ mimeType: 'image/png', data: 'restored-image' }] }
@@ -1839,6 +1887,7 @@ if (process.argv[2] === '--session-store-fixture') {
   await runFixture(process.argv[3])
 } else {
   const cases = {
+    'generation-hydration': 'generation speed survives hydration when prompts share timestamp and content',
     'queued-edit-draft': 'withdrawn steering prompts retain their images and cannot overwrite a reopened session',
     'branch-restores-prompt': 'tree restoration replaces unsent text and images without replaying the selected turn',
     'branch-restore-stale': 'a stale tree restoration cannot replace the current draft',

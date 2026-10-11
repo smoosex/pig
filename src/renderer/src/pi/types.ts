@@ -1,3 +1,4 @@
+import type { GenerationStats } from '../../../shared/api'
 import type { PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import type { LiveNestedCalls } from '../chat/nested-tools'
 import type {
@@ -30,8 +31,11 @@ export interface AssistantStreamEvent {
   contentIndex?: number
 }
 
-/** Renderer-only stream position; kept with its snapshot, never written into Pi history. */
-export type AssistantMessage = SdkAssistantMessage & { streamEvent?: AssistantStreamEvent }
+/** Renderer-only stream data; kept with its snapshot, never written into Pi history. */
+export type AssistantMessage = SdkAssistantMessage & {
+  streamEvent?: AssistantStreamEvent
+  generation?: GenerationStats
+}
 
 export type {
   ImageContent,

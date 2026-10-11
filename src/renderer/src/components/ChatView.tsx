@@ -16,6 +16,7 @@ const emptyCompactions: RuntimeState['liveCompactions'] = []
 const emptyToolUpdates: RuntimeState['toolUpdates'] = {}
 const emptyProcess: RuntimeState['processByTurnId'] = {}
 const emptyDurations: Record<string, number> = {}
+const emptyGeneration: RuntimeState['generationByTurnId'] = {}
 const MAX_SCROLL_SNAPSHOTS = 32
 const MAX_RETAINED_PANES = 3
 
@@ -81,13 +82,19 @@ const SessionChatPane = memo(function SessionChatPane({
   const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
   const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
   const elapsedByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.elapsedByTurnId ?? emptyDurations)
+  const generationByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.generationByTurnId ?? emptyGeneration)
   const streamElapsedMs = useSessionsStore((s) => s.runtime[sessionId]?.streamElapsedMs ?? null)
   const isStreaming = useSessionsStore((s) => s.runtime[sessionId]?.isStreaming ?? false)
   const liveCompactions = useSessionsStore((s) => s.runtime[sessionId]?.liveCompactions ?? emptyCompactions)
 
   const historical = useMemo(
-    () => turns.map((turn) => toTurn(turn, processByTurnId[turn.id] ?? [], elapsedByTurnId[turn.id])),
-    [turns, processByTurnId, elapsedByTurnId]
+    () => turns.map((turn) => toTurn(
+      turn,
+      processByTurnId[turn.id] ?? [],
+      elapsedByTurnId[turn.id],
+      generationByTurnId[turn.id]
+    )),
+    [turns, processByTurnId, elapsedByTurnId, generationByTurnId]
   )
   const live = useMemo(() => {
     const marks = liveCompactions.filter((mark) => showsInTranscript(mark, liveMessages.length > 0))

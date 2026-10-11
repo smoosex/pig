@@ -33,6 +33,7 @@ export const emptyRuntime = (): RuntimeState => ({
   processByTurnId: {},
   thinkingDurations: {},
   elapsedByTurnId: {},
+  generationByTurnId: {},
   isStreaming: false,
   agentRunRevision: 0,
   streamStartedAt: null,

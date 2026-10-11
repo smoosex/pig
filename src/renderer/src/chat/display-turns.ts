@@ -1,4 +1,4 @@
-import type { DisplayTurn, DisplayUser } from '../../../shared/api'
+import type { DisplayTurn, DisplayUser, GenerationStats } from '../../../shared/api'
 import { composePromptText, type PastedTextDisplayMetadata } from '../../../shared/pasted-text'
 import type { PigImageContent } from '../pi/types'
 import { renderKeyForUser, type ProcessItem, type Turn } from './turns'
@@ -15,7 +15,20 @@ function renderKeyContent(user: DisplayUser): string | Array<{ type: 'text'; tex
   ]
 }
 
-export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: number): Turn {
+export function renderKeyForDisplayTurn(display: DisplayTurn): string {
+  if (!display.user) return `turn:${display.id}`
+  return renderKeyForUser({
+    timestamp: display.userTimestamp ?? display.startedAt,
+    content: renderKeyContent(display.user)
+  })
+}
+
+export function toTurn(
+  display: DisplayTurn,
+  process: ProcessItem[],
+  workedMs?: number,
+  generation?: GenerationStats
+): Turn {
   const user = display.user
     ? {
         role: 'user' as const,
@@ -60,8 +73,7 @@ export function toTurn(display: DisplayTurn, process: ProcessItem[], workedMs?: 
     waitingForModel: false,
     hasProcess: display.hasProcess,
     workedMs,
-    renderKey: user && display.user
-      ? renderKeyForUser({ timestamp: user.timestamp, content: renderKeyContent(display.user) })
-      : `turn:${display.id}`
+    generation,
+    renderKey: renderKeyForDisplayTurn(display)
   }
 }

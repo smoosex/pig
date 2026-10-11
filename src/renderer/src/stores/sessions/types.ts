@@ -5,6 +5,7 @@ import type {
   DisplayTurn,
   DisplayTurnsResult,
   FollowUpAction,
+  GenerationStats,
   PromptStreamingBehavior,
   ProjectGroup,
   SessionControls,
@@ -86,6 +87,7 @@ export interface RuntimeState extends SessionControls {
   processByTurnId: Record<string, ProcessItem[]>
   thinkingDurations: ThinkingDurations
   elapsedByTurnId: Record<string, number>
+  generationByTurnId: Record<string, GenerationStats>
   isStreaming: boolean
   /** SDK lifecycle changes outrank cleanup of an older optimistic submission. */
   agentRunRevision: number
