@@ -47,7 +47,7 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
       aria-hidden={hidden}
       style={{ width: hidden ? 0 : width }}
       className={cn(
-        'relative flex max-w-1/2 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,margin] duration-200 ease-in-out motion-reduce:transition-none',
+        'relative flex min-w-0 max-w-1/2 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,margin] duration-200 ease-in-out motion-reduce:transition-none',
         hidden ? 'mr-0' : 'mr-2'
       )}
     >

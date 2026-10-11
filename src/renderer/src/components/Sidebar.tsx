@@ -41,7 +41,7 @@ export function Sidebar({
       inert={hidden}
       aria-hidden={hidden}
       className={cn(
-        'flex min-w-0 shrink-0 overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        'flex min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
         hidden ? 'w-0' : 'w-62'
       )}
     >

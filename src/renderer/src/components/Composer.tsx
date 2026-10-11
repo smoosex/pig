@@ -54,7 +54,7 @@ export function Composer({
             <div className="relative z-10">
               <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
                 <InputGroup
-                  className="min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
+                  className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-border bg-composer-background has-disabled:bg-composer-background has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:bg-composer-background dark:has-disabled:bg-composer-background"
                   onFocus={() => setFocused(true)}
                   onBlur={(event) => {
                     const next = event.relatedTarget

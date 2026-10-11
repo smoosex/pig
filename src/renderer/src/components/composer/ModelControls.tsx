@@ -120,9 +120,14 @@ export function ModelPicker({
       }}
     >
       <PopoverTrigger asChild>
-        <InputGroupButton className={cn(toolbarBtn, 'max-w-44')} disabled={disabled}>
+        <InputGroupButton
+          className={cn(toolbarBtn, 'max-w-44')}
+          disabled={disabled}
+          aria-label={model?.name ?? t('model.pickerFallback')}
+          title={model?.name ?? t('model.pickerFallback')}
+        >
           <ModelBrandIcon model={model} />
-          <span className="min-w-0 truncate">{model?.name ?? t('model.pickerFallback')}</span>
+          <span className="hidden min-w-0 truncate @min-md/composer:block">{model?.name ?? t('model.pickerFallback')}</span>
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5" onKeyDown={navigation.onKeyDown}>
@@ -219,9 +224,14 @@ export function ThinkingPicker({
       onOpenChange={setOpen}
     >
       <PopoverTrigger asChild>
-        <InputGroupButton className={toolbarBtn} disabled={disabled}>
+        <InputGroupButton
+          className={toolbarBtn}
+          disabled={disabled}
+          aria-label={t(thinkingLevelKeys[thinkingLevel])}
+          title={t(thinkingLevelKeys[thinkingLevel])}
+        >
           <ThinkingStrengthIcon level={thinkingLevel} levels={thinkingLevels} active />
-          {t(thinkingLevelKeys[thinkingLevel])}
+          <span className="hidden @min-md/composer:inline">{t(thinkingLevelKeys[thinkingLevel])}</span>
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent

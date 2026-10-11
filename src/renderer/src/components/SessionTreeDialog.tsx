@@ -261,9 +261,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       }}
     >
       <DialogTrigger asChild>
-        <InputGroupButton className={toolbarBtn} disabled={disabled} aria-label={t('tree.buttonAria')}>
+        <InputGroupButton className={toolbarBtn} disabled={disabled} aria-label={t('tree.buttonAria')} title={t('tree.buttonAria')}>
           <GitBranch data-icon="inline-start" />
-          {t('tree.button')}
+          <span className="hidden @min-md/composer:inline">{t('tree.button')}</span>
         </InputGroupButton>
       </DialogTrigger>
       <DialogContent
