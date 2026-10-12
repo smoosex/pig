@@ -2,6 +2,7 @@
 import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
 import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
+import { renamedPath } from '../../lib/worktree-paths'
 import { useComposerDraftsStore } from '../composer-drafts'
 import { useSplitLayoutStore, collectPaneNodes, findPaneNode } from '../split-layout'
 import { newSessionId } from '../../lib/session-id'
@@ -18,7 +19,7 @@ import type { OpenTab, SessionsStore, SessionSlice } from './types'
 const DEFAULT_SCOPE: DiffScope = 'all'
 
 /** One file tab per worktree and path: two worktrees hold a `src/main.ts` each, and they are not the same. */
-function fileTabId(cwd: string, path: string): string {
+export function fileTabId(cwd: string, path: string): string {
   return `file:${cwd}\u0000${path}`
 }
 
@@ -59,6 +60,7 @@ export const createTabsSlice: SessionSlice<
   | 'openExisting'
   | 'openChangesTab'
   | 'openFileTab'
+  | 'moveFileTab'
   | 'setChangesScope'
   | 'acquireProjectDraft'
   | 'releaseProjectDraft'
@@ -1056,6 +1058,54 @@ export const createTabsSlice: SessionSlice<
     setActive: (tabId) => {
       if (!get().openTabs.some((tab) => tab.id === tabId)) return
       void get().activateTab(tabId)
+    },
+
+    /**
+     * Follows a file or folder the tree renamed: the tab's identity is its path, so the row moving means
+     * the tab moves with it — same tab, new id and new title, and the pane holding it keeps showing it.
+     *
+     * A folder carries the tabs under it along, because those files moved too: a tab left pointing at
+     * `src/main.ts` after `src` became `source` is a tab whose file the next read reports as missing.
+     *
+     * A tab that is not there is left alone, so a rename that raced a close does not resurrect one. A
+     * tab already sitting at the destination is closed rather than left beside it: ids are what the strip
+     * keys on, two tabs cannot share one, and the destination's bytes were refused a rename onto them
+     * anyway, so a tab there is a tab for a file that is about to be reported missing.
+     */
+    moveFileTab: (cwd, from, to) => {
+      const movedIds = new Map<string, string>()
+      for (const tab of get().openTabs) {
+        if (tab.kind !== 'file' || tab.cwd !== cwd || !tab.path) continue
+        const next = renamedPath(tab.path, from, to)
+        if (next !== null) movedIds.set(tab.id, fileTabId(cwd, next))
+      }
+      // A destination already held by a tab that is not itself moving: the two would share an id.
+      const collides = new Set(
+        get()
+          .openTabs.filter((tab) => !movedIds.has(tab.id) && [...movedIds.values()].includes(tab.id))
+          .map((tab) => tab.id)
+      )
+      if (!movedIds.size) return
+      /** Where a tab id ends up: the moved one, or the same id when the rename does not touch it. */
+      const wander = (id: string): string => movedIds.get(id) ?? id
+      set((state) => ({
+        openTabs: state.openTabs.flatMap((tab) => {
+          if (collides.has(tab.id)) return []
+          const next = movedIds.get(tab.id)
+          if (next === undefined) return [tab]
+          const path = next.slice(next.indexOf('\u0000') + 1)
+          return [{ ...tab, id: next, path, title: path.slice(path.lastIndexOf('/') + 1) }]
+        }),
+        activeTabId: state.activeTabId === null ? null : wander(state.activeTabId),
+        activeTabByCwd:
+          state.activeTabByCwd[cwd] == null
+            ? state.activeTabByCwd
+            : { ...state.activeTabByCwd, [cwd]: wander(state.activeTabByCwd[cwd] as string) }
+      }))
+      // The panes still name the old ids, and a pane pointing at a tab that is no longer there shows
+      // nothing at all.
+      const layout = useSplitLayoutStore.getState()
+      for (const [id, next] of movedIds) layout.renameTabId(id, next)
     },
 
     renameTab: (tabId, title) => set((state) => ({

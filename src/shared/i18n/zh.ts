@@ -169,6 +169,7 @@ export const zh = {
     layout: 'diff 布局',
     unified: '统一视图',
     sideBySide: '并排视图',
+    followLine: '跳转到第 {line} 行',
     reading: '正在读取变更…',
     notGit: '当前目录不是 Git 仓库',
     truncated: '变更过大，超出的文件未读取',
@@ -217,9 +218,23 @@ export const zh = {
     ignoredLarge: '文件超过 2 MB，不在这里打开',
     ignoredSymlink: '这是符号链接，不跟随：打开它就会读到工作区之外的文件',
     missing: '文件不存在',
+    newFileLabel: '新文件的名称',
+    newFolderLabel: '新文件夹的名称',
     emptyTree: '这个工作区是空的',
     showIgnored: '显示 Git 忽略的文件',
-    hideIgnored: '隐藏 Git 忽略的文件'
+    hideIgnored: '隐藏 Git 忽略的文件',
+    newFile: '新建文件…',
+    newFolder: '新建文件夹…',
+    copyPath: '复制路径',
+    openFolder: '打开所在文件夹…',
+    rename: '重命名',
+    moveToTrash: '移到废纸篓',
+    renameFailed: '重命名失败',
+    createFailed: '新建失败',
+    trashFailed: '移到废纸篓失败',
+    copyFailed: '复制路径失败',
+    revealFailed: '打开所在文件夹失败',
+    dirtyRename: '这个文件有未保存的修改，先保存再改名'
   },
   tree: {
     button: '树',
@@ -242,7 +257,8 @@ export const zh = {
     viewAria: '侧边栏视图',
     files: '文件',
     changes: '变更',
-    resizeAria: '调整侧边栏宽度'
+    resizeAria: '调整侧边栏宽度',
+    newFileAria: '在工作区新建文件'
   },
   settings: {
     back: '返回',
@@ -645,6 +661,9 @@ export const zh = {
     noWritePermission: '没有写入权限',
     isDirectory: '这个路径是目录',
     missingDirectory: '文件所在的目录不存在',
+    missingEntry: '这个文件或文件夹已不存在',
+    nameTaken: '这个名字已经被占用了',
+    invalidName: '名称里不能有斜杠，也不能是 . 或 ..',
     noSpace: '磁盘空间不足',
     readOnlyFilesystem: '文件系统是只读的',
     gitMissing: '未找到 Git，请先安装 Git',

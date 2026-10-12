@@ -237,3 +237,35 @@ describe('useSplitLayoutStore', () => {
     assert.equal(state.dragOver, null)
   })
 })
+
+describe('renameTabId', () => {
+  beforeEach(() => {
+    useSplitLayoutStore.getState().reset()
+  })
+
+  test('points the pane holding a tab at its new id', () => {
+    const paneId = useSplitLayoutStore.getState().initLayout('file:/p\0a.ts')
+    useSplitLayoutStore.getState().renameTabId('file:/p\0a.ts', 'file:/p\0b.ts')
+    const root = useSplitLayoutStore.getState().root as PaneNode
+    assert.equal(root.id, paneId)
+    assert.equal(root.tabId, 'file:/p\0b.ts')
+  })
+
+  test('follows the tab through a split and leaves the other panes alone', () => {
+    const p1 = useSplitLayoutStore.getState().initLayout('file:/p\0a.ts')
+    useSplitLayoutStore.getState().splitPane(p1, 'file:/p\0other.ts', 'right')
+    useSplitLayoutStore.getState().renameTabId('file:/p\0a.ts', 'file:/p\0b.ts')
+    const root = useSplitLayoutStore.getState().root as SplitNode
+    const ids = JSON.stringify(root)
+    assert.match(ids, /file:\/p\\u0000b\.ts/)
+    assert.match(ids, /file:\/p\\u0000other\.ts/)
+    assert.doesNotMatch(ids, /file:\/p\\u0000a\.ts/)
+  })
+
+  test('answering nothing leaves the layout identical', () => {
+    useSplitLayoutStore.getState().initLayout('file:/p\0a.ts')
+    const before = useSplitLayoutStore.getState().root
+    useSplitLayoutStore.getState().renameTabId('file:/p\0nowhere.ts', 'file:/p\0b.ts')
+    assert.equal(useSplitLayoutStore.getState().root, before)
+  })
+})

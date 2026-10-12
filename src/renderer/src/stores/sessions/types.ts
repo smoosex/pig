@@ -208,6 +208,8 @@ export interface SessionsStore {
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
   /** Brings a file's tab to the front, opening it when the strip does not hold it. */
   openFileTab: (cwd: string, path: string) => Promise<void>
+  /** Follows a file the tree renamed: the tab keeps its place and takes the row's new name. */
+  moveFileTab: (cwd: string, from: string, to: string) => void
   /** The toolbar's scope control: one changes tab, its title and its contents following the choice. */
   setChangesScope: (cwd: string, scope: DiffScope) => void
   acquireProjectDraft: (cwd: string) => void

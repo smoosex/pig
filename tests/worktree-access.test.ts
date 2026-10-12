@@ -61,6 +61,7 @@ async function runFixture(): Promise<void> {
       }
     },
     shell: { openPath: async () => '', showItemInFolder: () => {} },
+    clipboard: { writeText: () => {} },
     dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
     BrowserWindow: { getAllWindows: () => [] }
   }))

@@ -167,6 +167,7 @@ export const en: Messages = {
     layout: 'Diff layout',
     unified: 'Unified view',
     sideBySide: 'Side-by-side view',
+    followLine: 'Jump to line {line}',
     reading: 'Reading changes…',
     notGit: 'This directory is not a Git repository',
     truncated: 'The changes are too large; the files beyond the limit were not read',
@@ -215,9 +216,23 @@ export const en: Messages = {
     ignoredLarge: 'The file is larger than 2 MB; it is not opened here',
     ignoredSymlink: 'This is a symlink, which is not followed: opening it would read outside the worktree',
     missing: 'The file does not exist',
+    newFileLabel: 'Name of the new file',
+    newFolderLabel: 'Name of the new folder',
     emptyTree: 'This worktree is empty',
     showIgnored: 'Show files Git ignores',
-    hideIgnored: 'Hide files Git ignores'
+    hideIgnored: 'Hide files Git ignores',
+    newFile: 'New File…',
+    newFolder: 'New Folder…',
+    copyPath: 'Copy path',
+    openFolder: 'Open folder…',
+    rename: 'Rename',
+    moveToTrash: 'Move to Trash',
+    renameFailed: 'Could not rename it',
+    createFailed: 'Could not create it',
+    trashFailed: 'Could not move it to the trash',
+    copyFailed: 'Could not copy the path',
+    revealFailed: 'Could not open the containing folder',
+    dirtyRename: 'This file has unsaved changes; save before renaming it'
   },
   tree: {
     button: 'Tree',
@@ -240,7 +255,8 @@ export const en: Messages = {
     viewAria: 'Sidebar view',
     files: 'Files',
     changes: 'Changes',
-    resizeAria: 'Resize the sidebar'
+    resizeAria: 'Resize the sidebar',
+    newFileAria: 'New file in the worktree'
   },
   settings: {
     back: 'Back',
@@ -643,6 +659,9 @@ export const en: Messages = {
     noWritePermission: 'No permission to write',
     isDirectory: 'That path is a directory',
     missingDirectory: 'The directory holding that file does not exist',
+    missingEntry: 'That file or folder is gone',
+    nameTaken: 'That name is already taken',
+    invalidName: 'A name cannot hold a slash, and it cannot be . or ..',
     noSpace: 'Not enough disk space',
     readOnlyFilesystem: 'The filesystem is read-only',
     gitMissing: 'Git was not found. Install Git first.',

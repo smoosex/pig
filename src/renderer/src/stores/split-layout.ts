@@ -171,6 +171,18 @@ function updatePaneTabInTree(node: LayoutNode, paneId: string, tabId: string): L
   }
 }
 
+/**
+ * The same walk for a tab whose own id moved, which is what renaming a file does to its tab: the
+ * identity is the path, so the row moving means every pane holding it has to follow.
+ */
+function renameTabInTree(node: LayoutNode, from: string, to: string): LayoutNode {
+  if (isPaneNode(node)) return node.tabId === from ? { ...node, tabId: to } : node
+  const children = node.children.map((child) => renameTabInTree(child, from, to))
+  return children.every((child, index) => child === node.children[index])
+    ? node
+    : { ...node, children }
+}
+
 function updateSplitSizes(node: LayoutNode, splitId: string, sizes: number[]): LayoutNode {
   if (isPaneNode(node)) return node
   if (node.id === splitId) {
@@ -203,6 +215,8 @@ export interface SplitLayoutState {
   setSplitSizes: (splitId: string, sizes: number[]) => void
   closePane: (paneId: string) => void
   setPaneTab: (paneId: string, tabId: string) => void
+  /** Points every pane that holds a tab at its new id, for a tab whose own identity moved. */
+  renameTabId: (from: string, to: string) => void
   setActivePane: (paneId: string) => void
   setDragOver: (dragOver: { paneId: string; position: SplitDropPosition } | null) => void
   setReintegratingTab: (tab: ReintegratingTab | null) => void
@@ -291,6 +305,15 @@ export const useSplitLayoutStore = create<SplitLayoutState>((set, get) => ({
     if (!root) return
     set({ root: updatePaneTabInTree(root, paneId, tabId) })
   },
+
+  renameTabId: (from: string, to: string) =>
+    set((state) => {
+      if (!state.root) return state
+      const root = renameTabInTree(state.root, from, to)
+      // The panes are what hold a tab id, and `renameTabInTree` is what walks them; there is nothing else
+      // to update, and the active *pane* is named by a pane id this never touches.
+      return root === state.root ? state : { root }
+    }),
 
   setActivePane: (paneId: string) => {
     set({ activePaneId: paneId })
