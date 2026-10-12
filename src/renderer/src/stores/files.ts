@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import { api, type FileReadResult, type FileStamp, type FileTreeEntry } from '../ipc/api'
 import { failureMessage } from '../lib/ipc-error'
+import { isUnder, renamedPath } from '../lib/worktree-paths'
 
 export interface DirectoryState {
   status: 'loading' | 'ready' | 'error'
@@ -45,9 +46,24 @@ export interface FileDocument {
   saveError?: string
 }
 
+/**
+ * A name a tree row is asking for in one worktree: something new in a directory, or a new name for a row
+ * that is already there. Paths are worktree-relative and `/`-separated, the same spelling every other
+ * path here uses, and an empty `directory` is the worktree's own root.
+ */
+export type TreeDraft = { cwd: string } & (
+  | { kind: 'file' | 'folder'; directory: string }
+  | { kind: 'rename'; path: string }
+)
+
 /** One document per worktree and path; joined with NUL so the key is never ambiguous. */
 export function fileKey(cwd: string, path: string): string {
   return `${path}\u0000${cwd}`
+}
+
+/** The worktree-relative path a key was made from, or null when the key belongs to another worktree. */
+function pathOf(cwd: string, key: string): string | null {
+  return key.endsWith(`\u0000${cwd}`) ? key.slice(0, key.length - cwd.length - 1) : null
 }
 
 /** Whether the editor holds something that has not reached the disk yet. */
@@ -79,12 +95,28 @@ interface FilesStore {
   hideIgnored: boolean
   loadDirectory: (cwd: string, path: string) => Promise<void>
   toggleDirectory: (cwd: string, path: string) => void
+  /** Opens every level on the way to a directory, so a row inside it can be on screen. */
+  ensureDirectory: (cwd: string, path: string) => void
   setHideIgnored: (hide: boolean) => void
   openDocument: (cwd: string, path: string) => Promise<void>
   setDraft: (cwd: string, path: string, text: string) => void
   saveDocument: (cwd: string, path: string, overwrite?: boolean) => Promise<void>
   reloadDocument: (cwd: string, path: string) => Promise<void>
   releaseDocument: (cwd: string, path: string) => void
+  /** Re-keys what this store holds for a renamed row, draft included. */
+  moveDocument: (cwd: string, from: string, to: string) => void
+  /** Drops what this store holds for a row that is gone. */
+  forgetDocument: (cwd: string, path: string) => void
+  /**
+   * The name a tree is asking for, or null when nothing is being named.
+   *
+   * It lives here rather than in the column because the field it draws is a row of the tree, and the
+   * tree is rebuilt from the store: the level it belongs to can be refreshed from underneath it while
+   * the reader is typing, and a draft held by a component that unmounts with the panel would take that
+   * typing with it. It names its own worktree, because the store outlives the column that asked.
+   */
+  naming: TreeDraft | null
+  setNaming: (naming: TreeDraft | null) => void
   /** Reloads what this worktree has open: the levels on screen and every document. */
   refreshWorktree: (cwd: string) => void
   /** The line a tab is being asked to land on, or null when nothing is waiting to be revealed. */
@@ -193,6 +225,24 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     if (open) void get().loadDirectory(cwd, path)
   },
 
+  /**
+   * Opens a chain of directories without closing what was already open, and reads the level that was
+   * not read yet: a field asking for a name inside a level nobody has opened has nowhere to stand.
+   */
+  ensureDirectory: (cwd, path) => {
+    if (!path) return
+    const segments = path.split('/')
+    const open: Record<string, boolean> = {}
+    for (let index = 0; index < segments.length; index += 1) {
+      open[segments.slice(0, index + 1).join('/')] = true
+    }
+    const previouslyOpen = get().expanded[cwd] ?? {}
+    set((state) => ({ expanded: { ...state.expanded, [cwd]: { ...previouslyOpen, ...open } } }))
+    for (const level of Object.keys(open)) {
+      if (!previouslyOpen[level] || !get().trees[cwd]?.[level]?.entries) void get().loadDirectory(cwd, level)
+    }
+  },
+
   setHideIgnored: (hideIgnored) => set({ hideIgnored }),
 
   openDocument: async (cwd, path) => {
@@ -296,6 +346,63 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     })
   },
 
+  /**
+   * Follows a rename the reader asked for from the tree, and re-keys what this store holds under the
+   * old path: the draft, and the read that is still in flight for it.
+   *
+   * A dirty draft moves with the file rather than being dropped — it describes the bytes that were
+   * renamed, and those bytes are now under the new name. Its stamp moves with it, so the next save
+   * still compares against the file as it actually is.
+   *
+   * A folder takes everything under it along: the rows inside are not named by the field, but they moved
+   * all the same, and a document left under the old prefix is a draft whose next save writes to a path
+   * that no longer exists.
+   */
+  moveDocument: (cwd, from, to) => {
+    set((state) => {
+      const moved: Record<string, FileDocument> = {}
+      let changed = false
+      for (const [key, document] of Object.entries(state.documents)) {
+        const path = pathOf(cwd, key)
+        if (path === null) continue
+        const renamed = renamedPath(path, from, to)
+        if (renamed === null) continue
+        const next = fileKey(cwd, renamed)
+        reads.set(next, reads.get(key) ?? ++readCount)
+        reads.delete(key)
+        moved[next] = document
+        changed = true
+      }
+      if (!changed) return state
+      const documents = { ...state.documents }
+      for (const key of Object.keys(state.documents)) {
+        const path = pathOf(cwd, key)
+        if (path !== null && renamedPath(path, from, to) !== null) delete documents[key]
+      }
+      return { documents: { ...documents, ...moved } }
+    })
+  },
+
+  /** Drops what this store holds for a row that is gone, and everything that was under it. */
+  forgetDocument: (cwd, path) => {
+    const key = fileKey(cwd, path)
+    reads.delete(key)
+    set((state) => {
+      const documents: Record<string, FileDocument> = {}
+      let changed = false
+      for (const [existing, document] of Object.entries(state.documents)) {
+        const at = pathOf(cwd, existing)
+        if (at !== null && (at === path || isUnder(at, path))) {
+          reads.delete(existing)
+          changed = true
+          continue
+        }
+        documents[existing] = document
+      }
+      return changed ? { documents } : state
+    })
+  },
+
   refreshWorktree: (cwd) => {
     const state = get()
     for (const path of Object.keys(state.trees[cwd] ?? {})) {
@@ -309,7 +416,10 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   reveal: null,
   revealLine: (cwd, path, line) =>
     set((state) => ({ reveal: { cwd, path, line, token: (state.reveal?.token ?? 0) + 1 } })),
-  clearReveal: () => set({ reveal: null })
+  clearReveal: () => set({ reveal: null }),
+
+  naming: null,
+  setNaming: (naming) => set({ naming })
 }))
 
 /**

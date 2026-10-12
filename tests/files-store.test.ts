@@ -285,6 +285,58 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'move-file' || name === 'move-folder' || name === 'forget-folder') {
+    const reads = new Map([
+      ['a.ts', 'AAA\n'],
+      ['src/main.ts', 'MAIN\n'],
+      ['src/deep/leaf.ts', 'LEAF\n'],
+      ['src2/other.ts', 'OTHER\n']
+    ])
+    Object.assign(api, {
+      readFile: async (_cwd: string, path: string) => text(reads.get(path) ?? '', 1)
+    } satisfies Partial<SessionApi>)
+    const { fileKey, useFilesStore } = await import('../src/renderer/src/stores/files')
+    const cwd = '/store-move'
+    for (const path of ['a.ts', 'src/main.ts', 'src/deep/leaf.ts', 'src2/other.ts']) {
+      await useFilesStore.getState().openDocument(cwd, path)
+    }
+    useFilesStore.getState().setDraft(cwd, 'src/main.ts', 'edited\n')
+
+    if (name === 'move-file') {
+      useFilesStore.getState().moveDocument(cwd, 'a.ts', 'renamed.ts')
+      const documents = useFilesStore.getState().documents
+      assert.equal(documents[fileKey(cwd, 'a.ts')], undefined, 'the old key is gone')
+      assert.equal(documents[fileKey(cwd, 'renamed.ts')]?.text, 'AAA\n')
+      assert.equal(documents[fileKey(cwd, 'src/main.ts')]?.text, 'edited\n', 'a folder is left alone')
+      return
+    }
+
+    if (name === 'move-folder') {
+      // A folder rename carries everything under it, and leaves a sibling that merely shares the prefix.
+      useFilesStore.getState().moveDocument(cwd, 'src', 'source')
+      const documents = useFilesStore.getState().documents
+      assert.equal(documents[fileKey(cwd, 'src/main.ts')], undefined, 'the old key is gone')
+      assert.equal(documents[fileKey(cwd, 'src/deep/leaf.ts')], undefined)
+      assert.equal(documents[fileKey(cwd, 'source/main.ts')]?.text, 'edited\n', 'the draft moved with it')
+      assert.equal(documents[fileKey(cwd, 'source/deep/leaf.ts')]?.text, 'LEAF\n')
+      assert.equal(documents[fileKey(cwd, 'src2/other.ts')]?.text, 'OTHER\n', 'a prefix sibling stays put')
+      assert.equal(documents[fileKey(cwd, 'a.ts')]?.text, 'AAA\n', 'an unrelated file stays put')
+      return
+    }
+
+    if (name === 'forget-folder') {
+      // Trashing a folder drops the drafts under it: the rows are gone with the folder.
+      useFilesStore.getState().forgetDocument(cwd, 'src')
+      const documents = useFilesStore.getState().documents
+      assert.equal(documents[fileKey(cwd, 'src/main.ts')], undefined)
+      assert.equal(documents[fileKey(cwd, 'src/deep/leaf.ts')], undefined)
+      assert.equal(documents[fileKey(cwd, 'src2/other.ts')]?.text, 'OTHER\n', 'a prefix sibling survives')
+      return
+    }
+
+    throw new Error(`unknown move case ${name}`)
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -296,7 +348,10 @@ if (process.argv[2] === '--files-store-fixture') {
     refresh: 'a change event adopts new bytes when the tab is clean and flags them when it is not',
     refusals: 'a file that cannot be edited says which kind it is, and keeps no draft',
     tree: 'a directory level is read once, kept while it refreshes, and reports a listing that failed',
-    release: 'closing a tab keeps a draft and lets a clean document go'
+    release: 'closing a tab keeps a draft and lets a clean document go',
+    'move-file': 'a rename re-keys the one document it names, draft included',
+    'move-folder': 'a folder rename carries the drafts under it and leaves a prefix sibling',
+    'forget-folder': 'trashing a folder drops the drafts under it'
   })) {
     test(`files store: ${description}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--files-store-fixture', name], {

@@ -304,6 +304,9 @@ export type FileWriteResult =
   /** The file no longer holds what the draft was written against: the reader decides what to do. */
   | { kind: 'conflict' }
 
+/** What a rename leaves behind: the worktree-relative path the row now answers to. */
+export type FileRenameResult = { path: string }
+
 /** An image block a turn refers to; the bytes stay in main behind a pig-image URL. */
 export interface DisplayImage {
   mimeType: string
@@ -758,6 +761,13 @@ export interface SessionApi extends ToolSettingsApi {
   /** 打开方式…: hands the file to the desktop instead of opening a tab for it. */
   openFileExternally: (cwd: string, path: string) => Promise<void>
   revealFileExternally: (cwd: string, path: string) => Promise<void>
+  /** The file tree's own writes, asked for from a row's context menu. */
+  createFile: (cwd: string, path: string) => Promise<{ path: string }>
+  createDirectory: (cwd: string, path: string) => Promise<{ path: string }>
+  renameEntry: (cwd: string, path: string, name: string) => Promise<FileRenameResult>
+  trashEntry: (cwd: string, path: string) => Promise<void>
+  /** Puts the row's absolute path on the clipboard, resolved in main. */
+  copyPath: (cwd: string, path: string) => Promise<void>
   readWorktreeDiff: (cwd: string) => Promise<WorktreeDiff>
   readWorktreePatch: (cwd: string, scope: DiffScope) => Promise<WorktreePatch>
   readUntrackedFile: (cwd: string, path: string) => Promise<UntrackedFileResult>

@@ -116,6 +116,13 @@ const api: SessionApi = {
     ipcRenderer.invoke('files:open-externally', cwd, path),
   revealFileExternally: (cwd: string, path: string) =>
     ipcRenderer.invoke('files:reveal-externally', cwd, path),
+  createFile: (cwd: string, path: string) => ipcRenderer.invoke('files:create-file', cwd, path),
+  createDirectory: (cwd: string, path: string) =>
+    ipcRenderer.invoke('files:create-directory', cwd, path),
+  renameEntry: (cwd: string, path: string, name: string) =>
+    ipcRenderer.invoke('files:rename', cwd, path, name),
+  trashEntry: (cwd: string, path: string) => ipcRenderer.invoke('files:trash', cwd, path),
+  copyPath: (cwd: string, path: string) => ipcRenderer.invoke('files:copy-path', cwd, path),
   readWorktreeDiff: (cwd: string) => ipcRenderer.invoke('diff:read-worktree', cwd),
   readWorktreePatch: (cwd: string, scope: DiffScope) =>
     ipcRenderer.invoke('diff:read-patch', cwd, scope),

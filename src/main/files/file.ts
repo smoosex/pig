@@ -15,7 +15,7 @@ import type { FileReadResult, FileStamp, FileWriteResult } from '../../shared/ap
 import { t } from '../i18n'
 import { readLanes } from '../git/limit'
 import { resolveWorktreePath } from './paths'
-import { BINARY_PROBE_BYTES, isMissingError, readCapped } from './read'
+import { BINARY_PROBE_BYTES, isMissingError, readCapped, writeFailure } from './read'
 
 /** A file a person edits by hand: past this it is data, and the tab refuses it instead of loading it. */
 const MAX_EDITABLE_BYTES = 2 * 1024 * 1024
@@ -136,23 +136,4 @@ function stampOf(info: Stats): FileStamp {
 
 function sameStamp(current: FileStamp | null, expected: FileStamp): boolean {
   return current !== null && current.mtimeMs === expected.mtimeMs && current.size === expected.size
-}
-
-/** A write that failed in a way the reader can act on says so in its own words, not in errno's. */
-function writeFailure(error: unknown): Error {
-  const code = (error as NodeJS.ErrnoException).code
-  const reason =
-    code === 'EACCES' || code === 'EPERM'
-      ? t('error.noWritePermission')
-      : code === 'EISDIR'
-        ? t('error.isDirectory')
-        : code === 'ENOENT'
-          ? t('error.missingDirectory')
-          : code === 'ENOSPC'
-            ? t('error.noSpace')
-            : code === 'EROFS'
-              ? t('error.readOnlyFilesystem')
-              : null
-  if (!reason) return error instanceof Error ? error : new Error(String(error))
-  return new Error(reason)
 }

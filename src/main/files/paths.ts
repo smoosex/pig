@@ -19,6 +19,18 @@ export interface WorktreePath {
 }
 
 /**
+ * A worktree-relative path built from a directory and a name, always `/`-separated.
+ *
+ * The renderer splits these strings on `/` — the tree, the file tabs and the changes panel all do — so a
+ * path joined with the platform's own separator would be a path nothing there recognises on Windows. It
+ * is the same normalizing `worktreePath` does on the way in, kept in one place so a caller that is
+ * building a path rather than reading one spells it the same way.
+ */
+export function worktreeRelative(directory: string, name: string): string {
+  return directory ? `${directory}/${name}` : name
+}
+
+/**
  * The absolute path behind a renderer-supplied worktree path, or null when the path is not inside the
  * worktree. Nothing here touches the disk: it is the string that is being judged.
  */

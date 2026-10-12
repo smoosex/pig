@@ -55,6 +55,12 @@ async function runFixture(): Promise<void> {
   await api.saveOpenProjectTabOrder('/repo', ['diff:/repo', 'session-1'])
   await api.saveOpenChatTabs(['chat-1', 'chat-2'], 'chat-2')
   await api.retryWorktreeNaming('/repo', '/repo-worktree')
+  // The tree's own writes: each takes the worktree, the row, and the name a rename is given.
+  await api.createFile('/repo', 'src/thing.ts')
+  await api.createDirectory('/repo', 'src/nested')
+  await api.renameEntry('/repo', 'src/thing.ts', 'entry.ts')
+  await api.trashEntry('/repo', 'src/entry.ts')
+  await api.copyPath('/repo', 'src/entry.ts')
 
   assert.deepEqual(invokes, [
     { channel: 'diff:read-worktree', args: ['/repo'] },
@@ -78,7 +84,12 @@ async function runFixture(): Promise<void> {
       channel: 'system:save-open-chat-tabs',
       args: [['chat-1', 'chat-2'], 'chat-2']
     },
-    { channel: 'project:retry-worktree-naming', args: ['/repo', '/repo-worktree'] }
+    { channel: 'project:retry-worktree-naming', args: ['/repo', '/repo-worktree'] },
+    { channel: 'files:create-file', args: ['/repo', 'src/thing.ts'] },
+    { channel: 'files:create-directory', args: ['/repo', 'src/nested'] },
+    { channel: 'files:rename', args: ['/repo', 'src/thing.ts', 'entry.ts'] },
+    { channel: 'files:trash', args: ['/repo', 'src/entry.ts'] },
+    { channel: 'files:copy-path', args: ['/repo', 'src/entry.ts'] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
