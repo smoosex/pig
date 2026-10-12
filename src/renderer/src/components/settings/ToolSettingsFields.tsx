@@ -7,22 +7,12 @@ import { Switch } from '../ui/switch'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
 export function ToolSettingsFeedback() {
-  const t = useT()
   const error = useToolSettingsStore((s) => s.error)
-  const pending = useToolSettingsStore((s) => s.state.pendingSessions.length)
+  if (!error) return null
   return (
-    <>
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      {pending > 0 ? (
-        <Alert>
-          <AlertDescription>{t('mcp.pending', { n: pending })}</AlertDescription>
-        </Alert>
-      ) : null}
-    </>
+    <Alert variant="destructive">
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
   )
 }
 export function CodemodeSetting() {

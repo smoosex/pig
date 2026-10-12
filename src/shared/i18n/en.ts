@@ -5,7 +5,6 @@ export const en: Messages = {
   mcp: {
     title: 'MCP', description: 'Manage MCP servers',
     tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',
-    pending: '{n} running sessions will apply changes after their current task finishes.',
     installed: 'Added', market: 'Marketplace', add: 'Add MCP', edit: 'Edit configuration', remove: 'Remove',
     search: 'Search the official MCP Registry', loading: 'Loading…', empty: 'No MCP servers added', emptyDescription: 'Choose a server from the marketplace or add a configuration manually.', noMatches: 'No compatible servers found',
     addRecipe: 'Add {name}', addServer: 'Add', optional: '(optional)', remote: 'Remote', homepage: 'Homepage', added: 'Added', enabled: 'Globally enabled', configured: 'New entries are saved disabled; replacements keep their existing enable state.',

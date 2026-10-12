@@ -7,7 +7,6 @@ export const zh = {
   mcp: {
     title: 'MCP', description: '管理 MCP 服务',
     tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',
-    pending: '{n} 个会话正在执行，变更将在本轮结束后生效。',
     installed: '已添加', market: '商店', add: '添加 MCP', edit: '编辑配置', remove: '移除',
     search: '搜索官方 MCP Registry', loading: '正在加载…', empty: '还没有添加 MCP', emptyDescription: '从商店选取服务器，或手动添加配置。', noMatches: '没有兼容的服务器',
     addRecipe: '添加 {name}', addServer: '添加', optional: '（可选）', remote: '远程', homepage: '主页', added: '已添加', enabled: '全局启用', configured: '新增条目保存后默认关闭；同名替换保留现有启用状态。',
