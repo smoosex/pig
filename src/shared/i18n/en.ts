@@ -167,6 +167,7 @@ export const en: Messages = {
     layout: 'Diff layout',
     unified: 'Unified view',
     sideBySide: 'Side-by-side view',
+    followLine: 'Jump to line {line}',
     reading: 'Reading changes…',
     notGit: 'This directory is not a Git repository',
     truncated: 'The changes are too large; the files beyond the limit were not read',

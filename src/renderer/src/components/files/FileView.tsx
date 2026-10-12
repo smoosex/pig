@@ -6,7 +6,8 @@
  * `onEditChange` rather than feeding it back — and a reload becomes a new surface, keyed by the document
  * and its revision, instead of an update handed to a session that is already in progress. ⌘S is caught on
  * the way down: the editor has a keymap of its own, and saving is the tab's business rather than the
- * editor's.
+ * editor's. A diff row followed into the tab lands the editor on that line, which is what
+ * `useFileLineReveal` holds.
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { Translate } from '../../../../shared/i18n'
@@ -32,6 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
+import { useFileLineReveal } from './useFileLineReveal'
 
 const createEditor: EditorFactory<undefined, undefined> = (type, options, editStateKey) =>
   new Editor(type, options, editStateKey)
@@ -54,6 +56,9 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
   }, [cwd, path, openDocument])
 
   useEffect(() => setActionError(null), [cwd, path])
+
+  // The line a diff row asked for, and the editor that can be told about it.
+  const reveal = useFileLineReveal(cwd, path, document)
 
   const runExternal = (run: () => Promise<unknown>) => {
     setActionError(null)
@@ -168,6 +173,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
           path={path}
           contents={document.text}
           dark={dark}
+          editorOptions={reveal.editorOptions}
           onEditChange={(text) => setDraft(cwd, path, text)}
         />
       ) : (
@@ -206,11 +212,13 @@ function FileSurface({
   path,
   contents,
   dark,
+  editorOptions,
   onEditChange
 }: {
   path: string
   contents: string
   dark: boolean
+  editorOptions: { onAttach: (editor: Editor<'file', undefined, undefined>) => void }
   onEditChange: (text: string) => void
 }) {
   const [file] = useState(() => ({ name: path, contents }))
@@ -221,6 +229,7 @@ function FileSurface({
         <FileCode
           file={file}
           options={options}
+          editorOptions={editorOptions}
           edit
           onEditChange={(event: EditorChangeEvent<'file', undefined, undefined>) =>
             onEditChange(event.file.contents)

@@ -169,6 +169,7 @@ export const zh = {
     layout: 'diff 布局',
     unified: '统一视图',
     sideBySide: '并排视图',
+    followLine: '跳转到第 {line} 行',
     reading: '正在读取变更…',
     notGit: '当前目录不是 Git 仓库',
     truncated: '变更过大，超出的文件未读取',

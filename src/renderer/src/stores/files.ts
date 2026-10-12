@@ -55,6 +55,21 @@ export function isDirty(document: FileDocument): boolean {
   return document.text !== document.saved
 }
 
+/**
+ * A line a file tab was asked to land on, asked for by the changes tab when a diff line is followed.
+ *
+ * The request is one-shot and lives outside the tab: a tab that is not mounted yet — one the changes tab
+ * just opened — reads it when its document arrives, and the tab takes it off the store once the editor
+ * has been told, so switching away and back does not replay it. `token` is what makes a repeat of the
+ * same line a new request, the same way the changes tab's own file focus works.
+ */
+export interface FileReveal {
+  cwd: string
+  path: string
+  line: number
+  token: number
+}
+
 interface FilesStore {
   /** Directory listings per worktree, then per worktree-relative path. */
   trees: Record<string, Record<string, DirectoryState>>
@@ -72,6 +87,10 @@ interface FilesStore {
   releaseDocument: (cwd: string, path: string) => void
   /** Reloads what this worktree has open: the levels on screen and every document. */
   refreshWorktree: (cwd: string) => void
+  /** The line a tab is being asked to land on, or null when nothing is waiting to be revealed. */
+  reveal: FileReveal | null
+  revealLine: (cwd: string, path: string, line: number) => void
+  clearReveal: () => void
 }
 
 /**
@@ -285,7 +304,12 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     for (const key of Object.keys(state.documents)) {
       if (key.endsWith(`\u0000${cwd}`)) void refreshDocument(cwd, key.slice(0, key.indexOf('\u0000')))
     }
-  }
+  },
+
+  reveal: null,
+  revealLine: (cwd, path, line) =>
+    set((state) => ({ reveal: { cwd, path, line, token: (state.reveal?.token ?? 0) + 1 } })),
+  clearReveal: () => set({ reveal: null })
 }))
 
 /**

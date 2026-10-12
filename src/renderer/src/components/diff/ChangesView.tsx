@@ -492,7 +492,7 @@ function SectionBody({
       {drawing ? (
         near ? (
           <Suspense fallback={<Notice>{t('diff.rendering')}</Notice>}>
-            <DiffBody fileDiff={drawing} style={diffStyle} scroll={scroll} />
+            <DiffBody fileDiff={drawing} style={diffStyle} scroll={scroll} cwd={cwd} path={entry.path} />
           </Suspense>
         ) : (
           <Notice>{t('diff.preparing')}</Notice>
