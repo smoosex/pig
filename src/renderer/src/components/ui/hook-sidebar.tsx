@@ -7,12 +7,15 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 const CORNER = 6;
-const DASH =
-  "repeating-linear-gradient(to top, transparent 0 2px, currentColor 2px 4px)";
+const DASH = "2 2";
+// The row pitch (30px) does not divide the dash period (4px), so a path that starts
+// its own dash at its own top lands a dash right next to the previous one just before
+// every other corner. Every path here measures its dash from the top of the list, so
+// consecutive rows read as one unbroken spine instead of two strokes meeting.
+const phaseAt = (y: number) => ((y % 4) + 4) % 4;
 
 export type HookSidebarItem = string | { label: string; href?: string };
 
@@ -44,70 +47,46 @@ const hrefOf = (item: HookSidebarItem) =>
 const labelOf = (item: HookSidebarItem) =>
   typeof item === "string" ? item : item.label;
 
-const Rail = ({
-  from = 0,
-  y,
-  visible,
-  color,
+// One row owns one path: it runs down from where the row above bent away, bends at
+// its own centre and stops at the label. Rows never overlap each other, so a muted
+// row and an accented one cannot show through one another.
+const TreeLine = ({
   dashed,
-  className,
+  startY,
+  rise,
+  accented,
+  color,
   left,
 }: {
-  from?: number;
-  y: number | null;
-  visible: boolean;
-  color?: string;
   dashed: boolean;
-  className?: string;
+  /** Height in the list where this run leaves the corner above. */
+  startY: number;
+  /** Length of the run above this row's bend. */
+  rise: number;
+  accented: boolean;
+  color: string;
   left?: string;
-}) => {
-  const reduced = useReducedMotion();
-  const travel = reduced
-    ? { duration: 0 }
-    : { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.7 };
-  const railLeft = left ?? "0.125rem";
-
-  return (
-    <motion.span
-      aria-hidden
-      initial={false}
-      style={{ color }}
-      animate={{ opacity: visible && y !== null ? 1 : 0 }}
-      transition={reduced ? { duration: 0 } : { duration: 0.2 }}
-      className={cn("pointer-events-none absolute inset-0", className)}
-    >
-      <motion.span
-        initial={false}
-        animate={{ top: from, height: Math.max(0, (y ?? 0) - CORNER - from) }}
-        transition={travel}
-        style={{
-          left: railLeft,
-          ...(dashed
-            ? { backgroundImage: DASH }
-            : { backgroundColor: "currentColor" }),
-        }}
-        className="absolute w-px"
-      />
-      <motion.svg
-        initial={false}
-        animate={{ top: (y ?? 0) - CORNER }}
-        transition={travel}
-        width="12"
-        height="7"
-        viewBox="0 0 12 7"
-        fill="none"
-        style={{ left: railLeft }}
-        className="absolute"
-      >
-        <path
-          d="M0.5 0a6 6 0 0 0 6 6H12"
-          stroke="currentColor"
-          strokeDasharray={dashed ? "2 2" : undefined}
-        />
-      </motion.svg>
-    </motion.span>
-  );
-};
+}) => (
+  <svg
+    aria-hidden
+    width="12"
+    height={rise + 7}
+    fill="none"
+    className={cn(
+      "pointer-events-none absolute transition-colors duration-150 motion-reduce:transition-none",
+      !accented && "text-foreground/30",
+    )}
+    style={{ left, bottom: "calc(50% - 1px)", color: accented ? color : undefined }}
+  >
+    <path
+      d={`M0.5 0V${rise}a6 6 0 0 0 6 6H12`}
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeDasharray={dashed ? DASH : undefined}
+      strokeDashoffset={dashed ? phaseAt(startY) : undefined}
+    />
+  </svg>
+);
 
 export function HookSidebar({
   items,
@@ -148,14 +127,11 @@ export function HookSidebar({
     return () => observer.disconnect();
   }, [items.length]);
 
-  const activeY = activeIndex < 0 ? null : (centers[activeIndex] ?? null);
-  const hoverY = hoverIndex === null ? null : (centers[hoverIndex] ?? null);
-
-  // above the active row the accent line already covers the span, so draw only the corner
-  const hoverFrom =
-    activeY !== null && hoverY !== null && hoverY <= activeY
-      ? Math.max(0, hoverY - CORNER)
-      : (activeY ?? 0);
+  // The accent covers the path down to the current row and, while the pointer is in
+  // the list, also down to the row under it when that one sits further down.
+  const hovered = pointerInside || focusInside ? hoverIndex : null;
+  const accentTo =
+    hovered !== null && hovered > activeIndex ? hovered : activeIndex;
 
   const select = (index: number) => {
     if (value === undefined) setInternalValue(index);
@@ -183,26 +159,24 @@ export function HookSidebar({
         onMouseLeave={() => setPointerInside(false)}
         className="relative flex flex-col gap-0.5"
       >
-        <Rail
-          from={hoverFrom}
-          y={hoverY}
-          visible={(pointerInside || focusInside) && hoverIndex !== activeIndex}
-          dashed={dashed}
-          left={railLeft}
-          className="text-foreground/30"
-        />
-        <Rail
-          y={activeY}
-          visible={activeY !== null}
-          color={color}
-          dashed={dashed}
-          left={railLeft}
-        />
-
         {items.map((item, index) => {
           const text = labelOf(item);
           const href = hrefOf(item);
           const isActive = index === activeIndex;
+          // Runs meet apex to apex: this row starts where the row above stopped
+          // bending, and its own bend sits on the row's centre line.
+          const startY = index === 0 ? 0 : (centers[index - 1] ?? 0) - CORNER;
+          const rise = Math.max(0, (centers[index] ?? 0) - CORNER - startY);
+          const line = (
+            <TreeLine
+              dashed={dashed}
+              startY={startY}
+              rise={rise}
+              accented={index <= accentTo}
+              color={color}
+              left={railLeft}
+            />
+          );
           const setRef = (el: HTMLElement | null) => {
             itemRefs.current[index] = el;
           };
@@ -223,7 +197,7 @@ export function HookSidebar({
             ...interactionProps,
             onClick: () => select(index),
             className: cn(
-              "rounded-lg py-1.5 pl-5 pr-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none",
+              "relative rounded-lg py-1.5 pl-5 pr-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none",
               isActive
                 ? "text-foreground"
                 : "text-foreground/50 hover:text-foreground/80",
@@ -238,13 +212,14 @@ export function HookSidebar({
                 data-slot="hook-sidebar-item"
                 data-active={isActive}
                 {...interactionProps}
-                className="min-w-0"
+                className="relative min-w-0"
               >
                 {renderItem(item, index, {
                   index,
                   label: text,
                   active: isActive,
                 })}
+                {line}
               </div>
             );
           }
@@ -257,6 +232,7 @@ export function HookSidebar({
               href={href}
               aria-current={isActive ? "page" : undefined}
             >
+              {line}
               {text}
             </a>
           ) : (
@@ -267,6 +243,7 @@ export function HookSidebar({
               type="button"
               aria-current={isActive ? "true" : undefined}
             >
+              {line}
               {text}
             </button>
           );
