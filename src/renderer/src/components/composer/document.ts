@@ -4,7 +4,7 @@
  * serialization must add real newlines before calculating the next range.
  */
 import type { JSONContent } from '@tiptap/core'
-import { createInlinePastedTextDisplayMetadata, normalizeNewlines, utf8ByteLength, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
+import { createInlinePastedTextDisplayMetadata, isInlinePastedTextAttachments, normalizeNewlines, utf8ByteLength, type PastedTextAttachmentInput, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
 import type { PigUserMessage } from '../../pi/types'
 
 export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [] }
@@ -16,6 +16,50 @@ export function textToComposerDocument(text: string): JSONContent {
       line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' }
     )
   }
+}
+
+export function restoredPromptToComposerDocument(
+  text: string,
+  attachments: PastedTextAttachmentInput[] = []
+): JSONContent {
+  const normalizedText = normalizeNewlines(text)
+  if (attachments.length === 0) return textToComposerDocument(normalizedText)
+  const normalized = attachments.map((attachment) => ({
+    ...attachment,
+    start: attachment.start,
+    end: attachment.end,
+    byteSize: attachment.byteSize ?? utf8ByteLength(attachment.text)
+  })).sort((left, right) => (left.start ?? -1) - (right.start ?? -1))
+  if (!isInlinePastedTextAttachments(normalizedText, normalized)) {
+    throw new Error('Invalid restored pasted-text attachment ranges')
+  }
+
+  const paragraphs: JSONContent[] = [{ type: 'paragraph' }]
+  const appendText = (value: string) => {
+    value.split('\n').forEach((part, index) => {
+      if (index > 0) paragraphs.push({ type: 'paragraph' })
+      if (!part) return
+      const paragraph = paragraphs[paragraphs.length - 1]
+      paragraph.content = [...(paragraph.content ?? []), { type: 'text', text: part }]
+    })
+  }
+  let cursor = 0
+  for (const attachment of normalized) {
+    appendText(normalizedText.slice(cursor, attachment.start))
+    const paragraph = paragraphs[paragraphs.length - 1]
+    paragraph.content = [...(paragraph.content ?? []), {
+      type: 'pastedText',
+      attrs: {
+        id: attachment.id,
+        text: attachment.text,
+        byteSize: attachment.byteSize,
+        ...(attachment.filename ? { filename: attachment.filename } : {})
+      }
+    }]
+    cursor = attachment.end
+  }
+  appendText(normalizedText.slice(cursor))
+  return { type: 'doc', content: paragraphs }
 }
 
 export type SerializedComposer = {

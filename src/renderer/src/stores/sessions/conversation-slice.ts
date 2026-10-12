@@ -3,21 +3,15 @@
  * Requests belong to a runtime instance, so closing/reopening the same session
  * cannot let an old response replace the new view.
  */
-import { api, type RestoredSessionPrompt } from '../../ipc/api'
+import { api, type SessionBranchOptions } from '../../ipc/api'
+import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument } from '../../components/composer/document'
+import { useComposerDraftsStore } from '../composer-drafts'
 import { renderKeyForDisplayTurn } from '../../chat/display-turns'
 import { buildTurn, groupTurns, thinkingTimingKey } from '../../chat/turns'
 import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
-import { useComposerDraftsStore } from '../composer-drafts'
-import { textToComposerDocument } from '../../components/composer/document'
-
-function restorePromptDraft(sessionId: string, prompt: RestoredSessionPrompt): void {
-  useComposerDraftsStore.getState().restoreDraft(sessionId, {
-    content: textToComposerDocument(prompt.text),
-    images: prompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
-  })
-}
+import { restorePromptDraft } from './restore-prompt'
 
 /** Turns fetched when the reader scrolls above the loaded window. */
 const PAGE_TURNS = 40
@@ -62,6 +56,7 @@ export const createConversationSlice: SessionSlice<
   | 'updateCompaction'
   | 'dropCompaction'
   | 'viewBranch'
+  | 'retryUserMessage'
 > = (set, get) => {
   const historyRequests = new Map<number, object>()
   const controlRequests = new Map<number, object>()
@@ -83,6 +78,34 @@ export const createConversationSlice: SessionSlice<
     const runtime = patchRuntime(state.runtime, sessionId, patch)
     return runtime === state.runtime ? state : { runtime }
   })
+
+  async function navigateBranch(
+    sessionId: string,
+    tipId: string,
+    options: SessionBranchOptions | undefined,
+    restoreDraft: boolean
+  ) {
+    const initial = get().runtime[sessionId]
+    if (!initial) return
+    const branchRequest = initial.branchRequest + 1
+    update(sessionId, { branchRequest, toolUpdates: {}, liveCompactions: [], retryNotice: null })
+    const branch = await api.viewBranch(sessionId, tipId, options)
+    const latest = currentInstance(sessionId, initial)
+    if (!latest || latest.branchRequest !== branchRequest) return
+    const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
+      : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
+    const hydrated = await get().hydrateTurns(sessionId, {
+      expectedLeafId: branch.leafId,
+      expectedBranchRequest: branchRequest,
+      branchViewId,
+      display: branch
+    })
+    if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
+    if (restoreDraft && branch.restoredPrompt) restorePromptDraft(sessionId, branch.restoredPrompt)
+    await get().loadControls(sessionId)
+    if (currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
+    return { initial, branchRequest, prompt: branch.restoredPrompt }
+  }
 
   return {
     runtime: {},
@@ -534,26 +557,54 @@ export const createConversationSlice: SessionSlice<
     })),
 
     viewBranch: async (sessionId, tipId, options) => {
-      const initial = get().runtime[sessionId]
-      if (!initial) return
-      const branchRequest = initial.branchRequest + 1
-      update(sessionId, { branchRequest, toolUpdates: {}, liveCompactions: [], retryNotice: null })
-      const branch = await api.viewBranch(sessionId, tipId, options)
-      const latest = currentInstance(sessionId, initial)
-      if (!latest || latest.branchRequest !== branchRequest) return
-      const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
-        : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
-      const hydrated = await get().hydrateTurns(sessionId, {
-        expectedLeafId: branch.leafId,
-        expectedBranchRequest: branchRequest,
-        branchViewId,
-        display: branch
-      })
-      if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
-      if (branch.restoredPrompt) {
-        restorePromptDraft(sessionId, branch.restoredPrompt)
+      await navigateBranch(sessionId, tipId, options, true)
+    },
+
+    retryUserMessage: async (sessionId, userEntryId) => {
+      const runtime = get().runtime[sessionId]
+      if (!runtime) return
+      if (runtime.isStreaming || runtime.bashExecution) throw new Error('Session is busy')
+      // Retry reads bytes from Pi's entry, not the renderer's image URLs, and leaves unsent drafts alone.
+      const restored = await navigateBranch(sessionId, userEntryId, { restoreUserInput: true }, false)
+      if (!restored) return
+      const { initial, branchRequest, prompt } = restored
+      if (!prompt) throw new Error(`User prompt not restored: ${userEntryId}`)
+      const current = currentInstance(sessionId, initial)!
+      if (current.isStreaming || current.bashExecution) throw new Error('Session is busy')
+      const content = restoredPromptToComposerDocument(prompt.text, prompt.textAttachments)
+      const serialized = serializeComposerDocument(content)
+      const optimistic = composerUserMessage(prompt.text, prompt.images, serialized.attachments)
+      const agentRunRevision = current.agentRunRevision
+      const isCurrent = () => currentInstance(sessionId, initial)?.branchRequest === branchRequest
+      get().beginPrompt(sessionId, optimistic)
+      try {
+        await api.prompt(
+          sessionId, prompt.text,
+          prompt.images.length ? prompt.images : undefined,
+          prompt.textAttachments?.length ? prompt.textAttachments : undefined
+        )
+      } catch (error) {
+        if (!isCurrent()) return
+        if (get().runtime[sessionId]?.pendingUserMessage) {
+          get().rollbackPrompt(sessionId, optimistic, agentRunRevision)
+          useComposerDraftsStore.getState().setFailedDrafts((drafts) => ({
+            ...drafts,
+            [sessionId]: [...(drafts[sessionId] ?? []), {
+              content,
+              images: prompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
+            }]
+          }))
+        }
+        throw error
+      }
+      if (!isCurrent()) return
+      if (get().runtime[sessionId]?.pendingUserMessage) {
+        get().rollbackPrompt(sessionId, optimistic, agentRunRevision)
+        await get().hydrateTurns(sessionId, { keepOlderTurns: true })
       }
       await get().loadControls(sessionId)
+      const cwd = get().openTabs.find((tab) => tab.id === sessionId)?.cwd
+      if (cwd && isCurrent()) await get().refreshCwd(cwd)
     }
   }
 }

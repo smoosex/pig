@@ -6,6 +6,7 @@ import {
   createPendingSession,
   discardDraftSession,
   exportSession,
+  forkSessionFromMessage,
   getSessionControls,
   getSessionTokenStats,
   getSessionTrees,
@@ -175,6 +176,15 @@ export function registerSessionIpc(): void {
     if (!sessionId || !tipId) throw new Error('Session id and tip id are required')
     const branch = await viewSessionBranch(sessionId, tipId, options)
     return { ...await getDisplayTurns(sessionId), ...branch }
+  })
+
+  ipcMain.handle('session:fork', async (event, sessionId: string, userEntryId: string) => {
+    if (!sessionId || !userEntryId) throw new Error('Session id and user entry id are required')
+    const forked = await forkSessionFromMessage(sessionId, userEntryId, windowForEvent(event))
+    if (forked && !isChatCwd(forked.cwd)) {
+      await rememberOpenProjectSession(forked.cwd, forked.sessionId)
+    }
+    return forked
   })
 
   ipcMain.handle('session:get-controls', async (_event, sessionId: string) => {

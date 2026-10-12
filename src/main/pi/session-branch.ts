@@ -4,6 +4,7 @@
  */
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { SessionBranchOptions, SessionBranchRef } from '../../shared/api'
+import { restoreSessionUserPrompt } from './session-user-prompt'
 
 type BranchSession = Pick<AgentSession, 'sessionManager' | 'isStreaming' | 'isBashRunning' | 'refreshContext' | 'extensionRunner'>
 
@@ -19,12 +20,9 @@ export async function switchSessionBranch(
   let leafId: string | null = tipId
   let restoredPrompt: SessionBranchRef['restoredPrompt']
   if (options?.restoreUserInput && target.type === 'message' && target.message.role === 'user') {
-    leafId = target.parentId
-    const content = target.message.content
-    restoredPrompt = {
-      text: typeof content === 'string' ? content : content.filter((block) => block.type === 'text').map((block) => block.text).join(''),
-      images: typeof content === 'string' ? [] : content.filter((block) => block.type === 'image').map(({ mimeType, data }) => ({ mimeType, data }))
-    }
+    const restored = restoreSessionUserPrompt(sm, target)
+    leafId = restored.parentId
+    restoredPrompt = restored.prompt
   }
   if (sm.getLeafId() !== leafId) {
     const oldLeafId = sm.getLeafId()

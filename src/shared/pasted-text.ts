@@ -46,7 +46,17 @@ export interface PastedTextInlineMetadata {
   attachments: PastedTextMetadataAttachment[]
 }
 
-export type PastedTextMetadata = PastedTextLegacyMetadata | PastedTextInlineMetadata
+export type PastedTextInputMetadata = PastedTextLegacyMetadata | PastedTextInlineMetadata
+
+/** The delivered prompt may be expanded or replaced; ranges still belong to the original input. */
+export interface PastedTextTransformedMetadata {
+  version: 3
+  contentLength: number
+  contentHash: string
+  source: { text: string; metadata: PastedTextInputMetadata }
+}
+
+export type PastedTextMetadata = PastedTextInputMetadata | PastedTextTransformedMetadata
 
 export type PastedTextDisplaySegment =
   | { type: 'text'; text: string }
@@ -115,6 +125,41 @@ export function pastedTextFingerprint(text: string): string {
     hash = Math.imul(hash, 16777619)
   }
   return (hash >>> 0).toString(16)
+}
+
+export function createPastedTextDeliveryMetadata(
+  sourceText: string,
+  metadata: PastedTextInputMetadata,
+  deliveredText: string
+): PastedTextMetadata {
+  return sourceText === deliveredText ? metadata : {
+    version: 3,
+    contentLength: deliveredText.length,
+    contentHash: pastedTextFingerprint(deliveredText),
+    source: { text: sourceText, metadata }
+  }
+}
+
+/** Verifies both the persisted message binding and the source whose attachment ranges we restore. */
+export function resolvePastedTextMetadata(
+  deliveredText: string,
+  metadata: PastedTextMetadata
+): { text: string; metadata: PastedTextInputMetadata } {
+  const source = metadata.version === 3 ? metadata.source : { text: deliveredText, metadata }
+  if (
+    deliveredText.length !== metadata.contentLength ||
+    pastedTextFingerprint(deliveredText) !== metadata.contentHash ||
+    (metadata.version === 3 && (
+      source.text.length !== source.metadata.contentLength ||
+      pastedTextFingerprint(source.text) !== source.metadata.contentHash
+    )) ||
+    source.metadata.attachments.some((attachment) => attachment.end > source.text.length)
+  ) {
+    throw Object.assign(new Error('Pasted-text metadata does not match its user message or source input'), {
+      code: 'PASTED_TEXT_METADATA_MISMATCH'
+    })
+  }
+  return source
 }
 
 export function createPastedTextMetadata(
@@ -248,7 +293,7 @@ function isMetadataAttachment(value: unknown): value is PastedTextMetadataAttach
   )
 }
 
-export function isPastedTextMetadata(value: unknown): value is PastedTextMetadata {
+function isPastedTextInputMetadata(value: unknown): value is PastedTextInputMetadata {
   if (!value || typeof value !== 'object') return false
   const metadata = value as {
     version?: unknown
@@ -283,4 +328,15 @@ export function isPastedTextMetadata(value: unknown): value is PastedTextMetadat
     cursor = attachment.end
     return true
   })
+}
+
+export function isPastedTextMetadata(value: unknown): value is PastedTextMetadata {
+  if (isPastedTextInputMetadata(value)) return true
+  if (!value || typeof value !== 'object') return false
+  const metadata = value as Partial<PastedTextTransformedMetadata>
+  return metadata.version === 3 &&
+    Number.isInteger(metadata.contentLength) && metadata.contentLength! >= 0 &&
+    typeof metadata.contentHash === 'string' && metadata.contentHash.length > 0 &&
+    Boolean(metadata.source) && typeof metadata.source?.text === 'string' &&
+    isPastedTextInputMetadata(metadata.source.metadata)
 }

@@ -60,7 +60,7 @@ async function runFixture(): Promise<void> {
   try {
     const { sessionDirForCwd } = await import('../src/main/pi/session-loader')
     const { normalizeSessionPrompt } = await import('../src/main/pi/prompt-input')
-    const { PASTED_TEXT_CUSTOM_TYPE } = await import('../src/shared/pasted-text')
+    const { createPastedTextDeliveryMetadata, PASTED_TEXT_CUSTOM_TYPE } = await import('../src/shared/pasted-text')
     const { registerWorktreeIpc } = await import('../src/main/ipc/worktrees')
     registerWorktreeIpc()
     const retry = handlers.get('project:retry-worktree-naming')
@@ -118,6 +118,16 @@ async function runFixture(): Promise<void> {
       { type: 'custom', customType: PASTED_TEXT_CUSTOM_TYPE, data: inline.metadata },
       user([{ type: 'text', text: inline.modelText }]),
       user('not the original task')
+    ] }])
+    await retry({}, '/project', cwd)
+    assert.equal(retries.at(-1)?.text, task)
+
+    assert.ok(inline.metadata)
+    const delivered = 'The input hook replaced the entire prompt'
+    await setSessions([{ id: 'transformed', created, entries: [
+      { type: 'custom', customType: PASTED_TEXT_CUSTOM_TYPE,
+        data: createPastedTextDeliveryMetadata(inline.modelText, inline.metadata, delivered) },
+      user(delivered)
     ] }])
     await retry({}, '/project', cwd)
     assert.equal(retries.at(-1)?.text, task)

@@ -223,6 +223,7 @@ export interface SessionsStore {
   /** Drops the selection work in flight: the worktrees it was started for are gone. */
   invalidateSelection: () => void
   newSession: (cwd: string) => Promise<string | null>
+  forkSession: (sessionId: string, userEntryId: string) => Promise<void>
   newChat: () => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<void>
@@ -272,6 +273,7 @@ export interface SessionsStore {
   updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void
   dropCompaction: (sessionId: string, id: string) => void
   viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<void>
+  retryUserMessage: (sessionId: string, userEntryId: string) => Promise<void>
 }
 
 export type SessionSlice<Keys extends keyof SessionsStore> = StateCreator<

@@ -1,4 +1,4 @@
-import { PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
+import { createPastedTextDeliveryMetadata, PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
 import { worktrees } from '../project-worktrees'
 import { nameWorktreeBranch } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
@@ -34,11 +34,11 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
           agentSession,
           prompt.modelText,
           prompt.displayMetadata,
-          () => {
+          (deliveredText) => {
             if (prompt.metadata) {
               agentSession.sessionManager.appendCustomEntry(
                 PASTED_TEXT_CUSTOM_TYPE,
-                prompt.metadata
+                createPastedTextDeliveryMetadata(prompt.modelText, prompt.metadata, deliveredText)
               )
             }
             void worktrees

@@ -1097,6 +1097,83 @@ async function runFixture(name: string): Promise<void> {
     await restoring
     assert.equal(runtime().leafId, 'newer-node')
     assert.equal(drafts.getState().drafts[meta.id], undefined, 'a superseded restoration cannot overwrite the draft')
+  } else if (name.startsWith('retry-user-')) {
+    const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+    const { textToComposerDocument, serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
+    drafts.getState().setContent(meta.id, textToComposerDocument('未发送的草稿'))
+    drafts.getState().setImages(meta.id, [{ id: 'draft-image', mimeType: 'image/png', data: 'unsent-image' }])
+    const originalDraft = drafts.getState().drafts[meta.id]
+    const prompt = {
+      text: '再试一次\n\n附件原文',
+      images: [{ mimeType: 'image/png', data: 'stored-image-bytes' }],
+      textAttachments: [{ id: 'paste', text: '附件原文', start: 6, end: 10 }]
+    }
+    let submissions = 0
+    api.viewBranch = async (id, tip, options) => {
+      assert.deepEqual([id, tip, options], [meta.id, 'user-node', { restoreUserInput: true }])
+      return { ...history('retry-parent'), restoredPrompt: prompt }
+    }
+    api.prompt = async (id, text, images, textAttachments) => {
+      submissions++
+      assert.deepEqual([id, text, images, textAttachments], [meta.id, prompt.text, prompt.images, prompt.textAttachments])
+      assert.deepEqual(runtime().turns.map((turn) => turn.id), ['retry-parent'])
+      if (name === 'retry-user-failed') throw new Error('prompt rejected')
+      state().appendLiveMessage(meta.id, { role: 'user', timestamp: 100, content: text })
+      state().setStreaming(meta.id, false)
+    }
+    api.isChatCwd = async () => false
+    if (name === 'retry-user-stale') {
+      const response = deferred<SessionBranchRef>()
+      api.viewBranch = () => response.promise
+      const retry = state().retryUserMessage(meta.id, 'user-node')
+      api.viewBranch = async () => history('newer-node')
+      await state().viewBranch(meta.id, 'newer-node')
+      response.resolve({ ...history('old-parent'), restoredPrompt: prompt })
+      await retry
+      assert.equal(submissions, 0, 'a superseded retry cannot send on another branch')
+      assert.equal(runtime().leafId, 'newer-node')
+    } else if (name === 'retry-user-failed') {
+      await assert.rejects(state().retryUserMessage(meta.id, 'user-node'), /prompt rejected/)
+      assert.equal(runtime().isStreaming, false)
+      assert.equal(runtime().pendingUserMessage, false)
+      const failed = drafts.getState().failedDrafts[meta.id]![0]
+      assert.equal(serializeComposerDocument(failed.content).text, prompt.text)
+      assert.deepEqual(failed.images.map(({ mimeType, data }) => ({ mimeType, data })), prompt.images)
+    } else {
+      await state().retryUserMessage(meta.id, 'user-node')
+      assert.equal(submissions, 1)
+      assert.equal(runtime().pendingUserMessage, false)
+      state().setStreaming(meta.id, true)
+      await assert.rejects(state().retryUserMessage(meta.id, 'user-node'), /Session is busy/)
+      assert.equal(submissions, 1)
+    }
+    assert.equal(drafts.getState().drafts[meta.id], originalDraft, 'retry never replaces the unsent composer draft')
+  } else if (name === 'fork-session') {
+    const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+    const { serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
+    const prompt = {
+      text: '分支问题\n\n完整粘贴',
+      images: [{ mimeType: 'image/png', data: 'fork-image' }],
+      textAttachments: [{ id: 'paste', text: '完整粘贴', start: 6, end: 10 }]
+    }
+    api.forkSession = async (id, userEntryId) => {
+      assert.deepEqual([id, userEntryId], [meta.id, 'user-node'])
+      return {
+        sessionId: 'forked', cwd: meta.cwd,
+        display: history('fork-parent'),
+        restoredPrompt: prompt
+      }
+    }
+    api.isChatCwd = async () => false
+    await state().forkSession(meta.id, 'user-node')
+    assert.equal(state().activeTabId, 'forked')
+    assert.equal(state().openTabs.at(-1)?.title, '新对话')
+    assert.deepEqual(state().runtime.forked.turns.map((turn) => turn.id), ['fork-parent'])
+    const draft = drafts.getState().drafts.forked!
+    const serialized = serializeComposerDocument(draft.content!)
+    assert.equal(serialized.text, prompt.text)
+    assert.deepEqual(serialized.attachments.map(({ id, text, start, end }) => ({ id, text, start, end })), prompt.textAttachments)
+    assert.deepEqual(draft.images?.map(({ mimeType, data }) => ({ mimeType, data })), prompt.images)
   } else if (name === 'open-lazy') {
     state().closeTab(meta.id)
     await state().openExisting(meta)
@@ -1891,6 +1968,10 @@ if (process.argv[2] === '--session-store-fixture') {
     'queued-edit-draft': 'withdrawn steering prompts retain their images and cannot overwrite a reopened session',
     'branch-restores-prompt': 'tree restoration replaces unsent text and images without replaying the selected turn',
     'branch-restore-stale': 'a stale tree restoration cannot replace the current draft',
+    'fork-session': 'forking a user message opens a separate session and restores its prompt',
+    'retry-user-success': 'retry resends the Pi entry with images and attachments without replacing the draft',
+    'retry-user-stale': 'a superseded retry cannot send on another branch',
+    'retry-user-failed': 'a rejected retry rolls back optimistic state and retains recoverable input',
     'chat-restore-scan-failure': 'failed chat scans preserve saved membership until a successful retry',
     'chat-restore-live': 'restoration preserves chat tabs opened while project scanning is pending',
     'chat-restore-closed': 'restoration respects a chat opened and closed during scanning',

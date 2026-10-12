@@ -55,7 +55,10 @@ async function fixture(name: string): Promise<void> {
       createChatResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
       createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) })
     }))
-    mock.module(fileURLToPath(new URL('../src/main/chats.ts', import.meta.url)), () => ({ isChatCwd: () => false }))
+    mock.module(fileURLToPath(new URL('../src/main/chats.ts', import.meta.url)), () => ({
+      createChatDir: async () => '/chat',
+      isChatCwd: () => false
+    }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: { assertAvailable() {} } }))
     try {
       registry = await import('../src/main/pi/session-registry')

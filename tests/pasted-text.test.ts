@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import assert from 'node:assert/strict'
 import {
   composePromptText,
   createInlinePastedTextDisplayMetadata,
   createInlinePastedTextMetadata,
   createPastedTextMetadata,
+  createPastedTextDeliveryMetadata,
+  resolvePastedTextMetadata,
   formatPastedTextSize,
   isLongPastedText,
   normalizeNewlines,
@@ -59,6 +62,29 @@ describe('pasted text attachments', () => {
       { type: 'attachment', attachment: { id: 'one', text: '附件', byteSize: 6 } },
       { type: 'text', text: '后文' }
     ])
+  })
+
+  test('transformed metadata verifies both the delivered prompt and its original input', () => {
+    const text = '前文附件后文'
+    const original = createInlinePastedTextMetadata(text, [{ id: 'paste', text: '附件', byteSize: 6, start: 2, end: 4 }])
+    expect(createPastedTextDeliveryMetadata(text, original, text)).toBe(original)
+    const transformed = createPastedTextDeliveryMetadata(text, original, 'rewritten')
+    assert.equal(transformed.version, 3)
+    if (transformed.version !== 3) throw new Error('Missing transformed metadata')
+    expect(isPastedTextMetadata(transformed)).toBe(true)
+    expect(resolvePastedTextMetadata('rewritten', transformed)).toEqual({ text, metadata: original })
+    const mismatches = [
+      { delivered: 'tampered!', metadata: transformed },
+      { delivered: 'rewritten', metadata: { ...transformed, source: { ...transformed.source, text: '原文附件后文' } } },
+      { delivered: 'rewritten', metadata: { ...transformed, source: { ...transformed.source, metadata: { ...original, contentHash: 'wrong' } } } }
+    ]
+    for (const { delivered, metadata } of mismatches) {
+      assert.throws(() => resolvePastedTextMetadata(delivered, metadata),
+        (error: unknown) => (error as { code?: string }).code === 'PASTED_TEXT_METADATA_MISMATCH')
+    }
+    for (const source of [null, {}, { text, metadata: null }, { text, metadata: transformed }]) {
+      expect(isPastedTextMetadata({ ...transformed, source })).toBe(false)
+    }
   })
 
   test('calculates UTF-8 size and validates persisted metadata', () => {

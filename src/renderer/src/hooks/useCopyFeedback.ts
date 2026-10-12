@@ -7,8 +7,8 @@ export function useCopyFeedback(text: string, resetMs = 1500) {
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const copy = useCallback(async () => {
-    await navigator.clipboard.writeText(text)
+  const copy = useCallback(async (value = text) => {
+    await navigator.clipboard.writeText(value)
     setCopied(true)
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setCopied(false), resetMs)

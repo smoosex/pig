@@ -6,7 +6,7 @@ import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { compareGroupsByLatestSession } from '../../shared/session-order'
 import {
   isPastedTextMetadata,
-  pastedTextFingerprint,
+  resolvePastedTextMetadata,
   PASTED_TEXT_CUSTOM_TYPE,
   type PastedTextMetadata
 } from '../../shared/pasted-text'
@@ -419,25 +419,24 @@ export async function readProjectNamingText(cwd: string): Promise<string | undef
         }
         if (!created) throw new Error(`Missing session header: ${filePath}`)
         if (entry.type === 'custom' && entry.customType === PASTED_TEXT_CUSTOM_TYPE) {
-          if (!isPastedTextMetadata(entry.data)) throw new Error(`Invalid pasted-text metadata: ${filePath}`)
+          if (!isPastedTextMetadata(entry.data)) {
+            throw Object.assign(new Error(`Invalid pasted-text metadata: ${filePath}`), { code: 'PASTED_TEXT_METADATA_INVALID' })
+          }
           pendingPastedText = entry.data
           continue
         }
         if (entry.type === 'message' && entry.message?.role === 'user') {
-          const pastedText = pendingPastedText
-          const text = contentText(stripImageHintsFromContent(entry.message.content))
-          if (pastedText && (
-            text.length !== pastedText.contentLength ||
-            pastedTextFingerprint(text) !== pastedText.contentHash ||
-            pastedText.attachments.some((attachment) => attachment.end > text.length)
-          )) throw new Error(`Pasted-text metadata does not match the first user message: ${filePath}`)
-          if (!text.trim() && !hasImage(entry.message.content) && !pastedText?.attachments.length) return undefined
+          const deliveredText = contentText(stripImageHintsFromContent(entry.message.content))
+          const source = pendingPastedText ? resolvePastedTextMetadata(deliveredText, pendingPastedText) : undefined
+          const text = source?.text ?? deliveredText
+          const metadata = source?.metadata
+          if (!text.trim() && !hasImage(entry.message.content) && !metadata?.attachments.length) return undefined
           const prompt = normalizeSessionPrompt({
-            text: pastedText?.version === 1 ? text.slice(0, pastedText.bodyLength) : text,
-            textAttachments: pastedText?.attachments.map((attachment) => ({
+            text: metadata?.version === 1 ? text.slice(0, metadata.bodyLength) : text,
+            textAttachments: metadata?.attachments.map((attachment) => ({
               id: attachment.id,
               text: text.slice(attachment.start, attachment.end),
-              ...(pastedText.version === 2 ? { start: attachment.start, end: attachment.end } : {})
+              ...(metadata.version === 2 ? { start: attachment.start, end: attachment.end } : {})
             }))
           })
           return { created, text: prompt.namingText }

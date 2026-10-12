@@ -25,6 +25,7 @@ async function runFixture(name: string): Promise<void> {
   // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { TurnView } = await import('../src/renderer/src/components/TurnView')
+  const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   type Message = Parameters<typeof groupTurns>[0][number]
   const sourceUser: Message = { role: 'user', content: 'run tools', timestamp: 1_000 }
   const sourceRequest: Extract<Message, { role: 'assistant' }> = {
@@ -60,8 +61,18 @@ async function runFixture(name: string): Promise<void> {
     waitingForModel: false,
     ...patch
   })
-  const render = async (turn: Turn, onNeedProcess?: (id: string) => Promise<void>) => {
-    await act(async () => { root.render(createElement(TurnView, { turn, onNeedProcess })) })
+  const render = async (
+    turn: Turn,
+    onNeedProcess?: (id: string) => Promise<void>,
+    sessionId?: string
+  ) => {
+    await act(async () => {
+      root.render(createElement(
+        TooltipProvider,
+        null,
+        createElement(TurnView, { turn, onNeedProcess, sessionId })
+      ))
+    })
   }
   const separator = () => {
     const button = container.querySelector<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')
@@ -523,7 +534,9 @@ async function runFixture(name: string): Promise<void> {
           const [turn] = groupTurns(state.liveMessages, state.isStreaming, state.thinkingDurations, state.toolUpdates)
           return turn ? createElement(TurnView, { turn: { ...turn, id: 'live:repair', workedMs: state.streamElapsedMs ?? undefined } }) : null
         }
-        await act(async () => { root.render(createElement(LiveTurn)) })
+        await act(async () => {
+          root.render(createElement(TooltipProvider, null, createElement(LiveTurn)))
+        })
         await act(async () => {
           actions.rollbackPrompt('repair', command, revision)
           actions.appendLiveMessage('repair', { role: 'user', content: 'Implement findings', timestamp: now })
@@ -667,7 +680,11 @@ async function runFixture(name: string): Promise<void> {
       const requested: string[] = []
       const load = async (id: string) => {
         requested.push(id)
-        root.render(createElement(TurnView, { turn: toTurn(display, process), onNeedProcess: load }))
+        root.render(createElement(
+          TooltipProvider,
+          null,
+          createElement(TurnView, { turn: toTurn(display, process), onNeedProcess: load })
+        ))
       }
       const headers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
         .filter((button) => button.textContent?.includes('工作耗时'))
@@ -851,6 +868,99 @@ async function runFixture(name: string): Promise<void> {
         generation: { outputTokens: 7, durationMs: 500 }
       }))
       assert.equal(separator().textContent?.includes('tok/s'), false)
+    } else if (name === 'user-timestamp') {
+      const timestamp = new Date(2026, 8, 28, 22, 57, 11).getTime()
+      await render(makeTurn({
+        id: 'user-entry',
+        user: { role: 'user', content: '再来', timestamp },
+        streaming: false
+      }), undefined, 'session-one')
+      const time = container.querySelector<HTMLElement>('time')!
+      assert.equal(time.textContent, '22:57')
+      assert.equal(time.tabIndex, 0)
+      assert.equal(time.getAttribute('datetime'), new Date(timestamp).toISOString())
+      await act(async () => { time.focus(); await Bun.sleep(0) })
+      const tooltip = () => document.querySelector('[role="tooltip"]')!
+      assert.match(tooltip().textContent ?? '', /^2026年9月28日\s*星期一 22:57:11$/)
+      assert.equal(time.getAttribute('aria-label'), tooltip().textContent)
+      assert.equal(tooltip().closest('[data-slot="tooltip-content"]')?.getAttribute('data-side'), 'top')
+      await act(async () => { useSettingsStore.setState({ localeSetting: 'en', locale: 'en' }) })
+      assert.equal(time.textContent, '22:57')
+      assert.equal(tooltip().textContent, 'Monday, September 28, 2026 at 22:57:11')
+    } else if (name === 'user-actions') {
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const forks: Array<[string, string]> = []
+      const retries: Array<[string, string]> = []
+      const edits: unknown[] = []
+      let releaseFork!: () => void
+      const pendingFork = new Promise<void>((resolve) => { releaseFork = resolve })
+      useSessionsStore.setState({
+        forkSession: async (sessionId, userEntryId) => {
+          forks.push([sessionId, userEntryId])
+          await pendingFork
+        },
+        retryUserMessage: async (sessionId, userEntryId) => { retries.push([sessionId, userEntryId]) },
+        viewBranch: async (...args) => { edits.push(args) }
+      })
+      let copied = ''
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: async (text: string) => { copied = text } },
+        configurable: true
+      })
+      await render(makeTurn({
+        id: 'user-entry',
+        user: { role: 'user', content: '**需要复制和分支**', timestamp: 1_000 },
+        streaming: false
+      }), undefined, 'session-one')
+      const copy = container.querySelector<HTMLButtonElement>('button[aria-label="复制"]')!
+      const toolbar = container.querySelector('[data-slot="user-message-actions"]')!
+      const retry = toolbar.querySelector<HTMLButtonElement>('button[aria-label="重新生成"]')!
+      const edit = toolbar.querySelector<HTMLButtonElement>('button[aria-label="编辑"]')!
+      const more = toolbar.querySelector<HTMLButtonElement>('button[aria-label="更多操作"]')!
+      assert.deepEqual([...toolbar.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+        ['复制', '重新生成', '编辑', '更多操作'])
+      assert.equal(toolbar.querySelector('time')?.getAttribute('datetime'), new Date(1_000).toISOString())
+      assert.ok(toolbar.className.includes('group-hover/user-message:opacity-100'))
+      const messageRow = toolbar.closest('[data-turn-user]')!
+      assert.ok(messageRow.classList.contains('group/user-message'))
+      assert.ok(messageRow.classList.contains('w-full'), 'the hover group covers the full row, including blank space left of the bubble')
+      assert.equal(toolbar.closest('[data-slot="message-content"]')?.classList.contains('group/user-message'), false)
+      await act(async () => { copy.click() })
+      assert.equal(copied, '**需要复制和分支**')
+      assert.ok(container.querySelector('button[aria-label="已复制"]'))
+      await act(async () => { retry.click() })
+      assert.deepEqual(retries, [['session-one', 'user-entry']])
+      await act(async () => { edit.click() })
+      assert.deepEqual(edits, [['session-one', 'user-entry', { restoreUserInput: true }]])
+      async function openMenu() {
+        await act(async () => {
+          more.focus()
+          more.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+          await Bun.sleep(0)
+        })
+      }
+      await openMenu()
+      const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      assert.deepEqual(items.map((item) => item.textContent), ['复制为 Markdown', '复制为纯文本', '创建分支'])
+      assert.ok(toolbar.classList.contains('opacity-100'), 'the toolbar stays visible while its portal menu is open')
+      copied = ''
+      await act(async () => { items[0].click(); await Bun.sleep(0) })
+      assert.equal(copied, '**需要复制和分支**', 'Markdown copy preserves the original source')
+      await openMenu()
+      const plainCopy = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === '复制为纯文本')!
+      await act(async () => { plainCopy.click(); await Bun.sleep(0) })
+      assert.equal(copied, '需要复制和分支', 'plain-text copy removes Markdown presentation')
+      await openMenu()
+      const fork = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === '创建分支')!
+      await act(async () => { fork.click(); await Bun.sleep(0) })
+      assert.deepEqual(forks, [['session-one', 'user-entry']])
+      assert.equal(retry.disabled, true)
+      assert.equal(edit.disabled, true)
+      await act(async () => { releaseFork() })
+      assert.equal(retry.disabled, false)
+      assert.equal(edit.disabled, false)
     } else if (name === 'disclosure') {
       let requested: string | undefined
       let release!: () => void
@@ -916,6 +1026,8 @@ if (process.argv[2] === '--marker-fixture') {
     'compaction-empty-blocks': 'empty compaction intervals create no work header or timing offset',
     'compaction-ids': 'each work block split by a compaction owns a unique content id',
     tps: 'completed model calls show weighted output speed and hide noisy short samples',
+    'user-timestamp': 'user timestamps show a localized full date, weekday and seconds in an upper tooltip',
+    'user-actions': 'user toolbar has four actions and its more menu contains both copy formats and native fork',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
   }
   for (const [name, title] of Object.entries(fixtures)) {

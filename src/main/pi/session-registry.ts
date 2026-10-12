@@ -12,6 +12,7 @@ import { t } from '../i18n'
 import type {
   DisplayTurnsResult,
   FollowUpAction,
+  ForkedSessionRef,
   PromptStreamingBehavior,
   SessionControls,
   SessionBranchOptions,
@@ -22,7 +23,7 @@ import type {
   ThinkingLevel
 } from '../../shared/api'
 import { normalizeWorktreePath as resolve } from '../worktrees'
-import { isChatCwd } from '../chats'
+import { createChatDir, isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
 import { sessionToolFactory } from './tool-resources'
@@ -47,6 +48,7 @@ import {
 } from './session-actions'
 import { buildSessionTreeViews, SESSION_TREE_VIEWS } from './session-tree'
 import { switchSessionBranch } from './session-branch'
+import { forkSessionManager } from './session-fork'
 import {
   displayWindow,
   fileSource,
@@ -65,7 +67,7 @@ import {
   type SessionHeader
 } from './session-jsonl'
 import { CURRENT_SESSION_VERSION } from '@earendil-works/pi-coding-agent'
-import { forgetSessionName, isSessionFile } from './session-loader'
+import { forgetSessionName, isSessionFile, sessionDirForCwd } from './session-loader'
 import type {
   LiveSession,
   MemorySession,
@@ -235,15 +237,16 @@ async function build(
   }
 }
 
-export function createPendingSession(
+function holdPendingSession(
+  sessionManager: SessionManager,
   cwd: string,
   win: BrowserWindow,
-  options: { draft?: boolean; id?: string } = {}
-): PendingSession {
-  worktrees.assertAvailable(cwd)
-  if (!statSync(cwd).isDirectory()) throw new Error(t('error.sessionCwdMissing'))
-  const sessionManager = SessionManager.create(cwd, undefined, options.id ? { id: options.id } : undefined)
+  draft: boolean
+): MemorySession {
   const sessionId = sessionManager.getSessionId()
+  if (live.has(sessionId) || pending.has(sessionId) || preparing.has(sessionId) || closing.has(sessionId)) {
+    throw new Error(`Session already exists: ${sessionId}`)
+  }
   const session: MemorySession = {
     kind: 'memory',
     sessionId,
@@ -254,10 +257,19 @@ export function createPendingSession(
   const sessionFile = sessionManager.getSessionFile()
   if (!sessionFile) throw new Error('Pending session has no session file')
   pending.set(sessionId, session)
-  if (options.draft !== false) {
-    drafts.set(sessionId, sessionFile)
-  }
+  if (draft) drafts.set(sessionId, sessionFile)
   return session
+}
+
+export function createPendingSession(
+  cwd: string,
+  win: BrowserWindow,
+  options: { draft?: boolean; id?: string } = {}
+): PendingSession {
+  worktrees.assertAvailable(cwd)
+  if (!statSync(cwd).isDirectory()) throw new Error(t('error.sessionCwdMissing'))
+  const sessionManager = SessionManager.create(cwd, undefined, options.id ? { id: options.id } : undefined)
+  return holdPendingSession(sessionManager, cwd, win, options.draft !== false)
 }
 
 export function promoteDraftSession(sessionId: string): string {
@@ -770,6 +782,42 @@ export function sessionEntryLookup(sessionId: string, entryId: string): Promise<
 export async function viewSessionBranch(sessionId: string, tipId: string, options?: SessionBranchOptions) {
   const ls = await prepareSession(sessionId)
   return switchSessionBranch(ls.agentSession, tipId, options)
+}
+
+export async function forkSessionFromMessage(
+  sessionId: string,
+  userEntryId: string,
+  win: BrowserWindow
+): Promise<ForkedSessionRef | null> {
+  const source = await prepareSession(sessionId)
+  const agentSession = source.agentSession
+  if (!agentSession.isIdle || agentSession.isBashRunning) throw new Error('Session is busy')
+  if (agentSession.extensionRunner.hasHandlers('session_before_fork')) {
+    const result = await agentSession.extensionRunner.emit({
+      type: 'session_before_fork',
+      entryId: userEntryId,
+      position: 'before'
+    })
+    if (result?.cancel === true) return null
+  }
+
+  const chat = isChatCwd(source.cwd)
+  const targetCwd = chat ? await createChatDir() : source.cwd
+  const targetSessionDir = chat
+    ? sessionDirForCwd(targetCwd)
+    : agentSession.sessionManager.getSessionDir()
+  const forked = forkSessionManager(
+    agentSession.sessionManager,
+    userEntryId,
+    targetCwd,
+    targetSessionDir
+  )
+  const held = holdPendingSession(forked.sessionManager, targetCwd, win, false)
+  return {
+    ...previewFor(managerSource(forked.sessionManager), targetCwd),
+    sessionId: held.sessionId,
+    restoredPrompt: forked.restoredPrompt
+  }
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {

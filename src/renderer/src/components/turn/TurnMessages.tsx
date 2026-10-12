@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { FileText } from 'lucide-react'
-import { formatPastedTextSize } from '../../../../shared/pasted-text'
+import { composePromptText, formatPastedTextSize } from '../../../../shared/pasted-text'
 import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/types'
 import { turnImageSrc, type AnswerBlock } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
@@ -12,6 +12,7 @@ import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
+import { UserMessageActions } from './UserMessageActions'
 
 function userText(message: PigUserMessage): string {
   if (message.pastedText) return message.pastedText.body
@@ -50,7 +51,15 @@ function InlinePastedText({
   )
 }
 
-export const UserBubble = memo(function UserBubble({ message }: { message: PigUserMessage }) {
+export const UserBubble = memo(function UserBubble({
+  message,
+  sessionId,
+  turnId
+}: {
+  message: PigUserMessage
+  sessionId?: string
+  turnId?: string
+}) {
   const t = useT()
   const images = userImages(message).flatMap((image, i) => {
     const src = turnImageSrc(image)
@@ -59,10 +68,14 @@ export const UserBubble = memo(function UserBubble({ message }: { message: PigUs
   const text = userText(message)
   const textAttachments = message.pastedText?.attachments ?? []
   const segments = message.pastedText?.segments
+  const copyText = message.pastedText && !segments
+    ? composePromptText(message.pastedText.body, textAttachments)
+    : text
   const [preview, setPreview] = useState<string | null>(null)
   const hasTextBubble = Boolean(segments) || text.length > 0 || textAttachments.length > 0
+
   return (
-    <Message align="end" className="mb-4" data-turn-user="">
+    <Message align="end" className="group/user-message mb-4" data-turn-user="">
       <MessageContent className="w-fit max-w-9/10 gap-1.5">
         {images.length > 0 ? (
           <div className="flex flex-wrap justify-end gap-1.5">
@@ -127,6 +140,7 @@ export const UserBubble = memo(function UserBubble({ message }: { message: PigUs
             </BubbleContent>
           </Bubble>
         ) : null}
+        <UserMessageActions text={copyText} timestamp={message.timestamp} sessionId={sessionId} turnId={turnId} />
         <ImagePreview src={preview} onClose={() => setPreview(null)} />
       </MessageContent>
     </Message>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { composerUserMessage, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
+import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
 import { builtinCommandKey, compactInstructions, filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
 import type { SlashCommand } from '../src/shared/api'
 
@@ -34,6 +34,56 @@ describe('composer document protocol', () => {
     expect(message.pastedText?.body).toBe(serialized.text)
     expect(message.pastedText?.segments?.map((segment) => segment.type)).toEqual(['text', 'attachment', 'text'])
     expect(message.pastedText?.attachments[0].text).toBe('A\nB')
+  })
+
+  test('restores forked pasted text as an attachment without changing the prompt', () => {
+    const text = '问题\n\n完整粘贴内容'
+    const document = restoredPromptToComposerDocument(text, [{
+      id: 'paste-1',
+      text: '完整粘贴内容',
+      byteSize: 18,
+      start: 4,
+      end: text.length
+    }])
+    expect(serializeComposerDocument(document)).toEqual({
+      text,
+      attachments: [{
+        id: 'paste-1',
+        text: '完整粘贴内容',
+        byteSize: 18,
+        start: 4,
+        end: text.length
+      }]
+    })
+  })
+
+  test('restores prompts without attachments as ordinary text', () => {
+    expect(restoredPromptToComposerDocument('a\r\nb')).toEqual(textToComposerDocument('a\nb'))
+    expect(restoredPromptToComposerDocument('')).toEqual(textToComposerDocument(''))
+  })
+
+  test('sorts restored attachment ranges and fills their byte sizes', () => {
+    const document = restoredPromptToComposerDocument('A--B', [
+      { id: 'second', text: 'B', start: 3, end: 4 },
+      { id: 'first', text: 'A', start: 0, end: 1 }
+    ])
+    expect(serializeComposerDocument(document)).toEqual({
+      text: 'A--B',
+      attachments: [
+        { id: 'first', text: 'A', byteSize: 1, start: 0, end: 1 },
+        { id: 'second', text: 'B', byteSize: 1, start: 3, end: 4 }
+      ]
+    })
+    expect(() => restoredPromptToComposerDocument('AAAA', [
+      { id: 'first', text: 'AA', start: 0, end: 2 },
+      { id: 'second', text: 'AA', start: 1, end: 3 }
+    ])).toThrow(Error)
+  })
+
+  test('rejects restored attachment metadata that does not match the prompt', () => {
+    expect(() => restoredPromptToComposerDocument('原始内容', [{
+      id: 'paste-1', text: '错误内容', start: 0, end: 4
+    }])).toThrow(Error)
   })
 
   test('keeps image-only prompts valid without inventing an empty text block', () => {

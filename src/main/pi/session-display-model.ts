@@ -11,7 +11,7 @@ import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '.
 import {
   createInlinePastedTextDisplayMetadata,
   isPastedTextMetadata,
-  pastedTextFingerprint,
+  resolvePastedTextMetadata,
   PASTED_TEXT_CUSTOM_TYPE,
   type PastedTextMetadata,
   type PastedTextPromptAttachment
@@ -55,7 +55,10 @@ function* pathMessages(entries: SessionEntry[]): Generator<PathMessage> {
   for (const raw of entries) {
     const entry = raw as SessionEntry
     if (entry.type === 'custom' && entry.customType === PASTED_TEXT_CUSTOM_TYPE) {
-      pendingPastedText = isPastedTextMetadata(entry.data) ? entry.data : undefined
+      if (!isPastedTextMetadata(entry.data)) {
+        throw Object.assign(new Error(`Invalid pasted-text metadata: ${entry.id}`), { code: 'PASTED_TEXT_METADATA_INVALID' })
+      }
+      pendingPastedText = entry.data
       continue
     }
     const fallback = entryTimestamp(entry)
@@ -148,31 +151,27 @@ function displayUser(
       if (image) images.push(image)
     })
   }
-  if (
-    pastedText &&
-    text.length === pastedText.contentLength &&
-    pastedTextFingerprint(text) === pastedText.contentHash &&
-    pastedText.attachments.every((attachment) => attachment.end <= text.length)
-  ) {
-    const attachments: PastedTextPromptAttachment[] = pastedText.attachments.map((attachment) => ({
+  if (pastedText) {
+    const { text: sourceText, metadata } = resolvePastedTextMetadata(text, pastedText)
+    const attachments: PastedTextPromptAttachment[] = metadata.attachments.map((attachment) => ({
       id: attachment.id,
-      text: text.slice(attachment.start, attachment.end),
+      text: sourceText.slice(attachment.start, attachment.end),
       byteSize: attachment.byteSize,
       start: attachment.start,
       end: attachment.end,
       ...(attachment.filename ? { filename: attachment.filename } : {})
     }))
-    if (pastedText.version === 2) {
-      const display = createInlinePastedTextDisplayMetadata(text, attachments)
+    if (metadata.version === 2) {
+      const display = createInlinePastedTextDisplayMetadata(sourceText, attachments)
       return {
-        text,
+        text: sourceText,
         images,
         textAttachments: display.attachments,
         textSegments: display.segments
       }
     }
     return {
-      text: text.slice(0, pastedText.bodyLength),
+      text: sourceText.slice(0, metadata.bodyLength),
       images,
       textAttachments: attachments.map(({ id, text: attachmentText, byteSize, filename }) => ({
         id,

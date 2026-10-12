@@ -78,7 +78,7 @@ interface PendingUserMessage {
   images?: ImageContent[]
   mode?: PendingMessageMode
   state: PendingMessageState
-  onStart: () => void
+  onStart: (deliveredText: string) => void
 }
 
 interface QueueSlot {
@@ -119,7 +119,7 @@ export function queuePendingUserMessage(
   session: AgentSession,
   text: string,
   metadata: PastedTextDisplayMetadata | undefined,
-  onStart: () => void,
+  onStart: (deliveredText: string) => void,
   mode?: PendingMessageMode,
   images?: ImageContent[]
 ): PendingUserMessageHandle {
@@ -327,7 +327,7 @@ export function bridgeEvents(
         if (direct) {
           direct.acceptedText = messageText
           direct.state = 'started'
-          direct.onStart()
+          direct.onStart(messageText)
           metadata = direct.metadata
         } else {
           const delivering = deliveringMessages.get(session) ?? []
@@ -339,7 +339,7 @@ export function bridgeEvents(
             const pending = delivering.splice(index, 1)[0]!
             if (delivering.length === 0) deliveringMessages.delete(session)
             pending.state = 'started'
-            pending.onStart()
+            pending.onStart(messageText)
             metadata = pending.metadata
           }
         }

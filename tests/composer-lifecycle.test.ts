@@ -26,8 +26,8 @@ async function runFixture(name: string): Promise<void> {
         return nextFrame
       }
       globalThis.cancelAnimationFrame = (id) => { frames.delete(id) }
-      function Probe({ sessionId }: { sessionId: string }) {
-        state = useComposerEditor({ sessionId, onKeyDown: () => { forwarded++; return true }, onPasteImages: async () => {} })
+      function Probe({ sessionId, isActive = true }: { sessionId: string; isActive?: boolean }) {
+        state = useComposerEditor({ sessionId, isActive, onKeyDown: () => { forwarded++; return true }, onPasteImages: async () => {} })
         return null
       }
       await act(async () => { root.render(createElement(Probe, { sessionId: 'one' })) })
@@ -125,10 +125,25 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(state.getDraft().text, '编辑\n队列')
       const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
       const { textToComposerDocument } = await import('../src/renderer/src/components/composer/document')
+      frames.clear()
+      let focusCalls = 0
+      const originalFocus = editor.view.focus.bind(editor.view)
+      editor.view.focus = () => { focusCalls++ }
       await act(async () => {
         drafts.getState().restoreDraft('one', { content: textToComposerDocument('树中恢复\n待发送'), images: [] })
       })
       assert.equal(state.getDraft().text, '树中恢复\n待发送', 'restoration updates an already mounted editor')
+      await act(async () => { for (const callback of frames.values()) callback(0) })
+      frames.clear()
+      assert.equal(focusCalls, 1, 'editing a message moves focus to the active composer')
+      await act(async () => { root.render(createElement(Probe, { sessionId: 'one', isActive: false })) })
+      await act(async () => {
+        drafts.getState().restoreDraft('one', { content: textToComposerDocument('后台恢复'), images: [] })
+      })
+      await act(async () => { for (const callback of frames.values()) callback(0) })
+      frames.clear()
+      assert.equal(focusCalls, 1, 'background restorations do not steal keyboard focus')
+      editor.view.focus = originalFocus
       await act(async () => {
         state.clear()
         assert.equal(state.getDraft().text, '')

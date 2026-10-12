@@ -85,6 +85,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:set-label', sessionId, targetId, label, path),
   viewBranch: (sessionId: string, tipId: string, options?: Parameters<SessionApi['viewBranch']>[2]) =>
     ipcRenderer.invoke('session:view-branch', sessionId, tipId, options),
+  forkSession: (sessionId: string, userEntryId: string) =>
+    ipcRenderer.invoke('session:fork', sessionId, userEntryId),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
   getTokenStats: (sessionId: string) =>

@@ -10,6 +10,7 @@ import { t } from '../../lib/i18n'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
 import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './session-title'
+import { restorePromptDraft } from './restore-prompt'
 import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs } from './tab-order'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
 
@@ -68,6 +69,7 @@ export const createTabsSlice: SessionSlice<
   | 'focusChatHome'
   | 'invalidateSelection'
   | 'newSession'
+  | 'forkSession'
   | 'newChat'
   | 'closeTab'
   | 'reorderTabs'
@@ -851,6 +853,29 @@ export const createTabsSlice: SessionSlice<
       }, selection)
       if (selection === selectionVersion) persistSelection(cwd, sessionId, sessionId)
       return selection === selectionVersion
+    },
+
+    forkSession: async (sessionId, userEntryId) => {
+      const sourceTab = get().openTabs.find((tab) => tab.id === sessionId)
+      if (!sourceTab || (sourceTab.kind !== 'project' && sourceTab.kind !== 'chat')) {
+        throw new Error(`Open session tab not found: ${sessionId}`)
+      }
+      const selection = ++selectionVersion
+      const ref = await api.forkSession(sessionId, userEntryId)
+      if (!ref) return
+      restorePromptDraft(ref.sessionId, ref.restoredPrompt)
+      const added = addReadyTab({
+        id: ref.sessionId,
+        cwd: ref.cwd,
+        title: sourceTab.title,
+        kind: sourceTab.kind,
+        loadState: 'ready'
+      }, selection)
+      if (sourceTab.kind === 'project' && selection === selectionVersion) {
+        persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
+      }
+      if (added) await hydrateReady(ref)
+      void get().refreshCwd(ref.cwd).catch((error) => set({ workspaceError: describeError(error) }))
     },
 
     newSession: async (cwd) => {

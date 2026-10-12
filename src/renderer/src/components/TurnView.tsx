@@ -193,7 +193,7 @@ function AgentTurnView({
 
   return (
     <div className="mb-4">
-      {turn.user ? <UserBubble message={turn.user} /> : null}
+      {turn.user ? <UserBubble message={turn.user} sessionId={sessionId} turnId={turn.id} /> : null}
       {showBody ? (
         <div className="mb-3">
           {blocks.map((block, index) =>

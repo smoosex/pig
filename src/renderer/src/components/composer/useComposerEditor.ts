@@ -185,6 +185,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
 
   const restoreVersion = useComposerDraftsStore((state) => options.sessionId
     ? state.drafts[options.sessionId]?.restoreVersion ?? 0 : 0)
+  const appliedRestore = useRef({ sessionId: options.sessionId, version: restoreVersion })
   useLayoutEffect(() => {
     const content = (options.sessionId
       ? useComposerDraftsStore.getState().drafts[options.sessionId]?.content
@@ -194,6 +195,12 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     currentDraft.current = next
     setDraft(next)
     editor?.setEditable(Boolean(options.sessionId))
+    // Only a new external restoration in this active editor moves focus, not ordinary tab hydration.
+    const previous = appliedRestore.current
+    if (previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false) {
+      editor?.commands.focus('end')
+    }
+    appliedRestore.current = { sessionId: options.sessionId, version: restoreVersion }
   }, [options.sessionId, editor, restoreVersion])
 
   useEffect(() => {

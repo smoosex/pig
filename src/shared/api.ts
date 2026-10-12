@@ -427,6 +427,12 @@ export interface SessionBranchOptions {
 export interface RestoredSessionPrompt {
   text: string
   images: Array<{ mimeType: string; data: string }>
+  textAttachments?: PastedTextAttachmentInput[]
+}
+
+/** A Pi fork is a separate session whose composer restores the selected user message. */
+export interface ForkedSessionRef extends OpenSessionRef {
+  restoredPrompt: RestoredSessionPrompt
 }
 
 /** Switching a branch answers with the new window and any input restored from the selected node. */
@@ -731,6 +737,7 @@ export interface SessionApi extends ToolSettingsApi {
   ) => Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>
   setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) => Promise<void>
   viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<SessionBranchRef>
+  forkSession: (sessionId: string, userEntryId: string) => Promise<ForkedSessionRef | null>
   getControls: (sessionId: string) => Promise<SessionControls>
   getTokenStats: (sessionId: string) => Promise<SessionTokenStats>
   getCommands: (sessionId: string) => Promise<SlashCommand[]>
