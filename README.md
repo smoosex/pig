@@ -63,8 +63,15 @@ boundaries, data flow, and conventions.
 
 ```bash
 bun install
-bun run dev
+env -u PIG_DIR bun run dev
 ```
+
+`env -u PIG_DIR` matters: `PIG_DIR` is the highest-precedence override of the data
+directory, and it is inherited — a terminal opened from an installed Pig carries
+`PIG_DIR` pointing at that install, which would leave this development build reading
+and writing the same `settings.json`, `opened-projects.json` and `chats/` as the app
+you use every day. Dropping it puts the development build back on this checkout's
+`.pig/`.
 
 On macOS, `dev` signs the local Electron bundle once so system notifications work.
 Allow notifications for Electron in System Settings if prompted. `build:mac` uses
@@ -90,7 +97,9 @@ worktree from the original directory's current HEAD; each worktree's `+` creates
 conversation in that directory. Independent chats do not support worktrees.
 
 New worktrees live at `<pig-dir>/worktrees/<project-name>/<uuid>`:
-development uses `cwd/.pig`, packaged uses `$HOME/.pig`, and `PIG_DIR` overrides both.
+development uses `cwd/.pig`, packaged uses `$HOME/.pig`, and `PIG_DIR` overrides both —
+so don't export it while working on the app, or the development build shares its data
+directory with the installed one.
 A short path hash is appended only when two projects would share the same name;
 metadata is stored at `<pig-dir>/worktrees/.state.json`.
 Initially the branch also uses the UUID.
