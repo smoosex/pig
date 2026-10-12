@@ -22,7 +22,7 @@ export function SettingsRow({
 
 export function SettingsCard({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10 [&>*+*]:relative [&>*+*]:before:absolute [&>*+*]:before:inset-x-4 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border/50 [&>*+*]:before:content-['']">
+    <div className="overflow-hidden rounded-xl border border-foreground/10 [&>*+*]:relative [&>*+*]:before:absolute [&>*+*]:before:inset-x-4 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border/50 [&>*+*]:before:content-['']">
       {children}
     </div>
   )
