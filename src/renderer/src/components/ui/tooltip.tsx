@@ -5,29 +5,98 @@ import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+interface TooltipWindowState {
+  blurRevision: number
+  suppressRestoredFocus: React.RefObject<boolean>
+}
+
+const TooltipWindowContext = React.createContext<TooltipWindowState | null>(null)
+
 function TooltipProvider({
   delayDuration = 0,
+  children,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+  const suppressRestoredFocus = React.useRef(false)
+  const [blurRevision, setBlurRevision] = React.useState(0)
+
+  React.useEffect(() => {
+    const handleBlur = () => {
+      suppressRestoredFocus.current = true
+      setBlurRevision((revision) => revision + 1)
+    }
+    const releaseSuppression = () => {
+      suppressRestoredFocus.current = false
+    }
+    window.addEventListener("blur", handleBlur)
+    window.addEventListener("keydown", releaseSuppression, true)
+    window.addEventListener("pointerdown", releaseSuppression, true)
+    return () => {
+      window.removeEventListener("blur", handleBlur)
+      window.removeEventListener("keydown", releaseSuppression, true)
+      window.removeEventListener("pointerdown", releaseSuppression, true)
+    }
+  }, [])
+
+  const windowState = React.useMemo(
+    () => ({ blurRevision, suppressRestoredFocus }),
+    [blurRevision]
+  )
+
   return (
-    <TooltipPrimitive.Provider
-      data-slot="tooltip-provider"
-      delayDuration={delayDuration}
-      {...props}
-    />
+    <TooltipWindowContext.Provider value={windowState}>
+      <TooltipPrimitive.Provider
+        data-slot="tooltip-provider"
+        delayDuration={delayDuration}
+        {...props}
+      >
+        {children}
+      </TooltipPrimitive.Provider>
+    </TooltipWindowContext.Provider>
   )
 }
 
 function Tooltip({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+  const windowState = React.useContext(TooltipWindowContext)
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen ?? false)
+  const open = openProp ?? uncontrolledOpen
+  const handledBlurRevision = React.useRef(windowState?.blurRevision ?? 0)
+  const changeOpen = React.useCallback((next: boolean) => {
+    if (openProp === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }, [onOpenChange, openProp])
+
+  React.useEffect(() => {
+    if (!windowState || handledBlurRevision.current === windowState.blurRevision) return
+    handledBlurRevision.current = windowState.blurRevision
+    if (open) changeOpen(false)
+  }, [changeOpen, open, windowState])
+
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} open={open} onOpenChange={changeOpen} />
 }
 
 function TooltipTrigger({
+  onFocus,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  const windowState = React.useContext(TooltipWindowContext)
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      {...props}
+      onFocus={(event) => {
+        onFocus?.(event)
+        if (!event.defaultPrevented && windowState?.suppressRestoredFocus.current) {
+          event.preventDefault()
+        }
+      }}
+    />
+  )
 }
 
 function TooltipContent({
