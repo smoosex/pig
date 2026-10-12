@@ -43,8 +43,7 @@ mac:
   target:
     - dmg
   category: public.app-category.developer-tools
-  identity: null
-afterPack: scripts/sign-mac-local.cjs
+  identity: pig
 linux:
   target:
     - AppImage
