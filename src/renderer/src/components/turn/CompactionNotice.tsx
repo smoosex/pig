@@ -38,7 +38,7 @@ export function CompactionNotice({ item }: { item: CompactionItem }) {
   const runningMs = useRunningMs(running?.startedAt ?? null)
   if (running) {
     return (
-      <Marker variant="separator">
+      <Marker variant="separator" className="text-xs">
         <MarkerContent className={landmarkRow}>
           <Archive className="size-3.5" />
           <span className="shimmer">{t(compactionReasonKey(running.reason))}</span>
