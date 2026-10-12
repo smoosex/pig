@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
+import { GripHorizontal, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
@@ -205,6 +205,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const titlebarRef = useRef<HTMLDivElement>(null)
+  const [titlebarHovered, setTitlebarHovered] = useState(false)
   /**
    * What each half of the switcher was left on. A chat clears `currentProjectCwd`, so the worktree
    * the projects half sat in has to be remembered here; the chat half remembers its tab because the
@@ -225,6 +227,25 @@ export default function App() {
   useEffect(() => api.onNotificationClick((sessionId) => {
     openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
+
+  useEffect(() => {
+    const syncTitlebarHover = (event: PointerEvent) => {
+      const bounds = titlebarRef.current?.getBoundingClientRect()
+      const hovered = Boolean(
+        bounds &&
+        event.clientX >= bounds.left && event.clientX <= bounds.right &&
+        event.clientY >= bounds.top && event.clientY <= bounds.bottom
+      )
+      setTitlebarHovered((current) => current === hovered ? current : hovered)
+    }
+    const clearTitlebarHover = () => setTitlebarHovered(false)
+    window.addEventListener('pointermove', syncTitlebarHover, true)
+    window.addEventListener('blur', clearTitlebarHover)
+    return () => {
+      window.removeEventListener('pointermove', syncTitlebarHover, true)
+      window.removeEventListener('blur', clearTitlebarHover)
+    }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -359,7 +380,16 @@ export default function App() {
       <SystemPluginUI activeSessionId={activeSessionId} />
       <ExtensionUI />
       <div className="flex h-full flex-col bg-background">
-        <div className="drag flex h-10 shrink-0 items-center">
+        <div ref={titlebarRef} className="relative flex h-10 shrink-0 items-center">
+          <div
+            aria-hidden="true"
+            className={cn(
+              'drag absolute top-1 left-1/2 flex h-6 w-16 -translate-x-1/2 items-center justify-center text-muted-foreground transition-opacity',
+              titlebarHovered ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+            )}
+          >
+            <GripHorizontal className="size-4" />
+          </div>
           <div className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : (
               <>
