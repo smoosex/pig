@@ -99,6 +99,23 @@ function appSettings(): SettingsManager {
   return settingsManager
 }
 
+export async function getOrCreateDeviceId(): Promise<string> {
+  const settings = appSettings()
+  // Reload drops IDs left in memory by failed writes; the SDK buffers errors instead of throwing them.
+  await settings.reload()
+  const loadErrors = settings.drainErrors()
+  if (loadErrors.length) {
+    throw new AggregateError(loadErrors.map(({ error }) => error), 'Could not load settings for the installation ID')
+  }
+  const deviceId = settings.getOrCreateDeviceId()
+  await settings.flush()
+  const writeErrors = settings.drainErrors()
+  if (writeErrors.length) {
+    throw new AggregateError(writeErrors.map(({ error }) => error), 'Could not persist the installation ID')
+  }
+  return deviceId
+}
+
 export function defaultModelFromSettings(): SessionModelInfo | null {
   const settings = appSettings()
   const provider = settings.getDefaultProvider()

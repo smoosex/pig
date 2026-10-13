@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -229,7 +230,10 @@ async function fixture(name: string): Promise<void> {
       }
     }
     mock.module('electron', () => ({ shell: { openExternal: async (url: string) => { urls.push(url) } }, BrowserWindow: { getAllWindows: () => [] } }))
-    mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({ startModelRuntime: async () => runtime }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
+      startModelRuntime: async () => runtime,
+      getOrCreateDeviceId: () => { throw new Error('API-key login must not request a device ID') }
+    }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({
       synchronizeModelCatalog: () => ({ models: [], revision: 0, refreshing: false })
     }))
@@ -248,6 +252,132 @@ async function fixture(name: string): Promise<void> {
     resolveAuthPrompt(events[1].id, 'second-reply')
     await second
     assert.deepEqual(urls, [])
+    return
+  }
+
+  if (name === 'auth-device-id' || name === 'auth-device-id-existing') {
+    const root = await mkdtemp(join(tmpdir(), 'pig-auth-device-id-'))
+    const agentDir = join(root, 'agent')
+    const projectId = '11111111-1111-4111-8111-111111111111'
+    const existingId = name === 'auth-device-id-existing'
+      ? '22222222-2222-4222-8222-222222222222'
+      : undefined
+    await mkdir(agentDir)
+    await mkdir(join(root, '.pi'))
+    await writeFile(join(agentDir, 'settings.json'), JSON.stringify({ defaultProvider: 'openai', deviceId: existingId }))
+    await writeFile(join(root, '.pi', 'settings.json'), JSON.stringify({ deviceId: projectId }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
+    const RealSettingsManager = sdk.SettingsManager
+    const settings = RealSettingsManager.create(root, agentDir)
+    const deviceIds: string[] = []
+    let creates = 0
+    const runtime = {
+      login: async (_provider: string, type: string, _interaction: unknown, options?: Parameters<import('@earendil-works/pi-coding-agent').ModelRuntime['login']>[3]) => {
+        if (type === 'api_key') {
+          assert.equal(options, undefined, 'API-key login needs no installation identity')
+          return
+        }
+        assert.equal(typeof options?.getDeviceId, 'function', 'login must supply the SDK installation-ID callback')
+        const id = options?.getDeviceId?.()
+        assert.ok(id)
+        assert.equal(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8')).deviceId, id, 'the ID is on disk before the SDK login flow uses it')
+        assert.match(id, /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+        assert.notEqual(id, projectId, 'project settings cannot supply an installation identity')
+        if (existingId) assert.equal(id, existingId, 'reuse the identity already saved by pi')
+        deviceIds.push(id)
+      },
+      refresh: async () => {}
+    }
+    mock.module('electron', () => ({ shell: {} }))
+    mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
+      ModelRuntime: { create: async () => runtime },
+      SettingsManager: { create: () => { creates++; return settings } }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({ synchronizeModelCatalog() {} }))
+    try {
+      const { loginProvider } = await import('../src/main/pi/providers')
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false } } as import('electron').BrowserWindow
+      await loginProvider(win, 'openai', 'api_key')
+      assert.equal(creates, 0, 'login flows that do not need an ID must not create one')
+      await loginProvider(win, 'openai', 'oauth')
+      const saved = JSON.parse(await readFile(join(agentDir, 'settings.json'), 'utf8'))
+      assert.equal(saved.deviceId, deviceIds[0], 'the installation ID is persisted before a later launch')
+      assert.equal(saved.defaultProvider, 'openai', 'identity creation preserves other pi settings')
+      await loginProvider(win, 'openai', 'oauth')
+      assert.deepEqual(deviceIds, [saved.deviceId, saved.deviceId], 'retries use the same installation ID')
+      assert.equal(creates, 1, 'identity and model preferences share the settings manager')
+      const restored = RealSettingsManager.create(root, agentDir)
+      assert.notEqual(restored, settings, 'restoration reads through a fresh real SDK manager')
+      assert.equal(restored.getGlobalSettings().deviceId, saved.deviceId, 'a new settings manager restores the persisted identity')
+      await writeFile(join(agentDir, 'settings.json'), JSON.stringify({ defaultProvider: 'openai' }))
+      assert.equal(RealSettingsManager.create(root, agentDir).getGlobalSettings().deviceId, undefined, 'restoration depends on the on-disk ID, not the mocked manager')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+    return
+  }
+
+  if (['auth-device-id-malformed', 'auth-device-id-cached-malformed', 'auth-device-id-unreadable', 'auth-device-id-write-failure'].includes(name)) {
+    const root = await mkdtemp(join(tmpdir(), 'pig-auth-device-id-error-'))
+    const agentDir = join(root, 'agent')
+    const settingsPath = join(agentDir, 'settings.json')
+    const malformed = '{"deviceId":'
+    const initial = name === 'auth-device-id-malformed' ? malformed : '{"defaultProvider":"openai"}'
+    await mkdir(agentDir)
+    if (name === 'auth-device-id-unreadable') await mkdir(settingsPath)
+    else await writeFile(settingsPath, initial)
+    const sdk = await import('@earendil-works/pi-coding-agent')
+    const writeError = Object.assign(new Error('Fixture denied settings write'), { code: 'EACCES' })
+    let writeAttempts = 0
+    const settings = name === 'auth-device-id-write-failure'
+      ? sdk.SettingsManager.fromStorage({
+          withLock: (scope, fn) => {
+            const next = fn(scope === 'global' ? readFileSync(settingsPath, 'utf8') : undefined)
+            if (next !== undefined) {
+              writeAttempts++
+              throw writeError
+            }
+          }
+        })
+      : sdk.SettingsManager.create(root, agentDir)
+    if (name === 'auth-device-id-cached-malformed') await writeFile(settingsPath, malformed)
+    let logins = 0
+    let refreshes = 0
+    const runtime = {
+      login: async () => { logins++ },
+      refresh: async () => { refreshes++ }
+    }
+    mock.module('electron', () => ({ shell: {} }))
+    mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
+      ModelRuntime: { create: async () => runtime },
+      SettingsManager: { create: () => settings }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({ synchronizeModelCatalog() {} }))
+    try {
+      const { loginProvider } = await import('../src/main/pi/providers')
+      const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false } } as import('electron').BrowserWindow
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await assert.rejects(loginProvider(win, 'openai', 'oauth'), (error) => {
+          assert.ok(error instanceof AggregateError)
+          assert.ok(error.errors.length > 0)
+          for (const cause of error.errors) {
+            if (name === 'auth-device-id-write-failure') assert.equal(cause, writeError)
+            else if (name === 'auth-device-id-unreadable') assert.equal(cause.code, 'EISDIR')
+            else assert.ok(cause instanceof SyntaxError)
+          }
+          return true
+        })
+      }
+      assert.equal(logins, 0, 'settings failures stop login before the SDK can use an unpersisted ID')
+      assert.equal(refreshes, 0, 'failed identity persistence cannot publish a successful login refresh')
+      assert.equal(writeAttempts, name === 'auth-device-id-write-failure' ? 2 : 0)
+      if (name === 'auth-device-id-unreadable') await assert.rejects(readFile(settingsPath), { code: 'EISDIR' })
+      else assert.equal(await readFile(settingsPath, 'utf8'), name === 'auth-device-id-cached-malformed' ? malformed : initial, 'failed login leaves settings untouched')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
     return
   }
 
@@ -290,6 +420,7 @@ async function fixture(name: string): Promise<void> {
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
       startModelRuntime: async () => runtime,
+      getOrCreateDeviceId: () => { throw new Error('API-key login must not request a device ID') },
       availableModels: () => models
     }))
     const { loginProvider, cancelProviderLogin, logoutProvider } = await import('../src/main/pi/providers')
@@ -359,6 +490,12 @@ if (process.argv[2] === '--main-settings-fixture') {
     runtime: 'failed startup retries and background refresh errors stay handled',
     controls: 'pending model selection applies the same reasoning level the picker displays',
     auth: 'an old login cannot clear a newer prompt or open a stale login URL',
+    'auth-device-id': 'subscription login lazily creates and persists a stable global installation ID',
+    'auth-device-id-existing': 'subscription login reuses an existing pi installation ID instead of the project ID',
+    'auth-device-id-malformed': 'malformed global settings reject subscription login without overwriting the file',
+    'auth-device-id-cached-malformed': 'cached settings do not hide JSON corruption introduced before login',
+    'auth-device-id-unreadable': 'unreadable global settings reject subscription login on every attempt',
+    'auth-device-id-write-failure': 'device ID write failures propagate before login and cannot be bypassed by retry',
     'auth-refresh': 'post-login refresh stays cancellable and never starts an unbounded full refresh',
     'pig-settings': 'concurrent preference updates preserve each other and recover after a write failure'
   })) {
