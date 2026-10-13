@@ -72,13 +72,19 @@ export function registerWorktreeIpc(): void {
     }
   })
 
+  ipcMain.handle('project:list-worktree-deletions', async () => worktrees.listDeletions())
+  ipcMain.handle('project:retry-worktree-deletion', async (_event, cwd: string) => {
+    if (typeof cwd !== 'string' || !cwd) throw new Error('Invalid worktree cwd')
+    await worktrees.retryDeletion(cwd)
+  })
+
   ipcMain.handle('project:delete-worktree', async (_event, projectCwd: string, cwd: string, force = false) => {
     const project = await requireOpenedProject(projectCwd)
     if (typeof cwd !== 'string' || !cwd || isChatCwd(cwd) || isChatsRoot(cwd)) throw new Error('Invalid worktree cwd')
     const info = await worktrees.deletionInfo(project, cwd)
     await worktrees.remove(project, cwd, Boolean(force),
-      () => closeSessionsForCwd(cwd), () => removeProjectDir(cwd))
+      () => closeSessionsForCwd(cwd), () => removeProjectDir(cwd), { background: true })
     await removeOpenProjectWorkspaces([info.worktree.cwd])
-    return { cwd: info.worktree.cwd, project: await loadWorktreeProject(project) }
+    return { cwd: info.worktree.cwd }
   })
 }

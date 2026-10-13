@@ -33,6 +33,7 @@ export const createCatalogSlice: SessionSlice<
   | 'refreshCwd'
   | 'createWorktree'
   | 'deleteWorktree'
+  | 'applyWorktreeDeletions'
   | 'deleteProject'
   | 'deleteChat'
   | 'deleteSession'
@@ -61,6 +62,7 @@ export const createCatalogSlice: SessionSlice<
       try {
         await current
       } catch (error) {
+        // Only a superseded scan may be ignored; callers still await and receive the latest result.
         if (latestProjectLoad === current) throw error
       }
       const latest = latestProjectLoad
@@ -83,11 +85,13 @@ export const createCatalogSlice: SessionSlice<
         const projects = await api.listProjects()
         if (
           request !== projectLoadVersion ||
-          version !== projectMembershipVersion ||
           orderVersion !== projectOrderVersion ||
           savingOrder ||
           get().isReorderingProjects
         ) return
+        // A deletion may precede the first catalog. Read fresh membership rather than restoring
+        // deleted worktrees or leaving startup with no projects after rejecting the stale scan.
+        if (version !== projectMembershipVersion) return get().loadProjects()
         set((s) => ({
           projects,
           openTabs: patchTabsFromGroups(s.openTabs, projects)
@@ -293,20 +297,26 @@ export const createCatalogSlice: SessionSlice<
       }
       const result = await api.deleteWorktree(projectCwd, cwd, force)
       if (!result) return
-      useDiffStore.getState().forgetWorktree(cwd)
+      get().applyWorktreeDeletions([result.cwd])
+    },
+
+    applyWorktreeDeletions: (cwds) => {
+      const targets = new Set(cwds)
+      if (targets.size === 0) return
       projectMembershipVersion++
-      set((s) => {
-        const current = s.projects.find((item) => item.cwd === projectCwd)
-        return {
-          ...removeCwdSessions(s, new Set([cwd]), [
-            ...(project?.sessions ?? []),
-            ...(current?.sessions ?? [])
-          ]),
-          projects: s.projects.some((item) => item.cwd === result.project.cwd)
-            ? upsertGroup(s.projects, result.project.cwd, result.project, true)
-            : s.projects
-        }
-      })
+      if (!get().projects.some((project) => project.worktrees?.some((worktree) => targets.has(worktree.cwd)))
+        && !get().openTabs.some((tab) => targets.has(tab.cwd))
+        && !targets.has(get().currentProjectCwd ?? '')) return
+      get().invalidateSelection()
+      for (const cwd of targets) useDiffStore.getState().forgetWorktree(cwd)
+      set((state) => ({
+        ...removeCwdSessions(state, targets, state.projects.flatMap((project) => project.sessions)),
+        projects: state.projects.map((project) => ({
+          ...project,
+          sessions: project.sessions.filter((session) => !targets.has(session.cwd)),
+          worktrees: project.worktrees?.filter((worktree) => !targets.has(worktree.cwd))
+        }))
+      }))
     },
 
     deleteProject: async (cwd) => {

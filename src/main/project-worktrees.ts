@@ -19,6 +19,12 @@ export const worktrees = new WorktreeService(pigPath('worktrees'), (projectCwd) 
       window.webContents.send('projects:changed', projectCwd)
     }
   }
+}, (jobs) => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send('worktrees:deletions-changed', jobs)
+    }
+  }
 })
 
 export async function requireOpenedProject(cwd: string): Promise<string> {

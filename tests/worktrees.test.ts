@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import { GitExecError, isNotARepoError } from '../src/main/git/exec'
 import { canonicalProject, git, isGitProject, parseWorktrees, validateBranchName, WorktreeService } from '../src/main/worktrees'
 import { applyLocaleSetting } from '../src/main/i18n'
+import type { WorktreeDeletionJob } from '../src/shared/api'
 
 // Pig's own errors come from the dictionary: pin the wording these tests spell out.
 applyLocaleSetting('zh-CN')
@@ -18,7 +19,7 @@ afterEach(async () => {
   await Promise.all(temps.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 
-async function fixture(committed = true) {
+async function fixture(committed = true, retryDelays?: readonly number[], onDeletionsChanged?: (jobs: WorktreeDeletionJob[]) => void) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-worktree-test-')))
   temps.push(root)
   const project = join(root, 'project with spaces')
@@ -32,7 +33,7 @@ async function fixture(committed = true) {
     await git(project, ['update-ref', 'HEAD', commit])
   }
   const storage = join(root, 'worktrees')
-  const service = new WorktreeService(storage)
+  const service = new WorktreeService(storage, undefined, onDeletionsChanged, retryDelays)
   services.push(service)
   return { root, project, storage, service }
 }
@@ -455,5 +456,232 @@ describe('deletion protection and cleanup', () => {
     await naming
     expect((await service.discover(project)).length).toBe(1)
     expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
+  })
+})
+
+async function waitForDeletions(service: WorktreeService, ready: (jobs: WorktreeDeletionJob[]) => boolean): Promise<WorktreeDeletionJob[]> {
+  const deadline = performance.now() + 3_000
+  while (performance.now() < deadline) {
+    const jobs = await service.listDeletions()
+    if (ready(jobs)) return jobs
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error('Background deletion did not reach the expected state')
+}
+
+describe('durable background deletion', () => {
+  for (const force of [false, true]) {
+    test(`queued cleanup preserves force=${force} for ignored files written after enqueue and manual retry`, async () => {
+      const { project, service } = await fixture(true, [])
+      const blocker = await service.create(project)
+      const target = await service.create(project)
+      await writeFile(join(project, '.git', 'info', 'exclude'), 'late-ignored.txt\n')
+      const started = deferred<void>()
+      const release = deferred<void>()
+      await service.startDeletionWorker(async (cwd) => {
+        if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+      })
+      try {
+        await service.remove(project, blocker.cwd, false, noop, noop, { background: true })
+        await started.promise
+        await service.remove(project, target.cwd, force, noop, noop, { background: true })
+        await writeFile(join(target.cwd, 'late-ignored.txt'), 'new data')
+      } finally {
+        release.resolve()
+      }
+      await waitForDeletions(service, (jobs) => force
+        ? jobs.length === 0 : jobs.some((job) => job.cwd === target.cwd && job.status === 'failed'))
+      if (force) {
+        expect(await stat(target.cwd).catch(() => null)).toBeNull()
+      } else {
+        expect(await readFile(join(target.cwd, 'late-ignored.txt'), 'utf8')).toBe('new data')
+        expect((await git(project, ['rev-parse', target.branch])).trim()).toBe((await git(project, ['rev-parse', 'HEAD'])).trim())
+        const state = JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8'))
+        expect(state.worktrees.find((record: { cwd: string }) => record.cwd === target.cwd).backgroundDeletion.force).toBe(false)
+        await service.retryDeletion(target.cwd)
+        await waitForDeletions(service, (jobs) => jobs.some((job) => job.cwd === target.cwd && job.status === 'failed'))
+        expect(await readFile(join(target.cwd, 'late-ignored.txt'), 'utf8')).toBe('new data')
+      }
+    })
+
+    test(`restart preserves force=${force} for untracked files written before recovery`, async () => {
+      const { project, service } = await fixture(true, [])
+      const blocker = await service.create(project)
+      const target = await service.create(project)
+      const started = deferred<void>()
+      const release = deferred<void>()
+      await service.startDeletionWorker(async (cwd) => {
+        if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+      })
+      let shutdown: Promise<void> | undefined
+      try {
+        await service.remove(project, blocker.cwd, false, noop, noop, { background: true })
+        await started.promise
+        await service.remove(project, target.cwd, force, noop, noop, { background: true })
+        shutdown = service.shutdown()
+      } finally {
+        release.resolve()
+      }
+      await shutdown
+      await writeFile(join(target.cwd, 'new-after-enqueue.txt'), 'important')
+      const restarted = new WorktreeService(service.root, undefined, undefined, [])
+      services.push(restarted)
+      await restarted.startDeletionWorker(noop)
+      await waitForDeletions(restarted, (jobs) => force ? jobs.length === 0 : jobs[0]?.status === 'failed')
+      if (force) {
+        expect(await stat(target.cwd).catch(() => null)).toBeNull()
+      } else {
+        expect(await readFile(join(target.cwd, 'new-after-enqueue.txt'), 'utf8')).toBe('important')
+        expect((await git(project, ['rev-parse', target.branch])).trim()).toBe((await git(project, ['rev-parse', 'HEAD'])).trim())
+      }
+    })
+  }
+
+  test('an external deletion record cannot choose the parent for a new managed worktree', async () => {
+    const { root, project, service } = await fixture()
+    const external = join(root, 'external-parent', 'worktree')
+    await git(project, ['worktree', 'add', '-b', 'external', external])
+    const started = deferred<void>()
+    const release = deferred<void>()
+    await service.startDeletionWorker(async () => { started.resolve(); await release.promise })
+    try {
+      await service.remove(project, external, false, noop, noop, { background: true })
+      await started.promise
+      const managed = await service.create(project)
+      expect(dirname(dirname(managed.cwd))).toBe(service.root)
+      expect((await service.discover(project)).find((item) => item.cwd === managed.cwd)?.managed).toBe(true)
+    } finally {
+      release.resolve()
+      await waitForDeletions(service, (jobs) => jobs.length === 0)
+    }
+  })
+
+  for (const failure of ['malformed', 'unreadable'] as const) {
+    test(`worker initialization rejects ${failure} state and requires explicit initialization after repair`, async () => {
+      const { project, service } = await fixture(true, [])
+      const target = await service.create(project)
+      const statePath = join(service.root, '.state.json')
+      const saved = JSON.parse(await readFile(statePath, 'utf8'))
+      saved.worktrees[0].head = (await git(project, ['rev-parse', 'HEAD'])).trim()
+      saved.worktrees[0].deleting = true
+      saved.worktrees[0].backgroundDeletion = { force: false, attempts: 0 }
+      if (failure === 'malformed') {
+        await writeFile(statePath, '{invalid JSON')
+        await expect(service.startDeletionWorker(noop)).rejects.toBeInstanceOf(SyntaxError)
+      } else {
+        await rm(statePath)
+        await mkdir(statePath)
+        await expect(service.startDeletionWorker(noop)).rejects.toMatchObject({ code: 'EISDIR' })
+        await rm(statePath, { recursive: true })
+      }
+      await writeFile(statePath, JSON.stringify(saved))
+      await expect(service.remove(project, target.cwd, false, noop, noop, { background: true }))
+        .rejects.toMatchObject({ code: 'ERR_WORKTREE_DELETION_WORKER_NOT_READY' })
+      let cleaned = false
+      await service.startDeletionWorker(async () => { cleaned = true })
+      expect(() => service.assertAvailable(target.cwd)).toThrow()
+      await waitForDeletions(service, (jobs) => jobs.length === 0)
+      expect(cleaned).toBe(true)
+      expect(await stat(target.cwd).catch(() => null)).toBeNull()
+    })
+  }
+
+  test('returns after enqueue, hides the worktree and blocks sessions while cleanup is still running', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project)
+    const started = deferred<void>()
+    const release = deferred<void>()
+    await service.startDeletionWorker(async () => { started.resolve(); await release.promise })
+    try {
+      await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+      await started.promise
+      expect((await service.discover(project)).map((item) => item.cwd)).toEqual([project])
+      expect(() => service.assertAvailable(tree.cwd)).toThrow('正在删除')
+      expect(await service.listDeletions()).toMatchObject([{ cwd: tree.cwd, status: 'running' }])
+      const state = JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8'))
+      expect(state.worktrees[0]).toMatchObject({ cwd: tree.cwd, deleting: true, backgroundDeletion: { force: false, attempts: 1 } })
+      const other = await service.create(project)
+      await service.remove(project, other.cwd, false, noop, noop, { background: true })
+      expect((await service.listDeletions()).map((job) => job.cwd).sort()).toEqual([tree.cwd, other.cwd].sort())
+    } finally {
+      release.resolve()
+      await waitForDeletions(service, (jobs) => jobs.length === 0)
+    }
+    expect(() => service.assertAvailable(tree.cwd)).not.toThrow()
+    expect(await stat(tree.cwd).catch(() => null)).toBeNull()
+  })
+
+  test('reports a cleanup failure and retries without requiring the already-deleted Git worktree', async () => {
+    const notices: WorktreeDeletionJob[][] = []
+    const { project, service } = await fixture(true, [5], (jobs) => notices.push(jobs))
+    const tree = await service.create(project)
+    let attempts = 0
+    await service.startDeletionWorker(async () => {
+      if (++attempts === 1) throw new Error('temporary session cleanup failure')
+    })
+    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs.length === 0)
+    expect(attempts).toBe(2)
+    expect(notices.some((jobs) => jobs.some((job) => job.status === 'retrying' && job.error === 'temporary session cleanup failure'))).toBe(true)
+    expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
+  })
+
+  test('exhausted retries stay durable, hidden and manually retryable after restart', async () => {
+    const { project, service } = await fixture(true, [])
+    const tree = await service.create(project)
+    await service.startDeletionWorker(async () => { throw new Error('permission denied') })
+    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs[0]?.status === 'failed')
+    await service.shutdown()
+    const restarted = new WorktreeService(service.root)
+    services.push(restarted)
+    await restarted.startDeletionWorker(noop)
+    expect(await restarted.listDeletions()).toMatchObject([{ cwd: tree.cwd, status: 'failed', error: 'permission denied' }])
+    expect((await restarted.discover(project)).map((item) => item.cwd)).toEqual([project])
+    expect(() => restarted.assertAvailable(tree.cwd)).toThrow()
+    await Promise.all([restarted.retryDeletion(tree.cwd), restarted.retryDeletion(tree.cwd)])
+    await waitForDeletions(restarted, (jobs) => jobs.length === 0)
+    expect(() => restarted.assertAvailable(tree.cwd)).not.toThrow()
+  })
+
+  test('restart resumes a saved automatic retry', async () => {
+    const { project, service } = await fixture(true, [100])
+    const tree = await service.create(project)
+    await service.startDeletionWorker(async () => { throw new Error('interrupted cleanup') })
+    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs[0]?.status === 'retrying')
+    await service.shutdown()
+    const restarted = new WorktreeService(service.root)
+    services.push(restarted)
+    let cleaned = false
+    await restarted.startDeletionWorker(async () => { cleaned = true })
+    expect(() => restarted.assertAvailable(tree.cwd)).toThrow()
+    await waitForDeletions(restarted, (jobs) => jobs.length === 0)
+    expect(cleaned).toBe(true)
+  })
+
+  test('a retry does not delete a branch recreated with a different commit', async () => {
+    const { project, service } = await fixture(true, [])
+    const tree = await service.create(project)
+    await service.startDeletionWorker(async () => { throw new Error('cleanup failed') })
+    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs[0]?.status === 'failed')
+    const index = (await git(project, ['write-tree'])).trim()
+    const commit = (await git(project, ['-c', 'user.name=Pig Test', '-c', 'user.email=test@localhost', 'commit-tree', index, '-p', 'HEAD', '-m', 'new branch'])).trim()
+    await git(project, ['branch', tree.branch, commit])
+    await service.retryDeletion(tree.cwd)
+    await waitForDeletions(service, (jobs) => jobs[0]?.status === 'failed')
+    expect((await git(project, ['rev-parse', tree.branch])).trim()).toBe(commit)
+  })
+
+  test('background enqueue still refuses fresh writes made while stopping agents', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project)
+    await service.startDeletionWorker(noop)
+    await expect(service.remove(project, tree.cwd, false, async () => {
+      await writeFile(join(tree.cwd, 'late.txt'), 'last write')
+    }, noop, { background: true })).rejects.toThrow('新修改')
+    expect(await service.listDeletions()).toEqual([])
+    expect(await readFile(join(tree.cwd, 'late.txt'), 'utf8')).toBe('last write')
   })
 })

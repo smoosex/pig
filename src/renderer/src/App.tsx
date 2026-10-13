@@ -5,6 +5,7 @@ import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
+import { useWorktreeDeletions } from './hooks/useWorktreeDeletions'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
 import { SystemPluginUI } from './components/SystemPluginUI'
@@ -221,6 +222,7 @@ export default function App() {
   useEventBridge()
   useSessionWindows()
   useSessionNames()
+  useWorktreeDeletions()
   useModelCatalog()
   const modelCatalogError = useModelCatalogStore((s) => s.error)
   const modelCatalogLoading = useModelCatalogStore((s) => s.loading)

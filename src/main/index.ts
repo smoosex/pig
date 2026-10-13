@@ -7,13 +7,14 @@ import { registerIpc } from './ipc'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { forwardSessionNames } from './session-names'
-import { disposeAll } from './pi/session-registry'
+import { closeSessionsForCwd, disposeAll } from './pi/session-registry'
+import { removeProjectDir } from './pi/session-loader'
 import { startModelRuntime } from './pi/model-settings'
 import { startModelCatalog } from './pi/model-catalog'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
-import { flushOpenProjectSessions } from './open-project-sessions'
+import { flushOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
 import { importShellEnvironment } from './shell-env'
@@ -65,6 +66,12 @@ app.whenReady().then(async () => {
     .catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
   await initLocale((await loadPigSettings()).locale)
+  await worktrees.startDeletionWorker(async (cwd) => {
+    await closeSessionsForCwd(cwd)
+    await removeProjectDir(cwd)
+    await removeOpenProjectWorkspaces([cwd])
+  })
+  await removeOpenProjectWorkspaces((await worktrees.listDeletions()).map((job) => job.cwd))
   // Before the window can make one: a chat the last run left behind is nobody's.
   await pruneEmptyChatDirs().catch(() => {})
   forwardSessionNames()
@@ -73,20 +80,23 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
+  // Only an initialized process may create another window or reopen its sessions.
+  app.on('second-instance', () => {
+    const [window] = BrowserWindow.getAllWindows()
+    if (!window) return void createMainWindow()
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  })
+}).catch((error: unknown) => {
+  // Persistent-state initialization can fail on corrupt JSON or unreadable storage. This process
+  // boundary reports a fatal startup failure and exits; it must not expose a partially restored UI.
+  console.error('Pig startup failed:', error)
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
-})
-
-// The launch that stepped aside has already told this one, so the window comes back instead of
-// nothing happening at all.
-app.on('second-instance', () => {
-  const [window] = BrowserWindow.getAllWindows()
-  if (!window) return void createMainWindow()
-  if (window.isMinimized()) window.restore()
-  window.show()
-  window.focus()
 })
 
 let isDisposing = false

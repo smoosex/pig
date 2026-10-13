@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -33,6 +33,13 @@ const api: SessionApi = {
     ipcRenderer.invoke('project:worktree-deletion-info', projectCwd, cwd),
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) =>
     ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd, force),
+  listWorktreeDeletions: () => ipcRenderer.invoke('project:list-worktree-deletions'),
+  retryWorktreeDeletion: (cwd: string) => ipcRenderer.invoke('project:retry-worktree-deletion', cwd),
+  onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, jobs: WorktreeDeletionJob[]) => listener(jobs)
+    ipcRenderer.on('worktrees:deletions-changed', handler)
+    return () => ipcRenderer.off('worktrees:deletions-changed', handler)
+  },
   retryWorktreeNaming: (projectCwd: string, cwd: string) =>
     ipcRenderer.invoke('project:retry-worktree-naming', projectCwd, cwd),
   onProjectsChanged: (listener: (projectCwd: string) => void): (() => void) => {

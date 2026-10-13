@@ -1643,6 +1643,69 @@ async function runFixture(name: string): Promise<void> {
     api.listProject = async () => tied
     await state().refreshCwd(tied.cwd)
     assert.deepEqual(state().chats.map((chat) => chat.cwd), [older.cwd, newer.cwd, tied.cwd], 'a new chat with the same timestamp follows cwd order, not a prepend hint')
+  } else if (name === 'background-worktree-delete') {
+    const worktreeCwd = '/worktree'
+    const worktreeMeta = { ...meta, id: 'worktree-session', cwd: worktreeCwd }
+    const project: ProjectGroup = {
+      cwd: '/project', name: 'project', sessions: [meta, worktreeMeta],
+      worktrees: [
+        { cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [meta] },
+        { cwd: worktreeCwd, branch: 'feature', isPrimary: false, locked: false, missing: false, managed: true, sessions: [worktreeMeta] }
+      ]
+    }
+    store.setState({
+      projects: [project], currentProjectCwd: worktreeCwd, activeTabId: worktreeMeta.id,
+      openTabs: [
+        { id: worktreeMeta.id, cwd: worktreeCwd, title: 'worktree', kind: 'project', loadState: 'ready' },
+        { id: 'file-tab', cwd: worktreeCwd, title: 'file', kind: 'file', path: 'file.txt', loadState: 'ready' },
+        { id: 'kept-chat', cwd: '/chat', title: 'chat', kind: 'chat', loadState: 'ready' }
+      ]
+    })
+    const scan = deferred<ProjectGroup[]>()
+    const fresh = { ...project, sessions: [meta], worktrees: project.worktrees!.filter((item) => item.isPrimary) }
+    let scans = 0
+    api.listProjects = () => ++scans === 1 ? scan.promise : Promise.resolve([fresh])
+    api.deleteWorktree = async () => ({ cwd: worktreeCwd })
+    const loading = state().loadProjects()
+    await state().deleteWorktree('/project', worktreeCwd)
+    assert.deepEqual(state().projects[0].worktrees?.map((item) => item.cwd), ['/project'])
+    assert.deepEqual(state().projects[0].sessions.map((item) => item.id), [meta.id])
+    assert.deepEqual(state().openTabs.map((tab) => tab.id), ['kept-chat'])
+    assert.equal(state().currentProjectCwd, null)
+    assert.equal(state().activeTabId, 'kept-chat')
+    scan.resolve([project])
+    await loading
+    assert.deepEqual(state().projects[0].worktrees?.map((item) => item.cwd), ['/project'], 'a pre-enqueue scan cannot resurrect the deleted worktree')
+    assert.equal(scans, 2)
+  } else if (name === 'background-deletion-before-catalog' || name === 'background-deletion-fresh-scan-failure') {
+    const project: ProjectGroup = {
+      cwd: '/project', name: 'project', sessions: [],
+      worktrees: [
+        { cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [] },
+        { cwd: '/worktree', branch: 'feature', isPrimary: false, locked: false, missing: false, managed: true, sessions: [] }
+      ]
+    }
+    const fresh = { ...project, worktrees: project.worktrees!.filter((item) => item.isPrimary) }
+    const scan = deferred<ProjectGroup[]>()
+    const failure = Object.assign(new Error('fresh scan failed'), { code: 'EACCES' })
+    let scans = 0
+    api.listProjects = () => {
+      if (++scans === 1) return scan.promise
+      return name === 'background-deletion-fresh-scan-failure' ? Promise.reject(failure) : Promise.resolve([fresh])
+    }
+    assert.deepEqual(state().projects, [])
+    const loading = state().loadProjects()
+    state().applyWorktreeDeletions(['/worktree'])
+    scan.resolve([project])
+    if (name === 'background-deletion-fresh-scan-failure') {
+      await assert.rejects(loading, (error) => error === failure)
+      assert.deepEqual(state().projects, [])
+    } else {
+      await loading
+      assert.equal(state().projects[0].cwd, '/project', 'invalidating initial membership must not lose the surviving projects')
+      assert.deepEqual(state().projects[0].worktrees?.map((item) => item.cwd), ['/project'])
+    }
+    assert.equal(scans, 2, 'a deletion received by an empty store invalidates and refreshes the pending scan')
   } else if (name === 'deleted-chat') {
     const chat = { cwd: meta.cwd, name: 'chat', sessions: [meta] }
     store.setState({ chats: [chat] })
@@ -2033,6 +2096,9 @@ if (process.argv[2] === '--session-store-fixture') {
     'consecutive-prompts': 'sending before history refresh preserves completed live messages',
     'selection-order': 'a delayed open does not override a later tab selection',
     'deleted-chat': 'late directory scans do not restore a deleted chat',
+    'background-worktree-delete': 'background deletion acknowledgement removes the worktree and its tabs and fences stale scans',
+    'background-deletion-before-catalog': 'a deletion before initial loading rejects stale membership and loads the surviving projects',
+    'background-deletion-fresh-scan-failure': 'a failed fresh scan after deletion propagates instead of restoring stale membership',
     'chat-refresh-order': 'refreshing a chat moves it to its modified-time position immediately',
     'chat-session-delete-keeps-diff': 'deleting a chat or session does not clear worktree diff state',
     'file-tabs': 'a file tab opens no session and is remembered per worktree',

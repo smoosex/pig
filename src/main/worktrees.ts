@@ -1,9 +1,11 @@
+/** Own Git topology, branch naming and deletion tombstones; cleanup retries live in the same atomic state file. */
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
-import { execGit, isNotARepoError, type GitExecOptions } from './git/exec'
+import { execGit, GitExecError, isNotARepoError, type GitExecOptions } from './git/exec'
 import { t } from './i18n'
+import type { WorktreeDeletionJob } from '../shared/api'
 
 function resolve(path: string): string {
   const absolute = resolvePath(path)
@@ -42,6 +44,13 @@ interface WorktreeRecord {
   /** The task the attempt was given, kept so a retry is given the same one. */
   namingText?: string
   deleting?: boolean
+  backgroundDeletion?: {
+    /** Older jobs did not record consent to force deletion; missing means non-force. */
+    force?: boolean
+    attempts: number
+    error?: string
+    retryAt?: number
+  }
 }
 
 export function git(cwd: string, args: string[], options?: GitExecOptions): Promise<string> {
@@ -119,10 +128,16 @@ export class WorktreeService {
   private preps = new Map<string, Promise<{ attempt: Promise<void> }>>()
   private blocked = new Set<string>()
   private stopped = false
+  private deletionJobs = new Map<string, Promise<void>>()
+  private deletionLock: Promise<void> = Promise.resolve()
+  private deletionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private cleanDeletedSessions?: (cwd: string) => Promise<void>
 
   constructor(
     readonly root: string,
-    private readonly onChange: (projectCwd: string) => void = () => {}
+    private readonly onChange: (projectCwd: string) => void = () => {},
+    private readonly onDeletionsChanged: (jobs: WorktreeDeletionJob[]) => void = () => {},
+    private readonly deletionRetryDelays: readonly number[] = [1_000, 5_000, 30_000]
   ) {
     this.root = resolve(root)
   }
@@ -133,16 +148,18 @@ export class WorktreeService {
       if (data.version !== 1 || !Array.isArray(data.worktrees)) throw new Error('Invalid worktree state')
       return data.worktrees
     } catch (error) {
+      // No state file on the first run is an empty registry; parse and other I/O failures are fatal.
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw error
     }
   }
 
   private storageParent(project: string, records: WorktreeRecord[], name: string): string {
-    const existing = records.find((record) => record.projectCwd === project)
+    const managed = records.filter((record) => !record.deleting)
+    const existing = managed.find((record) => record.projectCwd === project)
     if (existing) return dirname(existing.cwd)
     const preferred = join(this.root, name)
-    if (records.some((record) => record.projectCwd !== project && dirname(record.cwd) === preferred)) {
+    if (managed.some((record) => record.projectCwd !== project && dirname(record.cwd) === preferred)) {
       const hash = createHash('sha256').update(project).digest('hex').slice(0, 8)
       return join(this.root, `${name}-${hash}`)
     }
@@ -203,6 +220,7 @@ export class WorktreeService {
     const items = await repositoryWorktrees(cwd)
     const records = (await this.records()).filter((r) => r.projectCwd === cwd)
     for (const record of records) {
+      if (record.backgroundDeletion) continue
       let item = items.find((w) => w.cwd === record.cwd)
       if (!item && record.deleting) {
         item = { cwd: record.cwd, branch: record.branch, head: record.head, detached: record.detached, isPrimary: false, locked: false, missing: true, managed: true }
@@ -217,7 +235,8 @@ export class WorktreeService {
         item.namingError = record.namingError || (record.naming === 'naming' && !this.namingJobs.has(item.cwd) ? t('naming.interrupted') : undefined)
       }
     }
-    return items
+    const deleting = new Set(records.filter((record) => record.backgroundDeletion).map((record) => record.cwd))
+    return items.filter((item) => !deleting.has(item.cwd))
   }
 
   async create(projectCwd: string): Promise<GitWorktree> {
@@ -266,38 +285,186 @@ export class WorktreeService {
     return { worktree, dirty, unmerged }
   }
 
-  async remove(projectCwd: string, cwd: string, force: boolean, close: () => Promise<void>, cleanSessions: () => Promise<void>): Promise<void> {
+  async remove(
+    projectCwd: string,
+    cwd: string,
+    force: boolean,
+    close: () => Promise<void>,
+    cleanSessions: () => Promise<void>,
+    options: { background?: boolean } = {}
+  ): Promise<void> {
+    const { background = false } = options
     const path = resolve(cwd)
     return this.exclusive(projectCwd, async () => {
       this.assertAvailable(path)
+      if (background && !this.cleanDeletedSessions) {
+        throw Object.assign(new Error('Worktree deletion worker is not ready'), { code: 'ERR_WORKTREE_DELETION_WORKER_NOT_READY' })
+      }
       const initial = await this.deletionInfo(projectCwd, path)
       if (!force && (initial.dirty || initial.unmerged)) throw new Error(t('error.worktreeDirty'))
       this.blocked.add(path)
       this.namingJobs.get(path)?.controller.abort()
+      let queued = false
       try {
         await close()
         const { worktree, dirty, unmerged } = await this.deletionInfo(projectCwd, path)
         if (!force && (dirty || unmerged)) throw new Error(t('error.worktreeNewChanges'))
         await this.update((records) => {
           const record = records.find((r) => r.cwd === path)
-          const deletion = { branch: worktree.branch, head: worktree.head, detached: worktree.detached, deleting: true }
+          const deletion = {
+            branch: worktree.branch, head: worktree.head, detached: worktree.detached, deleting: true,
+            backgroundDeletion: background ? { force, attempts: 0 } : undefined
+          }
           if (record) return records.map((r) => r === record ? { ...r, ...deletion } : r)
           return [...records, { projectCwd, cwd: path, initialBranch: worktree.branch, ...deletion }]
         })
-        const registered = (await repositoryWorktrees(projectCwd)).find((w) => w.cwd === path)
-        if (registered) await git(projectCwd, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
-        const branch = worktree.branch
-        if (!worktree.detached && branch) {
-          const exists = await git(projectCwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true).catch(() => false)
-          if (exists) await git(projectCwd, ['branch', '-D', branch])
+        if (background) {
+          queued = true
+          // Every window must see the tombstone even if cleanup finishes before IPC returns.
+          try {
+            await this.publishDeletions()
+          } finally {
+            this.scheduleDeletion(path, 0)
+          }
+        } else {
+          await this.cleanWorktree(projectCwd, worktree, force, cleanSessions)
         }
-        await cleanSessions()
-        await this.update((records) => records.filter((r) => r.cwd !== path))
       } finally {
-        this.blocked.delete(path)
+        if (!queued) this.blocked.delete(path)
         this.onChange(projectCwd)
       }
     })
+  }
+
+  private async cleanWorktree(
+    projectCwd: string,
+    worktree: Pick<GitWorktree, 'cwd' | 'branch' | 'head' | 'detached'>,
+    force: boolean,
+    cleanSessions: () => Promise<void>,
+    authorized = false
+  ): Promise<void> {
+    const path = worktree.cwd
+    const registered = (await repositoryWorktrees(projectCwd)).find((w) => w.cwd === path)
+    if (registered) {
+      if (authorized && (registered.branch !== worktree.branch || registered.head !== worktree.head || Boolean(registered.detached) !== Boolean(worktree.detached))) {
+        throw new Error(t('error.worktreeDeletionChanged'))
+      }
+      if (!force && !registered.missing && (await git(path, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0) {
+        throw new Error(t('error.worktreeNewChanges'))
+      }
+      await git(projectCwd, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    }
+    const branch = worktree.branch
+    if (!worktree.detached && branch) {
+      const ref = `refs/heads/${branch}`
+      const exists = await git(projectCwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true).catch((error: unknown) => {
+        if (error instanceof GitExecError && error.code === 1) return false
+        throw error
+      })
+      if (exists) {
+        if (authorized && worktree.head && (await git(projectCwd, ['rev-parse', ref])).trim() !== worktree.head) {
+          throw new Error(t('error.worktreeDeletionChanged'))
+        }
+        await git(projectCwd, ['branch', '-D', branch])
+      }
+    }
+    await cleanSessions()
+    await this.update((records) => records.filter((r) => r.cwd !== path))
+  }
+
+  /** Restore tombstones before the window can reopen their sessions. */
+  async startDeletionWorker(cleanSessions: (cwd: string) => Promise<void>): Promise<void> {
+    const records = await this.records()
+    this.cleanDeletedSessions = cleanSessions
+    for (const record of records) {
+      if (!record.backgroundDeletion) continue
+      this.blocked.add(record.cwd)
+      const deletion = record.backgroundDeletion
+      if (!deletion.error || deletion.retryAt !== undefined) {
+        this.scheduleDeletion(record.cwd, Math.max(0, (deletion.retryAt ?? 0) - Date.now()))
+      }
+    }
+  }
+
+  async listDeletions(): Promise<WorktreeDeletionJob[]> {
+    return (await this.records()).filter((record) => record.backgroundDeletion).map((record) => {
+      const deletion = record.backgroundDeletion!
+      return {
+        projectCwd: record.projectCwd, cwd: record.cwd, branch: record.branch,
+        attempts: deletion.attempts, error: deletion.error, retryAt: deletion.retryAt,
+        status: this.deletionJobs.has(record.cwd) ? 'running'
+          : deletion.error ? deletion.retryAt !== undefined ? 'retrying' : 'failed' : 'pending'
+      }
+    })
+  }
+
+  private async publishDeletions(): Promise<void> {
+    this.onDeletionsChanged(await this.listDeletions())
+  }
+
+  async retryDeletion(cwd: string): Promise<void> {
+    const path = resolve(cwd)
+    if (this.stopped) throw new Error(t('error.worktreeBusy'))
+    const record = (await this.records()).find((item) => item.cwd === path && item.backgroundDeletion)
+    if (!record) throw new Error(t('error.worktreeNotOpen'))
+    await this.exclusive(record.projectCwd, async () => {
+      if (this.stopped) throw new Error(t('error.worktreeBusy'))
+      if (this.deletionJobs.has(path)) return
+      await this.update((records) => records.map((item) => item.cwd === path
+        ? { ...item, backgroundDeletion: { ...item.backgroundDeletion, attempts: 0, error: undefined, retryAt: undefined } } : item))
+      try {
+        await this.publishDeletions()
+      } finally {
+        this.scheduleDeletion(path, 0)
+      }
+    })
+  }
+
+  private scheduleDeletion(path: string, delay: number): void {
+    if (this.stopped) return
+    clearTimeout(this.deletionTimers.get(path))
+    const timer = setTimeout(() => {
+      this.deletionTimers.delete(path)
+      if (this.stopped || this.deletionJobs.has(path)) return
+      const task = this.deletionLock.then(() => this.runDeletion(path)).finally(async () => {
+        this.deletionJobs.delete(path)
+        await this.publishDeletions()
+        const record = (await this.records()).find((item) => item.cwd === path)
+        if (record?.backgroundDeletion?.retryAt !== undefined) {
+          this.scheduleDeletion(path, Math.max(0, record.backgroundDeletion.retryAt - Date.now()))
+        }
+      })
+      this.deletionLock = task.catch(() => {})
+      this.deletionJobs.set(path, task)
+      void task.catch((error) => console.error('Background worktree deletion failed:', error))
+    }, delay)
+    this.deletionTimers.set(path, timer)
+  }
+
+  private async runDeletion(path: string): Promise<void> {
+    const record = (await this.records()).find((item) => item.cwd === path && item.backgroundDeletion)
+    if (!record || this.stopped) return
+    const deletion = record.backgroundDeletion!
+    const attempts = deletion.attempts + 1
+    try {
+      await this.update((records) => records.map((item) => item.cwd === path
+        ? { ...item, backgroundDeletion: { ...deletion, attempts, error: undefined, retryAt: undefined } } : item))
+      await this.publishDeletions()
+      // Preparation alone holds the project lock. Cleanup uses its frozen tombstone and Git's
+      // own locks, so a slow directory removal cannot block creating or queuing another worktree.
+      // Retries keep the original force choice: a tombstone is not permission to discard new files.
+      await this.cleanWorktree(record.projectCwd, record, deletion.force === true, () => this.cleanDeletedSessions!(path), true)
+      this.blocked.delete(path)
+    } catch (error) {
+      // This task boundary translates Git/cleanup failures into durable retry state and UI notices.
+      // If recording the failure also fails, that I/O error propagates to the worker boundary.
+      const message = error instanceof Error ? error.message : String(error)
+      const delay = this.deletionRetryDelays[attempts - 1]
+      await this.update((records) => records.map((item) => item.cwd === path
+        ? { ...item, backgroundDeletion: { ...deletion, attempts, error: message, retryAt: delay === undefined ? undefined : Date.now() + delay } }
+        : item))
+      console.error('Background worktree deletion failed:', path, message)
+    }
   }
 
   nameOnFirstPrompt(cwd: string, text: string, generate: (text: string, signal: AbortSignal) => Promise<string>): Promise<void> {
@@ -414,10 +581,13 @@ export class WorktreeService {
 
   async shutdown(): Promise<void> {
     this.stopped = true
+    for (const timer of this.deletionTimers.values()) clearTimeout(timer)
+    this.deletionTimers.clear()
     for (const job of this.namingJobs.values()) job.controller.abort()
     // Preparation rechecks `stopped` after reading and writing, so it cannot register another job.
     await Promise.allSettled([...this.preps.values()])
     await Promise.allSettled([...this.namingJobs.values()].map((job) => job.done))
+    await Promise.allSettled([...this.deletionJobs.values()])
     await Promise.allSettled([...this.locks.values()])
     await this.stateLock
   }

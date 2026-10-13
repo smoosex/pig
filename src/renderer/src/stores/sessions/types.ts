@@ -229,6 +229,7 @@ export interface SessionsStore {
   newChat: () => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<void>
+  applyWorktreeDeletions: (cwds: string[]) => void
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>

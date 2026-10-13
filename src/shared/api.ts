@@ -72,6 +72,17 @@ export interface WorktreeCreateInfo {
   hasHead: boolean
 }
 
+/** Durable background cleanup; failed jobs remain available for a manual retry. */
+export interface WorktreeDeletionJob {
+  projectCwd: string
+  cwd: string
+  branch: string
+  attempts: number
+  status: 'pending' | 'running' | 'retrying' | 'failed'
+  error?: string
+  retryAt?: number
+}
+
 export interface WorktreeDeletionInfo {
   cwd: string
   branch: string
@@ -723,7 +734,11 @@ export interface SessionApi extends ToolSettingsApi {
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>
   worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
-  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string; project: ProjectGroup } | null>
+  /** Returns after validation, session shutdown and durable enqueue, not directory cleanup. */
+  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string } | null>
+  listWorktreeDeletions: () => Promise<WorktreeDeletionJob[]>
+  retryWorktreeDeletion: (cwd: string) => Promise<void>
+  onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void) => () => void
   /**
    * Names a worktree whose first attempt failed, from the earliest session's first message. Returns
    * as soon as the attempt is recorded; the outcome arrives through `onProjectsChanged` like the first try.
