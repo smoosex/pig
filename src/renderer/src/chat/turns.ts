@@ -99,6 +99,23 @@ function lastToolCallIndex(content: AssistantMessage['content']): number {
   return -1
 }
 
+/**
+ * Union of the models behind one turn's samples, in first-seen order. A model switch mid-turn makes
+ * the summed window a blend, so the identities have to survive the addition.
+ */
+function mergeGenerationModels(
+  first: readonly string[] | undefined,
+  second: readonly string[] | undefined
+): string[] {
+  if (!first?.length) return second ? [...second] : []
+  if (!second?.length) return [...first]
+  const merged = [...first]
+  for (const model of second) {
+    if (!merged.includes(model)) merged.push(model)
+  }
+  return merged
+}
+
 function hashText(value: string): string {
   let hash = 2166136261
   for (let i = 0; i < value.length; i++) {
@@ -330,7 +347,8 @@ export function buildTurn(
       if (message.generation) {
         generation = {
           outputTokens: (generation?.outputTokens ?? 0) + message.generation.outputTokens,
-          durationMs: (generation?.durationMs ?? 0) + message.generation.durationMs
+          durationMs: (generation?.durationMs ?? 0) + message.generation.durationMs,
+          models: mergeGenerationModels(generation?.models, message.generation.models)
         }
       }
       if (streaming) {

@@ -306,7 +306,11 @@ export function bridgeEvents(
       const last = timing?.lastOutputAt
       const outputTokens = event.message.usage?.output ?? 0
       if (first !== undefined && last !== undefined && last > first && outputTokens > 0) {
-        generation = { outputTokens, durationMs: last - first }
+        generation = {
+          outputTokens,
+          durationMs: last - first,
+          models: [`${event.message.provider}/${event.message.model}`]
+        }
       }
       generationTiming = undefined
     }

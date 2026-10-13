@@ -173,6 +173,12 @@ export interface SessionTokenStats {
 export interface GenerationStats {
   outputTokens: number
   durationMs: number
+  /**
+   * `provider/model` identities behind these tokens, in first-seen order. A single model call
+   * contributes one entry; a turn that spans a model switch contributes several, and then the
+   * summed figure is a blend rather than any one model's decode speed.
+   */
+  models: string[]
 }
 
 /**

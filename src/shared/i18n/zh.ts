@@ -461,6 +461,7 @@ export const zh = {
     workedFor: '工作耗时 {duration}',
     tps: '{value} tok/s',
     tpsDescription: '输出速度，不包含首字等待和工具执行时间',
+    tpsMixedModels: '本轮切换过模型（{models}），这是它们的混合速度',
     createFork: '创建分支',
     forkFailed: '创建分支失败',
     retryMessage: '重新生成',
