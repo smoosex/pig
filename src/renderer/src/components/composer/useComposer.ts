@@ -7,6 +7,7 @@ import { useFileMentions } from './useFileMentions'
 import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
+import { useSystemUIStore } from '../../stores/system-ui'
 
 /** Coordinates session-owned drafts with pane-local editors and attachment previews. */
 export function useComposer(
@@ -19,6 +20,7 @@ export function useComposer(
   const effectiveActiveSessionId = (explicitSessionId != null && explicitSessionId !== '') ? explicitSessionId : activeSessionId
   const sessionId = effectiveActiveSessionId ?? draftSessionId ?? null
   const isDraftSession = Boolean(!effectiveActiveSessionId && draftCwd && draftSessionId)
+  const inputDisabled = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)
@@ -27,7 +29,7 @@ export function useComposer(
   // session's id on both sides; keying the home by cwd alone would clear the editor on promote.
   const draftKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
   const attachments = useComposerImages(draftKey)
-  const document = useComposerEditor({ sessionId: draftKey, isActive, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
+  const document = useComposerEditor({ sessionId: draftKey, isActive, disabled: inputDisabled, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
   const { editor, draft, replaceText } = document
   const restoreVersion = useComposerDraftsStore((state) => draftKey
     ? state.drafts[draftKey]?.restoreVersion ?? 0 : 0)
@@ -68,13 +70,13 @@ export function useComposer(
   const commands = useSlashCommands(sessionId, draft.text, (command) => {
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
-  }, bashMode)
+  }, bashMode || inputDisabled)
   // A draft is its own workspace; a tab reads the workspace off the session behind it.
   const activeCwd = useSessionsStore((state) => explicitSessionId
     ? state.openTabs.find((tab) => tab.id === explicitSessionId)?.cwd ?? null
     : selectActiveSessionCwd(state))
   const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
-  const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode })
+  const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode || inputDisabled })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 
   useEffect(() => {
@@ -85,6 +87,7 @@ export function useComposer(
   }, [sessionId, clearQueuedEditText, editor, queuedEditText, replaceText])
 
   function handleKeyDown(event: KeyboardEvent): boolean {
+    if (inputDisabled) return false
     if (bashMode && event.key === 'Escape') {
       event.preventDefault()
       setDismissedBashKey(draftKey)
@@ -111,5 +114,5 @@ export function useComposer(
     return true
   }
 
-  return { sessionId, isDraftSession, isStreaming, bashMode, canRunBash: Boolean((enteringBash ? draft.text.slice(1) : draft.text).trim()), editor, hasDraft, commands, mentions, attachments, ...submission }
+  return { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash: Boolean((enteringBash ? draft.text.slice(1) : draft.text).trim()), editor, hasDraft, commands, mentions, attachments, ...submission }
 }

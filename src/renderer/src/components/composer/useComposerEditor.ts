@@ -16,6 +16,7 @@ import { useComposerDraftsStore } from '../../stores/composer-drafts'
 interface ComposerEditorOptions {
   sessionId: string | null
   isActive?: boolean
+  disabled?: boolean
   onKeyDown: (event: KeyboardEvent) => boolean
   onPasteImages: (files: File[]) => Promise<void>
 }
@@ -65,6 +66,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   callbacks.current = options
 
   const editor = useEditor({
+    editable: Boolean(options.sessionId) && !options.disabled,
     // ProseMirror joins blocks with a blank line when it writes text/plain to the clipboard, which
     // would add one newline per paragraph on the way back in. The draft's own form is a single '\n'.
     coreExtensionOptions: { clipboardTextSerializer: { blockSeparator: '\n' } },
@@ -103,6 +105,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
         'data-slot': 'input-group-control',
         'aria-label': t('composer.messageLabel'),
         'aria-multiline': 'true',
+        'aria-disabled': String(!options.sessionId || Boolean(options.disabled)),
         class: 'min-h-16 outline-none whitespace-pre-wrap break-words'
       },
       handleDOMEvents: {
@@ -120,6 +123,10 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           return false
         },
         drop: (view, event) => {
+          if (callbacks.current.disabled || !view.editable) {
+            event.preventDefault()
+            return true
+          }
           if (view.dragging) return false
           const drag = event as DragEvent
           const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
@@ -131,11 +138,16 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           return true
         }
       },
-      handleKeyDown: (_view, event) => {
+      handleKeyDown: (view, event) => {
+        if (callbacks.current.disabled || !view.editable) return false
         if (event.isComposing || composing.current || event.keyCode === 229) return false
         return callbacks.current.onKeyDown(event)
       },
       handlePaste: (view, event) => {
+        if (callbacks.current.disabled || !view.editable) {
+          event.preventDefault()
+          return true
+        }
         const data = event.clipboardData
         const pastedText = data?.getData('text/plain') ?? ''
         const markup = Boolean(data?.getData('text/html'))
@@ -194,18 +206,22 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     const next = serializeComposerDocument(content)
     currentDraft.current = next
     setDraft(next)
-    editor?.setEditable(Boolean(options.sessionId))
     // Only a new external restoration in this active editor moves focus, not ordinary tab hydration.
     const previous = appliedRestore.current
-    if (previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false) {
+    if (previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false && !options.disabled) {
       editor?.commands.focus('end')
     }
     appliedRestore.current = { sessionId: options.sessionId, version: restoreVersion }
   }, [options.sessionId, editor, restoreVersion])
 
+  // Editability changes must not rehydrate the document: locking a return preserves its draft.
+  useLayoutEffect(() => {
+    editor?.setEditable(Boolean(options.sessionId) && !options.disabled, false)
+  }, [editor, options.sessionId, options.disabled])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (callbacks.current.isActive === false) return
+      if (callbacks.current.isActive === false || callbacks.current.disabled || !editor?.isEditable) return
       if (
         !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
         event.key.toLowerCase() !== 'l' || event.isComposing || event.keyCode === 229 ||

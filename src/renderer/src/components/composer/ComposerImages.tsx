@@ -6,11 +6,13 @@ import type { PastedImage } from './useComposerImages'
 export function ComposerImages({
   images,
   onPreview,
-  onRemove
+  onRemove,
+  disabled = false
 }: {
   images: PastedImage[]
   onPreview: (url: string) => void
   onRemove: (id: string) => void
+  disabled?: boolean
 }) {
   // Hooks stay above the early return: the strip mounts once and images come and go on the same instance.
   const t = useT()
@@ -35,6 +37,7 @@ export function ComposerImages({
             size="icon-xs"
             className="absolute top-0.5 right-0.5 size-3.5 rounded-full bg-popover p-0 text-popover-foreground shadow-sm hover:bg-accent hover:text-accent-foreground [&_svg]:size-2"
             aria-label={t('composer.removeImage')}
+            disabled={disabled}
             onClick={() => onRemove(image.id)}
           >
             <X />

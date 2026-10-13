@@ -1391,6 +1391,7 @@ Instructions:
 		const sessionId = ctx.sessionManager.getSessionId();
 		endReviewInProgress.add(sessionId);
 		try {
+			reviewUI(ctx).setReturning(true);
 			const choice = await reviewUI(ctx).choose("finish", [
 				{ value: "returnOnly", label: "Return only" },
 				{ value: "returnAndFix", label: "Return and fix findings" },
@@ -1414,6 +1415,7 @@ Instructions:
 			});
 		} finally {
 			endReviewInProgress.delete(sessionId);
+			reviewUI(ctx).setReturning(false);
 		}
 	}
 

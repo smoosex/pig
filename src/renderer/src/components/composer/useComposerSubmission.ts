@@ -8,6 +8,7 @@ import { composerUserMessage, textToComposerDocument } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import type { useComposerImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
+import { useSystemUIStore } from '../../stores/system-ui'
 
 interface SubmissionOptions {
   sessionId: string | null
@@ -58,7 +59,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
   }, [recoverable, document.draft, attachments.images, sessionId])
 
   async function send(streamingBehavior: PromptStreamingBehavior = 'followUp'): Promise<void> {
-    if (!document.editor) return
+    if (!document.editor || (sessionId && useSystemUIStore.getState().returningReviewSessions[sessionId])) return
     const serialized = document.getDraft()
     const images = attachments.getImages()
     const hasAttachments = serialized.attachments.length > 0

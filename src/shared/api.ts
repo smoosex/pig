@@ -590,6 +590,7 @@ export type SystemUIEvent =
   | { kind: 'dismiss'; id: string; sessionId: string }
   | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
   | { kind: 'review-state'; sessionId: string; active: boolean }
+  | { kind: 'review-returning'; sessionId: string; returning: boolean }
   | { kind: 'reset'; sessionId: string }
 
 export interface MemoryPluginSettings {

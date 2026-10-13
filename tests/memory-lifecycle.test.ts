@@ -96,7 +96,7 @@ async function fixture(scenario: string): Promise<void> {
   registerSystemUI('session', {
     send: () => {},
     memory: { notify: (message) => notifications.push(message) },
-    review: { available: true, notify: () => {}, setActive: () => {}, choose: async () => undefined, edit: async () => undefined }
+    review: { available: true, returning: false, notify: () => {}, setActive: () => {}, setReturning: () => {}, choose: async () => undefined, edit: async () => undefined }
   })
   const { default: plugin } = await import('../src/main/plugins/observational-memory/index')
   const { memoryRuntime } = await import('../src/main/plugins/observational-memory/runtime')

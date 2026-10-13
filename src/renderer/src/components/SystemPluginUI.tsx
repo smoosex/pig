@@ -124,10 +124,12 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
       })
     }
     if (event.kind === 'review-state') useSystemUIStore.getState().setReviewActive(event.sessionId, event.active)
+    if (event.kind === 'review-returning') useSystemUIStore.getState().setReviewReturning(event.sessionId, event.returning)
     if (event.kind === 'reset') {
       setPrompts((items) => items.filter((item) => item.sessionId !== event.sessionId))
       setNotices((items) => items.filter((item) => item.sessionId !== event.sessionId))
       useSystemUIStore.getState().setReviewActive(event.sessionId, false)
+      useSystemUIStore.getState().setReviewReturning(event.sessionId, false)
       setDetail((item) => item?.sessionId === event.sessionId ? null : item)
     }
   }), [])

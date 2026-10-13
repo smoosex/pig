@@ -24,12 +24,14 @@ export function cancelSystemPrompts(sessionId: string): void {
 
 export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNotifier {
   let hasState = false
+  let returning = false
   const send = (event: SystemUIEvent): void => {
     if (win.isDestroyed() || win.webContents.isDestroyed()) return
     if (event.kind !== 'dismiss' && event.kind !== 'reset') hasState = true
     win.webContents.send('system-plugins:ui', event)
   }
   resetters.set(sessionId, () => {
+    returning = false
     if (hasState) send({ kind: 'reset', sessionId })
     hasState = false
   })
@@ -54,9 +56,14 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
     memory: notifier('memory'),
     review: {
       ...notifier('review'), available: true,
+      get returning() { return returning },
       choose: (step, options) => prompt(step, options),
       edit: (step, prefill) => prompt(step, undefined, prefill),
-      setActive: (active) => send({ kind: 'review-state', sessionId, active })
+      setActive: (active) => send({ kind: 'review-state', sessionId, active }),
+      setReturning: (value) => {
+        returning = value
+        send({ kind: 'review-returning', sessionId, returning })
+      }
     }
   })
   return notifier('host')

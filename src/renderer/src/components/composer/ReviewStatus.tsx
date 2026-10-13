@@ -10,20 +10,24 @@ import { Button } from '../ui/button'
 export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   const t = useT()
   const active = useSystemUIStore((state) => !!sessionId && !!state.reviewSessions[sessionId])
-  const [ending, setEnding] = useState(false)
+  const returning = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
+  const [pending, setPending] = useState(false)
+  const ending = returning || pending
 
-  if (!sessionId || !active) return null
+  if (!sessionId || (!active && !ending)) return null
 
   const endReview = async () => {
-    setEnding(true)
+    if (pending || useSystemUIStore.getState().returningReviewSessions[sessionId]) return
+    setPending(true)
     try {
       await api.prompt(sessionId, '/end-review')
     } catch (error) {
+      // Report IPC rejection (including a duplicate return) here; only the host can release its lock.
       toast.error(t('reviewUI.endFailed'), {
         description: error instanceof Error ? error.message : String(error)
       })
     } finally {
-      setEnding(false)
+      setPending(false)
     }
   }
 
@@ -35,8 +39,8 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
       <Badge className="h-6 gap-1.5 py-0.5 pr-1 pl-2.5 shadow-md shadow-primary/40 inset-shadow-[0_1px_0_0_color-mix(in_srgb,var(--primary)_75%,white)] dark:shadow-primary/25">
         <span role="status" className="flex items-center gap-1.5">
           <ScanEye aria-hidden="true" className="size-3" />
-          <span className="hidden @min-md/composer-column:inline">{t('reviewUI.active')}</span>
-          <span className="@min-md/composer-column:hidden">{t('reviewUI.activeCompact')}</span>
+          <span className="hidden @min-md/composer-column:inline">{t(ending ? 'reviewUI.returning' : 'reviewUI.active')}</span>
+          <span className="@min-md/composer-column:hidden">{t(ending ? 'reviewUI.returning' : 'reviewUI.activeCompact')}</span>
         </span>
         <Button
           type="button"

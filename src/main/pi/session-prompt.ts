@@ -4,6 +4,7 @@ import { nameWorktreeBranch } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
 import { normalizeSessionPrompt, type SessionPromptInput } from './prompt-input'
 import { activateSessionInput } from './session-registry'
+import { isReviewReturning } from '../plugins/pig-ui'
 
 /**
  * Submit a prompt and attach display metadata when Pi accepts its user message.
@@ -15,6 +16,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
     releaseInput
   } = await activateSessionInput(sessionId)
   try {
+    if (isReviewReturning(sessionId)) throw new Error('Cannot submit a prompt while returning from review. Wait for the return to finish and retry.')
     const prompt = normalizeSessionPrompt(input)
     worktrees.assertAvailable(cwd)
     if (agentSession.isBashRunning) throw new Error('Session is running a bash command')

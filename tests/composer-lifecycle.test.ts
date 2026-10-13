@@ -19,6 +19,7 @@ async function runFixture(name: string): Promise<void> {
       const { useComposerEditor } = await import('../src/renderer/src/components/composer/useComposerEditor')
       let state!: ReturnType<typeof useComposerEditor>
       let forwarded = 0
+      let imagePastes = 0
       const frames = new Map<number, FrameRequestCallback>()
       let nextFrame = 0
       globalThis.requestAnimationFrame = (callback) => {
@@ -26,8 +27,8 @@ async function runFixture(name: string): Promise<void> {
         return nextFrame
       }
       globalThis.cancelAnimationFrame = (id) => { frames.delete(id) }
-      function Probe({ sessionId, isActive = true }: { sessionId: string; isActive?: boolean }) {
-        state = useComposerEditor({ sessionId, isActive, onKeyDown: () => { forwarded++; return true }, onPasteImages: async () => {} })
+      function Probe({ sessionId, isActive = true, disabled = false }: { sessionId: string; isActive?: boolean; disabled?: boolean }) {
+        state = useComposerEditor({ sessionId, isActive, disabled, onKeyDown: () => { forwarded++; return true }, onPasteImages: async () => { imagePastes++ } })
         return null
       }
       await act(async () => { root.render(createElement(Probe, { sessionId: 'one' })) })
@@ -151,6 +152,32 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { state.replaceText('旧会话') })
       await act(async () => { root.render(createElement(Probe, { sessionId: 'two' })) })
       assert.equal(state.getDraft().text, '')
+      await act(async () => { state.replaceText('保留草稿') })
+      await act(async () => { root.render(createElement(Probe, { sessionId: 'two', disabled: true })) })
+      assert.equal(editor.isEditable, false)
+      assert.equal(editor.view.dom.getAttribute('contenteditable'), 'false')
+      assert.equal(editor.view.dom.getAttribute('aria-disabled'), 'true')
+      assert.equal(keyDown({ key: 'Enter' }), false)
+      assert.equal(keyDown({ key: 'Tab' }), false)
+      assert.equal(forwarded, 1)
+      assert.equal((await paste('不应插入')).text, '保留草稿')
+      await act(async () => {
+        props.handleDOMEvents!.drop!.call(undefined, editor.view, dropped)
+        props.handlePaste!.call(undefined, editor.view, {
+          clipboardData: { getData: () => '', files: [new File(['image'], 'image.png', { type: 'image/png' })], items: [] },
+          preventDefault: () => {}
+        } as unknown as ClipboardEvent, editor.state.selection.content())
+      })
+      assert.equal(state.getDraft().text, '保留草稿')
+      assert.equal(imagePastes, 0)
+      await act(async () => { root.render(createElement(Probe, { sessionId: 'three' })) })
+      assert.equal(editor.isEditable, true, 'another session remains editable')
+      await act(async () => { root.render(createElement(Probe, { sessionId: 'two', disabled: true })) })
+      assert.equal(editor.isEditable, false)
+      assert.equal(state.getDraft().text, '保留草稿')
+      await act(async () => { root.render(createElement(Probe, { sessionId: 'two' })) })
+      assert.equal(editor.isEditable, true)
+      assert.equal(state.getDraft().text, '保留草稿', 'unlocking does not replace the draft')
     } else {
       const { useComposerImages } = await import('../src/renderer/src/components/composer/useComposerImages')
       const reads: FakeFileReader[] = []
