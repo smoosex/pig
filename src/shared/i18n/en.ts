@@ -609,7 +609,10 @@ export const en: Messages = {
     noMatch: 'No model matches',
     pickerFallback: 'Model',
     refresh: 'Refresh models',
-    thinking: 'Thinking effort'
+    thinking: 'Thinking effort',
+    switched: 'Model switched to {name}',
+    thinkingSwitched: 'Thinking effort set to {level}',
+    appliesNextRequest: 'Takes effect on the next request'
   },
   providers: {
     configuredCount: 'Configured providers: {count}',

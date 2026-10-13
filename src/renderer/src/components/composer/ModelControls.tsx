@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
 import { thinkingLevelKeys } from '../../lib/thinking-levels'
@@ -91,9 +92,16 @@ export function ModelPicker({
     )
   }, [models, query])
 
+  // The switch applies to the next request, not to the turn already streaming: say so, since the
+  // toolbar alone gives no sign that the running turn keeps its previous model.
   const select = async (item: SessionModelInfo) => {
+    if (model?.provider === item.provider && model.id === item.id) {
+      setOpen(false)
+      return
+    }
     if (sessionId && await actions.run(() => api.setModel(sessionId, item.provider, item.id))) {
       setOpen(false)
+      toast.success(t('model.switched', { name: item.name }), { description: t('model.appliesNextRequest') })
     }
   }
 
@@ -213,7 +221,16 @@ export function ThinkingPicker({
   const [open, setOpen] = useState(false)
 
   const select = async (level: ThinkingLevel) => {
-    if (sessionId && await actions.run(() => api.setThinking(sessionId, level))) setOpen(false)
+    if (level === thinkingLevel) {
+      setOpen(false)
+      return
+    }
+    if (sessionId && await actions.run(() => api.setThinking(sessionId, level))) {
+      setOpen(false)
+      toast.success(t('model.thinkingSwitched', { level: t(thinkingLevelKeys[level]) }), {
+        description: t('model.appliesNextRequest')
+      })
+    }
   }
   const contentRef = useRef<HTMLDivElement>(null)
   const navigation = useModelNavigation(thinkingLevels, open, (level) => { void select(level) })
