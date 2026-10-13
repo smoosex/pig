@@ -11,7 +11,7 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Separator } from '../ui/separator'
-import { Chevron, disclosureButton, VerbLabel } from './ProcessChrome'
+import { Chevron, disclosureButton, Rail, VerbLabel } from './ProcessChrome'
 import { useT } from '../../hooks/useT'
 import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
 import { NestedToolCalls } from './NestedToolCalls'
@@ -196,12 +196,14 @@ export function ToolCluster({ steps }: { steps: ToolStep[] }) {
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="px-1 pt-1">
-        <div className="flex min-w-0 flex-col">
-          {steps.map((step) => (
-            <ToolRow key={step.id} step={step} />
-          ))}
-        </div>
+      <CollapsibleContent>
+        <Rail>
+          <div className="flex min-w-0 flex-col">
+            {steps.map((step) => (
+              <ToolRow key={step.id} step={step} />
+            ))}
+          </div>
+        </Rail>
       </CollapsibleContent>
     </Collapsible>
   )
@@ -220,12 +222,14 @@ export function BashCluster({ messages }: { messages: BashExecutionMessage[] }) 
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="px-1 pt-1">
-        <div className="flex min-w-0 flex-col">
-          {messages.map((message, i) => (
-            <BashRow key={i} message={message} />
-          ))}
-        </div>
+      <CollapsibleContent>
+        <Rail>
+          <div className="flex min-w-0 flex-col">
+            {messages.map((message, i) => (
+              <BashRow key={i} message={message} />
+            ))}
+          </div>
+        </Rail>
       </CollapsibleContent>
     </Collapsible>
   )

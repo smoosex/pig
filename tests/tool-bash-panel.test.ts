@@ -22,7 +22,7 @@ async function runFixture(): Promise<void> {
   const { createRoot } = await import('react-dom/client')
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
-  const { ToolRow, BashRow } = await import('../src/renderer/src/components/turn/ToolDetails')
+  const { ToolRow, BashRow, ToolCluster, BashCluster } = await import('../src/renderer/src/components/turn/ToolDetails')
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -118,6 +118,37 @@ async function runFixture(): Promise<void> {
     assert.equal(panels()[0].classList.contains('border-code-border'), true)
     assert.equal(panels()[0].querySelector('.max-h-80')?.classList.contains('bg-code-background'), false)
     assert.equal(panels()[0].querySelector('.token')?.textContent, 'file contents')
+
+    // ToolCluster and BashCluster expand with a guide rail line in front of items
+    await act(async () => {
+      root.render(createElement(ToolCluster, {
+        steps: [
+          { id: 'bash-c1', name: 'bash', args: { command: 'echo first' } },
+          { id: 'bash-c2', name: 'bash', args: { command: 'echo second' } }
+        ]
+      }))
+    })
+    const clusterBtn = container.querySelector('button')!
+    assert.equal(clusterBtn.textContent?.includes('Run 2 commands'), true)
+    await act(async () => { clusterBtn.click() })
+    const railLine = container.querySelector('[data-slot="collapsible-content"] .bg-border')
+    assert.ok(railLine, 'expected Rail line with bg-border inside ToolCluster')
+    assert.equal(container.querySelectorAll('[data-slot="collapsible-content"] button').length, 2)
+
+    await act(async () => {
+      root.render(createElement(BashCluster, {
+        messages: [
+          { role: 'bashExecution', command: 'echo one', output: '1', exitCode: 0, cancelled: false, truncated: false, timestamp: 1 },
+          { role: 'bashExecution', command: 'echo two', output: '2', exitCode: 0, cancelled: false, truncated: false, timestamp: 2 }
+        ]
+      }))
+    })
+    const bashClusterBtn = container.querySelector('button')!
+    assert.equal(bashClusterBtn.textContent?.includes('Run 2 commands'), true)
+    await act(async () => { bashClusterBtn.click() })
+    const bashRailLine = container.querySelector('[data-slot="collapsible-content"] .bg-border')
+    assert.ok(bashRailLine, 'expected Rail line with bg-border inside BashCluster')
+    assert.equal(container.querySelectorAll('[data-slot="collapsible-content"] button').length, 2)
   } finally {
     await act(async () => { root.unmount() })
     await GlobalRegistrator.unregister()
