@@ -1,5 +1,6 @@
 /**
- * Project/chat discovery and membership changes.
+ * Project/chat discovery, membership changes and sidebar expansion.
+ * Expansion belongs to the catalog rather than its mounted rows, so switching halves preserves it.
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
@@ -22,6 +23,11 @@ export const createCatalogSlice: SessionSlice<
   | 'projects'
   | 'chats'
   | 'isReorderingProjects'
+  | 'expandedProjects'
+  | 'expandedWorktrees'
+  | 'setProjectExpanded'
+  | 'setWorktreeExpanded'
+  | 'revealProjectWorktree'
   | 'loadProjects'
   | 'syncProjectWorktrees'
   | 'loadWorktreeSessions'
@@ -55,6 +61,7 @@ export const createCatalogSlice: SessionSlice<
    */
   let chatLoad: { membership: number; request: Promise<void> } | null = null
   const refreshRequests = new Map<string, object>()
+  const revealedWorktreeByProject = new Map<string, string>()
 
   async function waitForLatestProjectLoad(started: Promise<void>): Promise<void> {
     let current = started
@@ -75,6 +82,32 @@ export const createCatalogSlice: SessionSlice<
     projects: [],
     chats: [],
     isReorderingProjects: false,
+    expandedProjects: {},
+    expandedWorktrees: {},
+
+    setProjectExpanded: (projectCwd, expanded) =>
+      set((s) => ({
+        expandedProjects: { ...s.expandedProjects, [projectCwd]: expanded }
+      })),
+
+    setWorktreeExpanded: (worktreeCwd, expanded) =>
+      set((s) => ({
+        expandedWorktrees: { ...s.expandedWorktrees, [worktreeCwd]: expanded }
+      })),
+
+    revealProjectWorktree: (projectCwd, worktreeCwd) => {
+      if (worktreeCwd === null) {
+        revealedWorktreeByProject.delete(projectCwd)
+        return
+      }
+      // A remount is not another selection: keep manual folds until the active worktree changes.
+      if (revealedWorktreeByProject.get(projectCwd) === worktreeCwd) return
+      revealedWorktreeByProject.set(projectCwd, worktreeCwd)
+      set((s) => ({
+        expandedProjects: { ...s.expandedProjects, [projectCwd]: true },
+        expandedWorktrees: { ...s.expandedWorktrees, [worktreeCwd]: true }
+      }))
+    },
 
     loadProjects: () => {
       const request = ++projectLoadVersion
@@ -191,9 +224,18 @@ export const createCatalogSlice: SessionSlice<
           cwd,
           ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
         ])
+        const expandedProjects = { ...s.expandedProjects }
+        const expandedWorktrees = { ...s.expandedWorktrees }
+        delete expandedProjects[cwd]
+        for (const dropCwd of cwds) {
+          delete expandedWorktrees[dropCwd]
+        }
+        revealedWorktreeByProject.delete(cwd)
         return {
           projects: s.projects.filter((item) => item.cwd !== cwd),
-          ...removeCwdSessions(s, cwds, project?.sessions ?? [])
+          ...removeCwdSessions(s, cwds, project?.sessions ?? []),
+          expandedProjects,
+          expandedWorktrees
         }
       })
     },
@@ -309,14 +351,24 @@ export const createCatalogSlice: SessionSlice<
         && !targets.has(get().currentProjectCwd ?? '')) return
       get().invalidateSelection()
       for (const cwd of targets) useDiffStore.getState().forgetWorktree(cwd)
-      set((state) => ({
-        ...removeCwdSessions(state, targets, state.projects.flatMap((project) => project.sessions)),
-        projects: state.projects.map((project) => ({
-          ...project,
-          sessions: project.sessions.filter((session) => !targets.has(session.cwd)),
-          worktrees: project.worktrees?.filter((worktree) => !targets.has(worktree.cwd))
-        }))
-      }))
+      for (const [projectCwd, worktreeCwd] of revealedWorktreeByProject) {
+        if (targets.has(worktreeCwd)) revealedWorktreeByProject.delete(projectCwd)
+      }
+      set((state) => {
+        const expandedWorktrees = { ...state.expandedWorktrees }
+        for (const cwd of targets) {
+          delete expandedWorktrees[cwd]
+        }
+        return {
+          ...removeCwdSessions(state, targets, state.projects.flatMap((project) => project.sessions)),
+          projects: state.projects.map((project) => ({
+            ...project,
+            sessions: project.sessions.filter((session) => !targets.has(session.cwd)),
+            worktrees: project.worktrees?.filter((worktree) => !targets.has(worktree.cwd))
+          })),
+          expandedWorktrees
+        }
+      })
     },
 
     deleteProject: async (cwd) => {
@@ -339,9 +391,18 @@ export const createCatalogSlice: SessionSlice<
           ...(current?.worktrees ?? []).map((worktree) => worktree.cwd),
           ...sessions.map((session) => session.cwd)
         ])
+        const expandedProjects = { ...s.expandedProjects }
+        const expandedWorktrees = { ...s.expandedWorktrees }
+        delete expandedProjects[cwd]
+        for (const dropCwd of cwds) {
+          delete expandedWorktrees[dropCwd]
+        }
+        revealedWorktreeByProject.delete(cwd)
         return {
           projects: s.projects.filter((item) => item.cwd !== cwd),
-          ...removeCwdSessions(s, cwds, sessions)
+          ...removeCwdSessions(s, cwds, sessions),
+          expandedProjects,
+          expandedWorktrees
         }
       })
     },
