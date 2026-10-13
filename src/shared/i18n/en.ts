@@ -611,7 +611,10 @@ export const en: Messages = {
     pickerFallback: 'Model',
     refresh: 'Refresh models',
     loadFailed: 'Could not load models',
-    thinking: 'Thinking effort'
+    thinking: 'Thinking effort',
+    switched: 'Model switched to {name}',
+    thinkingSwitched: 'Thinking effort set to {level}',
+    appliesNextRequest: 'Takes effect on the next request'
   },
   providers: {
     configuredCount: 'Configured providers: {count}',

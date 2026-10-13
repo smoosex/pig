@@ -613,7 +613,10 @@ export const zh = {
     pickerFallback: '模型',
     refresh: '刷新模型列表',
     loadFailed: '模型列表加载失败',
-    thinking: '推理强度'
+    thinking: '推理强度',
+    switched: '已切换模型：{name}',
+    thinkingSwitched: '推理强度已设为{level}',
+    appliesNextRequest: '下一次请求生效'
   },
   providers: {
     configuredCount: '已配置 {count} 个供应商',
