@@ -134,8 +134,17 @@ describe('completion notifications', () => {
   })
 })
 
-test('assistant output carries provider usage measured over active decoding time', () => {
-  const timestamps = [100, 600]
+test.each([
+  { durationMs: 500, outputTokens: 25, accepted: true },
+  { durationMs: 0, outputTokens: 25, accepted: false },
+  { durationMs: 1, outputTokens: 3441, accepted: false },
+  { durationMs: 199, outputTokens: 25, accepted: false },
+  { durationMs: 200, outputTokens: 25, accepted: true },
+  { durationMs: 500, outputTokens: 1001, accepted: false },
+  { durationMs: 200, outputTokens: 400, accepted: true },
+  { durationMs: 200, outputTokens: 401, accepted: false }
+])('assistant output sampling: %p', ({ durationMs, outputTokens, accepted }) => {
+  const timestamps = [100, 100 + durationMs]
   const state = fixture([], () => timestamps.shift()!)
   const message = {
     role: 'assistant' as const,
@@ -146,7 +155,7 @@ test('assistant output carries provider usage measured over active decoding time
     stopReason: 'toolUse' as const,
     content: [],
     usage: {
-      input: 10, output: 25, cacheRead: 0, cacheWrite: 0, totalTokens: 35,
+      input: 10, output: outputTokens, cacheRead: 0, cacheWrite: 0, totalTokens: 10 + outputTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
     }
   }
@@ -161,10 +170,14 @@ test('assistant output carries provider usage measured over active decoding time
   } as AgentSessionEvent)
   state.emit({ type: 'message_end', message } as AgentSessionEvent)
 
-  expect(state.events.at(-1)).toMatchObject({
-    type: 'message_end',
-    message: { generation: { outputTokens: 25, durationMs: 500, models: ['test/test'] } }
-  })
+  if (accepted) {
+    expect(state.events.at(-1)).toMatchObject({
+      type: 'message_end',
+      message: { generation: { outputTokens, durationMs, models: ['test/test'] } }
+    })
+  } else {
+    expect(state.events.at(-1)).toEqual({ type: 'message_end', message })
+  }
   expect(message).not.toHaveProperty('generation')
   state.unsubscribe()
 })

@@ -180,6 +180,10 @@ export interface SessionTokenStats {
   total: number
 }
 
+// Sampling heuristics shared by collection and display; burst delivery cannot measure decoding speed.
+export const MIN_GENERATION_DURATION_MS = 200
+export const MAX_REALISTIC_TPS = 2_000
+
 /** Provider-reported output tokens measured over active model decoding time. */
 export interface GenerationStats {
   outputTokens: number
