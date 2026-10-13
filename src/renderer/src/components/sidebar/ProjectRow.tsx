@@ -37,9 +37,12 @@ export function ProjectRow({
   const newSession = useSessionsStore((s) => s.newSession)
   const deleteProject = useSessionsStore((s) => s.deleteProject)
   const unpinProject = useSessionsStore((s) => s.unpinProject)
+  const open = useSessionsStore((s) => s.expandedProjects[project.cwd] ?? false)
+  const expandedWorktrees = useSessionsStore((s) => s.expandedWorktrees)
+  const setProjectExpanded = useSessionsStore((s) => s.setProjectExpanded)
+  const setWorktreeExpanded = useSessionsStore((s) => s.setWorktreeExpanded)
+  const revealProjectWorktree = useSessionsStore((s) => s.revealProjectWorktree)
   const t = useT()
-  const [open, setOpen] = useState(false)
-  const [worktreeOpen, setWorktreeOpen] = useState<Record<string, boolean>>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { pending, error, runAction } = useProjectAction()
   const {
@@ -70,13 +73,9 @@ export function ProjectRow({
     activeSessionCwd !== null && worktrees.some((worktree) => worktree.cwd === activeSessionCwd)
       ? activeSessionCwd
       : null
-  // The strip follows the session: opening or switching to one unfolds its project and branch here.
-  // Only ever unfolding, so a branch the user folded stays folded until another session asks for it.
   useEffect(() => {
-    if (revealedCwd === null) return
-    setOpen(true)
-    setWorktreeOpen((state) => (state[revealedCwd] ? state : { ...state, [revealedCwd]: true }))
-  }, [revealedCwd])
+    revealProjectWorktree(project.cwd, revealedCwd)
+  }, [revealedCwd, project.cwd, revealProjectWorktree])
 
   return (
     <div
@@ -84,7 +83,7 @@ export function ProjectRow({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn('relative', isDragging && 'opacity-40')}
     >
-      <Collapsible open={open} onOpenChange={setOpen}>
+      <Collapsible open={open} onOpenChange={(next) => setProjectExpanded(project.cwd, next)}>
         <div className="px-1">
           <div
             data-sidebar-hover-row
@@ -160,8 +159,8 @@ export function ProjectRow({
               onCreate={async (initGit) => {
                 const cwd = await createWorktree(project.cwd, { initGit })
                 if (!cwd) return
-                setOpen(true)
-                setWorktreeOpen((state) => ({ ...state, [cwd]: true }))
+                setProjectExpanded(project.cwd, true)
+                setWorktreeExpanded(cwd, true)
                 await newSession(cwd)
               }}
             />
@@ -207,10 +206,8 @@ export function ProjectRow({
                 key={worktree.cwd}
                 projectCwd={project.cwd}
                 worktree={worktree}
-                open={worktreeOpen[worktree.cwd] ?? false}
-                onOpenChange={(value) =>
-                  setWorktreeOpen((state) => ({ ...state, [worktree.cwd]: value }))
-                }
+                open={expandedWorktrees[worktree.cwd] ?? false}
+                onOpenChange={(value) => setWorktreeExpanded(worktree.cwd, value)}
                 pending={pending}
                 runAction={runAction}
               />

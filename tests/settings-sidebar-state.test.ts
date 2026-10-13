@@ -675,7 +675,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(retry(), null, 'a named worktree has nothing to retry')
       assert.deepEqual(retried, [['/project', '/project-worktree']], 'no retry was sent for it')
       assert.equal(action.error, null, 'the retry never failed')
-    } else if (name === 'reveal-active-session') {
+    } else if (name === 'reveal-active-session' || name === 'project-expansion-switch-chat') {
       class NoopResizeObserver {
         observe() {}
         unobserve() {}
@@ -683,11 +683,11 @@ async function runFixture(name: string): Promise<void> {
       }
       Object.assign(globalThis, { ResizeObserver: NoopResizeObserver })
       Object.assign(window, { ResizeObserver: NoopResizeObserver })
-      const { DndContext } = await import('@dnd-kit/core')
       const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
-      const { ProjectRow } =
-        await import('../src/renderer/src/components/sidebar/ProjectRow')
+      const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
       const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      api.onProjectsChanged = () => () => {}
+      api.discoverOpenedWorktrees = async () => []
       const meta = (id: string, cwd: string, firstMessage: string): SessionMeta => ({
         id,
         cwd,
@@ -729,52 +729,94 @@ async function runFixture(name: string): Promise<void> {
           }
         ]
       }
+      const tabs = [tab('s1', '/project', 'First session'), tab('s2', '/project-feature', 'Second session')]
       useSessionsStore.setState({
         projects: [project],
-        openTabs: [],
+        chats: [],
+        openTabs: name === 'reveal-active-session' ? [] : tabs,
         activeTabId: null,
-        currentProjectCwd: null
+        currentProjectCwd: null,
+        selectProjectCwd: async (cwd) => { useSessionsStore.setState({ currentProjectCwd: cwd }) }
       })
-      await act(async () => {
-        root.render(
-          createElement(
-            TooltipProvider,
-            null,
-            createElement(
-              DndContext,
-              null,
-              createElement(ProjectRow, {
-                project,
-                index: 0,
-                disabled: false,
-                clickGuard: { current: false }
-              })
-            )
+      const renderHalf = async (half: 'projects' | 'chats', select?: () => void) => {
+        await act(async () => {
+          select?.()
+          root.render(
+            createElement(TooltipProvider, null, createElement(Sidebar, {
+              tab: half,
+              preferencesError: null,
+              onOpenSettings: () => {}
+            }))
           )
-        )
-      })
-      const shown = (text: string) => document.body.textContent?.includes(text) ?? false
+        })
+      }
+      const shown = (text: string) => container.textContent?.includes(text) ?? false
+      const projectButton = () => {
+        const button = container.querySelector('[title="/project"]')?.closest('button')
+        assert.ok(button)
+        return button
+      }
+      const branchButton = (branch: string) => {
+        const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${branch}"]`)
+        assert.ok(button)
+        return button
+      }
+      const roundTrip = async () => {
+        const { activeTabId, currentProjectCwd } = useSessionsStore.getState()
+        await renderHalf('chats', () => {
+          useSessionsStore.setState({ activeTabId: null, currentProjectCwd: null })
+        })
+        assert.equal(container.querySelector('[title="/project"]'), null)
+        assert.equal(shown('First session'), false)
+        await renderHalf('projects', () => {
+          useSessionsStore.setState({ activeTabId, currentProjectCwd })
+        })
+      }
+      await renderHalf('projects')
       assert.equal(shown('First session'), false)
-      await act(async () => {
-        useSessionsStore.setState({
-          openTabs: [tab('s1', '/project', 'First session')],
-          activeTabId: 's1'
+
+      if (name === 'reveal-active-session') {
+        await act(async () => {
+          useSessionsStore.setState({ openTabs: [tabs[0]], activeTabId: 's1' })
         })
-      })
-      assert.equal(shown('First session'), true)
-      assert.equal(shown('Second session'), false)
-      await act(async () => {
-        useSessionsStore.setState({ activeTabId: null })
-      })
-      assert.equal(shown('First session'), true, 'leaving the session never folds it back')
-      await act(async () => {
-        useSessionsStore.setState({
-          openTabs: [tab('s1', '/project', 'First session'), tab('s2', '/project-feature', 'Second session')],
-          activeTabId: 's2'
+        assert.equal(shown('First session'), true)
+        assert.equal(shown('Second session'), false)
+        await act(async () => {
+          useSessionsStore.setState({ activeTabId: null })
         })
-      })
-      assert.equal(shown('First session'), true)
-      assert.equal(shown('Second session'), true)
+        assert.equal(shown('First session'), true, 'leaving the session never folds it back')
+        await act(async () => {
+          useSessionsStore.setState({ openTabs: tabs, activeTabId: 's2' })
+        })
+        assert.equal(shown('First session'), true)
+        assert.equal(shown('Second session'), true)
+      } else {
+        await act(async () => { projectButton().click() })
+        await act(async () => { branchButton('main').click() })
+        assert.equal(shown('First session'), true)
+        assert.equal(shown('Second session'), false)
+        await roundTrip()
+        assert.equal(projectButton().getAttribute('aria-expanded'), 'true')
+        assert.equal(branchButton('main').getAttribute('aria-expanded'), 'true')
+        assert.equal(branchButton('feature').getAttribute('aria-expanded'), 'false')
+        assert.equal(shown('First session'), true, 'manual expansion survives the sidebar switch')
+
+        await act(async () => { useSessionsStore.setState({ activeTabId: 's1' }) })
+        await act(async () => { branchButton('main').click() })
+        assert.equal(shown('First session'), false)
+        await roundTrip()
+        assert.equal(branchButton('main').getAttribute('aria-expanded'), 'false',
+          'remounting must not reveal the same active branch again')
+        await act(async () => { projectButton().click() })
+        await roundTrip()
+        assert.equal(projectButton().getAttribute('aria-expanded'), 'false',
+          'a manually folded active project stays folded')
+
+        await act(async () => { useSessionsStore.setState({ activeTabId: null }) })
+        await act(async () => { useSessionsStore.setState({ activeTabId: 's1' }) })
+        assert.equal(shown('First session'), true, 'selecting the session again still reveals its branch')
+        assert.equal(shown('Second session'), false)
+      }
     } else {
       throw new Error(`Unknown fixture: ${name}`)
     }
@@ -809,7 +851,9 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'worktree-naming-retry':
       'a failed branch naming offers a retry instead of only naming the error',
     'reveal-active-session':
-      'opening a session unfolds its project and branch, and leaving never folds back'
+      'opening a session unfolds its project and branch, and leaving never folds back',
+    'project-expansion-switch-chat':
+      'project and worktree expansion survives switching to chat and back'
   })) {
     test(`settings/sidebar: ${title}`, async () => {
       const child = Bun.spawn(

@@ -157,6 +157,12 @@ export interface SessionsStore {
   workspaceError: string | null
   runtime: Record<string, RuntimeState>
   isReorderingProjects: boolean
+  expandedProjects: Record<string, boolean>
+  expandedWorktrees: Record<string, boolean>
+
+  setProjectExpanded: (projectCwd: string, expanded: boolean) => void
+  setWorktreeExpanded: (worktreeCwd: string, expanded: boolean) => void
+  revealProjectWorktree: (projectCwd: string, worktreeCwd: string | null) => void
 
   loadProjects: () => Promise<void>
   syncProjectWorktrees: () => Promise<void>
