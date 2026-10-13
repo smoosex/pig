@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { BrowserWindow } from 'electron'
 import type { ImageContent } from '@earendil-works/pi-ai'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
-import type { GenerationStats } from '../../shared/api'
+import { MIN_GENERATION_DURATION_MS, MAX_REALISTIC_TPS, type GenerationStats } from '../../shared/api'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
@@ -305,11 +305,15 @@ export function bridgeEvents(
       const first = timing?.firstOutputAt
       const last = timing?.lastOutputAt
       const outputTokens = event.message.usage?.output ?? 0
-      if (first !== undefined && last !== undefined && last > first && outputTokens > 0) {
-        generation = {
-          outputTokens,
-          durationMs: last - first,
-          models: [`${event.message.provider}/${event.message.model}`]
+      const durationMs = first !== undefined && last !== undefined ? last - first : 0
+      if (durationMs >= MIN_GENERATION_DURATION_MS && outputTokens > 0) {
+        const tps = outputTokens / (durationMs / 1_000)
+        if (Number.isFinite(tps) && tps <= MAX_REALISTIC_TPS) {
+          generation = {
+            outputTokens,
+            durationMs,
+            models: [`${event.message.provider}/${event.message.model}`]
+          }
         }
       }
       generationTiming = undefined

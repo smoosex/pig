@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type CompactionItem, type ProcessItem, type Turn } from '../chat/turns'
+import { MIN_GENERATION_DURATION_MS, MAX_REALISTIC_TPS } from '../../../shared/api'
 import type { Translate } from '../../../shared/i18n'
 import type { DisplayBranchSummary } from '../../../shared/api'
 import { useT } from '../hooks/useT'
@@ -61,9 +62,9 @@ function projectedSegments(landmarks: CompactionItem[], workBlocks: boolean[]): 
 
 function turnTps(turn: Turn): string | null {
   const generation = turn.generation
-  return generation && generation.outputTokens >= 8 && generation.durationMs > 0
-    ? (generation.outputTokens / (generation.durationMs / 1_000)).toFixed(1)
-    : null
+  if (!generation || generation.outputTokens < 8 || generation.durationMs < MIN_GENERATION_DURATION_MS) return null
+  const tps = generation.outputTokens / (generation.durationMs / 1_000)
+  return Number.isFinite(tps) && tps > 0 && tps <= MAX_REALISTIC_TPS ? tps.toFixed(1) : null
 }
 
 /**

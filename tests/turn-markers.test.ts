@@ -987,13 +987,33 @@ async function runFixture(name: string): Promise<void> {
       assert.ok(tpsIndex > summaryIndex, 'TPS follows a compaction when no trailing work header exists')
       assert.equal(markers[0].textContent?.includes('tok/s'), false)
 
+      for (const [outputTokens, durationMs, expectedSpeed] of [
+        [7, 500, null],
+        [20, 199, null],
+        [3441, 1, null],
+        [1001, 500, null],
+        [401, 200, null],
+        [Infinity, 500, null],
+        [20, 200, '100.0'],
+        [400, 200, '2000.0']
+      ] as const) {
+        await render(makeTurn({
+          process: [{ kind: 'tools', tools: [readTool('sample', true)] }],
+          streaming: false,
+          workedMs: 1_000,
+          generation: { outputTokens, durationMs, models: ['synthetic/synthetic'] }
+        }))
+        assert.equal(separator().textContent?.includes('tok/s'), expectedSpeed !== null)
+        if (expectedSpeed !== null) assert.ok(separator().textContent?.includes(`${expectedSpeed} tok/s`))
+      }
+
       await render(makeTurn({
-        process: [{ kind: 'tools', tools: [readTool('short', true)] }],
+        answer: [{ type: 'text', text: 'buffered answer' }],
         streaming: false,
-        workedMs: 1_000,
-        generation: { outputTokens: 7, durationMs: 500, models: ['synthetic/synthetic'] }
+        generation: { outputTokens: 3441, durationMs: 1, models: ['synthetic/synthetic'] }
       }))
-      assert.equal(separator().textContent?.includes('tok/s'), false)
+      assert.equal(container.textContent?.includes('tok/s'), false)
+      assert.equal(container.querySelector('[data-slot="marker"][data-variant="separator"]'), null)
     } else if (name === 'user-timestamp') {
       const timestamp = new Date(2026, 8, 28, 22, 57, 11).getTime()
       await render(makeTurn({
