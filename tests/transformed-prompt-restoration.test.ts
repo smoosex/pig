@@ -34,7 +34,7 @@ async function fixture(): Promise<void> {
   const { displayTurnsFromEntries } = await import('../src/main/pi/session-display-model')
   const { isPastedTextMetadata, resolvePastedTextMetadata } = await import('../src/shared/pasted-text')
   const controls: SessionControls = {
-    model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+    model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
     contextUsage: null, followUpMessages: [], steeringMessages: []
   }
   api.getControls = async () => controls

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { shell, type BrowserWindow } from 'electron'
 import { currentLocale } from '../i18n'
 import { startModelRuntime } from './model-settings'
+import { synchronizeModelCatalog } from './model-catalog'
 
 import type {
   ProviderAuthType,
@@ -192,8 +193,15 @@ export async function loginProvider(
       }
     })
     abort.signal.throwIfAborted()
-    await runtime.refresh({ providers: [providerId], signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) })
+    try {
+      await runtime.refresh({ providers: [providerId], signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) })
+      abort.signal.throwIfAborted()
+    } finally {
+      // Login already changed credentials. Publish that snapshot even if the targeted refresh fails.
+      synchronizeModelCatalog()
+    }
   } catch (error) {
+    // Translate cancellation to the auth boundary's result; all other SDK/refresh failures propagate.
     if (abort.signal.aborted) throw cancelled
     throw error
   } finally {
@@ -205,4 +213,5 @@ export async function loginProvider(
 export async function logoutProvider(providerId: string): Promise<void> {
   const runtime = await startModelRuntime()
   await runtime.logout(providerId, { signal: AbortSignal.timeout(15_000) })
+  synchronizeModelCatalog()
 }

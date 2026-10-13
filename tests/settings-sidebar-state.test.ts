@@ -38,7 +38,6 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings {
     defaultModel: null,
     defaultThinkingLevel: null,
     thinkingLevels: [],
-    models: [],
     providers: [],
     ...patch
   }

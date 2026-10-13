@@ -11,6 +11,9 @@ import { SystemPluginUI } from './components/SystemPluginUI'
 import { ExtensionUI } from './components/ExtensionUI'
 import { useToolSettingsStore } from './stores/tool-settings'
 import { useSessionWindows } from './hooks/useSessionWindows'
+import { useModelCatalog } from './hooks/useModelCatalog'
+import { useModelCatalogStore } from './stores/model-catalog'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert'
 import { Button } from './components/ui/button'
 import { Kbd } from './components/ui/kbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
@@ -218,6 +221,9 @@ export default function App() {
   useEventBridge()
   useSessionWindows()
   useSessionNames()
+  useModelCatalog()
+  const modelCatalogError = useModelCatalogStore((s) => s.error)
+  const modelCatalogLoading = useModelCatalogStore((s) => s.loading)
 
   useEffect(() => api.onMcpChanged(() => {
     const store = useToolSettingsStore.getState()
@@ -427,6 +433,22 @@ export default function App() {
             </Tooltip>
           ) : null}
         </div>
+        {modelCatalogError ? (
+          <Alert variant="destructive">
+            <AlertTitle>{t('model.loadFailed')}</AlertTitle>
+            <AlertDescription>{modelCatalogError}</AlertDescription>
+            <AlertAction>
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={modelCatalogLoading}
+                onClick={() => void useModelCatalogStore.getState().load()}
+              >
+                {t('common.retry')}
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : null}
         <div className="flex min-h-0 flex-1">
           <Sidebar
             hidden={!sidebarOpen || settingsOpen}

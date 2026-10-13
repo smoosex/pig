@@ -12,9 +12,17 @@ async function fixture(): Promise<void> {
   process.env.PIG_DIR = join(root, 'pig')
   const service = new WorktreeService(join(root, 'state'))
   const noop = () => {}
+  let models: { id: string; provider: string; name: string; contextWindow: number; reasoning: boolean }[] = []
+  const pushed: import('../src/shared/api').ModelCatalog[] = []
   mock.module('electron', () => ({
     app: { isPackaged: false },
-    BrowserWindow: { getAllWindows: () => [] }
+    BrowserWindow: { getAllWindows: () => [{
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send: (channel: string, catalog: import('../src/shared/api').ModelCatalog) => {
+        assert.equal(channel, 'models:changed')
+        pushed.push(catalog)
+      } }
+    }] }
   }))
   mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({
     worktrees: service
@@ -53,7 +61,11 @@ async function fixture(): Promise<void> {
         }
       }
     },
-    ModelRuntime: { create: async () => ({ refresh: async () => {} }) },
+    ModelRuntime: { create: async () => ({
+      refresh: async () => { throw new Error('Lifecycle synchronization must not refresh the network') },
+      getAvailableSnapshot: () => models,
+      getProvider: () => ({ name: 'Extensions' })
+    }) },
     DefaultResourceLoader: class {
       async reload() {}
       getExtensions() {
@@ -77,7 +89,9 @@ async function fixture(): Promise<void> {
         isIdle: false,
         isBashRunning: false,
         reloads: 0,
-        bindExtensions: async () => {},
+        bindExtensions: async () => {
+          models.push({ id: session.sessionId, provider: 'extensions', name: 'Bound', contextWindow: 100, reasoning: false })
+        },
         subscribe: (callback: (event: unknown) => void) => {
           listener = callback
           return () => {
@@ -91,12 +105,14 @@ async function fixture(): Promise<void> {
             started()
             await gate
           }
+          models = models.filter((model) => model.id !== session.sessionId)
           await options?.beforeSessionStart?.()
+          models.push({ id: session.sessionId, provider: 'extensions', name: `Reload ${session.reloads}`, contextWindow: 200, reasoning: true })
           session.starts++
         },
         abort: async () => {},
         dispose: noop,
-        extensionRunner: { emit: async () => {} }
+        extensionRunner: { emit: async () => { models = models.filter((model) => model.id !== session.sessionId) } }
       }
       sessions.push(session)
       return { session }
@@ -120,6 +136,9 @@ async function fixture(): Promise<void> {
       ids.push(pending.sessionId)
       await registry.prepareSession(pending.sessionId)
     }
+    const { currentModelCatalog } = await import('../src/main/pi/model-catalog')
+    assert.deepEqual((await currentModelCatalog()).models.map((model) => model.id), ids)
+    assert.deepEqual(pushed.at(-1)!.models.map((model) => model.id), ids, 'binding extensions updates every selector')
     const { beginSessionInput } = await import('../src/main/pi/event-bridge')
     for (const session of sessions) session.isIdle = true
     const releaseInput = beginSessionInput(registry.getLive(ids[0])!.agentSession)
@@ -157,6 +176,8 @@ async function fixture(): Promise<void> {
     assert.equal(sessions[0].reloads, 2, 'a change arriving during reload is not lost')
     assert.equal(sessions[1].reloads, 2, 'global changes also reload other projects')
     assert.equal(sessions[2].reloads, 2, 'ordinary chats use the same global tools')
+    assert.ok((await currentModelCatalog()).models.every((model) => model.name === 'Reload 2'))
+    assert.ok(pushed.at(-1)!.models.every((model) => model.name === 'Reload 2'), 'reload broadcasts replacement models')
     for (const session of sessions) session.isIdle = true
     await registry.refreshToolSessions()
     assert.deepEqual(
@@ -187,6 +208,8 @@ async function fixture(): Promise<void> {
           code: 'ERR_SESSION_RESOURCES_UNAVAILABLE'
         })
       }
+      assert.deepEqual((await currentModelCatalog()).models, [], 'removals before failed reloads are also synchronized')
+      assert.deepEqual(pushed.at(-1)!.models, [])
       extensionErrors = []
       await registry.refreshToolSessions()
       await registry.prepareSession(ids[0])
@@ -209,6 +232,7 @@ async function fixture(): Promise<void> {
   } finally {
     release()
     await registry.disposeAll()
+    assert.deepEqual(pushed.at(-1)!.models, [], 'shutdown removals are published')
     await service.shutdown()
     await rm(root, { recursive: true, force: true })
   }

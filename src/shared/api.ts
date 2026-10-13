@@ -175,9 +175,20 @@ export interface GenerationStats {
   durationMs: number
 }
 
+/**
+ * The catalog every picker reads. It belongs to the app rather than to a session: one main-side
+ * runtime answers for all of them, and a refresh re-reads it once instead of once per open session.
+ */
+export interface ModelCatalog {
+  models: SessionModelInfo[]
+  /** Bumped by main on every refresh that changed the list, so a late read cannot win over a newer push. */
+  revision: number
+  /** Whether a refresh is in flight: an empty list means "not yet" until this is false. */
+  refreshing: boolean
+}
+
 export interface SessionControls {
   model: SessionModelInfo | null
-  models: SessionModelInfo[]
   thinkingLevel: ThinkingLevel
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
@@ -530,7 +541,6 @@ export interface AppSettings extends ThemePrefs {
   defaultModel: SessionModelInfo | null
   defaultThinkingLevel: ThinkingLevel | null
   thinkingLevels: ThinkingLevel[]
-  models: SessionModelInfo[]
   providers: SettingsProvider[]
 }
 
@@ -750,7 +760,10 @@ export interface SessionApi extends ToolSettingsApi {
   exportSession: (sessionId: string) => Promise<{ path: string } | null>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
-  refreshModels: (sessionId: string) => Promise<SessionControls>
+  /** The shared catalog, always read latest; a session id only says which probes to skip. */
+  getModelCatalog: () => Promise<ModelCatalog>
+  /** Re-reads the runtime and pushes the result to every window, including this one. */
+  refreshModelCatalog: () => Promise<ModelCatalog>
   followUpAction: (sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) => Promise<RestoredSessionPrompt | null>
   pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
@@ -837,4 +850,5 @@ export interface SessionApi extends ToolSettingsApi {
   /** Pushed when an extension moves the session leaf; null means the root before any entry. */
   onSessionBranchChanged: (listener: (sessionId: string, leafId: string | null) => void) => () => void
   onAuthEvent: (listener: (event: SettingsAuthEvent) => void) => () => void
+  onModelCatalog: (listener: (catalog: ModelCatalog) => void) => () => void
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, FolderOpen, Plus, Settings, X } from 'lucide-react'
 import { useT } from '../../hooks/useT'
-import { useSettingsStore } from '../../stores/settings'
+import { useModelCatalogStore } from '../../stores/model-catalog'
 import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo } from '../../ipc/api'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
@@ -46,7 +46,7 @@ export function PluginsPane() {
   const [modelThinking, setModelThinking] = useState('default')
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const models = useSettingsStore((s) => s.models)
+  const models = useModelCatalogStore((s) => s.models)
   const selectedPlugin = plugins.find((item) => item.id === selectedPluginId)
   const memoryModel = modelProvider.trim() && modelId.trim()
     ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null

@@ -609,6 +609,7 @@ export const en: Messages = {
     noMatch: 'No model matches',
     pickerFallback: 'Model',
     refresh: 'Refresh models',
+    loadFailed: 'Could not load models',
     thinking: 'Thinking effort'
   },
   providers: {

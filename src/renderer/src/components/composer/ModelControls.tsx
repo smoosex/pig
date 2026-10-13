@@ -69,19 +69,22 @@ export function ModelPicker({
   sessionId,
   model,
   models,
+  refreshing,
   actions,
   disabled
 }: {
   sessionId: string | null
   model: SessionModelInfo | null
   models: SessionModelInfo[]
+  /** A catalog refresh is running, wherever it was started from. */
+  refreshing: boolean
   actions: ModelControlActions
   disabled?: boolean
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -100,12 +103,12 @@ export function ModelPicker({
   const navigation = useModelNavigation(filtered, open, (item) => { void select(item) })
 
   const refresh = async () => {
-    if (!sessionId || actions.pending) return
-    setRefreshing(true)
+    if (refreshing) return
+    setRefreshError(null)
     try {
-      await actions.run(() => api.refreshModels(sessionId))
-    } finally {
-      setRefreshing(false)
+      await api.refreshModelCatalog()
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -144,13 +147,17 @@ export function ModelPicker({
             variant="ghost"
             size="icon-xs"
             aria-label={t('model.refresh')}
-            disabled={!sessionId || actions.pending}
+            disabled={refreshing}
             onClick={() => void refresh()}
           >
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
           </Button>
         </div>
-        {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
+        {refreshError ?? actions.error ? (
+          <p role="alert" className="px-3 py-1.5 text-xs text-destructive">
+            {refreshError ?? actions.error}
+          </p>
+        ) : null}
         <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <SmoothHoverHighlight activeKey={navigation.index}>
             {filtered.length === 0 ? (

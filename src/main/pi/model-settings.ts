@@ -33,7 +33,6 @@ export function startModelRuntime(): Promise<ModelRuntime> {
     modelRuntimePromise = ModelRuntime.create()
       .then((runtime) => {
         modelRuntime = runtime
-        void runtime.refresh().catch((error) => console.error('Model refresh failed:', error))
         return runtime
       })
       .catch((error) => {
@@ -106,11 +105,6 @@ export function defaultModelFromSettings(): SessionModelInfo | null {
   const id = settings.getDefaultModel()
   if (!provider || !id) return null
   return findModel(provider, id)
-}
-
-export async function listAvailableModels(): Promise<SessionModelInfo[]> {
-  await startModelRuntime()
-  return availableModels()
 }
 
 export function defaultThinkingFromSettings(

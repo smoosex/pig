@@ -22,7 +22,7 @@ function deferred<T>() {
 }
 
 const controls = (_input = 0): SessionControls => ({
-  model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+  model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
   contextUsage: null,
   followUpMessages: [], steeringMessages: []
 })

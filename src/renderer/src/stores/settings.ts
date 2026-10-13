@@ -41,7 +41,6 @@ const empty: AppSettings = {
   defaultModel: null,
   defaultThinkingLevel: null,
   thinkingLevels: [],
-  models: [],
   providers: []
 }
 

@@ -9,6 +9,7 @@ import { loadPigSettings } from './pig-settings'
 import { forwardSessionNames } from './session-names'
 import { disposeAll } from './pi/session-registry'
 import { startModelRuntime } from './pi/model-settings'
+import { startModelCatalog } from './pi/model-catalog'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
@@ -57,9 +58,11 @@ app.whenReady().then(async () => {
 
   handleSessionImages()
   handleMcpIcons()
-  void startModelRuntime().catch((error) =>
-    console.error('Model runtime initialization failed:', error)
-  )
+  // Reads the catalog from disk and refreshes it in the background: the first paint must not wait
+  // on the network, but whatever the refresh finds is pushed to the window when it lands.
+  void startModelRuntime()
+    .then(() => startModelCatalog())
+    .catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
   await initLocale((await loadPigSettings()).locale)
   // Before the window can make one: a chat the last run left behind is nobody's.

@@ -19,7 +19,6 @@ import {
 } from '../pi/providers'
 import {
   getDefaultSessionSettings,
-  listAvailableModels,
   setDefaultModel,
   setDefaultThinking,
   type SessionThinkingLevel
@@ -28,9 +27,8 @@ import {
 export function registerSettingsIpc(): void {
   ipcMain.handle('settings:get', async () => {
     const pig = await loadPigSettings()
-    const [defaults, models, providers] = await Promise.all([
+    const [defaults, providers] = await Promise.all([
       getDefaultSessionSettings(),
-      listAvailableModels(),
       listProviders()
     ])
     return {
@@ -45,7 +43,6 @@ export function registerSettingsIpc(): void {
       defaultModel: defaults.model,
       defaultThinkingLevel: defaults.thinkingLevel,
       thinkingLevels: defaults.thinkingLevels,
-      models,
       providers
     }
   })

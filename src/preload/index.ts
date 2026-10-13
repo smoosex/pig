@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DiffScope, DiffWatchError, FileStamp, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -89,6 +89,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:fork', sessionId, userEntryId),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
+  getModelCatalog: () => ipcRenderer.invoke('models:get-catalog'),
+  refreshModelCatalog: () => ipcRenderer.invoke('models:refresh-catalog'),
   getTokenStats: (sessionId: string) =>
     ipcRenderer.invoke('session:get-token-stats', sessionId),
   getCommands: (sessionId: string) =>
@@ -99,8 +101,6 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:set-model', sessionId, provider, id),
   setThinking: (sessionId: string, level: string) =>
     ipcRenderer.invoke('session:set-thinking', sessionId, level),
-  refreshModels: (sessionId: string) =>
-    ipcRenderer.invoke('session:refresh-models', sessionId),
   followUpAction: (sessionId, index, action, mode) =>
     ipcRenderer.invoke('session:follow-up-action', sessionId, index, action, mode),
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),
@@ -244,6 +244,13 @@ const api: SessionApi = {
     ipcRenderer.on('settings:auth-event', handler)
     return () => {
       ipcRenderer.off('settings:auth-event', handler)
+    }
+  },
+  onModelCatalog: (listener: (catalog: ModelCatalog) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, catalog: ModelCatalog): void => listener(catalog)
+    ipcRenderer.on('models:changed', handler)
+    return () => {
+      ipcRenderer.off('models:changed', handler)
     }
   }
 }

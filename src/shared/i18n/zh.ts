@@ -611,6 +611,7 @@ export const zh = {
     noMatch: '没有匹配的模型',
     pickerFallback: '模型',
     refresh: '刷新模型列表',
+    loadFailed: '模型列表加载失败',
     thinking: '推理强度'
   },
   providers: {

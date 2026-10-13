@@ -40,14 +40,15 @@ async function fixture(name: string): Promise<void> {
       SessionManager: { create: () => manager }
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
-      startModelRuntime: async () => ({}), getDefaultSessionSettings() {}, listAvailableModels() {},
+      startModelRuntime: async () => ({}), getDefaultSessionSettings() {},
       setDefaultModel() {}, setDefaultThinking() {}
     }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({ synchronizeModelCatalog() {} }))
     mock.module(fileURLToPath(new URL('../src/main/pi/session-controls.ts', import.meta.url)), () => ({
       applyPendingControls: async () => { started.resolve(); await release.promise },
       setSessionModel: async (state: object) => { applied.push({ kind: 'model', live: 'agentSession' in state }) },
       setSessionThinking: async (state: object) => { applied.push({ kind: 'thinking', live: 'agentSession' in state }) },
-      controlsFor() {}, refreshSessionModels() {},
+      controlsFor() {},
       tokenStatsFor: () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 })
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
@@ -87,7 +88,7 @@ async function fixture(name: string): Promise<void> {
     const logged: unknown[][] = []
     const originalError = console.error
     console.error = (...values) => { logged.push(values) }
-    const runtime = { refresh: async () => { throw new Error('refresh unavailable') } }
+    const runtime = { refresh: async () => { throw new Error('refresh unavailable') }, getAvailableSnapshot: () => [] }
     mock.module('@earendil-works/pi-coding-agent', () => ({
       ModelRuntime: { create: async () => {
         if (++creates === 1) throw new Error('temporary startup failure')
@@ -95,6 +96,7 @@ async function fixture(name: string): Promise<void> {
       } },
       SettingsManager: {}
     }))
+    mock.module('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }))
     try {
       const { startModelRuntime } = await import('../src/main/pi/model-settings')
       const first = startModelRuntime()
@@ -103,8 +105,12 @@ async function fixture(name: string): Promise<void> {
       await assert.rejects(first, /temporary startup failure/)
       assert.equal(await startModelRuntime(), runtime)
       assert.equal(await startModelRuntime(), runtime)
+      assert.equal(creates, 2, 'the failed create is retried, the good one is reused')
+      assert.deepEqual(logged, [])
+      // The catalog owns the refresh, and a failed one is reported rather than left unhandled.
+      const { startModelCatalog } = await import('../src/main/pi/model-catalog')
+      startModelCatalog()
       await new Promise<void>((resolve) => setImmediate(resolve))
-      assert.equal(creates, 2)
       assert.equal(logged.length, 1)
       assert.match(String(logged[0][1]), /refresh unavailable/)
     } finally {
@@ -222,8 +228,11 @@ async function fixture(name: string): Promise<void> {
         assert.equal(await reply, 'second-reply')
       }
     }
-    mock.module('electron', () => ({ shell: { openExternal: async (url: string) => { urls.push(url) } } }))
+    mock.module('electron', () => ({ shell: { openExternal: async (url: string) => { urls.push(url) } }, BrowserWindow: { getAllWindows: () => [] } }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({ startModelRuntime: async () => runtime }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({
+      synchronizeModelCatalog: () => ({ models: [], revision: 0, refreshing: false })
+    }))
     const { loginProvider, resolveAuthPrompt } = await import('../src/main/pi/providers')
     const win = {
       isDestroyed: () => false,
@@ -239,6 +248,68 @@ async function fixture(name: string): Promise<void> {
     resolveAuthPrompt(events[1].id, 'second-reply')
     await second
     assert.deepEqual(urls, [])
+    return
+  }
+
+  if (name === 'auth-refresh') {
+    const refreshing = deferred()
+    let stall = true
+    let targeted = 0
+    let full = 0
+    let cancelled = false
+    let models: import('../src/shared/api').SessionModelInfo[] = []
+    const pushed: import('../src/shared/api').ModelCatalog[] = []
+    const runtime = {
+      login: async () => {
+        models = [{ id: 'new', name: 'New', provider: 'test', providerName: 'Test', contextWindow: 100, reasoning: false }]
+      },
+      logout: async () => { models = [] },
+      refresh: async (options?: { providers: string[]; signal: AbortSignal }) => {
+        if (!options) {
+          full++
+          return new Promise<void>(() => {})
+        }
+        targeted++
+        assert.deepEqual(options.providers, ['test'])
+        if (!stall) return
+        refreshing.resolve()
+        await new Promise<void>((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => {
+            cancelled = true
+            reject(options.signal.reason)
+          }, { once: true })
+        })
+      }
+    }
+    mock.module('electron', () => ({
+      shell: {},
+      BrowserWindow: { getAllWindows: () => [{
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, send: (_channel: string, value: import('../src/shared/api').ModelCatalog) => pushed.push(value) }
+      }] }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
+      startModelRuntime: async () => runtime,
+      availableModels: () => models
+    }))
+    const { loginProvider, cancelProviderLogin, logoutProvider } = await import('../src/main/pi/providers')
+    const { currentModelCatalog } = await import('../src/main/pi/model-catalog')
+    await currentModelCatalog()
+    const win = { isDestroyed: () => false, webContents: { isDestroyed: () => false } } as import('electron').BrowserWindow
+    const login = loginProvider(win, 'test', 'api_key')
+    const rejected = assert.rejects(login, (error) => error instanceof Error)
+    await refreshing.promise
+    cancelProviderLogin()
+    await rejected
+    assert.equal(cancelled, true, 'cancellation reaches the targeted refresh')
+    assert.equal(full, 0, 'login must never wait for an unrelated full refresh')
+    assert.deepEqual(pushed.at(-1)!.models.map((model) => model.id), ['new'], 'credential changes remain visible after cancellation')
+    stall = false
+    await loginProvider(win, 'test', 'api_key')
+    assert.equal(targeted, 2, 'another login is not blocked after cancellation')
+    await logoutProvider('test')
+    assert.equal(full, 0, 'logout also only publishes the synchronized snapshot')
+    assert.deepEqual(pushed.at(-1)!.models, [])
     return
   }
 
@@ -288,6 +359,7 @@ if (process.argv[2] === '--main-settings-fixture') {
     runtime: 'failed startup retries and background refresh errors stay handled',
     controls: 'pending model selection applies the same reasoning level the picker displays',
     auth: 'an old login cannot clear a newer prompt or open a stale login URL',
+    'auth-refresh': 'post-login refresh stays cancellable and never starts an unbounded full refresh',
     'pig-settings': 'concurrent preference updates preserve each other and recover after a write failure'
   })) {
     test(`main settings lifecycle: ${title}`, async () => {

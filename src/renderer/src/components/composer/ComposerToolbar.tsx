@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ArrowUp, Square, SquareTerminal } from 'lucide-react'
 import { api } from '../../ipc/api'
-import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
+import type { ThinkingLevel } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
+import { useModelCatalogStore } from '../../stores/model-catalog'
 import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
@@ -11,7 +12,6 @@ import { ContextUsageButton } from './ContextUsageButton'
 import { ModelPicker, ThinkingPicker } from './ModelControls'
 import { useModelControls } from './useModelControls'
 
-const EMPTY_MODELS: SessionModelInfo[] = []
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
 function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
   const projectCwd = useSessionsStore((s) => s.currentProjectCwd)
@@ -65,13 +65,15 @@ export function ComposerToolbar({
   const t = useT()
   const bashRunning = useSessionsStore((s) => sessionId ? s.runtime[sessionId]?.bashExecution != null : false)
   const sessionModel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.model ?? null) : null)
-  const sessionModels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.models ?? EMPTY_MODELS) : EMPTY_MODELS)
   const sessionThinkingLevel = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevel ?? 'off') : 'off')
   const sessionThinkingLevels = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.thinkingLevels ?? EMPTY_LEVELS) : EMPTY_LEVELS)
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
+  // The catalog is the app's, not the session's: a session with no model chosen still shows every
+  // provider the app knows about, which is what makes the picker usable on a fresh tab.
+  const models = useModelCatalogStore((s) => s.models)
+  const refreshing = useModelCatalogStore((s) => s.refreshing)
   const model = sessionId ? sessionModel : defaultModel
-  const models = sessionId ? sessionModels : (defaultModel ? [defaultModel] : EMPTY_MODELS)
   const thinkingLevel = sessionId ? sessionThinkingLevel : (defaultThinkingLevel ?? 'off')
   const thinkingLevels = sessionId ? sessionThinkingLevels : [thinkingLevel]
   const actions = useModelControls(sessionId)
@@ -85,7 +87,15 @@ export function ComposerToolbar({
           </span>
         ) : (
           <>
-            <ModelPicker key={`model-${sessionId}`} sessionId={sessionId} model={model} models={models} actions={actions} disabled={!sessionId || actions.pending} />
+            <ModelPicker
+              key={`model-${sessionId}`}
+              sessionId={sessionId}
+              model={model}
+              models={models}
+              refreshing={refreshing}
+              actions={actions}
+              disabled={!sessionId || actions.pending}
+            />
             <ThinkingPicker
               sessionId={sessionId}
               key={`thinking-${sessionId}`}
