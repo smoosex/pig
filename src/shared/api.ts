@@ -19,9 +19,12 @@ export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplay
 export type SessionPreviewFallback = 'pastedText' | 'image'
 
 export interface SessionMeta {
+  /** Absolute session file path. */
   path: string
   id: string
   cwd: string
+  /** Absolute path of the session file this one was forked, cloned, or branched from. */
+  parentSession?: string
   name?: string
   created: string
   modified: string

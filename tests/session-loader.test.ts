@@ -1,10 +1,14 @@
 import { expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
+import { SessionManager } from '@earendil-works/pi-coding-agent'
+import { withSessionForks } from '../src/shared/session-lineage'
 import {
   forgetSessionName,
   listProject,
+  listProjectFiles,
+  listProjects,
   onSessionNamesResolved,
   removeProjectDir,
   sessionDirForCwd
@@ -85,6 +89,65 @@ test('an image-only first message is reported as a flag rather than as copy', as
     expect(text?.firstMessageIsImage).toBeUndefined()
     expect(imgtext?.firstMessage).toBe('修登录按钮')
     expect(imgtext?.firstMessageIsImage).toBeUndefined()
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previous
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+/**
+ * A fork names the file it was cloned, branched, or forked from in its own header, and the listing
+ * is what the sidebar threads by: the header line sits in the prefix a scan reads, so it rides along.
+ */
+test('a fork reports the parent session its header names', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-session-parent-'))
+  const previous = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = join(root, 'agent')
+  try {
+    const cwd = join(root, 'project')
+    const dir = sessionDirForCwd(cwd)
+    await mkdir(dir, { recursive: true })
+    const header = (id: string, parent?: string) =>
+      JSON.stringify({ type: 'session', version: 3, id, cwd, timestamp: new Date().toISOString(), ...(parent ? { parentSession: parent } : {}) }) + '\n'
+    const message = (text: string) =>
+      JSON.stringify({ type: 'message', message: { role: 'user', content: text } }) + '\n'
+    await writeFile(join(dir, 'parent.jsonl'), header('parent') + message('原文'))
+    await writeFile(join(dir, 'fork.jsonl'), header('fork', relative(process.cwd(), join(dir, 'parent.jsonl'))) + message('分支'))
+
+    const sessions = (await listProject(cwd))?.sessions ?? []
+    expect(sessions.find((meta) => meta.id === 'parent')?.parentSession).toBeUndefined()
+    expect(sessions.find((meta) => meta.id === 'fork')?.parentSession).toBe(join(dir, 'parent.jsonl'))
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previous
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a relative PI_CODING_AGENT_DIR produces absolute paths matching SDK fork headers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-session-relative-'))
+  const previous = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = relative(process.cwd(), join(root, 'agent'))
+  try {
+    const cwd = join(root, 'project')
+    const manager = SessionManager.create(cwd)
+    const entry = manager.appendMessage({ role: 'user', content: '原文', timestamp: 1 })
+    const parentId = manager.getSessionId()
+    const parentPath = manager.getSessionFile()!
+    const forkPath = manager.createBranchedSession(entry)!
+    const forkId = manager.getSessionId()
+    expect(isAbsolute(parentPath)).toBe(true)
+    expect(manager.getHeader()?.parentSession).toBe(parentPath)
+
+    const sessions = (await listProject(cwd))!.sessions
+    expect(sessions.find((meta) => meta.id === parentId)?.path).toBe(parentPath)
+    expect(sessions.find((meta) => meta.id === forkId)?.path).toBe(forkPath)
+    expect(sessions.find((meta) => meta.id === forkId)?.parentSession).toBe(parentPath)
+    expect(withSessionForks(sessions).map((row) => row.id)).toEqual([parentId, forkId])
+    expect(withSessionForks(sessions)[1]!.forkedFrom).toBe(parentPath)
+    expect((await listProjects())[0]!.sessions.every((meta) => isAbsolute(meta.path))).toBe(true)
+    expect((await listProjectFiles(cwd)).sort()).toEqual([parentPath, forkPath].sort())
   } finally {
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = previous

@@ -1,4 +1,6 @@
+import { useMemo } from 'react'
 import { useSessionsStore, selectActiveSessionId, type SessionMeta } from '../../stores/sessions'
+import { withSessionForks, type SessionFork } from '../../../../shared/session-lineage'
 import { sessionTitle } from '../../stores/sessions/session-title'
 import { Button } from '../ui/button'
 import {
@@ -15,15 +17,26 @@ import { TreeNav } from '../spectrumui/tree-nav'
 import { SessionCloseButton } from './SessionCloseButton'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
+import { SessionForkIcon } from '../SessionForkIcon'
 
 export function ChatList() {
   const t = useT()
   const chats = useSessionsStore((state) => state.chats)
   const activeSessionId = useSessionsStore(selectActiveSessionId)
-  const rows = chats.flatMap((chat) => {
-    const session = chat.sessions[0]
-    return session ? [{ session, title: sessionTitle(session), cwd: chat.cwd }] : []
-  })
+  // One row per chat, headed by its newest session. A chat forked from another chat keeps its own
+  // directory, so the fork it came from is the other chat's row.
+  const rows = useMemo(
+    () =>
+      withSessionForks(
+        chats.flatMap((chat) => {
+          const session = chat.sessions[0]
+          return session
+            ? [{ ...session, cwd: chat.cwd }]
+            : []
+        })
+      ),
+    [chats]
+  )
 
   if (rows.length === 0) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">{t('sidebar.chatsEmpty')}</p>
@@ -31,29 +44,22 @@ export function ChatList() {
 
   return (
     <TreeNav
-      items={rows.map(({ session, title }) => ({ label: title, href: session.id }))}
+      items={rows.map((row) => ({ label: sessionTitle(row), href: row.id }))}
       activeHref={activeSessionId ?? undefined}
       showHighlight={false}
       className="py-1 pr-1"
       renderItem={(_, index, active) => {
         const row = rows[index]
-        return row ? <ChatRow {...row} active={active} /> : null
+        return row ? <ChatRow row={row} active={active} /> : null
       }}
     />
   )
 }
 
-function ChatRow({
-  session,
-  title,
-  cwd,
-  active
-}: {
-  session: SessionMeta
-  title: string
-  cwd: string
-  active: boolean
-}) {
+function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: boolean }) {
+  const session = row
+  const title = sessionTitle(row)
+  const cwd = row.cwd
   const openExisting = useSessionsStore((state) => state.openExisting)
   const closeTab = useSessionsStore((state) => state.closeTab)
   const deleteChat = useSessionsStore((state) => state.deleteChat)
@@ -61,7 +67,6 @@ function ChatRow({
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
   const { pending, error, runAction } = useProjectAction()
   const rename = useSessionRename(session.id, session.path)
-
   return (
     <div>
       <ContextMenu>
@@ -87,6 +92,7 @@ function ChatRow({
                 disabled={pending !== null}
                 onClick={() => void runAction('open', () => openExisting(session, 'chat'))}
               >
+                {row.forkedFrom ? <SessionForkIcon /> : null}
                 <span className="min-w-0 truncate">{title}</span>
               </Button>
             )}

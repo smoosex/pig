@@ -3,12 +3,14 @@ import { LoaderCircle } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { useT } from '../hooks/useT'
 import { relativeTime } from '../lib/relative-time'
+import { withSessionForks } from '../../../shared/session-lineage'
 import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { SessionSizeDots } from './SessionSizeDots'
+import { SessionForkIcon } from './SessionForkIcon'
 
 export function ProjectSessionHome({ cwd }: { cwd: string }) {
   const t = useT()
@@ -21,8 +23,10 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
   const sessions = useMemo(() => {
     for (const project of projects) {
       const worktree = project.worktrees?.find((item) => item.cwd === cwd)
-      if (worktree) return worktree.sessions.slice(0, 5)
-      if (!project.worktrees && project.cwd === cwd) return project.sessions.slice(0, 5)
+      const metas = worktree?.sessions ?? (!project.worktrees && project.cwd === cwd ? project.sessions : undefined)
+      if (!metas) continue
+      // Cap newest-first candidates before threading; deep ancestry must not displace recent sessions.
+      return withSessionForks(metas.slice(0, 5))
     }
     return []
   }, [cwd, projects])
@@ -55,26 +59,27 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
           className="flex flex-col gap-1 px-4"
           highlightClassName="bg-muted dark:bg-muted/50"
         >
-          {sessions.map((session) => (
+          {sessions.map((row) => (
             <Button
-              key={session.id}
+              key={row.id}
               type="button"
               variant="ghost"
               data-sidebar-hover-row
               className="relative h-10 w-full justify-start gap-3 px-3 text-xs font-normal !bg-transparent"
               disabled={pending !== null}
-              aria-busy={pending === session.id}
-              onClick={() => void open(session)}
+              aria-busy={pending === row.id}
+              onClick={() => void open(row)}
             >
-              {pending === session.id ? (
+              {pending === row.id ? (
                 <LoaderCircle data-icon="inline-start" className="animate-spin" />
               ) : null}
-              <span className="min-w-0 flex-1 truncate text-left">{sessionTitle(session)}</span>
+              {row.forkedFrom ? <SessionForkIcon /> : null}
+              <span className="min-w-0 flex-1 truncate text-left">{sessionTitle(row)}</span>
               <span className="flex shrink-0 items-center gap-2">
                 <span className="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
-                  {relativeTime(session.modified, t)}
+                  {relativeTime(row.modified, t)}
                 </span>
-                <SessionSizeDots size={session.size} />
+                <SessionSizeDots size={row.size} />
               </span>
             </Button>
           ))}

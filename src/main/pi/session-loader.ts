@@ -23,7 +23,7 @@ const SCAN_CONCURRENCY = 32
 
 function sessionsRoot(): string {
   const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
-  return join(agentDir, 'sessions')
+  return resolve(agentDir, 'sessions')
 }
 
 export function sessionDirForCwd(cwd: string): string {
@@ -132,6 +132,8 @@ type ScanEntry = {
   id?: string
   timestamp?: string
   cwd?: string
+  /** The header's lineage: the session file this one was forked, cloned, or branched from. */
+  parentSession?: string
   name?: string
   customType?: string
   data?: unknown
@@ -280,6 +282,7 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
     const [st, lines] = await Promise.all([stat(filePath), readPrefix(filePath)])
     let id = ''
     let cwd = ''
+    let parentSession = ''
     let created = st.birthtime.toISOString()
     let name: string | undefined
     let firstMessage = ''
@@ -292,6 +295,7 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
       if (!id && entry.type === 'session' && typeof entry.id === 'string') {
         id = entry.id
         cwd = typeof entry.cwd === 'string' ? entry.cwd : ''
+        parentSession = typeof entry.parentSession === 'string' ? entry.parentSession : ''
         if (typeof entry.timestamp === 'string') {
           const time = new Date(entry.timestamp)
           if (!Number.isNaN(time.getTime())) created = time.toISOString()
@@ -318,6 +322,7 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
       path: filePath,
       id,
       cwd,
+      ...(parentSession ? { parentSession: resolve(parentSession) } : {}),
       name: resolved,
       created,
       modified: st.mtime.toISOString(),

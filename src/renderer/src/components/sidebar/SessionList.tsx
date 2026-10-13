@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import { CircleAlert, Download, LoaderCircle, PenLine } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../../stores/sessions'
+import { withSessionForks, type SessionFork } from '../../../../shared/session-lineage'
 import { api } from '../../ipc/api'
 import { useProjectAction } from './project-action'
 import { cn } from '../../lib/utils'
@@ -13,29 +15,49 @@ import {
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { HookSidebar } from '../ui/hook-sidebar'
 import { SessionCloseButton } from './SessionCloseButton'
+import { SessionForkIcon } from '../SessionForkIcon'
 import { useT } from '../../hooks/useT'
 
 export function SessionList({ sessions }: { sessions: OpenTab[] }) {
+  // The tab list keeps the order the strip was left in; the fork rows it holds just hang under the
+  // session they were forked from. A tab the listing has not reached yet carries no file, so it can
+  // neither be nor name a parent.
+  const rows = useMemo(
+    () =>
+      withSessionForks(
+        sessions.map((tab) => ({
+          tab,
+          path: tab.meta?.path ?? `tab:${tab.id}`,
+          modified: tab.meta?.modified ?? '',
+          parentSession: tab.meta?.parentSession
+        })),
+        { order: 'input' }
+      ),
+    [sessions]
+  )
   const activeIndex = useSessionsStore((state) =>
-    sessions.findIndex((session) => session.id === selectActiveSessionId(state))
+    rows.findIndex((row) => row.tab.id === selectActiveSessionId(state))
   )
 
   return (
     <HookSidebar
-      items={sessions.map((session) => session.title)}
+      items={rows.map((row) => ({ label: row.tab.title, href: row.tab.id }))}
       value={activeIndex}
       color="var(--primary)"
       railLeft="1.5rem"
       className="pt-0.5 pb-1"
       renderItem={(_, index) => {
-        const session = sessions[index]
-        return session ? <SessionRow session={session} /> : null
+        const row = rows[index]
+        return row ? <SessionRow key={row.tab.id} tab={row.tab} fork={row} /> : null
       }}
     />
   )
 }
 
-function SessionRow({ session }: { session: OpenTab }) {
+type SessionTabRow = { tab: OpenTab; path: string; modified: string; parentSession?: string } & SessionFork
+
+function SessionRow({ tab, fork }: { tab: OpenTab; fork: SessionTabRow }) {
+  const session = tab
   const t = useT()
   const active = useSessionsStore((state) => selectActiveSessionId(state) === session.id)
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
@@ -69,6 +91,7 @@ function SessionRow({ session }: { session: OpenTab }) {
                 title={session.loadError || session.title}
                 onClick={() => void activateTab(session.id)}
               >
+                {fork.forkedFrom ? <SessionForkIcon /> : null}
                 <span className="min-w-0 truncate">{session.title}</span>
               </Button>
             )}

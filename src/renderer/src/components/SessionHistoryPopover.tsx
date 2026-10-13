@@ -1,8 +1,9 @@
-import { useState, type ComponentProps } from 'react'
+import { useMemo, useState, type ComponentProps } from 'react'
 import { History } from 'lucide-react'
 import { useT } from '../hooks/useT'
 import { relativeTime } from '../lib/relative-time'
 import { cn } from '../lib/utils'
+import { withSessionForks, type SessionFork } from '../../../shared/session-lineage'
 import { useSessionsStore, selectActiveSessionId, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
@@ -11,6 +12,7 @@ import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
 import { SquaresSpinner } from './RunningSpinners'
 import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
+import { SessionForkIcon } from './SessionForkIcon'
 
 const emptySessions: SessionMeta[] = []
 
@@ -38,7 +40,8 @@ export function SessionHistoryPopover({
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-
+  // The listing arrives newest-first, so a fork's parent row is the one above it.
+  const rows = useMemo(() => withSessionForks(sessions), [sessions])
   const run = async (session: SessionMeta, action: 'open' | 'delete') => {
     if (pending) return
     setPending(session.id)
@@ -77,16 +80,16 @@ export function SessionHistoryPopover({
       >
         <div className="min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <SmoothHoverHighlight activeKey={activeId} className="flex flex-col gap-0.5">
-            {sessions.length === 0 ? (
+            {rows.length === 0 ? (
               <p className="px-2 py-4 text-center text-xs text-muted-foreground">{t('sessions.historyEmpty')}</p>
-            ) : sessions.map((session) => (
+            ) : rows.map((row) => (
               <HistoryRow
-                key={session.id}
-                session={session}
-                active={session.id === activeId}
+                key={row.id}
+                row={row}
+                active={row.id === activeId}
                 pending={pending}
-                onOpen={() => void run(session, 'open')}
-                onDelete={() => void run(session, 'delete')}
+                onOpen={() => void run(row, 'open')}
+                onDelete={() => void run(row, 'delete')}
               />
             ))}
           </SmoothHoverHighlight>
@@ -98,21 +101,21 @@ export function SessionHistoryPopover({
 }
 
 function HistoryRow({
-  session,
+  row,
   active,
   pending,
   onOpen,
   onDelete
 }: {
-  session: SessionMeta
+  row: SessionMeta & SessionFork
   active: boolean
   pending: string | null
   onOpen: () => void
   onDelete: () => void
 }) {
-  const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
+  const streaming = useSessionsStore((state) => state.runtime[row.id]?.isStreaming ?? false)
   const t = useT()
-  const title = sessionTitle(session)
+  const title = sessionTitle(row)
   return (
     <div
       data-hover-highlight-row
@@ -127,18 +130,19 @@ function HistoryRow({
         disabled={pending !== null}
         onClick={onOpen}
       >
+        {row.forkedFrom ? <SessionForkIcon /> : null}
         <span className="min-w-0 flex-1 truncate text-left font-normal">{title}</span>
         <span className="ml-4 flex shrink-0 items-center gap-2">
           <span
             className="w-14 shrink-0 text-right text-[0.7rem] text-muted-foreground tabular-nums"
-            title={new Date(session.modified).toLocaleString()}
+            title={new Date(row.modified).toLocaleString()}
           >
-            {relativeTime(session.modified, t)}
+            {relativeTime(row.modified, t)}
           </span>
           <SessionSizeDots
-            size={session.size}
+            size={row.size}
             className={
-              streaming || pending === session.id
+              streaming || pending === row.id
                 ? 'opacity-0 transition-opacity'
                 : 'transition-opacity group-hover/session:opacity-0'
             }
@@ -146,7 +150,7 @@ function HistoryRow({
         </span>
       </Button>
       <div className="pointer-events-none absolute right-1 z-10 flex w-12 items-center justify-end">
-        {streaming || pending === session.id ? (
+        {streaming || pending === row.id ? (
           <SquaresSpinner />
         ) : (
           <SessionDeleteButton

@@ -162,6 +162,7 @@ export function HookSidebar({
         {items.map((item, index) => {
           const text = labelOf(item);
           const href = hrefOf(item);
+          const key = href ?? `${index}-${text}`;
           const isActive = index === activeIndex;
           // Runs meet apex to apex: this row starts where the row above stopped
           // bending, and its own bend sits on the row's centre line.
@@ -207,7 +208,7 @@ export function HookSidebar({
           if (renderItem) {
             return (
               <div
-                key={`${index}-${text}`}
+                key={key}
                 ref={setRef}
                 data-slot="hook-sidebar-item"
                 data-active={isActive}
@@ -226,7 +227,7 @@ export function HookSidebar({
 
           return href ? (
             <a
-              key={`${index}-${text}`}
+              key={key}
               {...rowProps}
               ref={setRef}
               href={href}
@@ -237,7 +238,7 @@ export function HookSidebar({
             </a>
           ) : (
             <button
-              key={`${index}-${text}`}
+              key={key}
               {...rowProps}
               ref={setRef}
               type="button"
