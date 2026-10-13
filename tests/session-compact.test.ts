@@ -23,7 +23,7 @@ async function fixture(): Promise<void> {
     ...Object.fromEntries([
       'activateSession', 'activateSessionInput', 'closeSession', 'createPendingSession', 'discardDraftSession', 'exportSession',
       'forkSessionFromMessage', 'getSessionControls', 'getSessionTokenStats', 'getSessionTrees', 'listSessionCommands', 'openSession',
-      'promoteDraftSession', 'refreshSessionModels', 'renameSession', 'setSessionLabel', 'setSessionModel',
+      'promoteDraftSession', 'renameSession', 'setSessionLabel', 'setSessionModel',
       'setSessionThinking', 'updateFollowUpMessage', 'viewSessionBranch'
     ].map((name) => [name, () => {}])),
     prepareSession: async (sessionId: string) => {

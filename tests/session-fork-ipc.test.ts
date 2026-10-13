@@ -21,7 +21,7 @@ async function fixture(): Promise<void> {
   }
   const noop = () => {}
   const controls: SessionControls = {
-    model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+    model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
     contextUsage: null, followUpMessages: [], steeringMessages: []
   }
   mock.module('electron', () => ({
@@ -33,7 +33,7 @@ async function fixture(): Promise<void> {
     activateSession: noop, closeSession: noop, createPendingSession: noop, discardDraftSession: noop,
     exportSession: noop, getSessionControls: noop, getSessionTokenStats: noop, getSessionTrees: noop,
     listSessionCommands: noop, openSession: noop, prepareSession: noop, promoteDraftSession: noop,
-    refreshSessionModels: noop, renameSession: noop, setSessionLabel: noop, setSessionModel: noop,
+    renameSession: noop, setSessionLabel: noop, setSessionModel: noop,
     setSessionThinking: noop, updateFollowUpMessage: noop, viewSessionBranch: noop,
     forkSessionFromMessage: async () => forked
   }))

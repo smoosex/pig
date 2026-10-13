@@ -3,6 +3,7 @@ import { useT } from '../../hooks/useT'
 import type { LocaleSetting, SendShortcut, ThinkingLevel } from '../../ipc/api'
 import { thinkingLevelKeys } from '../../lib/thinking-levels'
 import { useSettingsStore } from '../../stores/settings'
+import { useModelCatalogStore } from '../../stores/model-catalog'
 import {
   Select,
   SelectContent,
@@ -33,7 +34,7 @@ export function GeneralPane() {
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
   const thinkingLevels = useSettingsStore((s) => s.thinkingLevels)
-  const models = useSettingsStore((s) => s.models)
+  const models = useModelCatalogStore((s) => s.models)
   const setSendShortcut = useSettingsStore((s) => s.setSendShortcut)
   const completionNotifications = useSettingsStore((s) => s.completionNotifications)
   const setCompletionNotifications = useSettingsStore((s) => s.setCompletionNotifications)

@@ -14,7 +14,6 @@ import {
   openSession,
   prepareSession,
   promoteDraftSession,
-  refreshSessionModels,
   renameSession,
   setSessionLabel,
   setSessionModel,
@@ -229,10 +228,6 @@ export function registerSessionIpc(): void {
       return setSessionThinking(sessionId, level)
     }
   )
-
-  ipcMain.handle('session:refresh-models', async (_event, sessionId: string) => {
-    return refreshSessionModels(sessionId)
-  })
 
   ipcMain.handle(
     'session:follow-up-action',

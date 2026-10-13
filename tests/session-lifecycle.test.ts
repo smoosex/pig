@@ -71,7 +71,7 @@ async function fixture(scenario: string): Promise<void> {
     mock.module('@earendil-works/pi-coding-agent', () => ({
       ...sdk,
       createAgentSession: async () => ({ session }),
-      ModelRuntime: { create: async () => ({ refresh: async () => {}, getModel: () => ({ id: 'test' }) }) },
+      ModelRuntime: { create: async () => ({ refresh: async () => {}, getAvailableSnapshot: () => [], getModel: () => ({ id: 'test' }) }) },
       SessionManager: { create: () => { createCalls++; return manager }, open: () => manager },
       SettingsManager: { fromStorage: sdk.SettingsManager.fromStorage, create: () => ({}) },
       DefaultResourceLoader: class {

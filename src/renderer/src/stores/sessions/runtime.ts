@@ -41,7 +41,6 @@ export const emptyRuntime = (): RuntimeState => ({
   liveCompactions: [],
   retryNotice: null,
   model: null,
-  models: [],
   thinkingLevel: 'off',
   thinkingLevels: ['off'],
   contextUsage: null,

@@ -17,7 +17,7 @@ async function runFixture(name: string): Promise<void> {
     closeSession: async () => {},
     selectOpenProjectWorkspace: async () => {},
     getControls: async (): Promise<SessionControls> => ({
-      model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+      model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
       contextUsage: null,
       followUpMessages: [], steeringMessages: []
     }),
@@ -364,7 +364,7 @@ async function runFixture(name: string): Promise<void> {
       api.getControls = async () => {
         controlReads++
         return {
-          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
           contextUsage: { tokens: controlReads * 100, contextWindow: 1000, percent: controlReads * 10 },
           followUpMessages: [], steeringMessages: []
         }
@@ -396,7 +396,7 @@ async function runFixture(name: string): Promise<void> {
       api.getControls = async () => {
         controlReads++
         return {
-          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
           contextUsage: null, followUpMessages: [], steeringMessages: []
         }
       }
@@ -498,7 +498,7 @@ async function runFixture(name: string): Promise<void> {
       api.getControls = async () => {
         controlReads++
         return {
-          model: null, models: [], thinkingLevel: 'off', thinkingLevels: ['off'],
+          model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
           contextUsage: null, followUpMessages: [], steeringMessages: []
         }
       }

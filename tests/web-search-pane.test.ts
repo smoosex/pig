@@ -86,7 +86,7 @@ test('the web access panel adds engines with their key and saves only changes', 
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
-  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN', models: [] })
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
   const host = document.createElement('div')
   document.body.appendChild(host)

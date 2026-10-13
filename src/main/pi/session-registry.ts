@@ -33,13 +33,13 @@ import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bri
 import { enabledPluginPaths } from './plugins'
 import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
 import { startModelRuntime } from './model-settings'
+import { synchronizeModelCatalog } from './model-catalog'
 import {
   applyPendingControls,
   controlsFor,
   tokenStatsFor,
   setSessionModel as applyModel,
-  setSessionThinking as applyThinking,
-  refreshSessionModels as refreshModels
+  setSessionThinking as applyThinking
 } from './session-controls'
 import {
   exportSession as exportAgentSession,
@@ -93,7 +93,6 @@ export type {
 export type { MemorySession, PendingSession, SessionFileSession } from './session-state'
 export {
   getDefaultSessionSettings,
-  listAvailableModels,
   setDefaultModel,
   setDefaultThinking,
   startModelRuntime
@@ -133,6 +132,9 @@ async function reloadSessionResources(session: LiveSession): Promise<void> {
     resourceFailures.set(session.sessionId, failure)
     pendingToolRefresh.add(session.sessionId)
     throw failure
+  } finally {
+    // Reload may register/remove models before failing; selectors must reflect that runtime too.
+    synchronizeModelCatalog()
   }
 }
 function reportBackgroundReload(session: LiveSession, promise: Promise<void>): void {
@@ -226,6 +228,7 @@ async function build(
       },
       onError: (error) => notifications.notify(`${error.extensionPath}: ${error.error}`, 'error')
     })
+    synchronizeModelCatalog()
     worktrees.assertAvailable(cwd)
     await configure?.(session)
     worktrees.assertAvailable(cwd)
@@ -234,6 +237,8 @@ async function build(
   } catch (error) {
     await disposeLiveSession(created)
     throw error
+  } finally {
+    synchronizeModelCatalog()
   }
 }
 
@@ -836,6 +841,7 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
   } catch {
   }
   session.agentSession.dispose()
+  synchronizeModelCatalog()
 }
 
 export function closeSession(sessionId: string): Promise<void> {
@@ -907,10 +913,6 @@ export async function setSessionThinking(sessionId: string, level: ThinkingLevel
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
   return retryAfterIndexFallback(sessionId, () => applyThinking(sessionState(sessionId), level))
-}
-
-export function refreshSessionModels(sessionId: string) {
-  return retryAfterIndexFallback(sessionId, () => refreshModels(sessionState(sessionId)))
 }
 
 export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) {

@@ -16,7 +16,9 @@ async function fixture(): Promise<void> {
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
-  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN', models: [
+  const { useModelCatalogStore } = await import('../src/renderer/src/stores/model-catalog')
+  useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
+  useModelCatalogStore.setState({ revision: 1, refreshing: false, models: [
     { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: false }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')

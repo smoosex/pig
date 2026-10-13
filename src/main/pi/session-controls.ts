@@ -107,13 +107,10 @@ function persistedContextUsage(
  * an opened session reports the model, thinking level, and context usage its branch recorded, never
  * the global defaults.
  */
-function pendingControls(
-  session: MemorySession,
-  models: SessionControls['models']
-): SessionControls {
+function pendingControls(session: MemorySession): SessionControls {
   const context = session.sessionManager.buildSessionContext()
   const branch = session.sessionManager.getBranch()
-  const model = resolveModel(session, context.model, models)
+  const model = resolveModel(session, context.model)
   const supported = thinkingLevelsFor(model)
   const picker = pickerThinkingLevels(supported)
   const recorded = branch.some((entry) => entry.type === 'thinking_level_change')
@@ -121,7 +118,6 @@ function pendingControls(
     : undefined
   return {
     model,
-    models,
     thinkingLevel: clampThinking(
       session.thinkingLevel ?? recorded ?? defaultThinkingFromSettings(model),
       picker.length > 0 ? picker : supported
@@ -135,8 +131,7 @@ function pendingControls(
 
 function resolveModel(
   session: PendingSession,
-  recorded: { provider: string; modelId: string } | null,
-  models: SessionControls['models']
+  recorded: { provider: string; modelId: string } | null
 ): SessionControls['model'] {
   return (
     (session.modelProvider && session.modelId
@@ -144,7 +139,7 @@ function resolveModel(
       : null) ??
     (recorded ? findModel(recorded.provider, recorded.modelId) : null) ??
     defaultModelFromSettings() ??
-    models[0] ??
+    availableModels()[0] ??
     null
   )
 }
@@ -240,17 +235,15 @@ export function fileContextUsage(
 
 function fileControls(
   session: SessionFileSession,
-  models: SessionControls['models'],
   index: SessionFileIndex
 ): SessionControls {
   const file: IndexedFile = { path: session.path, index }
   const settings = fileSettings(file)
-  const model = resolveModel(session, settings.model, models)
+  const model = resolveModel(session, settings.model)
   const supported = thinkingLevelsFor(model)
   const picker = pickerThinkingLevels(supported)
   return {
     model,
-    models,
     thinkingLevel: clampThinking(
       session.thinkingLevel ?? settings.thinkingLevel ?? defaultThinkingFromSettings(model),
       picker.length > 0 ? picker : supported
@@ -304,7 +297,6 @@ function fileTokenStats(file: IndexedFile, session: SessionFileSession): Session
 
 export async function controlsFor(session: SessionState): Promise<SessionControls> {
   await startModelRuntime()
-  const models = availableModels()
   if ('agentSession' in session) {
     const model = session.agentSession.model
       ? toModelInfo(session.agentSession.model)
@@ -312,7 +304,6 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
     const usage = session.agentSession.getContextUsage()
     return {
       model,
-      models,
       thinkingLevel: session.agentSession.thinkingLevel,
       thinkingLevels: pickerThinkingLevels(
         session.agentSession.getAvailableThinkingLevels() as SessionThinkingLevel[]
@@ -329,9 +320,9 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
     }
   }
 
-  if (session.kind !== 'file') return pendingControls(session, models)
+  if (session.kind !== 'file') return pendingControls(session)
   // Waiting here is the point of the split: the picker and the ring appear when the index exists.
-  return fileControls(session, models, await sessionIndex(session))
+  return fileControls(session, await sessionIndex(session))
 }
 
 export async function setSessionModel(
@@ -380,9 +371,4 @@ export async function setSessionThinking(
   if (!current.thinkingLevels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
   session.thinkingLevel = level
   return { ...current, thinkingLevel: level }
-}
-
-export async function refreshSessionModels(session: SessionState): Promise<SessionControls> {
-  await (await startModelRuntime()).refresh()
-  return controlsFor(session)
 }

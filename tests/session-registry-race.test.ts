@@ -88,7 +88,7 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
         }
         return { session }
       },
-      ModelRuntime: { create: async () => ({ refresh: async () => {} }) },
+      ModelRuntime: { create: async () => ({ refresh: async () => {}, getAvailableSnapshot: () => [] }) },
       SessionManager: {
         open: () => {
           openCalls++
@@ -219,7 +219,7 @@ async function reproduceReopen(): Promise<void> {
         }
         return { session }
       },
-      ModelRuntime: { create: async () => ({ refresh: async () => {} }) },
+      ModelRuntime: { create: async () => ({ refresh: async () => {}, getAvailableSnapshot: () => [] }) },
       SessionManager: {
         create: () => manager,
         open: () => {
