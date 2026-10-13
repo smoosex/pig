@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { shell, type BrowserWindow } from 'electron'
 import { currentLocale } from '../i18n'
-import { startModelRuntime } from './model-settings'
+import { getOrCreateDeviceId, startModelRuntime } from './model-settings'
 import { synchronizeModelCatalog } from './model-catalog'
 
 import type {
@@ -173,6 +173,11 @@ export async function loginProvider(
   try {
     const runtime = await startModelRuntime()
     abort.signal.throwIfAborted()
+    // The SDK callback is synchronous; persist OpenAI's installation ID before entering its flow.
+    const deviceId = providerId === 'openai' && authType === 'oauth'
+      ? await getOrCreateDeviceId()
+      : undefined
+    abort.signal.throwIfAborted()
     await runtime.login(providerId, authType, {
       signal: abort.signal,
       prompt: (prompt) => {
@@ -191,7 +196,7 @@ export async function loginProvider(
         if (url) void shell.openExternal(url).catch((error) => console.error('Could not open login URL:', error))
         send({ kind: 'notify', event: payload })
       }
-    })
+    }, deviceId === undefined ? undefined : { getDeviceId: () => deviceId })
     abort.signal.throwIfAborted()
     try {
       await runtime.refresh({ providers: [providerId], signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) })
@@ -201,7 +206,7 @@ export async function loginProvider(
       synchronizeModelCatalog()
     }
   } catch (error) {
-    // Translate cancellation to the auth boundary's result; all other SDK/refresh failures propagate.
+    // Translate cancellation to the auth boundary's result; settings/SDK/refresh failures propagate.
     if (abort.signal.aborted) throw cancelled
     throw error
   } finally {
