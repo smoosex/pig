@@ -818,25 +818,39 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { notice!.click(); await Bun.sleep(0) })
       assert.ok(container.textContent?.includes('保留这条记忆'))
     } else if (name === 'tps') {
-      const first = { ...sourceRequest, generation: { outputTokens: 10, durationMs: 500 } }
+      const first = { ...sourceRequest, generation: { outputTokens: 10, durationMs: 500, models: ['synthetic/synthetic'] } }
       const second = {
         ...sourceRequest,
         timestamp: 2_500,
         stopReason: 'stop' as const,
-        generation: { outputTokens: 30, durationMs: 500 }
+        generation: { outputTokens: 30, durationMs: 500, models: ['synthetic/synthetic'] }
       }
       const turn = buildTurn([sourceUser, first, sourceResult, second], false)
-      assert.deepEqual(turn.generation, { outputTokens: 40, durationMs: 1_000 })
+      assert.deepEqual(turn.generation, { outputTokens: 40, durationMs: 1_000, models: ['synthetic/synthetic'] })
       await render({ ...turn, id: 'tps', workedMs: 3_000 })
       const speed = separator().querySelector<HTMLElement>('[title]')!
       assert.equal(speed.textContent?.trim(), '· 40.0 tok/s')
       assert.equal(speed.title, '输出速度，不包含首字等待和工具执行时间')
 
+      // A model switch mid-turn sums two models' samples into one figure, so the legend has to name
+      // both rather than present the blend as a single model's decode speed.
+      const mixed = buildTurn([
+        sourceUser,
+        { ...first, generation: { outputTokens: 10, durationMs: 500, models: ['a/one'] } },
+        sourceResult,
+        { ...second, generation: { outputTokens: 30, durationMs: 500, models: ['b/two'] } }
+      ], false)
+      assert.deepEqual(mixed.generation, { outputTokens: 40, durationMs: 1_000, models: ['a/one', 'b/two'] })
+      await render({ ...mixed, id: 'tps-mixed', workedMs: 3_000 })
+      const mixedSpeed = separator().querySelector<HTMLElement>('[title]')!
+      assert.equal(mixedSpeed.textContent?.trim(), '· 40.0 tok/s')
+      assert.match(mixedSpeed.title, /本轮切换过模型（a\/one \/ b\/two）/)
+
       await render(makeTurn({
         answer: [{ type: 'text', text: 'plain answer' }],
         streaming: false,
         workedMs: 2_000,
-        generation: { outputTokens: 20, durationMs: 500 }
+        generation: { outputTokens: 20, durationMs: 500, models: ['synthetic/synthetic'] }
       }))
       const standalone = container.querySelector<HTMLElement>('[data-slot="marker"][data-variant="separator"]')!
       assert.match(standalone.textContent ?? '', /工作耗时 2 秒.*40.0 tok\/s/)
@@ -852,7 +866,7 @@ async function runFixture(name: string): Promise<void> {
         answer: [{ type: 'text', text: 'answer after summary' }],
         streaming: false,
         workedMs: 3_000,
-        generation: { outputTokens: 20, durationMs: 500 }
+        generation: { outputTokens: 20, durationMs: 500, models: ['synthetic/synthetic'] }
       }))
       const markers = [...container.querySelectorAll<HTMLElement>('[data-slot="marker"]')]
       const summaryIndex = markers.findIndex((row) => row.textContent?.includes('上下文已压缩'))
@@ -865,7 +879,7 @@ async function runFixture(name: string): Promise<void> {
         process: [{ kind: 'tools', tools: [readTool('short', true)] }],
         streaming: false,
         workedMs: 1_000,
-        generation: { outputTokens: 7, durationMs: 500 }
+        generation: { outputTokens: 7, durationMs: 500, models: ['synthetic/synthetic'] }
       }))
       assert.equal(separator().textContent?.includes('tok/s'), false)
     } else if (name === 'user-timestamp') {

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type CompactionItem, type ProcessItem, type Turn } from '../chat/turns'
+import type { Translate } from '../../../shared/i18n'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
@@ -61,6 +62,18 @@ function turnTps(turn: Turn): string | null {
     : null
 }
 
+/**
+ * Tooltip for a turn's speed. A turn whose samples came from more than one model measures their
+ * blend, so the legend names them instead of presenting the figure as one model's decode rate.
+ */
+function tpsTooltip(t: Translate, turn: Turn): string {
+  const description = t('turn.tpsDescription')
+  const models = turn.generation?.models ?? []
+  return models.length > 1
+    ? `${description} · ${t('turn.tpsMixedModels', { models: models.join(' / ') })}`
+    : description
+}
+
 function WorkedLabel({ turn, landmarks, block, sessionId }: {
   sessionId?: string
   turn: Turn
@@ -75,7 +88,7 @@ function WorkedLabel({ turn, landmarks, block, sessionId }: {
     <span className="flex items-center gap-1">
       <span>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</span>
       {tps ? (
-        <span className="tabular-nums" title={t('turn.tpsDescription')}>
+        <span className="tabular-nums" title={tpsTooltip(t, turn)}>
           · {t('turn.tps', { value: tps })}
         </span>
       ) : null}

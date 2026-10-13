@@ -995,15 +995,15 @@ async function runFixture(name: string): Promise<void> {
   await state().newSession(meta.cwd)
 
   if (name === 'generation-hydration') {
-    const assistant = (timestamp: number, outputTokens: number, durationMs: number) => ({
+    const assistant = (timestamp: number, outputTokens: number, durationMs: number, model = 'test') => ({
       role: 'assistant' as const,
-      timestamp, api: 'test', provider: 'test', model: 'test', stopReason: 'stop' as const,
+      timestamp, api: 'test', provider: 'test', model, stopReason: 'stop' as const,
       content: [{ type: 'text' as const, text: 'done' }],
       usage: {
         input: 10, output: outputTokens, cacheRead: 0, cacheWrite: 0, totalTokens: 10 + outputTokens,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
       },
-      generation: { outputTokens, durationMs }
+      generation: { outputTokens, durationMs, models: [`test/${model}`] }
     })
     state().appendLiveMessage(meta.id, { role: 'user', content: 'same prompt', timestamp: 100 })
     state().appendLiveMessage(meta.id, assistant(200, 20, 500))
@@ -1038,8 +1038,8 @@ async function runFixture(name: string): Promise<void> {
     api.getDisplayTurns = async () => display
     await state().hydrateTurns(meta.id)
     assert.deepEqual(runtime().generationByTurnId, {
-      first: { outputTokens: 20, durationMs: 500 },
-      second: { outputTokens: 30, durationMs: 600 }
+      first: { outputTokens: 20, durationMs: 500, models: ['test/test'] },
+      second: { outputTokens: 30, durationMs: 600, models: ['test/test'] }
     })
     assert.deepEqual(runtime().liveMessages, [])
   } else if (name === 'queued-edit-draft') {

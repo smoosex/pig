@@ -459,6 +459,7 @@ export const en: Messages = {
     workedFor: 'Worked for {duration}',
     tps: '{value} tok/s',
     tpsDescription: 'Output speed, excluding time to first token and tool execution',
+    tpsMixedModels: 'The model changed during this turn ({models}); this speed blends them',
     createFork: 'Create fork',
     forkFailed: 'Could not create fork',
     retryMessage: 'Regenerate',

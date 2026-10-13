@@ -163,7 +163,7 @@ test('assistant output carries provider usage measured over active decoding time
 
   expect(state.events.at(-1)).toMatchObject({
     type: 'message_end',
-    message: { generation: { outputTokens: 25, durationMs: 500 } }
+    message: { generation: { outputTokens: 25, durationMs: 500, models: ['test/test'] } }
   })
   expect(message).not.toHaveProperty('generation')
   state.unsubscribe()
