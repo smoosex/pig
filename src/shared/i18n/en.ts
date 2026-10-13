@@ -596,7 +596,7 @@ export const en: Messages = {
     returnAndSummarize: 'Return with a summary', returnAndSummarizeDescription: 'Preserve the findings in a branch summary.',
     prPlaceholder: 'PR number or GitHub pull request URL', foldersPlaceholder: 'Paths separated by spaces or newlines',
     instructionsPlaceholder: 'What should the reviewer focus on?', active: 'Review active', activeCompact: 'Review',
-    endReview: 'Return to conversation', endFailed: 'Could not end review'
+    returning: 'Returning…', endReview: 'Return to conversation', endFailed: 'Could not end review'
   },
   thinking: {
     off: 'Off',

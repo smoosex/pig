@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import reviewExtension from '../src/main/plugins/pi-review/index'
-import { registerSystemUI } from '../src/main/plugins/pig-ui'
+import { isReviewReturning, registerSystemUI } from '../src/main/plugins/pig-ui'
 
 type Notification = { message: string; level?: string }
 
@@ -15,15 +16,17 @@ interface Session {
   handlers: Map<string, ((event: unknown, ctx: unknown) => unknown)[]>
   notifications: Notification[]
   reviewStates: boolean[]
+  returningStates: boolean[]
   appended: unknown[]
   sent: string[]
 }
 
 // Pi caches extension modules per cwd, so one module instance backs every session in a worktree.
 // Calling the factory twice models two Pig sessions sharing that instance.
-function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-pig-review-workspace'): Session {
+function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-pig-review-workspace', finishAction?: string): Session {
   const notifications: Notification[] = []
   const reviewStates: boolean[] = []
+  const returningStates: boolean[] = []
   const appended: unknown[] = []
   const sent: string[] = []
   const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>()
@@ -57,12 +60,14 @@ function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-p
   registerSystemUI(id, {
     send: () => {}, memory: { notify: () => {} },
     review: {
-      available: true, choose: async () => undefined, edit: async () => undefined,
+      available: true, get returning() { return returningStates.at(-1) ?? false },
+      choose: async (step) => step === 'finish' ? finishAction : undefined, edit: async () => undefined,
       notify: (message, level) => notifications.push({ message, level }),
-      setActive: (active) => reviewStates.push(active)
+      setActive: (active) => reviewStates.push(active),
+      setReturning: (returning) => returningStates.push(returning)
     }
   })
-  return { api, ctx, commands, handlers, notifications, reviewStates, appended, sent }
+  return { api, ctx, commands, handlers, notifications, reviewStates, returningStates, appended, sent }
 }
 
 function loadExtension(session: Session): void {
@@ -165,3 +170,55 @@ test('pi-review: custom review instructions are read from the asking session onl
   assert.equal(first.sent.length, 1)
   assert.ok(first.sent[0].includes('A-only rules'))
 })
+
+for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
+  test(`pi-review: ${action} locks only its session until navigation finishes`, async () => {
+    const id = `return-${action}`
+    const session = createSession(id, [reviewState('origin')], undefined, action)
+    const other = createSession(`${id}-other`)
+    loadExtension(session)
+    loadExtension(other)
+    await emit(session, 'session_start')
+    let finish!: (value: { cancelled: boolean }) => void
+    const navigation = new Promise<{ cancelled: boolean }>((resolve) => { finish = resolve })
+    const ctx = session.ctx as Pick<ExtensionCommandContext, 'navigateTree'>
+    ctx.navigateTree = async (target, options) => {
+      assert.equal(target, 'origin')
+      assert.equal(options?.summarize, action !== 'returnOnly')
+      return navigation
+    }
+    const end = session.commands.get('end-review')!
+    const ending = end('', session.ctx)
+    await Promise.resolve()
+    assert.equal(isReviewReturning(id), true)
+    assert.equal(isReviewReturning(`${id}-other`), false)
+    assert.deepEqual(session.returningStates, [true])
+    await end('', session.ctx)
+    assert.deepEqual(session.returningStates, [true], 'a duplicate command must not unlock the active return')
+    assert.equal(session.sent.length, 0)
+    finish({ cancelled: false })
+    await ending
+    assert.deepEqual(session.returningStates, [true, false])
+    assert.equal(isReviewReturning(id), false)
+    assert.equal(session.reviewStates.at(-1), false)
+    assert.equal(session.sent.length, action === 'returnAndFix' ? 1 : 0)
+  })
+}
+
+for (const outcome of ['cancelled', 'failed', 'menu-cancelled']) {
+  test(`pi-review: ${outcome} return unlocks the composer without clearing review mode`, async () => {
+    const session = createSession(`return-${outcome}`, [reviewState('origin')], undefined,
+      outcome === 'menu-cancelled' ? undefined : 'returnAndSummarize')
+    loadExtension(session)
+    await emit(session, 'session_start')
+    const ctx = session.ctx as Pick<ExtensionCommandContext, 'navigateTree'>
+    ctx.navigateTree = async () => {
+      if (outcome === 'failed') throw new Error('Summary failed')
+      return { cancelled: true }
+    }
+    await session.commands.get('end-review')!('', session.ctx)
+    assert.deepEqual(session.returningStates, [true, false])
+    assert.equal(session.reviewStates.at(-1), true)
+    assert.equal(session.sent.length, 0)
+  })
+}

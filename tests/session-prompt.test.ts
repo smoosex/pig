@@ -55,6 +55,34 @@ async function fixture(): Promise<void> {
   assert.equal(accepted.length, 2)
   assert.equal(cancelled, 2)
   assert.equal(released, 4)
+
+  const { attachSystemUI, detachSystemUI, resetSystemUI } = await import('../src/main/pi/system-plugin-ui')
+  const { reviewUI } = await import('../src/main/plugins/pig-ui')
+  const events: unknown[] = []
+  attachSystemUI('session', {
+    isDestroyed: () => false,
+    webContents: { isDestroyed: () => false, send: (_channel: string, event: unknown) => events.push(event) }
+  } as unknown as BrowserWindow)
+  const ui = reviewUI({ sessionManager: { getSessionId: () => 'session' } })
+  try {
+    ui.setReturning(true)
+    assert.deepEqual(events.at(-1), { kind: 'review-returning', sessionId: 'session', returning: true })
+    for (const streamingBehavior of ['followUp', 'steer'] as const) {
+      await assert.rejects(promptSession('session', { text: 'During summary', streamingBehavior }), /returning from review/)
+    }
+    assert.equal(accepted.length, 2)
+    assert.equal(pendingModes.length, 4, 'blocked prompts never enter the delivery queue')
+    assert.equal(released, 6, 'rejected prompts release the input lease')
+    await promptSession('other-session', { text: 'Another session', streamingBehavior: 'followUp' })
+    assert.equal(accepted.length, 3)
+    resetSystemUI('session')
+    assert.equal(ui.returning, false)
+    assert.deepEqual(events.at(-1), { kind: 'reset', sessionId: 'session' })
+    await promptSession('session', { text: 'After return', streamingBehavior: 'followUp' })
+    assert.equal(accepted.length, 4)
+  } finally {
+    detachSystemUI('session')
+  }
 }
 
 async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise<void> {

@@ -12,23 +12,6 @@ export function stripThoughtHeading(text: string): string {
   return text.replace(/^(Thought for \d+s|已?思考了?\s*\d+\s*(秒|s)?)\s*\n+/i, '').trim()
 }
 
-export function ProcessDisclosure({ title, text }: { title: string; text: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
-      <CollapsibleTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
-          <Chevron open={open} />
-          <span>{title}</span>
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <pre className={cn(pre, 'px-2 pb-2 text-muted-foreground')}>{text}</pre>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 /**
  * One thinking block. Live rows track the newest line of reasoning until the
  * reader scrolls away from it; settled rows only render once expanded.

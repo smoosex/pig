@@ -37,7 +37,7 @@ export function Composer({
   workspace?: { project: string; branch: string } | null
 } = {}) {
   const t = useT()
-  const { sessionId, isDraftSession, isStreaming, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
+  const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
   const appearance = useComposerAppearance()
   const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const [focused, setFocused] = useState(false)
@@ -51,7 +51,7 @@ export function Composer({
       <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
           <div ref={boxRef} className="relative rounded-2xl shadow-md">
-            <SteerHint visible={isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
+            <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
               <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
                 <InputGroup
@@ -73,11 +73,11 @@ export function Composer({
                       editor={editor}
                       className={cn('min-h-16 w-full shrink-0 px-3.5 pt-3 text-sm leading-snug [&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', bashMode && 'font-mono')}
                     />
-                    <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} />
+                    <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} disabled={inputDisabled} />
                     {attachments.error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{attachments.error}</p> : null}
                     {error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{error}</p> : null}
                     {canRestore ? (
-                      <Button type="button" variant="link" size="xs" className="mx-2.5 mb-1.5" onClick={restore}>
+                      <Button type="button" variant="link" size="xs" className="mx-2.5 mb-1.5" disabled={inputDisabled} onClick={restore}>
                         {t('composer.restoreDraft')}
                       </Button>
                     ) : null}
@@ -89,6 +89,7 @@ export function Composer({
                     canRunBash={canRunBash}
                     hasDraft={hasDraft}
                     isDraftSession={isDraftSession}
+                    inputDisabled={inputDisabled}
                     onSend={send}
                     onAbort={abort}
                   />

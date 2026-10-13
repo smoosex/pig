@@ -6,9 +6,11 @@ export interface SystemNotifier {
 }
 export interface ReviewUI extends SystemNotifier {
   readonly available: boolean
+  readonly returning: boolean
   choose(step: ReviewStep, options: ReviewOption[]): Promise<string | undefined>
   edit(step: ReviewStep, prefill?: string): Promise<string | undefined>
   setActive(active: boolean): void
+  setReturning(returning: boolean): void
 }
 export interface SystemUIHost {
   review: ReviewUI
@@ -26,14 +28,20 @@ export function registerSystemUI(sessionId: string, host?: SystemUIHost): void {
   else hosts.delete(sessionId)
 }
 
+export function isReviewReturning(sessionId: string): boolean {
+  return hosts.get(sessionId)?.review.returning ?? false
+}
+
 export function reviewUI(ctx: SessionIdentity): ReviewUI {
   const sessionId = ctx.sessionManager.getSessionId()
   return {
     get available() { return hosts.has(sessionId) },
+    get returning() { return isReviewReturning(sessionId) },
     choose: (step, options) => hosts.get(sessionId)?.review.choose(step, options) ?? Promise.resolve(undefined),
     edit: (step, prefill) => hosts.get(sessionId)?.review.edit(step, prefill) ?? Promise.resolve(undefined),
     notify: (message, level) => hosts.get(sessionId)?.review.notify(message, level),
-    setActive: (active) => hosts.get(sessionId)?.review.setActive(active)
+    setActive: (active) => hosts.get(sessionId)?.review.setActive(active),
+    setReturning: (returning) => hosts.get(sessionId)?.review.setReturning(returning)
   }
 }
 

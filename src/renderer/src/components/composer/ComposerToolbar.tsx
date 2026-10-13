@@ -50,6 +50,7 @@ export function ComposerToolbar({
   canRunBash,
   hasDraft,
   isDraftSession,
+  inputDisabled,
   onSend,
   onAbort
 }: {
@@ -59,6 +60,7 @@ export function ComposerToolbar({
   canRunBash: boolean
   hasDraft: boolean
   isDraftSession: boolean
+  inputDisabled: boolean
   onSend: () => Promise<void>
   onAbort: () => Promise<void>
 }) {
@@ -126,7 +128,7 @@ export function ComposerToolbar({
             variant="default"
             className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
             aria-label={bashMode ? t('composer.runBash') : isStreaming ? t('composer.queue') : t('composer.send')}
-            disabled={!sessionId || bashRunning || (bashMode ? !canRunBash || isStreaming : !hasDraft)}
+            disabled={!sessionId || inputDisabled || bashRunning || (bashMode ? !canRunBash || isStreaming : !hasDraft)}
             onClick={() => void onSend()}
           >
             <ArrowUp />

@@ -3,7 +3,6 @@
  * kind is clustered, so intervening assistant text remains in its original place.
  */
 import type { BashExecutionMessage, CustomMessage } from '../../pi/types'
-import type { MessageKey } from '../../../../shared/i18n'
 import type { ProcessItem, ToolStep } from '../../chat/turns'
 
 export type IconKind = 'thinking' | 'bash' | 'file' | 'tool'
@@ -25,7 +24,7 @@ export function iconKinds(items: ProcessItem[]): IconKind[] {
   for (const item of items) {
     if (item.kind === 'thinking') push('thinking')
     else if (item.kind === 'bash') push('bash')
-    else if (item.kind === 'custom' || item.kind === 'summary') push('tool')
+    else if (item.kind === 'custom') push('tool')
     else if (item.kind === 'tools') {
       for (const step of item.tools) push(stackKindForTool(step.name))
     }
@@ -38,7 +37,6 @@ export type WorkRow =
   | { kind: 'tools'; steps: ToolStep[] }
   | { kind: 'bash'; messages: BashExecutionMessage[] }
   | { kind: 'custom'; message: CustomMessage }
-  | { kind: 'summary'; titleKey: MessageKey; text: string }
 
 export function clusterWork(items: ProcessItem[]): WorkRow[] {
   const rows: WorkRow[] = []
@@ -64,8 +62,6 @@ export function clusterWork(items: ProcessItem[]): WorkRow[] {
       continue
     }
     if (item.kind === 'custom') rows.push({ kind: 'custom', message: item.message })
-    else if (item.kind === 'summary')
-      rows.push({ kind: 'summary', titleKey: item.titleKey, text: item.text })
   }
   return rows
 }

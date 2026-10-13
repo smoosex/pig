@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type CompactionItem, type ProcessItem, type Turn } from '../chat/turns'
 import type { Translate } from '../../../shared/i18n'
+import type { DisplayBranchSummary } from '../../../shared/api'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
@@ -10,6 +11,7 @@ import { Marker, MarkerContent } from './ui/marker'
 import { Answer, UserBubble } from './turn/TurnMessages'
 import { BashTurn } from './turn/BashTurn'
 import { CompactionNotice } from './turn/CompactionNotice'
+import { BranchSummaryNotice } from './turn/BranchSummaryNotice'
 import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkBlockMs } from './turn/useWorkBlockMs'
 
@@ -20,9 +22,11 @@ import { useWorkBlockMs } from './turn/useWorkBlockMs'
  * turn's answer are handed back separately, because they belong below the answer rather than inside
  * the work block.
  */
-type ProcessSegment =
-  | { kind: 'work'; items: ProcessItem[]; block: number }
-  | { kind: 'compaction'; item: Extract<ProcessItem, { kind: 'compaction' }> }
+type SummarySegment =
+  | { kind: 'compaction'; item: CompactionItem }
+  | { kind: 'branchSummary'; item: DisplayBranchSummary }
+
+type ProcessSegment = { kind: 'work'; items: ProcessItem[]; block: number } | SummarySegment
 
 function segmentProcess(items: ProcessItem[]): ProcessSegment[] {
   const segments: ProcessSegment[] = []
@@ -106,7 +110,8 @@ function AgentTurnView({
   turn: Turn
   onNeedProcess?: (turnId: string) => Promise<void>
 }) {
-  const trailing: Extract<ProcessItem, { kind: 'compaction' }>[] = []
+  const trailing: SummarySegment[] = []
+  const trailingCompactions: CompactionItem[] = []
   const inline: ProcessItem[] = []
   // Pi keeps a compaction in the same stream as the work, so a loaded process owns its landmarks and
   // has their exact position. The projection's copies stand in while the process is unread — a
@@ -114,14 +119,28 @@ function AgentTurnView({
   // process on hand is a partial one, such as the command row a finished run leaves behind.
   const loaded = turn.process.some((item) => item.kind === 'compaction') ? [] : turn.compactions ?? []
   for (const item of [...turn.process, ...loaded]) {
-    if (item.kind === 'compaction' && item.afterAnswer) trailing.push(item)
-    else inline.push(item)
+    if (item.kind === 'compaction' && item.afterAnswer) {
+      trailingCompactions.push(item)
+      trailing.push({ kind: 'compaction', item })
+    } else inline.push(item)
   }
   const landmarks = inline.filter((item): item is CompactionItem => item.kind === 'compaction')
   // History already knows which intervals contain work; reading a body must not create its header.
   const blocks = turn.process.length === 0 && turn.workBlocks
     ? projectedSegments(landmarks, turn.workBlocks)
     : segmentProcess(inline)
+  // Handoffs occupy compaction intervals without creating new timed work blocks. Source offsets
+  // keep their order even when history bodies are unread or multiple entries share a timestamp.
+  for (const item of turn.branchSummaries ?? []) {
+    const target = item.afterAnswer ? trailing : blocks
+    const nextCompaction = item.afterAnswer
+      ? trailingCompactions[item.compactionsBefore - landmarks.length]
+      : landmarks[item.compactionsBefore]
+    const index = nextCompaction
+      ? target.findIndex((segment) => segment.kind === 'compaction' && segment.item === nextCompaction)
+      : target.length
+    target.splice(index, 0, { kind: 'branchSummary', item })
+  }
   const hasWork = blocks.some((segment) => segment.kind === 'work')
   const showHeader = hasWork || turn.streaming || (!turn.workBlocks && Boolean(turn.hasProcess) && turn.process.length === 0)
   const showBody = showHeader || blocks.length > 0
@@ -187,6 +206,7 @@ function AgentTurnView({
         await onNeedProcess(turn.id)
         if (request.current !== token) return
       } catch (error) {
+        // UI boundary for lazy-history IPC/read failures: keep the block closed and show the error.
         if (request.current === token) setLoadError(error instanceof Error ? error.message : String(error))
         return
       } finally {
@@ -210,7 +230,9 @@ function AgentTurnView({
       {showBody ? (
         <div className="mb-3">
           {blocks.map((block, index) =>
-            block.kind === 'compaction' ? (
+            block.kind === 'branchSummary' ? (
+              <BranchSummaryNotice key={`branch-${index}`} text={block.item.text} />
+            ) : block.kind === 'compaction' ? (
               <CompactionNotice key={`compaction-${index}`} item={block.item} />
             ) : (
               // One Collapsible per work block, each with its own header: they open independently,
@@ -259,7 +281,9 @@ function AgentTurnView({
         </div>
       ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
       {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
-      {trailing.map((item, index) => <CompactionNotice key={`trailing-${index}`} item={item} />)}
+      {trailing.map((segment, index) => segment.kind === 'compaction'
+        ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
+        : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
     </div>
   )
 }
@@ -268,7 +292,8 @@ function AgentTurnView({
 // the command, so the leftovers are projected onto a turn without command metadata.
 function withoutCommand(turn: Turn): Turn | null {
   const process = turn.process.filter((item) => item.kind !== 'bash')
-  if (process.length === 0 && turn.answer.length === 0 && !turn.errorMessage && (turn.compactions?.length ?? 0) === 0) return null
+  if (process.length === 0 && turn.answer.length === 0 && !turn.errorMessage &&
+    (turn.compactions?.length ?? 0) === 0 && (turn.branchSummaries?.length ?? 0) === 0) return null
   return { ...turn, process, bash: undefined, hasProcess: process.length > 0 }
 }
 

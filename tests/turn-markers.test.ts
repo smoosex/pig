@@ -651,6 +651,118 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(partial.length, 2, 'the work header and the projection landmark')
       await act(async () => { partial[1].click(); await Bun.sleep(0) })
       assert.ok(container.textContent?.includes('投影压缩'))
+    } else if (name === 'branch-summary') {
+      const { displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model')
+      const { toTurn } = await import('../src/renderer/src/chat/display-turns')
+      const message = (id: string, value: Message) => ({
+        type: 'message', id, parentId: null, timestamp: new Date(value.timestamp).toISOString(), message: value
+      })
+      const handoff = {
+        type: 'branch_summary', id: 'handoff', parentId: null, timestamp: new Date(4_000).toISOString(),
+        summary: '## Review findings\n\nFix the return race.', fromId: 'review'
+      }
+      const entries = [
+        message('user', sourceUser), message('request', sourceRequest), message('result', sourceResult),
+        message('answer', { ...sourceRequest, timestamp: 3_000, content: [{ type: 'text', text: '最后回答' }] }),
+        handoff
+      ] as unknown as Parameters<typeof displayTurnsFromEntries>[1]
+      const [display] = displayTurnsFromEntries('session', entries)
+      const canonical = buildTurn(turnMessagesFromEntries(entries, display.id) as Message[], false)
+      const process = canonical.process
+      const requested: string[] = []
+      const load = async (id: string) => {
+        requested.push(id)
+        root.render(createElement(TooltipProvider, null, createElement(TurnView, { turn: toTurn(display, process), onNeedProcess: load })))
+      }
+      const workHeaders = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
+        .filter((button) => button.textContent?.includes('工作耗时'))
+      const summaryHeaders = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
+        .filter((button) => button.textContent?.includes('分支摘要'))
+      await render(canonical)
+      assert.equal(summaryHeaders().length, 1, 'a message-built turn also has a standalone summary')
+      await render(toTurn(display, []), load)
+      assert.equal(workHeaders().length, 1)
+      const work = workHeaders()[0]
+      assert.equal(work.getAttribute('aria-expanded'), 'false')
+      assert.equal(summaryHeaders().length, 1, 'the summary is visible before process loading')
+      const summary = summaryHeaders()[0]
+      assert.equal(summary.closest('[data-slot="collapsible-content"]'), null)
+      assert.ok(container.textContent!.indexOf('最后回答') < container.textContent!.indexOf('分支摘要'))
+      assert.equal(container.textContent?.includes('Fix the return race.'), false)
+      await act(async () => { summary.click(); await Bun.sleep(0) })
+      assert.equal(container.querySelector('h2')?.textContent, 'Review findings')
+      assert.ok(container.textContent?.includes('Fix the return race.'))
+      assert.equal(work.getAttribute('aria-expanded'), 'false')
+      assert.deepEqual(requested, [], 'opening the summary does not load tool history')
+      await act(async () => { work.click(); await Bun.sleep(0) })
+      assert.deepEqual(requested, [display.id])
+      assert.equal(summaryHeaders().length, 1, 'loading the process does not duplicate the summary')
+      assert.equal(summaryHeaders()[0], summary)
+      assert.equal(summary.getAttribute('aria-expanded'), 'true')
+      const workBody = document.getElementById(work.getAttribute('aria-controls')!)!
+      assert.ok(workBody.textContent?.trim())
+      assert.equal(workBody.textContent?.includes('分支摘要'), false)
+      await act(async () => { work.click(); await Bun.sleep(0) })
+      assert.ok(container.textContent?.includes('Fix the return race.'))
+      const [summaryOnly] = displayTurnsFromEntries('session', [handoff] as unknown as Parameters<typeof displayTurnsFromEntries>[1])
+      await render(toTurn(summaryOnly, []), load)
+      assert.equal(workHeaders().length, 0, 'a summary alone has no fake work disclosure')
+      assert.equal(summaryHeaders().length, 1)
+      assert.deepEqual(requested, [display.id])
+    } else if (name === 'summary-order') {
+      const { displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model')
+      const { toTurn } = await import('../src/renderer/src/chat/display-turns')
+      const message = (id: string, value: Message) => ({
+        type: 'message', id, parentId: null, timestamp: new Date(value.timestamp).toISOString(), message: value
+      })
+      const answer = message('answer', { ...sourceRequest, timestamp: 3_000, content: [{ type: 'text', text: '回答正文' }] })
+      // Equal timestamps ensure ordering comes from the source stream, not a timestamp sort.
+      const branch = (id: string) => ({
+        type: 'branch_summary', id, parentId: null, timestamp: new Date(4_000).toISOString(), summary: id, fromId: 'review'
+      })
+      const compact = (id: string) => ({
+        type: 'compaction', id, parentId: null, timestamp: new Date(4_000).toISOString(), summary: id, tokensBefore: 42
+      })
+      for (const resumed of [false, true]) {
+        for (const notes of [
+          [branch('branch-1')],
+          [branch('branch-1'), compact('compact-1'), branch('branch-2'), compact('compact-2')],
+          [compact('compact-1'), branch('branch-1'), compact('compact-2'), branch('branch-2')]
+        ]) {
+          const entries = [
+            message('user', sourceUser), answer, ...notes,
+            ...(resumed ? [message('resumed', { ...sourceRequest, timestamp: 5_000, content: [{ type: 'text', text: '后续回答' }] })] : [])
+          ] as unknown as Parameters<typeof displayTurnsFromEntries>[1]
+          const [display] = displayTurnsFromEntries('session', entries)
+          const canonical = buildTurn(turnMessagesFromEntries(entries, display.id) as Message[], false)
+          const expectedSummaries = notes.flatMap((note, index) => note.type === 'branch_summary' ? [{
+            text: note.summary, afterAnswer: !resumed,
+            compactionsBefore: notes.slice(0, index).filter((before) => before.type === 'compaction').length
+          }] : [])
+          assert.deepEqual(display.branchSummaries, expectedSummaries)
+          assert.deepEqual(canonical.branchSummaries, expectedSummaries)
+          const expected = notes.map((note) => note.type === 'branch_summary' ? '分支摘要' : '上下文已压缩')
+          for (const turn of [toTurn(display, []), toTurn(display, canonical.process), canonical]) {
+            await render(turn)
+            const markers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
+              .filter((button) => !button.textContent?.includes('工作耗时'))
+            assert.deepEqual(markers.map((button) => button.textContent?.startsWith('分支摘要') ? '分支摘要' : '上下文已压缩'), expected)
+            const text = container.textContent!
+            if (resumed) assert.ok(text.indexOf('后续回答') > text.lastIndexOf(expected.at(-1)!))
+            else assert.ok(text.indexOf('回答正文') < text.indexOf(expected[0]))
+            assert.ok(markers.every((button) => button.closest('[data-slot="collapsible-content"]') === null))
+            if (resumed && turn.process.length > 0) {
+              const work = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
+                .find((button) => button.textContent?.includes('工作耗时'))!
+              assert.ok(work)
+              if (work.getAttribute('aria-expanded') === 'false') await act(async () => { work.click(); await Bun.sleep(0) })
+              const body = document.getElementById(work.getAttribute('aria-controls')!)!
+              assert.ok(body.textContent?.includes('回答正文'), 'loading history preserves the earlier reply')
+              assert.equal(body.textContent?.includes('后续回答'), false)
+            }
+          }
+        }
+      }
     } else if (name === 'compaction-unloaded' || name === 'compaction-retry-text') {
       const retryText = name === 'compaction-retry-text'
       const { displayTurnsFromEntries, turnMessagesFromEntries } = await import('../src/main/pi/session-display-model')
@@ -1034,6 +1146,8 @@ if (process.argv[2] === '--marker-fixture') {
     finish: 'shimmer stops during the 300ms collapse and restart cancels stale cleanup',
     'command-continuation': 'a command continuation keeps live thinking, locked work headers and a ticking clock until settlement',
     compaction: 'a compaction renders as its own landmark outside the collapsed work block',
+    'branch-summary': 'review handoffs expand independently before process loading and never become work',
+    'summary-order': 'review handoffs and compactions keep source order before and after process loading',
     'compaction-live': 'a live compaction splits the turn into two blocks that time themselves alone',
     'compaction-unloaded': 'all persisted work headers survive settlement, lazy loading and reopening',
     'compaction-retry-text': 'partial-text retries after compaction create no empty or disappearing work header',

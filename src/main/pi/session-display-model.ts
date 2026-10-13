@@ -240,14 +240,15 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
 
   let hasProcess = false
   const workBlocks = [false]
-  let blockHasNonTextWork = false
+  let blockHasRetainedWork = false
   const markNonTextWork = () => {
     hasProcess = true
     workBlocks[workBlocks.length - 1] = true
-    blockHasNonTextWork = true
+    blockHasRetainedWork = true
   }
   let answer: DisplayAnswer[] = []
   const compactions: DisplayCompaction[] = []
+  const branchSummaries: DisplayTurn['branchSummaries'] = []
   let errorMessage: string | undefined
   // The work clock runs from the prompt to the next landmark and stops while a summary is written.
   // Entry write times, not message stamps: every row the projection reads has one.
@@ -293,9 +294,9 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
         if (blocks.length > 0) answer = blocks
         else if (!splitTrailing) {
           answer = pulled
-          // buildTurn merges adjacent text across replies, then pulls the entire trailing text into
-          // the answer. Only non-text work can keep this interval's header after that extraction.
-          workBlocks[workBlocks.length - 1] = blockHasNonTextWork
+          // Answer extraction stops at a branch summary. Earlier text, like non-text work, still
+          // owns this interval's header when the last reply is pulled into the answer.
+          workBlocks[workBlocks.length - 1] = blockHasRetainedWork
         }
       } else if (pulled.length > 0 || blocks.length > 0 || !isLast) {
         hasProcess = true
@@ -310,12 +311,19 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     if (
       message.role === 'toolResult' ||
       message.role === 'bashExecution' ||
-      message.role === 'custom' ||
-      message.role === 'branchSummary'
+      message.role === 'custom'
     ) {
       // The leading standalone command has its own card, not an assistant work header.
       if (bash && i === 0) hasProcess = true
       else markNonTextWork()
+    }
+    if (message.role === 'branchSummary') {
+      branchSummaries.push({
+        text: message.summary as string,
+        afterAnswer: i > lastAssistant,
+        compactionsBefore: compactions.length
+      })
+      blockHasRetainedWork ||= workBlocks[workBlocks.length - 1]
     }
     if (message.role === 'compactionSummary') {
       // Nothing is written while the summary is being written, so the gap between the entry before
@@ -334,7 +342,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
       })
       if (i < lastAssistant) {
         workBlocks.push(false)
-        blockHasNonTextWork = false
+        blockHasRetainedWork = false
       }
     }
   })
@@ -349,6 +357,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
     answer,
     compactions,
+    branchSummaries,
     workBlocks,
     errorMessage,
     startedAt,

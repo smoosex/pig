@@ -61,7 +61,7 @@ async function fixture(scenario: string): Promise<void> {
     hydrateTurns: async () => {
       hydrationCalls++
       if (scenario.startsWith('bash')) store.runtime.one.turns = [{
-        id: 'bash-row', bash: { command: 'echo done', cancelled: false }, answer: [], compactions: [], workBlocks: [false],
+        id: 'bash-row', bash: { command: 'echo done', cancelled: false }, answer: [], branchSummaries: [], compactions: [], workBlocks: [false],
         hasProcess: true, startedAt: 1, endedAt: 2
       }]
       return true
@@ -85,7 +85,7 @@ async function fixture(scenario: string): Promise<void> {
       return { sessionId: 'one', cwd: '/project', created: true }
     },
     prompt: async (...args: Parameters<SessionApi['prompt']>) => {
-      const [, text, , , behavior] = args
+      const [target, text, , , behavior] = args
       promptCalls++
       sentPrompt = text
       behaviors.push(behavior)
@@ -93,7 +93,7 @@ async function fixture(scenario: string): Promise<void> {
         if (scenario !== 'command-delayed') startRepair()
         if (scenario === 'command-error') throw new Error('Command failed after starting repair')
       } else {
-        if (scenario !== 'command-only') store.runtime.one.pendingUserMessage = false
+        if (scenario !== 'command-only') store.runtime[target].pendingUserMessage = false
         if (continuation && !behavior) throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
         if (scenario === 'accepted-error') throw new Error('Run failed after acknowledgement')
       }
@@ -158,6 +158,31 @@ async function fixture(scenario: string): Promise<void> {
         images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
       }
     })
+    if (scenario === 'review-returning') {
+      const { useSystemUIStore } = await import('../src/renderer/src/stores/system-ui')
+      useSystemUIStore.getState().setReviewReturning('one', true)
+      for (const mode of ['followUp', 'steer'] as const) await act(async () => { await state.send(mode) })
+      assert.equal(promptCalls, 0)
+      assert.equal(store.runtime.one.isStreaming, false)
+      assert.equal(editor.getDraft().text, '原文附件')
+      assert.equal(editor.getDraft().attachments.length, 1)
+      assert.equal(images.images.length, 1)
+      await render('two')
+      await act(async () => { editor.replaceText('另一会话'); prepared.resolve(); await state.send() })
+      assert.equal(promptCalls, 1)
+      assert.equal(sentPrompt, '另一会话')
+      await render('one')
+      await act(async () => { await state.send() })
+      assert.equal(promptCalls, 1)
+      assert.equal(editor.getDraft().text, '原文附件')
+      useSystemUIStore.getState().setReviewReturning('one', false)
+      await act(async () => { await state.send() })
+      assert.equal(promptCalls, 2)
+      assert.equal(editor.getDraft().text, '')
+      assert.equal(images.images.length, 0)
+      assert.equal(state.error, undefined)
+      return
+    }
     let sending!: Promise<void>
     let duplicate!: Promise<void>
     await act(async () => {
@@ -338,7 +363,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments']) {
+  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments', 'review-returning']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)
