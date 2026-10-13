@@ -1,5 +1,5 @@
 diff --git a/dist/extensions/mcp/index.d.ts b/dist/extensions/mcp/index.d.ts
-index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..a1230f90ddd3ed88dc9d1956fdb2fd92a2ac588c 100644
+index 2ee96fa..a1230f9 100644
 --- a/dist/extensions/mcp/index.d.ts
 +++ b/dist/extensions/mcp/index.d.ts
 @@ -25,6 +25,7 @@
@@ -26,10 +26,10 @@ index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..a1230f90ddd3ed88dc9d1956fdb2fd92
       * Saves `/mcp` changes to the server's config file: its project `override` when set, else its
       * `source`. Defaults to editing that `mcp.json`.
 diff --git a/dist/extensions/mcp/index.js b/dist/extensions/mcp/index.js
-index a0335babb4c21d2ce2346a99200c1f4335897424..96b6cc1275cd81e74535e0aa2f25e08110989157 100644
+index 8ebc6df..2ed79a0 100644
 --- a/dist/extensions/mcp/index.js
 +++ b/dist/extensions/mcp/index.js
-@@ -457,8 +457,9 @@ export function createMcpExtension(options = {}) {
+@@ -460,8 +460,9 @@ export function createMcpExtension(options = {}) {
              const connection = new runtime.McpServerConnection({
                  entry: server.entry,
                  cwd: sessionCwd,
@@ -40,7 +40,7 @@ index a0335babb4c21d2ce2346a99200c1f4335897424..96b6cc1275cd81e74535e0aa2f25e081
                  providerToken: async (provider) => modelRegistry?.getApiKeyForProvider(provider),
                  log: getServerLog(runtime),
                  onTools: (connection) => {
-@@ -565,6 +566,7 @@ export function createMcpExtension(options = {}) {
+@@ -568,6 +569,7 @@ export function createMcpExtension(options = {}) {
              try {
                  await track(runtime.signInMcpServer({
                      serverUrl: url,
@@ -48,7 +48,7 @@ index a0335babb4c21d2ce2346a99200c1f4335897424..96b6cc1275cd81e74535e0aa2f25e081
                      store: getCredentials(runtime).forServer(server.entry.name, url),
                      settings: connection.oauthSettings(),
                      challenge: connection.challenge,
-@@ -798,7 +800,7 @@ export function createMcpExtension(options = {}) {
+@@ -801,7 +803,7 @@ export function createMcpExtension(options = {}) {
              return signIn(server, {
                  showAuthorizationUrl: (url) => {
                      authorizationUrl = url.href;
@@ -57,7 +57,7 @@ index a0335babb4c21d2ce2346a99200c1f4335897424..96b6cc1275cd81e74535e0aa2f25e081
                  },
                  promptForRedirectUrl: async (signal) => {
                      const value = await ui.redirectUrl(title, authorizationUrl, signal);
-@@ -950,7 +952,7 @@ export function createMcpExtension(options = {}) {
+@@ -953,7 +955,7 @@ export function createMcpExtension(options = {}) {
                  failure = await signIn(server, {
                      showAuthorizationUrl: (url) => {
                          ctx.ui.notify(`Sign in to MCP server "${name}" in your browser:\n${url.href}`, "info");
@@ -67,7 +67,7 @@ index a0335babb4c21d2ce2346a99200c1f4335897424..96b6cc1275cd81e74535e0aa2f25e081
                      promptForRedirectUrl: (signal) => ctx.ui.input(`Waiting for sign-in to "${name}". If the browser cannot reach this machine, paste the URL it was redirected to.`, "http://127.0.0.1:.../callback?code=...", { signal }),
                  });
 diff --git a/dist/extensions/mcp/oauth.d.ts b/dist/extensions/mcp/oauth.d.ts
-index 6e9ee3ef8d4c1c7df168ee1e2c2ca475c2cebe58..f8fa6a3516d856c76d64468ed79d1b483039c1aa 100644
+index 6e9ee3e..f8fa6a3 100644
 --- a/dist/extensions/mcp/oauth.d.ts
 +++ b/dist/extensions/mcp/oauth.d.ts
 @@ -9,7 +9,7 @@
@@ -102,7 +102,7 @@ index 6e9ee3ef8d4c1c7df168ee1e2c2ca475c2cebe58..f8fa6a3516d856c76d64468ed79d1b48
  //# sourceMappingURL=oauth.d.ts.map
 \ No newline at end of file
 diff --git a/dist/extensions/mcp/oauth.js b/dist/extensions/mcp/oauth.js
-index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c9134e051 100644
+index 24852eb..c1c807b 100644
 --- a/dist/extensions/mcp/oauth.js
 +++ b/dist/extensions/mcp/oauth.js
 @@ -226,7 +226,7 @@ export function createMcpAuthProvider(options) {
@@ -133,7 +133,7 @@ index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c
          await authorizeMcp(provider, { ...flow, authorizationCode: code, iss });
      }
 diff --git a/dist/extensions/mcp/runtime.d.ts b/dist/extensions/mcp/runtime.d.ts
-index 57f09e05da5845912d7d303c81aee3f275b594e5..de1072d8ac1445db1ac64bb33f133a342f570849 100644
+index 07ef63a..a542817 100644
 --- a/dist/extensions/mcp/runtime.d.ts
 +++ b/dist/extensions/mcp/runtime.d.ts
 @@ -3,7 +3,7 @@
@@ -154,7 +154,7 @@ index 57f09e05da5845912d7d303c81aee3f275b594e5..de1072d8ac1445db1ac64bb33f133a34
  /** One configured server. Reconnects lazily when a call finds the connection gone. */
  export declare class McpServerConnection implements McpToolCaller, McpResourceServer {
      readonly entry: McpServerEntry;
-@@ -53,6 +53,7 @@ export declare class McpServerConnection implements McpToolCaller, McpResourceSe
+@@ -51,6 +51,7 @@ export declare class McpServerConnection implements McpToolCaller, McpResourceSe
          cwd: string;
          createTransport: McpTransportFactory;
          credentials: McpOAuthCredentialStore;
@@ -163,10 +163,10 @@ index 57f09e05da5845912d7d303c81aee3f275b594e5..de1072d8ac1445db1ac64bb33f133a34
          providerToken?: (provider: string) => Promise<string | undefined>;
          onTools: (connection: McpServerConnection) => void;
 diff --git a/dist/extensions/mcp/runtime.js b/dist/extensions/mcp/runtime.js
-index 04d60ef5c4fd537027059d1e8d44c546e6ff900a..2aea4a848300f6e0360a103ccf8bd6a24c1a0750 100644
+index 833ea47..a2b44ce 100644
 --- a/dist/extensions/mcp/runtime.js
 +++ b/dist/extensions/mcp/runtime.js
-@@ -49,13 +49,14 @@ function expandHome(value) {
+@@ -48,13 +48,14 @@ function expandHome(value) {
      }
      return value;
  }
@@ -182,7 +182,7 @@ index 04d60ef5c4fd537027059d1e8d44c546e6ff900a..2aea4a848300f6e0360a103ccf8bd6a2
          });
      }
      const env = {};
-@@ -141,6 +142,7 @@ export class McpServerConnection {
+@@ -124,6 +125,7 @@ export class McpServerConnection {
                  serverUrl: url,
                  store: options.credentials.forServer(this.entry.name, url),
                  settings: () => this.oauthSettings(),
