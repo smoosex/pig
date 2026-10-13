@@ -363,6 +363,13 @@ export interface DisplayCompaction {
   durationMs: number
 }
 
+export interface DisplayBranchSummary {
+  text: string
+  afterAnswer: boolean
+  /** Number of compaction records preceding this handoff in the turn's source stream. */
+  compactionsBefore: number
+}
+
 export interface DisplayTurn {
   id: string
   user?: DisplayUser
@@ -376,6 +383,8 @@ export interface DisplayTurn {
    * block is expanded is one the reader has to find first.
    */
   compactions: DisplayCompaction[]
+  /** Review branch handoffs stay visible without loading the turn's process bodies. */
+  branchSummaries: DisplayBranchSummary[]
   /**
    * Work presence in each interval separated by an inline compaction, including the final interval.
    * Empty intervals stay false; trailing compactions and the standalone command card are excluded.
@@ -385,7 +394,7 @@ export interface DisplayTurn {
   errorMessage?: string
   startedAt: number
   endedAt: number
-  /** Whether the turn has work beyond its compactions: the process disclosure has something behind it. */
+  /** Whether the turn has work beyond its summaries: the process disclosure has something behind it. */
   hasProcess: boolean
 }
 

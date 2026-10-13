@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { pastedTextFingerprint } from '../src/shared/pasted-text'
 import { buildTurn, type ProcessItem } from '../src/renderer/src/chat/turns'
+import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 let displayTurnsFromEntries: typeof import('../src/main/pi/session-display-model')['displayTurnsFromEntries']
 let turnMessagesFromEntries: typeof import('../src/main/pi/session-display-model')['turnMessagesFromEntries']
@@ -112,6 +113,65 @@ test('a turn that carries nothing but a compaction has no work of its own', () =
   // The landmark is not the disclosure's reason to exist: no work behind it means no work header.
   expect(turn.hasProcess).toBe(false)
   expect(turn.workBlocks).toEqual([false])
+})
+
+test('review branch summaries travel with the projection without inventing work', () => {
+  for (const withAnswer of [false, true]) {
+    const entries = [
+      {
+        type: 'message', id: 'user', parentId: null, timestamp: new Date(1_000).toISOString(),
+        message: { role: 'user', content: 'question', timestamp: 1_000 }
+      },
+      ...(withAnswer ? [{
+        type: 'message', id: 'answer', parentId: 'user', timestamp: new Date(2_000).toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: 'final answer' }], timestamp: 2_000 }
+      }] : []),
+      {
+        type: 'branch_summary', id: 'handoff', parentId: withAnswer ? 'answer' : 'user',
+        timestamp: new Date(3_000).toISOString(), summary: '## Review findings\n\nFix the return race.', fromId: 'review'
+      }
+    ] as unknown as SessionEntry[]
+    const [display] = displayTurnsFromEntries('session', entries)
+    const loaded = buildTurn(turnMessagesFromEntries(entries, display.id) as Parameters<typeof buildTurn>[0], false)
+    expect(display.branchSummaries).toEqual([{ text: '## Review findings\n\nFix the return race.', afterAnswer: true, compactionsBefore: 0 }])
+    expect(loaded.branchSummaries).toEqual(display.branchSummaries)
+    expect(display.hasProcess).toBe(false)
+    expect(display.workBlocks).toEqual([false])
+    expect(loaded.process).toEqual([])
+    expect(loaded.hasProcess).toBe(false)
+    expect(display.answer).toEqual(withAnswer ? [{ type: 'text', text: 'final answer' }] : [])
+  }
+})
+
+test('historical process loading keeps text before a branch summary out of the final answer', () => {
+  for (const content of [[{ type: 'text' as const, text: 'answer B' }], []]) {
+    const entries = [
+      {
+        type: 'message', id: 'user', parentId: null, timestamp: new Date(1_000).toISOString(),
+        message: { role: 'user', content: 'question', timestamp: 1_000 }
+      },
+      {
+        type: 'message', id: 'before', parentId: 'user', timestamp: new Date(2_000).toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: 'reply A' }], timestamp: 2_000 }
+      },
+      {
+        type: 'branch_summary', id: 'handoff', parentId: 'before', timestamp: new Date(3_000).toISOString(),
+        summary: 'review handoff', fromId: 'review'
+      },
+      {
+        type: 'message', id: 'after', parentId: 'handoff', timestamp: new Date(4_000).toISOString(),
+        message: { role: 'assistant', content, timestamp: 4_000 }
+      }
+    ] as unknown as SessionEntry[]
+    const [display] = displayTurnsFromEntries('session', entries)
+    const loaded = buildTurn(turnMessagesFromEntries(entries, display.id) as Parameters<typeof buildTurn>[0], false)
+    expect(loaded.process).toEqual([{ kind: 'text', text: 'reply A' }])
+    expect(loaded.answer).toEqual(content)
+    expect(display.workBlocks).toEqual([true])
+    const historical = toTurn(display, loaded.process)
+    expect(historical.process).toEqual([{ kind: 'text', text: 'reply A' }])
+    expect(historical.answer).toEqual(content)
+  }
 })
 
 describe('work layout before process loading', () => {

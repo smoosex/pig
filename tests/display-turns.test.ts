@@ -6,7 +6,7 @@ import type { AssistantMessage, PigImageContent, PiMessage } from '../src/render
 import { toTurn } from '../src/renderer/src/chat/display-turns'
 
 const display = (patch: Partial<DisplayTurn> = {}): DisplayTurn => ({
-  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], compactions: [], workBlocks: [patch.hasProcess ?? true], ...patch
+  id: 'turn', startedAt: 1000, endedAt: 2000, hasProcess: true, answer: [], branchSummaries: [], compactions: [], workBlocks: [patch.hasProcess ?? true], ...patch
 })
 
 describe('display turn projection', () => {

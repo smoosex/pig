@@ -117,21 +117,23 @@ async function fixture(): Promise<void> {
 
     // A command can head a turn that carries other entries; the card must not swallow them.
     const mixed: Turn = {
-      ...turn, id: 'command-1', process: [
-        { kind: 'bash', message },
-        { kind: 'summary', titleKey: 'chat.branchSummary', text: 'summarized' }
-      ], answer: [{ type: 'text', text: 'later' }]
+      ...turn, id: 'command-1', process: [{ kind: 'bash', message }],
+      branchSummaries: [{ text: 'summarized', afterAnswer: true, compactionsBefore: 0 }], answer: [{ type: 'text', text: 'later' }]
     }
     await act(async () => { root.render(createElement(TurnView, { turn: mixed })) })
     assert.equal(container.textContent?.includes('$ echo ready'), true)
     assert.equal(container.textContent?.includes('ready\n'), true)
     assert.equal(container.textContent?.includes('later'), true)
-    const worked = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Worked for'))
-    assert.ok(worked)
-    assert.equal(container.textContent?.includes('Branch summary'), false)
-    await act(async () => { worked.click(); await Bun.sleep(0) })
-    assert.equal(container.textContent?.includes('Branch summary'), true)
+    assert.equal(container.textContent?.includes('Worked for'), false)
+    const summary = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Branch summary'))
+    assert.ok(summary)
+    assert.equal(summary.closest('[data-slot="collapsible-content"]'), null)
+    await act(async () => { summary.click(); await Bun.sleep(0) })
+    assert.equal(container.textContent?.includes('summarized'), true)
     assert.equal(container.querySelectorAll('[data-slot="card"]').length, 1)
+    await act(async () => { root.render(createElement(TurnView, { turn: { ...mixed, answer: [] } })) })
+    assert.equal(container.textContent?.includes('Branch summary'), true)
+    assert.equal(container.textContent?.includes('Worked for'), false)
 
     const failedTurn: Turn = { ...turn, id: 'command-1', errorMessage: 'model exploded' }
     await act(async () => { root.render(createElement(TurnView, { turn: failedTurn })) })

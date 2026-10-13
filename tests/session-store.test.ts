@@ -33,7 +33,7 @@ const history = (id: string): DisplayTurnsResult => ({
   leafId: id,
   startIndex: 0,
   totalTurns: 1,
-  turns: [{ id, answer: [{ type: 'text', text: id }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
+  turns: [{ id, answer: [{ type: 'text', text: id }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
 })
 
 const meta: SessionMeta = {
@@ -1014,12 +1014,12 @@ async function runFixture(name: string): Promise<void> {
       turns: [
         {
           id: 'first', user: { text: 'same prompt', images: [], textAttachments: [] }, userTimestamp: 100,
-          answer: [{ type: 'text', text: 'done' }], compactions: [], workBlocks: [true],
+          answer: [{ type: 'text', text: 'done' }], branchSummaries: [], compactions: [], workBlocks: [true],
           startedAt: 100, endedAt: 200, hasProcess: true
         },
         {
           id: 'second', user: { text: 'same prompt', images: [], textAttachments: [] }, userTimestamp: 100,
-          answer: [{ type: 'text', text: 'done' }], compactions: [], workBlocks: [true],
+          answer: [{ type: 'text', text: 'done' }], branchSummaries: [], compactions: [], workBlocks: [true],
           startedAt: 100, endedAt: 300, hasProcess: true
         }
       ]
@@ -1221,7 +1221,7 @@ async function runFixture(name: string): Promise<void> {
   } else if (name === 'stale-guards-quiet') {
     const window = (leafId: string, startIndex: number, totalTurns: number, id: string): DisplayTurnsResult => ({
       leafId, startIndex, totalTurns,
-      turns: [{ id, answer: [{ type: 'text', text: id }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
+      turns: [{ id, answer: [{ type: 'text', text: id }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
     })
     api.getDisplayTurns = async () => window('A', 40, 300, 'A40')
     await state().hydrateTurns(meta.id)
@@ -1255,7 +1255,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime().tokens, null)
   } else if (name === 'placeholder-not-spliced') {
     const list = (from: number, count: number): DisplayTurn[] => Array.from({ length: count }, (_, offset) => ({
-      id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true
+      id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true
     }))
     // The first paint of a long file: 60 turns of the tail with a provisional offset of 0.
     api.getDisplayTurns = async () => ({ leafId: 'A', startIndex: 0, totalTurns: 100, indexPending: true, turns: list(40, 60) })
@@ -1276,7 +1276,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(runtime().turnIndexTrusted, true)
   } else if (name === 'placeholder-self-heals') {
     const list = (from: number, count: number): DisplayTurn[] => Array.from({ length: count }, (_, offset) => ({
-      id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true
+      id: `t${from + offset}`, answer: [{ type: 'text', text: 'x' }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true
     }))
     api.getDisplayTurns = async () => ({ leafId: 'A', startIndex: 0, totalTurns: 100, indexPending: true, turns: list(40, 60) })
     await state().hydrateTurns(meta.id)
@@ -1304,7 +1304,7 @@ async function runFixture(name: string): Promise<void> {
   } else if (name === 'paging-converges') {
     const page = (startIndex: number, id: string): DisplayTurnsResult => ({
       leafId: 'A', startIndex, totalTurns: 700,
-      turns: [{ id, answer: [{ type: 'text', text: id }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
+      turns: [{ id, answer: [{ type: 'text', text: id }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
     })
     api.getDisplayTurns = async () => page(600, 'A600')
     await state().hydrateTurns(meta.id)
@@ -1454,7 +1454,7 @@ async function runFixture(name: string): Promise<void> {
       leafId,
       startIndex,
       totalTurns,
-      turns: [{ id, answer: [{ type: 'text', text: id }], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
+      turns: [{ id, answer: [{ type: 'text', text: id }], branchSummaries: [], compactions: [], workBlocks: [true], startedAt: 1, endedAt: 2, hasProcess: true }]
     })
     const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -1512,6 +1512,7 @@ async function runFixture(name: string): Promise<void> {
           startedAt: 1,
           endedAt: 2,
           hasProcess: false,
+          branchSummaries: [],
           compactions: [],
           workBlocks: [false]
         }))

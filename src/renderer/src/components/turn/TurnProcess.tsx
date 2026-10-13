@@ -17,10 +17,9 @@ import { MarkdownText } from '../MarkdownText'
 import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel } from './ProcessChrome'
 import { clusterWork, countTools, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
-import { CustomProcess, ProcessDisclosure, ThinkingRow } from './ProcessText'
+import { CustomProcess, ThinkingRow } from './ProcessText'
 
 function GroupBody({ items }: { items: ProcessItem[] }) {
-  const t = useT()
   return (
     <div className="flex min-w-0 flex-col">
       {clusterWork(items).map((row, i) => {
@@ -30,8 +29,6 @@ function GroupBody({ items }: { items: ProcessItem[] }) {
         if (row.kind === 'tools') return <ToolCluster key={row.steps[0].id} steps={row.steps} />
         if (row.kind === 'bash') return <BashCluster key={i} messages={row.messages} />
         if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
-        if (row.kind === 'summary')
-          return <ProcessDisclosure key={i} title={t(row.titleKey)} text={row.text} />
         return null
       })}
     </div>
@@ -50,8 +47,6 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
             return <ThinkingRow key={i} text={item.text} durationMs={item.durationMs} stacked />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-          if (item.kind === 'summary')
-            return <ProcessDisclosure key={i} title={t(item.titleKey)} text={item.text} />
           return null
         })}
       </>
@@ -125,7 +120,6 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
 }
 
 function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
-  const t = useT()
   if (row.kind === 'thinking') {
     if (last && streaming && row.live) {
       return <ThinkingRow text={row.text} live streaming={streaming} />
@@ -158,7 +152,6 @@ function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; str
     )
   }
   if (row.kind === 'custom') return <CustomProcess message={row.message} />
-  if (row.kind === 'summary') return <ProcessDisclosure title={t(row.titleKey)} text={row.text} />
   return null
 }
 
@@ -188,8 +181,6 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
             return <ThinkingRow key={i} text={item.text} durationMs={item.durationMs} stacked />
           }
           if (item.kind === 'custom') return <CustomProcess key={i} message={item.message} />
-          if (item.kind === 'summary')
-            return <ProcessDisclosure key={i} title={t(item.titleKey)} text={item.text} />
           return null
         })}
       </>

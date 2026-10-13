@@ -1,5 +1,5 @@
 import type { DisplayCompaction, DisplayTurn, GenerationStats } from '../../../shared/api'
-import type { MessageKey, Translate } from '../../../shared/i18n'
+import type { Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
   BashExecutionMessage,
@@ -36,7 +36,6 @@ export type ProcessItem =
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
-  | { kind: 'summary'; titleKey: MessageKey; text: string }
   | CompactionItem
 
 /**
@@ -76,6 +75,7 @@ export interface Turn {
    * same stream as the work, so a loaded process carries its own copies and outranks these.
    */
   compactions?: CompactionItem[]
+  branchSummaries?: DisplayTurn['branchSummaries']
   /** Persisted work layout, available before the process bodies are read. */
   workBlocks?: DisplayTurn['workBlocks']
   answer: AnswerBlock[]
@@ -145,11 +145,11 @@ export function renderKeyForTurn(turn: Pick<Turn, 'renderKey' | 'id'>, fallback:
   return turn.renderKey ?? turn.id ?? `turn:${fallback}`
 }
 
-function pushText(process: ProcessItem[], text: string): void {
+function pushText(process: ProcessItem[], text: string, textBoundary: number): void {
   const trimmed = text.trimEnd()
   if (!trimmed) return
   const last = process[process.length - 1]
-  if (last?.kind === 'text') {
+  if (last?.kind === 'text' && process.length > textBoundary) {
     last.text = `${last.text}\n${trimmed}`
     return
   }
@@ -245,7 +245,8 @@ function consumeAssistant(
   splitTrailingText: boolean,
   thinkingDurations: ThinkingDurations,
   active: boolean,
-  thinkingBoundary: number
+  thinkingBoundary: number,
+  textBoundary: number
 ): AnswerBlock[] {
   const answer: AnswerBlock[] = []
   const splitAt = splitTrailingText ? lastToolCallIndex(message.content) : -1
@@ -277,7 +278,7 @@ function consumeAssistant(
       if (block.text) answer.push({ type: 'text', text: block.text })
       return
     }
-    pushText(process, block.text)
+    pushText(process, block.text, textBoundary)
   })
 
   return answer
@@ -295,7 +296,9 @@ export function buildTurn(
   const bash = chunk[0]?.role === 'bashExecution' ? chunk[0] : undefined
   const rest = user ? chunk.slice(1) : chunk
   const process: ProcessItem[] = []
+  const branchSummaries: DisplayTurn['branchSummaries'] = []
   let thinkingBoundary = 0
+  let textBoundary = 0
   let answer: AnswerBlock[] = []
   let errorMessage: string | undefined
   let generation: GenerationStats | undefined
@@ -304,6 +307,7 @@ export function buildTurn(
   // entries rather than messages, so this only applies to a stream that carries one anyway.
   const workStart = user?.timestamp ?? chunk[0]?.timestamp ?? 0
   let summarizedMs = 0
+  let compactionCount = 0
   let waitingForModel = true
   // Failed attempts stay in process, but their unexecuted calls cannot block a later request.
   let pendingToolCalls: Set<string> | undefined
@@ -333,6 +337,7 @@ export function buildTurn(
       })
       waitingForModel = mark.status === 'done'
       summarizedMs += durationMs
+      compactionCount++
     }
   }
 
@@ -367,13 +372,14 @@ export function buildTurn(
         splitTrailing && trailingIsAnswer,
         thinkingDurations,
         streaming && i === rest.length - 1,
-        thinkingBoundary
+        thinkingBoundary,
+        textBoundary
       )
       if (!streaming && isLast && (trailingIsAnswer || lastToolCallIndex(message.content) < 0)) {
         if (blocks.length) answer = blocks
         else if (!splitTrailing) {
           const pulled: AnswerBlock[] = []
-          while (process.length > 0 && process[process.length - 1].kind === 'text') {
+          while (process.length > textBoundary && process[process.length - 1].kind === 'text') {
             const item = process.pop() as Extract<ProcessItem, { kind: 'text' }>
             pulled.unshift({ type: 'text', text: item.text })
           }
@@ -403,7 +409,9 @@ export function buildTurn(
       return
     }
     if (message.role === 'branchSummary') {
-      process.push({ kind: 'summary', titleKey: 'chat.branchSummary', text: message.summary })
+      branchSummaries.push({ text: message.summary, afterAnswer: i > lastAssistant, compactionsBefore: compactionCount })
+      // The standalone notice leaves no process row to stop text merging or answer extraction.
+      textBoundary = thinkingBoundary = process.length
       return
     }
     if (message.role === 'compactionSummary') {
@@ -421,6 +429,7 @@ export function buildTurn(
         durationMs
       })
       summarizedMs += durationMs
+      compactionCount++
       waitingForModel = true
     }
   })
@@ -433,6 +442,7 @@ export function buildTurn(
     user,
     bash: bash ? { command: bash.command, exitCode: bash.exitCode, cancelled: bash.cancelled } : undefined,
     process,
+    branchSummaries,
     answer,
     errorMessage,
     startedAt,

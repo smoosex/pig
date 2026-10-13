@@ -88,6 +88,7 @@ async function runFixture(name: string): Promise<void> {
     startedAt: index,
     endedAt: index + 1,
     hasProcess: true,
+    branchSummaries: [],
     compactions: [],
     workBlocks: [true],
     user: { text: `user ${index}`, images: [], textAttachments: [] },

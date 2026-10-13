@@ -57,6 +57,7 @@ export function toTurn(
     bash: display.bash,
     process,
     compactions: display.compactions.map((landmark) => ({ kind: 'compaction' as const, ...landmark })),
+    branchSummaries: display.branchSummaries,
     workBlocks: display.workBlocks,
     answer: display.answer.map((block) =>
       block.type === 'text'
