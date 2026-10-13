@@ -1,11 +1,13 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Check, Copy, FileCode2 } from 'lucide-react'
 import type { BashExecutionMessage } from '../../pi/types'
+import type { LiveNestedCall } from '../../chat/nested-tools'
 import { resultText, toolStepLabel, type ToolStep } from '../../chat/turns'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { langFromPath } from '../../lib/highlight'
 import { cn, hideScroll } from '../../lib/utils'
 import { bashCodeSurface, codeSurface, HighlightedCode } from '../HighlightedCode'
+import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Separator } from '../ui/separator'
@@ -88,10 +90,14 @@ function BashToolPanel({ command, output }: { command: string; output?: string }
   )
 }
 
-export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) {
+export function ToolRow({ step, active, nestedCall }: {
+  step: ToolStep
+  active?: boolean
+  nestedCall?: LiveNestedCall
+}) {
   const t = useT()
   const [open, setOpen] = useState(false)
-  const failed = !!step.result?.isError
+  const failed = nestedCall?.status === 'error' || !!step.result?.isError
   const output = resultText(step.result ?? step.partialResult)
   const edits = useMemo(() => (step.name === 'edit' ? editList(step.args) : []), [step])
   const path = typeof step.args.path === 'string' ? step.args.path : ''
@@ -104,6 +110,16 @@ export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) 
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={disclosureButton}>
           <VerbLabel text={toolStepLabel(step, t)} failed={failed} active={active && !step.result} />
+          {nestedCall ? (
+            <Badge variant={failed ? 'destructive' : 'secondary'}>
+              {t(nestedCall.status === 'ok' ? 'mcp.success' : `mcp.${nestedCall.status}`)}
+            </Badge>
+          ) : null}
+          {nestedCall?.durationMs !== undefined ? (
+            <span className="shrink-0 text-muted-foreground">
+              {t('mcp.duration', { ms: Math.round(nestedCall.durationMs) })}
+            </span>
+          ) : null}
           <Chevron open={open} />
         </Button>
       </CollapsibleTrigger>
@@ -121,7 +137,28 @@ export function ToolRow({ step, active }: { step: ToolStep; active?: boolean }) 
         ) : (
           <ToolPanel input={toolInput(step)} output={output} />
         )}
-        {nested ? <NestedToolCalls record={nested} /> : null}
+        {nestedCall?.argumentsBytes !== undefined ? (
+          <p className="text-xs text-muted-foreground">
+            {t('mcp.argumentsOmitted', { n: nestedCall.argumentsBytes })}
+          </p>
+        ) : null}
+        {nestedCall?.error ? (
+          <p className="mt-1 whitespace-pre-wrap break-words text-xs text-destructive">
+            {nestedCall.error}
+          </p>
+        ) : null}
+        {nested ? (
+          <NestedToolCalls record={nested}>
+            {nested.calls.map((call) => (
+              <ToolRow
+                key={call.id}
+                step={{ id: call.id, name: call.name, args: call.arguments ?? {} }}
+                active={call.status === 'running'}
+                nestedCall={call}
+              />
+            ))}
+          </NestedToolCalls>
+        ) : null}
       </CollapsibleContent>
     </Collapsible>
   )
