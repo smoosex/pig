@@ -12,6 +12,7 @@ function state(): WebSearchSettingsState {
       fetchAllowedModes: null,
       ssrfAllowRanges: null,
       ssrfTrustEnvProxy: null,
+      fetchRedirects: null,
       tools: { webSearch: true, sourceCheck: true, fetchContent: true, getSearchContent: true }
     },
     error: null,
@@ -257,7 +258,8 @@ test('the web access panel adds engines with their key and saves only changes', 
       fetchDefaultMode: 'raw',
       fetchAllowedModes: ['raw'],
       ssrfAllowRanges: [],
-      ssrfTrustEnvProxy: false
+      ssrfTrustEnvProxy: false,
+      fetchRedirects: null
     })
   } finally {
     await act(async () => { root.unmount() })

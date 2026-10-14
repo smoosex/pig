@@ -414,6 +414,8 @@ export const en: Messages = {
     maxCharsHint: 'Leave empty for the plugin default (30,000 characters)',
     trustEnvProxy: 'Trust proxy environment',
     trustEnvProxyHint: 'Skip the local DNS preflight when HTTP(S)_PROXY is set',
+    sameOriginRedirects: 'Refuse cross-origin redirects',
+    sameOriginRedirectsHint: 'Every redirect must stay on the requested scheme, host and port; extraction paths that cannot show their redirects are turned off',
     ssrfRanges: 'SSRF allowlist ranges',
     ssrfRangesHint: 'One CIDR per line, for example 198.18.0.0/15 for fake-IP proxies',
     reloadHint: 'Saving reloads idle sessions so the new engine selection and tool switches take effect.',

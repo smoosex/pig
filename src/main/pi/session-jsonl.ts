@@ -43,6 +43,8 @@ const PASTED_TEXT_MARKER = Buffer.from(`"customType":"${PASTED_TEXT_CUSTOM_TYPE}
 /** The fields the session tree reads from an otherwise heavy row. */
 const TOOL_CALL_ID_KEY = Buffer.from('"toolCallId":"')
 const TOOL_NAME_KEY = Buffer.from('"toolName":"')
+const IS_ERROR_KEY = Buffer.from('"isError":')
+const MESSAGE_OBJECT_KEY = Buffer.from('"message":{')
 const TOKENS_BEFORE_KEY = Buffer.from('"tokensBefore":')
 const TIMESTAMP_KEY = Buffer.from('"timestamp":"')
 /** A user line heavier than this is treated as "heavy": the minimap must stay readable. */
@@ -626,12 +628,51 @@ function stringAfter(line: Buffer, key: Buffer): string | null {
   return at < 0 ? null : stringAt(line, at + key.length - 1)
 }
 
+/** Prove the flag belongs to message without decoding heavy strings; ambiguous rows use the SDK. */
+function toolResultIsError(line: Buffer): boolean | null {
+  const at = line.indexOf(IS_ERROR_KEY)
+  const messageAt = line.indexOf(MESSAGE_OBJECT_KEY)
+  if (at < 0 || messageAt < 0 || messageAt >= at) return null
+  if (line.indexOf(IS_ERROR_KEY, at + IS_ERROR_KEY.length) >= 0
+    || line.indexOf(MESSAGE_OBJECT_KEY, messageAt + MESSAGE_OBJECT_KEY.length) >= 0) return null
+  let depth = 0
+  let inMessage = false
+  for (let i = 0; i < at; i++) {
+    const byte = line[i]
+    if (byte === 0x22) {
+      if (i === messageAt && depth !== 1) return null
+      let end = line.indexOf(0x22, i + 1)
+      while (end >= 0) {
+        let escapes = 0
+        for (let back = end - 1; back > i && line[back] === 0x5c; back--) escapes++
+        if (escapes % 2 === 0) break
+        end = line.indexOf(0x22, end + 1)
+      }
+      if (end < 0 || end >= at) return null
+      i = end
+    } else if (byte === 0x7b || byte === 0x5b) {
+      depth++
+      if (i === messageAt + MESSAGE_OBJECT_KEY.length - 1) inMessage = true
+    } else if (byte === 0x7d || byte === 0x5d) {
+      if (depth === 2) inMessage = false
+      depth--
+    }
+  }
+  if (!inMessage || depth !== 2) return null
+  const start = at + IS_ERROR_KEY.length
+  const value = line.subarray(start, start + 5).toString('ascii')
+  const length = value.startsWith('true') ? 4 : value === 'false' ? 5 : 0
+  if (length === 0 || (line[start + length] !== 0x2c && line[start + length] !== 0x7d)) return null
+  return length === 4
+}
+
 /** A tool result the tree only needs as the call it answers: its output is never parsed. */
 function toolResultStub(line: Buffer, row: SessionFileEntry): SessionEntry | null {
   const timestamp = stringAfter(line, TIMESTAMP_KEY)
   const toolCallId = stringAfter(line, TOOL_CALL_ID_KEY)
   const toolName = stringAfter(line, TOOL_NAME_KEY)
-  if (!timestamp || !toolCallId || !toolName) return null
+  const isError = toolResultIsError(line)
+  if (!timestamp || !toolCallId || !toolName || isError === null) return null
   return {
     type: 'message',
     id: row.id,
@@ -642,7 +683,7 @@ function toolResultStub(line: Buffer, row: SessionFileEntry): SessionEntry | nul
       toolCallId,
       toolName,
       content: [],
-      isError: false,
+      isError,
       timestamp: Date.parse(timestamp) || 0
     }
   }

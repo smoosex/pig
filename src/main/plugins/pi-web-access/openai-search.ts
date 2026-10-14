@@ -13,14 +13,14 @@ const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // The selected model runs the server-side web_search call and writes the cited summary.
-// Prefer the newest mid-tier ("terra") model, then the newest bare mainline id, then any
+// Prefer the newest low-cost ("luna") model, then the newest bare mainline id, then any
 // other versioned GPT id (gateway providers such as opencode-go list only suffixed GPT
 // ids next to non-OpenAI models; unversioned ids such as gpt-oss-* are skipped); price
 // tiers ("pro"/"ultra" id segments) are excluded, and the numeric-aware sort keeps
 // e.g. gpt-5.10 ahead of gpt-5.9.
 const EXCLUDED_MODEL_SEGMENTS = new Set(["pro", "ultra"]);
 const MODEL_PREFERENCE = [
-	(id: string) => id.includes("terra"),
+	(id: string) => id.includes("luna"),
 	(id: string) => /^gpt-\d+(\.\d+)?$/.test(id),
 	(id: string) => /^gpt-\d/.test(id),
 ];
@@ -51,6 +51,18 @@ type ProviderHeaders = Record<string, string | null>;
 class CustomOpenAIBaseUrlError extends Error {}
 
 export class OpenAIAlphaSearchUnsupportedError extends Error {}
+
+export class OpenAIStreamError extends Error {
+	readonly code?: string;
+	readonly type?: string;
+
+	constructor(message: string, code?: string, type?: string) {
+		super(message);
+		this.name = "OpenAIStreamError";
+		this.code = code;
+		this.type = type;
+	}
+}
 
 interface OpenAIAuth {
 	provider: string;
@@ -89,6 +101,14 @@ function resolveCurrentModelSearchTarget(model: CurrentModel): CurrentModelSearc
 	}
 
 	throw new Error("Current model is not backed by an official OpenAI Responses endpoint");
+}
+
+// The active model draws on a ChatGPT subscription: openai-codex, or openai signed in
+// through Pi's "Sign in with ChatGPT" OAuth rather than an API key.
+export function isOpenAISubscriptionModelSelected(ctx?: Pick<ExtensionContext, "model"> & { modelRegistry?: Pick<ExtensionContext["modelRegistry"], "isUsingOAuth"> }): boolean {
+	const model = ctx?.model;
+	if (model?.provider === "openai-codex") return true;
+	return model?.provider === "openai" && ctx?.modelRegistry?.isUsingOAuth?.(model) === true;
 }
 
 export function isCurrentModelHostedSearchEligible(ctx?: Pick<ExtensionContext, "model">): boolean {
@@ -161,6 +181,15 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function isCodexJwt(token: string): boolean {
 	const payload = decodeJwtPayload(token);
 	return !!payload?.["https://api.openai.com/auth"];
+}
+
+function isOfficialOpenAIBaseUrl(baseUrl: string | undefined): boolean {
+	if (baseUrl === undefined) return false;
+	try {
+		return new URL(baseUrl).toString().replace(/\/+$/u, "") === "https://api.openai.com/v1";
+	} catch {
+		return false;
+	}
 }
 
 function extractAccountId(token: string): string | undefined {
@@ -282,16 +311,12 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 		// Auth can override the model's base URL. Do not guess Responses/web_search
 		// support from a gateway URL, or pair its credential with the official API.
 		const baseUrl = resolved.baseUrl ?? preferred.baseUrl;
-		const useCodexEndpoint = provider === "openai-codex" || isCodexJwt(resolved.apiKey);
-		if (!hasExplicitResponsesUrl && !useProviderBaseUrl && !useCodexEndpoint && baseUrl !== undefined) {
-			let isOfficial = false;
-			try {
-				isOfficial = new URL(baseUrl).toString().replace(/\/+$/u, "") === "https://api.openai.com/v1";
-			} catch {
-			}
-			if (!isOfficial) {
-				throw new CustomOpenAIBaseUrlError(`OpenAI web search cannot reuse Pi credentials with a custom baseUrl by default. Set openaiResponsesUrl in ${CONFIG_PATH} to the full Responses endpoint for this credential.`);
-			}
+		const isOfficialBaseUrl = isOfficialOpenAIBaseUrl(baseUrl);
+		// Pi sends credentials for the official API base directly to api.openai.com, including
+		// "Sign in with ChatGPT" access tokens, which are ChatGPT JWTs but not Codex credentials.
+		const useCodexEndpoint = provider === "openai-codex" || (!isOfficialBaseUrl && isCodexJwt(resolved.apiKey));
+		if (!hasExplicitResponsesUrl && !useProviderBaseUrl && !useCodexEndpoint && baseUrl !== undefined && !isOfficialBaseUrl) {
+			throw new CustomOpenAIBaseUrlError(`OpenAI web search cannot reuse Pi credentials with a custom baseUrl by default. Set openaiResponsesUrl in ${CONFIG_PATH} to the full Responses endpoint for this credential.`);
 		}
 		let providerResponsesUrl = responsesUrl;
 		if (useProviderBaseUrl) {
@@ -309,6 +334,7 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 			model: modelOverride ?? preferred.id,
 			headers: resolved.headers ?? {},
 			responsesUrl: providerResponsesUrl,
+			useCodexEndpoint,
 			...(useProviderBaseUrl ? { useProviderBaseUrl: true } : {}),
 		};
 	}
@@ -343,7 +369,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 		signal,
 	});
 	return apiKey
-		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: {}, responsesUrl }
+		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-6-luna", headers: {}, responsesUrl }
 		: undefined;
 }
 
@@ -454,22 +480,54 @@ async function parseOpenAIResponse(response: Response): Promise<ParsedOpenAIResp
 	const outputItems: unknown[] = [];
 	let completedResponse: Record<string, unknown> | null = null;
 	let webSearchCallSeen = false;
+	let streamError: { code?: unknown; type?: unknown; message?: unknown } | null = null;
 	for (const line of text.split("\n")) {
 		if (!line.startsWith("data: ")) continue;
 		const data = line.slice(6).trim();
 		if (!data || data === "[DONE]") continue;
+		let parsed: Record<string, unknown>;
 		try {
-			const parsed = JSON.parse(data) as Record<string, unknown>;
-			if (typeof parsed.type === "string" && parsed.type.startsWith("response.web_search_call")) webSearchCallSeen = true;
-			if (parsed.type === "response.output_item.done" && parsed.item) {
-				outputItems.push(parsed.item);
-				webSearchCallSeen ||= isWebSearchCall(parsed.item);
-			}
-			if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response && typeof parsed.response === "object") {
-				completedResponse = parsed.response as Record<string, unknown>;
-			}
-		} catch {
+			parsed = JSON.parse(data) as Record<string, unknown>;
+		} catch (err) {
+			throw new Error("OpenAI API returned invalid JSON in stream", { cause: err });
 		}
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error("OpenAI API returned an invalid response stream event");
+		}
+		// HTTP 200 streams can fail after partial output. A terminal error takes precedence
+		// over any later output/completion and keeps its identifiers for provider routing.
+		if (parsed.type === "error") {
+			const err = parsed.error;
+			streamError ??= err && typeof err === "object"
+				? err as { code?: unknown; type?: unknown; message?: unknown }
+				: { code: parsed.code, message: typeof err === "string" ? err : (typeof parsed.message === "string" ? parsed.message : undefined) };
+		}
+		if (typeof parsed.type === "string" && parsed.type.startsWith("response.web_search_call")) webSearchCallSeen = true;
+		if (parsed.type === "response.output_item.done" && parsed.item) {
+			outputItems.push(parsed.item);
+			webSearchCallSeen ||= isWebSearchCall(parsed.item);
+		}
+		if ((parsed.type === "response.failed" || parsed.type === "response.incomplete" || parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response && typeof parsed.response === "object") {
+			completedResponse = parsed.response as Record<string, unknown>;
+			const responseError = (completedResponse as { error?: unknown }).error;
+			if (responseError && typeof responseError === "object") {
+				streamError ??= responseError as { code?: unknown; type?: unknown; message?: unknown };
+			}
+			// A failed response with error: null still must not pass its partial output as success.
+			if (parsed.type === "response.failed") {
+				streamError ??= { message: "response stream failed with no error payload (invalid response)" };
+			}
+		}
+	}
+
+	if (streamError) {
+		const code = typeof streamError.code === "string" ? streamError.code : undefined;
+		const type = typeof streamError.type === "string" ? streamError.type : undefined;
+		const message = typeof streamError.message === "string" && streamError.message.trim().length > 0
+			? streamError.message
+			: "OpenAI API stream failed";
+		const detail = [type, code].filter(Boolean).join("/");
+		throw new OpenAIStreamError(`OpenAI API stream error${detail ? ` (${detail})` : ""}: ${message}`, code, type);
 	}
 
 	if (completedResponse) {
@@ -746,7 +804,10 @@ async function runOpenAISearch(
 			activityMonitor.logError(activityId, redactedMessage);
 		}
 		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
+		// Redact provider-echoed credentials without losing the identifiers used by routing.
+		const redactedError = err instanceof OpenAIStreamError
+			? new OpenAIStreamError(redactedMessage, err.code, err.type)
+			: new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}

@@ -39,6 +39,7 @@ interface Draft {
   fetchModes: WebSearchFetchMode[]
   ranges: string
   trustEnvProxy: boolean
+  sameOriginRedirects: boolean
   values: Record<string, EngineDraft>
 }
 
@@ -71,6 +72,7 @@ function draftFrom(state: WebSearchSettingsState): Draft {
     fetchModes: settings.fetchAllowedModes ?? [...FETCH_MODES],
     ranges: (settings.ssrfAllowRanges ?? []).join('\n'),
     trustEnvProxy: settings.ssrfTrustEnvProxy ?? false,
+    sameOriginRedirects: settings.fetchRedirects === 'same-origin',
     values: Object.fromEntries(state.providers.map((provider) => [provider.id, engineDraft(provider)]))
   }
 }
@@ -171,6 +173,9 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
     const ranges = draft.ranges.split('\n').map((range) => range.trim()).filter(Boolean)
     if (force || !sameList(ranges, settings.ssrfAllowRanges ?? [])) patch.ssrfAllowRanges = ranges
     if (force || draft.trustEnvProxy !== (settings.ssrfTrustEnvProxy ?? false)) patch.ssrfTrustEnvProxy = draft.trustEnvProxy
+    if (force || draft.sameOriginRedirects !== (settings.fetchRedirects === 'same-origin')) {
+      patch.fetchRedirects = draft.sameOriginRedirects ? 'same-origin' : null
+    }
     const providers: NonNullable<WebSearchSettingsPatch['providers']> = {}
     for (const providerState of state.providers) {
       const current = draft.values[providerState.id]
@@ -387,6 +392,10 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
             <SettingsRow title={t('webSearch.trustEnvProxy')} description={t('webSearch.trustEnvProxyHint')}>
               <Switch aria-label={t('webSearch.trustEnvProxy')} checked={draft.trustEnvProxy}
                 onCheckedChange={(checked) => setDraft((current) => current && { ...current, trustEnvProxy: checked })} />
+            </SettingsRow>
+            <SettingsRow title={t('webSearch.sameOriginRedirects')} description={t('webSearch.sameOriginRedirectsHint')}>
+              <Switch aria-label={t('webSearch.sameOriginRedirects')} checked={draft.sameOriginRedirects}
+                onCheckedChange={(checked) => setDraft((current) => current && { ...current, sameOriginRedirects: checked })} />
             </SettingsRow>
             <div className="flex flex-col gap-2 px-4 py-3">
               <div className="text-sm font-medium">{t('webSearch.ssrfRanges')}</div>

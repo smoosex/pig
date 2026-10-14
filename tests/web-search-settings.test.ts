@@ -316,3 +316,21 @@ test('SSRF ranges and base URLs are validated and reported as configured', async
   assert.equal(searxng.source, 'config', 'a base URL alone counts as configured')
   assert.equal(state.providers.find((provider) => provider.id === 'duckduckgo')!.source, null)
 })
+
+test('the same-origin redirect policy is stored, read back, and cleared', async () => {
+  const { dir, settings } = await fixture()
+  const path = join(dir, 'web-search.json')
+  const enabled = await settings.patchWebSearchSettings({ fetchRedirects: 'same-origin' })
+  assert.equal(enabled.settings.fetchRedirects, 'same-origin')
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).fetchContent.redirects, 'same-origin')
+
+  const cleared = await settings.patchWebSearchSettings({ fetchRedirects: null })
+  assert.equal(cleared.settings.fetchRedirects, null)
+  // Clearing the only key leaves an empty object, which the extension reads as "unset".
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).fetchContent.redirects, undefined)
+
+  await assert.rejects(
+    () => settings.patchWebSearchSettings({ fetchRedirects: 'cross-origin' as never }),
+    /same-origin/
+  )
+})

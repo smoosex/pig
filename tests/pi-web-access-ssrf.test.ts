@@ -18,7 +18,7 @@ test('the connection lookup rejects an address the preflight accepted', async ()
   }
   await validateRemoteUrl('http://rebind.test/', { lookup })
   const error = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
-    createValidatingLookup({ lookup, allowRanges: [], trustEnvProxy: false })('rebind.test', { all: true }, (err) => resolve(err))
+    createValidatingLookup({ lookup, allowRanges: [] })('rebind.test', { all: true }, (err) => resolve(err))
   })
   assert.match(error?.message ?? '', /Blocked internal address for rebind\.test: 127\.0\.0\.1/)
   assert.equal(resolutions, 2, 'the preflight and the connection each resolved the hostname')
@@ -27,8 +27,7 @@ test('the connection lookup rejects an address the preflight accepted', async ()
 test('the connection lookup still allows explicitly allowed ranges', async () => {
   const context = {
     lookup: async () => [{ address: '127.0.0.1', family: 4 }],
-    allowRanges: [{ bytes: new Uint8Array([127, 0, 0, 0]), prefix: 8 }],
-    trustEnvProxy: false
+    allowRanges: [{ bytes: new Uint8Array([127, 0, 0, 0]), prefix: 8 }]
   }
   const addresses = await new Promise<unknown>((resolve, reject) => {
     createValidatingLookup(context)('allowed.test', { all: true }, (err, value) => (err ? reject(err) : resolve(value)))

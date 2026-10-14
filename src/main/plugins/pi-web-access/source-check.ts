@@ -1,6 +1,6 @@
 // Structured source evidence and machine-readable research artifacts.
 import { createHash } from "node:crypto";
-import { generateId, type SessionStorage } from "./storage.ts";
+import { generateId, getResult, storeResult } from "./storage.ts";
 import type { SearchResult } from "./perplexity.ts";
 import type { ExtractedContent } from "./extract.ts";
 
@@ -234,13 +234,13 @@ export function withClaimAssessment(artifact: ResearchArtifact, claims: string[]
 	return { ...artifact, claims: claims.map((claim) => assessClaim(claim, artifact.passages)) };
 }
 
-export function storeResearchArtifact(storage: SessionStorage, artifact: ResearchArtifact): void {
+export function storeResearchArtifact(artifact: ResearchArtifact): void {
 	if (!artifact.id) throw new Error("Research artifact id must not be empty");
-	storage.storeResult(artifact.id, { id: artifact.id, type: "research", timestamp: artifact.timestamp, artifact });
+	storeResult(artifact.id, { id: artifact.id, type: "research", timestamp: artifact.timestamp, artifact });
 }
 
-export function getResearchArtifact(storage: SessionStorage, id: string): ResearchArtifact | null {
-	const data = storage.getResult(id);
+export function getResearchArtifact(id: string): ResearchArtifact | null {
+	const data = getResult(id);
 	if (!data || data.type !== "research" || !data.artifact || typeof data.artifact !== "object") return null;
 	return data.artifact as ResearchArtifact;
 }

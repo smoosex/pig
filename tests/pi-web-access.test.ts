@@ -40,7 +40,7 @@ test('the vendored plugin registers the four tools and no command surface', asyn
   assert.deepEqual(fake.tools.sort(), ['fetch_content', 'get_search_content', 'source_check', 'web_search'])
   assert.deepEqual(fake.commands, [])
   assert.deepEqual(fake.shortcuts, [])
-  assert.deepEqual(fake.events.sort(), ['session_shutdown', 'session_start', 'session_tree'])
+  assert.deepEqual(fake.events.sort(), ['session_shutdown', 'session_start', 'session_tree', 'tool_call'])
 })
 
 type ToolExecute = (callId: string, params: Record<string, unknown>) => Promise<{ content?: Array<{ type: string; text?: string }> }>
@@ -48,6 +48,7 @@ type ToolExecute = (callId: string, params: Record<string, unknown>) => Promise<
 interface FakeSession {
   tools: Map<string, ToolExecute>
   start: () => Promise<void>
+  end: () => Promise<void>
 }
 
 function createSession(plugin: { default: (api: ExtensionAPI) => void }, branch: unknown[]): FakeSession {
@@ -71,17 +72,20 @@ function createSession(plugin: { default: (api: ExtensionAPI) => void }, branch:
   }
   plugin.default(api as unknown as ExtensionAPI)
   const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => 'session' } }
+  const emit = async (event: string) => {
+    for (const handler of handlers.get(event) ?? []) await handler({ type: event }, ctx)
+  }
   return {
     tools,
-    async start() {
-      for (const handler of handlers.get('session_start') ?? []) await handler({ type: 'session_start' }, ctx)
-    }
+    start: () => emit('session_start'),
+    end: () => emit('session_shutdown')
   }
 }
 
 // The SDK caches the extension factory per cwd but runs it once per session, so tabs in the same
-// worktree get separate factory closures. Stored results must not cross between them.
-test('stored results belong to the session that created them', async () => {
+// worktree get separate factory closures. Results are held by reference count: one tab's session
+// starting or ending must not drop or abort another tab's results.
+test('one session starting or ending leaves another session\'s stored results in place', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pig-web-access-plugin-'))
   process.env.PIG_DIR = root
   const plugin = await import('../src/main/plugins/pi-web-access/index.ts')
@@ -96,12 +100,24 @@ test('stored results belong to the session that created them', async () => {
   await sessionA.start()
   await sessionB.start()
   const readA = sessionA.tools.get('get_search_content')
-  const readB = sessionB.tools.get('get_search_content')
-  assert.ok(readA && readB)
+  assert.ok(readA)
   const kept = await readA('call', { responseId: 'res-a', urlIndex: 0 })
   assert.match(kept.content?.[0]?.text ?? '', /hello from session A/)
-  const missing = await readB('call', { responseId: 'res-a', urlIndex: 0 })
-  assert.match(missing.content?.[0]?.text ?? '', /No stored results/)
+
+  // Session B ends while A is mid-turn; A still holds the result.
+  await sessionB.end()
+  const afterB = await readA('call', { responseId: 'res-a', urlIndex: 0 })
+  assert.match(afterB.content?.[0]?.text ?? '', /hello from session A/)
+
+  // A session forked from A's history shares the id and keeps it alive after A ends.
+  const sessionC = createSession(plugin, [{ type: 'custom', customType: 'web-search-results', data }])
+  await sessionC.start()
+  await sessionA.end()
+  const readC = sessionC.tools.get('get_search_content')
+  assert.ok(readC)
+  const shared = await readC('call', { responseId: 'res-a', urlIndex: 0 })
+  assert.match(shared.content?.[0]?.text ?? '', /hello from session A/)
+  await sessionC.end()
 })
 
 // A reload evaluates the module again; the installed global fetch wrapper must still see the proxy

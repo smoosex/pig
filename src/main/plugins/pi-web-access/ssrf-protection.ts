@@ -4,26 +4,29 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import net from "node:net";
 import { isBlockedAddress } from "../../network-address.ts";
 import type * as Undici from "undici";
-import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl } from "./utils.ts";
+import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, installGlobalProxyFetch, isLoopbackHostname, isProxyBypassedUrl, loadConfiguredProxy, normalizeProxyUrl, type ProxiedRequestInit } from "./utils.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const LOOPBACK_ALLOW_RANGES = ["127.0.0.0/8", "::1", "::ffff:127.0.0.0/104"];
+// Proxy schemes where the proxy, not curl, resolves the target hostname.
+const REMOTE_DNS_PROXY_PROTOCOLS = new Set(["http:", "https:", "socks4a:", "socks5h:"]);
 
 export type LookupAddress = { address: string; family: number };
 export type Lookup = (hostname: string) => Promise<LookupAddress[]>;
 type Fetch = typeof fetch;
 
-const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
+// Resolved per call: the host may set PIG_DIR after this module was first imported.
+const webSearchConfigPath = (): string => getWebSearchConfigPath();
 
 let cachedConfigRoot: { signature: string; value: Record<string, unknown> | null } | null = null;
 
 function loadConfigRoot(): Record<string, unknown> | null {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return null;
+	if (!existsSync(webSearchConfigPath())) return null;
 
 	let signature: string;
 	try {
-		const stat = statSync(WEB_SEARCH_CONFIG_PATH);
+		const stat = statSync(webSearchConfigPath());
 		signature = `${stat.mtimeMs}:${stat.size}`;
 	} catch {
 		return null;
@@ -33,7 +36,7 @@ function loadConfigRoot(): Record<string, unknown> | null {
 
 	let raw: string;
 	try {
-		raw = readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8");
+		raw = readFileSync(webSearchConfigPath(), "utf-8");
 	} catch {
 		// Do not memoize read failures: a chmod fix changes neither mtime nor size,
 		// so a cached failure would permanently fail-open the domain policy.
@@ -45,7 +48,7 @@ function loadConfigRoot(): Record<string, unknown> | null {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
+		throw new Error(`Failed to parse ${webSearchConfigPath()}: ${message}`);
 	}
 
 	const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -67,18 +70,33 @@ export interface DomainPolicy {
 
 const DEFAULT_DOMAIN_POLICY: DomainPolicy = { allow: [], deny: [] };
 
-export function loadFetchContentDomainPolicy(): DomainPolicy {
+export type RedirectPolicy = "same-origin";
+
+function loadFetchContentConfig(): Record<string, unknown> | undefined {
 	const parsed = loadConfigRoot();
-	if (!parsed) return { ...DEFAULT_DOMAIN_POLICY };
+	if (!parsed) return undefined;
 	const fetchContent = parsed.fetchContent;
-	if (fetchContent === undefined || fetchContent === null) return { ...DEFAULT_DOMAIN_POLICY };
+	if (fetchContent === undefined || fetchContent === null) return undefined;
 	if (typeof fetchContent !== "object" || Array.isArray(fetchContent)) {
-		throw new Error(`fetchContent in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+		throw new Error(`fetchContent in ${webSearchConfigPath()} must be an object`);
 	}
-	const policy = (fetchContent as { domainPolicy?: unknown }).domainPolicy;
+	return fetchContent as Record<string, unknown>;
+}
+
+export function loadFetchContentRedirectPolicy(): RedirectPolicy | undefined {
+	const redirects = loadFetchContentConfig()?.redirects;
+	if (redirects === undefined || redirects === null) return undefined;
+	if (redirects !== "same-origin") {
+		throw new Error(`fetchContent.redirects in ${webSearchConfigPath()} must be "same-origin"`);
+	}
+	return redirects;
+}
+
+export function loadFetchContentDomainPolicy(): DomainPolicy {
+	const policy = loadFetchContentConfig()?.domainPolicy;
 	if (policy === undefined || policy === null) return { ...DEFAULT_DOMAIN_POLICY };
 	if (typeof policy !== "object" || Array.isArray(policy)) {
-		throw new Error(`fetchContent.domainPolicy in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+		throw new Error(`fetchContent.domainPolicy in ${webSearchConfigPath()} must be an object`);
 	}
 	const config = policy as { allow?: unknown; deny?: unknown };
 	return {
@@ -90,15 +108,15 @@ export function loadFetchContentDomainPolicy(): DomainPolicy {
 function parseDomainEntries(value: unknown, field: "allow" | "deny"): string[] {
 	if (value === undefined || value === null) return [];
 	if (!Array.isArray(value)) {
-		throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must be an array of hostnames`);
+		throw new Error(`fetchContent.domainPolicy.${field} in ${webSearchConfigPath()} must be an array of hostnames`);
 	}
 	return value.map((entry, index) => {
 		if (typeof entry !== "string") {
-			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must contain only hostnames; entry ${index + 1} is ${typeof entry}`);
+			throw new Error(`fetchContent.domainPolicy.${field} in ${webSearchConfigPath()} must contain only hostnames; entry ${index + 1} is ${typeof entry}`);
 		}
 		const hostname = normalizeDomainEntry(entry);
 		if (!hostname) {
-			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} contains an invalid hostname: ${JSON.stringify(entry)}`);
+			throw new Error(`fetchContent.domainPolicy.${field} in ${webSearchConfigPath()} contains an invalid hostname: ${JSON.stringify(entry)}`);
 		}
 		return hostname;
 	});
@@ -118,19 +136,19 @@ export function loadSsrfConfig(): SsrfConfig {
 	const ssrf = parsed.ssrf;
 	if (ssrf === undefined || ssrf === null) return { allowRanges: [], trustEnvProxy: false };
 	if (typeof ssrf !== "object" || Array.isArray(ssrf)) {
-		throw new Error(`ssrf in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+		throw new Error(`ssrf in ${webSearchConfigPath()} must be an object`);
 	}
 	const config = ssrf as { allowRanges?: unknown; trustEnvProxy?: unknown };
 	if (config.allowRanges !== undefined && config.allowRanges !== null && !Array.isArray(config.allowRanges)) {
-		throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must be an array of CIDR strings`);
+		throw new Error(`ssrf.allowRanges in ${webSearchConfigPath()} must be an array of CIDR strings`);
 	}
 	if (config.trustEnvProxy !== undefined && typeof config.trustEnvProxy !== "boolean") {
-		throw new Error(`ssrf.trustEnvProxy in ${WEB_SEARCH_CONFIG_PATH} must be a boolean`);
+		throw new Error(`ssrf.trustEnvProxy in ${webSearchConfigPath()} must be a boolean`);
 	}
 	const allowRangesValue: unknown[] = Array.isArray(config.allowRanges) ? config.allowRanges : [];
 	const allowRanges = allowRangesValue.map((entry, index) => {
 		if (typeof entry !== "string") {
-			throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must contain only CIDR strings; entry ${index + 1} is ${typeof entry}`);
+			throw new Error(`ssrf.allowRanges in ${webSearchConfigPath()} must contain only CIDR strings; entry ${index + 1} is ${typeof entry}`);
 		}
 		return entry.trim();
 	}).filter(Boolean);
@@ -150,12 +168,15 @@ interface ValidationOptions {
 	 */
 	allowRanges?: string[];
 	/**
-	 * When true, trust an explicitly-configured HTTP(S) proxy for hostname
-	 * resolution instead of performing local DNS lookups inside the sandbox.
-	 * Literal IPs and localhost remain blocked, and NO_PROXY hosts still use
-	 * the local SSRF preflight. This does not configure proxy transport.
+	 * When true, let the proxy carrying the request resolve hostnames instead of
+	 * performing local DNS lookups: an HTTP(S) proxy from the environment, or the
+	 * `proxy` configured in web-search.json. A different per-call proxy never
+	 * qualifies. Literal IPs and localhost remain blocked, and NO_PROXY hosts still
+	 * use the local SSRF preflight. This does not configure proxy transport.
 	 */
 	trustEnvProxy?: boolean;
+	/** Proxy pinned on the request via `__proxy`; defaults to the scoped proxy, like the transport. */
+	proxy?: string;
 	/** Allow loopback URLs for explicit provider base endpoints, not fetched targets. */
 	allowLoopback?: boolean;
 }
@@ -177,6 +198,8 @@ interface FetchRemoteOptions extends ValidationOptions {
 	fetch?: Fetch;
 	maxRedirects?: number;
 	onRedirect?: (args: RedirectRequestInitArgs) => RequestInit;
+	/** "same-origin" refuses any redirect that leaves the original URL's origin. */
+	redirects?: RedirectPolicy;
 }
 
 async function defaultLookup(hostname: string): Promise<LookupAddress[]> {
@@ -210,14 +233,21 @@ export async function validateRemoteUrl(rawUrl: string | URL, options: Validatio
 		return url;
 	}
 
-	if (shouldTrustEnvProxy(url, options.trustEnvProxy === true)) return url;
+	const trustProxy = options.trustEnvProxy === true;
+	const proxy = options.proxy !== undefined
+		? normalizeProxyUrl(options.proxy, "proxy")
+		: hasScopedProxyDecision() ? getActiveProxy() : undefined;
+	if (proxy === undefined ? shouldTrustEnvProxy(url, trustProxy) : trustProxy && isConfiguredRemoteDnsProxy(url, proxy)) return url;
 
 	let addresses: LookupAddress[];
 	try {
 		addresses = await (options.lookup ?? defaultLookup)(hostname);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to resolve ${hostname}: ${message}`);
+		const hint = !trustProxy && proxy && isConfiguredRemoteDnsProxy(url, proxy)
+			? ". If your configured proxy resolves hostnames, set ssrf.trustEnvProxy to true in web-search.json."
+			: "";
+		throw new Error(`Failed to resolve ${hostname}: ${message}${hint}`);
 	}
 
 	if (addresses.length === 0) throw new Error(`Failed to resolve ${hostname}: no addresses returned`);
@@ -231,32 +261,25 @@ export async function validateRemoteUrl(rawUrl: string | URL, options: Validatio
 export interface LookupContext {
 	lookup: Lookup;
 	allowRanges: ParsedCidr[];
-	trustEnvProxy: boolean;
 }
 
 const lookupContext = new AsyncLocalStorage<LookupContext>();
 
 let ssrfAgent: Undici.Agent | undefined;
 
-/**
- * undici is loaded lazily: its package entry point constructs a CacheStorage at import time, which
- * needs Node internals that Bun lacks, and eagerly evaluating it would break the whole extension
- * under test. The transport falls back to the global fetch when it is unavailable.
- */
+/** Load lazily for Bun compatibility; a failed import must never bypass connection validation. */
 interface UndiciTransport {
 	Agent: typeof Undici.Agent;
 	fetch: typeof fetch;
 }
 
-let undiciTransport: Promise<UndiciTransport | null> | undefined;
+let undiciTransport: Promise<UndiciTransport> | undefined;
 
-function getUndiciTransport(): Promise<UndiciTransport | null> {
-	undiciTransport ??= import("undici").then(
-		(module) => (typeof module.Agent === "function" && typeof module.fetch === "function"
-			? { Agent: module.Agent, fetch: module.fetch as unknown as typeof fetch }
-			: null),
-		() => null,
-	);
+function getUndiciTransport(): Promise<UndiciTransport> {
+	undiciTransport ??= import("undici").then((module) => ({
+		Agent: module.Agent,
+		fetch: module.fetch as unknown as typeof fetch,
+	}));
 	return undiciTransport;
 }
 
@@ -273,9 +296,8 @@ export function createValidatingLookup(context: LookupContext): (hostname: strin
 		context.lookup(hostname).then((addresses) => {
 			try {
 				if (addresses.length === 0) throw new Error(`Failed to resolve ${hostname}: no addresses returned`);
-				if (!context.trustEnvProxy) {
-					for (const { address } of addresses) assertPublicAddress(address, hostname, context.allowRanges);
-				}
+				// Only direct connections reach this dispatcher; proxy trust cannot exempt their DNS.
+				for (const { address } of addresses) assertPublicAddress(address, hostname, context.allowRanges);
 			} catch (error) {
 				callback(error as NodeJS.ErrnoException, "");
 				return;
@@ -304,11 +326,11 @@ function getSsrfAgent(AgentClass: typeof Undici.Agent): Undici.Agent {
 }
 
 function hopLookupContext(url: URL, options: FetchRemoteOptions): LookupContext {
-	return {
-		lookup: options.lookup ?? defaultLookup,
-		allowRanges: parseAllowRanges(options.allowRanges),
-		trustEnvProxy: shouldTrustEnvProxy(url, options.trustEnvProxy === true),
-	};
+	const allowRanges = parseAllowRanges(options.allowRanges);
+	if (options.allowLoopback === true && isLoopbackHostname(url.hostname)) {
+		allowRanges.push(...parseAllowRanges(LOOPBACK_ALLOW_RANGES));
+	}
+	return { lookup: options.lookup ?? defaultLookup, allowRanges };
 }
 
 /**
@@ -317,30 +339,36 @@ function hopLookupContext(url: URL, options: FetchRemoteOptions): LookupContext 
  * there is no connection-time check. Proxied requests go through the global wrapper instead, which
  * routes them through curl and resolves names on the proxy side anyway.
  */
-async function fetchDirect(url: URL, init: RequestInit): Promise<Response> {
-	if (getActiveProxy() && !isProxyBypassedUrl(url)) return fetch(url, init);
+async function fetchDirect(url: URL, init: ProxiedRequestInit): Promise<Response> {
+	const proxy = init.__proxy ?? getActiveProxy();
+	if (proxy && !isProxyBypassedUrl(url)) {
+		installGlobalProxyFetch();
+		return fetch(url, { ...init, __proxy: proxy } as ProxiedRequestInit);
+	}
 	const transport = await getUndiciTransport();
-	if (!transport) return fetch(url, init);
 	const dispatcher = getSsrfAgent(transport.Agent);
 	return transport.fetch(url as unknown as RequestInfo, { ...init, dispatcher } as RequestInit) as unknown as Promise<Response>;
 }
 
 export async function fetchRemoteUrl(
 	url: string | URL,
-	init: RequestInit = {},
+	init: ProxiedRequestInit = {},
 	options: FetchRemoteOptions = {},
 ): Promise<Response> {
+	// Pin the same proxy override for the preflight and transport, including explicit direct mode.
+	options = { ...options, proxy: options.proxy ?? init.__proxy };
 	const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
 	let current = await validateRemoteUrl(url, options);
 	const configuredOrigin = current.origin;
-	let requestInit = init;
+	let requestInit: ProxiedRequestInit = { ...init, __proxy: options.proxy };
 
 	for (let redirects = 0; redirects <= maxRedirects; redirects++) {
-		const response = await lookupContext.run(hopLookupContext(current, options), async () => {
+		const hopOptions = current.origin === configuredOrigin ? options : { ...options, allowLoopback: false };
+		const response = await lookupContext.run(hopLookupContext(current, hopOptions), async () => {
 			const hopInit = { ...requestInit, redirect: "manual" } as RequestInit;
 			if (options.fetch) {
 				const transport = await getUndiciTransport();
-				const dispatcher = transport ? getSsrfAgent(transport.Agent) : undefined;
+				const dispatcher = getSsrfAgent(transport.Agent);
 				return options.fetch(current, { ...hopInit, dispatcher } as RequestInit);
 			}
 			return fetchDirect(current, hopInit);
@@ -353,6 +381,9 @@ export async function fetchRemoteUrl(
 
 		const from = current;
 		const next = new URL(location, current);
+		if (options.redirects === "same-origin" && next.origin !== configuredOrigin) {
+			throw new Error(`Refused cross-origin redirect by fetch_content redirect policy: ${configuredOrigin} -> ${next.origin}`);
+		}
 		// allowLoopback exempts an explicitly configured endpoint, never a redirect target: a loopback
 		// base must not be able to pivot the request onto a different loopback origin.
 		current = await validateRemoteUrl(next, next.origin === configuredOrigin ? options : { ...options, allowLoopback: false });
@@ -441,13 +472,18 @@ function hostnameMatchesNoProxy(hostname: string, port: string, entry: string): 
 
 function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 	if (!enabled || !getProxyForProtocol(url.protocol)) return false;
-	if (hasScopedProxyDecision()) return false;
-	const activeProxy = getActiveProxy();
-	if (activeProxy && !isProxyBypassedUrl(url)) return false;
 	const hostname = normalizeHostname(url.hostname);
 	const port = url.port || (url.protocol === "https:" ? "443" : "80");
 	const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
 	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, port, entry));
+}
+
+/** Only the operator's configured proxy qualifies: a model-supplied per-call proxy must not skip DNS validation. */
+function isConfiguredRemoteDnsProxy(url: URL, proxy: string | null): boolean {
+	return proxy !== null &&
+		REMOTE_DNS_PROXY_PROTOCOLS.has(new URL(proxy).protocol) &&
+		!isProxyBypassedUrl(url) &&
+		proxy === loadConfiguredProxy();
 }
 
 function assertPublicAddress(address: string, hostname: string, allowRanges: ParsedCidr[] = []): void {

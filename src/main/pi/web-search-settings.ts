@@ -31,6 +31,7 @@ const MAX_INLINE_CONTENT_CHARS = 200_000
  */
 export const WEB_SEARCH_PROVIDERS: WebSearchProviderOption[] = [
   { id: 'duckduckgo', name: 'DuckDuckGo', kind: 'none' },
+  { id: 'degoog', name: 'degoog', kind: 'key', loginOptional: true, apiKeyKey: 'degoogApiKey', apiKeyEnv: 'DEGOOG_API_KEY', baseUrlKey: 'degoogBaseUrl', baseUrlEnv: 'DEGOOG_URL', note: 'Self-hosted or public instance; the key is optional' },
   { id: 'searxng', name: 'SearXNG', kind: 'none', baseUrlKey: 'searxngBaseUrl', baseUrlEnv: 'SEARXNG_BASE_URL', note: 'Self-hosted instance URL' },
   {
     id: 'gemini', name: 'Gemini', kind: 'key', apiKeyKey: 'geminiApiKey', apiKeyEnv: 'GEMINI_API_KEY',
@@ -91,6 +92,10 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderOption[] = [
   { id: 'serper', name: 'Serper', kind: 'key', apiKeyKey: 'serperApiKey', apiKeyEnv: 'SERPER_API_KEY' },
   { id: 'serply', name: 'Serply', kind: 'key', apiKeyKey: 'serplyApiKey', apiKeyEnv: 'SERPLY_API_KEY' },
   { id: 'baizhi', name: 'Baizhi', kind: 'key', apiKeyKey: 'baizhiApiKey', apiKeyEnv: 'BAIZHI_API_KEY' },
+  { id: 'zai', name: 'Z.ai', kind: 'key', apiKeyKey: 'zaiApiKey', apiKeyEnv: 'ZAI_API_KEY', note: 'GLM Coding Plan key; searches use plan quota',
+    extras: [{ key: 'zaiEndpoint', label: 'Endpoint', type: 'select', options: ['', 'global', 'china'] }] },
+  { id: 'keenable', name: 'Keenable', kind: 'key', loginOptional: true, apiKeyKey: 'keenableApiKey', apiKeyEnv: 'KEENABLE_API_KEY', note: 'Works without a key; a key raises the rate limit' },
+  { id: 'ceramic', name: 'Ceramic', kind: 'key', apiKeyKey: 'ceramicApiKey', apiKeyEnv: 'CERAMIC_API_KEY', note: 'Paid keyword search API' },
   { id: 'valyu', name: 'Valyu', kind: 'key', apiKeyKey: 'valyuApiKey', apiKeyEnv: 'VALYU_API_KEY' },
   { id: 'bocha', name: 'Bocha', kind: 'key', apiKeyKey: 'bochaApiKey', apiKeyEnv: 'BOCHA_API_KEY' },
   { id: 'xcrawl', name: 'XCrawl', kind: 'key', apiKeyKey: 'xcrawlApiKey', apiKeyEnv: 'XCRAWL_API_KEY' },
@@ -98,6 +103,12 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderOption[] = [
     id: 'datalab', name: 'Datalab PDF', kind: 'key', group: 'extract',
     apiKeyKey: 'datalabApiKey', apiKeyEnv: 'DATALAB_API_KEY',
     extras: [{ key: 'datalabMode', label: 'Mode', type: 'select', options: ['', 'fast', 'balanced', 'accurate'], env: 'DATALAB_MODE' }]
+  },
+  {
+    id: 'pdf-endpoint', name: 'PDF endpoint', kind: 'none', group: 'extract',
+    baseUrlKey: 'pdf.endpointUrl', baseUrlEnv: 'PDF_ENDPOINT_URL',
+    extras: [{ key: 'pdf.provider', label: 'PDF provider', type: 'select', options: ['', 'auto', 'endpoint', 'gemini', 'datalab', 'unpdf'] }],
+    note: 'Your own document parser; select "endpoint" as the PDF provider to use it'
   },
   {
     id: 'crawl4ai', name: 'Crawl4AI', kind: 'key', group: 'extract',
@@ -241,6 +252,12 @@ function ssrfBoolean(value: unknown): boolean | null {
   return value
 }
 
+function fetchRedirects(value: unknown): 'same-origin' | null {
+  if (value === undefined || value === null) return null
+  if (value !== 'same-origin') throw new Error('fetchContent.redirects must be "same-origin"')
+  return value
+}
+
 /**
  * Lenient read: a field the extension would reject reads as unset and its message is collected, so
  * the panel shows the rest of the config and can repair the broken field on save.
@@ -257,6 +274,7 @@ function readSettingsLenient(config: Config): { settings: WebSearchSettings; iss
   }
   const fetchConfig = isRecord(config.fetch) ? config.fetch : {}
   const ssrf = isRecord(config.ssrf) ? config.ssrf : {}
+  const fetchContent = isRecord(config.fetchContent) ? config.fetchContent : {}
   const webSearch = isRecord(config.webSearch) ? config.webSearch : {}
   const tools = isRecord(config.tools) ? config.tools : {}
   const allowedModes = collect(() => fetchModeList(fetchConfig.allowedModes), null)
@@ -272,6 +290,7 @@ function readSettingsLenient(config: Config): { settings: WebSearchSettings; iss
     fetchAllowedModes: allowedModes,
     ssrfAllowRanges: collect(() => ssrfRanges(ssrf.allowRanges), null),
     ssrfTrustEnvProxy: collect(() => ssrfBoolean(ssrf.trustEnvProxy), null),
+    fetchRedirects: collect(() => fetchRedirects(fetchContent.redirects), null),
     tools: Object.fromEntries(TOOL_KEYS.map((key) => {
       const entry = tools[key]
       const enabled = isRecord(entry) ? entry.enabled : undefined
@@ -455,6 +474,12 @@ function applyPatch(config: Config, patch: WebSearchSettingsPatch): void {
       throw new Error('ssrf.trustEnvProxy must be a boolean')
     }
     setPath(config, 'ssrf.trustEnvProxy', patch.ssrfTrustEnvProxy)
+  }
+  if (patch.fetchRedirects !== undefined) {
+    if (patch.fetchRedirects !== null && patch.fetchRedirects !== 'same-origin') {
+      throw new Error('fetchContent.redirects must be "same-origin"')
+    }
+    setPath(config, 'fetchContent.redirects', patch.fetchRedirects)
   }
   for (const key of Object.keys(patch.tools ?? {})) {
     if (!TOOL_KEYS.includes(key as keyof WebSearchToolFlags)) throw new Error(`Unknown web search tool: ${key}`)

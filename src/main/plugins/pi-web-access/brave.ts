@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
+import { BraveRateLimitCoordinator } from "./brave-rate-limit.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
@@ -9,6 +10,7 @@ import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl
 const BRAVE_API_BASE_URL = "https://api.search.brave.com/res/v1";
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
+const braveRateLimit = new BraveRateLimitCoordinator();
 
 interface WebSearchConfig {
 	braveApiKey?: unknown;
@@ -110,6 +112,24 @@ function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): bo
 	return !filters.blocked.some(domain => hostMatchesDomain(hostname, domain));
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+	"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&apos;": "'", "&nbsp;": " ",
+	"&mdash;": "—", "&ndash;": "–", "&hellip;": "…", "&rsquo;": "’", "&lsquo;": "‘",
+	"&rdquo;": "”", "&ldquo;": "“", "&middot;": "·", "&bull;": "•", "&deg;": "°",
+};
+
+/** Brave marks matched terms with tags and escapes the rest. */
+function stripHtml(value: string): string {
+	return value
+		.replace(/<[^>]*>/g, "")
+		.replace(/&(?:#(x?)([0-9a-f]+)|[a-z]+);/gi, (entity, hex: string | undefined, digits: string | undefined) => {
+			if (!digits) return HTML_ENTITIES[entity.toLowerCase()] ?? entity;
+			const code = Number.parseInt(digits, hex ? 16 : 10);
+			return code <= 0x10ffff && (code < 0xd800 || code > 0xdfff) ? String.fromCodePoint(code) : entity;
+		})
+		.trim();
+}
+
 export function isBraveAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Brave",
@@ -154,17 +174,32 @@ export async function searchWithBrave(
 	}
 
 	try {
-		const response = await fetchWithCredentialRedirects(`${apiUrl}?${params.toString()}`, {
-			method: "GET",
-			headers: {
-				"X-Subscription-Token": apiKey,
-				"Accept": "application/json",
-				"Accept-Encoding": "gzip",
-			},
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["X-Subscription-Token"]);
+		const searchDeadline = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+		const searchSignal = options.signal
+			? AbortSignal.any([searchDeadline, options.signal])
+			: searchDeadline;
+		const response = await braveRateLimit.run(async () => {
+			for (let attempt = 0; attempt < 2; attempt++) {
+				const current = await fetchWithCredentialRedirects(`${apiUrl}?${params.toString()}`, {
+					method: "GET",
+					headers: {
+						"X-Subscription-Token": apiKey,
+						"Accept": "application/json",
+						"Accept-Encoding": "gzip",
+					},
+					signal: searchSignal,
+				}, ["X-Subscription-Token"]);
+
+				braveRateLimit.observe(current.headers);
+				if (current.status !== 429 || attempt === 1) return current;
+				const retryDelay = braveRateLimit.retryDelay(current.headers);
+				if (retryDelay === null) return current;
+				braveRateLimit.recordRetryDelay(retryDelay);
+				await current.body?.cancel().catch(() => undefined);
+				await braveRateLimit.waitForRecordedCooldown(searchSignal);
+			}
+			throw new Error("Brave Search retry loop exited unexpectedly");
+		}, searchSignal);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);
@@ -181,9 +216,9 @@ export async function searchWithBrave(
 		for (const item of data.web?.results ?? []) {
 			if (!item.url || !matchesDomainFilters(item.url, domainFilters)) continue;
 			results.push({
-				title: item.title || item.url,
+				title: stripHtml(item.title || "") || item.url,
 				url: item.url,
-				snippet: item.description || "",
+				snippet: stripHtml(item.description || ""),
 			});
 			if (results.length >= numResults) break;
 		}
