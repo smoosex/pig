@@ -102,7 +102,7 @@ export const UserBubble = memo(function UserBubble({
           </div>
         ) : null}
         {hasTextBubble ? (
-          <Bubble align="end" className="max-w-full *:data-[slot=bubble-content]:bg-user-message-background *:data-[slot=bubble-content]:text-user-message-foreground">
+          <Bubble align="end" className="max-w-full *:data-[slot=bubble-content]:bg-glass-prompt-background *:data-[slot=bubble-content]:text-glass-prompt-foreground solid:*:data-[slot=bubble-content]:bg-user-message-background solid:*:data-[slot=bubble-content]:text-user-message-foreground">
             <BubbleContent
               className={cn(
                 'flex max-w-full flex-col gap-2',

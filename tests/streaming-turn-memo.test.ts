@@ -10,6 +10,7 @@ async function runFixture(scenario: string): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   document.write('<!doctype html><html><head></head><body></body></html>')
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(window, { api: { supportsGlass: false } })
   const { mock } = await import('bun:test')
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')

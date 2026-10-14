@@ -176,7 +176,8 @@ export function SplitPaneContainer({
     }
     const isActive = activePaneId === node.id
     const isDraggingOver = dragOver?.paneId === node.id
-    const tabTitle = openTabs.find((tab) => tab.id === node.tabId)?.title || node.tabId
+    const paneTab = openTabs.find((tab) => tab.id === node.tabId)
+    const tabTitle = paneTab?.title || node.tabId
     return (
       <div
         key={node.id}
@@ -188,7 +189,8 @@ export function SplitPaneContainer({
           useSessionsStore.getState().setActive(node.tabId)
         }}
         className={cn(
-          'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card shadow-xs transition-colors',
+          'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border shadow-xs transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none',
+          paneTab?.kind === 'project' || paneTab?.kind === 'chat' ? 'bg-transparent solid:bg-card' : 'bg-card',
           isActive ? 'border-primary/80' : 'border-border/60'
         )}
       >

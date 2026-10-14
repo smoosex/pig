@@ -303,7 +303,7 @@ function TabFace({
           : [
             'cursor-pointer',
             active
-              ? 'bg-card text-foreground before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
+              ? 'bg-foreground/12 solid:bg-card text-foreground transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
               : 'text-muted-foreground'
           ],
         className
