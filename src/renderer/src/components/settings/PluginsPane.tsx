@@ -16,10 +16,14 @@ import { WebSearchSettings } from './WebSearchSettings'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
-  'compactAfterTokensRatio', 'observationsPoolMaxTokens', 'observationsPoolTargetTokens',
+  'compactAfterTokensRatio', 'workerMemoryMaxTokens', 'compactionMaxRetainedTokens',
+  'compactionSummaryMaxTokens', 'observationsPoolMaxTokens', 'observationsPoolTargetTokens',
   'agentMaxTurns', 'agentMaxTokens'
 ] as const
-const booleanKeys = ['showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
+// Rendered alongside the numeric keys; 0 is a meaningful value (disables catch-up).
+const nonNegativeKeys = ['compactionCatchUpMaxChunks'] as const
+const numberSettingKeys = [...numericKeys, ...nonNegativeKeys] as const
+const booleanKeys = ['consolidateWhenIdle', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -44,12 +48,18 @@ export function PluginsPane() {
   const [modelProvider, setModelProvider] = useState('')
   const [modelId, setModelId] = useState('')
   const [modelThinking, setModelThinking] = useState('default')
+  const [fallbackProvider, setFallbackProvider] = useState('')
+  const [fallbackId, setFallbackId] = useState('')
+  const [fallbackThinking, setFallbackThinking] = useState('default')
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const models = useModelCatalogStore((s) => s.models)
   const selectedPlugin = plugins.find((item) => item.id === selectedPluginId)
   const memoryModel = modelProvider.trim() && modelId.trim()
     ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null
+    : null
+  const memoryFallbackModel = fallbackProvider.trim() && fallbackId.trim()
+    ? models.find((item) => item.provider === fallbackProvider.trim() && item.id === fallbackId.trim()) ?? null
     : null
 
   useEffect(() => {
@@ -72,10 +82,13 @@ export function PluginsPane() {
       if (cancelled) return
       setSaved(config)
       setDraft(config)
-      setNumbers(Object.fromEntries(numericKeys.map((key) => [key, config[key] == null ? '' : String(config[key])])))
+      setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, config[key] == null ? '' : String(config[key])])))
       setModelProvider(config.model?.provider ?? '')
       setModelId(config.model?.id ?? '')
       setModelThinking(config.model?.thinking ?? 'default')
+      setFallbackProvider(config.fallbackModel?.provider ?? '')
+      setFallbackId(config.fallbackModel?.id ?? '')
+      setFallbackThinking(config.fallbackModel?.thinking ?? 'default')
       setSettingsError(null)
     }, (failure) => { if (!cancelled) setSettingsError(errorText(failure)) })
     return () => { cancelled = true }
@@ -103,7 +116,7 @@ export function PluginsPane() {
 
   const saveMemory = async () => {
     const patch: MemoryPluginSettingsPatch = {}
-    for (const key of numericKeys) {
+    for (const key of numberSettingKeys) {
       const oldValue = saved[key] == null ? '' : String(saved[key])
       const current = (numbers[key] ?? '').trim()
       if (current !== oldValue) patch[key] = current ? Number(current) : null
@@ -122,13 +135,21 @@ export function PluginsPane() {
       return
     }
     if (JSON.stringify(model) !== JSON.stringify(saved.model ?? null)) patch.model = model
+    const fallback = fallbackProvider.trim() && fallbackId.trim()
+      ? { provider: fallbackProvider.trim(), id: fallbackId.trim(), ...(fallbackThinking === 'default' ? {} : { thinking: fallbackThinking as NonNullable<MemoryPluginSettings['fallbackModel']>['thinking'] }) }
+      : null
+    if ((fallbackProvider.trim() || fallbackId.trim()) && !fallback) {
+      setSettingsError('Provider and model ID are both required')
+      return
+    }
+    if (JSON.stringify(fallback) !== JSON.stringify(saved.fallbackModel ?? null)) patch.fallbackModel = fallback
     setSaving(true)
     setSettingsError(null)
     try {
       const next = await api.setMemoryPluginSettings(patch)
       setSaved(next)
       setDraft(next)
-      setNumbers(Object.fromEntries(numericKeys.map((key) => [key, next[key] == null ? '' : String(next[key])])))
+      setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, next[key] == null ? '' : String(next[key])])))
       setSelectedPluginId(null)
     } catch (failure) { setSettingsError(errorText(failure)) }
     finally { setSaving(false) }
@@ -235,7 +256,12 @@ export function PluginsPane() {
         <SettingsCard>
           {numericKeys.map((key) => (
             <SettingsRow key={key} title={t(`plugins.${key}`)} description={key === 'observerChunkMaxTokens' ? t('plugins.observerChunkAutoHint') : t(`plugins.${key}Hint`)}>
-              <Input className="w-30" aria-label={t(`plugins.${key}`)} type="number" min={key === 'compactAfterTokensRatio' ? '0.0001' : '1'} max={key === 'compactAfterTokensRatio' ? '0.9999' : undefined} step={key === 'compactAfterTokensRatio' ? 'any' : '1'} value={numbers[key] ?? ''} placeholder={key === 'observerChunkMaxTokens' ? t('plugins.autoDefault') : (defaults[key] === undefined ? '—' : String(defaults[key]))} onChange={(event) => setNumbers((items) => ({ ...items, [key]: event.target.value }))} />
+              <Input className="w-30" aria-label={t(`plugins.${key}`)} type="number" min={key === 'compactAfterTokensRatio' ? '0.0001' : '1'} max={key === 'compactAfterTokensRatio' ? '0.9999' : undefined} step={key === 'compactAfterTokensRatio' ? 'any' : '1'} value={numbers[key] ?? ''} placeholder={key === 'observerChunkMaxTokens' || key === 'workerMemoryMaxTokens' || key === 'compactionMaxRetainedTokens' || key === 'compactionSummaryMaxTokens' ? t('plugins.autoDefault') : (defaults[key] === undefined ? '—' : String(defaults[key]))} onChange={(event) => setNumbers((items) => ({ ...items, [key]: event.target.value }))} />
+            </SettingsRow>
+          ))}
+          {nonNegativeKeys.map((key) => (
+            <SettingsRow key={key} title={t(`plugins.${key}`)} description={t(`plugins.${key}Hint`)}>
+              <Input className="w-30" aria-label={t(`plugins.${key}`)} type="number" min="0" step="1" value={numbers[key] ?? ''} placeholder={String(defaults[key] ?? '')} onChange={(event) => setNumbers((items) => ({ ...items, [key]: event.target.value }))} />
             </SettingsRow>
           ))}
           <SettingsRow title={t('plugins.compactAfterTokensMode')} description={t('plugins.compactAfterTokensModeHint')}>
@@ -261,6 +287,21 @@ export function PluginsPane() {
                   onClick={() => { setModelProvider(''); setModelId(''); setModelThinking('default') }}><X /></Button>
               ) : null}
               <Select value={modelThinking} onValueChange={setModelThinking}>
+                <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
+                  <SelectItem value="default">{t('plugins.thinking')}</SelectItem>
+                  {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
+                </SelectGroup></SelectContent>
+              </Select>
+            </div>
+          </SettingsRow>
+          <SettingsRow title={t('plugins.fallbackModel')} description={t('plugins.fallbackModelHint')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <DefaultModelPicker model={memoryFallbackModel} models={models} onSelect={(item) => { setFallbackProvider(item.provider); setFallbackId(item.id) }} />
+              {fallbackProvider.trim() && fallbackId.trim() ? (
+                <Button size="icon-sm" variant="ghost" aria-label={t('plugins.clearModel')}
+                  onClick={() => { setFallbackProvider(''); setFallbackId(''); setFallbackThinking('default') }}><X /></Button>
+              ) : null}
+              <Select value={fallbackThinking} onValueChange={setFallbackThinking}>
                 <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
                   <SelectItem value="default">{t('plugins.thinking')}</SelectItem>
                   {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}

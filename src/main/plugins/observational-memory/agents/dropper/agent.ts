@@ -16,7 +16,7 @@ import {
 	summarizeCoverageByRelevanceForIds,
 	observationToDropperLine,
 } from "./coverage.js";
-import { observationPoolMetrics } from "./pool.js";
+import { observationPoolMetrics, type ObservationPoolMetrics } from "./pool.js";
 export {
 	maxDropCountForPool,
 	observationPoolFullness,
@@ -37,6 +37,15 @@ export {
 } from "./coverage.js";
 export type { CoverageSummaryByRelevance, CoverageTransitionSummaryByRelevance, ReflectionCoverageTier } from "./coverage.js";
 
+export class DropperStreamError extends Error {
+	readonly stopReason: string;
+	constructor(stopReason: string, errorMessage?: string) {
+		super(`dropper stream ended with stopReason "${stopReason}"${errorMessage ? `: ${errorMessage}` : ""}`);
+		this.name = "DropperStreamError";
+		this.stopReason = stopReason;
+	}
+}
+
 interface RunDropperArgs {
 	model: Model<any>;
 	apiKey?: string;
@@ -45,6 +54,8 @@ interface RunDropperArgs {
 	reflections: Reflection[];
 	observations: Observation[];
 	targetTokens: number;
+	/** Eligibility and excess of the full ledger pool, not the bounded candidates. */
+	poolMetrics?: ObservationPoolMetrics;
 	signal?: AbortSignal;
 	agentLoop?: typeof agentLoop;
 	maxTurns?: number;
@@ -139,12 +150,14 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 	const { model, apiKey, headers, env, reflections, observations, targetTokens, signal } = args;
 	if (observations.length === 0) return undefined;
 
-	const metrics = observationPoolMetrics(observations, targetTokens);
-	const { observationTokens, fullness, tokensOverTarget, maxDropsAllowed } = metrics;
+	const metrics = args.poolMetrics ?? observationPoolMetrics(observations, targetTokens);
+	const { observationTokens, fullness, tokensOverTarget } = metrics;
+	const maxDropsAllowed = Math.min(observations.length, metrics.maxDropsAllowed);
 	const coverageById = reflectionCoverageMap(observations, reflections);
 	const coverageSummaryByRelevance = summarizeCoverageByRelevance(observations, coverageById);
 	debugLog("dropper.agent_start", {
-		activeObservationCount: observations.length,
+		activeObservationCount: metrics.activeObservationCount,
+		candidateCount: observations.length,
 		reflectionCount: reflections.length,
 		observationTokens,
 		targetTokens,
@@ -237,7 +250,7 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 	};
 
 	const fullnessPercent = Math.round(fullness * 100);
-	const userText = `CURRENT REFLECTIONS:\n${joinOrEmpty(reflections.map(reflectionToSummaryLine))}\n\nCURRENT OBSERVATIONS:\n${joinOrEmpty(observations.map((observation) => observationToDropperLine(observation, coverageTierForObservation(observation, coverageById))))}\n\nActive observation pool: ~${observationTokens.toLocaleString()} tokens; target: ~${targetTokens.toLocaleString()} tokens; fullness against target: ~${fullnessPercent.toLocaleString()}%; over target by ~${tokensOverTarget.toLocaleString()} tokens.\nMaximum drops allowed this run: ${maxDropsAllowed.toLocaleString()} observation${maxDropsAllowed === 1 ? "" : "s"}. This maximum is sized to move the active pool toward the target if every proposed drop is clearly safe.\nThis maximum is a hard upper bound, not a target. Drop fewer or none if fewer observations are clearly safe.`;
+	const userText = `CURRENT REFLECTIONS:\n${joinOrEmpty(reflections.map(reflectionToSummaryLine))}\n\nCURRENT OBSERVATIONS:\n${joinOrEmpty(observations.map((observation) => observationToDropperLine(observation, coverageTierForObservation(observation, coverageById))))}\n\nActive observation pool: ~${observationTokens.toLocaleString()} tokens; target: ~${targetTokens.toLocaleString()} tokens; fullness against target: ~${fullnessPercent.toLocaleString()}%; over target by ~${tokensOverTarget.toLocaleString()} tokens.\nCandidates supplied: ${observations.length.toLocaleString()} of ${metrics.activeObservationCount.toLocaleString()} active observations (bounded to the worker memory budget).\nMaximum drops allowed this run: ${maxDropsAllowed.toLocaleString()} observation${maxDropsAllowed === 1 ? "" : "s"}. This maximum is sized to move the active pool toward the target if every proposed drop is clearly safe.\nThis maximum is a hard upper bound, not a target. Drop fewer or none if fewer observations are clearly safe.`;
 	const prompts: Message[] = [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }];
 	const context: AgentContext = { messages: [{ role: 'system', content: DROPPER_SYSTEM, timestamp: Date.now() }], tools: [dropObservations as AgentTool<any>] };
 	const reasoning = (model as { reasoning?: unknown }).reasoning;
@@ -253,7 +266,14 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 		convertToLlm: (msgs) => msgs as Message[],
 		toolExecution: "sequential",
 		...(reasoning && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
-		...(effectiveMaxTurns !== undefined ? { shouldStopAfterTurn: () => ++turnCount >= effectiveMaxTurns } : {}),
+		...(effectiveMaxTurns !== undefined
+			? {
+				finishTurn: (turn) => {
+					if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return;
+					return ++turnCount >= effectiveMaxTurns ? { action: "end" } : undefined;
+				},
+			}
+			: {}),
 	};
 
 	const loop = args.agentLoop ?? agentLoop;
@@ -264,12 +284,18 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 		signal,
 		resolveWorkerStreamSimple(model, args.modelRegistry, args.streamSimple),
 	);
+	let streamError: { stopReason: string; errorMessage?: string } | undefined;
 	for await (const event of stream) {
 		// Tool execution collects candidate ids.
 		logAgentStreamError("dropper", event);
+		const message = (event as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
+		if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
+			streamError = { stopReason: message.stopReason, errorMessage: message.errorMessage };
+		}
 	}
 	await stream.result();
 	const droppedIds = selectDropCandidates(proposedDropIds, observations, maxDropsAllowed, reflections);
+	if (droppedIds.length === 0 && streamError) throw new DropperStreamError(streamError.stopReason, streamError.errorMessage);
 	const reason = droppedIds.length > 0
 		? "selected_nonempty"
 		: toolCallCount === 0

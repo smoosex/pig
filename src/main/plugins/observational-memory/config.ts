@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { memorySettingsPath } from "./paths.js";
 
 export interface ConfiguredModel {
@@ -41,6 +43,33 @@ export interface Config {
 	compactAfterTokens: number;
 	compactAfterTokensMode: CompactAfterTokensMode;
 	compactAfterTokensRatio: number;
+	/**
+	 * Maximum estimated source tokens the compaction hook may keep in context
+	 * when it moves Pi's retention boundary back to the observer frontier so
+	 * that unobserved entries are not discarded. Unset (default) derives the
+	 * budget from the active session model's context window; see
+	 * {@link resolveCompactionMaxRetainedTokens}.
+	 */
+	compactionMaxRetainedTokens?: number;
+	/**
+	 * Estimated token budget for the memory summary the compaction hook renders.
+	 * Unset (default) derives it from the session model's context window; see
+	 * {@link resolveCompactionSummaryMaxTokens}.
+	 */
+	compactionSummaryMaxTokens?: number;
+	/**
+	 * Maximum observer chunks the compaction hook may run synchronously to cover
+	 * source entries the background observer has not reached before Pi's cut,
+	 * so the hook can own the compaction instead of delegating to Pi's native
+	 * summarizer. 0 disables synchronous catch-up.
+	 */
+	compactionCatchUpMaxChunks: number;
+	/**
+	 * Estimated token budget for the prior memory (reflections and observations)
+	 * carried by each observer, reflector, and dropper request. Unset derives it
+	 * from the memory model's context window; see {@link resolveWorkerMemoryMaxTokens}.
+	 */
+	workerMemoryMaxTokens?: number;
 	observationsPoolMaxTokens: number;
 	observationsPoolTargetTokens: number;
 	agentMaxTurns: number;
@@ -53,10 +82,42 @@ export interface Config {
 	 */
 	agentMaxTokens: number;
 	model?: ConfiguredModel;
+	/**
+	 * Run memory workers (observer, reflector, dropper) only while the agent is
+	 * idle: launch them from `agent_settled` instead of `agent_start`/`turn_end`,
+	 * and abort an in-flight run when a new agent run starts. For hosts where
+	 * the session model and the memory model share one context budget (a single
+	 * local llama.cpp server), this keeps worker requests from colliding with
+	 * the session's own requests.
+	 */
+	consolidateWhenIdle: boolean;
+	/**
+	 * Optional model the memory workers fall back to.
+	 *
+	 * Tried in two places:
+	 * - Resolution: when the primary memory model (this `model` when set,
+	 *   otherwise the session model) cannot be resolved — absent from Pi's
+	 *   registry, or carrying no usable credentials.
+	 * - Runtime: when a worker stage (observer/reflector/dropper) fails its
+	 *   model call, that one stage is retried once with this model.
+	 *
+	 * Once the fallback resolves, it is reused for the rest of the consolidation
+	 * pass so later stages do not re-pay a known-broken primary. A configured
+	 * fallback that also fails leaves the existing skip/fail-safe behavior intact.
+	 */
+	fallbackModel?: ConfiguredModel;
 	showWorkerNotifications: boolean;
+	/** Pig-specific: gate the proactive-compaction notifications separately from worker ones. */
 	showCompactionNotifications: boolean;
 	passive: boolean;
 	debugLog: boolean;
+	/**
+	 * Pi's own `compaction.enabled` setting, read from the same settings files
+	 * (not an extension setting). When Pi's automatic compaction is disabled,
+	 * the proactive trigger counts raw source tokens instead of observed ones,
+	 * since nothing else would compact a session whose observer has stalled.
+	 */
+	piAutoCompactionEnabled: boolean;
 }
 
 export const DEFAULTS: Config = {
@@ -69,10 +130,13 @@ export const DEFAULTS: Config = {
 	observationsPoolTargetTokens: 10_000,
 	agentMaxTurns: 16,
 	agentMaxTokens: 32_000,
+	compactionCatchUpMaxChunks: 2,
+	consolidateWhenIdle: false,
 	showWorkerNotifications: true,
 	showCompactionNotifications: true,
 	passive: false,
 	debugLog: false,
+	piAutoCompactionEnabled: true,
 };
 
 export const COMPACT_AFTER_TOKENS_MODE_VALUES: readonly CompactAfterTokensMode[] = ["calibrated", "ratio"] as const;
@@ -92,6 +156,80 @@ export function resolveCompactAfterTokens(config: Config, contextWindow: number 
 		return Math.max(1, Math.floor(contextWindow * config.compactAfterTokensRatio));
 	}
 	return config.compactAfterTokens;
+}
+
+/** Retained-tail budget used when `compactionMaxRetainedTokens` is unset and the context window is unknown. */
+export const COMPACTION_RETAINED_FALLBACK_MAX_TOKENS = 60_000;
+
+/**
+ * Fraction of the session model's context window the compaction hook may keep
+ * when it retains unobserved source entries past Pi's proposed cut. Half the
+ * window leaves room for the rendered memory summary, system prompt, tool
+ * schemas, and the next response even when the ~4 chars/token estimate
+ * undercounts real tokens.
+ */
+export const COMPACTION_RETAINED_CONTEXT_RATIO = 0.5;
+
+/**
+ * Resolve how many estimated source tokens the compaction hook may retain when
+ * observation coverage lags behind Pi's proposed retention boundary.
+ *
+ * An explicit `compactionMaxRetainedTokens` always wins. Otherwise the budget
+ * is `floor(contextWindow * COMPACTION_RETAINED_CONTEXT_RATIO)` for the active
+ * session model, falling back to {@link COMPACTION_RETAINED_FALLBACK_MAX_TOKENS}
+ * when the window is unknown.
+ */
+export function resolveCompactionMaxRetainedTokens(config: Config, contextWindow: number | undefined): number {
+	if (config.compactionMaxRetainedTokens !== undefined && config.compactionMaxRetainedTokens > 0) {
+		return config.compactionMaxRetainedTokens;
+	}
+	if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0) {
+		return Math.max(1, Math.floor(contextWindow * COMPACTION_RETAINED_CONTEXT_RATIO));
+	}
+	return COMPACTION_RETAINED_FALLBACK_MAX_TOKENS;
+}
+
+/** Summary budget used when `compactionSummaryMaxTokens` is unset and the context window is unknown. */
+export const COMPACTION_SUMMARY_FALLBACK_MAX_TOKENS = 8_000;
+
+/** Fraction of the session model's context window the rendered memory summary may occupy by default. */
+export const COMPACTION_SUMMARY_CONTEXT_RATIO = 0.125;
+
+/**
+ * Resolve the estimated token budget for the rendered compaction summary. An
+ * explicit `compactionSummaryMaxTokens` wins; otherwise one eighth of the
+ * session model's context window, or {@link COMPACTION_SUMMARY_FALLBACK_MAX_TOKENS}
+ * when the window is unknown.
+ */
+export function resolveCompactionSummaryMaxTokens(config: Config, contextWindow: number | undefined): number {
+	if (config.compactionSummaryMaxTokens !== undefined && config.compactionSummaryMaxTokens > 0) {
+		return config.compactionSummaryMaxTokens;
+	}
+	if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0) {
+		return Math.max(1, Math.floor(contextWindow * COMPACTION_SUMMARY_CONTEXT_RATIO));
+	}
+	return COMPACTION_SUMMARY_FALLBACK_MAX_TOKENS;
+}
+
+/** Worker prior-memory budget used when unset and the memory model's context window is unknown. */
+export const WORKER_MEMORY_FALLBACK_MAX_TOKENS = 16_000;
+
+/** Fraction of the memory model's context window worker prompts may spend on prior memory. */
+export const WORKER_MEMORY_CONTEXT_RATIO = 0.25;
+
+/**
+ * Resolve the prior-memory budget for worker prompts. Explicit
+ * `workerMemoryMaxTokens` wins; otherwise a quarter of the memory model's
+ * context window, or {@link WORKER_MEMORY_FALLBACK_MAX_TOKENS} when unknown.
+ * Together with the observer chunk cap (a fifth of the window) and the output
+ * reservation this keeps a worker request inside the window.
+ */
+export function resolveWorkerMemoryMaxTokens(config: Config, contextWindow: number | undefined): number {
+	if (config.workerMemoryMaxTokens !== undefined && config.workerMemoryMaxTokens > 0) return config.workerMemoryMaxTokens;
+	if (typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0) {
+		return Math.max(1, Math.floor(contextWindow * WORKER_MEMORY_CONTEXT_RATIO));
+	}
+	return WORKER_MEMORY_FALLBACK_MAX_TOKENS;
 }
 
 export const THINKING_LEVEL_VALUES: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -139,6 +277,9 @@ export function resolveObserverChunkMaxTokens(config: Config, contextWindow: num
 }
 
 const SETTINGS_KEY = "observational-memory";
+
+/** Whether an unreadable settings file has already been reported for this process. */
+let warnedInvalidConfig = false;
 
 function positiveIntegerOrUndefined(value: unknown): number | undefined {
 	return Number.isInteger(value) && typeof value === "number" && value > 0 ? value : undefined;
@@ -195,6 +336,9 @@ function normalizeSettingsConfig(value: Record<string, unknown>): Partial<Config
 		"reflectAfterTokens",
 		"observerChunkMaxTokens",
 		"compactAfterTokens",
+		"compactionMaxRetainedTokens",
+		"compactionSummaryMaxTokens",
+		"workerMemoryMaxTokens",
 		"observationsPoolMaxTokens",
 		"observationsPoolTargetTokens",
 		"agentMaxTurns",
@@ -204,21 +348,37 @@ function normalizeSettingsConfig(value: Record<string, unknown>): Partial<Config
 		const normalizedValue = positiveIntegerOrUndefined(value[key]);
 		if (normalizedValue !== undefined) normalized[key] = normalizedValue;
 	}
+	if (Number.isInteger(value.compactionCatchUpMaxChunks) && (value.compactionCatchUpMaxChunks as number) >= 0) {
+		normalized.compactionCatchUpMaxChunks = value.compactionCatchUpMaxChunks as number;
+	}
 	if (isCompactAfterTokensMode(value.compactAfterTokensMode)) {
 		normalized.compactAfterTokensMode = value.compactAfterTokensMode;
 	}
 	const ratio = validRatioOrUndefined(value.compactAfterTokensRatio);
 	if (ratio !== undefined) normalized.compactAfterTokensRatio = ratio;
+	if (typeof value.consolidateWhenIdle === "boolean") normalized.consolidateWhenIdle = value.consolidateWhenIdle;
 	if (typeof value.showWorkerNotifications === "boolean") normalized.showWorkerNotifications = value.showWorkerNotifications;
 	if (typeof value.showCompactionNotifications === "boolean") normalized.showCompactionNotifications = value.showCompactionNotifications;
 	if (typeof value.passive === "boolean") normalized.passive = value.passive;
 	if (typeof value.debugLog === "boolean") normalized.debugLog = value.debugLog;
 	const model = normalizeModel(value.model);
 	if (model) normalized.model = model;
+	const fallbackModel = normalizeModel(value.fallbackModel);
+	if (fallbackModel) normalized.fallbackModel = fallbackModel;
 	return normalized;
 }
 
-let warnedInvalidConfig = false;
+function readPiCompactionEnabled(path: string): boolean | undefined {
+	try {
+		const raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+		const compaction = raw.compaction;
+		return isRecord(compaction) && typeof compaction.enabled === "boolean" ? compaction.enabled : undefined;
+	} catch (error) {
+		// A missing optional scope is absence; malformed JSON and IO failures are not.
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw new Error(`Observational memory: failed to read Pi compaction settings: ${path}`, { cause: error });
+	}
+}
 
 function readNamespacedConfig(path: string): Partial<Config> {
 	if (!existsSync(path)) return {};
@@ -231,15 +391,19 @@ function readNamespacedConfig(path: string): Partial<Config> {
 	} catch (error) {
 		if (!warnedInvalidConfig) {
 			warnedInvalidConfig = true;
-		console.error(
-			`Observational memory: ignoring invalid config, using defaults: ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			console.error(
+				`Observational memory: ignoring invalid config, using defaults: ${path}: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 		return {};
 	}
 }
 
-export function loadConfig(): Config {
+export function loadConfig(cwd?: string): Config {
+	// Memory settings come only from Pig's own file; Pi CLI's `observational-memory`
+	// namespace is deliberately ignored. Pi's *own* compaction switch is a different
+	// setting and is read below, because it decides whether Pi's automatic compaction
+	// can backstop a stalled observer.
 	const merged = {
 		...DEFAULTS,
 		observationsPoolTargetTokens: undefined,
@@ -250,8 +414,17 @@ export function loadConfig(): Config {
 		merged.observationsPoolMaxTokens,
 	) ?? derivedObservationPoolTarget(merged.observationsPoolMaxTokens);
 
+	// Project scope wins over global, matching how Pi itself resolves `compaction.enabled`.
+	// Without a cwd only the global file is consulted.
+	const globalPath = join(getAgentDir(), "settings.json");
+	const projectPath = cwd === undefined ? undefined : join(cwd, ".pi", "settings.json");
+	const piAutoCompactionEnabled = (projectPath !== undefined ? readPiCompactionEnabled(projectPath) : undefined)
+		?? readPiCompactionEnabled(globalPath)
+		?? DEFAULTS.piAutoCompactionEnabled;
+
 	return {
 		...merged,
 		observationsPoolTargetTokens: target,
+		piAutoCompactionEnabled,
 	};
 }

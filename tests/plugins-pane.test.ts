@@ -1,17 +1,23 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import type { MemoryPluginSettings, MemoryPluginSettingsPatch } from '../src/shared/api'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  const patches: unknown[] = []
+  const patches: MemoryPluginSettingsPatch[] = []
+  let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
   Object.assign(window, { api: {
     listPlugins: async () => [{ id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', enabled: true, available: true }],
     onPluginsChanged: () => () => {},
-    getMemoryPluginDefaults: async () => ({ observeAfterTokens: 10000 }),
-    getMemoryPluginSettings: async () => ({ observeAfterTokens: 800 }),
-    setMemoryPluginSettings: async (patch: unknown) => { patches.push(patch); return { observeAfterTokens: 900 } }
+    getMemoryPluginDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
+    getMemoryPluginSettings: async () => memoryConfig,
+    setMemoryPluginSettings: async (patch: MemoryPluginSettingsPatch) => {
+      patches.push(patch)
+      memoryConfig = Object.fromEntries(Object.entries({ ...memoryConfig, ...patch }).filter(([, value]) => value !== null)) as MemoryPluginSettings
+      return memoryConfig
+    }
   } })
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
@@ -47,8 +53,21 @@ async function fixture(): Promise<void> {
     const workerSwitch = document.querySelector('[aria-label="记忆任务通知"]')
     assert.ok(workerSwitch)
     assert.equal(workerSwitch.parentElement?.childElementCount, 1)
+    const catchUp = document.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')
+    assert.ok(catchUp)
+    assert.equal(catchUp.value, '3')
+    assert.equal(catchUp.min, '0')
+    assert.equal(catchUp.placeholder, '2')
+    const idleSwitch = document.querySelector<HTMLButtonElement>('[aria-label="仅在空闲时运行"]')
+    assert.ok(idleSwitch)
+    assert.equal(idleSwitch.getAttribute('aria-checked'), 'false')
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
-    await act(async () => { setValue.call(input, '900'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    await act(async () => {
+      setValue.call(input, '900'); input.dispatchEvent(new Event('input', { bubbles: true }))
+      setValue.call(catchUp, '0'); catchUp.dispatchEvent(new Event('input', { bubbles: true }))
+      idleSwitch.click()
+    })
+    assert.equal(idleSwitch.getAttribute('aria-checked'), 'true')
     const picker = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('选择模型'))
     assert.ok(picker)
     await act(async () => { picker.click() })
@@ -64,8 +83,20 @@ async function fixture(): Promise<void> {
     assert.ok(save)
     await act(async () => { save.click() })
     await flush()
-    assert.deepEqual(patches, [{ observeAfterTokens: 900, model: { provider: 'test', id: 'm1' } }])
+    assert.deepEqual(patches, [{ observeAfterTokens: 900, compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true, model: { provider: 'test', id: 'm1' } }])
     assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
+    await act(async () => { open.click() })
+    await flush()
+    const savedCatchUp = document.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')
+    assert.ok(savedCatchUp)
+    assert.equal(savedCatchUp.value, '0', 'zero is an explicit saved value, not the default')
+    assert.equal(document.querySelector('[aria-label="仅在空闲时运行"]')?.getAttribute('aria-checked'), 'true')
+    await act(async () => { setValue.call(savedCatchUp, ''); savedCatchUp.dispatchEvent(new Event('input', { bubbles: true })) })
+    const saveDefault = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')
+    assert.ok(saveDefault)
+    await act(async () => { saveDefault.click() })
+    await flush()
+    assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
   } finally {
     await act(async () => { root.unmount() })
     host.remove()

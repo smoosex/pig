@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { MemoryPluginSettingsPatch } from '../src/shared/api'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-plugins-'))
@@ -97,7 +98,8 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getMemoryPluginDefaults(), {
       observeAfterTokens: 10000, reflectAfterTokens: 20000, compactAfterTokens: 81000,
       compactAfterTokensRatio: 0.68, observationsPoolMaxTokens: 20000,
-      observationsPoolTargetTokens: 10000, agentMaxTurns: 16, agentMaxTokens: 32000
+      observationsPoolTargetTokens: 10000, agentMaxTurns: 16, agentMaxTokens: 32000,
+      compactionCatchUpMaxChunks: 2
     })
     assert.deepEqual(await module.getMemoryPluginSettings(), {})
     const settingsFile = join(root, 'pig', 'plugins', 'observational-memory', 'settings.json')
@@ -110,6 +112,27 @@ async function fixture(): Promise<void> {
     const { loadConfig } = await import('../src/main/plugins/observational-memory/config')
     assert.equal(loadConfig().observeAfterTokens, 800)
     assert.equal(loadConfig().passive, false)
+    const piConfigProject = join(root, 'compaction-config-project')
+    const piProjectSettings = join(piConfigProject, '.pi', 'settings.json')
+    await mkdir(join(piConfigProject, '.pi'), { recursive: true })
+    const originalPiSettings = await readFile(agentSettings, 'utf8')
+    await writeFile(agentSettings, JSON.stringify({ compaction: { enabled: false } }))
+    assert.equal(loadConfig(piConfigProject).piAutoCompactionEnabled, false)
+    await writeFile(piProjectSettings, JSON.stringify({ compaction: { enabled: true } }))
+    assert.equal(loadConfig(piConfigProject).piAutoCompactionEnabled, true)
+    await writeFile(piProjectSettings, '{broken JSON')
+    assert.throws(() => loadConfig(piConfigProject), (error: unknown) =>
+      error instanceof Error && error.message.includes(piProjectSettings) && error.cause instanceof SyntaxError)
+    await rm(piProjectSettings)
+    await mkdir(piProjectSettings)
+    assert.throws(() => loadConfig(piConfigProject), (error: unknown) =>
+      error instanceof Error && error.message.includes(piProjectSettings) && (error.cause as NodeJS.ErrnoException).code === 'EISDIR')
+    await rm(piProjectSettings, { recursive: true })
+    await writeFile(agentSettings, '{broken JSON')
+    assert.throws(() => loadConfig(piConfigProject), (error: unknown) =>
+      error instanceof Error && error.message.includes(agentSettings) && error.cause instanceof SyntaxError)
+    await writeFile(agentSettings, originalPiSettings)
+    assert.equal(loadConfig(piConfigProject).piAutoCompactionEnabled, true)
     const { runObserver } = await import('../src/main/plugins/observational-memory/agents/observer/agent')
     let observerPrompt = ''
     await runObserver({
@@ -124,6 +147,26 @@ async function fixture(): Promise<void> {
     })
     assert.match(observerPrompt, /observation agent/)
     await assert.rejects(module.setMemoryPluginSettings({ compactAfterTokensRatio: 3 }), /Ratio/)
+    // The fallback model is written by the settings pane, so the allowlist has to accept it
+    // and keep it out of the sibling `model` slot.
+    const withFallback = await module.setMemoryPluginSettings({ fallbackModel: { provider: 'test', id: 'small', thinking: 'low' } })
+    assert.deepEqual(withFallback.fallbackModel, { provider: 'test', id: 'small', thinking: 'low' })
+    // Malformed payloads must be rejected at runtime, not just by the type contract.
+    const malformed = (value: unknown) => ({ fallbackModel: value }) as MemoryPluginSettingsPatch
+    await assert.rejects(module.setMemoryPluginSettings(malformed({ provider: 'test' })), /Invalid memory model/)
+    await assert.rejects(module.setMemoryPluginSettings(malformed({ provider: 'test', id: 'small', thinking: 'bogus' })), /Invalid memory model/)
+    await module.setMemoryPluginSettings({ fallbackModel: null })
+    assert.equal((await module.getMemoryPluginSettings()).fallbackModel, undefined)
+    const idleSettings = await module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true })
+    assert.equal(idleSettings.compactionCatchUpMaxChunks, 0)
+    assert.equal(idleSettings.consolidateWhenIdle, true)
+    assert.equal(loadConfig().compactionCatchUpMaxChunks, 0)
+    assert.equal(loadConfig().consolidateWhenIdle, true)
+    await assert.rejects(module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: -1 }))
+    await assert.rejects(module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: 0.5 }))
+    await module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: null, consolidateWhenIdle: null })
+    assert.equal(loadConfig().compactionCatchUpMaxChunks, 2)
+    assert.equal(loadConfig().consolidateWhenIdle, false)
 
     const requests: { channel: string; payload: any }[] = []
     const sender = { send: (channel: string, payload: any) => { requests.push({ channel, payload }) }, isDestroyed: () => false }

@@ -83,7 +83,7 @@ export function registerPluginIpc(): void {
     }
     const entries = (await sessionSourceFor(sessionId)).branch() as Entry[]
     if (kind === 'view') return memoryView(entries, full)
-    return memoryStatus(sessionId, entries, getLive(sessionId)?.agentSession.model?.contextWindow)
+    return memoryStatus(sessionId, entries, getLive(sessionId)?.agentSession.model?.contextWindow, sessionCwd(sessionId))
   })
   ipcMain.handle('plugins:config-get', async (_event, id: string) => {
     if (typeof id !== 'string') throw new Error('Plugin id is required')

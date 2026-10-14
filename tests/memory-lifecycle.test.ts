@@ -7,7 +7,11 @@ import type { Entry, Observation, Reflection } from '../src/main/plugins/observa
 async function fixture(scenario: string): Promise<void> {
   const entered = Promise.withResolvers<void>()
   const released = Promise.withResolvers<void>()
-  const phase = scenario.startsWith('observer') ? 'observer' : scenario
+  const idle = scenario.startsWith('idle-')
+  const baseScenario = idle ? scenario.slice(5) : scenario
+  const phase = baseScenario.startsWith('observer') ? 'observer' : baseScenario
+  const unhandled: unknown[] = []
+  process.on('unhandledRejection', (error) => { unhandled.push(error) })
   const calls: string[] = []
   const signals: AbortSignal[] = []
   let blocked = true
@@ -70,7 +74,7 @@ async function fixture(scenario: string): Promise<void> {
     }
   } as unknown as ExtensionAPI
   const ctx = {
-    cwd: '/project', hasUI: false,
+    get cwd() { assertActive(); return '/project' }, hasUI: false,
     get ui(): never { throw new Error('Native plugin UI must not be used') },
     model: { provider: 'test', id: 'test', contextWindow: 100_000 },
     modelRegistry: {
@@ -110,10 +114,14 @@ async function fixture(scenario: string): Promise<void> {
     assert.ok(runtime)
     runtime.configLoaded = true
     Object.assign(runtime.config, {
-      passive: false, observeAfterTokens: 1, reflectAfterTokens: 1,
+      passive: false, consolidateWhenIdle: idle, observeAfterTokens: 1, reflectAfterTokens: 1,
       observationsPoolTargetTokens: 1, showWorkerNotifications: false, debugLog: false
     })
     await emit('agent_start')
+    if (idle) {
+      assert.equal(runtime.consolidationPromise, null)
+      await emit('agent_settled')
+    }
     assert.ok(runtime.consolidationPromise)
     return { runtime, promise: runtime.consolidationPromise }
   }
@@ -156,6 +164,8 @@ async function fixture(scenario: string): Promise<void> {
       assert.deepEqual(writes, ['om.observations.recorded', 'om.reflections.recorded', 'om.observations.dropped'])
     }
   }
+  await new Promise((done) => setTimeout(done, 0))
+  assert.deepEqual(unhandled, [])
   assert.equal(runtime.consolidationInFlight, false)
   assert.equal(runtime.consolidationPromise, null)
 }
@@ -163,7 +173,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--memory-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['observer', 'observer-error', 'reflector', 'dropper', 'auth', 'failure', 'success']) {
+  for (const scenario of ['observer', 'observer-error', 'reflector', 'dropper', 'auth', 'failure', 'success', 'idle-observer', 'idle-auth', 'idle-reflector', 'idle-dropper']) {
     test(`memory lifecycle: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--memory-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timer = setTimeout(() => child.kill(), 10_000)

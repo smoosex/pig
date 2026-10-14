@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCompactionHook } from "./hooks/compaction-hook.js";
-import { registerCompactionTrigger } from "./hooks/compaction-trigger.js";
+import { maybeTriggerCompaction, registerCompactionTrigger } from "./hooks/compaction-trigger.js";
 import { registerConsolidationTrigger } from "./hooks/consolidation-trigger.js";
 import { Runtime, registerMemoryRuntime } from "./runtime.js";
 import { registerRecallTool } from "./tools/recall-observation.js";
@@ -9,7 +9,9 @@ import { memoryUI } from "../pig-ui.js";
 export default function observationalMemory(pi: ExtensionAPI) {
 	const runtime = new Runtime();
 
-	registerConsolidationTrigger(pi, runtime);
+	registerConsolidationTrigger(pi, runtime, {
+		afterIdleConsolidation: (ctx) => maybeTriggerCompaction(runtime, ctx as Parameters<typeof maybeTriggerCompaction>[1]),
+	});
 	registerCompactionTrigger(pi, runtime);
 	registerCompactionHook(pi, runtime);
 
