@@ -206,7 +206,7 @@ export function McpPane() {
           </Button>
         ) : null}
         {!state.servers.length ? (
-          <Empty>
+          <Empty className="min-h-40 border">
             <EmptyHeader>
               <EmptyTitle>{t('mcp.empty')}</EmptyTitle>
               <EmptyDescription>{t('mcp.emptyDescription')}</EmptyDescription>
