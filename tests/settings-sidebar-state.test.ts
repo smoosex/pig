@@ -28,6 +28,7 @@ function deferred<T>() {
 function settings(patch: Partial<AppSettings> = {}): AppSettings {
   return {
     appearance: 'light',
+    surfaceStyle: 'glass',
     lightTheme: 'pig',
     darkTheme: 'pig',
     sendShortcut: 'enter',
@@ -56,8 +57,51 @@ async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  const api: Partial<SessionApi> = { getSettings: async () => settings() }
+  const api: Partial<SessionApi> = { supportsGlass: name !== 'surface-style-unsupported', getSettings: async () => settings() }
   Object.defineProperty(window, 'api', { value: api, configurable: true })
+  const bootstrap = async () => {
+    const html = await Bun.file(new URL('../src/renderer/index.html', import.meta.url)).text()
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)![1]
+    new Function('localStorage', 'document', 'matchMedia', script)(localStorage, document, window.matchMedia.bind(window))
+  }
+  if (name === 'theme-cache-malformed') {
+    const { storedThemePrefs } = await import('../src/renderer/src/lib/theme')
+    for (const value of ['{invalid JSON', '']) {
+      localStorage.setItem('pig.theme', value)
+      assert.throws(() => storedThemePrefs(true), SyntaxError)
+      await assert.rejects(bootstrap(), SyntaxError)
+      assert.equal(localStorage.getItem('pig.theme'), value, 'bad mirrors are not replaced with guessed preferences')
+    }
+    await assert.rejects(import('../src/renderer/src/stores/settings'), SyntaxError)
+    await GlobalRegistrator.unregister()
+    return
+  }
+  if (name === 'theme-cache-read-failure') {
+    const { storedThemePrefs } = await import('../src/renderer/src/lib/theme')
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
+    const error = new Error('Storage unavailable')
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: () => { throw error } }
+    })
+    try {
+      assert.throws(() => storedThemePrefs(true), (caught) => caught === error)
+      await assert.rejects(bootstrap(), (caught) => caught === error)
+      await assert.rejects(import('../src/renderer/src/stores/settings'), (caught) => caught === error)
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', descriptor)
+      await GlobalRegistrator.unregister()
+    }
+    return
+  }
+  if (name === 'surface-style-restore' || name === 'surface-style-unsupported') {
+    localStorage.setItem('pig.theme', JSON.stringify(settings({
+      surfaceStyle: name === 'surface-style-restore' ? 'solid' : 'glass', lightTheme: 'everforest'
+    })))
+    await bootstrap()
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'solid')
+    assert.equal(document.documentElement.dataset.palette, 'everforest')
+  }
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   // Component copy comes from the dictionary: pin it to the wording the assertions below spell out.
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
@@ -86,11 +130,11 @@ async function runFixture(name: string): Promise<void> {
     if (name === 'save-order') {
       const third = useSettingsStore.getState().setSendShortcut('shift-enter')
       assert.deepEqual(shortcuts, [])
-      themes[0].resolve({ appearance: 'dark', lightTheme: 'pig', darkTheme: 'pig' })
+      themes[0].resolve({ appearance: 'dark', lightTheme: 'pig', darkTheme: 'pig', surfaceStyle: 'glass' })
       await first
       assert.equal(useSettingsStore.getState().lightTheme, 'everforest')
       assert.equal(themes.length, 2)
-      themes[1].resolve({ appearance: 'dark', lightTheme: 'everforest', darkTheme: 'pig' })
+      themes[1].resolve({ appearance: 'dark', lightTheme: 'everforest', darkTheme: 'pig', surfaceStyle: 'glass' })
       await Promise.all([second, third])
       assert.deepEqual(shortcuts, ['shift-enter'])
       assert.equal(useSettingsStore.getState().sendShortcut, 'shift-enter')
@@ -102,7 +146,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(useSettingsStore.getState().appearance, 'light')
       assert.equal(useSettingsStore.getState().lightTheme, 'everforest')
       assert.equal(document.documentElement.dataset.palette, 'everforest')
-      themes[1].resolve({ appearance: 'light', lightTheme: 'everforest', darkTheme: 'pig' })
+      themes[1].resolve({ appearance: 'light', lightTheme: 'everforest', darkTheme: 'pig', surfaceStyle: 'glass' })
       await second
       assert.equal(useSettingsStore.getState().error, 'first save failed')
       const last = useSettingsStore.getState().setTheme({ appearance: 'dark' })
@@ -116,6 +160,151 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(useSettingsStore.getState().error, null)
       assert.equal(useSettingsStore.getState().sendShortcut, 'shift-enter')
     }
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'surface-style-restore' || name === 'surface-style-unsupported') {
+    assert.equal(useSettingsStore.getState().surfaceStyle, 'solid', 'first paint and store agree, including unsupported platforms with glass mirrors')
+    assert.equal(useSettingsStore.getState().supportsGlass, name === 'surface-style-restore')
+    assert.equal(useSettingsStore.getState().lightTheme, 'everforest')
+    api.getSettings = async () => settings({ surfaceStyle: 'solid', lightTheme: 'everforest' })
+    await useSettingsStore.getState().load()
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'solid')
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'surface-style') {
+    const requests: ReturnType<typeof deferred<ThemePrefs>>[] = []
+    const patches: Partial<ThemePrefs>[] = []
+    api.getSettings = async () => settings({ lightTheme: 'everforest' })
+    api.setTheme = (patch) => {
+      patches.push(patch)
+      const request = deferred<ThemePrefs>()
+      requests.push(request)
+      return request.promise
+    }
+    await useSettingsStore.getState().load()
+    const solid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'solid', 'opaque CSS covers the window before main removes material')
+    await Promise.resolve()
+    requests[0].resolve(settings({ surfaceStyle: 'solid', lightTheme: 'everforest' }))
+    await solid
+    const glass = useSettingsStore.getState().setTheme({ surfaceStyle: 'glass' })
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'solid', 'transparent CSS waits for native material acknowledgement')
+    await Promise.resolve()
+    requests[1].resolve(settings({ lightTheme: 'everforest' }))
+    await glass
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass')
+    assert.equal(document.documentElement.dataset.palette, 'everforest', 'style never changes the palette')
+    assert.equal(document.documentElement.style.colorScheme, 'light')
+    assert.equal(JSON.parse(localStorage.getItem('pig.theme')!).surfaceStyle, 'glass')
+
+    const failure = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    assert.equal(useSettingsStore.getState().surfaceStyle, 'solid')
+    await Promise.resolve()
+    requests[2].reject(new Error('style could not be saved'))
+    await failure
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass')
+    assert.equal(JSON.parse(localStorage.getItem('pig.theme')!).surfaceStyle, 'glass')
+    assert.equal(useSettingsStore.getState().error, 'style could not be saved')
+
+    const queuedSolid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    const queuedGlass = useSettingsStore.getState().setTheme({ surfaceStyle: 'glass' })
+    await Promise.resolve()
+    assert.equal(requests.length, 4)
+    requests[3].resolve(settings({ surfaceStyle: 'glass', lightTheme: 'everforest' }))
+    await queuedSolid
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass', 'a queued reverse coalesces obsolete solid material changes')
+    requests[4].reject(new Error('glass could not be saved'))
+    await queuedGlass
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass', 'a failed duplicate keeps the coalesced confirmed style')
+    assert.deepEqual(patches.map((patch) => patch.surfaceStyle), ['solid', 'glass', 'solid', 'glass', 'glass'])
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'surface-style-animation') {
+    const surface = document.createElement('div')
+    surface.setAttribute('data-app-surface', '')
+    document.body.append(surface)
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    globalThis.requestAnimationFrame = (callback) => { frames.set(++frameId, callback); return frameId }
+    globalThis.cancelAnimationFrame = (id) => { frames.delete(id) }
+    const tick = () => {
+      const callbacks = [...frames.values()]
+      frames.clear()
+      for (const callback of callbacks) callback(0)
+    }
+    const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
+    const fade = deferred<void>()
+    const animation = { transitionProperty: 'background-color', playState: 'running', finished: fade.promise }
+    let animations = [animation]
+    surface.getAnimations = () => animations as unknown as Animation[]
+    let persisted = settings()
+    const patches: Partial<ThemePrefs>[] = []
+    api.setTheme = async (patch) => {
+      if (patch.surfaceStyle === 'glass' && persisted.surfaceStyle === 'solid') {
+        assert.equal(document.documentElement.dataset.surfaceStyle, 'solid', 'native glass is enabled before CSS uncovers it')
+      }
+      patches.push(patch)
+      persisted = { ...persisted, ...patch }
+      return persisted
+    }
+    await useSettingsStore.getState().load()
+    const solid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    await flush()
+    assert.equal(patches.length, 0, 'native material cannot close during the background fade')
+    animations = []
+    fade.resolve(undefined)
+    await flush()
+    assert.equal(frames.size, 1)
+    tick()
+    await flush()
+    assert.equal(patches.length, 0, 'the final opaque frame must be painted before the IPC')
+    tick()
+    await solid
+    assert.deepEqual(patches, [{ surfaceStyle: 'solid' }])
+    await useSettingsStore.getState().setTheme({ surfaceStyle: 'glass' })
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass')
+
+    const unfinished = deferred<void>()
+    animations = [{ transitionProperty: 'background-color', playState: 'running', finished: unfinished.promise }]
+    const obsolete = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid', lightTheme: 'everforest' })
+    await flush()
+    const reversed = useSettingsStore.getState().setTheme({ surfaceStyle: 'glass' })
+    await Promise.all([obsolete, reversed])
+    assert.deepEqual(patches.slice(2), [
+      { surfaceStyle: 'glass', lightTheme: 'everforest' }, { surfaceStyle: 'glass' }
+    ], 'a reversed fade never toggles native solid; unrelated palette patches are preserved')
+    assert.equal(useSettingsStore.getState().surfaceStyle, 'glass')
+    assert.equal(useSettingsStore.getState().lightTheme, 'everforest')
+    assert.equal(useSettingsStore.getState().error, null)
+    assert.equal(frames.size, 0)
+
+    const finalFade = deferred<void>()
+    animations = [{ transitionProperty: 'background-color', playState: 'running', finished: finalFade.promise }]
+    const firstSolid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    await flush()
+    const skippedGlass = useSettingsStore.getState().setTheme({ surfaceStyle: 'glass' })
+    const lastSolid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
+    await flush()
+    assert.equal(patches.length, 4, 'solid → glass → solid still waits for the current fade')
+    animations = []
+    finalFade.resolve(undefined)
+    await flush()
+    tick()
+    await flush()
+    tick()
+    await Promise.all([firstSolid, skippedGlass, lastSolid])
+    assert.deepEqual(patches.slice(4).map((patch) => patch.surfaceStyle), ['solid', 'solid', 'solid'])
+    assert.equal(useSettingsStore.getState().surfaceStyle, 'solid')
+    assert.equal(useSettingsStore.getState().error, null)
+    assert.equal(frames.size, 0)
+    surface.remove()
     await GlobalRegistrator.unregister()
     return
   }
@@ -837,6 +1026,12 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'save-order': 'serial saves preserve all pending UI choices',
     'save-failure': 'failed saves roll back only their patch and keep the queue usable',
     'load-race': 'a stale settings load cannot replace later edits or provider updates',
+    'surface-style': 'surface styles coordinate material acknowledgement, serial saves and rollback without changing theme',
+    'surface-style-restore': 'the saved solid style survives first paint and settings loading',
+    'surface-style-unsupported': 'unsupported platforms paint solid even with a cached glass preference',
+    'theme-cache-malformed': 'malformed and empty theme mirrors fail without overwriting the cache',
+    'theme-cache-read-failure': 'theme storage read failures propagate through bootstrap and store initialization',
+    'surface-style-animation': 'native material waits for background paint and rapid reversal skips obsolete material changes',
     locale: 'the language setting follows the system, persists and re-titles placeholders',
     'notification-setting': 'the completion notification setting persists through the settings store',
     'beam-border-setting': 'the Beam border switch updates and persists its preference',

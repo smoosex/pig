@@ -444,6 +444,99 @@ async function fixture(name: string): Promise<void> {
     return
   }
 
+  if (name.startsWith('native-theme')) {
+    const root = await mkdtemp(join(tmpdir(), 'pig-native-theme-'))
+    const previous = process.env.PIG_DIR
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const osPlatform = name === 'native-theme' ? 'darwin' : name === 'native-theme-linux' ? 'linux' : 'win32'
+    const supported = name === 'native-theme' || name === 'native-theme-windows'
+    const version = name === 'native-theme-windows10' ? '10.0.19045' : name === 'native-theme-windows11-old' ? '10.0.22000' : '10.0.22621'
+    Object.defineProperty(process, 'platform', { ...platform, value: osPlatform })
+    const os = await import('node:os')
+    mock.module('node:os', () => ({ ...os, release: () => version }))
+    const nativeTheme = { themeSource: 'system' }
+    const materials: Array<[string, string | null]> = []
+    const window = {
+      isDestroyed: () => false,
+      setBackgroundColor: (value: string) => materials.push(['background', value]),
+      setVibrancy: (value: string | null) => materials.push(['vibrancy', value]),
+      setBackgroundMaterial: (value: string) => materials.push(['backgroundMaterial', value])
+    }
+    const handlers = new Map<string, (...args: any[]) => Promise<unknown>>()
+    const noop = () => {}
+    mock.module('electron', () => ({
+      app: { isPackaged: false },
+      BrowserWindow: { getAllWindows: () => [window] },
+      nativeTheme,
+      ipcMain: { handle: (channel: string, handler: (...args: any[]) => Promise<unknown>) => handlers.set(channel, handler) }
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/providers.ts', import.meta.url)), () => ({
+      cancelProviderLogin: noop, listProviders: async () => [], loginProvider: noop,
+      logoutProvider: noop, resolveAuthPrompt: noop
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
+      getDefaultSessionSettings: async () => ({ model: null, thinkingLevel: null, thinkingLevels: [] }),
+      setDefaultModel: noop, setDefaultThinking: noop
+    }))
+    try {
+      process.env.PIG_DIR = join(root, 'settings')
+      const { registerSettingsIpc } = await import('../src/main/ipc/settings')
+      const { supportsGlass } = await import('../src/main/surface-support')
+      const { windowSurfaceOptions } = await import('../src/main/window-surface')
+      assert.equal(supportsGlass, supported)
+      registerSettingsIpc()
+      assert.equal((await handlers.get('settings:get')!({}) as import('../src/shared/api').AppSettings).surfaceStyle, supported ? 'glass' : 'solid')
+      const setTheme = handlers.get('settings:set-theme')!
+      if (!supported) {
+        await mkdir(process.env.PIG_DIR, { recursive: true })
+        await writeFile(join(process.env.PIG_DIR, 'settings.json'), '{"version":1,"surfaceStyle":"glass"}')
+        assert.equal((await handlers.get('settings:get')!({}) as import('../src/shared/api').AppSettings).surfaceStyle, 'solid', 'copied glass preferences cannot uncover an unsupported window')
+        assert.equal((await setTheme({}, { surfaceStyle: 'glass' }) as import('../src/main/pig-settings').PigSettings).surfaceStyle, 'solid')
+      }
+      for (const appearance of ['dark', 'light', 'system'] as const) {
+        const next = await setTheme({}, { appearance }) as import('../src/main/pig-settings').PigSettings
+        assert.equal(next.appearance, appearance)
+        assert.equal(nativeTheme.themeSource, appearance)
+      }
+      await setTheme({}, { appearance: 'dark' })
+      await setTheme({}, { darkTheme: 'everforest' })
+      assert.equal(nativeTheme.themeSource, 'dark', 'palette-only changes preserve the native appearance')
+      assert.deepEqual(materials, [], 'appearance and palette changes do not rebuild the material')
+      await setTheme({}, { surfaceStyle: 'solid' })
+      assert.deepEqual(materials, supported ? [[osPlatform === 'darwin' ? 'vibrancy' : 'backgroundMaterial', osPlatform === 'darwin' ? null : 'none']] : [], 'only supported materials change; the native backing colour stays fixed')
+      assert.deepEqual(windowSurfaceOptions(), {
+        backgroundColor: supported ? '#00000000' : '#1a1a1a',
+        vibrancy: undefined,
+        backgroundMaterial: supported && osPlatform === 'win32' ? 'none' : undefined
+      }, 'solid windows rely on opaque document paint')
+      assert.equal((await handlers.get('settings:get')!({}) as import('../src/shared/api').AppSettings).surfaceStyle, 'solid')
+      await setTheme({}, { lightTheme: 'everforest' })
+      assert.equal(materials.length, supported ? 1 : 0)
+      const glass = await setTheme({}, { surfaceStyle: 'glass' }) as import('../src/main/pig-settings').PigSettings
+      assert.equal(glass.surfaceStyle, supported ? 'glass' : 'solid')
+      assert.deepEqual(materials.slice(1), supported ? [[osPlatform === 'darwin' ? 'vibrancy' : 'backgroundMaterial', osPlatform === 'darwin' ? 'under-window' : 'acrylic']] : [])
+      const glassOptions = {
+        backgroundColor: supported ? '#00000000' : '#1a1a1a',
+        vibrancy: supported && osPlatform === 'darwin' ? 'under-window' : undefined,
+        backgroundMaterial: supported && osPlatform === 'win32' ? 'acrylic' : undefined
+      }
+      assert.deepEqual(windowSurfaceOptions(), glassOptions)
+      const invalid = join(root, 'file')
+      await writeFile(invalid, 'not a directory')
+      process.env.PIG_DIR = invalid
+      await assert.rejects(setTheme({}, { appearance: 'light', surfaceStyle: 'solid' }))
+      assert.equal(nativeTheme.themeSource, 'dark', 'a failed save does not change the native appearance')
+      assert.equal(materials.length, supported ? 2 : 0, 'failed saves leave native material untouched')
+      assert.deepEqual(windowSurfaceOptions(), glassOptions)
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+      if (previous === undefined) delete process.env.PIG_DIR
+      else process.env.PIG_DIR = previous
+      await rm(root, { recursive: true, force: true })
+    }
+    return
+  }
+
   if (name === 'pig-settings') {
     const root = await mkdtemp(join(tmpdir(), 'pig-settings-lifecycle-'))
     const previous = process.env.PIG_DIR
@@ -451,14 +544,19 @@ async function fixture(name: string): Promise<void> {
     try {
       process.env.PIG_DIR = join(root, 'settings')
       const { loadPigSettings, savePigSettings } = await import('../src/main/pig-settings')
+      await mkdir(process.env.PIG_DIR, { recursive: true })
+      await writeFile(join(process.env.PIG_DIR, 'settings.json'), '{"version":1,"appearance":"light"}')
+      const { supportsGlass } = await import('../src/main/surface-support')
+      assert.equal((await loadPigSettings()).surfaceStyle, supportsGlass ? 'glass' : 'solid', 'legacy preferences use the supported default surface')
       await Promise.all([
         savePigSettings({ appearance: 'dark' }),
         savePigSettings({ sendShortcut: 'shift-enter' }),
         savePigSettings({ lightTheme: 'everforest' }),
-        savePigSettings({ darkTheme: 'everforest' })
+        savePigSettings({ darkTheme: 'everforest' }),
+        savePigSettings({ surfaceStyle: 'solid' })
       ])
       assert.deepEqual(await loadPigSettings(), {
-        appearance: 'dark', sendShortcut: 'shift-enter', locale: 'system',
+        appearance: 'dark', surfaceStyle: 'solid', sendShortcut: 'shift-enter', locale: 'system',
         completionNotifications: true, beamBorderEnabled: true, lightTheme: 'everforest', darkTheme: 'everforest'
       })
       const updating = savePigSettings({ appearance: 'light' })
@@ -497,6 +595,11 @@ if (process.argv[2] === '--main-settings-fixture') {
     'auth-device-id-unreadable': 'unreadable global settings reject subscription login on every attempt',
     'auth-device-id-write-failure': 'device ID write failures propagate before login and cannot be bypassed by retry',
     'auth-refresh': 'post-login refresh stays cancellable and never starts an unbounded full refresh',
+    'native-theme': 'native macOS appearance and vibrancy follow saved choices',
+    'native-theme-windows': 'Windows 11 22H2 uses acrylic and supports switching to solid',
+    'native-theme-windows10': 'Windows 10 stays solid even with copied glass preferences',
+    'native-theme-windows11-old': 'Windows 11 before 22H2 stays solid without unsupported material calls',
+    'native-theme-linux': 'Linux stays solid even with copied glass preferences',
     'pig-settings': 'concurrent preference updates preserve each other and recover after a write failure'
   })) {
     test(`main settings lifecycle: ${title}`, async () => {

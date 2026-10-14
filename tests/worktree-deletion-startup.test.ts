@@ -22,6 +22,7 @@ async function fixture(failure: Failure): Promise<void> {
   let windows = 0
   let workspacePrunes = 0
   let chatPrunes = 0
+  const nativeTheme = { themeSource: 'system' }
   const failures: unknown[] = []
   const log = spyOn(console, 'error').mockImplementation((_message: unknown, error: unknown) => { failures.push(error) })
   const noop = () => {}
@@ -34,7 +35,8 @@ async function fixture(failure: Failure): Promise<void> {
       on: (event: string, handler: (...args: any[]) => unknown) => { handlers.set(event, handler) },
       exit
     },
-    BrowserWindow: { getAllWindows: () => [] }
+    BrowserWindow: { getAllWindows: () => [] },
+    nativeTheme
   }))
   mock.module('@electron-toolkit/utils', () => ({
     electronApp: { setAppUserModelId: noop }, optimizer: { watchWindowShortcuts: noop }
@@ -43,7 +45,7 @@ async function fixture(failure: Failure): Promise<void> {
     'window': { createMainWindow: () => { windows++ } },
     'ipc/index': { registerIpc: noop },
     'i18n': { initLocale: asyncNoop },
-    'pig-settings': { loadPigSettings: async () => ({ locale: 'en' }) },
+    'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },
     'session-names': { forwardSessionNames: noop },
     'pi/session-registry': { closeSessionsForCwd: asyncNoop, disposeAll: asyncNoop },
     'pi/session-loader': { removeProjectDir: asyncNoop },
@@ -70,6 +72,11 @@ async function fixture(failure: Failure): Promise<void> {
     assert.equal(handlers.has('second-instance'), false, 'an uninitialized process cannot reopen a window')
     ready()
     assert.equal(await exited, 1)
+    assert.equal(nativeTheme.themeSource, 'dark', 'startup applies the saved native appearance before opening a window')
+    const { supportsGlass } = await import('../src/main/surface-support')
+    const { windowSurfaceOptions } = await import('../src/main/window-surface')
+    assert.equal(windowSurfaceOptions().vibrancy, undefined)
+    assert.equal(windowSurfaceOptions().backgroundColor, supportsGlass ? '#00000000' : '#1a1a1a', 'solid uses an opaque document without changing the native backing')
     assert.equal(windows, 0)
     assert.equal(workspacePrunes, 0)
     assert.equal(chatPrunes, 0)

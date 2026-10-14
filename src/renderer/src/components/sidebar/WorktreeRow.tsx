@@ -11,6 +11,7 @@ import { SessionList } from './SessionList'
 import { SessionHistoryPopover } from '../SessionHistoryPopover'
 import type { RunProjectAction } from './project-action'
 import { useT } from '../../hooks/useT'
+import { sidebarRowSurface } from './sidebar-surface'
 
 export function WorktreeRow({
   projectCwd,
@@ -99,9 +100,10 @@ export function WorktreeRow({
       <div className="px-1">
         <div
           data-sidebar-hover-row
+          data-sidebar-selected={active || undefined}
           className={cn(
-            'group/worktree relative flex h-7 min-w-0 items-center gap-0.5 rounded-sm px-1 transition-colors',
-            active && 'bg-sidebar-accent'
+            'group/worktree relative flex h-7 min-w-0 items-center gap-0.5 rounded-sm px-1',
+            sidebarRowSurface(active)
           )}
         >
           {sessions.length > 0 ? (

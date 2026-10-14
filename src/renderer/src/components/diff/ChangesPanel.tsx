@@ -4,7 +4,7 @@
  * there, so the column stays a list and the reading happens in the conversation area. Nothing here
  * mutates git, it only reads.
  */
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { scopeLabel } from '../../stores/diff'
 import { useT } from '../../hooks/useT'
 import { ChevronRight } from 'lucide-react'
@@ -12,14 +12,13 @@ import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import { useDiffStore } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { sidebarRowSurface, sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { FileTypeIcon } from '../files/FileTypeIcon'
 import { STATUS_META, splitPath, sumCounts } from './file-entry'
 
 type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
-
-const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
 
 export function ChangesPanel({ cwd }: { cwd: string }) {
   const t = useT()
@@ -31,6 +30,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   const visiblePath = useDiffStore((s) => s.visible[cwd])
   const [flat, setFlat] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   const diff = state?.diff
   const groups: Group[] = [
@@ -38,6 +38,36 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     { key: 'unstaged', entries: diff?.unstaged ?? [] }
   ]
   const flatEntries = diff?.all ?? []
+
+  useLayoutEffect(() => {
+    const area = scrollAreaRef.current!
+    const sections = [...area.querySelectorAll<HTMLElement>('[data-change-group]')]
+    // Headers expose the column surface and shared hover layer; bottom padding keeps the gap inside the clip boundary.
+    // Read all bounds before clipping; this does not change layout or rerender React on scroll.
+    const updateClips = () => {
+      const clips = sections.flatMap((section) => {
+        const header = section.firstElementChild as HTMLElement
+        const list = header.nextElementSibling as HTMLElement | null
+        if (!list) return []
+        return [{
+          list,
+          top: Math.max(0, header.getBoundingClientRect().bottom - list.getBoundingClientRect().top)
+        }]
+      })
+      for (const { list, top } of clips) {
+        list.style.clipPath = top > 0 ? `inset(${top}px 0 0)` : ''
+      }
+    }
+    const observer = new ResizeObserver(updateClips)
+    observer.observe(area)
+    for (const section of sections) observer.observe(section)
+    area.addEventListener('scroll', updateClips, { passive: true })
+    updateClips()
+    return () => {
+      area.removeEventListener('scroll', updateClips)
+      observer.disconnect()
+    }
+  }, [collapsed, cwd, flat, state])
 
   function rows(entries: DiffFileEntry[], scope: DiffScope, indented: boolean) {
     // The left column's rhythm: 2px between rows, inset 4px so the hover background can round off.
@@ -60,13 +90,15 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         type="button"
         title={entry.path}
         data-sidebar-hover-row
+        data-sidebar-selected={isActive || undefined}
         onClick={() => void openChangesTab(cwd, entry.path, scope)}
         className={cn(
-          'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs transition-colors',
+          'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',
+          sidebarRowSurface(isActive),
           // A grouped row starts where the group label does (4px inset + px-1 + chevron + gap), not
           // under the chevron; the flat list starts where the chevron of that label sits.
           indented ? 'pl-6' : 'pl-1',
-          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
+          isActive && 'text-sidebar-accent-foreground'
         )}
       >
         <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
@@ -101,14 +133,17 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
       const counts = group.entries.every((entry) => entry.additions !== null) ? sumCounts(group.entries) : null
       const open = !collapsed[group.key]
       return (
-        <div key={group.key}>
-          <div className="sticky top-0 z-10 bg-sidebar px-1 has-[[data-sidebar-hover-target]]:bg-transparent">
+        <div key={group.key} data-change-group={group.key}>
+          <div data-sidebar-hover-occlusion className={cn('sticky top-0 z-10 bg-transparent px-1', open && 'pb-0.5')}>
             <button
               type="button"
               aria-expanded={open}
               data-sidebar-hover-row
               onClick={() => setCollapsed((current) => ({ ...current, [group.key]: open }))}
-              className="relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap transition-colors"
+              className={cn(
+                'relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap',
+                sidebarRowSurface(false)
+              )}
             >
               <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
               <span>{scopeLabel(t, group.key)}</span>
@@ -133,8 +168,8 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
       {/* The 4px of air above the list lives here, not on the scroll region: sticky offsets resolve
           against the content box, so padding there both leaves an uncovered band that rows scroll
           through and makes the group label travel before it pins to the top. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <SidebarHoverHighlight>{list()}</SidebarHoverHighlight>
+      <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <SidebarHoverHighlight className="flex flex-col gap-0.5">{list()}</SidebarHoverHighlight>
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">

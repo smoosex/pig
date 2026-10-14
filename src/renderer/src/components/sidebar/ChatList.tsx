@@ -11,6 +11,7 @@ import {
 } from '../ui/context-menu'
 import { Download, PenLine } from 'lucide-react'
 import { api } from '../../ipc/api'
+import { cn } from '../../lib/utils'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useT } from '../../hooks/useT'
 import { TreeNav } from '../spectrumui/tree-nav'
@@ -18,6 +19,7 @@ import { SessionCloseButton } from './SessionCloseButton'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 import { SessionForkIcon } from '../SessionForkIcon'
+import { sidebarRowSurface } from './sidebar-surface'
 
 export function ChatList() {
   const t = useT()
@@ -73,7 +75,11 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
         <ContextMenuTrigger asChild disabled={rename.editing}>
           <div
             data-sidebar-hover-row
-            className="close-reveal group/session relative flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2"
+            data-sidebar-selected={active || undefined}
+            className={cn(
+              'close-reveal group/session relative flex h-8 min-w-0 items-center gap-0.5 rounded-md px-2',
+              sidebarRowSurface(active)
+            )}
           >
             {rename.editing ? (
               <SessionRenameField

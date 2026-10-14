@@ -97,7 +97,8 @@ export const en: Messages = {
     chatsEmpty: 'Click + to start chatting',
     projectsEmpty: 'Add a project to get started',
     settings: 'Settings',
-    addProject: 'Add project'
+    addProject: 'Add project',
+    surfaceStyle: 'Interface style'
   },
   sessions: {
     newTitle: 'New chat',

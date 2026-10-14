@@ -216,7 +216,7 @@ async function fixture(scenario: Scenario): Promise<void> {
         for (const appearance of ['light', 'dark'] as const) {
           await act(async () => {
             useSettingsStore.setState({ appearance })
-            applyDocumentTheme({ appearance, lightTheme: palette, darkTheme: palette })
+            applyDocumentTheme({ appearance, lightTheme: palette, darkTheme: palette, surfaceStyle: 'glass' })
           })
           assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), appearance)
           const notice = document.querySelector<HTMLElement>('[data-sonner-toast]')!
@@ -241,13 +241,13 @@ async function fixture(scenario: Scenario): Promise<void> {
       window.matchMedia = () => media as unknown as MediaQueryList
       await act(async () => {
         useSettingsStore.setState({ appearance: 'system' })
-        applyDocumentTheme({ appearance: 'system', lightTheme: 'pig', darkTheme: 'pig' })
+        applyDocumentTheme({ appearance: 'system', lightTheme: 'pig', darkTheme: 'pig', surfaceStyle: 'glass' })
       })
       assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), 'light')
       await act(async () => {
         media.matches = true
         for (const callback of mediaListeners) callback({ matches: true } as MediaQueryListEvent)
-        applyDocumentTheme({ appearance: 'system', lightTheme: 'pig', darkTheme: 'pig' })
+        applyDocumentTheme({ appearance: 'system', lightTheme: 'pig', darkTheme: 'pig', surfaceStyle: 'glass' })
       })
       assert.ok(document.documentElement.classList.contains('dark'))
       assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), 'dark')

@@ -8,7 +8,7 @@ import { useSessionsStore, type SessionMeta } from '../stores/sessions'
 import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
-import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
+import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
 import { SessionSizeDots } from './SessionSizeDots'
 import { SessionForkIcon } from './SessionForkIcon'
 
@@ -55,8 +55,10 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
             <Separator className="min-w-0 flex-1" />
           </div>
         ) : null}
-        <SidebarHoverHighlight
+        <SmoothHoverHighlight
           className="flex flex-col gap-1 px-4"
+          rowSelector="[data-sidebar-hover-row]"
+          targetAttribute="data-sidebar-hover-target"
           highlightClassName="bg-muted dark:bg-muted/50"
         >
           {sessions.map((row) => (
@@ -83,7 +85,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
               </span>
             </Button>
           ))}
-        </SidebarHoverHighlight>
+        </SmoothHoverHighlight>
         {draftError || error ? (
           <p role="alert" className="px-3 text-sm text-destructive">{draftError || error}</p>
         ) : null}

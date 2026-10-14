@@ -4,6 +4,9 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { is } from '@electron-toolkit/utils'
 import { createAppUrlCheck, installNavigationGuard } from './app-url'
+import { supportsGlass } from './surface-support'
+import { windowSurfaceOptions } from './window-surface'
+import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -31,9 +34,10 @@ export function createMainWindow(): BrowserWindow {
     title: 'Pig',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 14 },
-    backgroundColor: '#1a1a1a',
+    ...windowSurfaceOptions(),
     webPreferences: {
       preload: resolvePreload(),
+      additionalArguments: supportsGlass ? [GLASS_SURFACE_ARGUMENT] : [],
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false

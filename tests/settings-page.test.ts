@@ -7,6 +7,7 @@ async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(window, { api: { supportsGlass: false } })
   const { act, createElement: h } = await import('react')
   const panes = [
     ['GeneralPane', 'settings.sectionGeneral', 'settings.sectionGeneralDescription'],
@@ -52,12 +53,21 @@ async function fixture(): Promise<void> {
       ]
     )
     assert.equal(navigation.querySelector('[data-slot="collapsible"]'), null)
+    assert.ok(navigation.querySelector('span.will-change-transform')!.classList.contains('bg-sidebar-foreground/6'))
     for (const [name, key, desc] of panes) {
       await act(async () => {
         const text = `${translate('en', key)}${translate('en', desc)}`
         buttons.find((button) => button.textContent === text)!.click()
       })
       assert.equal(host.querySelector('h1')!.textContent, translate('en', key))
+      for (const button of navigation.querySelectorAll('[data-sidebar-hover-row]')) {
+        const selected = button.textContent === `${translate('en', key)}${translate('en', desc)}`
+        assert.equal(button.classList.contains('bg-sidebar-foreground/12'), selected)
+        assert.equal(button.hasAttribute('data-sidebar-selected'), selected)
+        assert.ok(button.classList.contains(selected ? 'hover:bg-sidebar-foreground/12!' : 'hover:bg-transparent!'))
+        assert.ok(button.classList.contains('duration-100'))
+        assert.ok(!button.className.includes('backdrop-blur'))
+      }
       assert.equal(
         host.querySelector(`[data-settings-pane="${name}"]`)!.parentElement!.className,
         'contents'

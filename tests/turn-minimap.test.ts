@@ -12,6 +12,7 @@ async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(window, { api: { supportsGlass: false } })
   class ResizeObserverStub {
     observe() {}
     unobserve() {}

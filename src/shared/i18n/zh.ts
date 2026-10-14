@@ -99,7 +99,8 @@ export const zh = {
     chatsEmpty: '点击 + 开始对话',
     projectsEmpty: '添加项目即可开始',
     settings: '设置',
-    addProject: '添加项目'
+    addProject: '添加项目',
+    surfaceStyle: '界面风格'
   },
   sessions: {
     newTitle: '新对话',

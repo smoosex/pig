@@ -1,8 +1,9 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, nativeTheme } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
+import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
@@ -65,7 +66,10 @@ app.whenReady().then(async () => {
     .then(() => startModelCatalog())
     .catch((error) => console.error('Model runtime initialization failed:', error))
   registerIpc()
-  await initLocale((await loadPigSettings()).locale)
+  const settings = await loadPigSettings()
+  nativeTheme.themeSource = settings.appearance
+  applyWindowSurfaceStyle(settings.surfaceStyle)
+  await initLocale(settings.locale)
   await worktrees.startDeletionWorker(async (cwd) => {
     await closeSessionsForCwd(cwd)
     await removeProjectDir(cwd)

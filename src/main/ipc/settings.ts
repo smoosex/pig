@@ -1,14 +1,13 @@
-import { ipcMain } from 'electron'
+import { ipcMain, nativeTheme } from 'electron'
 import { windowForEvent } from './window'
 import {
   loadPigSettings,
   savePigSettings,
-  type Appearance,
-  type PaletteId,
   type SendShortcut
 } from '../pig-settings'
 import { applyLocaleSetting, systemLocale } from '../i18n'
-import type { LocaleSetting } from '../../shared/api'
+import type { LocaleSetting, ThemePrefs } from '../../shared/api'
+import { applyWindowSurfaceStyle } from '../window-surface'
 import {
   cancelProviderLogin,
   listProviders,
@@ -38,6 +37,7 @@ export function registerSettingsIpc(): void {
       localeSetting: pig.locale,
       systemLocale: systemLocale(),
       appearance: pig.appearance,
+      surfaceStyle: pig.surfaceStyle,
       lightTheme: pig.lightTheme,
       darkTheme: pig.darkTheme,
       defaultModel: defaults.model,
@@ -71,9 +71,12 @@ export function registerSettingsIpc(): void {
     'settings:set-theme',
     async (
       _event,
-      patch: { appearance?: Appearance; lightTheme?: PaletteId; darkTheme?: PaletteId }
+      patch: Partial<ThemePrefs>
     ) => {
-      return savePigSettings(patch ?? {})
+      const next = await savePigSettings(patch ?? {})
+      nativeTheme.themeSource = next.appearance
+      applyWindowSurfaceStyle(next.surfaceStyle)
+      return next
     }
   )
 

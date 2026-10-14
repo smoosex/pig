@@ -24,8 +24,7 @@ import { FileTree } from '../files/FileTree'
 import { ChangesPanel } from '../diff/ChangesPanel'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
-
-const sidebarSurfaceToggle = 'hover:bg-sidebar-accent data-[state=on]:bg-sidebar-accent'
+import { sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
 
 export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
   const t = useT()
@@ -47,7 +46,7 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
       aria-hidden={hidden}
       style={{ width: hidden ? 0 : width }}
       className={cn(
-        'relative flex min-w-0 max-w-1/2 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width,margin] duration-200 ease-in-out motion-reduce:transition-none',
+        'relative flex min-w-0 max-w-1/2 flex-col overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground transition-[width,margin,background-color] duration-200 ease-in-out motion-reduce:transition-none',
         hidden ? 'mr-0' : 'mr-2'
       )}
     >

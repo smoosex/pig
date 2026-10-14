@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { Sidebar } from './components/Sidebar'
 import { GooglyEyesButton } from './components/ui/googly-eyes-button'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
+import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
 import type { SidebarTab } from '../../shared/api'
 import { TabBar } from './components/TabBar'
 import { halfSwitch } from './components/tab-strip'
@@ -48,15 +49,16 @@ function ThemeSync() {
   const appearance = useSettingsStore((s) => s.appearance)
   const lightTheme = useSettingsStore((s) => s.lightTheme)
   const darkTheme = useSettingsStore((s) => s.darkTheme)
+  const surfaceStyle = useSettingsStore((s) => s.surfaceStyle)
 
   useEffect(() => {
-    applyDocumentTheme({ appearance, lightTheme, darkTheme })
+    applyDocumentTheme({ appearance, lightTheme, darkTheme, surfaceStyle })
     if (appearance !== 'system') return
     const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => applyDocumentTheme({ appearance, lightTheme, darkTheme })
+    const onChange = () => applyDocumentTheme({ appearance, lightTheme, darkTheme, surfaceStyle })
     media.addEventListener('change', onChange)
     return () => media.removeEventListener('change', onChange)
-  }, [appearance, lightTheme, darkTheme])
+  }, [appearance, lightTheme, darkTheme, surfaceStyle])
 
   return null
 }
@@ -78,7 +80,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="no-drag translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+          className={cn('no-drag translate-y-px', sidebarSurfaceHover)}
           onClick={onClick}
           aria-label={t('app.sidebarLeft')}
         >
@@ -387,7 +389,7 @@ export default function App() {
       <HighlighterWarmup />
       <SystemPluginUI activeSessionId={activeSessionId} />
       <ExtensionUI />
-      <div className="flex h-full flex-col bg-background">
+      <div data-app-surface className="flex h-full flex-col bg-background/10 backdrop-blur-sm transition-[background-color,backdrop-filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background solid:backdrop-blur-none">
         <div ref={titlebarRef} className="relative flex h-10 shrink-0 items-center">
           <div
             aria-hidden="true"
@@ -421,7 +423,7 @@ export default function App() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="no-drag mr-3 translate-y-px hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+                  className={cn('no-drag mr-3 translate-y-px', sidebarSurfaceToggle)}
                   aria-label={t('app.sidebarRight')}
                   aria-pressed={reviewOpen}
                   onClick={() => setReviewOpen(!reviewOpen)}

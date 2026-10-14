@@ -1,8 +1,10 @@
 import { FolderPlus, Plus, Settings } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { useDiffStore } from '../stores/diff'
+import { useSettingsStore } from '../stores/settings'
 import type { SidebarTab } from '../../../shared/api'
 import { Button } from './ui/button'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Kbd } from './ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { ScrollArea } from './ui/scroll-area'
@@ -11,6 +13,7 @@ import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
+import { sidebarSurfaceHover, sidebarSurfaceToggle } from './sidebar/sidebar-surface'
 import { useProjectAction } from './sidebar/project-action'
 
 export function Sidebar({
@@ -26,6 +29,10 @@ export function Sidebar({
 }) {
   const openProject = useSessionsStore((s) => s.openProject)
   const newChat = useSessionsStore((s) => s.newChat)
+  const surfaceStyle = useSettingsStore((s) => s.surfaceStyle)
+  const supportsGlass = useSettingsStore((s) => s.supportsGlass)
+  const setTheme = useSettingsStore((s) => s.setTheme)
+  const settingsError = useSettingsStore((s) => s.error)
   const t = useT()
   const {
     pending: projectPending,
@@ -34,14 +41,14 @@ export function Sidebar({
   } = useProjectAction()
   // The right sidebar keeps its own preferences in the same file, so its failures belong on this same line.
   const reviewPrefsError = useDiffStore((s) => s.prefsError)
-  const error = projectError ?? preferencesError ?? reviewPrefsError
+  const error = projectError ?? preferencesError ?? reviewPrefsError ?? settingsError
 
   return (
     <aside
       inert={hidden}
       aria-hidden={hidden}
       className={cn(
-        'flex min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
+        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground transition-[width,background-color] duration-200 ease-in-out motion-reduce:transition-none',
         hidden ? 'w-0' : 'w-62'
       )}
     >
@@ -78,7 +85,7 @@ export function Sidebar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+                className={cn('text-muted-foreground', sidebarSurfaceHover)}
                 aria-label={t('sidebar.settings')}
                 onClick={onOpenSettings}
               >
@@ -94,7 +101,7 @@ export function Sidebar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground hover:bg-sidebar-accent dark:hover:bg-sidebar-accent"
+                className={cn('text-muted-foreground', sidebarSurfaceHover)}
                 aria-label={t('app.openProject')}
                 disabled={projectPending !== null}
                 aria-busy={projectPending !== null}
@@ -107,6 +114,21 @@ export function Sidebar({
               {t('sidebar.addProject')} <Kbd className="bg-transparent!">⌘ ⇧ A</Kbd>
             </TooltipContent>
           </Tooltip>
+          <span className="flex-1" />
+          {supportsGlass ? (
+            <ToggleGroup
+              type="single"
+              size="xs"
+              value={surfaceStyle}
+              onValueChange={(value) => {
+                if (value === 'glass' || value === 'solid') void setTheme({ surfaceStyle: value })
+              }}
+              aria-label={t('sidebar.surfaceStyle')}
+            >
+              <ToggleGroupItem value="glass" className={sidebarSurfaceToggle}>glass</ToggleGroupItem>
+              <ToggleGroupItem value="solid" className={sidebarSurfaceToggle}>solid</ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
         </div>
       </div>
     </aside>

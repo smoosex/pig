@@ -5,12 +5,12 @@
 import { afterEach, describe, mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { createElement } from 'react'
-import { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH } from '../src/shared/api'
+import { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH, type SurfaceStyle } from '../src/shared/api'
 
 // The store graph reads window.api the first time it is evaluated and that evaluation is shared
 // across test files, so this one pins the module rather than freezing `undefined` for everyone.
 mock.module('../src/renderer/src/ipc/api', () => ({
-  api: {},
+  api: { supportsGlass: true },
   DEFAULT_REVIEW_WIDTH,
   MAX_REVIEW_WIDTH,
   MIN_REVIEW_WIDTH
@@ -52,7 +52,16 @@ describe('sidebar list per half', () => {
     const { act, createElement: h } = await import('react')
     const { createRoot } = await import('react-dom/client')
     const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
-    useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
+    const originalSettings = useSettingsStore.getState()
+    const styleChanges: SurfaceStyle[] = []
+    useSettingsStore.setState({
+      localeSetting: 'zh-CN', locale: 'zh-CN', surfaceStyle: 'glass', supportsGlass: true, error: null,
+      setTheme: async (patch) => {
+        if (!patch.surfaceStyle) return
+        styleChanges.push(patch.surfaceStyle)
+        useSettingsStore.setState({ surfaceStyle: patch.surfaceStyle })
+      }
+    })
     const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
     const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
 
@@ -65,6 +74,34 @@ describe('sidebar list per half', () => {
           h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab, preferencesError: null }))
         )
       })
+      const highlight = container.querySelector('span.will-change-transform')!
+      assert.ok(highlight.classList.contains('bg-sidebar-foreground/6'), 'sidebar rows share a sliding foreground tint')
+      assert.ok(!highlight.className.includes('backdrop-blur'))
+      assert.ok(highlight.classList.contains('solid:bg-sidebar-accent'), 'both styles keep the same sliding layer')
+      assert.ok(container.querySelector('aside')!.classList.contains('solid:bg-sidebar'))
+      const switcher = container.querySelector<HTMLElement>('[data-slot=toggle-group][aria-label="界面风格"]')!
+      assert.equal(switcher.getAttribute('data-size'), 'xs')
+      const [glass, solid] = [...switcher.querySelectorAll<HTMLButtonElement>('button')]
+      assert.deepEqual([glass.textContent, solid.textContent], ['glass', 'solid'])
+      assert.equal(glass.getAttribute('data-state'), 'on')
+      const before = styleChanges.length
+      await act(async () => { glass.click() })
+      assert.equal(styleChanges.length, before, 'the active style cannot be deselected')
+      await act(async () => { solid.click() })
+      assert.equal(solid.getAttribute('data-state'), 'on')
+      await act(async () => { glass.click() })
+      assert.deepEqual(styleChanges.slice(before), ['solid', 'glass'])
+      assert.equal(glass.getAttribute('data-state'), 'on')
+      await act(async () => { useSettingsStore.setState({ supportsGlass: false, surfaceStyle: 'solid' }) })
+      assert.equal(container.querySelector('[aria-label="界面风格"]'), null, 'unsupported platforms never offer a material switch')
+      await act(async () => { useSettingsStore.setState({ supportsGlass: true, surfaceStyle: 'glass' }) })
+      const actions = container.querySelectorAll('button[aria-label="设置"], button[aria-label="打开项目"]')
+      assert.equal(actions.length, 2)
+      for (const button of actions) {
+        assert.ok(button.classList.contains('hover:bg-sidebar-foreground/6!'))
+        assert.ok(button.classList.contains('duration-100'))
+        assert.ok(!button.className.includes('backdrop-blur'))
+      }
       assert.equal(
         container.querySelector('[data-stub="project-list"]') !== null,
         tab === 'projects',
@@ -83,5 +120,10 @@ describe('sidebar list per half', () => {
       await act(async () => { root.unmount() })
       container.remove()
     }
+    useSettingsStore.setState({
+      setTheme: originalSettings.setTheme,
+      supportsGlass: originalSettings.supportsGlass,
+      surfaceStyle: originalSettings.surfaceStyle
+    })
   })
 })

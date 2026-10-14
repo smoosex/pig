@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
 import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
@@ -173,6 +174,7 @@ const api: SessionApi = {
     ipcRenderer.on('mcp:changed', handler)
     return () => ipcRenderer.off('mcp:changed', handler)
   },
+  supportsGlass: process.argv.includes(GLASS_SURFACE_ARGUMENT),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
   installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),

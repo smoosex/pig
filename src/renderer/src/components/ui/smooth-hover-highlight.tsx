@@ -18,6 +18,7 @@ export function SmoothHoverHighlight({
   activeKey,
   className,
   highlightClassName,
+  highlightClip,
   rowSelector = '[data-hover-highlight-row]',
   activeSelector = '[data-hover-highlight-active]',
   activeAttribute = 'data-hover-highlight-active',
@@ -27,12 +28,14 @@ export function SmoothHoverHighlight({
 }: ComponentProps<'div'> & {
   activeKey?: string | number | null
   highlightClassName?: string
+  highlightClip?: (area: HTMLElement, target: HTMLElement | null) => string
   rowSelector?: string
   activeSelector?: string
   activeAttribute?: string
   targetAttribute?: string
 }) {
   const areaRef = useRef<HTMLDivElement>(null)
+  const clipRef = useRef<HTMLDivElement>(null)
   const pointerInsideRef = useRef(false)
   const pointerControlsRef = useRef(false)
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null)
@@ -57,10 +60,17 @@ export function SmoothHoverHighlight({
     [rowSelector]
   )
 
+  const updateHighlightClip = useCallback((row = targetRef.current) => {
+    if (highlightClip && areaRef.current && clipRef.current) {
+      clipRef.current.style.clipPath = highlightClip(areaRef.current, row)
+    }
+  }, [highlightClip])
+
   const moveTo = useCallback(
     (row: HTMLElement | null, immediate = false, fast = false) => {
       const area = areaRef.current
       const nextTarget = row && area?.contains(row) ? row : null
+      updateHighlightClip(nextTarget ?? targetRef.current)
       if (targetRef.current !== nextTarget) {
         targetRef.current?.removeAttribute(targetAttribute)
         nextTarget?.setAttribute(targetAttribute, '')
@@ -94,7 +104,7 @@ export function SmoothHoverHighlight({
       }
       animate(opacity, 1, reduced ? { duration: 0 } : FADE)
     },
-    [height, opacity, reduced, targetAttribute, width, x, y]
+    [height, opacity, reduced, targetAttribute, updateHighlightClip, width, x, y]
   )
 
   useEffect(() => {
@@ -107,6 +117,18 @@ export function SmoothHoverHighlight({
   }, [moveTo, target])
 
   useEffect(() => {
+    const area = areaRef.current
+    if (!highlightClip || !area) return
+    const sync = () => updateHighlightClip()
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(area, {
+      attributes: true, attributeFilter: [activeAttribute], childList: true, subtree: true
+    })
+    return () => observer.disconnect()
+  }, [activeAttribute, highlightClip, updateHighlightClip])
+
+  useEffect(() => {
     let frame = 0
     const retarget = () => {
       frame = 0
@@ -117,6 +139,7 @@ export function SmoothHoverHighlight({
       moveTo(row, true)
     }
     const handleScroll = () => {
+      if (highlightClip && targetRef.current) moveTo(targetRef.current, true)
       if (!frame && pointerInsideRef.current && pointerControlsRef.current) {
         frame = requestAnimationFrame(retarget)
       }
@@ -126,7 +149,7 @@ export function SmoothHoverHighlight({
       window.removeEventListener('scroll', handleScroll, true)
       if (frame) cancelAnimationFrame(frame)
     }
-  }, [moveTo, rowFrom])
+  }, [highlightClip, moveTo, rowFrom])
 
   useEffect(() => {
     const area = areaRef.current
@@ -182,6 +205,17 @@ export function SmoothHoverHighlight({
     if (!pointerInsideRef.current) moveTo(activeRowRef.current ?? focusRowRef.current)
   }
 
+  const highlight = (
+    <motion.span
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute top-0 left-0 rounded-md bg-accent will-change-transform',
+        highlightClassName
+      )}
+      style={{ x, y, width, height, opacity }}
+    />
+  )
+
   return (
     <div
       ref={areaRef}
@@ -192,14 +226,11 @@ export function SmoothHoverHighlight({
       onBlurCapture={handleBlur}
       {...props}
     >
-      <motion.span
-        aria-hidden
-        className={cn(
-          'pointer-events-none absolute top-0 left-0 rounded-md bg-accent will-change-transform',
-          highlightClassName
-        )}
-        style={{ x, y, width, height, opacity }}
-      />
+      {highlightClip ? (
+        <div ref={clipRef} aria-hidden data-hover-highlight-clip className="pointer-events-none absolute inset-0">
+          {highlight}
+        </div>
+      ) : highlight}
       {children}
     </div>
   )

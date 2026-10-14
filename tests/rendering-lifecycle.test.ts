@@ -125,6 +125,7 @@ async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(window, { api: { supportsGlass: false } })
   const { act, createElement, useRef } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const container = document.createElement('div')

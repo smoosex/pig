@@ -6,16 +6,19 @@ import {
   type SendShortcut,
   type SessionModelInfo,
   type SettingsProvider,
+  type SurfaceStyle,
   type ThemePrefs,
   type ThinkingLevel
 } from '../ipc/api'
 import { applyDocumentLocale, storedLocale } from '../lib/locale'
-import { applyDocumentTheme } from '../lib/theme'
+import { applyDocumentTheme, storedThemePrefs } from '../lib/theme'
+import { waitForSurfacePaint } from '../lib/surface-transition'
 
 interface SettingsStore extends AppSettings {
   /** The setting resolved against the system language: what the UI actually speaks. */
   locale: Locale
   loaded: boolean
+  supportsGlass: boolean
   error: string | null
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
@@ -35,9 +38,7 @@ const empty: AppSettings = {
   localeSetting: 'system',
   // Until the first load the only hint is the locale of the last run, which the mirror holds.
   systemLocale: storedLocale(),
-  appearance: 'system',
-  lightTheme: 'pig',
-  darkTheme: 'pig',
+  ...storedThemePrefs(api.supportsGlass),
   defaultModel: null,
   defaultThinkingLevel: null,
   thinkingLevels: [],
@@ -62,6 +63,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   let writes = Promise.resolve()
   let loading: Promise<void> | null = null
   const pending: Partial<AppSettings>[] = []
+  let requestedSurfaceStyle: SurfaceStyle = empty.surfaceStyle
+  let surfacePaint = new AbortController()
 
   const publish = () => {
     const merged = Object.assign({}, confirmed, ...pending) as AppSettings
@@ -71,6 +74,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     if (
       !current.loaded ||
       current.appearance !== next.appearance ||
+      current.surfaceStyle !== next.surfaceStyle ||
       current.lightTheme !== next.lightTheme ||
       current.darkTheme !== next.darkTheme
     ) {
@@ -135,6 +139,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     ...empty,
     locale: storedLocale(),
     loaded: false,
+    supportsGlass: api.supportsGlass,
     error: null,
     load,
 
@@ -162,15 +167,36 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         return { localeSetting: next.localeSetting, systemLocale: next.systemLocale }
       }),
 
-    setTheme: (patch) =>
-      save(patch, async () => {
-        const next = await api.setTheme(patch)
+    setTheme: (patch) => {
+      if (patch.surfaceStyle !== undefined) {
+        requestedSurfaceStyle = patch.surfaceStyle
+        surfacePaint.abort()
+        surfacePaint = new AbortController()
+      }
+      // Solid paints first; glass stays covered until main has enabled its material.
+      const optimistic = { ...patch }
+      if (optimistic.surfaceStyle === 'glass') delete optimistic.surfaceStyle
+      return save(optimistic, async () => {
+        let effective = patch
+        if (patch.surfaceStyle !== undefined) {
+          while (requestedSurfaceStyle === 'solid' && confirmed.surfaceStyle !== 'solid') {
+            const paint = surfacePaint
+            const waiting = waitForSurfacePaint(paint.signal)
+            if (waiting) await waiting
+            if (paint === surfacePaint) break
+          }
+          // Only obsolete material choices are coalesced; palette and appearance patches still commit in order.
+          effective = { ...patch, surfaceStyle: requestedSurfaceStyle }
+        }
+        const next = await api.setTheme(effective)
         return {
           appearance: next.appearance,
           lightTheme: next.lightTheme,
-          darkTheme: next.darkTheme
+          darkTheme: next.darkTheme,
+          surfaceStyle: next.surfaceStyle
         }
-      }),
+      })
+    },
 
     setDefaultModel: (provider, id) =>
       save({}, async () => applyDefaults(await api.setDefaultModelSetting(provider, id))),

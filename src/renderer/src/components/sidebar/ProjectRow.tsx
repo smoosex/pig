@@ -19,6 +19,7 @@ import { useProjectAction } from './project-action'
 import { CreateWorktreeButton } from './WorktreeActions'
 import { WorktreeRow } from './WorktreeRow'
 import { ProjectAvatar } from './ProjectAvatar'
+import { sidebarRowSurface } from './sidebar-surface'
 
 export type DragClickGuard = { current: boolean }
 
@@ -87,9 +88,10 @@ export function ProjectRow({
         <div className="px-1">
           <div
             data-sidebar-hover-row
+            data-sidebar-selected={active || undefined}
             className={cn(
-              'group/project relative flex h-9 items-center gap-0.5 rounded-md px-1 transition-colors',
-              active && 'bg-sidebar-accent'
+              'group/project relative flex h-9 items-center gap-0.5 rounded-md px-1',
+              sidebarRowSurface(active)
             )}
           >
             <CollapsibleTrigger asChild>

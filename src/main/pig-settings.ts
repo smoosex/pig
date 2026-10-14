@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { pigPath } from './pig-dir'
+import { supportsGlass } from './surface-support'
 import { parseLocaleSetting } from '../shared/i18n'
+import { parseSurfaceStyle } from '../shared/surface-style'
 import type { Appearance, LocaleSetting, PaletteId, SendShortcut, ThemePrefs } from '../shared/api'
 
 export type { Appearance, PaletteId, SendShortcut } from '../shared/api'
@@ -19,6 +21,7 @@ const defaults: PigSettings = {
   beamBorderEnabled: true,
   locale: 'system',
   appearance: 'system',
+  surfaceStyle: parseSurfaceStyle(undefined, supportsGlass),
   lightTheme: 'pig',
   darkTheme: 'pig'
 }
@@ -46,6 +49,7 @@ function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
     beamBorderEnabled: data?.beamBorderEnabled !== false,
     locale: parseLocaleSetting(data?.locale),
     appearance: parseAppearance(data?.appearance),
+    surfaceStyle: parseSurfaceStyle(data?.surfaceStyle, supportsGlass),
     lightTheme: parsePalette(data?.lightTheme),
     darkTheme: parsePalette(data?.darkTheme)
   }

@@ -78,6 +78,13 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.equal(row.children.length, 2)
     assert.ok(row.classList.contains('group/session'))
     assert.ok(row.classList.contains('close-reveal'))
+    assert.ok(row.classList.contains('bg-sidebar-foreground/12'), 'selected project and chat rows use the same foreground tint')
+    assert.ok(row.classList.contains('hover:bg-sidebar-foreground/12!'), 'hover keeps the selected tint unchanged')
+    assert.ok(row.hasAttribute('data-sidebar-selected'), 'the shared hover layer can mask the selected row')
+    assert.ok(row.classList.contains('duration-100'))
+    assert.ok(!row.classList.contains('hover:bg-sidebar-foreground/6!'))
+    assert.ok(!row.className.includes('backdrop-blur'))
+    assert.ok(!row.className.includes('sidebar-hover-target'), 'selection is never cleared for a shared hover layer')
     assert.ok(close.parentElement!.classList.contains('group/close-slot'))
     for (const selector of ['group-hover/session', 'group-focus-within/close-slot']) {
       assert.ok(orb.classList.contains(`${selector}:opacity-0`))
@@ -116,6 +123,11 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
       assert.ok(row.querySelector('.lucide-trash-2'), 'settled chats keep their hold-to-delete action')
       assert.equal(row.querySelector('.lucide-x'), null)
     }
+    await act(async () => { store.setState({ activeTabId: null }) })
+    const unselected = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!
+    assert.ok(unselected.classList.contains('hover:bg-transparent!'), 'the shared layer owns hover tint')
+    assert.ok(!unselected.classList.contains('bg-sidebar-foreground/12'))
+    assert.ok(!unselected.hasAttribute('data-sidebar-selected'))
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

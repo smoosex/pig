@@ -3,10 +3,8 @@
  * opens in place, a file opens — or comes back to — its own tab, and the file a tab is showing is marked
  * here so the column and the strip agree about what is being read.
  *
- * Rows carry the rail's hover markers, so the sidebar's single sliding highlight follows the pointer
- * through them like it does through every other list in that column. What git ignores is dimmed, and the
- * footer's toggle hides those rows outright, which is what makes a directory like `node_modules` bearable
- * without hiding the fact that it is there.
+ * What git ignores is dimmed, and the footer's toggle hides those rows outright, which makes a directory
+ * like `node_modules` bearable without hiding the fact that it is there.
  *
  * Right-clicking a row — or the space below the last one — offers what the tree can be asked to do to it.
  * A new entry and a rename both become a row with a field in it, so the name is typed where the thing
@@ -19,6 +17,8 @@ import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
+import { sidebarRowSurface, sidebarSurfaceHover, sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
+import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { FileTypeIcon } from './FileTypeIcon'
 import { FileTreeMenu } from './FileTreeMenu'
 import { TreeNameField } from './TreeNameField'
@@ -67,7 +67,7 @@ export function FileTree({ cwd }: { cwd: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-h-full flex-col gap-0.5 px-1">
+        <SidebarHoverHighlight className="flex min-h-full flex-col gap-0.5 px-1">
           {notice && !draft ? <p className="px-3 py-2 text-xs text-muted-foreground">{notice}</p> : null}
           {rows.map(({ entry, depth, draft: naming }) => {
             const open = entry.kind === 'directory' && expanded?.[entry.path] === true
@@ -90,6 +90,7 @@ export function FileTree({ cwd }: { cwd: string }) {
                 <button
                   type="button"
                   data-sidebar-hover-row
+                  data-sidebar-selected={shownPath === entry.path || undefined}
                   title={entry.path}
                   // The indent is the row's own, not a nested container's: a row has to keep the column's
                   // full width for the hover background to reach both edges.
@@ -101,8 +102,9 @@ export function FileTree({ cwd }: { cwd: string }) {
                   }
                   className={cn(
                     'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',
+                    sidebarRowSurface(shownPath === entry.path),
                     entry.ignored && 'text-muted-foreground',
-                    shownPath === entry.path && 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    shownPath === entry.path && 'text-sidebar-accent-foreground'
                   )}
                 >
                   {entry.kind === 'directory' ? (
@@ -131,7 +133,7 @@ export function FileTree({ cwd }: { cwd: string }) {
           <FileTreeMenu target={null} drafts={drafts}>
             <div className="min-h-8 flex-1" />
           </FileTreeMenu>
-        </div>
+        </SidebarHoverHighlight>
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 px-3 pt-1.5 pb-2">
@@ -140,7 +142,7 @@ export function FileTree({ cwd }: { cwd: string }) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="text-muted-foreground"
+          className={cn('text-muted-foreground', sidebarSurfaceHover)}
           aria-label={t('panel.newFileAria')}
           onClick={() => drafts.startNew('file', '')}
         >
@@ -150,7 +152,7 @@ export function FileTree({ cwd }: { cwd: string }) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="text-muted-foreground"
+          className={cn('text-muted-foreground', sidebarSurfaceToggle)}
           aria-pressed={hideIgnored}
           aria-label={hideIgnored ? t('file.showIgnored') : t('file.hideIgnored')}
           onClick={() => setHideIgnored(!hideIgnored)}

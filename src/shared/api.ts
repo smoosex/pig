@@ -514,6 +514,7 @@ export interface SessionTreeRow {
 
 export type SendShortcut = 'enter' | 'shift-enter'
 export type Appearance = 'system' | 'light' | 'dark'
+export type SurfaceStyle = 'glass' | 'solid'
 export type PaletteId = 'pig' | 'everforest'
 
 export type ProviderAuthType = 'oauth' | 'api_key'
@@ -555,6 +556,7 @@ export interface DefaultSessionSettings {
 }
 
 export interface ThemePrefs {
+  surfaceStyle: SurfaceStyle
   appearance: Appearance
   lightTheme: PaletteId
   darkTheme: PaletteId
@@ -845,6 +847,8 @@ export interface SessionApi extends ToolSettingsApi {
   saveOpenProjectTabOrder: (cwd: string, tabIds: string[]) => Promise<void>
   /** Records the chats half's open chat tabs and which of them was showing. */
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) => Promise<void>
+  /** Native material support is available synchronously, before the document's first paint. */
+  readonly supportsGlass: boolean
   getSettings: () => Promise<AppSettings>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>

@@ -5,6 +5,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { ScrollArea } from '../ui/scroll-area'
+import { sidebarRowSurface, sidebarSurfaceHover } from '../sidebar/sidebar-surface'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { GeneralPane } from './GeneralPane'
 import { ThemePane } from './ThemePane'
@@ -86,7 +87,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           {t('sidebar.settings')}
         </div>
         <ScrollArea className="-mx-1.5 -mt-1.5 min-h-0 flex-1">
-          <SidebarHoverHighlight activeKey={section} className="flex flex-col gap-1 p-1.5">
+          <SidebarHoverHighlight className="flex flex-col gap-1 p-1.5">
             {sections.map(({ id, title, description, icon: SectionIcon }) => {
               const active = section === id
               return (
@@ -95,11 +96,12 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   type="button"
                   variant="ghost"
                   data-sidebar-hover-row
-                  data-hover-highlight-active={active ? '' : undefined}
+                  data-sidebar-selected={active || undefined}
                   className={cn(
-                    'relative h-auto w-full items-start justify-start gap-2.5 px-2.5 py-2 text-left hover:bg-transparent!',
+                    'relative h-auto w-full items-start justify-start gap-2.5 px-2.5 py-2 text-left',
+                    sidebarRowSurface(active),
                     active
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      ? 'text-sidebar-accent-foreground'
                       : 'text-sidebar-foreground hover:text-sidebar-accent-foreground'
                   )}
                   onClick={() => setSection(id)}
@@ -121,7 +123,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             type="button"
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className={cn('w-full justify-start text-muted-foreground hover:text-sidebar-accent-foreground', sidebarSurfaceHover)}
             onClick={onClose}
           >
             <ChevronLeft data-icon="inline-start" />

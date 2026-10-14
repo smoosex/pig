@@ -9,8 +9,9 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi } from '../src/shared/api'
+import { GLASS_SURFACE_ARGUMENT } from '../src/shared/surface-style'
 
-async function runFixture(): Promise<void> {
+async function runFixture(supportsGlass: boolean): Promise<void> {
   const invokes: { channel: string; args: unknown[] }[] = []
   const listeners: string[] = []
   let exposed: SessionApi | null = null
@@ -35,6 +36,8 @@ async function runFixture(): Promise<void> {
   assert.ok(exposed, 'the preload exposed its api')
 
   const api = exposed as SessionApi
+  assert.equal(api.supportsGlass, supportsGlass, 'native material capability is synchronous and needs no IPC call')
+  assert.equal(invokes.length, 0)
   await api.readWorktreeDiff('/repo')
   await api.readWorktreePatch('/repo', 'staged')
   await api.readUntrackedFile('/repo', 'src/new.ts')
@@ -100,10 +103,10 @@ async function runFixture(): Promise<void> {
 }
 
 if (process.argv[2] === '--preload-api-fixture') {
-  await runFixture()
+  await runFixture(process.argv[3] === 'true')
 } else {
-  test('the preload hands every diff call its channel and arguments', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--preload-api-fixture'], {
+  for (const supportsGlass of [false, true]) test(`the preload exposes material support (${supportsGlass}) and forwards IPC arguments`, async () => {
+    const child = Bun.spawn([process.execPath, import.meta.path, '--preload-api-fixture', String(supportsGlass), ...(supportsGlass ? [GLASS_SURFACE_ARGUMENT] : [])], {
       cwd: new URL('..', import.meta.url).pathname,
       stdout: 'pipe',
       stderr: 'pipe'
