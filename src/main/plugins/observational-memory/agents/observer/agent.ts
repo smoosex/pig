@@ -204,9 +204,10 @@ ${conversation}`;
 		...(reasoning && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
 		...(effectiveMaxTurns !== undefined
 			? {
-				shouldStopAfterTurn: () => {
+				finishTurn: (turn) => {
+					if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return;
 					turnCount++;
-					return turnCount >= effectiveMaxTurns;
+					return turnCount >= effectiveMaxTurns ? { action: "end" } : undefined;
 				},
 			}
 			: {}),

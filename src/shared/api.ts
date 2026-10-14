@@ -624,15 +624,21 @@ export interface MemoryPluginSettings {
   compactAfterTokens?: number
   compactAfterTokensMode?: 'calibrated' | 'ratio'
   compactAfterTokensRatio?: number
+  compactionMaxRetainedTokens?: number
+  compactionSummaryMaxTokens?: number
+  compactionCatchUpMaxChunks?: number
+  workerMemoryMaxTokens?: number
   observationsPoolMaxTokens?: number
   observationsPoolTargetTokens?: number
   agentMaxTurns?: number
   agentMaxTokens?: number
   model?: { provider: string; id: string; thinking?: ThinkingLevel }
+  fallbackModel?: { provider: string; id: string; thinking?: ThinkingLevel }
   showWorkerNotifications?: boolean
   showCompactionNotifications?: boolean
   passive?: boolean
   debugLog?: boolean
+  consolidateWhenIdle?: boolean
 }
 
 export type MemoryPluginSettingsPatch = { [K in keyof MemoryPluginSettings]?: MemoryPluginSettings[K] | null }

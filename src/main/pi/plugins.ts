@@ -334,9 +334,14 @@ export function updatePlugin(id: string): Promise<void> {
 
 const integerKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
+  'compactionMaxRetainedTokens', 'compactionSummaryMaxTokens', 'workerMemoryMaxTokens',
   'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens'
 ] as const
-const booleanKeys = ['showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
+// 0 is meaningful here: it disables the synchronous observer catch-up.
+const nonNegativeIntegerKeys = ['compactionCatchUpMaxChunks'] as const
+const booleanKeys = [
+  'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog', 'consolidateWhenIdle'
+] as const
 
 async function readSettingsObject(path: string): Promise<Record<string, unknown>> {
   try {
@@ -351,7 +356,8 @@ async function readSettingsObject(path: string): Promise<Record<string, unknown>
 
 const memoryDefaultKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'compactAfterTokens', 'compactAfterTokensRatio',
-  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens'
+  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens',
+  'compactionCatchUpMaxChunks'
 ] as const
 
 export async function getMemoryPluginDefaults(): Promise<Record<string, number>> {
@@ -381,15 +387,22 @@ async function saveNamespacedSettings(path: string, settings: Record<string, unk
 export function setMemoryPluginSettings(patch: MemoryPluginSettingsPatch): Promise<MemoryPluginSettings> {
   return serialize(async () => {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
-    const allowed = new Set<string>([...integerKeys, ...booleanKeys, 'model', 'compactAfterTokensMode', 'compactAfterTokensRatio'])
+    const allowed = new Set<string>([
+      ...integerKeys, ...nonNegativeIntegerKeys, ...booleanKeys,
+      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio'
+    ])
     for (const [key, value] of Object.entries(patch)) {
       if (!allowed.has(key)) throw new Error(`Unknown memory setting: ${key}`)
       if (value === undefined || value === null) continue
-      if ((integerKeys as readonly string[]).includes(key) && (!Number.isSafeInteger(value) || (value as number) <= 0)) throw new Error(`Invalid positive integer: ${key}`)
+      const nonNegative = (nonNegativeIntegerKeys as readonly string[]).includes(key)
+      const integer = (integerKeys as readonly string[]).includes(key) || nonNegative
+      if (integer && (!Number.isSafeInteger(value) || (value as number) < (nonNegative ? 0 : 1))) {
+        throw new Error(nonNegative ? `Invalid non-negative integer: ${key}` : `Invalid positive integer: ${key}`)
+      }
       if ((booleanKeys as readonly string[]).includes(key) && typeof value !== 'boolean') throw new Error(`Invalid boolean: ${key}`)
       if (key === 'compactAfterTokensMode' && value !== 'calibrated' && value !== 'ratio') throw new Error('Invalid compaction mode')
       if (key === 'compactAfterTokensRatio' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value >= 1)) throw new Error('Ratio must be between 0 and 1')
-      if (key === 'model' && value !== null && (
+      if ((key === 'model' || key === 'fallbackModel') && value !== null && (
         typeof value !== 'object' || !value || typeof value.provider !== 'string' || !value.provider ||
         typeof value.id !== 'string' || !value.id ||
         (value.thinking !== undefined && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value.thinking))

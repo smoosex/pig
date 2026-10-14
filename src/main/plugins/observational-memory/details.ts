@@ -3,9 +3,11 @@ import { loadConfig, resolveCompactAfterTokens } from './config.js'
 import { memoryRuntime } from './runtime.js'
 import {
   diffProjection, foldLedger, fullProjection, observationToSummaryLine,
-  rawTokensSinceLastCompaction, rawTokensSinceObservationCoverage, rawTokensSinceReflectionCoverage,
+  observedTokensSinceLastCompaction, observedTokensSinceReflectionCoverage,
+  rawTokensSinceLastCompaction, rawTokensSinceObservationCoverage,
   reflectionToSummaryLine, visibleProjection, type Entry, type Projection
 } from './session-ledger/index.js'
+import { compactionProgress, progressLabel } from './hooks/compaction-trigger.js'
 
 function pct(value: number, total: number): number {
   return total > 0 ? Math.round(value / total * 100) : 0
@@ -15,9 +17,9 @@ function totalTokens(items: { tokenCount: number }[]): number {
   return items.reduce((sum, item) => sum + item.tokenCount, 0)
 }
 
-export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?: number): string {
+export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?: number, cwd?: string): string {
   const runtime = memoryRuntime(sessionId)
-  const config = runtime?.configLoaded ? runtime.config : loadConfig()
+  const config = runtime?.configLoaded ? runtime.config : loadConfig(cwd)
   const folded = foldLedger(entries)
   const visible = visibleProjection(entries)
   const full = fullProjection(entries)
@@ -30,8 +32,10 @@ export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?
   const reflectionSuffix = drift.reflectionsOnlyInFull.length ? ` +${drift.reflectionsOnlyInFull.length}` : ''
   const compactThreshold = resolveCompactAfterTokens(config, contextWindow)
   const observationProgress = rawTokensSinceObservationCoverage(entries)
-  const reflectionProgress = rawTokensSinceReflectionCoverage(entries)
-  const compactionProgress = rawTokensSinceLastCompaction(entries)
+  const reflectionProgress = observedTokensSinceReflectionCoverage(entries)
+  const compactionProgressTokens = runtime ? compactionProgress(runtime, entries) : rawTokensSinceLastCompaction(entries)
+  const unobservedSinceCompaction = Math.max(0, rawTokensSinceLastCompaction(entries) - observedTokensSinceLastCompaction(entries))
+  const progressKind = runtime ? progressLabel(runtime) : 'estimated'
   const lines = [
     ...(config.passive ? ['── Mode ──', 'Passive: automatic memory workers and auto-compaction disabled; manual/Pi compaction and recall remain active', ''] : []),
     '── Memory ──',
@@ -40,8 +44,9 @@ export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?
     '',
     '── Activity ──',
     `Next observation: ~${observationProgress.toLocaleString()} / ${config.observeAfterTokens.toLocaleString()} tokens (${pct(observationProgress, config.observeAfterTokens)}%)`,
-    `Next reflection:  ~${reflectionProgress.toLocaleString()} / ${config.reflectAfterTokens.toLocaleString()} tokens (${pct(reflectionProgress, config.reflectAfterTokens)}%)`,
-    `Next compaction:  ~${compactionProgress.toLocaleString()} / ${compactThreshold.toLocaleString()} estimated source tokens (${pct(compactionProgress, compactThreshold)}%)`,
+    `Next reflection:  ~${reflectionProgress.toLocaleString()} / ${config.reflectAfterTokens.toLocaleString()} observed tokens (${pct(reflectionProgress, config.reflectAfterTokens)}%)`,
+    `Next compaction:  ~${compactionProgressTokens.toLocaleString()} / ${compactThreshold.toLocaleString()} ${progressKind} source tokens (${pct(compactionProgressTokens, compactThreshold)}%)`,
+    `Observer backlog: ~${unobservedSinceCompaction.toLocaleString()} unobserved source tokens since the compaction boundary`,
     `Visible observation pool: ~${totalTokens(visible.observations).toLocaleString()} / ${config.observationsPoolMaxTokens.toLocaleString()} tokens (${pct(totalTokens(visible.observations), config.observationsPoolMaxTokens)}%)`,
     `Active observation pool: ~${pool.observationTokens.toLocaleString()} / ${config.observationsPoolTargetTokens.toLocaleString()} target tokens (${pct(pool.observationTokens, config.observationsPoolTargetTokens)}%)`,
     `Reflection pool:         ~${totalTokens(visible.reflections).toLocaleString()} tokens`
