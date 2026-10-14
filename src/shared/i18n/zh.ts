@@ -570,8 +570,6 @@ export const zh = {
     memoryView: '查看记忆',
     memoryVisible: '可见记忆',
     memoryFull: '完整记录',
-    memoryCopy: '复制内容',
-    memoryCopied: '已复制',
     memoryLoading: '正在读取记忆…',
     memoryFailed: '记忆读取失败：{error}',
     loadFailed: '统计加载失败：{error}',

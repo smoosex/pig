@@ -568,8 +568,6 @@ export const en: Messages = {
     memoryView: 'View memory',
     memoryVisible: 'Visible memory',
     memoryFull: 'Full record',
-    memoryCopy: 'Copy content',
-    memoryCopied: 'Copied',
     memoryLoading: 'Loading memory…',
     memoryFailed: 'Could not load memory: {error}',
     loadFailed: 'Failed to load token stats: {error}',
