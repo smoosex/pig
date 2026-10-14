@@ -54,7 +54,6 @@ export function ContextUsageButton({
   const [full, setFull] = useState(false)
   const [text, setText] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!memoryAvailable) setDetail(null)
   }, [memoryAvailable])
@@ -63,7 +62,6 @@ export function ContextUsageButton({
     let active = true
     setText(null)
     setDetailError(null)
-    setCopied(false)
     void api.getMemoryDetail(sessionId, detail, detail === 'view' && full).then((value) => {
       if (active) setText(value)
     }, (failure) => {
@@ -164,9 +162,6 @@ export function ContextUsageButton({
           <ScrollArea className="h-[min(60vh,32rem)] rounded-md border border-code-border bg-code-background">
             <pre className="whitespace-pre-wrap break-words p-4 font-mono text-xs text-code-foreground">{text}</pre>
           </ScrollArea>
-          <Button variant="outline" size="sm" className="self-end" onClick={() => {
-            void navigator.clipboard.writeText(text).then(() => setCopied(true), (failure) => setDetailError(String(failure)))
-          }}>{t(copied ? 'context.memoryCopied' : 'context.memoryCopy')}</Button>
         </> : null}
       </DialogContent>
     </Dialog>
