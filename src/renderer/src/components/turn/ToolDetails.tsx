@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, memo, Suspense, useMemo, useState } from 'react'
 import { Check, Copy, FileCode2 } from 'lucide-react'
 import type { BashExecutionMessage } from '../../pi/types'
 import type { LiveNestedCall } from '../../chat/nested-tools'
@@ -90,7 +90,11 @@ function BashToolPanel({ command, output }: { command: string; output?: string }
   )
 }
 
-export function ToolRow({ step, active, nestedCall }: {
+/**
+ * groupTurns rebuilds ToolStep wrappers on each delta. Arguments and results retain their source
+ * snapshot references, so compare the wrapper's fields rather than its identity.
+ */
+export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
   step: ToolStep
   active?: boolean
   nestedCall?: LiveNestedCall
@@ -162,9 +166,17 @@ export function ToolRow({ step, active, nestedCall }: {
       </CollapsibleContent>
     </Collapsible>
   )
-}
+}, (previous, next) =>
+  previous.step.id === next.step.id &&
+  previous.step.name === next.step.name &&
+  previous.step.args === next.step.args &&
+  previous.step.result === next.step.result &&
+  previous.step.partialResult === next.step.partialResult &&
+  previous.active === next.active &&
+  previous.nestedCall === next.nestedCall
+)
 
-export function BashRow({ message }: { message: BashExecutionMessage }) {
+export const BashRow = memo(function BashRow({ message }: { message: BashExecutionMessage }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
@@ -181,9 +193,9 @@ export function BashRow({ message }: { message: BashExecutionMessage }) {
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
-export function ToolCluster({ steps }: { steps: ToolStep[] }) {
+export const ToolCluster = memo(function ToolCluster({ steps }: { steps: ToolStep[] }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   if (steps.length === 1) return <ToolRow step={steps[0]} />
@@ -207,9 +219,9 @@ export function ToolCluster({ steps }: { steps: ToolStep[] }) {
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
-export function BashCluster({ messages }: { messages: BashExecutionMessage[] }) {
+export const BashCluster = memo(function BashCluster({ messages }: { messages: BashExecutionMessage[] }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   if (messages.length === 1) return <BashRow message={messages[0]} />
@@ -233,4 +245,4 @@ export function BashCluster({ messages }: { messages: BashExecutionMessage[] }) 
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
