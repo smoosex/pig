@@ -1,8 +1,12 @@
 /**
  * Completed work stays collapsed until requested. The live outline renders the
  * same Pi process items while keeping unfinished work visible.
+ *
+ * Every row component below is memoized: a streaming turn re-renders on each token, and only the row
+ * that token belongs to can have changed. The memo boundary is what keeps a long turn from
+ * re-reconciling its entire history on every delta.
  */
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { MessageKey } from '../../../../shared/i18n'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { BashExecutionMessage } from '../../pi/types'
@@ -19,7 +23,7 @@ import { clusterWork, countTools, iconKinds, processSegments, type WorkRow } fro
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ThinkingRow } from './ProcessText'
 
-function GroupBody({ items }: { items: ProcessItem[] }) {
+const GroupBody = memo(function GroupBody({ items }: { items: ProcessItem[] }) {
   return (
     <div className="flex min-w-0 flex-col">
       {clusterWork(items).map((row, i) => {
@@ -33,9 +37,9 @@ function GroupBody({ items }: { items: ProcessItem[] }) {
       })}
     </div>
   )
-}
+})
 
-function ActivityGroup({ items }: { items: ProcessItem[] }) {
+const ActivityGroup = memo(function ActivityGroup({ items }: { items: ProcessItem[] }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const tools = countTools(items)
@@ -70,7 +74,7 @@ function ActivityGroup({ items }: { items: ProcessItem[] }) {
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
 const WAIT_LINE_KEYS: MessageKey[] = [
   'turn.placeholder1',
@@ -103,7 +107,7 @@ function WaitLine({ streaming }: { streaming: boolean }) {
   )
 }
 
-function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
+const OutlineBash = memo(function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
   const t = useT()
   const failed = message.cancelled || (message.exitCode ?? 0) !== 0
   return (
@@ -117,9 +121,9 @@ function OutlineBash({ message, active }: { message: BashExecutionMessage; activ
       </MarkerContent>
     </Marker>
   )
-}
+})
 
-function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
+const OutlineRow = memo(function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; streaming: boolean }) {
   if (row.kind === 'thinking') {
     if (last && streaming && row.live) {
       return <ThinkingRow text={row.text} live streaming={streaming} />
@@ -153,9 +157,9 @@ function OutlineRow({ row, last, streaming }: { row: WorkRow; last: boolean; str
   }
   if (row.kind === 'custom') return <CustomProcess message={row.message} />
   return null
-}
+})
 
-function OutlineBody({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
+const OutlineBody = memo(function OutlineBody({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
   const rows = clusterWork(items)
   return (
     <div className="flex min-w-0 flex-col">
@@ -164,9 +168,9 @@ function OutlineBody({ items, active, streaming }: { items: ProcessItem[]; activ
       ))}
     </div>
   )
-}
+})
 
-function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
+const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
   const t = useT()
   const tools = countTools(items)
   if (tools === 0) {
@@ -197,7 +201,7 @@ function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; acti
       </Rail>
     </div>
   )
-}
+})
 
 export function ProcessOutline({ items, streaming, waitingForModel }: {
   items: ProcessItem[]
@@ -222,7 +226,14 @@ export function ProcessOutline({ items, streaming, waitingForModel }: {
     <div className="flex min-w-0 flex-col gap-2">
       {segments.map((segment, i) =>
         segment.kind === 'text' ? (
-          <MarkdownText key={i} className="px-1 text-sm" text={segment.text} streaming={streaming} />
+          // Only the last segment is still being written to: passing `streaming` to a settled one
+          // would keep it on the animated streaming renderer long after its text stopped moving.
+          <MarkdownText
+            key={i}
+            className="px-1 text-sm"
+            text={segment.text}
+            streaming={streaming && i === segments.length - 1}
+          />
         ) : (
           <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} streaming={streaming} />
         )

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { CustomMessage, TextContent } from '../../pi/types'
 import { formatElapsed } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
@@ -13,10 +13,15 @@ export function stripThoughtHeading(text: string): string {
 }
 
 /**
- * One thinking block. Live rows track the newest line of reasoning until the
- * reader scrolls away from it; settled rows only render once expanded.
+ * One thinking block. Live rows track the newest line of reasoning until the reader scrolls away
+ * from it; settled rows only render once expanded.
+ *
+ * Memoized on the rendered text and its timing: a live turn re-renders every frame, and only the
+ * row currently receiving reasoning deltas can change. `text` is compared by value because the SDK
+ * mutates the block objects it shares with the store, so a block reference would look unchanged
+ * while its contents moved.
  */
-export function ThinkingRow({
+export const ThinkingRow = memo(function ThinkingRow({
   text,
   durationMs = 0,
   stacked,
@@ -92,9 +97,9 @@ export function ThinkingRow({
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
-export function CustomProcess({ message }: { message: CustomMessage }) {
+export const CustomProcess = memo(function CustomProcess({ message }: { message: CustomMessage }) {
   const text =
     typeof message.content === 'string'
       ? message.content
@@ -108,4 +113,4 @@ export function CustomProcess({ message }: { message: CustomMessage }) {
       {text ? <p className="mt-1 whitespace-pre-wrap">{text}</p> : null}
     </div>
   )
-}
+})
