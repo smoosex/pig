@@ -429,6 +429,64 @@ test('reduces tool results and compactions to the fields a tree label needs', as
   })
 })
 
+test('a reduced tool result keeps the isError flag the file records', async () => {
+  const failed = JSON.stringify({
+    type: 'message',
+    id: 'r1',
+    parentId: null,
+    timestamp: '2026-01-01T00:00:00.000Z',
+    message: {
+      role: 'toolResult',
+      toolCallId: 'call-1',
+      toolName: 'web_search',
+      content: [{ type: 'text', text: 'Error: no provider' }],
+      isError: true,
+      timestamp: 1
+    }
+  })
+  const ok = JSON.stringify({
+    type: 'message',
+    id: 'r2',
+    parentId: 'r1',
+    timestamp: '2026-01-01T00:00:01.000Z',
+    message: {
+      role: 'toolResult',
+      toolCallId: 'call-2',
+      toolName: 'read',
+      content: [{ type: 'text', text: 'file contents' }],
+      isError: false,
+      timestamp: 2
+    }
+  })
+  await withFile([header(), failed, ok], (path) => {
+    const index = indexSessionFile(path)
+    const reduced = readTreeEntries(index) as unknown as Array<Record<string, any>>
+    expect(reduced.map((item) => item.message.isError)).toEqual([true, false])
+  })
+})
+
+test('tree tool-result flags match full parsing instead of nested details or metadata', async () => {
+  const base = { role: 'toolResult', toolCallId: 'call', toolName: 'web_search', timestamp: 1 }
+  const cases = [
+    { message: { ...base, details: { isError: true }, isError: false, content: [] } },
+    { message: { ...base, details: { isError: false }, isError: true, content: [] } },
+    { message: { ...base, isError: false, content: [], details: { isError: true } } },
+    { message: { ...base, details: { isError: true }, content: [] } },
+    { message: { ...base, content: [] }, metadata: { isError: true } },
+    { message: { ...base, content: [{ type: 'text', text: 'braces }{, quotes "isError":true and backslashes \\\\' }], isError: true } }
+  ]
+  const lines = cases.map((value, i) => JSON.stringify({
+    type: 'message', id: `r${i}`, parentId: null, timestamp: '2026-01-01T00:00:00.000Z', ...value
+  }))
+  await withFile([header(), ...lines], (path) => {
+    const index = indexSessionFile(path)
+    const full = readAllEntries(index) as unknown as Array<{ message: { isError?: boolean } }>
+    const reduced = readTreeEntries(index) as unknown as Array<{ message: { isError?: boolean; content: unknown[] } }>
+    expect(reduced.map(item => item.message.isError)).toEqual(full.map(item => item.message.isError))
+    expect(reduced.at(-1)!.message.content).toEqual([])
+  })
+})
+
 test('reads a reduced row the slow way when its bytes are not the expected shape', async () => {
   const odd = JSON.stringify({
     type: 'message',

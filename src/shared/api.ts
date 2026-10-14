@@ -677,6 +677,8 @@ export interface WebSearchSettings {
   fetchAllowedModes: WebSearchFetchMode[] | null
   ssrfAllowRanges: string[] | null
   ssrfTrustEnvProxy: boolean | null
+  /** "same-origin" refuses redirects that leave the requested origin. */
+  fetchRedirects: 'same-origin' | null
   tools: WebSearchToolFlags
 }
 
@@ -696,6 +698,7 @@ export interface WebSearchSettingsPatch {
   fetchAllowedModes?: string[] | null
   ssrfAllowRanges?: string[] | null
   ssrfTrustEnvProxy?: boolean | null
+  fetchRedirects?: 'same-origin' | null
   tools?: Partial<WebSearchToolFlags>
   providers?: Record<string, { apiKey?: string | null; baseUrl?: string | null; extras?: Record<string, string | null> }>
 }

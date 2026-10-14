@@ -67,14 +67,9 @@ export interface StoredSearchData {
 	fetchCacheError?: string;
 }
 
-/** Per-session stored results: the extension factory runs once per session, so each session owns one. */
-export interface SessionStorage {
-	storeResult(id: string, data: StoredSearchData): void;
-	storeFetchedContentResult(id: string, data: StoredSearchData & { type: "fetch"; urls: ExtractedContent[] }): StoredSearchData;
-	getResult(id: string): StoredSearchData | null;
-	clear(): void;
-	restoreFromSession(ctx: ExtensionContext): void;
-}
+const storedResults = new Map<string, StoredSearchData>();
+/** How many live sessions hold each result. Sessions forked from one history hold the same ids. */
+const resultHolders = new Map<string, number>();
 
 export function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -405,69 +400,97 @@ function readCachedFetchData(data: StoredSearchData): StoredSearchData {
 	}
 }
 
-/**
- * Session-scoped result store. The SDK caches the extension factory per cwd but runs it once per
- * session, so this map must live here rather than at module scope: a shared map would let one
- * session's restore or shutdown drop another session's stored results.
- */
-export function createSessionStorage(): SessionStorage {
-	const storedResults = new Map<string, StoredSearchData>();
-
-	const pruneExpiredFetchedResults = (now: number): void => {
-		for (const [id, data] of storedResults) {
-			if (data.type === "fetch" && now - data.timestamp >= CACHE_TTL_MS) {
-				storedResults.set(id, unavailableFetchData(data, "Cached fetched content is missing or expired"));
-			}
+function pruneExpiredFetchedResults(now: number): void {
+	for (const [id, data] of storedResults) {
+		if (data.type === "fetch" && now - data.timestamp >= CACHE_TTL_MS) {
+			storedResults.set(id, unavailableFetchData(data, "Cached fetched content is missing or expired"));
 		}
-	};
+	}
+}
 
-	const pruneExpiredFetchCache = (now = Date.now(), requestedLimits?: Partial<FetchCacheLimits>): void => {
-		const limits = cacheLimits(requestedLimits);
-		pruneExpiredFetchedResults(now);
-		try { pruneFetchCache(now, limits); } catch {}
-	};
+export function pruneExpiredFetchCache(now = Date.now(), requestedLimits?: Partial<FetchCacheLimits>): void {
+	const limits = cacheLimits(requestedLimits);
+	pruneExpiredFetchedResults(now);
+	try { pruneFetchCache(now, limits); } catch {}
+}
 
-	return {
-		storeResult(id, data) {
-			storedResults.set(id, data);
-		},
-		storeFetchedContentResult(id, data) {
-			pruneExpiredFetchedResults(Date.now());
-			let ref: FetchCacheRef | null = null;
-			let cacheError: string | undefined;
-			try {
-				ref = writeFetchCache(data);
-			} catch (err) {
-				cacheError = `Failed to write fetched content cache: ${err instanceof Error ? err.message : String(err)}`;
-			}
-			storedResults.set(id, ref ? { ...data, fetchCache: ref, urlMetadata: metadataForUrls(data.urls) } : { ...data, fetchCacheError: cacheError });
-			return createFetchSessionData(data, ref, cacheError);
-		},
-		getResult(id) {
-			const data = storedResults.get(id);
-			if (!data) return null;
-			const loaded = readCachedFetchData(data);
-			if (loaded !== data) storedResults.set(id, loaded);
-			return loaded;
-		},
-		clear() {
-			storedResults.clear();
-		},
-		restoreFromSession(ctx) {
-			storedResults.clear();
-			const now = Date.now();
-			pruneExpiredFetchCache(now);
+export function storeResult(id: string, data: StoredSearchData): void {
+	storedResults.set(id, data);
+}
 
-			for (const entry of ctx.sessionManager.getBranch()) {
-				if (entry.type === "custom" && entry.customType === "web-search-results") {
-					const data = entry.data;
-					if (isValidStoredData(data) && now - data.timestamp < CACHE_TTL_MS) {
-						storedResults.set(data.id, data);
-					}
+export function storeFetchedContentResult(id: string, data: StoredSearchData & { type: "fetch"; urls: ExtractedContent[] }): StoredSearchData {
+	pruneExpiredFetchedResults(Date.now());
+	let ref: FetchCacheRef | null = null;
+	let cacheError: string | undefined;
+	try {
+		ref = writeFetchCache(data);
+	} catch (err) {
+		cacheError = `Failed to write fetched content cache: ${err instanceof Error ? err.message : String(err)}`;
+	}
+	storedResults.set(id, ref ? { ...data, fetchCache: ref, urlMetadata: metadataForUrls(data.urls) } : { ...data, fetchCacheError: cacheError });
+	return createFetchSessionData(data, ref, cacheError);
+}
+
+export function getResult(id: string): StoredSearchData | null {
+	const data = storedResults.get(id);
+	if (!data) return null;
+	const loaded = readCachedFetchData(data);
+	if (loaded !== data) storedResults.set(id, loaded);
+	return loaded;
+}
+
+export function getAllResults(): StoredSearchData[] {
+	return Array.from(storedResults.values());
+}
+
+export function deleteResult(id: string): boolean {
+	const data = storedResults.get(id);
+	if (data?.fetchCache) {
+		try {
+			const dir = safeFetchCacheDir(false);
+			const path = fetchCachePath(data.fetchCache.key);
+			if (dir && path) {
+				const info = lstatSync(path);
+				if (!info.isSymbolicLink() && info.isFile()) {
+					unlinkCacheFile(dir, { name: data.fetchCache.key, size: info.size, mtimeMs: info.mtimeMs, dev: info.dev, ino: info.ino });
 				}
 			}
+		} catch {}
+	}
+	resultHolders.delete(id);
+	return storedResults.delete(id);
+}
+
+export function clearResults(): void {
+	storedResults.clear();
+	resultHolders.clear();
+}
+
+/** Record that one more live session holds each of these results. */
+export function holdResults(ids: Iterable<string>): void {
+	for (const id of ids) resultHolders.set(id, (resultHolders.get(id) ?? 0) + 1);
+}
+
+/** Release one session's hold on each result, and drop a result from memory once no live
+ * session holds it. Unlike deleteResult, the fetch cache files stay: the session journal
+ * still references them, and a later restore reads them back. */
+export function releaseResults(ids: Iterable<string>): void {
+	for (const id of ids) {
+		const holders = (resultHolders.get(id) ?? 0) - 1;
+		if (holders > 0) {
+			resultHolders.set(id, holders);
+			continue;
 		}
-	};
+		resultHolders.delete(id);
+		storedResults.delete(id);
+	}
+}
+
+/** Delete a result for one session that holds it. Other live sessions holding the same
+ * result keep it and its fetch cache file; the last holder deletes both. */
+export function deleteHeldResult(id: string): void {
+	if ((resultHolders.get(id) ?? 0) > 1) releaseResults([id]);
+	else deleteResult(id);
 }
 
 function isValidStoredData(data: unknown): data is StoredSearchData {
@@ -486,3 +509,35 @@ function isValidStoredData(data: unknown): data is StoredSearchData {
 	return true;
 }
 
+export function restoreFromSession(ctx: ExtensionContext): void {
+	storedResults.clear();
+	loadSessionResults(ctx);
+}
+
+/** Add one session's stored results to memory, leaving other sessions' results in place,
+ * and return the results it loaded. A host that runs several sessions at once (one extension
+ * instance per session) restores each with this, holds their ids with holdResults, and
+ * releases them with releaseResults. */
+export function loadSessionResults(ctx: ExtensionContext): StoredSearchData[] {
+	const now = Date.now();
+	pruneExpiredFetchCache(now);
+
+	const loaded: StoredSearchData[] = [];
+	for (const entry of ctx.sessionManager.getBranch()) {
+		if (entry.type === "custom" && entry.customType === "web-search-results") {
+			const data = entry.data;
+			if (isValidStoredData(data) && now - data.timestamp < CACHE_TTL_MS) {
+				// Another live session may hold this result with its fetched content in memory;
+				// the journal copy only points at the disk cache, which can be pruned.
+				const live = storedResults.get(data.id);
+				if (live) {
+					loaded.push(live);
+					continue;
+				}
+				storedResults.set(data.id, data);
+				loaded.push(data);
+			}
+		}
+	}
+	return loaded;
+}

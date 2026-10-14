@@ -11,7 +11,9 @@ import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import {
 	isCurrentModelHostedSearchEligible,
 	isOpenAISearchAvailable,
+	isOpenAISubscriptionModelSelected,
 	OpenAIAlphaSearchUnsupportedError,
+	OpenAIStreamError,
 	searchWithCurrentModelOpenAI,
 	searchWithOpenAI,
 } from "./openai-search.ts";
@@ -30,6 +32,7 @@ import { isKagiAvailable, searchWithKagi } from "./kagi.ts";
 import { isBochaAvailable, searchWithBocha } from "./bocha.ts";
 import { isOllamaAvailable, searchWithOllama } from "./ollama.ts";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.ts";
+import { isDegoogAvailable, searchWithDegoog } from "./degoog.ts";
 import { isDuckDuckGoAvailable, searchWithDuckDuckGo } from "./duckduckgo.ts";
 import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isXcrawlAvailable, searchWithXCrawl } from "./xcrawl.ts";
@@ -40,12 +43,15 @@ import { isSerpApiAvailable, searchWithSerpApi } from "./serpapi.ts";
 import { isSerperAvailable, searchWithSerper } from "./serper.ts";
 import { isSerplyAvailable, searchWithSerply } from "./serply.ts";
 import { isBaizhiAvailable, searchWithBaizhi } from "./baizhi.ts";
+import { isZaiAvailable, searchWithZai } from "./zai.ts";
 import { isValyuAvailable, searchWithValyu } from "./valyu.ts";
+import { isKeenableAvailable, searchWithKeenable } from "./keenable.ts";
+import { isCeramicAvailable, searchWithCeramic } from "./ceramic.ts";
 import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi"] as const;
+export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi", "zai", "keenable", "ceramic"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
 
 export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
@@ -110,7 +116,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
-// Explicit-only providers (Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu) are deliberately absent:
+// Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
 const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported"] as const;
@@ -262,6 +268,8 @@ export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProviderSelection;
 	includeContent?: boolean;
 	extensionContext?: ExtensionContext;
+	/** Forwarded to providers that understand it (currently Exa); ignored elsewhere. */
+	category?: string;
 }
 
 function errorMessage(err: unknown): string {
@@ -272,15 +280,13 @@ function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-function isOpenAICodexSelected(ctx?: ExtensionContext): boolean {
-	return ctx?.model?.provider === "openai-codex";
-}
+type TakeAutoResult = (result: SearchResponse | null, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
 
-async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[]): Promise<AttributedSearchResponse | null> {
+async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[], take: TakeAutoResult): Promise<AttributedSearchResponse | null> {
 	try {
 		if (await isOpenAISearchAvailable(options.extensionContext)) {
 			const result = await searchWithOpenAI(query, options, options.extensionContext);
-			return { ...result, provider: "openai" };
+			return take(result, "openai");
 		}
 	} catch (err) {
 		if (isAbortError(err)) throw err;
@@ -327,9 +333,34 @@ function providerErrorStatus(message: string): number | undefined {
 	return Number(match[1]);
 }
 
+const OPENAI_STREAM_ERROR_KINDS = new Map<string, SearchProviderErrorKind>([
+	["authentication_error", "auth"],
+	["permission_error", "auth"],
+	["permission_denied", "auth"],
+	["invalid_api_key", "auth"],
+	["rate_limit_exceeded", "quota"],
+	["rate_limit_error", "quota"],
+	["insufficient_quota", "quota"],
+	["usage_limit_exceeded", "quota"],
+	["subscription_sharing_usage_limit_exceeded", "quota"],
+	["invalid_request_error", "invalid-request"],
+	["server_error", "transient"],
+	["internal_error", "transient"],
+	["api_error", "transient"],
+	["overloaded", "transient"],
+	["overloaded_error", "transient"],
+]);
+
 function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): SearchProviderError {
 	if (err instanceof SearchProviderError) return err;
 	const message = errorMessage(err);
+	if (provider === "openai" && err instanceof OpenAIStreamError) {
+		// Specific codes override generic types such as invalid_request_error; prose never controls routing.
+		const kind = OPENAI_STREAM_ERROR_KINDS.get(err.code ?? "")
+			?? OPENAI_STREAM_ERROR_KINDS.get(err.type ?? "")
+			?? "invalid-response";
+		return new SearchProviderError(provider, kind, message, undefined, err);
+	}
 	const lower = message.toLowerCase();
 	const status = providerErrorStatus(message);
 	let kind: SearchProviderErrorKind = "unknown";
@@ -406,10 +437,14 @@ async function searchWithResolvedProvider(
 	if (provider === "serper") return { ...(await searchWithSerper(query, options)), provider };
 	if (provider === "serply") return { ...(await searchWithSerply(query, options)), provider };
 	if (provider === "baizhi") return { ...(await searchWithBaizhi(query, options)), provider };
+	if (provider === "zai") return { ...(await searchWithZai(query, options)), provider };
 	if (provider === "valyu") return { ...(await searchWithValyu(query, options)), provider };
+	if (provider === "keenable") return { ...(await searchWithKeenable(query, options)), provider };
+	if (provider === "ceramic") return { ...(await searchWithCeramic(query, options)), provider };
 	if (provider === "xcrawl") return { ...(await searchWithXCrawl(query, options)), provider };
 	if (provider === "perplexity") return { ...(await searchWithPerplexity(query, options)), provider };
 	if (provider === "searxng") return { ...(await searchWithSearXNG(query, options)), provider };
+	if (provider === "degoog") return { ...(await searchWithDegoog(query, options)), provider };
 	if (provider === "duckduckgo") return { ...(await searchWithDuckDuckGo(query, options)), provider };
 	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
@@ -458,10 +493,14 @@ async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, opt
 	if (provider === "serper") return isSerperAvailable();
 	if (provider === "serply") return isSerplyAvailable();
 	if (provider === "baizhi") return isBaizhiAvailable();
+	if (provider === "zai") return isZaiAvailable();
 	if (provider === "valyu") return isValyuAvailable();
+	if (provider === "keenable") return isKeenableAvailable();
+	if (provider === "ceramic") return isCeramicAvailable();
 	if (provider === "xcrawl") return isXcrawlAvailable();
 	if (provider === "perplexity") return isPerplexityAvailable();
 	if (provider === "searxng") return isSearXNGAvailable();
+	if (provider === "degoog") return isDegoogAvailable();
 	if (provider === "duckduckgo") return isDuckDuckGoAvailable();
 	if (provider === "gemini") return isGeminiApiAvailable() || await isGeminiWebOptionallyAvailable();
 	if (provider === "kimi") return isKimiSearchAvailable(options.extensionContext);
@@ -486,6 +525,7 @@ export function providerLabel(provider: ResolvedSearchProvider): string {
 	if (provider === "firecrawl") return "Firecrawl";
 	if (provider === "serpdive") return "SERPdive";
 	if (provider === "searxng") return "SearXNG";
+	if (provider === "degoog") return "degoog";
 	if (provider === "duckduckgo") return "DuckDuckGo";
 	if (provider === "kagi") return "Kagi";
 	if (provider === "bocha") return "Bocha";
@@ -501,7 +541,10 @@ export function providerLabel(provider: ResolvedSearchProvider): string {
 	if (provider === "serply") return "Serply";
 	if (provider === "you") return "You.com";
 	if (provider === "baizhi") return "Baizhi";
+	if (provider === "zai") return "Z.ai";
 	if (provider === "valyu") return "Valyu";
+	if (provider === "keenable") return "Keenable";
+	if (provider === "ceramic") return "Ceramic";
 	return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
@@ -529,7 +572,7 @@ async function searchWithProviders(
 			: await isResolvedProviderAvailable(provider, options),
 	})))).filter((entry) => entry.available).map((entry) => entry.provider);
 	if (providers.length === 0) {
-		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, and XCrawl are excluded.");
+		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, XCrawl, Keenable, and Ceramic are excluded.");
 	}
 
 	const settled = await Promise.allSettled(
@@ -631,29 +674,41 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
+	// An empty 200 keeps the chain going; if every provider is empty, return the first.
+	let firstEmpty: AttributedSearchResponse | undefined;
+	const take: TakeAutoResult = (result, provider) => {
+		if (!result) return null;
+		const response = { ...result, provider };
+		if (result.results.length || result.answer.trim()) return response;
+		firstEmpty ??= response;
+		return null;
+	};
 	const allowed = new Set(config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS);
-
-	if (allowed.has("searxng") && isSearXNGAvailable()) {
+	const attempt = async (provider: ResolvedSearchProvider): Promise<AttributedSearchResponse | null> => {
+		if (!allowed.has(provider) || !(await isResolvedProviderAvailable(provider, options))) return null;
 		try {
-			const result = await searchWithSearXNG(query, options);
-			return { ...result, provider: "searxng" };
+			return take(await searchWithResolvedProvider(provider, query, options), provider);
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SearXNG: ${errorMessage(err)}`);
+			fallbackErrors.push(`${providerLabel(provider)}: ${errorMessage(err)}`);
+			return null;
 		}
-	}
+	};
+
+	const searxng = await attempt("searxng");
+	if (searxng) return searxng;
 
 	let triedOpenAI = false;
-	if (allowed.has("openai") && (!options.extensionContext || isOpenAICodexSelected(options.extensionContext))) {
+	if (allowed.has("openai") && (!options.extensionContext || isOpenAISubscriptionModelSelected(options.extensionContext))) {
 		triedOpenAI = true;
-		const result = await tryOpenAIInAuto(query, options, fallbackErrors);
+		const result = await tryOpenAIInAuto(query, options, fallbackErrors, take);
 		if (result) return result;
 	}
 
 	if (allowed.has("exa") && isExaAvailable()) {
 		try {
-			const result = await searchWithExa(query, options);
-			if (result) return { ...result, provider: "exa" };
+			const response = take(await searchWithExa(query, options), "exa");
+			if (response) return response;
 		} catch (err) {
 			if (err instanceof CredentialResolutionError || isAbortError(err)) throw err;
 			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
@@ -661,158 +716,24 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	if (allowed.has("openai") && !triedOpenAI) {
-		const result = await tryOpenAIInAuto(query, options, fallbackErrors);
+		const result = await tryOpenAIInAuto(query, options, fallbackErrors, take);
 		if (result) return result;
 	}
 
-	if (allowed.has("brave") && isBraveAvailable()) {
-		try {
-			const result = await searchWithBrave(query, options);
-			return { ...result, provider: "brave" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Brave: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("parallel") && isParallelAvailable()) {
-		try {
-			const result = await searchWithParallel(query, options);
-			return { ...result, provider: "parallel" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Parallel: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("tinyfish") && isTinyFishAvailable()) {
-		try {
-			const result = await searchWithTinyFish(query, options);
-			return { ...result, provider: "tinyfish" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`TinyFish: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("search1api") && isSearch1APIAvailable()) {
-		try {
-			const result = await searchWithSearch1API(query, options);
-			return { ...result, provider: "search1api" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Search1API: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("searchinfinity") && isSearchinfinityAvailable()) {
-		try {
-			const result = await searchWithSearchinfinity(query, options);
-			return { ...result, provider: "searchinfinity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Searchinfinity: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("querit") && isQueritAvailable()) {
-		try {
-			const result = await searchWithQuerit(query, options);
-			return { ...result, provider: "querit" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Querit: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("tavily") && isTavilyAvailable()) {
-		try {
-			const result = await searchWithTavily(query, options);
-			return { ...result, provider: "tavily" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("firecrawl") && isFirecrawlAvailable()) {
-		try {
-			const result = await searchWithFirecrawl(query, options);
-			return { ...result, provider: "firecrawl" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Firecrawl: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("jina") && isJinaSearchAvailable()) {
-		try {
-			const result = await searchWithJina(query, options);
-			return { ...result, provider: "jina" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Jina: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("serpdive") && isSerpdiveAvailable()) {
-		try {
-			const result = await searchWithSerpdive(query, options);
-			return { ...result, provider: "serpdive" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SERPdive: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("kagi") && isKagiAvailable()) {
-		try {
-			const result = await searchWithKagi(query, options);
-			return { ...result, provider: "kagi" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Kagi: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("bocha") && isBochaAvailable()) {
-		try {
-			const result = await searchWithBocha(query, options);
-			return { ...result, provider: "bocha" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Bocha: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("ollama") && isOllamaAvailable()) {
-		try {
-			const result = await searchWithOllama(query, options);
-			return { ...result, provider: "ollama" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Ollama: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("perplexity") && isPerplexityAvailable()) {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
-		}
+	for (const provider of ["brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "perplexity"] as const) {
+		const response = await attempt(provider);
+		if (response) return response;
 	}
 
 	if (allowed.has("gemini")) try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return { ...geminiResult, provider: "gemini" };
+		const response = take(await searchWithGemini(query, options, false), "gemini");
+		if (response) return response;
 	} catch (err) {
 		if (isAbortError(err)) throw err;
 		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 	}
 
+	if (firstEmpty) return firstEmpty;
 	if (fallbackErrors.length > 0) {
 		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
 	}
@@ -824,7 +745,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, FIRECRAWL_BASE_URL, JINA_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, BOCHA_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
 		"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 		"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
-		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xcrawl\" for XCrawl, \"xai\" for Grok, \"mistral\" for Mistral Conversations web search, \"brightdata\" with brightdataSerpZone for paid Bright Data SERP, \"serpbase\", \"serpapi\", \"serper\", or \"serply\" for Google SERP, \"you\" for You.com, or \"valyu\" for research search"
+		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xcrawl\" for XCrawl, \"xai\" for Grok, \"mistral\" for Mistral Conversations web search, \"brightdata\" with brightdataSerpZone for paid Bright Data SERP, \"serpbase\", \"serpapi\", \"serper\", or \"serply\" for Google SERP, \"you\" for You.com, \"zai\" for Z.ai GLM Coding Plan search, \"valyu\" for research search, \"keenable\" for keyless Keenable search, or \"ceramic\" for Ceramic search"
 	);
 }
 

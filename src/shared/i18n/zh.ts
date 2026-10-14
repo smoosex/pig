@@ -403,6 +403,8 @@ export const zh = {
     maxCharsHint: '留空使用插件默认值（30000 字符）',
     trustEnvProxy: '信任代理环境变量',
     trustEnvProxyHint: '设置 HTTP(S)_PROXY 时跳过本地 DNS 预检',
+    sameOriginRedirects: '拒绝跨源跳转',
+    sameOriginRedirectsHint: '跳转必须保持请求的协议、主机和端口；无法观察跳转链的抓取路径会被关闭',
     ssrfRanges: 'SSRF 白名单网段',
     ssrfRangesHint: '每行一个 CIDR，例如 fake-IP 代理的 198.18.0.0/15',
     reloadHint: '保存后会重新加载空闲会话，让新的引擎选择和工具开关生效。',
