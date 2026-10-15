@@ -62,7 +62,7 @@ function projectedSegments(landmarks: CompactionItem[], workBlocks: boolean[]): 
 
 function turnTps(turn: Turn): string | null {
   const generation = turn.generation
-  if (!generation || generation.outputTokens < 8 || generation.durationMs < MIN_GENERATION_DURATION_MS) return null
+  if (!generation || generation.measuredCalls === 0 || generation.outputTokens < 8 || generation.durationMs < MIN_GENERATION_DURATION_MS) return null
   const tps = generation.outputTokens / (generation.durationMs / 1_000)
   return Number.isFinite(tps) && tps > 0 && tps <= MAX_REALISTIC_TPS ? tps.toFixed(1) : null
 }
@@ -89,12 +89,16 @@ function WorkedLabel({ turn, landmarks, block, sessionId }: {
   // The clock lives in the label so a ticking timer re-renders this row and not the work below it.
   const workedMs = useWorkBlockMs(turn, landmarks, sessionId)
   const tps = block === landmarks.length ? turnTps(turn) : null
+  const generation = turn.generation
   return (
     <span className="flex items-center gap-1">
       <span>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</span>
-      {tps ? (
+      {tps && generation ? (
         <span className="tabular-nums" title={tpsTooltip(t, turn)}>
-          · {t('turn.tps', { value: tps })}
+          · {t('turn.tps', { value: tps })} · {t('turn.tpsSamples', {
+            measured: generation.measuredCalls,
+            total: generation.totalCalls
+          })}
         </span>
       ) : null}
     </span>

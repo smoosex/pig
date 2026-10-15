@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { BrowserWindow } from 'electron'
+import {
+  createAssistantMessageEventStream,
+  normalizeContext,
+  type AssistantMessage,
+  type AssistantMessageEventStream
+} from '@earendil-works/pi-ai'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import {
   batchQueueUpdates,
@@ -12,7 +18,8 @@ import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
 
 function fixture(
   initial: string[] = ['第一条', '第二条', '第三条'],
-  now: () => number = () => performance.now()
+  now: () => number = () => performance.now(),
+  streamFunction: AgentSession['agent']['streamFunction'] = createAssistantMessageEventStream
 ) {
   let followUp = [...initial]
   let steering = ['已有插话']
@@ -25,6 +32,7 @@ function fixture(
   }
   const emitQueue = () => emit({ type: 'queue_update', steering: [...steering], followUp: [...followUp] })
   const session = {
+    agent: { streamFunction },
     subscribe(listener: (event: AgentSessionEvent) => void) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -59,7 +67,25 @@ function fixture(
   const unsubscribe = bridgeEvents(session, 'test-session', win, async (sessionId) => {
     notifications.push(sessionId)
   }, now)
-  return { session, events, notifications, emit, unsubscribe, destroy: () => { destroyed = true } }
+  const startResponse = async (message: AssistantMessage) => {
+    const stream = await session.agent.streamFunction(
+      {} as Parameters<typeof session.agent.streamFunction>[0], normalizeContext({ messages: [] })
+    )
+    emit({ type: 'message_start', message })
+    return stream
+  }
+  const endResponse = async (
+    stream: AssistantMessageEventStream, message: AssistantMessage, endHook?: () => Promise<void>
+  ) => {
+    stream.end(message)
+    await stream.result()
+    await endHook?.()
+    emit({ type: 'message_end', message })
+  }
+  return {
+    session, events, notifications, emit, unsubscribe, startResponse, endResponse, streamFunction,
+    destroy: () => { destroyed = true }
+  }
 }
 
 function assistantEnd(stopReason: 'stop' | 'length' | 'error' | 'aborted'): AgentSessionEvent {
@@ -138,13 +164,13 @@ test.each([
   { durationMs: 500, outputTokens: 25, accepted: true },
   { durationMs: 0, outputTokens: 25, accepted: false },
   { durationMs: 1, outputTokens: 3441, accepted: false },
-  { durationMs: 199, outputTokens: 25, accepted: false },
-  { durationMs: 200, outputTokens: 25, accepted: true },
-  { durationMs: 500, outputTokens: 1001, accepted: false },
-  { durationMs: 200, outputTokens: 400, accepted: true },
-  { durationMs: 200, outputTokens: 401, accepted: false }
-])('assistant output sampling: %p', ({ durationMs, outputTokens, accepted }) => {
-  const timestamps = [100, 100 + durationMs]
+  { durationMs: 99, outputTokens: 25, accepted: false },
+  { durationMs: 100, outputTokens: 25, accepted: true },
+  { durationMs: 500, outputTokens: 5001, accepted: false },
+  { durationMs: 100, outputTokens: 1000, accepted: true },
+  { durationMs: 100, outputTokens: 1001, accepted: false }
+])('assistant output sampling: %p', async ({ durationMs, outputTokens, accepted }) => {
+  const timestamps = [100, 100 + durationMs, 100 + durationMs]
   const state = fixture([], () => timestamps.shift()!)
   const message = {
     role: 'assistant' as const,
@@ -159,26 +185,126 @@ test.each([
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
     }
   }
-  state.emit({ type: 'message_start', message } as AgentSessionEvent)
-  state.emit({
-    type: 'message_update', message,
-    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello', partial: message }
-  } as AgentSessionEvent)
-  state.emit({
-    type: 'message_update', message,
-    assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 1, delta: '{"path":"x"}', partial: message }
-  } as AgentSessionEvent)
-  state.emit({ type: 'message_end', message } as AgentSessionEvent)
+  const stream = await state.startResponse(message)
+  stream.push({ type: 'text_delta', contentIndex: 0, delta: 'hello', partial: message })
+  stream.push({ type: 'toolcall_delta', contentIndex: 1, delta: '{"path":"x"}', partial: message })
+  await state.endResponse(stream, message)
 
   if (accepted) {
     expect(state.events.at(-1)).toMatchObject({
       type: 'message_end',
-      message: { generation: { outputTokens, durationMs, models: ['test/test'] } }
+      message: { generation: { outputTokens, durationMs, measuredCalls: 1, totalCalls: 1, models: ['test/test'] } }
     })
   } else {
-    expect(state.events.at(-1)).toEqual({ type: 'message_end', message })
+    expect(state.events.at(-1)).toMatchObject({
+      type: 'message_end',
+      message: { generation: { outputTokens: 0, durationMs: 0, measuredCalls: 0, totalCalls: 1, models: [] } }
+    })
   }
   expect(message).not.toHaveProperty('generation')
+  state.unsubscribe()
+})
+
+test.each([0, 1000, 10_000])('timing excludes %d ms of extension hooks before session events', async (hookMs) => {
+  let clock = 0
+  const state = fixture([], () => clock)
+  const message: AssistantMessage = {
+    role: 'assistant', timestamp: 10, api: 'openai-responses', provider: 'test', model: 'test',
+    stopReason: 'stop', content: [{ type: 'text', text: 'answer' }],
+    usage: {
+      input: 10, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 110,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
+  }
+  const stream = await state.startResponse(message)
+  for (const [at, delta] of [[0, 'first'], [1000, 'last']] as const) {
+    clock = at
+    stream.push({ type: 'text_delta', contentIndex: 0, delta, partial: message })
+  }
+  await state.endResponse(stream, message, async () => {
+    await Promise.resolve()
+    // The session replays the deltas only after its hooks; the bridge must not time these copies.
+    clock += hookMs
+    state.emit({
+      type: 'message_update', message,
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'first', partial: message }
+    })
+    clock += hookMs
+  })
+  expect(state.events.at(-1)).toMatchObject({
+    message: { generation: { outputTokens: 100, durationMs: 1000, measuredCalls: 1, totalCalls: 1 } }
+  })
+  state.unsubscribe()
+  expect(state.session.agent.streamFunction).toBe(state.streamFunction)
+})
+
+test.each(['request', 'result'] as const)('timing preserves %s failures', async (failureAt) => {
+  const failure = new Error('Model stream failed')
+  const state = fixture([], () => 0, () => {
+    if (failureAt === 'request') throw failure
+    const stream = createAssistantMessageEventStream()
+    stream.result = () => Promise.reject(failure)
+    return stream
+  })
+  const response = state.session.agent.streamFunction(
+    {} as Parameters<typeof state.session.agent.streamFunction>[0], normalizeContext({ messages: [] })
+  )
+  if (failureAt === 'request') await expect(response).rejects.toBe(failure)
+  else await expect((await response).result()).rejects.toBe(failure)
+  state.unsubscribe()
+})
+
+test('sampling keeps reasoning aligned and resets across tools and unmeasured calls', async () => {
+  let clock = 0
+  const state = fixture([], () => clock)
+  const message = (timestamp: number, output: number, reasoning = 0): AssistantMessage => ({
+    role: 'assistant', timestamp, api: 'openai-responses', provider: 'test', model: 'test',
+    stopReason: 'stop', content: [{ type: 'text', text: 'answer' }],
+    usage: {
+      input: 10, output, reasoning, cacheRead: 0, cacheWrite: 0, totalTokens: output + 10,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
+  })
+  const delta = (
+    stream: AssistantMessageEventStream, at: number, type: 'text_delta' | 'thinking_delta', text: string
+  ) => {
+    clock = at
+    stream.push({ type, contentIndex: 0, delta: text, partial: message(0, 0) })
+  }
+  const thought = message(1, 2200, 2000)
+  const thoughtStream = await state.startResponse(thought)
+  delta(thoughtStream, 13_990, 'thinking_delta', 'summary')
+  delta(thoughtStream, 14_000, 'text_delta', 'first')
+  delta(thoughtStream, 15_500, 'text_delta', 'last')
+  await state.endResponse(thoughtStream, thought)
+  expect(state.events.at(-1)).toMatchObject({
+    message: { generation: { outputTokens: 200, durationMs: 1500, measuredCalls: 1, totalCalls: 1 } }
+  })
+  expect(thought.usage.output).toBe(2200)
+  expect(thought).not.toHaveProperty('generation')
+
+  clock = 100_000
+  state.emit({
+    type: 'tool_execution_end', toolCallId: 'read', toolName: 'read',
+    result: { content: [{ type: 'text', text: 'file' }], details: undefined }, isError: false
+  })
+  const held = message(2, 100)
+  const heldStream = await state.startResponse(held)
+  delta(heldStream, 100_000, 'text_delta', 'all at once')
+  clock = 101_000
+  await state.endResponse(heldStream, held)
+  expect(state.events.at(-1)).toMatchObject({
+    message: { generation: { outputTokens: 0, durationMs: 0, measuredCalls: 0, totalCalls: 1, models: [] } }
+  })
+
+  const answer = message(3, 100)
+  const answerStream = await state.startResponse(answer)
+  delta(answerStream, 200_000, 'text_delta', 'first')
+  delta(answerStream, 201_000, 'text_delta', 'last')
+  await state.endResponse(answerStream, answer)
+  expect(state.events.at(-1)).toMatchObject({
+    message: { generation: { outputTokens: 100, durationMs: 1000, measuredCalls: 1, totalCalls: 1 } }
+  })
   state.unsubscribe()
 })
 

@@ -77,6 +77,7 @@ async function fixture(): Promise<void> {
           }
           const session = {
             sessionManager: manager,
+            agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
             isStreaming: queued,
             isBashRunning: false,
             extensionRunner: { getCommand: () => undefined, emit: async () => {} },

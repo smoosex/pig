@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { BrowserWindow } from 'electron'
-import type { ImageContent } from '@earendil-works/pi-ai'
+import type { AssistantMessage, ImageContent } from '@earendil-works/pi-ai'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
-import { MIN_GENERATION_DURATION_MS, MAX_REALISTIC_TPS, type GenerationStats } from '../../shared/api'
+import type { GenerationStats } from '../../shared/api'
+import { GenerationSampler } from './generation-stats'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 
@@ -273,7 +274,29 @@ export function bridgeEvents(
   let subscribed = true
   let runActive = false
   let lastAnswerSucceeded = false
-  let generationTiming: { timestamp: number; firstOutputAt?: number; lastOutputAt?: number } | undefined
+  const sampled = new WeakMap<AssistantMessage, GenerationStats>()
+  const streamFunction = session.agent.streamFunction
+  // Session events reach this bridge only after awaited extension hooks, so they would skew both
+  // ends of the window. Time each response where its provider pushes events instead.
+  const timedStreamFunction: typeof streamFunction = async (...args) => {
+    const stream = await streamFunction(...args)
+    const sampler = new GenerationSampler()
+    const push = stream.push.bind(stream)
+    stream.push = (event) => {
+      if (event.type === 'text_delta' || event.type === 'thinking_delta' || event.type === 'toolcall_delta') {
+        sampler.record(event.type, event.delta, now())
+      }
+      push(event)
+    }
+    const result = stream.result().then((message) => {
+      sampled.set(message, sampler.finish(message, now()))
+      return message
+    })
+    // Keep this the result awaited by the SDK, so any rejection still propagates to the caller.
+    stream.result = () => result
+    return stream
+  }
+  session.agent.streamFunction = timedStreamFunction
   const lifetime = new AbortController()
   const forward = (event: AgentSessionEvent, metadataChanged = false) => {
     if (!subscribed) return
@@ -282,41 +305,12 @@ export function bridgeEvents(
       activeRuns.add(session)
       runActive = true
       lastAnswerSucceeded = false
-    } else if (event.type === 'message_start' && event.message.role === 'assistant') {
-      generationTiming = { timestamp: event.message.timestamp }
-    } else if (event.type === 'message_update' && event.message.role === 'assistant') {
-      const output = event.assistantMessageEvent
-      if (
-        (output.type === 'text_delta' || output.type === 'thinking_delta' || output.type === 'toolcall_delta') &&
-        output.delta.length > 0
-      ) {
-        if (!generationTiming || generationTiming.timestamp !== event.message.timestamp) {
-          throw new Error('Assistant output delta arrived without its message_start')
-        }
-        const at = now()
-        generationTiming.firstOutputAt ??= at
-        generationTiming.lastOutputAt = at
-      }
     }
     let generation: GenerationStats | undefined
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       lastAnswerSucceeded = event.message.stopReason === 'stop' || event.message.stopReason === 'length'
-      const timing = generationTiming?.timestamp === event.message.timestamp ? generationTiming : undefined
-      const first = timing?.firstOutputAt
-      const last = timing?.lastOutputAt
-      const outputTokens = event.message.usage?.output ?? 0
-      const durationMs = first !== undefined && last !== undefined ? last - first : 0
-      if (durationMs >= MIN_GENERATION_DURATION_MS && outputTokens > 0) {
-        const tps = outputTokens / (durationMs / 1_000)
-        if (Number.isFinite(tps) && tps <= MAX_REALISTIC_TPS) {
-          generation = {
-            outputTokens,
-            durationMs,
-            models: [`${event.message.provider}/${event.message.model}`]
-          }
-        }
-      }
-      generationTiming = undefined
+      // A message that never came from a stream (a failed request) still counts as an unmeasured call.
+      generation = sampled.get(event.message) ?? new GenerationSampler().finish(event.message, undefined)
     }
     let metadata: PastedTextDisplayMetadata | undefined
     const message = 'message' in event ? event.message : undefined
@@ -403,6 +397,7 @@ export function bridgeEvents(
     subscribed = false
     lifetime.abort()
     unsubscribe()
+    if (session.agent.streamFunction === timedStreamFunction) session.agent.streamFunction = streamFunction
     bridged.delete(session)
   }
 }

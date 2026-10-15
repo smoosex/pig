@@ -1003,12 +1003,16 @@ async function runFixture(name: string): Promise<void> {
         input: 10, output: outputTokens, cacheRead: 0, cacheWrite: 0, totalTokens: 10 + outputTokens,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
       },
-      generation: { outputTokens, durationMs, models: [`test/${model}`] }
+      generation: {
+        outputTokens, durationMs, measuredCalls: outputTokens > 0 ? 1 : 0, totalCalls: 1,
+        models: outputTokens > 0 ? [`test/${model}`] : []
+      }
     })
     state().appendLiveMessage(meta.id, { role: 'user', content: 'same prompt', timestamp: 100 })
     state().appendLiveMessage(meta.id, assistant(200, 20, 500))
     state().appendLiveMessage(meta.id, { role: 'user', content: 'same prompt', timestamp: 100 })
     state().appendLiveMessage(meta.id, assistant(300, 30, 600))
+    state().appendLiveMessage(meta.id, assistant(350, 0, 0))
     const display: DisplayTurnsResult = {
       leafId: 'second', startIndex: 0, totalTurns: 2,
       turns: [
@@ -1038,8 +1042,8 @@ async function runFixture(name: string): Promise<void> {
     api.getDisplayTurns = async () => display
     await state().hydrateTurns(meta.id)
     assert.deepEqual(runtime().generationByTurnId, {
-      first: { outputTokens: 20, durationMs: 500, models: ['test/test'] },
-      second: { outputTokens: 30, durationMs: 600, models: ['test/test'] }
+      first: { outputTokens: 20, durationMs: 500, measuredCalls: 1, totalCalls: 1, models: ['test/test'] },
+      second: { outputTokens: 30, durationMs: 600, measuredCalls: 1, totalCalls: 2, models: ['test/test'] }
     })
     assert.deepEqual(runtime().liveMessages, [])
   } else if (name === 'queued-edit-draft') {

@@ -29,6 +29,7 @@ async function fixture(name: string): Promise<void> {
     }
     const session = {
       sessionId: 'draft', bindExtensions: async () => {},
+      agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
       subscribe: () => () => {}, abort: async () => {}, dispose() {},
       extensionRunner: { emit: async () => {} }
     }
