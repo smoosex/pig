@@ -4,7 +4,9 @@
  */
 import type { Locale, LocaleSetting } from './i18n'
 import type { ToolSettingsApi } from './tool-settings'
+import type { SkillsApi } from './skills'
 export type * from './tool-settings'
+export type * from './skills'
 import type {
   PastedTextAttachment,
   PastedTextAttachmentInput,
@@ -739,7 +741,7 @@ export interface BashExecutionResult {
   truncated: boolean
 }
 
-export interface SessionApi extends ToolSettingsApi {
+export interface SessionApi extends ToolSettingsApi, SkillsApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
   listWorktreeSessions: (projectCwd: string, cwd: string) => Promise<SessionMeta[]>

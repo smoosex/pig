@@ -14,6 +14,7 @@ async function fixture(): Promise<void> {
     ['ThemePane', 'settings.sectionTheme', 'settings.sectionThemeDescription'],
     ['ProvidersPane', 'settings.sectionProviders', 'settings.sectionProvidersDescription'],
     ['McpPane', 'mcp.title', 'mcp.description'],
+    ['SkillsPane', 'skills.title', 'skills.description'],
     ['PluginsPane', 'settings.sectionPlugins', 'settings.sectionPluginsDescription']
   ] as const
   for (const [name] of panes) {

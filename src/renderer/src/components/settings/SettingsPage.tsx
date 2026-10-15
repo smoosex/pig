@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Component, GamepadDirectional, Rainbow, Snowflake, Webhook } from 'lucide-react'
+import { BookOpen, ChevronLeft, Component, GamepadDirectional, Rainbow, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
@@ -12,6 +12,7 @@ import { ThemePane } from './ThemePane'
 import { ProvidersPane } from './ProvidersPane'
 import { PluginsPane } from './PluginsPane'
 import { McpPane } from './McpPane'
+import { SkillsPane } from './SkillsPane'
 
 const sections = [
   {
@@ -41,6 +42,13 @@ const sections = [
     description: 'mcp.description',
     icon: Webhook,
     component: McpPane
+  },
+  {
+    id: 'skills',
+    title: 'skills.title',
+    description: 'skills.description',
+    icon: BookOpen,
+    component: SkillsPane
   },
   {
     id: 'plugins',

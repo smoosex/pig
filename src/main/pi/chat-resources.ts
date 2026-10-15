@@ -1,7 +1,7 @@
 /** Load only Pig-approved extensions, preserving Chat's restricted instructions and skills. */
-import { homedir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
+import { applySkillPreferences } from '../skills/manager'
 import {
   DefaultResourceLoader,
   getAgentDir,
@@ -56,7 +56,8 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
     settingsManager: options.settingsManager ?? sessionResourceSettings(cwd, agentDir),
     extensionFactories: options.extensionFactories,
     noExtensions: true,
-    additionalExtensionPaths: pluginPaths
+    additionalExtensionPaths: pluginPaths,
+    skillsOverride: (base) => applySkillPreferences(base)
   })
   await loader.reload()
   return loader
@@ -64,7 +65,6 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
 
 export async function createChatResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
-  const userAgents = resolve(homedir(), '.agents')
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
@@ -75,12 +75,7 @@ export async function createChatResourceLoader(cwd: string, pluginPaths: string[
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),
-    skillsOverride: (base) => ({
-      skills: base.skills.filter(
-        (skill) => isInside(skill.filePath, agentDir) || isInside(skill.filePath, userAgents)
-      ),
-      diagnostics: base.diagnostics
-    }),
+    skillsOverride: (base) => applySkillPreferences(base, true),
     appendSystemPrompt: [CHAT_APPEND_PROMPT]
   })
   await loader.reload()

@@ -176,6 +176,20 @@ const api: SessionApi = {
   },
   supportsGlass: process.argv.includes(GLASS_SURFACE_ARGUMENT),
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  listSkills: () => ipcRenderer.invoke('skills:list'),
+  setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:enable', id, enabled),
+  removeSkill: (id) => ipcRenderer.invoke('skills:remove', id),
+  readSkill: (id) => ipcRenderer.invoke('skills:read', id),
+  openSkillDirectory: (id) => ipcRenderer.invoke('skills:open-directory', id),
+  probeSkills: (source) => ipcRenderer.invoke('skills:probe', source),
+  discardSkillProbe: (token) => ipcRenderer.invoke('skills:discard-probe', token),
+  installSkills: (token, paths) => ipcRenderer.invoke('skills:install', token, paths),
+  searchSkillMarket: (query) => ipcRenderer.invoke('skills:search', query),
+  onSkillsChanged: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on('skills:changed', handler)
+    return () => ipcRenderer.off('skills:changed', handler)
+  },
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
   installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),
   pickPluginPath: () => ipcRenderer.invoke('plugins:pick-path'),
