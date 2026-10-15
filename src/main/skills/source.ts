@@ -125,7 +125,7 @@ export async function prepareSkillSource(input: string, fetcher: SkillFetcher = 
       kind: 'github', repo: source.repo, commit, files,
       skills: results.flatMap((result) => result.skills).filter((skill, index, list) => list.findIndex((other) => other.filePath === skill.filePath) === index),
       diagnostics: [
-        ...skipped.map((file): ResourceDiagnostic => ({ type: 'warning', message: 'Skipped: the path is not safe to import', path: join(root, file.path) })),
+        ...skipped.map((file): ResourceDiagnostic => ({ type: 'warning', message: 'Skipped: the path is not safe to import.', path: join(root, file.path) })),
         ...results.flatMap((result) => result.diagnostics)
       ], cleanup: () => rm(temporary, { recursive: true, force: true })
     }
@@ -147,7 +147,7 @@ export async function copyPreparedSkill(prepared: PreparedSkills, skill: Skill, 
     const prefix = relative(prepared.root, skill.baseDir).split(sep).join('/')
     const files = prepared.files!.filter((file) => !prefix || file.path.startsWith(`${prefix}/`))
     if (files.some((file) => !['100644', '100755'].includes(file.mode))) throw new Error('Skills containing symbolic links are not supported')
-    if (files.some((file) => !safeSkillPath(file.path))) throw new Error('Skill contains a file path that is not safe to import')
+    if (files.some((file) => !safeSkillPath(file.path))) throw new Error('Skill contains a file path that is not safe to import.')
     if (files.length > 2000 || files.reduce((sum, file) => sum + file.size, 0) > MAX_SKILL || files.some((file) => file.size > MAX_FILE)) throw new Error('Skill exceeds the import size limit')
     // Buffers preserve binary supporting files; the immutable commit is the one shown by the probe.
     await eachLimit(files, async (file) => {
