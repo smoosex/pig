@@ -56,6 +56,7 @@ async function fixture(scenario: Scenario): Promise<void> {
     })
     Object.assign(window.api, {
       getCommands: async () => [], onPluginsChanged: () => () => {},
+      isMemoryPluginEnabled: async () => false,
       prepareSession: async (sessionId: string) => ({ sessionId, cwd: '/project', created: false })
     })
   }

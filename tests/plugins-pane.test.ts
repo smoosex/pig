@@ -1,15 +1,46 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { MemoryPluginSettings, MemoryPluginSettingsPatch } from '../src/shared/api'
+import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const patches: MemoryPluginSettingsPatch[] = []
+  const scopeChanges: { id: string; scopes: PluginScope[] }[] = []
+  const scopeWaits = new Map<string, Promise<void>>()
+  const installedSources: string[] = []
+  let installation: ReturnType<typeof deferred> | null = null
+  let rejectScopeChange = false
+  let plugins: PluginInfo[] = [
+    { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
+    { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true },
+    { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
+  ]
   let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
   Object.assign(window, { api: {
-    listPlugins: async () => [{ id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', enabled: true, available: true }],
+    listPlugins: async () => plugins,
+    setPluginScopes: async (id: string, scopes: PluginScope[]) => {
+      if (rejectScopeChange) throw new Error('Scope save failed')
+      scopeChanges.push({ id, scopes })
+      plugins = plugins.map((plugin) => plugin.id === id ? { ...plugin, scopes } : plugin)
+      const snapshot = plugins
+      await scopeWaits.get(id)
+      return snapshot
+    },
+    installPlugin: async (source: string) => {
+      installedSources.push(source)
+      plugins = [...plugins, { id: 'installed', kind: 'local', name: 'Installed', source, scopes: [], available: true }]
+      const snapshot = plugins
+      await installation?.promise
+      return snapshot
+    },
     onPluginsChanged: () => () => {},
     getMemoryPluginDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
     getMemoryPluginSettings: async () => memoryConfig,
@@ -38,6 +69,105 @@ async function fixture(): Promise<void> {
     assert.equal(document.querySelector('[aria-label="观察阈值（token）"]'), null, 'settings are hidden until configured')
     const open = document.querySelector<HTMLButtonElement>('[aria-label="配置 Observational Memory"]')
     assert.ok(open)
+    const group = document.querySelector<HTMLElement>('[aria-label="Observational Memory 启用范围"]')
+    assert.ok(group)
+    assert.equal(group.parentElement?.lastElementChild, group, 'scope selection is the rightmost control')
+    assert.equal(group.previousElementSibling, open, 'configuration sits immediately to the left')
+    assert.equal(group.dataset.size, 'xs')
+    assert.equal(group.dataset.spacing, '0.5')
+    assert.ok(group.classList.contains('border') && group.classList.contains('p-px'))
+    const [project, chat] = [...group.querySelectorAll<HTMLButtonElement>('button')]
+    assert.equal(project.textContent, '项目')
+    assert.equal(chat.textContent, 'Chat')
+    const selected = () => [project, chat].map((item) => item.getAttribute('aria-pressed'))
+    assert.deepEqual(selected(), ['true', 'false'])
+    await act(async () => { chat.click() })
+    assert.deepEqual(selected(), ['true', 'true'])
+    await act(async () => { project.click() })
+    assert.deepEqual(selected(), ['false', 'true'])
+    await act(async () => { chat.click() })
+    assert.deepEqual(selected(), ['false', 'false'])
+    await act(async () => { project.click() })
+    assert.deepEqual(scopeChanges.map((change) => change.scopes), [['project', 'chat'], ['chat'], [], ['project']])
+
+    const sourceInput = host.querySelector<HTMLInputElement>('input')!
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    await act(async () => {
+      setValue.call(sourceInput, '/example-plugin')
+      sourceInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const choose = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '选择本地路径')!
+    const install = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '安装')!
+    const assertInstallerIdle = () => {
+      assert.equal(choose.disabled, false)
+      assert.equal(install.disabled, false)
+      assert.equal(install.textContent, '安装')
+      assert.equal(sourceInput.disabled, false)
+    }
+    const otherGroup = document.querySelector('[aria-label="Pi Review 启用范围"]')!
+    const [otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
+    const first = deferred()
+    const second = deferred()
+    scopeWaits.set('observational-memory', first.promise)
+    scopeWaits.set('pi-review', second.promise)
+    await act(async () => { chat.click() })
+    assert.equal(project.disabled, true)
+    assert.equal(chat.disabled, true)
+    assert.equal(otherChat.disabled, false, 'another plugin remains interactive during a slow save')
+    assertInstallerIdle()
+    await act(async () => { otherChat.click() })
+    assert.equal(otherProject.disabled, true)
+    await act(async () => { second.resolve() })
+    assert.equal(project.disabled, true, 'another save finishing cannot release this plugin’s pending state')
+    assert.equal(otherProject.disabled, false)
+    assertInstallerIdle()
+    await act(async () => { first.resolve() })
+    assert.equal(project.disabled, false)
+    assert.equal(otherChat.getAttribute('aria-pressed'), 'true', 'a delayed older reply cannot revert another plugin')
+    assertInstallerIdle()
+    scopeWaits.clear()
+
+    const turningOff = deferred()
+    scopeWaits.set('observational-memory', turningOff.promise)
+    await act(async () => { chat.click() })
+    assertInstallerIdle()
+    await act(async () => { turningOff.resolve() })
+    assert.deepEqual(selected(), ['true', 'false'])
+    assertInstallerIdle()
+    scopeWaits.clear()
+
+    installation = deferred()
+    await act(async () => { install.click() })
+    assert.deepEqual(installedSources, ['/example-plugin'])
+    assert.equal(choose.disabled, true)
+    assert.equal(install.disabled, true)
+    assert.equal(install.textContent, '处理中…')
+    assert.equal(sourceInput.disabled, true)
+    assert.equal(project.disabled, false, 'installing does not lock unrelated plugin rows')
+    await act(async () => { chat.click() })
+    assert.equal(choose.disabled, true, 'a scope save cannot release the installation state')
+    assert.equal(install.textContent, '处理中…')
+    await act(async () => { installation!.resolve() })
+    assert.equal(choose.disabled, false)
+    assert.equal(install.textContent, '安装')
+    assert.equal(install.disabled, true, 'a successful install clears the source')
+    assert.equal(sourceInput.disabled, false)
+    assert.deepEqual(selected(), ['true', 'true'], 'the installation’s older reply cannot revert a newer scope save')
+    await act(async () => { chat.click() })
+
+    rejectScopeChange = true
+    await act(async () => { chat.click() })
+    assert.deepEqual(selected(), ['true', 'false'], 'failed saves keep the previous selection')
+    assert.match(document.querySelector('[role="alert"]')?.textContent ?? '', /Scope save failed/)
+    rejectScopeChange = false
+    const missing = document.querySelector('[aria-label="Missing plugin 启用范围"]')!
+    const [missingProject, missingChat] = [...missing.querySelectorAll<HTMLButtonElement>('button')]
+    await act(async () => { missingProject.click() })
+    assert.equal(missingProject.disabled, true, 'unavailable plugins cannot gain a scope')
+    assert.equal(missingChat.disabled, false, 'an unavailable plugin can still shed its remaining scope')
+    await act(async () => { missingChat.click() })
+    assert.equal(missingChat.disabled, true)
+    assert.deepEqual(scopeChanges.at(-1), { id: 'missing', scopes: [] })
     await act(async () => { open.click() })
     await flush()
     assert.ok(document.querySelector('[data-slot="dialog-content"]'))
@@ -61,7 +191,6 @@ async function fixture(): Promise<void> {
     const idleSwitch = document.querySelector<HTMLButtonElement>('[aria-label="仅在空闲时运行"]')
     assert.ok(idleSwitch)
     assert.equal(idleSwitch.getAttribute('aria-checked'), 'false')
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     await act(async () => {
       setValue.call(input, '900'); input.dispatchEvent(new Event('input', { bubbles: true }))
       setValue.call(catchUp, '0'); catchUp.dispatchEvent(new Event('input', { bubbles: true }))
@@ -107,7 +236,7 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--plugins-pane-fixture')) {
   await fixture()
 } else {
-  test('plugin settings open in a dialog and save Pig-only global config', async () => {
+  test('plugin scopes are independently selectable and settings save Pig-only global config', async () => {
     const child = Bun.spawn([process.execPath, import.meta.path, '--plugins-pane-fixture'], { stdout: 'pipe', stderr: 'pipe' })
     const timer = setTimeout(() => child.kill(), 12_000)
     try {

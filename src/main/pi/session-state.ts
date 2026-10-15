@@ -8,7 +8,7 @@ export interface LiveSession {
   cwd: string
   agentSession: AgentSession
   unsubscribe: () => void
-  pluginPaths?: string[]
+  pluginPaths: string[]
   win?: BrowserWindow
 }
 

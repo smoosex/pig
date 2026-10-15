@@ -1,3 +1,4 @@
+/** Load only Pig-approved extensions, preserving Chat's restricted instructions and skills. */
 import { homedir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
@@ -61,7 +62,7 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
   return loader
 }
 
-export async function createChatResourceLoader(cwd: string, options: SessionResourceOptions = {}): Promise<ResourceLoader> {
+export async function createChatResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {
   const agentDir = getAgentDir()
   const userAgents = resolve(homedir(), '.agents')
   const loader = new DefaultResourceLoader({
@@ -70,6 +71,7 @@ export async function createChatResourceLoader(cwd: string, options: SessionReso
     settingsManager: options.settingsManager ?? sessionResourceSettings(cwd, agentDir),
     extensionFactories: options.extensionFactories,
     noExtensions: true,
+    additionalExtensionPaths: pluginPaths,
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),

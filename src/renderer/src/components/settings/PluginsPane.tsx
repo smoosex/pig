@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, FolderOpen, Plus, Settings, X } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useModelCatalogStore } from '../../stores/model-catalog'
-import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo } from '../../ipc/api'
+import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo, type PluginScope } from '../../ipc/api'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu'
@@ -33,7 +34,9 @@ export function PluginsPane() {
   const t = useT()
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [source, setSource] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [pendingPluginIds, setPendingPluginIds] = useState<Set<string>>(() => new Set())
+  const loadRequest = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [toRemove, setToRemove] = useState<PluginInfo | null>(null)
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
@@ -62,15 +65,22 @@ export function PluginsPane() {
     ? models.find((item) => item.provider === fallbackProvider.trim() && item.id === fallbackId.trim()) ?? null
     : null
 
+  const loadPlugins = useCallback(async () => {
+    const request = ++loadRequest.current
+    try {
+      const items = await api.listPlugins()
+      if (request === loadRequest.current) setPlugins(items)
+    } catch (failure) {
+      if (request === loadRequest.current) setError(errorText(failure))
+    }
+  }, [])
+
   useEffect(() => {
-    let cancelled = false
-    const load = () => void api.listPlugins().then((items) => {
-      if (!cancelled) setPlugins(items)
-    }, (failure) => { if (!cancelled) setError(errorText(failure)) })
+    const load = () => { void loadPlugins() }
     load()
     const off = api.onPluginsChanged(load)
-    return () => { cancelled = true; off() }
-  }, [])
+    return () => { loadRequest.current++; off() }
+  }, [loadPlugins])
 
   useEffect(() => {
     if (selectedPluginId !== 'observational-memory') return
@@ -107,11 +117,35 @@ export function PluginsPane() {
   }, [selectedPlugin?.id, selectedPlugin?.settings])
 
   const act = async (operation: () => Promise<PluginInfo[]>) => {
-    setBusy(true)
     setError(null)
-    try { setPlugins(await operation()) }
-    catch (failure) { setError(errorText(failure)) }
-    finally { setBusy(false) }
+    try {
+      await operation()
+      // Independent actions can finish out of order; their full-list replies may already be stale.
+      await loadPlugins()
+    } catch (failure) { setError(errorText(failure)) }
+  }
+
+  const actOnPlugin = async (id: string, operation: () => Promise<PluginInfo[]>) => {
+    setPendingPluginIds((current) => new Set(current).add(id))
+    try { await act(operation) }
+    finally {
+      setPendingPluginIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
+  const installPlugin = async () => {
+    setInstalling(true)
+    try {
+      await act(async () => {
+        const result = await api.installPlugin(source.trim())
+        setSource('')
+        return result
+      })
+    } finally { setInstalling(false) }
   }
 
   const saveMemory = async () => {
@@ -180,22 +214,32 @@ export function PluginsPane() {
     <SettingsRow key={plugin.id} title={plugin.name} description={plugin.error ?? plugin.source}>
       <div className="flex items-center gap-2">
         {!plugin.available ? <Badge variant="destructive">{t('plugins.missing')}</Badge> : null}
-        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.settings ? (
-          <Button size="icon-sm" variant="ghost" aria-label={`${t('plugins.configure')} ${plugin.name}`}
-            onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
-        ) : null}
-        <span className="text-xs text-muted-foreground">{t(plugin.enabled ? 'plugins.enabled' : 'plugins.disabled')}</span>
-        <Switch aria-label={plugin.name} checked={plugin.enabled} disabled={busy || (!plugin.available && !plugin.enabled)}
-          onCheckedChange={(enabled) => void act(() => api.setPluginEnabled(plugin.id, enabled))} />
         {plugin.kind !== 'system' ? (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={busy} aria-label={plugin.name}><ChevronDown /></Button></DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={plugin.name}><ChevronDown /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end"><DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => void act(() => api.updatePlugin(plugin.id))}>{t('plugins.update')}</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onSelect={() => setToRemove(plugin)} disabled={plugin.enabled}>{t('plugins.remove')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void actOnPlugin(plugin.id, () => api.updatePlugin(plugin.id))}>{t('plugins.update')}</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onSelect={() => setToRemove(plugin)} disabled={plugin.scopes.length > 0}>{t('plugins.remove')}</DropdownMenuItem>
             </DropdownMenuGroup></DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.settings ? (
+          <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
+            onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
+        ) : null}
+        <ToggleGroup
+          type="multiple"
+          spacing={0.5}
+          size="xs"
+          className="shrink-0 border p-px"
+          value={plugin.scopes}
+          disabled={pendingPluginIds.has(plugin.id)}
+          onValueChange={(scopes) => void actOnPlugin(plugin.id, () => api.setPluginScopes(plugin.id, scopes as PluginScope[]))}
+          aria-label={`${plugin.name} ${t('plugins.enabledIn')}`}
+        >
+          <ToggleGroupItem value="project" disabled={!plugin.available && !plugin.scopes.includes('project')}>{t('plugins.project')}</ToggleGroupItem>
+          <ToggleGroupItem value="chat" disabled={!plugin.available && !plugin.scopes.includes('chat')}>{t('plugins.chat')}</ToggleGroupItem>
+        </ToggleGroup>
       </div>
     </SettingsRow>
   )
@@ -203,7 +247,10 @@ export function PluginsPane() {
   return (
     <div className="flex flex-col gap-8">
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-      <p className="text-xs text-muted-foreground">{t('plugins.reloadHint')}</p>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-muted-foreground">{t('plugins.scopeHint')}</p>
+        <p className="text-xs text-muted-foreground">{t('plugins.reloadHint')}</p>
+      </div>
       <div className="flex flex-col gap-2">
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t('plugins.system')}</p>
         <SettingsCard>{system.map(renderPlugin)}</SettingsCard>
@@ -213,9 +260,9 @@ export function PluginsPane() {
         {external.length ? <SettingsCard>{external.map(renderPlugin)}</SettingsCard> : <p className="text-sm text-muted-foreground">{t('plugins.none')}</p>}
         <p className="text-xs text-muted-foreground">{t('plugins.installWarning')} {t('plugins.configHint')}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Input className="min-w-52 flex-1" value={source} placeholder={t('plugins.sourcePlaceholder')} onChange={(event) => setSource(event.target.value)} />
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void api.pickPluginPath().then((path) => { if (path) setSource(path) }, (failure) => setError(errorText(failure)))}><FolderOpen data-icon="inline-start" />{t('plugins.choosePath')}</Button>
-          <Button size="sm" disabled={busy || !source.trim()} onClick={() => void act(async () => { const result = await api.installPlugin(source.trim()); setSource(''); return result })}><Plus data-icon="inline-start" />{busy ? t('plugins.working') : t('plugins.install')}</Button>
+          <Input className="min-w-52 flex-1" value={source} disabled={installing} placeholder={t('plugins.sourcePlaceholder')} onChange={(event) => setSource(event.target.value)} />
+          <Button variant="outline" size="sm" disabled={installing} onClick={() => void api.pickPluginPath().then((path) => { if (path) setSource(path) }, (failure) => setError(errorText(failure)))}><FolderOpen data-icon="inline-start" />{t('plugins.choosePath')}</Button>
+          <Button size="sm" disabled={installing || !source.trim()} onClick={() => void installPlugin()}><Plus data-icon="inline-start" />{installing ? t('plugins.working') : t('plugins.install')}</Button>
         </div>
       </div>
       <Dialog open={!!selectedPluginId} onOpenChange={(open) => { if (!open) setSelectedPluginId(null) }}>
@@ -319,7 +366,7 @@ export function PluginsPane() {
         <DialogContent><DialogHeader><DialogTitle>{t('plugins.remove')} {toRemove?.name}</DialogTitle><DialogDescription>{toRemove?.source}</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setToRemove(null)}>{t('common.cancel')}</Button>
-            <Button variant="destructive" onClick={() => { const plugin = toRemove; setToRemove(null); if (plugin) void act(() => api.removePlugin(plugin.id)) }}>{t('plugins.remove')}</Button>
+            <Button variant="destructive" onClick={() => { const plugin = toRemove; setToRemove(null); if (plugin) void actOnPlugin(plugin.id, () => api.removePlugin(plugin.id)) }}>{t('plugins.remove')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

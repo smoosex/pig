@@ -23,7 +23,7 @@ async function withTestSession<T>(fn: (session: Awaited<ReturnType<typeof create
   try {
     // A fresh directory per run, so concurrent tests never share a working directory.
     cwd = await mkdtemp(join(tmpdir(), 'pig-web-search-test-'))
-    const resourceLoader = await createNoExtensionsResourceLoader(cwd, await enabledPluginPaths())
+    const resourceLoader = await createNoExtensionsResourceLoader(cwd, await enabledPluginPaths('any'))
     const extensionErrors = resourceLoader.getExtensions().errors
     if (extensionErrors.length) {
       throw new Error(extensionErrors.map((item) => `${item.path}: ${item.error}`).join('\n'))
