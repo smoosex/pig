@@ -4,6 +4,46 @@
  * Placeholders are `{name}` and are filled by `translate`.
  */
 export const zh = {
+  skills: {
+    title: 'Skills', description: '管理 Skills',
+    installed: '已安装', discover: '发现', add: '添加 Skill', refresh: '重新扫描',
+    search: '搜索名称、描述或来源…', marketSearch: '在 skills.sh 搜索 Skills…',
+    managed: 'Pig 管理', discovered: '自动发现', managedHint: '导入的副本由 Pig 保存，可在这里移除。',
+    discoveredHint: '来自个人 Pi 配置与 ~/.agents/skills。开关只影响 Pig，不修改原文件或其他工具。',
+    external: '来自其他 Agent', agentClaude: 'Claude Code', agentCodex: 'Codex',
+    externalHint: '扫描 Claude Code 与 Codex 的 Skills 目录，默认关闭。启用后 Pig 直接读取原文件，不复制也不修改，也不会同步给其他工具。',
+    scopeHint: '这里管理个人 Skills；项目内的 Skills 仍由对应项目提供。Agent 只在需要时读取完整指引。',
+    reloadHint: '修改会自动应用到空闲会话；运行中的会话在任务结束后重新加载。',
+    count: '{n} 个 Skills · {enabled} 个已启用', groupCount: '{n} 个',
+    empty: '还没有个人 Skills', emptyDescription: '从本地目录或 GitHub 导入，或在「发现」中寻找适合你的工作方法。',
+    noMatches: '没有匹配的 Skills', noMatchesDescription: '试试其他关键词，或清空搜索。',
+    loading: '正在加载…', manualOnly: '仅手动调用', unavailable: '文件缺失或无效', warning: '需要检查',
+    enable: '启用 {name}', more: '{name} 的更多操作', view: '查看 SKILL.md',
+    openDirectory: '打开所在目录', copyPath: '复制路径', copyCommand: '复制调用命令', remove: '移除',
+    removeTitle: '移除 {name}？', removeDescription: '仅移除 Pig 保存的副本并停用它，副本会保留在 Pig 的备份目录。原始目录和其他工具的 Skills 不受影响。',
+    removing: '正在移除…', close: '关闭', cancel: '取消', done: '完成',
+    source: '来源', sourcePlaceholder: 'owner/repo、GitHub 链接或本地绝对路径',
+    sourceHint: '支持公开 GitHub 仓库及子目录，或包含 SKILL.md 的本地目录。',
+    chooseDirectory: '选择目录', scan: '查找 Skills', scanning: '正在查找…',
+    importWarning: 'Skills 可包含运行脚本的指引。请确认来源可信；导入会复制文件到 Pig，不执行仓库代码，也不改动原目录。',
+    preview: '找到 {n} 个 Skills', selectAll: '全选', selectNone: '取消全选', alreadyInstalled: '已有同名 Skill',
+    noCandidates: '没有找到可导入的 SKILL.md', noCandidatesDescription: '检查目录或仓库地址；每个 Skill 需要有效的描述和名称。',
+    install: '安装 {n} 个 Skills', installing: '正在安装…', installedCount: '已安装 {n} 个 Skills',
+    skipped: '{name} 未安装：{error}', probeIssues: '部分文件未能加载', expiredHint: '请重新查找来源后再安装。',
+    detailDescription: '只读预览。可打开目录，在自己的编辑器中修改。',
+    featured: '精选 Skills', marketHint: '精选条目可离线浏览；搜索结果来自 skills.sh。',
+    marketEmpty: '没有找到相关 Skills', marketEmptyDescription: '换个关键词，或直接通过 GitHub 地址添加。',
+    marketFailed: '在线搜索暂不可用；以下仅显示匹配的精选条目。',
+    inspectInstall: '查看并安装', added: '已安装', installs: '{n} 次安装', repository: 'GitHub 仓库',
+    featuredDescriptions: {
+      'frontend-design': '设计并实现有辨识度、可用于生产的 Web 界面。',
+      'vercel-react-best-practices': 'Vercel 团队整理的 React 与 Next.js 性能实践。',
+      'agent-browser': '浏览网页、填写表单和自动化浏览器操作。',
+      pdf: '读取、提取、创建和处理 PDF 文档。',
+      docx: '创建、编辑和检查 Word 文档。',
+      'find-skills': '为新的任务发现和安装合适的 Skills。'
+    }
+  },
   mcp: {
     title: 'MCP', description: '管理 MCP 服务',
     tools: '工具', codemodeDescription: '允许模型通过 JavaScript 编排工具调用；关闭不影响 MCP 独立调用。',

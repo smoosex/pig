@@ -2,6 +2,46 @@ import type { Messages } from './zh'
 
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
+  skills: {
+    title: 'Skills', description: 'Manage skills',
+    installed: 'Installed', discover: 'Discover', add: 'Add skill', refresh: 'Rescan',
+    search: 'Search names, descriptions or sources…', marketSearch: 'Search skills on skills.sh…',
+    managed: 'Managed by Pig', discovered: 'Automatically discovered', managedHint: 'Pig stores imported copies. Only these can be removed here.',
+    discoveredHint: 'From your personal Pi configuration and ~/.agents/skills. Switches affect Pig only, not source files or other tools.',
+    external: 'From other agents', agentClaude: 'Claude Code', agentCodex: 'Codex',
+    externalHint: 'Scans the Claude Code and Codex skill directories. Off by default. Once enabled, Pig reads the original files in place without copying or changing them, and does not sync them to other tools.',
+    scopeHint: 'Manage personal skills here. Project skills stay with their projects. The agent reads full instructions only when needed.',
+    reloadHint: 'Changes reload idle sessions automatically. Running sessions reload after their task finishes.',
+    count: '{n} skills · {enabled} enabled', groupCount: '{n} skills',
+    empty: 'No personal skills yet', emptyDescription: 'Import a local folder or GitHub repository, or find a new workflow in Discover.',
+    noMatches: 'No matching skills', noMatchesDescription: 'Try a different keyword or clear your search.',
+    loading: 'Loading…', manualOnly: 'Manual invocation only', unavailable: 'Missing or invalid files', warning: 'Needs attention',
+    enable: 'Enable {name}', more: 'More actions for {name}', view: 'Read SKILL.md',
+    openDirectory: 'Open directory', copyPath: 'Copy path', copyCommand: 'Copy invocation', remove: 'Remove',
+    removeTitle: 'Remove {name}?', removeDescription: 'Disable and remove only the copy stored by Pig, keeping it in Pig’s backup directory. Original folders and other tools are not affected.',
+    removing: 'Removing…', close: 'Close', cancel: 'Cancel', done: 'Done',
+    source: 'Source', sourcePlaceholder: 'owner/repo, GitHub URL or absolute local path',
+    sourceHint: 'Public GitHub repositories and subdirectories, or a local directory containing SKILL.md.',
+    chooseDirectory: 'Choose folder', scan: 'Find skills', scanning: 'Looking for skills…',
+    importWarning: 'Skills may instruct the agent to run scripts. Review unfamiliar sources. Importing copies files into Pig without running repository code or changing the original folder.',
+    preview: '{n} skills found', selectAll: 'Select all', selectNone: 'Select none', alreadyInstalled: 'Name already installed',
+    noCandidates: 'No importable SKILL.md found', noCandidatesDescription: 'Check the folder or repository. Each skill needs a valid name and description.',
+    install: 'Install {n} skills', installing: 'Installing…', installedCount: '{n} skills installed',
+    skipped: '{name} was not installed: {error}', probeIssues: 'Some files could not be loaded', expiredHint: 'Scan the source again before installing.',
+    detailDescription: 'Read-only preview. Open the folder to make changes in your own editor.',
+    featured: 'Featured skills', marketHint: 'Featured entries work offline. Search results come from skills.sh.',
+    marketEmpty: 'No skills found', marketEmptyDescription: 'Try another keyword or add a GitHub repository directly.',
+    marketFailed: 'Online search is unavailable. Only matching featured entries are shown below.',
+    inspectInstall: 'Review and install', added: 'Installed', installs: '{n} installs', repository: 'GitHub repository',
+    featuredDescriptions: {
+      'frontend-design': 'Build distinctive, production-ready web interfaces.',
+      'vercel-react-best-practices': 'React and Next.js performance guidelines from Vercel.',
+      'agent-browser': 'Browse websites, fill forms and automate browser workflows.',
+      pdf: 'Read, extract, create and manipulate PDF documents.',
+      docx: 'Create, edit and inspect Word documents.',
+      'find-skills': 'Find and install skills for new workflows.'
+    }
+  },
   mcp: {
     title: 'MCP', description: 'Manage MCP servers',
     tools: 'Tools', codemodeDescription: 'Let the model orchestrate tools with JavaScript. Disabling this does not disable independent MCP calls.',

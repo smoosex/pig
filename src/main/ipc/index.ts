@@ -7,6 +7,7 @@ import { registerFilesIpc } from './files'
 import { registerPluginIpc } from './plugins'
 import { registerMcpIpc } from './mcp'
 import { registerModelIpc } from './models'
+import { registerSkillsIpc } from './skills'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -18,4 +19,5 @@ export function registerIpc(): void {
   registerPluginIpc()
   registerMcpIpc()
   registerModelIpc()
+  registerSkillsIpc()
 }
