@@ -42,6 +42,7 @@ async function fixture(scenario: string): Promise<void> {
     sessionId,
     sessionFile,
     sessionManager: manager,
+    agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
     bindExtensions: async () => {},
     setModel: async () => {
       modelCalls++

@@ -930,39 +930,44 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { notice!.click(); await Bun.sleep(0) })
       assert.ok(container.textContent?.includes('保留这条记忆'))
     } else if (name === 'tps') {
-      const first = { ...sourceRequest, generation: { outputTokens: 10, durationMs: 500, models: ['synthetic/synthetic'] } }
+      const generation = (
+        outputTokens: number, durationMs: number, models = ['synthetic/synthetic'], measuredCalls = 1, totalCalls = 1
+      ) => ({ outputTokens, durationMs, models, measuredCalls, totalCalls })
+      const first = { ...sourceRequest, generation: generation(10, 500) }
       const second = {
         ...sourceRequest,
         timestamp: 2_500,
         stopReason: 'stop' as const,
-        generation: { outputTokens: 30, durationMs: 500, models: ['synthetic/synthetic'] }
+        generation: generation(30, 500)
       }
-      const turn = buildTurn([sourceUser, first, sourceResult, second], false)
-      assert.deepEqual(turn.generation, { outputTokens: 40, durationMs: 1_000, models: ['synthetic/synthetic'] })
+      const skipped = { ...sourceRequest, timestamp: 2_100, content: [], generation: generation(0, 0, [], 0, 1) }
+      const turn = buildTurn([sourceUser, first, sourceResult, skipped, second], false)
+      assert.deepEqual(turn.generation, generation(40, 1_000, ['synthetic/synthetic'], 2, 3))
       await render({ ...turn, id: 'tps', workedMs: 3_000 })
       const speed = separator().querySelector<HTMLElement>('[title]')!
-      assert.equal(speed.textContent?.trim(), '· 40.0 tok/s')
-      assert.equal(speed.title, '输出速度，不包含首字等待和工具执行时间')
+      assert.equal(speed.textContent?.trim(), '· 40.0 tok/s · 2/3 次调用')
+      assert.match(speed.title, /流式输出速度估算.*仅统计正文.*不包含首字等待和工具执行时间/)
 
       // A model switch mid-turn sums two models' samples into one figure, so the legend has to name
       // both rather than present the blend as a single model's decode speed.
       const mixed = buildTurn([
         sourceUser,
-        { ...first, generation: { outputTokens: 10, durationMs: 500, models: ['a/one'] } },
+        { ...first, generation: generation(10, 500, ['a/one']) },
         sourceResult,
-        { ...second, generation: { outputTokens: 30, durationMs: 500, models: ['b/two'] } }
+        skipped,
+        { ...second, generation: generation(30, 500, ['b/two']) }
       ], false)
-      assert.deepEqual(mixed.generation, { outputTokens: 40, durationMs: 1_000, models: ['a/one', 'b/two'] })
+      assert.deepEqual(mixed.generation, generation(40, 1_000, ['a/one', 'b/two'], 2, 3))
       await render({ ...mixed, id: 'tps-mixed', workedMs: 3_000 })
       const mixedSpeed = separator().querySelector<HTMLElement>('[title]')!
-      assert.equal(mixedSpeed.textContent?.trim(), '· 40.0 tok/s')
+      assert.equal(mixedSpeed.textContent?.trim(), '· 40.0 tok/s · 2/3 次调用')
       assert.match(mixedSpeed.title, /本轮切换过模型（a\/one \/ b\/two）/)
 
       await render(makeTurn({
         answer: [{ type: 'text', text: 'plain answer' }],
         streaming: false,
         workedMs: 2_000,
-        generation: { outputTokens: 20, durationMs: 500, models: ['synthetic/synthetic'] }
+        generation: generation(20, 500)
       }))
       const standalone = container.querySelector<HTMLElement>('[data-slot="marker"][data-variant="separator"]')!
       assert.match(standalone.textContent ?? '', /工作耗时 2 秒.*40.0 tok\/s/)
@@ -978,7 +983,7 @@ async function runFixture(name: string): Promise<void> {
         answer: [{ type: 'text', text: 'answer after summary' }],
         streaming: false,
         workedMs: 3_000,
-        generation: { outputTokens: 20, durationMs: 500, models: ['synthetic/synthetic'] }
+        generation: generation(20, 500)
       }))
       const markers = [...container.querySelectorAll<HTMLElement>('[data-slot="marker"]')]
       const summaryIndex = markers.findIndex((row) => row.textContent?.includes('上下文已压缩'))
@@ -989,19 +994,20 @@ async function runFixture(name: string): Promise<void> {
 
       for (const [outputTokens, durationMs, expectedSpeed] of [
         [7, 500, null],
-        [20, 199, null],
+        [20, 99, null],
         [3441, 1, null],
-        [1001, 500, null],
-        [401, 200, null],
+        [5001, 500, null],
+        [1001, 100, null],
         [Infinity, 500, null],
-        [20, 200, '100.0'],
-        [400, 200, '2000.0']
+        [20, 100, '200.0'],
+        [400, 200, '2000.0'],
+        [1000, 100, '10000.0']
       ] as const) {
         await render(makeTurn({
           process: [{ kind: 'tools', tools: [readTool('sample', true)] }],
           streaming: false,
           workedMs: 1_000,
-          generation: { outputTokens, durationMs, models: ['synthetic/synthetic'] }
+          generation: generation(outputTokens, durationMs)
         }))
         assert.equal(separator().textContent?.includes('tok/s'), expectedSpeed !== null)
         if (expectedSpeed !== null) assert.ok(separator().textContent?.includes(`${expectedSpeed} tok/s`))
@@ -1010,10 +1016,16 @@ async function runFixture(name: string): Promise<void> {
       await render(makeTurn({
         answer: [{ type: 'text', text: 'buffered answer' }],
         streaming: false,
-        generation: { outputTokens: 3441, durationMs: 1, models: ['synthetic/synthetic'] }
+        generation: generation(0, 0, [], 0, 1)
       }))
       assert.equal(container.textContent?.includes('tok/s'), false)
       assert.equal(container.querySelector('[data-slot="marker"][data-variant="separator"]'), null)
+
+      await act(async () => { useSettingsStore.setState({ localeSetting: 'en', locale: 'en' }) })
+      await render({ ...turn, id: 'tps-en', workedMs: 3_000 })
+      const english = separator().querySelector<HTMLElement>('[title]')!
+      assert.equal(english.textContent?.trim(), '· 40.0 tok/s · 2/3 calls')
+      assert.match(english.title, /^Estimated streamed output speed/)
     } else if (name === 'user-timestamp') {
       const timestamp = new Date(2026, 8, 28, 22, 57, 11).getTime()
       await render(makeTurn({

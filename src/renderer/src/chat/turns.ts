@@ -353,6 +353,8 @@ export function buildTurn(
         generation = {
           outputTokens: (generation?.outputTokens ?? 0) + message.generation.outputTokens,
           durationMs: (generation?.durationMs ?? 0) + message.generation.durationMs,
+          measuredCalls: (generation?.measuredCalls ?? 0) + message.generation.measuredCalls,
+          totalCalls: (generation?.totalCalls ?? 0) + message.generation.totalCalls,
           models: mergeGenerationModels(generation?.models, message.generation.models)
         }
       }

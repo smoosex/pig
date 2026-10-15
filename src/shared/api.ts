@@ -176,16 +176,19 @@ export interface SessionTokenStats {
 }
 
 // Sampling heuristics shared by collection and display; burst delivery cannot measure decoding speed.
-export const MIN_GENERATION_DURATION_MS = 200
-export const MAX_REALISTIC_TPS = 2_000
+export const MIN_GENERATION_DURATION_MS = 100
+export const MAX_REALISTIC_TPS = 10_000
 
-/** Provider-reported output tokens measured over active model decoding time. */
+/** Estimated streamed output; rejected calls contribute only to sampling coverage. */
 export interface GenerationStats {
   outputTokens: number
   durationMs: number
+  measuredCalls: number
+  /** Ended model calls, including replies without reliable stream timing. */
+  totalCalls: number
   /**
-   * `provider/model` identities behind these tokens, in first-seen order. A single model call
-   * contributes one entry; a turn that spans a model switch contributes several, and then the
+   * `provider/model` identities behind accepted samples, in first-seen order. A measured model call
+   * contributes one entry; a turn that samples several models contributes several, and then the
    * summed figure is a blend rather than any one model's decode speed.
    */
   models: string[]

@@ -100,6 +100,7 @@ async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise
     isBashRunning: false,
     extensionRunner: { getCommand: (name: string) => name === 'end-review' ? { invocationName: name } : undefined },
     sessionManager: { appendCustomEntry: (type: string, data: PastedTextMetadata) => persisted.push({ type, data }) },
+    agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
     subscribe(listener: (event: AgentSessionEvent) => void) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }

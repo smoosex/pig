@@ -14,6 +14,7 @@ function fixture() {
   const emit = (event: AgentSessionEvent) => { for (const listener of listeners) listener(event) }
   const emitQueue = () => emit({ type: 'queue_update', steering: [...steering], followUp: [...followUp] })
   const session = {
+    agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
     subscribe(listener: (event: AgentSessionEvent) => void) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }

@@ -148,6 +148,7 @@ async function runFixture(): Promise<void> {
       createAgentSession: async () => ({
         session: {
           sessionId: 'guard-session',
+          agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
           subscribe: () => () => {},
           bindExtensions: async () => {},
           abort: async () => {},

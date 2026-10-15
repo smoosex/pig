@@ -86,6 +86,7 @@ async function fixture(): Promise<void> {
       const session = {
         sessionId: sessionManager.getSessionId(),
         sessionManager,
+        agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
         resourceLoader,
         paths: resourceLoader.options.additionalExtensionPaths,
         starts: 0,

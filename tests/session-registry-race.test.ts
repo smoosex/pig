@@ -54,6 +54,7 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
     const session = {
       sessionId,
       sessionFile,
+      agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
       bindExtensions: async () => {
         bindCalls++
         if (stage === 'bind') {
@@ -186,6 +187,7 @@ async function reproduceReopen(): Promise<void> {
     const session = {
       sessionId,
       sessionFile,
+      agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
       bindExtensions: async () => {},
       subscribe: () => () => {},
       dispose: () => {},
