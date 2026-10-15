@@ -60,7 +60,7 @@ test('the web access panel adds engines with their key and saves only changes', 
   const patches: any[] = []
   const current = state()
   const fakeApi = {
-    listPlugins: async () => [{ id: 'pi-web-access', kind: 'system', name: 'Pi Web Access', source: 'Pig built-in', enabled: true, available: true }],
+    listPlugins: async () => [{ id: 'pi-web-access', kind: 'system', name: 'Pi Web Access', source: 'Pig built-in', scopes: ['project'], available: true }],
     onPluginsChanged: () => () => {},
     getWebSearchSettings: async () => current,
     // Stores what the panel sends back, so reopening the dialog shows the saved configuration.

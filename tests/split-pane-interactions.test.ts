@@ -143,6 +143,91 @@ async function fixture(scenario: string): Promise<void> {
         host.querySelector<HTMLButtonElement>('button')!.click()
       })
       assert.equal(requests, 2, 'only the explicit retry performs another load')
+    } else if (scenario === 'memory-readiness') {
+      const failures: string[] = []
+      mock.module('sonner', () => ({
+        Toaster: () => null,
+        toast: { error: (message: string) => { failures.push(message) } }
+      }))
+      mock.module('../src/renderer/src/components/ChatView', () => ({ ChatView: () => null }))
+      mock.module('../src/renderer/src/components/diff/ChangesView', () => ({ ChangesView: () => null }))
+      mock.module('../src/renderer/src/components/panel/WorkspacePanel', () => ({ WorkspacePanel: () => null }))
+      const { PaneViewContent } = await import('../src/renderer/src/App')
+      const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+      const memoryQueries: string[] = []
+      const memoryDetails: string[] = []
+      const pluginListeners = new Set<() => void>()
+      const failure = Object.assign(new Error('Plugin registry cannot be read'), { code: 'EACCES' })
+      let failQuery = false
+      let registered = false
+      let register!: () => void
+      const opening = new Promise<void>((resolve) => { register = resolve })
+      const meta: NonNullable<OpenTab['meta']> = {
+        id: 'B', path: '/sessions/B.jsonl', cwd: '/p', size: 1, firstMessage: 'Restored',
+        created: '2026-01-01', modified: '2026-01-01'
+      }
+      Object.assign(window.api, {
+        openSession: async (path: string) => {
+          assert.equal(path, meta.path)
+          await opening
+          registered = true
+          return {
+            sessionId: 'B', cwd: '/p',
+            display: { leafId: null, turns: [], startIndex: 0, totalTurns: 0 }
+          }
+        },
+        getControls: async () => ({
+          model: null, thinkingLevel: 'off', thinkingLevels: ['off'], contextUsage: null,
+          followUpMessages: [], steeringMessages: []
+        }),
+        isMemoryPluginEnabled: async (sessionId: string) => {
+          memoryQueries.push(sessionId)
+          if (sessionId === 'B' && !registered) {
+            throw Object.assign(new Error('Session is not registered'), { code: 'ERR_SESSION_NOT_FOUND' })
+          }
+          if (sessionId === 'B' && failQuery) throw failure
+          return true
+        },
+        getMemoryDetail: async (sessionId: string) => { memoryDetails.push(sessionId); return 'Visible memory for B' },
+        getTokenStats: async () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }),
+        onPluginsChanged: (listener: () => void) => {
+          pluginListeners.add(listener)
+          return () => { pluginListeners.delete(listener) }
+        }
+      })
+      sessions.setState({
+        openTabs: [tabs[0], { ...tabs[1], loadState: 'cold', meta }],
+        runtime: { A: emptyRuntime() }
+      })
+      const a = split.getState().initLayout('A')
+      const b = split.getState().splitPane(a, 'B', 'right')
+      await act(async () => {
+        root.render(h(TooltipProvider, null, h(SplitPaneContainer, {
+          renderPane: (node, isActive) => h(PaneViewContent, { node, isActive, composerWorkspace: null })
+        })))
+      })
+      const pane = host.querySelector<HTMLElement>(`[data-pane-id="${b}"]`)!
+      const meter = pane.querySelector<HTMLButtonElement>('[aria-label="Context window"]')!
+      assert.ok(meter, 'the restored pane mounts its composer while opening')
+      assert.equal(sessions.getState().openTabs.find((tab) => tab.id === 'B')?.loadState, 'opening')
+      assert.deepEqual(memoryQueries.filter((id) => id === 'B'), [], 'opening tabs must not query main before registration')
+      assert.equal(meter.disabled, true)
+      await act(async () => { register() })
+      assert.equal(sessions.getState().openTabs.find((tab) => tab.id === 'B')?.loadState, 'ready')
+      assert.deepEqual(memoryQueries.filter((id) => id === 'B'), ['B'], 'readiness triggers the query without a plugin-change event')
+      assert.equal(meter.disabled, false)
+      assert.deepEqual(failures, [])
+      await act(async () => { meter.click() })
+      const view = document.querySelector<HTMLButtonElement>('[aria-label="View memory"]')
+      assert.ok(document.querySelector('[aria-label="Memory status"]'))
+      assert.ok(view)
+      await act(async () => { view.click() })
+      assert.deepEqual(memoryDetails, ['B'])
+      assert.ok(document.body.textContent?.includes('Visible memory for B'))
+      failQuery = true
+      await act(async () => { for (const listener of pluginListeners) listener() })
+      assert.deepEqual(failures, [`Could not load memory: ${failure.message}`], 'unexpected failures are reported at the toolbar UI boundary')
+      assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'query failures must not masquerade as disabling memory')
     } else if (scenario === 'drafts') {
       const { EditorContent } = await import('@tiptap/react')
       const { useComposer } = await import('../src/renderer/src/components/composer/useComposer')
@@ -644,6 +729,7 @@ if (process.argv[2] === '--fixture') await fixture(process.argv[3])
 else
   for (const scenario of [
     'loading',
+    'memory-readiness',
     'drafts',
     'headers',
     'close-active',

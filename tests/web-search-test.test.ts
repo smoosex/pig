@@ -8,13 +8,15 @@ import { join } from 'node:path'
 // The provider test drives the real bundled plugin through a throwaway session, so it needs the
 // esbuild output from `bun run plugins:build`; the brave provider fails on its missing key before
 // any network call, which keeps the case deterministic.
-test('the provider test runs the bundled plugin without a chat session', async () => {
+test('the provider test loads web access enabled only for Chat without a real session', async () => {
   if (!existsSync(join(process.cwd(), 'out/system-plugins/pi-web-access/index.js'))) return
   const root = await mkdtemp(join(tmpdir(), 'pig-web-search-test-'))
   process.env.PIG_DIR = join(root, 'pig')
   delete process.env.BRAVE_API_KEY
   const { mock } = await import('bun:test')
   mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
+  const { setPluginScopes } = await import('../src/main/pi/plugins')
+  await setPluginScopes('pi-web-access', ['chat'])
   const { testWebSearchProvider } = await import('../src/main/pi/web-search-test')
   const result = await testWebSearchProvider('brave')
   assert.equal(result.ok, false)

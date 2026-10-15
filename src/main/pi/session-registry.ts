@@ -173,12 +173,13 @@ async function build(
   configure?: (session: AgentSession) => Promise<void>
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
-  const pluginPaths = isChatCwd(cwd) ? undefined : await enabledPluginPaths()
+  const chat = isChatCwd(cwd)
+  const pluginPaths = await enabledPluginPaths(chat ? 'chat' : 'project')
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
   const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd)] }
-  const resourceLoader = pluginPaths
-    ? await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
-    : await createChatResourceLoader(cwd, resources)
+  const resourceLoader = chat
+    ? await createChatResourceLoader(cwd, pluginPaths, resources)
+    : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
   assertExtensionResources(resourceLoader)
   const result = await createAgentSession({
     cwd,
@@ -680,7 +681,6 @@ export async function refreshToolSessions(): Promise<void> {
 
 async function refreshLivePlugins(session: LiveSession, force = false): Promise<void> {
   const paths = session.pluginPaths
-  if (!paths && !force) return
   if (refreshingPlugins.has(session.sessionId)) {
     queuedPluginRefresh.set(session.sessionId, force || queuedPluginRefresh.get(session.sessionId) === true)
     return
@@ -695,22 +695,22 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
         delay = Math.min(delay * 2, 2000)
         continue
       }
-      const next = paths ? await enabledPluginPaths() : []
-      if (!force && (!paths || (paths.length === next.length && paths.every((path, i) => path === next[i])))) return
+      const next = await enabledPluginPaths(isChatCwd(session.cwd) ? 'chat' : 'project')
+      if (!force && paths.length === next.length && paths.every((path, i) => path === next[i])) return
       // Filesystem awaits above may let a prompt start. Once published, the reload promise gates
       // prepareSession so a new prompt cannot enter an extension runtime being replaced.
       if (!canReloadResources(session)) continue
       resetSystemUI(session.sessionId)
       cancelExtensionUI(session.sessionId)
-      const previous = [...(paths ?? [])]
-      paths?.splice(0, paths.length, ...next)
+      const previous = [...paths]
+      paths.splice(0, paths.length, ...next)
       if (!resourceReloads.has(session.sessionId)) {
         resourceReloads.set(session.sessionId, new Promise<void>((resolve) => { releaseReload = resolve }))
       }
       try {
         await reloadSessionResources(session)
       } catch (error) {
-        paths?.splice(0, paths.length, ...previous)
+        paths.splice(0, paths.length, ...previous)
         throw error
       }
       if (session.win && !session.win.isDestroyed()) session.win.webContents.send('plugins:changed')
@@ -743,17 +743,17 @@ export async function refreshPluginSessions(force = false, cwd?: string): Promis
     .map((item) => item.promise.catch(() => undefined))
   await Promise.all(building)
   await Promise.all([...live.values()].filter((session) => !cwd || resolve(session.cwd) === resolve(cwd)).map(async (session) => {
-    if (session.pluginPaths && canReloadResources(session)) {
+    if (canReloadResources(session)) {
       await refreshLivePlugins(session, force)
-    } else if (session.pluginPaths) {
+    } else {
       reportBackgroundReload(session, refreshLivePlugins(session, force))
     }
   }))
 }
 
 export function hasBusyPluginSessions(): boolean {
-  return [...live.values()].some((session) => session.pluginPaths &&
-    (!canReloadResources(session) || refreshingPlugins.has(session.sessionId)))
+  return [...live.values()].some((session) =>
+    !canReloadResources(session) || refreshingPlugins.has(session.sessionId))
 }
 
 /** A file session's source needs its index, which is why this waits on the deferred build. */

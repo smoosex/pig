@@ -47,6 +47,7 @@ async function fixture(): Promise<void> {
     isIdle: boolean
     reloads: number
     starts: number
+    paths: string[]
     emit(event: unknown): void
   }[] = []
   mock.module('@earendil-works/pi-coding-agent', () => ({
@@ -67,6 +68,7 @@ async function fixture(): Promise<void> {
       getProvider: () => ({ name: 'Extensions' })
     }) },
     DefaultResourceLoader: class {
+      constructor(readonly options: { additionalExtensionPaths: string[] }) {}
       async reload() {}
       getExtensions() {
         return { extensions: [], errors: extensionErrors }
@@ -78,13 +80,14 @@ async function fixture(): Promise<void> {
       resourceLoader
     }: {
       sessionManager: { getSessionId(): string }
-      resourceLoader: { getExtensions(): { errors: { path: string; error: string }[] } }
+      resourceLoader: { options: { additionalExtensionPaths: string[] }; getExtensions(): { errors: { path: string; error: string }[] } }
     }) => {
       let listener: ((event: unknown) => void) | undefined
       const session = {
         sessionId: sessionManager.getSessionId(),
         sessionManager,
         resourceLoader,
+        paths: resourceLoader.options.additionalExtensionPaths,
         starts: 0,
         isIdle: false,
         isBashRunning: false,
@@ -124,6 +127,8 @@ async function fixture(): Promise<void> {
     typeof registry.createPendingSession
   >[1]
   try {
+    const plugins = await import('../src/main/pi/plugins')
+    await plugins.setPluginScopes('pi-web-access', [])
     const cwds = [
       join(root, 'project'),
       join(root, 'other'),
@@ -136,6 +141,8 @@ async function fixture(): Promise<void> {
       ids.push(pending.sessionId)
       await registry.prepareSession(pending.sessionId)
     }
+    assert.ok(sessions[0].paths.length > 0)
+    assert.deepEqual(sessions[2].paths, [], 'Chat starts without project-only plugins')
     const { currentModelCatalog } = await import('../src/main/pi/model-catalog')
     assert.deepEqual((await currentModelCatalog()).models.map((model) => model.id), ids)
     assert.deepEqual(pushed.at(-1)!.models.map((model) => model.id), ids, 'binding extensions updates every selector')
@@ -184,6 +191,26 @@ async function fixture(): Promise<void> {
       sessions.map((session) => session.reloads),
       [3, 3, 3]
     )
+    const hasReview = (index: number) => sessions[index].paths.some((path) => path.endsWith(join('pi-review', 'index.ts')))
+    await plugins.setPluginScopes('pi-review', ['chat'])
+    await registry.refreshPluginSessions()
+    assert.deepEqual(sessions.map((session) => session.reloads), [4, 4, 4])
+    assert.deepEqual(sessions.map((_, index) => hasReview(index)), [false, false, true])
+    await plugins.setPluginScopes('pi-review', ['project', 'chat'])
+    await registry.refreshPluginSessions()
+    assert.deepEqual(sessions.map((session) => session.reloads), [5, 5, 4], 'unchanged Chat resources are not reloaded')
+    assert.deepEqual(sessions.map((_, index) => hasReview(index)), [true, true, true])
+    sessions[2].isIdle = false
+    await plugins.setPluginScopes('pi-review', [])
+    await registry.refreshPluginSessions()
+    assert.deepEqual(sessions.map((session) => session.reloads), [6, 6, 4])
+    assert.equal(hasReview(2), true, 'a busy Chat retains its runtime until idle')
+    sessions[2].isIdle = true
+    for (let n = 0; n < 100 && hasReview(2); n++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    await registry.prepareSession(ids[2])
+    assert.equal(sessions[2].reloads, 5)
+    assert.deepEqual(sessions[2].paths, [], 'Chat unloads the plugin after becoming idle')
     for (const error of ['Invalid JSON in tool-settings.json', 'EACCES reading mcp.json']) {
       const starts = sessions.map((session) => session.starts)
       const reloads = sessions.map((session) => session.reloads)

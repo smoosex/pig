@@ -591,12 +591,14 @@ export interface PluginSettingsSchema {
   fields: PluginSettingsField[]
 }
 
+export type PluginScope = 'project' | 'chat'
+
 export interface PluginInfo {
   id: string
   name: string
   source: string
   kind: 'system' | 'local' | 'npm' | 'git'
-  enabled: boolean
+  scopes: PluginScope[]
   available: boolean
   error?: string
   settings?: PluginSettingsSchema
@@ -862,10 +864,10 @@ export interface SessionApi extends ToolSettingsApi {
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>
   pickPluginPath: () => Promise<string | null>
-  setPluginEnabled: (id: string, enabled: boolean) => Promise<PluginInfo[]>
+  setPluginScopes: (id: string, scopes: PluginScope[]) => Promise<PluginInfo[]>
   updatePlugin: (id: string) => Promise<PluginInfo[]>
   removePlugin: (id: string) => Promise<PluginInfo[]>
-  isMemoryPluginEnabled: () => Promise<boolean>
+  isMemoryPluginEnabled: (sessionId: string) => Promise<boolean>
   getMemoryPluginDefaults: () => Promise<Record<string, number>>
   getMemoryPluginSettings: () => Promise<MemoryPluginSettings>
   setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => Promise<MemoryPluginSettings>

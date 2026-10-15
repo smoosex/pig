@@ -8,7 +8,7 @@ import {
   DefaultPackageManager,
   SettingsManager
 } from '@earendil-works/pi-coding-agent'
-import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginSettingsSchema } from '../../shared/api'
+import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope, PluginSettingsSchema } from '../../shared/api'
 import { pigPath } from '../pig-dir'
 import { DEFAULTS } from '../plugins/observational-memory/config'
 import { memorySettingsPath } from '../plugins/observational-memory/paths'
@@ -17,13 +17,13 @@ interface InstalledPlugin {
   id: string
   source: string
   kind: 'local' | 'npm' | 'git'
-  enabled: boolean
+  scopes: PluginScope[]
 }
 
 interface Registry {
-  memoryEnabled: boolean
-  reviewEnabled: boolean
-  webAccessEnabled: boolean
+  memoryScopes: PluginScope[]
+  reviewScopes: PluginScope[]
+  webAccessScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
 
@@ -48,13 +48,21 @@ function serialize<T>(action: () => Promise<T>): Promise<T> {
   return result
 }
 
+function parseScopes(value: unknown): PluginScope[] {
+  if (!Array.isArray(value) || value.some((scope) => scope !== 'project' && scope !== 'chat')) {
+    throw new Error('Invalid plugin scopes')
+  }
+  return (['project', 'chat'] as const).filter((scope) => value.includes(scope))
+}
+
 async function readRegistry(): Promise<Registry> {
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { memoryEnabled: true, reviewEnabled: true, webAccessEnabled: true, installed: [] }
+      return defaults
     }
     throw error
   }
@@ -62,17 +70,25 @@ async function readRegistry(): Promise<Registry> {
   if (!value || typeof value !== 'object' || !('installed' in value) || !Array.isArray(value.installed)) {
     throw new Error('Invalid Pig plugin registry')
   }
-  for (const item of value.installed) {
+  const installed: InstalledPlugin[] = value.installed.map((item) => {
     if (!item || typeof item.id !== 'string' || typeof item.source !== 'string' ||
-        !['local', 'npm', 'git'].includes(item.kind) || typeof item.enabled !== 'boolean') {
+        !['local', 'npm', 'git'].includes(item.kind) || (!('scopes' in item) && typeof item.enabled !== 'boolean')) {
       throw new Error('Invalid Pig plugin registry entry')
     }
-  }
+    return {
+      id: item.id, source: item.source, kind: item.kind,
+      scopes: 'scopes' in item ? parseScopes(item.scopes) : item.enabled ? ['project'] : []
+    }
+  })
+  // Explicit legacy switches only applied to projects; preserve them instead of applying new defaults.
   return {
-    memoryEnabled: !('memoryEnabled' in value) || value.memoryEnabled === true,
-    reviewEnabled: !('reviewEnabled' in value) || value.reviewEnabled === true,
-    webAccessEnabled: !('webAccessEnabled' in value) || value.webAccessEnabled === true,
-    installed: value.installed
+    memoryScopes: 'memoryScopes' in value ? parseScopes(value.memoryScopes)
+      : 'memoryEnabled' in value ? (value.memoryEnabled === true ? ['project'] : []) : defaults.memoryScopes,
+    reviewScopes: 'reviewScopes' in value ? parseScopes(value.reviewScopes)
+      : 'reviewEnabled' in value ? (value.reviewEnabled === true ? ['project'] : []) : defaults.reviewScopes,
+    webAccessScopes: 'webAccessScopes' in value ? parseScopes(value.webAccessScopes)
+      : 'webAccessEnabled' in value ? (value.webAccessEnabled === true ? ['project'] : []) : defaults.webAccessScopes,
+    installed
   }
 }
 
@@ -81,7 +97,7 @@ async function saveRegistry(value: Registry): Promise<void> {
   await mkdir(pigPath(), { recursive: true })
   const temp = `${path}.${randomUUID()}.tmp`
   try {
-    await writeFile(temp, `${JSON.stringify({ version: 1, ...value }, null, 2)}\n`)
+    await writeFile(temp, `${JSON.stringify({ version: 2, ...value }, null, 2)}\n`)
     await rename(temp, path)
   } catch (error) {
     const { rm } = await import('node:fs/promises')
@@ -129,30 +145,31 @@ async function resourcesFor(source: string): Promise<string[]> {
   return result.extensions.filter((item) => item.enabled).map((item) => item.path)
 }
 
-export async function isMemoryPluginEnabled(): Promise<boolean> {
+export async function isMemoryPluginEnabled(scope: PluginScope): Promise<boolean> {
   await mutation
-  return (await readRegistry()).memoryEnabled
+  return (await readRegistry()).memoryScopes.includes(scope)
 }
 
-export async function enabledPluginPaths(): Promise<string[]> {
+export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<string[]> {
   await mutation
   const registry = await readRegistry()
+  const isEnabled = (scopes: PluginScope[]) => scope === 'any' ? scopes.length > 0 : scopes.includes(scope)
   const paths: string[] = []
-  // Bundled extensions are on by default, so a build that predates the bundle keeps working
-  // without them; the settings page reports the missing file and refuses to enable it.
+  // Older builds may lack an enabled bundle; keep sessions usable while settings reports the
+  // missing file and refuses to enable it.
   for (const bundled of [
-    { enabled: registry.memoryEnabled, path: memoryPath(), name: 'observational memory' },
-    { enabled: registry.reviewEnabled, path: reviewPath(), name: 'code review' },
-    { enabled: registry.webAccessEnabled, path: webAccessPath(), name: 'web access' }
+    { scopes: registry.memoryScopes, path: memoryPath(), name: 'observational memory' },
+    { scopes: registry.reviewScopes, path: reviewPath(), name: 'code review' },
+    { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' }
   ]) {
-    if (!bundled.enabled) continue
+    if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
       console.warn(`Bundled ${bundled.name} extension is missing: ${bundled.path}`)
       continue
     }
     paths.push(bundled.path)
   }
-  for (const plugin of registry.installed.filter((item) => item.enabled)) {
+  for (const plugin of registry.installed.filter((item) => isEnabled(item.scopes))) {
     const found = await resourcesFor(plugin.source)
     if (!found.length) throw new Error(`Enabled plugin is missing or has no extensions: ${plugin.source}`)
     paths.push(...found)
@@ -208,7 +225,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
       if (!paths.length) {
         return {
           id: item.id, source: item.source, name: displayName(item.source), kind: item.kind,
-          enabled: item.enabled, available: false, error: 'Package is missing or contains no Pi extensions'
+          scopes: item.scopes, available: false, error: 'Package is missing or contains no Pi extensions'
         }
       }
       let settings: PluginSettingsSchema | undefined
@@ -220,28 +237,28 @@ export async function listPlugins(): Promise<PluginInfo[]> {
       }
       return {
         id: item.id, source: item.source, name: displayName(item.source), kind: item.kind,
-        enabled: item.enabled, available: true,
+        scopes: item.scopes, available: true,
         ...(settings ? { settings } : {}),
         ...(error ? { error } : {})
       }
     } catch (error) {
       return {
         id: item.id, source: item.source, name: displayName(item.source), kind: item.kind,
-        enabled: item.enabled, available: false, error: error instanceof Error ? error.message : String(error)
+        scopes: item.scopes, available: false, error: error instanceof Error ? error.message : String(error)
       }
     }
   }))
   return [{
     id: 'observational-memory', name: 'Observational Memory', source: 'Pig built-in',
-    kind: 'system', enabled: registry.memoryEnabled, available: existsSync(memoryPath()),
+    kind: 'system', scopes: registry.memoryScopes, available: existsSync(memoryPath()),
     ...(!existsSync(memoryPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
     id: 'pi-review', name: 'Pi Review', source: 'Pig built-in',
-    kind: 'system', enabled: registry.reviewEnabled, available: existsSync(reviewPath()),
+    kind: 'system', scopes: registry.reviewScopes, available: existsSync(reviewPath()),
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
     id: 'pi-web-access', name: 'Pi Web Access', source: 'Pig built-in',
-    kind: 'system', enabled: registry.webAccessEnabled, available: existsSync(webAccessPath()),
+    kind: 'system', scopes: registry.webAccessScopes, available: existsSync(webAccessPath()),
     ...(!existsSync(webAccessPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
@@ -276,28 +293,30 @@ export function installPlugin(source: string): Promise<void> {
       }
       throw error
     }
-    registry.installed.push({ id: randomUUID(), source: normalized.source, kind: normalized.kind, enabled: false })
+    registry.installed.push({ id: randomUUID(), source: normalized.source, kind: normalized.kind, scopes: [] })
     await saveRegistry(registry)
   })
 }
 
-export function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
+export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void> {
   return serialize(async () => {
+    const next = parseScopes(scopes)
     const registry = await readRegistry()
+    const addsScope = (current: PluginScope[]) => next.some((scope) => !current.includes(scope))
     if (id === 'observational-memory') {
-      if (enabled && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
-      registry.memoryEnabled = enabled
+      if (addsScope(registry.memoryScopes) && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
+      registry.memoryScopes = next
     } else if (id === 'pi-review') {
-      if (enabled && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
-      registry.reviewEnabled = enabled
+      if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
+      registry.reviewScopes = next
     } else if (id === 'pi-web-access') {
-      if (enabled && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
-      registry.webAccessEnabled = enabled
+      if (addsScope(registry.webAccessScopes) && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
+      registry.webAccessScopes = next
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')
-      if (enabled && !(await resourcesFor(plugin.source)).length) throw new Error('Plugin is missing or has no extensions')
-      plugin.enabled = enabled
+      if (addsScope(plugin.scopes) && !(await resourcesFor(plugin.source)).length) throw new Error('Plugin is missing or has no extensions')
+      plugin.scopes = next
     }
     await saveRegistry(registry)
   })
@@ -308,7 +327,7 @@ export function removePlugin(id: string): Promise<void> {
     const registry = await readRegistry()
     const plugin = registry.installed.find((item) => item.id === id)
     if (!plugin) throw new Error('Plugin not found or is a system plugin')
-    if (plugin.enabled) throw new Error('Disable the plugin before removing it')
+    if (plugin.scopes.length) throw new Error('Disable the plugin before removing it')
     const schema = settingsSchema(plugin.source)
     await packageManager(plugin.source).remove(plugin.source)
     registry.installed = registry.installed.filter((item) => item.id !== id)

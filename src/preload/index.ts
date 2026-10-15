@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
-import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -179,10 +179,10 @@ const api: SessionApi = {
   listPlugins: () => ipcRenderer.invoke('plugins:list'),
   installPlugin: (source: string) => ipcRenderer.invoke('plugins:install', source),
   pickPluginPath: () => ipcRenderer.invoke('plugins:pick-path'),
-  setPluginEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugins:enable', id, enabled),
+  setPluginScopes: (id: string, scopes: PluginScope[]) => ipcRenderer.invoke('plugins:scopes', id, scopes),
   updatePlugin: (id: string) => ipcRenderer.invoke('plugins:update', id),
   removePlugin: (id: string) => ipcRenderer.invoke('plugins:remove', id),
-  isMemoryPluginEnabled: () => ipcRenderer.invoke('plugins:memory-enabled'),
+  isMemoryPluginEnabled: (sessionId: string) => ipcRenderer.invoke('plugins:memory-enabled', sessionId),
   getMemoryPluginDefaults: () => ipcRenderer.invoke('plugins:memory-defaults'),
   getMemoryPluginSettings: () => ipcRenderer.invoke('plugins:memory-get'),
   setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => ipcRenderer.invoke('plugins:memory-set', patch),
