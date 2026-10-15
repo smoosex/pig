@@ -368,7 +368,7 @@ export default function App() {
       <HighlighterWarmup />
       <SystemPluginUI activeSessionId={activeSessionId} />
       <ExtensionUI />
-      <div data-app-surface className="flex h-full flex-col bg-glass-window-background/10 backdrop-blur-sm transition-[background-color,backdrop-filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background solid:backdrop-blur-none">
+      <div data-app-surface className="flex h-full flex-col transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
           <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : (
