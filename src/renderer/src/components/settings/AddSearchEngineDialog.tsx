@@ -174,6 +174,9 @@ export function AddSearchEngineDialog({
         ) : (
           <Command
             loop
+            // cmdk selects its first row on mount unless the value it starts with matches nothing;
+            // a chooser has to open without a hover, so the list waits for real input.
+            defaultValue=" "
             onKeyDownCapture={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) event.stopPropagation()
             }}
