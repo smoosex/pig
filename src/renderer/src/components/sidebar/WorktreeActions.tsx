@@ -109,26 +109,30 @@ export function WorktreeDeleteButton({
   disabled: boolean
   busy: boolean
   runAction: RunProjectAction
-  onConfirm: (force: boolean) => Promise<void>
+  onConfirm: () => Promise<void>
 }) {
-  const [prompt, setPrompt] = useState<string[] | null>(null)
+  // The dialog only describes what gets lost; the confirm button always deletes.
+  const [prompt, setPrompt] = useState<{ title: string; body: string } | null>(null)
   const t = useT()
-  const risks = prompt ?? []
-  const forced = risks.length > 0
-  const confirm = async (force: boolean) => {
+  const confirm = async () => {
     setPrompt(null)
-    await onConfirm(force)
+    await onConfirm()
   }
 
   const prepareDeletion = async () => {
     const info = await api.worktreeDeletionInfo(projectCwd, cwd)
-    setPrompt(
-      [
-        info.dirty ? t('worktree.riskDirty') : null,
-        info.unmerged ? t('worktree.riskUnmerged') : null,
-        info.missing ? t('worktree.riskMissing') : null
-      ].filter((item): item is string => item !== null)
-    )
+    setPrompt({
+      title: info.unmerged
+        ? t('worktree.deleteTitleUnmerged', { branch })
+        : t('worktree.deleteTitle', { branch }),
+      body: info.unmerged
+        ? (info.dirty ? t('worktree.deleteBodyUnmergedDirty') : t('worktree.deleteBodyUnmerged'))
+        : info.dirty
+          ? t('worktree.deleteBodyDirty')
+          : info.missing
+            ? t('worktree.deleteBodyMissing')
+            : t('worktree.deleteBodyClean')
+    })
   }
 
   return (
@@ -155,16 +159,8 @@ export function WorktreeDeleteButton({
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle className="text-sm">{t('worktree.deleteTitle')}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {t('worktree.deleteBody')}
-              {forced ? (
-                <>
-                  {risks.join(t('common.sentenceSeparator'))}
-                  {t('worktree.deletePermanent')}
-                </>
-              ) : null}
-            </DialogDescription>
+            <DialogTitle className="text-sm">{prompt?.title}</DialogTitle>
+            <DialogDescription className="text-xs">{prompt?.body}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setPrompt(null)}>
@@ -173,9 +169,9 @@ export function WorktreeDeleteButton({
             <Button
               variant="destructive"
               disabled={disabled}
-              onClick={() => void runAction(`delete:${cwd}`, () => confirm(forced))}
+              onClick={() => void runAction(`delete:${cwd}`, confirm)}
             >
-              {forced ? t('worktree.forceDelete') : t('common.delete')}
+              {t('common.delete')}
             </Button>
           </div>
         </DialogContent>

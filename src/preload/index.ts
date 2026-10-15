@@ -32,8 +32,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('project:create-worktree', projectCwd, options),
   worktreeDeletionInfo: (projectCwd: string, cwd: string) =>
     ipcRenderer.invoke('project:worktree-deletion-info', projectCwd, cwd),
-  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) =>
-    ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd, force),
+  deleteWorktree: (projectCwd: string, cwd: string) =>
+    ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd),
   listWorktreeDeletions: () => ipcRenderer.invoke('project:list-worktree-deletions'),
   retryWorktreeDeletion: (cwd: string) => ipcRenderer.invoke('project:retry-worktree-deletion', cwd),
   onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void): (() => void) => {

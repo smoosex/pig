@@ -45,7 +45,7 @@ interface WorktreeRecord {
   namingText?: string
   deleting?: boolean
   backgroundDeletion?: {
-    /** Older jobs did not record consent to force deletion; missing means non-force. */
+    /** Only explicit true authorizes discarding files; legacy jobs may omit this field. */
     force?: boolean
     attempts: number
     error?: string
@@ -288,7 +288,6 @@ export class WorktreeService {
   async remove(
     projectCwd: string,
     cwd: string,
-    force: boolean,
     close: () => Promise<void>,
     cleanSessions: () => Promise<void>,
     options: { background?: boolean } = {}
@@ -300,23 +299,22 @@ export class WorktreeService {
       if (background && !this.cleanDeletedSessions) {
         throw Object.assign(new Error('Worktree deletion worker is not ready'), { code: 'ERR_WORKTREE_DELETION_WORKER_NOT_READY' })
       }
-      const initial = await this.deletionInfo(projectCwd, path)
-      if (!force && (initial.dirty || initial.unmerged)) throw new Error(t('error.worktreeDirty'))
+      // The dialog already stated what gets lost; deleting is unconditional from here on.
+      await this.deletionInfo(projectCwd, path)
       this.blocked.add(path)
       this.namingJobs.get(path)?.controller.abort()
       let queued = false
       try {
         await close()
-        const { worktree, dirty, unmerged } = await this.deletionInfo(projectCwd, path)
-        if (!force && (dirty || unmerged)) throw new Error(t('error.worktreeNewChanges'))
+        const { worktree: current } = await this.deletionInfo(projectCwd, path)
         await this.update((records) => {
           const record = records.find((r) => r.cwd === path)
           const deletion = {
-            branch: worktree.branch, head: worktree.head, detached: worktree.detached, deleting: true,
-            backgroundDeletion: background ? { force, attempts: 0 } : undefined
+            branch: current.branch, head: current.head, detached: current.detached, deleting: true,
+            backgroundDeletion: background ? { force: true, attempts: 0 } : undefined
           }
           if (record) return records.map((r) => r === record ? { ...r, ...deletion } : r)
-          return [...records, { projectCwd, cwd: path, initialBranch: worktree.branch, ...deletion }]
+          return [...records, { projectCwd, cwd: path, initialBranch: current.branch, ...deletion }]
         })
         if (background) {
           queued = true
@@ -327,7 +325,7 @@ export class WorktreeService {
             this.scheduleDeletion(path, 0)
           }
         } else {
-          await this.cleanWorktree(projectCwd, worktree, force, cleanSessions)
+          await this.cleanWorktree(projectCwd, current, true, cleanSessions)
         }
       } finally {
         if (!queued) this.blocked.delete(path)
@@ -350,7 +348,7 @@ export class WorktreeService {
         throw new Error(t('error.worktreeDeletionChanged'))
       }
       if (!force && !registered.missing && (await git(path, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0) {
-        throw new Error(t('error.worktreeNewChanges'))
+        throw Object.assign(new Error(t('error.worktreeDeletionUnconfirmedChanges')), { code: 'ERR_WORKTREE_DELETION_UNCONFIRMED_CHANGES' })
       }
       await git(projectCwd, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
     }
@@ -452,7 +450,7 @@ export class WorktreeService {
       await this.publishDeletions()
       // Preparation alone holds the project lock. Cleanup uses its frozen tombstone and Git's
       // own locks, so a slow directory removal cannot block creating or queuing another worktree.
-      // Retries keep the original force choice: a tombstone is not permission to discard new files.
+      // Recovery and retries retain the original consent; old jobs must not gain force implicitly.
       await this.cleanWorktree(record.projectCwd, record, deletion.force === true, () => this.cleanDeletedSessions!(path), true)
       this.blocked.delete(path)
     } catch (error) {

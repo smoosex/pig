@@ -234,7 +234,7 @@ export interface SessionsStore {
   forkSession: (sessionId: string, userEntryId: string) => Promise<void>
   newChat: () => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
-  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<void>
+  deleteWorktree: (projectCwd: string, cwd: string) => Promise<void>
   applyWorktreeDeletions: (cwds: string[]) => void
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>

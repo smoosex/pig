@@ -78,11 +78,11 @@ export function registerWorktreeIpc(): void {
     await worktrees.retryDeletion(cwd)
   })
 
-  ipcMain.handle('project:delete-worktree', async (_event, projectCwd: string, cwd: string, force = false) => {
+  ipcMain.handle('project:delete-worktree', async (_event, projectCwd: string, cwd: string) => {
     const project = await requireOpenedProject(projectCwd)
     if (typeof cwd !== 'string' || !cwd || isChatCwd(cwd) || isChatsRoot(cwd)) throw new Error('Invalid worktree cwd')
     const info = await worktrees.deletionInfo(project, cwd)
-    await worktrees.remove(project, cwd, Boolean(force),
+    await worktrees.remove(project, cwd,
       () => closeSessionsForCwd(cwd), () => removeProjectDir(cwd), { background: true })
     await removeOpenProjectWorkspaces([info.worktree.cwd])
     return { cwd: info.worktree.cwd }

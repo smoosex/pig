@@ -121,7 +121,7 @@ export function WorktreeRow({
               disabled={pending !== null}
               busy={pending === `delete:${worktree.cwd}`}
               runAction={runAction}
-              onConfirm={(force) => deleteWorktree(projectCwd, worktree.cwd, force)}
+              onConfirm={() => deleteWorktree(projectCwd, worktree.cwd)}
             />
           )}
           <SessionHistoryPopover
