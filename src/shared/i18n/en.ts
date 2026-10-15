@@ -264,7 +264,6 @@ export const en: Messages = {
     viewAria: 'Sidebar view',
     files: 'Files',
     changes: 'Changes',
-    resizeAria: 'Resize the sidebar',
     newFileAria: 'New file in the worktree'
   },
   settings: {

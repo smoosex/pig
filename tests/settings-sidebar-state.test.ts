@@ -564,7 +564,7 @@ async function runFixture(name: string): Promise<void> {
         assert.equal(state.ready, true, 'an unanswered preference read cannot block workspace restore')
         assert.equal(state.tab, 'projects', 'a timed-out read falls back to Projects')
         await act(async () => {
-          initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+          initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false })
         })
         assert.equal(state.tab, 'projects', 'a late preference cannot steal the pane after fallback')
       } finally {
@@ -583,7 +583,7 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { root.render(createElement(Probe)) })
       assert.equal(state.ready, false)
       await act(async () => {
-        initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false })
       })
       assert.equal(state.ready, true)
       assert.equal(state.tab, 'chats', 'a restored Chats preference can drive the initial workspace selection')
@@ -614,7 +614,7 @@ async function runFixture(name: string): Promise<void> {
         state.setTab('chats')
       })
       await act(async () => {
-        initial.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        initial.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false })
       })
       assert.equal(state.tab, 'chats', 'a switch made before the prefs land wins over them')
       assert.equal(state.ready, true)
@@ -636,7 +636,7 @@ async function runFixture(name: string): Promise<void> {
         [{ sidebarTab: 'chats' }, { sidebarTab: 'projects' }]
       )
       await act(async () => {
-        saves[1].result.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 })
+        saves[1].result.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false })
       })
       assert.equal(state.error, null, 'a write that landed clears the message')
       assert.equal(state.tab, 'projects')

@@ -28,8 +28,16 @@ html[data-palette='everforest'] {
   --sidebar-ring: #64751b;
   --chat-background: #fdf6e3;
   --composer-background: #efebd4;
+  --tab-bar-background: #dedbc5;
+  --tab-active-background: #fdf6e3;
+  --tab-hover-background: #d3d9c1;
   --glass-background: color-mix(in srgb, #f8f8f8 50%, transparent);
   --glass-window-background: #eaeaea;
+  --glass-tab-bar-background: color-mix(in srgb, #292929 12%, transparent);
+  --glass-tab-active-background: rgb(255 255 255 / 0.65);
+  --glass-tab-active-sheen: none;
+  --glass-tab-active-border: rgb(255 255 255 / 0.65);
+  --glass-tab-active-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --glass-composer-background: #ebebeb;
   --glass-prompt-background: #e5e5e5;
   --glass-prompt-foreground: #292929;
@@ -92,8 +100,25 @@ html.dark[data-palette='everforest'] {
   --sidebar-ring: #a7c080;
   --chat-background: #2d353b;
   --composer-background: #343f44;
+  --tab-bar-background: #414e51;
+  --tab-active-background: #2d353b;
+  --tab-hover-background: #49564f;
   --glass-background: color-mix(in srgb, #202020 50%, transparent);
   --glass-window-background: #2f2f2f;
+  --glass-tab-bar-background: color-mix(in srgb, #ececec 12%, transparent);
+  --glass-tab-active-background: rgb(255 255 255 / 0.035);
+  --glass-tab-active-sheen: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.07),
+    rgb(255 255 255 / 0) 42%,
+    rgb(255 255 255 / 0.025)
+  );
+  --glass-tab-active-border: rgb(255 255 255 / 0.18);
+  --glass-tab-active-shadow:
+    0 1px 3px rgb(0 0 0 / 0.24),
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 -1px 0 rgb(255 255 255 / 0.06),
+    inset 0 1px 5px rgb(255 255 255 / 0.04);
   --glass-composer-background: #272727;
   --glass-prompt-background: #2b2b2b;
   --glass-prompt-foreground: #ececec;

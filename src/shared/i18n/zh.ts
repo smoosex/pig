@@ -261,7 +261,6 @@ export const zh = {
     viewAria: '侧边栏视图',
     files: '文件',
     changes: '变更',
-    resizeAria: '调整侧边栏宽度',
     newFileAria: '在工作区新建文件'
   },
   settings: {

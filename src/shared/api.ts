@@ -100,19 +100,14 @@ export interface ProjectGroup {
   gitError?: string
 }
 
-export const MIN_REVIEW_WIDTH = 240
-export const MAX_REVIEW_WIDTH = 720
-export const DEFAULT_REVIEW_WIDTH = 320
-
 /** Which list the left sidebar shows: the toggle in the title bar switches it. */
 export type SidebarTab = 'projects' | 'chats'
 
 export interface SidebarPrefs {
   sidebarTab: SidebarTab
   split: number
-  /** The change review column and its width, dragged and remembered like the sidebar. */
+  /** Whether the worktree's files and changes column is open. */
   reviewOpen: boolean
-  reviewWidth: number
 }
 
 export interface OpenProjectWorkspace {

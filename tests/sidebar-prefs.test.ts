@@ -14,8 +14,7 @@ import type { SidebarPrefs } from '../src/shared/api'
 const defaults: SidebarPrefs = {
   sidebarTab: 'projects',
   split: 0.5,
-  reviewOpen: false,
-  reviewWidth: 320
+  reviewOpen: false
 }
 
 async function runFixture(): Promise<void> {
@@ -48,12 +47,17 @@ async function runFixture(): Promise<void> {
     await saveSidebarPrefs({ sidebarTab: 'chats' })
     assert.equal((await loadSidebarPrefs()).sidebarTab, 'chats', 'and a known one round-trips')
 
+    await writeFile(file, JSON.stringify({ reviewOpen: true, reviewWidth: 720 }))
+    assert.deepEqual(await loadSidebarPrefs(), { ...defaults, reviewOpen: true }, 'legacy widths are not part of the preference contract')
+    await saveSidebarPrefs({ reviewOpen: false })
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { version: 1, ...defaults }, 'the next save drops the obsolete width')
+
     if (process.getuid?.() !== 0) {
-      await writeFile(file, JSON.stringify({ reviewOpen: true, reviewWidth: 400 }))
+      await writeFile(file, JSON.stringify({ reviewOpen: true }))
       await chmod(file, 0o000)
       await assert.rejects(loadSidebarPrefs(), /EACCES/, 'a read that failed is reported, not defaulted')
       await chmod(file, 0o644)
-      assert.equal((await loadSidebarPrefs()).reviewWidth, 400, 'and the file is still there to read')
+      assert.equal((await loadSidebarPrefs()).reviewOpen, true, 'and the file is still there to read')
       // Writing over an existing file needs the file to be writable, not the directory.
       await chmod(file, 0o444)
       await assert.rejects(saveSidebarPrefs({ reviewOpen: false }), /EACCES/, 'a write that failed is reported')

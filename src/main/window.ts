@@ -29,6 +29,8 @@ export function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1100,
     height: 760,
+    // The header tab strip reserves 256px per side (inset-x-64); below 800px less than one full tab would remain.
+    minWidth: 800,
     show: false,
     autoHideMenuBar: true,
     title: 'Pig',

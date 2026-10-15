@@ -1,4 +1,4 @@
-import { useState, type HTMLAttributes, type Ref } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
 import { ArrowUpToLine, CircleAlert, Dog, Download, FileDiff, LoaderCircle, PenLine, Plus } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -32,13 +32,16 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const openTabs = useSessionsStore((state) => state.openTabs)
   const activeTabId = useSessionsStore((state) => state.activeTabId)
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
-  const workspaceError = useSessionsStore((state) => state.workspaceError)
   const setActive = useSessionsStore((state) => state.setActive)
   const closeTab = useSessionsStore((state) => state.closeTab)
-  const newSession = useSessionsStore((state) => state.newSession)
-  const newChat = useSessionsStore((state) => state.newChat)
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const tabListRef = useRef<HTMLDivElement>(null)
+  const revealActiveTab = useCallback(() => {
+    tabListRef.current?.querySelector<HTMLElement>('[data-tab-active]')?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+    })
+  }, [])
 
   const root = useSplitLayoutStore((state) => state.root)
   const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
@@ -93,6 +96,8 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
     }
   }
 
+  useLayoutEffect(revealActiveTab, [activeTabId, currentProjectCwd, sidebarTab, representativeTab?.id, displayTabs.length, revealActiveTab])
+
   const { sensors, activeTab, clickGuard, handleDragStart, handleDragEnd, handleDragCancel } =
     useTabStripDnd(displayTabs, representativeTab
       ? { [representativeTab.id]: splitVisibleTabs.map((tab) => tab.id) }
@@ -112,27 +117,13 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
     }
   }
 
-  const createTab = async () => {
-    if (creating) return
-    setCreating(true)
-    setCreateError(null)
-    try {
-      // The button makes whatever the strip is listing, so the projects half only creates a session
-      // once there is a worktree for it to belong to.
-      if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
-      else if (currentProjectCwd) await newSession(currentProjectCwd)
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setCreating(false)
-    }
-  }
-
   return (
     <div
+      data-tab-strip="true"
       className={cn(
-        'flex h-full min-w-0 flex-1 items-stretch transition-colors',
-        reintegratingTab && 'bg-primary/5 ring-1 ring-inset ring-primary/30 rounded-md'
+        'flex h-8 w-max max-w-full min-w-0 items-stretch',
+        (displayTabs.length > 0 || reintegratingTab) && 'no-drag',
+        reintegratingTab && 'rounded-full ring-1 ring-inset ring-primary/30'
       )}
     >
       <DndContext
@@ -147,7 +138,17 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
           items={displayTabs.map((tab) => tab.id)}
           strategy={horizontalListSortingStrategy}
         >
-          <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={tabListRef}
+            data-session-tab-list
+            onTransitionEnd={(event) => {
+              if (event.propertyName === 'flex-basis' && (event.target as Element).hasAttribute('data-tab-active')) revealActiveTab()
+            }}
+            className={cn(
+              'flex min-w-0 flex-1 items-stretch overflow-x-auto rounded-full p-0.5 transition-[background-color,backdrop-filter] duration-200 ease-in-out motion-reduce:transition-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+              (displayTabs.length > 0 || reintegratingTab) && 'bg-glass-tab-bar-background backdrop-blur-sm solid:bg-tab-bar-background solid:backdrop-blur-none'
+            )}
+          >
             {displayTabs.map((tab) => {
               const isCombined = isSplit && tab.id === representativeTab?.id
               return (
@@ -216,31 +217,62 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
           ) : null}
         </DragOverlay>
       </DndContext>
-      <div className="no-drag relative flex shrink-0 items-center gap-0.5 px-1.5 before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-border">
-        {workspaceError ? (
-          <span title={workspaceError} role="alert" className="text-destructive">
-            <CircleAlert />
-          </span>
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('tabBar.new')}
-          aria-busy={creating}
-          title={createError ?? t('tabBar.new')}
-          disabled={creating}
-          onClick={() => void createTab()}
-        >
-          {creating ? (
-            <LoaderCircle className="animate-spin" />
-          ) : createError ? (
-            <CircleAlert className="text-destructive" />
-          ) : (
-            <Plus />
-          )}
-        </Button>
-      </div>
+    </div>
+  )
+}
+
+export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
+  const t = useT()
+  const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
+  const workspaceError = useSessionsStore((state) => state.workspaceError)
+  const newSession = useSessionsStore((state) => state.newSession)
+  const newChat = useSessionsStore((state) => state.newChat)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  const createTab = async () => {
+    if (creating) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      // The button makes whatever the strip is listing, so the projects half only creates a session
+      // once there is a worktree for it to belong to.
+      if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
+      else if (currentProjectCwd) await newSession(currentProjectCwd)
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="no-drag flex shrink-0 items-center gap-0.5">
+      {workspaceError ? (
+        <span title={workspaceError} role="alert" className="text-destructive">
+          <CircleAlert />
+        </span>
+      ) : null}
+      <Button
+        data-new-tab
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="translate-y-px rounded-full text-glass-prompt-foreground hover:bg-glass-prompt-foreground/8! hover:text-inherit solid:text-foreground solid:hover:bg-tab-hover-background!"
+        aria-label={t('tabBar.new')}
+        aria-busy={creating}
+        title={createError ?? t('tabBar.new')}
+        disabled={creating}
+        onClick={() => void createTab()}
+      >
+        {creating ? (
+          <LoaderCircle className="animate-spin" />
+        ) : createError ? (
+          <CircleAlert className="text-destructive" />
+        ) : (
+          <Plus />
+        )}
+      </Button>
     </div>
   )
 }
@@ -293,70 +325,79 @@ function TabFace({
   return (
     <div
       ref={ref}
+      data-session-tab={dragging ? undefined : true}
+      data-tab-active={active && !dragging ? true : undefined}
+      aria-current={active && !dragging ? true : undefined}
       className={cn(
-        'close-reveal group/tab no-drag relative flex touch-none select-none items-center gap-1.5 px-2.5 py-1.5 text-xs whitespace-nowrap after:absolute after:top-2 after:right-0 after:bottom-2 after:w-px after:bg-border last:after:hidden',
-        // The floating copy is the tab held in the hand, not the tab the pane is showing: it keeps the
-        // card background so it reads above the strip, but not the active underline, which on a ghost
-        // would claim the tab had become the selection while it is still in the air.
+        'close-reveal group/tab no-drag relative flex h-7 touch-none select-none items-center gap-1 rounded-full px-1.5 text-xs whitespace-nowrap session-tab-motion motion-reduce:transition-none after:pointer-events-none after:absolute after:inset-y-2 after:right-0 after:w-px after:bg-glass-prompt-foreground/16 after:transition-opacity last:after:opacity-0 has-[+[data-tab-active]]:after:opacity-0 has-[+:hover]:after:opacity-0 hover:after:opacity-0 focus-within:after:opacity-0 solid:after:bg-foreground/16',
+        // A floating copy stays opaque and name-sized; only tabs in the strip share the available width.
         dragging
-          ? 'pointer-events-none w-max rounded-t bg-card text-foreground shadow-md'
+          ? 'pointer-events-none w-max bg-card text-foreground shadow-md after:opacity-0'
           : [
-            'cursor-pointer',
+            '@container/session-tab w-56 min-w-7 max-w-56 shrink-0 cursor-pointer text-glass-prompt-foreground solid:text-foreground',
+            active ? 'basis-56 grow-0' : 'basis-7 grow',
+            // The shared rail owns blur; the selected face only paints the glass optics.
             active
-              ? 'bg-foreground/12 solid:bg-card text-foreground transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none before:absolute before:right-2 before:bottom-0 before:left-2 before:h-0.5 before:bg-primary'
-              : 'text-muted-foreground'
+              ? 'bg-glass-tab-active-background bg-(image:--glass-tab-active-sheen) shadow-glass-tab-active inset-ring-1 inset-ring-glass-tab-active-border after:opacity-0 solid:bg-tab-active-background solid:bg-none solid:shadow-xs solid:inset-ring-border'
+              : 'hover:bg-glass-prompt-foreground/8 focus-within:bg-glass-prompt-foreground/8 solid:hover:bg-tab-hover-background solid:focus-within:bg-tab-hover-background'
           ],
         className
       )}
       onClick={onSelect}
       {...rest}
     >
-      <span
-        className={cn(
-          'group/close-slot relative flex shrink-0 items-center justify-center',
-          splitDogCount && splitDogCount > 1 ? 'h-6 min-w-6' : 'size-6'
-        )}
-      >
+      {!dragging ? (
+        <span data-tab-close-slot className="group/close-slot invisible absolute top-0.5 left-1.5 flex size-6 items-center justify-center @min-[7rem]/session-tab:visible">
+          {onClose ? (
+            <CloseButton
+              streaming={streaming}
+              ariaLabel={t('sessions.close', { title: label })}
+              className="no-drag rounded-full text-inherit transition-[background-color,opacity] group-hover/tab:opacity-100 group-focus-within/close-slot:opacity-100 hover:bg-glass-prompt-foreground/8! hover:text-inherit solid:hover:bg-tab-hover-background!"
+              onClose={onClose}
+            />
+          ) : null}
+        </span>
+      ) : null}
+      <span className={cn('flex min-w-0 items-center justify-center overflow-hidden', dragging ? 'gap-1.5' : 'w-full gap-0 transition-[padding,gap] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:gap-1.5 @min-[7rem]/session-tab:px-8')}>
         {splitDogCount && splitDogCount > 1 ? (
-          <span className="flex items-center transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0">
+          <span className="flex shrink-0 items-center">
             {Array.from({ length: splitDogCount }).map((_, index) => (
-              <Dog
-                key={index}
-                className={cn('size-3.5', index > 0 && '-ml-1.5')}
-                aria-hidden
-              />
+              <Dog key={index} className={cn('size-3.5', index > 0 && '-ml-1.5', index > 0 && !dragging && 'hidden @min-[7rem]/session-tab:block')} aria-hidden />
             ))}
           </span>
         ) : kind === 'diff' ? (
-          <FileDiff className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
+          <FileDiff className="size-3.5 shrink-0" aria-hidden />
         ) : kind === 'file' ? (
-          <FileTypeIcon path={path ?? ''} className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" />
+          <FileTypeIcon path={path ?? ''} className="size-3.5 shrink-0" />
         ) : (
-          <Dog className="size-3.5 transition-opacity group-hover/tab:opacity-0 group-focus-within/close-slot:opacity-0" aria-hidden />
+          <Dog className="size-3.5 shrink-0" aria-hidden />
         )}
-        {onClose ? (
-          <CloseButton
-            streaming={streaming}
-            ariaLabel={t('sessions.close', { title: label })}
-            className="no-drag transition-opacity group-hover/tab:opacity-100 group-focus-within/close-slot:opacity-100 text-muted-foreground hover:text-foreground"
-            onClose={onClose}
-          />
-        ) : null}
+        <span data-tab-label className={cn('min-w-0 truncate', dragging ? 'max-w-60' : ['max-w-0 transition-[max-width] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full', editing && 'max-w-full flex-1'])}>
+          {editing && onRenameCommit && onRenameCancel ? (
+            <SessionRenameField
+              // Renaming keeps text selectable without lifting the sortable tab.
+              className="h-5 w-full select-text"
+              value={label}
+              onCommit={onRenameCommit}
+              onCancel={onRenameCancel}
+            />
+          ) : label}
+        </span>
       </span>
-      {editing && onRenameCommit && onRenameCancel ? (
-        <SessionRenameField
-          // The tab cannot be selected text, since dragging it is; the name being typed is the exception.
-          className="h-5 w-35 select-text"
-          value={label}
-          onCommit={onRenameCommit}
-          onCancel={onRenameCancel}
-        />
-      ) : (
-        <span className={dragging || (splitDogCount && splitDogCount > 1) ? 'max-w-60 truncate' : 'max-w-35 truncate'}>{label}</span>
-      )}
-      {dirty ? <span role="img" aria-label={t('tabBar.unsaved')} className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
-      {loading ? <LoaderCircle className="animate-spin" aria-label={t('tabBar.loading')} /> : null}
-      {error ? <CircleAlert role="img" aria-label={error} className="size-3.5 shrink-0 text-destructive" /> : null}
+      {!dragging || dirty || loading || error ? (
+        <span className={cn('flex shrink-0 items-center justify-end gap-1', !dragging && 'absolute inset-y-0 right-1.5 hidden min-w-6 items-center @min-[7rem]/session-tab:flex')}>
+          {dirty ? <span role="img" aria-label={t('tabBar.unsaved')} className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
+          {loading ? <LoaderCircle className="size-3.5 animate-spin" aria-label={t('tabBar.loading')} /> : null}
+          {error ? <CircleAlert role="img" aria-label={error} className="size-3.5 shrink-0 text-destructive" /> : null}
+        </span>
+      ) : null}
+      {!dragging && (error || loading || dirty) ? (
+        <span className="absolute top-0.5 right-0.5 @min-[7rem]/session-tab:hidden">
+          {error ? <CircleAlert role="img" aria-label={error} className="size-2 text-destructive" />
+            : loading ? <LoaderCircle aria-label={t('tabBar.loading')} className="size-2 animate-spin" />
+              : <span role="img" aria-label={t('tabBar.unsaved')} className="block size-1.5 rounded-full bg-primary" />}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -417,7 +458,7 @@ function Tab({
       ref={setNodeRef}
       {...(listeners as unknown as HTMLAttributes<HTMLDivElement>)}
       className={cn(isDragging && 'opacity-40')}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Transform.toString(transform), '--tab-drag-transition': transition } as CSSProperties}
       label={title}
       kind={kind}
       path={path}
@@ -443,7 +484,7 @@ function Tab({
         {body}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={rename.start}>
+        <ContextMenuItem onSelect={() => { onSelect(); rename.start() }}>
           <PenLine data-icon="inline-start" />
           {t('common.rename')}
         </ContextMenuItem>

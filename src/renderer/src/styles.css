@@ -41,8 +41,15 @@
   --color-sidebar: var(--sidebar);
   --color-chat-background: var(--chat-background);
   --color-composer-background: var(--composer-background);
+  --color-tab-bar-background: var(--tab-bar-background);
+  --color-tab-active-background: var(--tab-active-background);
+  --color-tab-hover-background: var(--tab-hover-background);
   --color-glass-background: var(--glass-background);
   --color-glass-window-background: var(--glass-window-background);
+  --color-glass-tab-bar-background: var(--glass-tab-bar-background);
+  --color-glass-tab-active-background: var(--glass-tab-active-background);
+  --color-glass-tab-active-border: var(--glass-tab-active-border);
+  --shadow-glass-tab-active: var(--glass-tab-active-shadow);
   --color-glass-composer-background: var(--glass-composer-background);
   --color-glass-prompt-background: var(--glass-prompt-background);
   --color-glass-prompt-foreground: var(--glass-prompt-foreground);
@@ -141,6 +148,16 @@
 
 @utility no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* dnd-kit's transform easing must coexist with tab expansion, not replace it. */
+@utility session-tab-motion {
+  transition:
+    flex-basis 200ms ease-in-out,
+    flex-grow 200ms ease-in-out,
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    var(--tab-drag-transition, transform 0s);
 }
 
 @utility caret-blink {

@@ -225,7 +225,7 @@ export function SplitPaneContainer({
 
   return (
     <div
-      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden px-1 pb-1', className)}
+      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden p-1', className)}
     >
       {renderLayoutNode(root)}
     </div>

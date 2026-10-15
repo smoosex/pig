@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { GripHorizontal, PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
+import { PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
@@ -24,7 +24,7 @@ import { GooglyEyesButton } from './components/ui/googly-eyes-button'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
 import type { SidebarTab } from '../../shared/api'
-import { TabBar } from './components/TabBar'
+import { NewTabButton, TabBar } from './components/TabBar'
 import { halfSwitch } from './components/tab-strip'
 import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
@@ -211,8 +211,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const titlebarRef = useRef<HTMLDivElement>(null)
-  const [titlebarHovered, setTitlebarHovered] = useState(false)
   /**
    * What each half of the switcher was left on. A chat clears `currentProjectCwd`, so the worktree
    * the projects half sat in has to be remembered here; the chat half remembers its tab because the
@@ -237,25 +235,6 @@ export default function App() {
   useEffect(() => api.onNotificationClick((sessionId) => {
     openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
-
-  useEffect(() => {
-    const syncTitlebarHover = (event: PointerEvent) => {
-      const bounds = titlebarRef.current?.getBoundingClientRect()
-      const hovered = Boolean(
-        bounds &&
-        event.clientX >= bounds.left && event.clientX <= bounds.right &&
-        event.clientY >= bounds.top && event.clientY <= bounds.bottom
-      )
-      setTitlebarHovered((current) => current === hovered ? current : hovered)
-    }
-    const clearTitlebarHover = () => setTitlebarHovered(false)
-    window.addEventListener('pointermove', syncTitlebarHover, true)
-    window.addEventListener('blur', clearTitlebarHover)
-    return () => {
-      window.removeEventListener('pointermove', syncTitlebarHover, true)
-      window.removeEventListener('blur', clearTitlebarHover)
-    }
-  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -390,17 +369,8 @@ export default function App() {
       <SystemPluginUI activeSessionId={activeSessionId} />
       <ExtensionUI />
       <div data-app-surface className="flex h-full flex-col bg-glass-window-background/10 backdrop-blur-sm transition-[background-color,backdrop-filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background solid:backdrop-blur-none">
-        <div ref={titlebarRef} className="relative flex h-10 shrink-0 items-center">
-          <div
-            aria-hidden="true"
-            className={cn(
-              'drag absolute top-1 left-1/2 flex h-6 w-16 -translate-x-1/2 items-center justify-center text-muted-foreground transition-opacity',
-              titlebarHovered ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-            )}
-          >
-            <GripHorizontal className="size-4" />
-          </div>
-          <div className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
+        <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
+          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : (
               <>
                 <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
@@ -416,27 +386,35 @@ export default function App() {
               </>
             )}
           </div>
-          <div className="flex-1" />
-          {currentProjectCwd && !settingsOpen ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn('no-drag mr-3 translate-y-px', sidebarSurfaceToggle)}
-                  aria-label={t('app.sidebarRight')}
-                  aria-pressed={reviewOpen}
-                  onClick={() => setReviewOpen(!reviewOpen)}
-                >
-                  <PanelRight />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('app.sidebarRight')} <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
-              </TooltipContent>
-            </Tooltip>
+          {/* Keep both 248px rails and the card's 8px gutters reserved when either sidebar is hidden. */}
+          <div data-header-tabs className="absolute inset-x-64 inset-y-1 flex min-w-0 items-center justify-center">
+            {!settingsOpen && (currentProjectCwd || activeTabId) ? <TabBar sidebarTab={sidebarTab} /> : null}
+          </div>
+          {!settingsOpen && (currentProjectCwd || activeTabId) ? (
+            <div data-header-trailing className="flex h-full shrink-0 items-center gap-1 pl-2 pr-3">
+              <NewTabButton sidebarTab={sidebarTab} />
+              {currentProjectCwd ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={cn('no-drag translate-y-px', sidebarSurfaceToggle)}
+                      aria-label={t('app.sidebarRight')}
+                      aria-pressed={reviewOpen}
+                      onClick={() => setReviewOpen(!reviewOpen)}
+                    >
+                      <PanelRight />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t('app.sidebarRight')} <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
           ) : null}
-        </div>
+        </header>
         {modelCatalogError ? (
           <Alert variant="destructive">
             <AlertTitle>{t('model.loadFailed')}</AlertTitle>
@@ -475,9 +453,6 @@ export default function App() {
                 )}
               >
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
-                  <div className="flex h-9 shrink-0 items-center overflow-hidden" data-tab-strip="true">
-                    {currentProjectCwd || activeTabId ? <TabBar sidebarTab={sidebarTab} /> : <div className="flex-1" />}
-                  </div>
                   <div
                     className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                     data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}

@@ -1,19 +1,13 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { pigDir, pigPath } from './pig-dir'
-import {
-  DEFAULT_REVIEW_WIDTH,
-  MAX_REVIEW_WIDTH,
-  MIN_REVIEW_WIDTH,
-  type SidebarPrefs
-} from '../shared/api'
+import type { SidebarPrefs } from '../shared/api'
 
 export type { SidebarPrefs } from '../shared/api'
 
 const defaults: SidebarPrefs = {
   sidebarTab: 'projects',
   split: 0.5,
-  reviewOpen: false,
-  reviewWidth: DEFAULT_REVIEW_WIDTH
+  reviewOpen: false
 }
 
 function filePath(): string {
@@ -30,11 +24,6 @@ async function setAsideCorruptFile(): Promise<void> {
 function clampSplit(value: number): number {
   if (!Number.isFinite(value)) return defaults.split
   return Math.min(0.8, Math.max(0.2, value))
-}
-
-function clampReviewWidth(value: number): number {
-  if (!Number.isFinite(value)) return defaults.reviewWidth
-  return Math.min(MAX_REVIEW_WIDTH, Math.max(MIN_REVIEW_WIDTH, Math.round(value)))
 }
 
 export async function loadSidebarPrefs(): Promise<SidebarPrefs> {
@@ -58,8 +47,7 @@ export async function loadSidebarPrefs(): Promise<SidebarPrefs> {
   return {
     sidebarTab: data.sidebarTab === 'chats' ? 'chats' : defaults.sidebarTab,
     split: clampSplit(data.split ?? defaults.split),
-    reviewOpen: Boolean(data.reviewOpen),
-    reviewWidth: clampReviewWidth(data.reviewWidth ?? defaults.reviewWidth)
+    reviewOpen: Boolean(data.reviewOpen)
   }
 }
 
@@ -71,9 +59,7 @@ export async function saveSidebarPrefs(patch: Partial<SidebarPrefs>): Promise<Si
         ? patch.sidebarTab
         : current.sidebarTab,
     split: patch.split === undefined ? current.split : clampSplit(patch.split),
-    reviewOpen: patch.reviewOpen === undefined ? current.reviewOpen : Boolean(patch.reviewOpen),
-    reviewWidth:
-      patch.reviewWidth === undefined ? current.reviewWidth : clampReviewWidth(patch.reviewWidth)
+    reviewOpen: patch.reviewOpen === undefined ? current.reviewOpen : Boolean(patch.reviewOpen)
   }
   await mkdir(pigDir(), { recursive: true })
   await writeFile(filePath(), `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)

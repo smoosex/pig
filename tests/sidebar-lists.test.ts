@@ -5,15 +5,12 @@
 import { afterEach, describe, mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { createElement } from 'react'
-import { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH, type SurfaceStyle } from '../src/shared/api'
+import type { SurfaceStyle } from '../src/shared/api'
 
 // The store graph reads window.api the first time it is evaluated and that evaluation is shared
 // across test files, so this one pins the module rather than freezing `undefined` for everyone.
 mock.module('../src/renderer/src/ipc/api', () => ({
-  api: { supportsGlass: true },
-  DEFAULT_REVIEW_WIDTH,
-  MAX_REVIEW_WIDTH,
-  MIN_REVIEW_WIDTH
+  api: { supportsGlass: true }
 }))
 mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({
   ProjectList: () => createElement('div', { 'data-stub': 'project-list' })
@@ -78,7 +75,10 @@ describe('sidebar list per half', () => {
       assert.ok(highlight.classList.contains('bg-sidebar-foreground/6'), 'sidebar rows share a sliding foreground tint')
       assert.ok(!highlight.className.includes('backdrop-blur'))
       assert.ok(highlight.classList.contains('solid:bg-sidebar-accent'), 'both styles keep the same sliding layer')
-      assert.ok(container.querySelector('aside')!.classList.contains('solid:bg-sidebar'))
+      const sidebar = container.querySelector('aside')!
+      assert.ok(sidebar.classList.contains('solid:bg-sidebar'))
+      assert.ok(sidebar.classList.contains('w-62'), 'both sidebars share the same width utility')
+      assert.ok(sidebar.firstElementChild!.classList.contains('w-62'))
       const switcher = container.querySelector<HTMLElement>('[data-slot=toggle-group][aria-label="界面风格"]')!
       assert.equal(switcher.getAttribute('data-size'), 'xs')
       const [glass, solid] = [...switcher.querySelectorAll<HTMLButtonElement>('button')]

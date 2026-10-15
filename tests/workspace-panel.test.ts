@@ -1,9 +1,8 @@
 /**
  * The right column is the only place git state becomes clickable, so this fixture drives the real store
  * and the real panel against a stubbed bridge: grouped rows, the flat 全部 list, the click that opens a
- * changes tab, folding a group, the empty states and a refresh that keeps its rows. A drag is checked
- * too, because the width is what decides whether the panel is usable at all — and so is the switch
- * between the changes list and the file tree that now share the column.
+ * changes tab, folding a group, the empty states and a refresh that keeps its rows. Its fixed-width rail
+ * keeps the file tree and changes list mounted when it collapses.
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
@@ -61,14 +60,12 @@ async function runFixture(name: string): Promise<void> {
     getSidebarPrefs: async () => ({
       sidebarTab: 'projects',
       split: 0.5,
-      reviewOpen: true,
-      reviewWidth: 320
+      reviewOpen: true
     }),
     setSidebarPrefs: async (patch) => ({
       sidebarTab: 'projects',
       split: 0.5,
-      reviewOpen: patch.reviewOpen ?? true,
-      reviewWidth: patch.reviewWidth ?? 320
+      reviewOpen: patch.reviewOpen ?? true
     })
   }
   Object.defineProperty(window, 'api', { value: api, configurable: true })
@@ -136,7 +133,7 @@ async function runFixture(name: string): Promise<void> {
     const saved: Partial<SidebarPrefs>[] = []
     api.setSidebarPrefs = async (patch) => {
       saved.push(patch)
-      return { sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 }
+      return { sidebarTab: 'projects', split: 0.5, reviewOpen: false }
     }
     await act(async () => {
       useDiffStore.getState().setReviewOpen(false)
@@ -145,16 +142,14 @@ async function runFixture(name: string): Promise<void> {
     assert.deepEqual(saved, [{ reviewOpen: false }], 'a write after the failure still goes out')
     assert.equal(useDiffStore.getState().prefsError, null, 'and clears the message once it lands')
   } else if (name === 'prefs-race') {
-    // Writes queue, so a failure can land after a later write was already queued. The message has to
-    // follow the field it belongs to: cleared by a later save of that same field, kept by a save of
-    // another one, because main merges one field at a time and the toggle was still never written.
+    // A failed save must not discard a newer toggle that is already queued behind it.
     const held: { patch: Partial<SidebarPrefs>; resolve: () => void; reject: (error: Error) => void }[] = []
     const flush = () => new Promise((done) => setTimeout(done, 0))
     api.setSidebarPrefs = (patch) =>
       new Promise((resolve, reject) => {
         held.push({
           patch,
-          resolve: () => resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false, reviewWidth: 320 }),
+          resolve: () => resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false }),
           reject
         })
       })
@@ -184,30 +179,7 @@ async function runFixture(name: string): Promise<void> {
       'a later save of the same field clears the message'
     )
 
-    await act(async () => {
-      useDiffStore.getState().setReviewOpen(true)
-      await flush()
-      useDiffStore.getState().commitReviewWidth()
-      await flush()
-    })
-    assert.equal(held.length, 3, 'the first of the pair is in flight, the second waits behind it')
-    await act(async () => {
-      held[2].reject(failure)
-      await flush()
-    })
-    assert.equal(held.length, 4, 'and starts once that one settles')
-    assert.equal(useDiffStore.getState().prefsError, 'EACCES: permission denied')
-    await act(async () => {
-      held[3].resolve()
-      await flush()
-    })
-    assert.equal(
-      useDiffStore.getState().prefsError,
-      'EACCES: permission denied',
-      'but a save of another field leaves it alone: the toggle still never reached the disk'
-    )
-    assert.equal(held[2].patch.reviewOpen, true)
-    assert.deepEqual(Object.keys(held[3].patch), ['reviewWidth'])
+    assert.deepEqual(held.map(({ patch }) => patch), [{ reviewOpen: true }, { reviewOpen: false }])
   } else if (name === 'grouped') {
     await render(CWD)
     const text = container.textContent ?? ''
@@ -389,7 +361,7 @@ async function runFixture(name: string): Promise<void> {
     const panel = container.querySelector('aside')
     assert.ok(panel, 'expected the review column')
     assert.doesNotMatch(panel!.className, /border-[ltrb]/, 'no separator lines around the column')
-    assert.match(panel!.className, /\bmr-2\b/, 'keeps the page margin the chat card has when collapsed')
+    assert.match(panel!.firstElementChild!.className, /\bpr-2\b/, 'the window inset stays inside the shared sidebar width')
     assert.equal(container.querySelector('button[aria-label="收起变更栏"]'), null)
     assert.equal(container.querySelector('button[aria-label="折叠全部"]'), null, 'folding lives in the canvas')
     const sizes = [...container.querySelectorAll('footer button[role="radio"]')]
@@ -405,13 +377,12 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(container.querySelector('span.will-change-transform')!.classList.contains('bg-sidebar-foreground/6'))
     assert.match(container.querySelector('footer')!.className, /\bpb-2\b/, 'the footer clears the window edge like the left column')
 
-    // Collapsing animates the same way the left column does: the width goes to 0 and the gap goes
-    // with it, and the rail is taken out of the tab order while it is off screen.
+    // The rail collapses like the left sidebar, retaining its inner inset inside the clipped contents.
     await render(CWD, true)
     const collapsed = container.querySelector('aside')!
-    assert.equal(collapsed.style.width, '0px', 'the rail collapses to nothing')
-    assert.match(collapsed.className, /transition-\[width,margin,background-color\]/, 'width, spacing and background animate without fading content')
-    assert.match(collapsed.className, /\bmr-0\b/, 'taking the page margin with it')
+    assert.ok(collapsed.classList.contains('w-0'), 'the rail collapses to nothing')
+    assert.match(collapsed.className, /transition-\[width,background-color\]/, 'width and background animate without fading content')
+    assert.doesNotMatch(collapsed.className, /\bmr-/, 'an outer margin cannot offset the centered conversation')
     assert.equal(collapsed.getAttribute('aria-hidden'), 'true')
     assert.ok(collapsed.hasAttribute('inert'), 'and stops answering the keyboard')
   } else if (name === 'views') {
@@ -478,60 +449,29 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(row('src/work.ts')!.classList.contains('bg-sidebar-foreground/12'))
     assert.ok(row('src/work.ts')!.classList.contains('hover:bg-sidebar-foreground/12!'))
     assert.ok(!row('src/work.ts')!.classList.contains('hover:bg-sidebar-foreground/6!'))
-  } else if (name === 'drag') {
-    await render(CWD)
-    const handle = container.querySelector('div[aria-label="调整侧边栏宽度"]')
-    assert.ok(handle, 'expected the resize handle')
-    assert.match(handle!.className, /\bleft-0\b/, 'the full handle stays inside the clipped panel')
-    assert.doesNotMatch(handle!.className, /-left-1/)
-    const writes: number[] = []
+  } else if (name === 'width') {
+    const writes: Partial<SidebarPrefs>[] = []
     api.setSidebarPrefs = async (patch) => {
-      if (patch.reviewWidth !== undefined) writes.push(patch.reviewWidth)
-      return { sidebarTab: 'projects', split: 0.5, reviewOpen: true, reviewWidth: patch.reviewWidth ?? 320 }
+      writes.push(patch)
+      return { sidebarTab: 'projects', split: 0.5, reviewOpen: true }
     }
-    // happy-dom lays nothing out, so the drag start has to be given a width to work from.
-    Object.defineProperty(handle!.parentElement!, 'offsetWidth', { value: 320, configurable: true })
-    Object.assign(handle!, { setPointerCapture: () => {}, releasePointerCapture: () => {} })
-    const pointer = (type: string, clientX: number) =>
-      new window.MouseEvent(type, { bubbles: true, clientX, pointerId: 1 } as MouseEventInit)
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointerdown', 500))
-      handle!.dispatchEvent(pointer('pointermove', 420))
-    })
-    assert.equal(useDiffStore.getState().reviewWidth, 400, 'drag left widens the panel')
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointermove', 100))
-    })
-    assert.equal(useDiffStore.getState().reviewWidth, 720, 'the width stops at its maximum')
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointerup', 100))
-    })
-    assert.equal(writes.length, 1)
-    assert.equal(writes[0], 720)
-
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointerdown', 500))
-      handle!.dispatchEvent(pointer('pointermove', 450))
-      handle!.dispatchEvent(pointer('pointercancel', 450))
-      await Promise.resolve()
-    })
-    assert.equal(useDiffStore.getState().reviewWidth, 370)
-    const committed = writes.length
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointermove', 300))
-      await Promise.resolve()
-    })
-    assert.equal(useDiffStore.getState().reviewWidth, 370, 'a cancelled drag stops moving')
-    assert.equal(writes.length, committed, 'lost capture after cancellation does not commit twice')
-
-    await act(async () => {
-      handle!.dispatchEvent(pointer('pointerdown', 500))
-      handle!.dispatchEvent(pointer('pointermove', 460))
-      handle!.dispatchEvent(pointer('lostpointercapture', 460))
-      await Promise.resolve()
-    })
-    assert.equal(useDiffStore.getState().reviewWidth, 360)
-    assert.equal(writes.length, committed + 1, 'lost capture commits the drag once')
+    await render(CWD)
+    const panel = container.querySelector('aside')!
+    const content = panel.firstElementChild!
+    assert.ok(panel.classList.contains('w-62'), 'the right rail uses the same width as the left sidebar')
+    assert.ok(content.classList.contains('w-62') && content.classList.contains('shrink-0'))
+    assert.equal(panel.style.width, '', 'no stored width overrides the shared CSS width')
+    assert.ok(!panel.classList.contains('max-w-1/2') && !panel.classList.contains('mr-2'))
+    assert.equal(panel.querySelector('[role="separator"]'), null, 'there is no resize handle')
+    await render(CWD, true)
+    assert.ok(panel.classList.contains('w-0'))
+    assert.equal(panel.getAttribute('aria-hidden'), 'true')
+    assert.ok(panel.hasAttribute('inert'))
+    assert.equal(panel.firstElementChild, content, 'collapsing retains the full-width contents')
+    await render(CWD)
+    assert.ok(panel.classList.contains('w-62'))
+    assert.equal(panel.firstElementChild, content)
+    assert.deepEqual(writes, [], 'mounting and collapsing do not write a width preference')
   }
 
   await act(async () => {
@@ -546,14 +486,14 @@ if (process.argv[2] === '--review-panel-fixture') {
 } else {
   for (const [name, title] of Object.entries({
     'prefs-failure': 'a preference that could not be read or saved is reported, and the queue survives it',
-    'prefs-race': 'a failure that lands after a queued write is cleared by that write only for its own field',
+    'prefs-race': 'toggle writes remain ordered and a later success clears a prior failure',
     grouped: 'grouped rows list both stages and a click reveals the file in the changes tab',
     sticky: 'transparent sticky titles clip scrolled rows without painting another surface',
     shell: 'the column has no separators and no duplicate collapse button',
     states: 'a broken read, a non-git folder and a clean worktree each say so',
     refresh: 'a refresh keeps the list while only a first read shows the loading text',
     views: 'the column switches between the changes list and the file tree',
-    drag: 'dragging the edge resizes the panel and writes the preference once'
+    width: 'the fixed rail matches the left sidebar and retains its contents while collapsing'
   })) {
     test(`review panel: ${title}`, async () => {
       const child = Bun.spawn(

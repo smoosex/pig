@@ -6,11 +6,6 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import {
-  DEFAULT_REVIEW_WIDTH,
-  MAX_REVIEW_WIDTH,
-  MIN_REVIEW_WIDTH
-} from '../src/shared/api'
 
 const CWD = '/reveal-project'
 
@@ -70,10 +65,7 @@ test('a reveal seats the card a card-gap below the top', async () => {
       unwatchWorktreeDiff: async () => {},
       onDiffChanged: () => () => {},
       onDiffWatchError: () => () => {}
-    },
-    DEFAULT_REVIEW_WIDTH,
-    MAX_REVIEW_WIDTH,
-    MIN_REVIEW_WIDTH
+    }
   }))
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })

@@ -6,9 +6,6 @@
 import { create } from 'zustand'
 import {
   api,
-  DEFAULT_REVIEW_WIDTH,
-  MAX_REVIEW_WIDTH,
-  MIN_REVIEW_WIDTH,
   type DiffFileEntry,
   type DiffScope,
   type UntrackedFileResult,
@@ -18,8 +15,6 @@ import {
 import { t } from '../lib/i18n'
 import { failureMessage } from '../lib/ipc-error'
 import type { MessageKey, Translate } from '../../../shared/i18n'
-
-export { DEFAULT_REVIEW_WIDTH, MAX_REVIEW_WIDTH, MIN_REVIEW_WIDTH } from '../ipc/api'
 
 export interface WorktreeDiffState {
   status: 'loading' | 'ready' | 'error'
@@ -91,7 +86,6 @@ interface DiffStore {
   visible: Record<string, string>
   setVisiblePath: (cwd: string, path: string) => void
   reviewOpen: boolean
-  reviewWidth: number
   /** Which view the right column is showing, per worktree: the files, or the change list. */
   panelTab: Record<string, PanelTab>
   setPanelTab: (cwd: string, tab: PanelTab) => void
@@ -101,9 +95,6 @@ interface DiffStore {
   reviewReady: boolean
   loadReviewPrefs: () => Promise<void>
   setReviewOpen: (open: boolean) => void
-  /** Live during a drag; `commitReviewWidth` writes the value once the pointer is released. */
-  setReviewWidth: (width: number) => void
-  commitReviewWidth: () => void
   loadWorktree: (cwd: string) => Promise<void>
   loadWorktreePatch: (cwd: string, scope: DiffScope) => Promise<void>
   /** Drops cached state for a worktree that went away. */
@@ -176,47 +167,8 @@ export function savedScrollTop(key: string): number {
   return scrollTops.get(key) ?? 0
 }
 
-type PrefField = 'reviewOpen' | 'reviewWidth' | 'read'
-
-/**
- * The panel looks saved the moment its state changes, so a write that fails has to say so somewhere: it
- * otherwise only shows up as a preference that reverted on the next launch. Failures are per field and a
- * success clears only the field it wrote, because `saveSidebarPrefs` merges one field at a time — a width
- * that saved says nothing about the toggle, and clearing the whole message there would hide a change that
- * never reached the disk. Oldest failure first, so the newest unresolved one is what the alert shows.
- */
-const prefFailures = new Map<PrefField, string>()
-
-function currentPrefsError(): string | null {
-  return [...prefFailures.values()].at(-1) ?? null
-}
-
-function notePrefFailure(field: PrefField, error: unknown): void {
-  prefFailures.delete(field)
-  prefFailures.set(field, failureMessage(error))
-}
-
-/** Width writes come from a drag, so they queue instead of racing each other. */
+/** Toggles are optimistic; serialize saves so an earlier write cannot overwrite a later click. */
 let prefWrites: Promise<unknown> = Promise.resolve()
-
-function savePrefs(
-  set: (partial: { prefsError: string | null }) => void,
-  patch: { reviewOpen?: boolean; reviewWidth?: number }
-): void {
-  const fields = Object.keys(patch) as PrefField[]
-  prefWrites = prefWrites.then(() => api.setSidebarPrefs(patch)).then(
-    () => {
-      for (const field of fields) prefFailures.delete(field)
-      // A write that landed proves the file can be reached, so it answers a read that failed as well.
-      prefFailures.delete('read')
-      set({ prefsError: currentPrefsError() })
-    },
-    (error: unknown) => {
-      for (const field of fields) notePrefFailure(field, error)
-      set({ prefsError: currentPrefsError() })
-    }
-  )
-}
 
 export const useDiffStore = create<DiffStore>((set, get) => ({
   worktrees: {},
@@ -274,7 +226,6 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
     set((state) => ({ visible: { ...state.visible, [cwd]: path } }))
   },
   reviewOpen: false,
-  reviewWidth: DEFAULT_REVIEW_WIDTH,
   panelTab: {},
   setPanelTab: (cwd, tab) => set((state) => ({ panelTab: { ...state.panelTab, [cwd]: tab } })),
   reviewReady: false,
@@ -285,25 +236,21 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
     set({ reviewReady: true })
     try {
       const prefs = await api.getSidebarPrefs()
-      set({ reviewOpen: prefs.reviewOpen, reviewWidth: prefs.reviewWidth })
+      set({ reviewOpen: prefs.reviewOpen })
     } catch (error) {
       // Main answers a missing file with its defaults, so a rejection here is a read that failed and the
       // panel is left showing defaults it cannot vouch for.
-      notePrefFailure('read', error)
-      set({ prefsError: currentPrefsError() })
+      set({ prefsError: failureMessage(error) })
     }
   },
 
   setReviewOpen: (reviewOpen) => {
     set({ reviewOpen })
-    savePrefs(set, { reviewOpen })
+    prefWrites = prefWrites.then(() => api.setSidebarPrefs({ reviewOpen })).then(
+      () => set({ prefsError: null }),
+      (error: unknown) => set({ prefsError: failureMessage(error) })
+    )
   },
-
-  setReviewWidth: (width) => {
-    set({ reviewWidth: Math.min(MAX_REVIEW_WIDTH, Math.max(MIN_REVIEW_WIDTH, Math.round(width))) })
-  },
-
-  commitReviewWidth: () => savePrefs(set, { reviewWidth: get().reviewWidth }),
 
   loadWorktree: async (cwd) => {
     const read = claim(scans, cwd)
