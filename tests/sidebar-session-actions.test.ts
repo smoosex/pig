@@ -94,6 +94,14 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.ok(close.classList.contains('absolute'))
     assert.ok(close.classList.contains('opacity-0'))
     assert.ok(close.classList.contains('pointer-events-none'))
+    // The row owns button backgrounds in every state, not just during hover.
+    for (const button of row.querySelectorAll<HTMLElement>('button')) {
+      assert.ok(
+        button.classList.contains('!bg-transparent'),
+        `row button ${button.getAttribute('aria-label') ?? button.textContent} keeps its own hover surface`
+      )
+    }
+    assert.ok(close.classList.contains('text-muted-foreground'), 'the close X is a dimmed icon action')
     const circle = close.querySelector('.close-spin')!
     assert.ok(circle)
     const topClose = [...container.querySelectorAll<HTMLButtonElement>('[data-tabs] button')]
@@ -120,8 +128,14 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     if (kind === 'project') {
       assert.ok(row.querySelector('.lucide-x'))
     } else {
-      assert.ok(row.querySelector('.lucide-trash-2'), 'settled chats keep their hold-to-delete action')
-      assert.equal(row.querySelector('.lucide-x'), null)
+      const settledRow = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!
+      const hold = settledRow.querySelector('.lucide-trash-2')?.closest('button')
+      assert.ok(hold, 'settled chats render a hold-to-delete button')
+      assert.ok(hold.classList.contains('text-destructive'), 'hold-to-delete keeps its destructive red')
+      assert.ok(!hold.classList.contains('text-muted-foreground'), 'secondary icon colors must not override delete feedback')
+      assert.ok(hold.classList.contains('!bg-transparent'), 'the row also owns the idle hold-to-delete background')
+      assert.ok(!hold.classList.contains('hover:bg-accent'))
+      assert.equal(settledRow.querySelector('.lucide-x'), null)
     }
     await act(async () => { store.setState({ activeTabId: null }) })
     const unselected = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!

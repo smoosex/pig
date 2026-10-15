@@ -11,7 +11,7 @@ import { SessionList } from './SessionList'
 import { SessionHistoryPopover } from '../SessionHistoryPopover'
 import type { RunProjectAction } from './project-action'
 import { useT } from '../../hooks/useT'
-import { sidebarRowSurface } from './sidebar-surface'
+import { sidebarButtonSurface, sidebarRowSurface } from './sidebar-surface'
 
 export function WorktreeRow({
   projectCwd,
@@ -49,7 +49,10 @@ export function WorktreeRow({
     <Button
       variant="ghost"
       size="xs"
-      className="h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal !bg-transparent"
+      className={cn(
+        'h-full min-w-0 flex-1 justify-start gap-1 rounded-md px-0 text-xs font-normal',
+        sidebarButtonSurface
+      )}
       aria-label={namingLabel ? t('worktree.branchNaming', { branch: worktree.branch, state: namingLabel }) : worktree.branch}
       onClick={() => void selectProjectCwd(worktree.cwd)}
     >
@@ -75,7 +78,7 @@ export function WorktreeRow({
         <Button
           variant="ghost"
           size="icon-xs"
-          className="shrink-0 text-destructive hover:text-destructive !bg-transparent"
+          className={cn(sidebarButtonSurface, 'shrink-0 text-destructive hover:text-destructive')}
           aria-label={t('worktree.retryNamingAria', { branch: worktree.branch })}
           disabled={pending !== null || worktree.missing}
           aria-busy={retrying}
@@ -130,7 +133,8 @@ export function WorktreeRow({
             variant="ghost"
             size="icon-xs"
             className={cn(
-              '!bg-transparent',
+              sidebarButtonSurface,
+              'text-muted-foreground',
               pending !== `new:${worktree.cwd}` &&
                 'pointer-events-none opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
             )}

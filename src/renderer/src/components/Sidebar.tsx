@@ -13,7 +13,7 @@ import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
-import { sidebarSurfaceHover, sidebarSurfaceToggle } from './sidebar/sidebar-surface'
+import { sidebarButtonSurface, sidebarSurfaceHover, sidebarSurfaceToggle } from './sidebar/sidebar-surface'
 import { useProjectAction } from './sidebar/project-action'
 
 export function Sidebar({
@@ -60,7 +60,10 @@ export function Sidebar({
             <Button
               variant="ghost"
               size="icon-xs"
-              className="pointer-events-none opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
+              className={cn(
+                'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
+                sidebarButtonSurface
+              )}
               aria-label={t('sidebar.newChat')}
               disabled={projectPending !== null}
               onClick={() => void runProjectAction('new-chat', newChat)}
