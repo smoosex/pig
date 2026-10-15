@@ -6,6 +6,7 @@ import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useT } from '../../hooks/useT'
+import { sidebarButtonSurface } from './sidebar-surface'
 import type { RunProjectAction } from './project-action'
 
 export function CreateWorktreeButton({
@@ -44,7 +45,8 @@ export function CreateWorktreeButton({
             variant="ghost"
             size="icon-xs"
             className={cn(
-              '!bg-transparent',
+              sidebarButtonSurface,
+              'text-muted-foreground',
               !busy &&
                 'pointer-events-none opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
             )}
@@ -134,7 +136,10 @@ export function WorktreeDeleteButton({
       <Button
         variant="ghost"
         size="icon-xs"
-        className="pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:text-destructive !bg-transparent"
+        className={cn(
+          'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/worktree:pointer-events-auto group-hover/worktree:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:text-destructive',
+          sidebarButtonSurface
+        )}
         aria-label={t('worktree.deleteAria', { branch })}
         disabled={disabled}
         aria-busy={busy}

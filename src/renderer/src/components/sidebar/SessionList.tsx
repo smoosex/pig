@@ -17,7 +17,7 @@ import { HookSidebar } from '../ui/hook-sidebar'
 import { SessionCloseButton } from './SessionCloseButton'
 import { SessionForkIcon } from '../SessionForkIcon'
 import { useT } from '../../hooks/useT'
-import { sidebarRowSurface } from './sidebar-surface'
+import { sidebarButtonSurface, sidebarRowSurface } from './sidebar-surface'
 
 export function SessionList({ sessions }: { sessions: OpenTab[] }) {
   // The tab list keeps the order the strip was left in; the fork rows it holds just hang under the
@@ -89,7 +89,7 @@ function SessionRow({ tab, fork }: { tab: OpenTab; fork: SessionTabRow }) {
               <Button
                 variant="ghost"
                 size="xs"
-                className="h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
+                className={cn('h-7 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal', sidebarButtonSurface)}
                 title={session.loadError || session.title}
                 onClick={() => void activateTab(session.id)}
               >

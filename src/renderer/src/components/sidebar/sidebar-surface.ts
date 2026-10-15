@@ -3,6 +3,13 @@ const transition = 'transition-colors duration-100 ease-out motion-reduce:transi
 
 export const sidebarSurfaceHover = `${transition} hover:bg-sidebar-foreground/6! solid:hover:bg-sidebar-accent!`
 
+/**
+ * Rows own every button background, including hover/expanded and hold-to-confirm idle/confirmed.
+ * Foregrounds remain caller-owned; hold feedback uses its progress ring and red/green icon,
+ * deliberately without a confirmed-state fill.
+ */
+export const sidebarButtonSurface = '!bg-transparent'
+
 const selectedSurface = `${transition} bg-sidebar-foreground/12 hover:bg-sidebar-foreground/12! solid:bg-sidebar-accent solid:hover:bg-sidebar-accent!`
 
 export function sidebarRowSurface(selected: boolean): string {

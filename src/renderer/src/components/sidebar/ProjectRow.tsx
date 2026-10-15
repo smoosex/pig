@@ -19,7 +19,7 @@ import { useProjectAction } from './project-action'
 import { CreateWorktreeButton } from './WorktreeActions'
 import { WorktreeRow } from './WorktreeRow'
 import { ProjectAvatar } from './ProjectAvatar'
-import { sidebarRowSurface } from './sidebar-surface'
+import { sidebarButtonSurface, sidebarRowSurface } from './sidebar-surface'
 
 export type DragClickGuard = { current: boolean }
 
@@ -100,7 +100,7 @@ export function ProjectRow({
                 {...attributes}
                 {...listeners}
                 variant="ghost"
-                className="h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal !bg-transparent"
+                className={cn('h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal', sidebarButtonSurface)}
                 onClick={(event) => {
                   if (clickGuard.current) {
                     event.preventDefault()
@@ -125,7 +125,10 @@ export function ProjectRow({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="pointer-events-none opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 !bg-transparent"
+                  className={cn(
+                    'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
+                    sidebarButtonSurface
+                  )}
                   aria-label={t('project.menu', { name: project.name })}
                   disabled={pending !== null}
                 >

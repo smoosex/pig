@@ -847,6 +847,14 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(document.body.textContent?.includes('命名失败'), false)
       const button = retry()
       assert.ok(button, 'a failed naming offers a retry')
+      assert.ok(button.classList.contains('text-destructive'), 'failed naming stays red without hover')
+      assert.ok(button.classList.contains('hover:text-destructive'))
+      assert.ok(!button.classList.contains('text-muted-foreground'), 'secondary actions cannot mask the error')
+      for (const selector of ['.lucide-history', '.lucide-plus']) {
+        const actionButton = container.querySelector(selector)?.closest('button')
+        assert.ok(actionButton)
+        assert.ok(actionButton.classList.contains('text-muted-foreground'), 'normal branch actions stay secondary')
+      }
       assert.equal(button.disabled, false)
       assert.equal(button.getAttribute('aria-busy'), 'false')
       await act(async () => {

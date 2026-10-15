@@ -13,6 +13,7 @@ import { SquaresSpinner } from './RunningSpinners'
 import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
 import { SessionForkIcon } from './SessionForkIcon'
+import { sidebarButtonSurface } from './sidebar/sidebar-surface'
 
 const emptySessions: SessionMeta[] = []
 
@@ -67,7 +68,7 @@ export function SessionHistoryPopover({
           type="button"
           variant="ghost"
           size={size}
-          className={cn('shrink-0 text-muted-foreground', triggerClassName)}
+          className={cn('text-muted-foreground', sidebarButtonSurface, triggerClassName)}
           aria-label={t('sessions.history')}
         >
           <History />
@@ -126,7 +127,7 @@ function HistoryRow({
         type="button"
         variant="ghost"
         size="sm"
-        className="h-9 min-w-0 flex-1 justify-start !bg-transparent"
+        className={cn('h-9 min-w-0 flex-1 justify-start', sidebarButtonSurface)}
         disabled={pending !== null}
         onClick={onOpen}
       >

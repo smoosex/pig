@@ -19,7 +19,7 @@ import { SessionCloseButton } from './SessionCloseButton'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 import { SessionForkIcon } from '../SessionForkIcon'
-import { sidebarRowSurface } from './sidebar-surface'
+import { sidebarButtonSurface, sidebarRowSurface } from './sidebar-surface'
 
 export function ChatList() {
   const t = useT()
@@ -92,7 +92,7 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
               <Button
                 variant="ghost"
                 size="xs"
-                className="h-8 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal !bg-transparent"
+                className={cn('h-8 min-w-0 flex-1 justify-start rounded-md px-0 text-left text-xs font-normal', sidebarButtonSurface)}
                 title={title}
                 aria-current={active ? 'page' : undefined}
                 disabled={pending !== null}

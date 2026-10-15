@@ -1,7 +1,9 @@
 /** The sidebar's running indicator and close action share one fixed-width slot. */
+import { cn } from '../../lib/utils'
 import { ThinkingOrb } from 'thinking-orbs'
 import { useDarkMode } from '../../lib/useDarkMode'
 import { CloseButton } from '../CloseButton'
+import { sidebarButtonSurface } from './sidebar-surface'
 
 export function SessionCloseButton({
   streaming,
@@ -33,7 +35,10 @@ export function SessionCloseButton({
         ariaLabel={ariaLabel}
         disabled={disabled}
         onClose={onClose}
-        className="pointer-events-none transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/close-slot:pointer-events-auto group-focus-within/close-slot:opacity-100"
+        className={cn(
+          sidebarButtonSurface,
+          'pointer-events-none text-muted-foreground transition-opacity group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/close-slot:pointer-events-auto group-focus-within/close-slot:opacity-100'
+        )}
       />
     </span>
   )
