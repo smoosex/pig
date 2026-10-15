@@ -131,7 +131,7 @@ describe('worktree discovery and lifecycle', () => {
     await service.nameOnFirstPrompt(tree.cwd, 'Write documentation', async () => 'docs/initial-guide')
     expect((await service.discover(project))[1].branch).toBe('docs/initial-guide')
     await expect(git(project, ['rev-parse', '--verify', 'HEAD'])).rejects.toThrow()
-    await service.remove(project, tree.cwd, false, noop, noop)
+    await service.remove(project, tree.cwd, noop, noop)
     expect((await service.discover(project)).length).toBe(1)
   })
 })
@@ -292,13 +292,13 @@ describe('deletion protection and cleanup', () => {
     const { root, project, service } = await fixture()
     const tree = await service.create(project)
     const other = await service.create(project)
-    await expect(service.remove(project, project, true, noop, noop)).rejects.toThrow('不能删除')
-    await expect(service.remove(project, root, true, noop, noop)).rejects.toThrow('不能删除')
+    await expect(service.remove(project, project, noop, noop)).rejects.toThrow('不能删除')
+    await expect(service.remove(project, root, noop, noop)).rejects.toThrow('不能删除')
     const sessionDir = join(root, 'sessions')
     await mkdir(sessionDir)
     await writeFile(join(sessionDir, 'session.jsonl'), 'fixture')
     let closed = false
-    await service.remove(project, tree.cwd, false, async () => {
+    await service.remove(project, tree.cwd, async () => {
       closed = true
       expect(() => service.assertAvailable(tree.cwd)).toThrow()
     }, async () => {
@@ -311,27 +311,16 @@ describe('deletion protection and cleanup', () => {
     expect((await service.discover(project)).map((w) => w.cwd)).toEqual([project, other.cwd])
   })
 
-  test('dirty and ignored files require explicit force; cancelled removal changes nothing', async () => {
+  test('dirty and ignored files no longer block deletion', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
     await writeFile(join(tree.cwd, 'new.txt'), 'important')
     expect((await service.deletionInfo(project, tree.cwd)).dirty).toBe(true)
-    await expect(service.remove(project, tree.cwd, false, noop, noop)).rejects.toThrow('未提交')
-    expect(await readFile(join(tree.cwd, 'new.txt'), 'utf8')).toBe('important')
-    await service.remove(project, tree.cwd, true, noop, noop)
+    await service.remove(project, tree.cwd, noop, noop)
     expect((await service.discover(project)).length).toBe(1)
   })
 
-  test('rechecks files after agents stop instead of silently deleting fresh writes', async () => {
-    const { project, service } = await fixture()
-    const tree = await service.create(project)
-    await expect(service.remove(project, tree.cwd, false, async () => {
-      await writeFile(join(tree.cwd, 'late.txt'), 'last write')
-    }, noop)).rejects.toThrow('新修改')
-    expect(await readFile(join(tree.cwd, 'late.txt'), 'utf8')).toBe('last write')
-  })
-
-  test('unmerged commits require explicit confirmation even with a clean working tree', async () => {
+  test('remerged commits and dirty files are reported but do not stop the removal', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
     const parent = (await git(tree.cwd, ['rev-parse', 'HEAD'])).trim()
@@ -339,12 +328,11 @@ describe('deletion protection and cleanup', () => {
     const commit = (await git(tree.cwd, ['-c', 'user.name=Pig Test', '-c', 'user.email=test@localhost', 'commit-tree', index, '-p', parent, '-m', 'unmerged fixture'])).trim()
     await git(tree.cwd, ['update-ref', 'HEAD', commit])
     expect(await service.deletionInfo(project, tree.cwd)).toMatchObject({ dirty: false, unmerged: true })
-    await expect(service.remove(project, tree.cwd, false, noop, noop)).rejects.toThrow('未合并')
-    await service.remove(project, tree.cwd, true, noop, noop)
+    await service.remove(project, tree.cwd, noop, noop)
     expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
   })
 
-  test('detached HEAD commits also require confirmation and survive failed-cleanup metadata', async () => {
+  test('detached HEAD commits are deleted even with a failed cleanup, and stay recoverable', async () => {
     const { root, project, service } = await fixture()
     const cwd = join(root, 'detached')
     await git(project, ['worktree', 'add', '--detach', cwd])
@@ -353,33 +341,32 @@ describe('deletion protection and cleanup', () => {
     const commit = (await git(cwd, ['-c', 'user.name=Pig Test', '-c', 'user.email=test@localhost', 'commit-tree', index, '-p', parent, '-m', 'detached fixture'])).trim()
     await git(cwd, ['update-ref', 'HEAD', commit])
     expect(await service.deletionInfo(project, cwd)).toMatchObject({ dirty: false, unmerged: true, worktree: { detached: true, head: commit } })
-    await expect(service.remove(project, cwd, false, noop, noop)).rejects.toThrow('未合并')
-    await expect(service.remove(project, cwd, true, noop, async () => { throw new Error('cleanup failed') })).rejects.toThrow('cleanup failed')
+    await expect(service.remove(project, cwd, noop, async () => { throw new Error('cleanup failed') })).rejects.toThrow('cleanup failed')
     expect((await service.discover(project))[1]).toMatchObject({ detached: true, head: commit, missing: true })
-    await service.remove(project, cwd, true, noop, noop)
+    await service.remove(project, cwd, noop, noop)
   })
 
   test('real branches with a detached prefix are still deleted normally', async () => {
     const { root, project, service } = await fixture()
     const cwd = join(root, 'named-detached')
     await git(project, ['worktree', 'add', '-b', 'detached/legit', cwd])
-    await service.remove(project, cwd, false, noop, noop)
+    await service.remove(project, cwd, noop, noop)
     expect(await git(project, ['branch', '--list', 'detached/legit'])).toBe('')
   })
 
-  test('rejects locked worktrees even with force', async () => {
+  test('rejects locked worktrees', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
     await git(project, ['worktree', 'lock', tree.cwd])
-    await expect(service.remove(project, tree.cwd, true, noop, noop)).rejects.toThrow('已锁定')
+    await expect(service.remove(project, tree.cwd, noop, noop)).rejects.toThrow('已锁定')
   })
 
   test('cleanup failure remains retryable after git removal', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
-    await expect(service.remove(project, tree.cwd, false, noop, async () => { throw new Error('disk error') })).rejects.toThrow('disk error')
+    await expect(service.remove(project, tree.cwd, noop, async () => { throw new Error('disk error') })).rejects.toThrow('disk error')
     expect((await service.discover(project))[1]).toMatchObject({ cwd: tree.cwd, missing: true })
-    await service.remove(project, tree.cwd, true, noop, noop)
+    await service.remove(project, tree.cwd, noop, noop)
     expect((await service.discover(project)).length).toBe(1)
   })
 
@@ -452,7 +439,7 @@ describe('deletion protection and cleanup', () => {
       return new Promise<string>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
     })
     await started.promise
-    await service.remove(project, tree.cwd, false, noop, noop)
+    await service.remove(project, tree.cwd, noop, noop)
     await naming
     expect((await service.discover(project)).length).toBe(1)
     expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
@@ -470,72 +457,106 @@ async function waitForDeletions(service: WorktreeService, ready: (jobs: Worktree
 }
 
 describe('durable background deletion', () => {
-  for (const force of [false, true]) {
-    test(`queued cleanup preserves force=${force} for ignored files written after enqueue and manual retry`, async () => {
-      const { project, service } = await fixture(true, [])
-      const blocker = await service.create(project)
-      const target = await service.create(project)
-      await writeFile(join(project, '.git', 'info', 'exclude'), 'late-ignored.txt\n')
-      const started = deferred<void>()
-      const release = deferred<void>()
-      await service.startDeletionWorker(async (cwd) => {
-        if (cwd === blocker.cwd) { started.resolve(); await release.promise }
-      })
-      try {
-        await service.remove(project, blocker.cwd, false, noop, noop, { background: true })
-        await started.promise
-        await service.remove(project, target.cwd, force, noop, noop, { background: true })
-        await writeFile(join(target.cwd, 'late-ignored.txt'), 'new data')
-      } finally {
-        release.resolve()
-      }
-      await waitForDeletions(service, (jobs) => force
-        ? jobs.length === 0 : jobs.some((job) => job.cwd === target.cwd && job.status === 'failed'))
-      if (force) {
-        expect(await stat(target.cwd).catch(() => null)).toBeNull()
-      } else {
-        expect(await readFile(join(target.cwd, 'late-ignored.txt'), 'utf8')).toBe('new data')
-        expect((await git(project, ['rev-parse', target.branch])).trim()).toBe((await git(project, ['rev-parse', 'HEAD'])).trim())
-        const state = JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8'))
-        expect(state.worktrees.find((record: { cwd: string }) => record.cwd === target.cwd).backgroundDeletion.force).toBe(false)
-        await service.retryDeletion(target.cwd)
-        await waitForDeletions(service, (jobs) => jobs.some((job) => job.cwd === target.cwd && job.status === 'failed'))
-        expect(await readFile(join(target.cwd, 'late-ignored.txt'), 'utf8')).toBe('new data')
-      }
-    })
+  for (const force of [false, undefined] as const) {
+    for (const kind of ['untracked', 'ignored'] as const) {
+      test(`legacy force=${force} jobs preserve late ${kind} files across recovery and retries`, async () => {
+        const { project, service } = await fixture()
+        const tree = await service.create(project)
+        await service.shutdown()
+        const head = (await git(project, ['rev-parse', tree.branch])).trim()
+        const statePath = join(service.root, '.state.json')
+        const saved = JSON.parse(await readFile(statePath, 'utf8'))
+        saved.worktrees[0].head = head
+        saved.worktrees[0].deleting = true
+        saved.worktrees[0].backgroundDeletion = force === undefined ? { attempts: 0 } : { force, attempts: 0 }
+        await writeFile(statePath, JSON.stringify(saved))
+        const filename = `late-${kind}.txt`
+        if (kind === 'ignored') await writeFile(join(project, '.git', 'info', 'exclude'), `${filename}\n`)
+        await writeFile(join(tree.cwd, filename), 'keep this data')
 
-    test(`restart preserves force=${force} for untracked files written before recovery`, async () => {
-      const { project, service } = await fixture(true, [])
-      const blocker = await service.create(project)
-      const target = await service.create(project)
-      const started = deferred<void>()
-      const release = deferred<void>()
-      await service.startDeletionWorker(async (cwd) => {
-        if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+        const restarted = new WorktreeService(service.root, undefined, undefined, [1])
+        services.push(restarted)
+        let cleaned = false
+        await restarted.startDeletionWorker(async () => { cleaned = true })
+        for (const retry of [false, true]) {
+          if (retry) await restarted.retryDeletion(tree.cwd)
+          await waitForDeletions(restarted, (jobs) => jobs[0]?.status === 'failed' && jobs[0].attempts === 2)
+          expect(await readFile(join(tree.cwd, filename), 'utf8')).toBe('keep this data')
+          expect((await git(project, ['rev-parse', tree.branch])).trim()).toBe(head)
+          expect(cleaned).toBe(false)
+          const state = JSON.parse(await readFile(statePath, 'utf8'))
+          expect(state.worktrees[0].backgroundDeletion.force).toBe(force)
+        }
       })
-      let shutdown: Promise<void> | undefined
-      try {
-        await service.remove(project, blocker.cwd, false, noop, noop, { background: true })
-        await started.promise
-        await service.remove(project, target.cwd, force, noop, noop, { background: true })
-        shutdown = service.shutdown()
-      } finally {
-        release.resolve()
-      }
-      await shutdown
-      await writeFile(join(target.cwd, 'new-after-enqueue.txt'), 'important')
-      const restarted = new WorktreeService(service.root, undefined, undefined, [])
-      services.push(restarted)
-      await restarted.startDeletionWorker(noop)
-      await waitForDeletions(restarted, (jobs) => force ? jobs.length === 0 : jobs[0]?.status === 'failed')
-      if (force) {
-        expect(await stat(target.cwd).catch(() => null)).toBeNull()
-      } else {
-        expect(await readFile(join(target.cwd, 'new-after-enqueue.txt'), 'utf8')).toBe('important')
-        expect((await git(project, ['rev-parse', target.branch])).trim()).toBe((await git(project, ['rev-parse', 'HEAD'])).trim())
-      }
-    })
+    }
   }
+
+  test('queued cleanup removes files written after enqueue and keeps failing cleanups retryable', async () => {
+    const { project, service } = await fixture(true, [])
+    const blocker = await service.create(project)
+    const target = await service.create(project)
+    await writeFile(join(project, '.git', 'info', 'exclude'), 'late-ignored.txt\n')
+    const started = deferred<void>()
+    const release = deferred<void>()
+    await service.startDeletionWorker(async (cwd) => {
+      if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+    })
+    try {
+      await service.remove(project, blocker.cwd, noop, noop, { background: true })
+      await started.promise
+      await service.remove(project, target.cwd, noop, noop, { background: true })
+      await writeFile(join(target.cwd, 'late-ignored.txt'), 'new data')
+    } finally {
+      release.resolve()
+    }
+    await waitForDeletions(service, (jobs) => jobs.length === 0)
+    expect(await stat(target.cwd).catch(() => null)).toBeNull()
+  })
+
+  test('a failing session cleanup stays retryable after the Git worktree and branch are gone', async () => {
+    const { project, service } = await fixture(true, [])
+    const tree = await service.create(project)
+    let attempts = 0
+    await service.startDeletionWorker(async () => {
+      if (++attempts === 1) throw new Error('cleanup failed')
+    })
+    await service.remove(project, tree.cwd, noop, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs.some((job) => job.cwd === tree.cwd && job.status === 'failed'))
+    expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
+    expect(() => service.assertAvailable(tree.cwd)).toThrow()
+    await service.retryDeletion(tree.cwd)
+    await waitForDeletions(service, (jobs) => jobs.length === 0)
+    expect(attempts).toBe(2)
+    expect(() => service.assertAvailable(tree.cwd)).not.toThrow()
+  })
+
+  test('restart keeps the tombstone until the queued cleanup finishes', async () => {
+    const { project, service } = await fixture(true, [])
+    const blocker = await service.create(project)
+    const target = await service.create(project)
+    const started = deferred<void>()
+    const release = deferred<void>()
+    await service.startDeletionWorker(async (cwd) => {
+      if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+    })
+    let shutdown: Promise<void> | undefined
+    try {
+      await service.remove(project, blocker.cwd, noop, noop, { background: true })
+      await started.promise
+      await service.remove(project, target.cwd, noop, noop, { background: true })
+      shutdown = service.shutdown()
+    } finally {
+      release.resolve()
+    }
+    await shutdown
+    await writeFile(join(target.cwd, 'new-after-enqueue.txt'), 'important')
+    const restarted = new WorktreeService(service.root, undefined, undefined, [])
+    services.push(restarted)
+    await restarted.startDeletionWorker(noop)
+    await waitForDeletions(restarted, (jobs) => jobs.length === 0)
+    expect(await stat(target.cwd).catch(() => null)).toBeNull()
+    expect(await git(project, ['branch', '--list', target.branch])).toBe('')
+  })
 
   test('an external deletion record cannot choose the parent for a new managed worktree', async () => {
     const { root, project, service } = await fixture()
@@ -545,7 +566,7 @@ describe('durable background deletion', () => {
     const release = deferred<void>()
     await service.startDeletionWorker(async () => { started.resolve(); await release.promise })
     try {
-      await service.remove(project, external, false, noop, noop, { background: true })
+      await service.remove(project, external, noop, noop, { background: true })
       await started.promise
       const managed = await service.create(project)
       expect(dirname(dirname(managed.cwd))).toBe(service.root)
@@ -564,7 +585,7 @@ describe('durable background deletion', () => {
       const saved = JSON.parse(await readFile(statePath, 'utf8'))
       saved.worktrees[0].head = (await git(project, ['rev-parse', 'HEAD'])).trim()
       saved.worktrees[0].deleting = true
-      saved.worktrees[0].backgroundDeletion = { force: false, attempts: 0 }
+      saved.worktrees[0].backgroundDeletion = { attempts: 0 }
       if (failure === 'malformed') {
         await writeFile(statePath, '{invalid JSON')
         await expect(service.startDeletionWorker(noop)).rejects.toBeInstanceOf(SyntaxError)
@@ -575,7 +596,7 @@ describe('durable background deletion', () => {
         await rm(statePath, { recursive: true })
       }
       await writeFile(statePath, JSON.stringify(saved))
-      await expect(service.remove(project, target.cwd, false, noop, noop, { background: true }))
+      await expect(service.remove(project, target.cwd, noop, noop, { background: true }))
         .rejects.toMatchObject({ code: 'ERR_WORKTREE_DELETION_WORKER_NOT_READY' })
       let cleaned = false
       await service.startDeletionWorker(async () => { cleaned = true })
@@ -593,15 +614,15 @@ describe('durable background deletion', () => {
     const release = deferred<void>()
     await service.startDeletionWorker(async () => { started.resolve(); await release.promise })
     try {
-      await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+      await service.remove(project, tree.cwd, noop, noop, { background: true })
       await started.promise
       expect((await service.discover(project)).map((item) => item.cwd)).toEqual([project])
       expect(() => service.assertAvailable(tree.cwd)).toThrow('正在删除')
       expect(await service.listDeletions()).toMatchObject([{ cwd: tree.cwd, status: 'running' }])
       const state = JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8'))
-      expect(state.worktrees[0]).toMatchObject({ cwd: tree.cwd, deleting: true, backgroundDeletion: { force: false, attempts: 1 } })
+      expect(state.worktrees[0]).toMatchObject({ cwd: tree.cwd, deleting: true, backgroundDeletion: { force: true, attempts: 1 } })
       const other = await service.create(project)
-      await service.remove(project, other.cwd, false, noop, noop, { background: true })
+      await service.remove(project, other.cwd, noop, noop, { background: true })
       expect((await service.listDeletions()).map((job) => job.cwd).sort()).toEqual([tree.cwd, other.cwd].sort())
     } finally {
       release.resolve()
@@ -619,7 +640,7 @@ describe('durable background deletion', () => {
     await service.startDeletionWorker(async () => {
       if (++attempts === 1) throw new Error('temporary session cleanup failure')
     })
-    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await service.remove(project, tree.cwd, noop, noop, { background: true })
     await waitForDeletions(service, (jobs) => jobs.length === 0)
     expect(attempts).toBe(2)
     expect(notices.some((jobs) => jobs.some((job) => job.status === 'retrying' && job.error === 'temporary session cleanup failure'))).toBe(true)
@@ -630,7 +651,7 @@ describe('durable background deletion', () => {
     const { project, service } = await fixture(true, [])
     const tree = await service.create(project)
     await service.startDeletionWorker(async () => { throw new Error('permission denied') })
-    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await service.remove(project, tree.cwd, noop, noop, { background: true })
     await waitForDeletions(service, (jobs) => jobs[0]?.status === 'failed')
     await service.shutdown()
     const restarted = new WorktreeService(service.root)
@@ -648,7 +669,7 @@ describe('durable background deletion', () => {
     const { project, service } = await fixture(true, [100])
     const tree = await service.create(project)
     await service.startDeletionWorker(async () => { throw new Error('interrupted cleanup') })
-    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await service.remove(project, tree.cwd, noop, noop, { background: true })
     await waitForDeletions(service, (jobs) => jobs[0]?.status === 'retrying')
     await service.shutdown()
     const restarted = new WorktreeService(service.root)
@@ -664,7 +685,7 @@ describe('durable background deletion', () => {
     const { project, service } = await fixture(true, [])
     const tree = await service.create(project)
     await service.startDeletionWorker(async () => { throw new Error('cleanup failed') })
-    await service.remove(project, tree.cwd, false, noop, noop, { background: true })
+    await service.remove(project, tree.cwd, noop, noop, { background: true })
     await waitForDeletions(service, (jobs) => jobs[0]?.status === 'failed')
     const index = (await git(project, ['write-tree'])).trim()
     const commit = (await git(project, ['-c', 'user.name=Pig Test', '-c', 'user.email=test@localhost', 'commit-tree', index, '-p', 'HEAD', '-m', 'new branch'])).trim()
@@ -674,14 +695,16 @@ describe('durable background deletion', () => {
     expect((await git(project, ['rev-parse', tree.branch])).trim()).toBe(commit)
   })
 
-  test('background enqueue still refuses fresh writes made while stopping agents', async () => {
+  test('background enqueue also deletes fresh writes made while stopping agents', async () => {
     const { project, service } = await fixture()
     const tree = await service.create(project)
     await service.startDeletionWorker(noop)
-    await expect(service.remove(project, tree.cwd, false, async () => {
+    await service.remove(project, tree.cwd, async () => {
       await writeFile(join(tree.cwd, 'late.txt'), 'last write')
-    }, noop, { background: true })).rejects.toThrow('新修改')
-    expect(await service.listDeletions()).toEqual([])
-    expect(await readFile(join(tree.cwd, 'late.txt'), 'utf8')).toBe('last write')
+    }, noop, { background: true })
+    await waitForDeletions(service, (jobs) => jobs.length === 0)
+    expect(await stat(tree.cwd).catch(() => null)).toBeNull()
+    expect(await readFile(join(tree.cwd, 'late.txt'), 'utf8').catch(() => null)).toBeNull()
+    expect(await git(project, ['branch', '--list', tree.branch])).toBe('')
   })
 })

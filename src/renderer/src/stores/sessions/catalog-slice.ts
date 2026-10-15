@@ -332,12 +332,12 @@ export const createCatalogSlice: SessionSlice<
       return result.cwd
     },
 
-    deleteWorktree: async (projectCwd, cwd, force = false) => {
+    deleteWorktree: async (projectCwd, cwd) => {
       const project = get().projects.find((item) => item.cwd === projectCwd)
       if (cwd === projectCwd || project?.worktrees?.some((worktree) => worktree.cwd === cwd && worktree.isPrimary)) {
         throw new Error(t('sessions.cannotDeleteRoot'))
       }
-      const result = await api.deleteWorktree(projectCwd, cwd, force)
+      const result = await api.deleteWorktree(projectCwd, cwd)
       if (!result) return
       get().applyWorktreeDeletions([result.cwd])
     },

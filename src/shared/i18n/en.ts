@@ -141,14 +141,18 @@ export const en: Messages = {
       'Project files are not committed. With no initial commit, an empty orphan branch is created, and uncommitted files in the project directory are not copied over.',
     createEmpty: 'Create empty worktree',
     initAndCreate: 'Initialize and create',
-    riskDirty: 'It holds uncommitted, untracked or ignored files',
-    riskUnmerged: 'The branch holds commits that are not merged into the project',
-    riskMissing: 'The working directory is gone; the leftover registration and sessions get cleaned up',
-    deleteTitle: 'Delete branch',
-    deleteBody:
-      'Stops the sessions and removes the branch from the UI, then deletes its working directory, Git branch and Pi session files in the background. Failures are reported and retried. This cannot be undone.',
-    deletePermanent: 'That content and its sessions are deleted permanently.',
-    forceDelete: 'Delete anyway',
+    deleteTitle: 'Delete branch {branch}',
+    deleteBodyClean:
+      'This branch is merged into the project and holds nothing uncommitted. The working directory and Git branch are cleared in the background, and the associated Pi session history is permanently deleted. This cannot be undone.',
+    deleteBodyDirty:
+      'This branch is merged, so no commits are lost. The working directory holds uncommitted, untracked or ignored files, which are discarded along with it. The associated Pi session history is also permanently deleted and cannot be recovered.',
+    deleteBodyMissing:
+      'The working directory is gone, and the branch is merged. Deleting it clears the leftover registration and Git branch, and the associated Pi session history is permanently deleted and cannot be recovered.',
+    deleteTitleUnmerged: 'Delete unmerged branch {branch}',
+    deleteBodyUnmerged:
+      'This branch holds commits that are not merged into the project. The matching changes in the working directory are lost permanently. The associated Pi session history is also permanently deleted and cannot be recovered.',
+    deleteBodyUnmergedDirty:
+      'This branch holds commits that are not merged into the project, and the working directory also has uncommitted changes. Both are lost permanently, and the associated Pi session history is also permanently deleted and cannot be recovered.',
     deleteAria: 'Delete {branch}',
     deleteFailed: 'Background deletion of {branch} failed',
     deleteRetrying: 'The cleanup task is saved and will retry in {seconds} seconds.',
@@ -698,11 +702,10 @@ export const en: Messages = {
     worktreeDeletePrimary: 'The original project and unregistered worktrees cannot be deleted',
     worktreeLocked: 'That worktree is locked in Git, unlock it first',
     worktreeBranchInUse: 'Another worktree still uses that branch',
-    worktreeDirty: 'That worktree has uncommitted files or unmerged commits. Confirm the deletion again.',
-    worktreeNewChanges: 'New changes showed up once the sessions closed. Confirm the deletion again.',
     worktreeBusy: 'A worktree is being deleted, or the app is quitting',
     deleteIncomplete: 'Deletion did not finish. Delete again to clean up the branch and sessions.',
     worktreeDeletionChanged: 'The worktree or branch changed after deletion was confirmed; background cleanup was stopped.',
+    worktreeDeletionUnconfirmedChanges: 'This older deletion task was not authorized to discard local files. Cleanup was stopped. Resolve the working directory changes before retrying.',
     branchMoved: 'The branch was switched or renamed by hand, so pig stops naming it',
     branchNameTaken: 'The generated branch name is already taken',
     worktreeNotRenamable: 'That worktree has been named already',

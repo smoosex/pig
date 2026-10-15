@@ -760,7 +760,7 @@ export interface SessionApi extends ToolSettingsApi {
   worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
   /** Returns after validation, session shutdown and durable enqueue, not directory cleanup. */
-  deleteWorktree: (projectCwd: string, cwd: string, force?: boolean) => Promise<{ cwd: string } | null>
+  deleteWorktree: (projectCwd: string, cwd: string) => Promise<{ cwd: string } | null>
   listWorktreeDeletions: () => Promise<WorktreeDeletionJob[]>
   retryWorktreeDeletion: (cwd: string) => Promise<void>
   onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void) => () => void

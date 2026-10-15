@@ -723,8 +723,8 @@ async function runFixture(name: string): Promise<void> {
           disabled: action.pending !== null,
           busy: action.pending !== null,
           runAction: action.runAction,
-          onConfirm: async (force) => {
-            deletions.push(force)
+          onConfirm: async () => {
+            deletions.push(true)
           }
         })
       }
@@ -760,12 +760,19 @@ async function runFixture(name: string): Promise<void> {
         })
       })
       assert.deepEqual(deletions, [])
+      assert.equal(action.error, null)
       assert.ok(
-        document.body.textContent?.includes('包含未提交、未跟踪或被忽略的文件。'),
-        'the risk joins the same dialog'
+        document.body.textContent?.includes('尚未合入项目的提交，工作目录里还有未提交的修改'),
+        'unmerged commits with dirty files get the combined warning'
+      )
+      assert.ok(
+        document.querySelector<HTMLElement>('[role="dialog"]')?.textContent?.includes(
+          '删除未合并的分支'
+        ),
+        'the unmerged case also retitles the dialog'
       )
       await act(async () => {
-        const confirm = button('仍然删除')
+        const confirm = button('删除')
         confirm.click()
         confirm.click()
       })
@@ -782,12 +789,60 @@ async function runFixture(name: string): Promise<void> {
           missing: false
         })
       })
+      assert.ok(
+        document.body.textContent?.includes('已经合入项目，没有未提交的内容'),
+        'a clean merged branch gets its own copy'
+      )
+      assert.ok(
+        !document.querySelector<HTMLElement>('[role="dialog"]')
+          ?.textContent?.includes('删除未合并的分支'),
+        'the merged case keeps the plain title'
+      )
       await act(async () => {
         const confirm = button('删除')
         confirm.click()
         confirm.click()
       })
-      assert.deepEqual(deletions, [true, false])
+      assert.deepEqual(deletions, [true, true])
+
+      const { translate } = await import('../src/shared/i18n')
+      const cases = [
+        { dirty: false, unmerged: false, missing: false, body: 'worktree.deleteBodyClean' },
+        { dirty: true, unmerged: false, missing: false, body: 'worktree.deleteBodyDirty' },
+        { dirty: false, unmerged: false, missing: true, body: 'worktree.deleteBodyMissing' },
+        { dirty: false, unmerged: true, missing: false, body: 'worktree.deleteBodyUnmerged' },
+        { dirty: true, unmerged: true, missing: false, body: 'worktree.deleteBodyUnmergedDirty' }
+      ] as const
+      for (const locale of ['zh-CN', 'en'] as const) {
+        await act(async () => { useSettingsStore.setState({ localeSetting: locale, locale }) })
+        for (const { body, ...flags } of cases) {
+          const requestIndex = checks.length
+          await act(async () => {
+            button(translate(locale, 'worktree.deleteAria', { branch: 'branch' })).click()
+          })
+          await act(async () => {
+            checks[requestIndex].resolve({ cwd: '/worktree', branch: 'branch', ...flags })
+          })
+          const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+          assert.ok(dialog)
+          assert.ok(dialog.textContent?.includes(translate(locale, body)), `${locale}: ${body}`)
+          assert.ok(
+            dialog.textContent?.includes(locale === 'en' ? 'Pi session history' : 'Pi 会话历史'),
+            'every confirmation mentions the Pi session history'
+          )
+          assert.ok(
+            dialog.textContent?.includes(locale === 'en' ? 'permanently deleted' : '永久删除'),
+            'every confirmation warns about permanent deletion'
+          )
+          const before = deletions.length
+          await act(async () => {
+            const confirm = button(translate(locale, 'common.delete'))
+            confirm.click()
+            confirm.click()
+          })
+          assert.equal(deletions.length, before + 1)
+        }
+      }
     } else if (name === 'worktree-naming-retry') {
       class NoopResizeObserver {
         observe() {}
@@ -1042,7 +1097,7 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     'sidebar-timeout': 'an unanswered sidebar read falls back without applying a late response',
     worktree: 'worktree inspection is guarded and failures never start creation',
     'worktree-delete':
-      'failed deletion checks never delete and dirty worktrees require explicit force',
+      'the confirm dialog swaps its copy for the merge state of the branch',
     'worktree-naming-retry':
       'a failed branch naming offers a retry instead of only naming the error',
     'reveal-active-session':
