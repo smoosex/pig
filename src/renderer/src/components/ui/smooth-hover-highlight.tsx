@@ -113,7 +113,18 @@ export function SmoothHoverHighlight({
     const observer = new ResizeObserver(measure)
     if (areaRef.current) observer.observe(areaRef.current)
     observer.observe(target)
-    return () => observer.disconnect()
+    // Transforms never reach ResizeObserver. Re-measure after this region or an ancestor finishes
+    // zooming, but don't let unrelated overlay animations interrupt the current glide.
+    const settle = (event: AnimationEvent) => {
+      if (event.target instanceof Element && event.target.contains(areaRef.current)) {
+        moveTo(target, true)
+      }
+    }
+    window.addEventListener('animationend', settle)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('animationend', settle)
+    }
   }, [moveTo, target])
 
   useEffect(() => {
