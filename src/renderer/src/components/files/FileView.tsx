@@ -335,7 +335,9 @@ function FileSurface({
   const options = useMemo(() => fileCodeOptions(dark), [dark])
   return (
     <EditProvider createEditor={createEditor}>
-      <Virtualizer className={cn('min-h-0 flex-1 overflow-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', hidden && 'invisible')}>
+      {/* No block gap around the code: the opaque gutter would otherwise stop short of the header and the
+          card edge, with the glass backplate showing through above and below it. */}
+      <Virtualizer className={cn('min-h-0 flex-1 overflow-auto [--diffs-gap-block:0px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', hidden && 'invisible')}>
         <FileCode
           file={file}
           options={options}
