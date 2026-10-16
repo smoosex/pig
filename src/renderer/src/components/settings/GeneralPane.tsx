@@ -13,6 +13,7 @@ import {
   SelectValue
 } from '../ui/select'
 import { Switch } from '../ui/switch'
+import { ScopedModelsSetting } from './ScopedModelsSetting'
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { CodemodeSetting } from './ToolSettingsFields'
@@ -180,6 +181,7 @@ export function GeneralPane() {
               </Select>
             )}
           </SettingsRow>
+          <ScopedModelsSetting />
         </SettingsCard>
       </div>
     </div>

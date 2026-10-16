@@ -667,6 +667,15 @@ export const zh = {
     max: '最高'
   },
   model: {
+    scope: 'Scoped models',
+    scopeDescription: '与 Pi 共用模型范围。搜索并勾选模型，已选项置顶，可拖动手柄调整顺序，修改自动保存；不选表示全部模型。',
+    scopeEmpty: '规则未匹配到可用模型，可切换 All 或在设置中调整规则。',
+    scopeChoose: '选择模型…',
+    scopeSelected: '已选择 {count} 项',
+    scopeReorder: '调整 {name} 的顺序',
+    scopeWarnings: '部分模型配置不可用',
+    scopeCleanup: '清除未配置供应商的模型',
+    scopeCleanupDescription: '清除供应商已移除或未配置（包括已退出登录）的失效模型条目；保留供应商仍有配置或可用模型的条目。',
     select: '选择模型',
     search: '搜索模型',
     empty: '没有可用模型',

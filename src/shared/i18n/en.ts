@@ -670,6 +670,15 @@ export const en: Messages = {
     max: 'Max'
   },
   model: {
+    scope: 'Scoped models',
+    scopeDescription: 'Shares the model scope with Pi. Search and select models; selected items stay on top. Drag handles to reorder. Changes save automatically; no selection means all models.',
+    scopeEmpty: 'No available models match these patterns. Switch to All or edit the scope in settings.',
+    scopeChoose: 'Select models…',
+    scopeSelected: '{count} selected',
+    scopeReorder: 'Reorder {name}',
+    scopeWarnings: 'Some model settings are unavailable',
+    scopeCleanup: 'Clear models from unconfigured providers',
+    scopeCleanupDescription: 'Removes unmatched entries from removed or unconfigured providers, including signed-out providers. Keeps entries whose providers still have credentials or available models.',
     select: 'Select a model',
     search: 'Search models',
     empty: 'No model is available',

@@ -11,6 +11,8 @@ import { Input } from '../ui/input'
 import { InputGroupButton } from '../ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { useScopedModels } from '../../hooks/useScopedModels'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
 
@@ -86,14 +88,16 @@ export function ModelPicker({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [refreshError, setRefreshError] = useState<string | null>(null)
+  const scope = useScopedModels(open)
+  const visibleModels = scope.mode === 'scoped' && scope.patterns.length ? scope.models : models
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return models
-    return models.filter((item) =>
+    if (!q) return visibleModels
+    return visibleModels.filter((item) =>
       `${item.name} ${item.providerName} ${item.provider} ${item.id}`.toLowerCase().includes(q)
     )
-  }, [models, query])
+  }, [visibleModels, query])
 
   // The switch applies to the next request, not to the turn already streaming: say so, since the
   // toolbar alone gives no sign that the running turn keeps its previous model.
@@ -161,6 +165,14 @@ export function ModelPicker({
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
           </Button>
         </div>
+        <ToggleGroup type="single" size="sm" value={scope.mode}
+          aria-label={t('model.scope')}
+          onKeyDown={(event) => event.stopPropagation()}
+          onValueChange={(value) => { if (value === 'all' || value === 'scoped') scope.setMode(value) }}>
+          <ToggleGroupItem value="all">All</ToggleGroupItem>
+          <ToggleGroupItem value="scoped">Scoped</ToggleGroupItem>
+        </ToggleGroup>
+        {scope.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{scope.error}</p> : null}
         {refreshError ?? actions.error ? (
           <p role="alert" className="px-3 py-1.5 text-xs text-destructive">
             {refreshError ?? actions.error}
@@ -170,7 +182,7 @@ export function ModelPicker({
           <SmoothHoverHighlight activeKey={navigation.index}>
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {models.length === 0 ? t('model.empty') : t('model.noMatch')}
+                {scope.mode === 'scoped' && scope.patterns.length && !visibleModels.length ? t('model.scopeEmpty') : models.length === 0 ? t('model.empty') : t('model.noMatch')}
               </p>
             ) : (
               filtered.map((item, index) => {

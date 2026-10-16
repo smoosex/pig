@@ -190,3 +190,29 @@ index 833ea47..a2b44ce 100644
                  onChallenge: (challenge) => {
                      this.challenge = challenge;
                  },
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 4a4e958..f0e2087 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -11,7 +11,7 @@ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts"
+ export type { RegisteredMcpServer } from "./core/mcp-servers.ts";
+ export { convertToLlm } from "./core/messages.ts";
+ export { ModelRegistry } from "./core/model-registry.ts";
+-export { type ModelScopeDiagnostic, type ResolveCliModelResult, type ResolveModelScopeResult, resolveCliModel, resolveModelScopeWithDiagnostics, type ScopedModel, } from "./core/model-resolver.ts";
++export { type ModelScopeDiagnostic, type ResolveCliModelResult, type ResolveModelScopeResult, resolveCliModel, resolveModelScopeFromModels, resolveModelScopeWithDiagnostics, type ScopedModel, } from "./core/model-resolver.ts";
+ export { type CreateModelRuntimeOptions, CredentialSynchronizationError, type CredentialSynchronizationOperation, ModelRuntime, type ModelRuntimeAuthOverrides, } from "./core/model-runtime.ts";
+ export type { PackageManager, PathMetadata, ProgressCallback, ProgressEvent, ResolvedPaths, ResolvedResource, } from "./core/package-manager.ts";
+ export { DefaultPackageManager } from "./core/package-manager.ts";
+diff --git a/dist/index.js b/dist/index.js
+index c48934f..3ef6266 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -10,7 +10,7 @@ export { createEventBus } from "./core/event-bus.js";
+ export { createExtensionRuntime, defineTool, discoverAndLoadExtensions, ExtensionRunner, isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isPowerShellToolResult, isReadToolResult, isToolCallEventType, isWriteToolResult, wrapRegisteredTool, wrapRegisteredTools, } from "./core/extensions/index.js";
+ export { convertToLlm } from "./core/messages.js";
+ export { ModelRegistry } from "./core/model-registry.js";
+-export { resolveCliModel, resolveModelScopeWithDiagnostics, } from "./core/model-resolver.js";
++export { resolveCliModel, resolveModelScopeFromModels, resolveModelScopeWithDiagnostics, } from "./core/model-resolver.js";
+ export { CredentialSynchronizationError, ModelRuntime, } from "./core/model-runtime.js";
+ export { DefaultPackageManager } from "./core/package-manager.js";
+ export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";

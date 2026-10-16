@@ -200,6 +200,15 @@ export interface GenerationStats {
  * The catalog every picker reads. It belongs to the app rather than to a session: one main-side
  * runtime answers for all of them, and a refresh re-reads it once instead of once per open session.
  */
+export interface ScopedModelSettings {
+  /** Keep original Pi rules, including globs, thinking suffixes and unavailable models. */
+  selections: { pattern: string; models: SessionModelInfo[] }[]
+  missingProviderPatterns: string[]
+  patterns: string[]
+  models: SessionModelInfo[]
+  warnings: string[]
+}
+
 export interface ModelCatalog {
   models: SessionModelInfo[]
   /** Bumped by main on every refresh that changed the list, so a late read cannot win over a newer push. */
@@ -809,6 +818,9 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi {
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
   /** The shared catalog, always read latest; a session id only says which probes to skip. */
+  getScopedModels: () => Promise<ScopedModelSettings>
+  setScopedModels: (patterns: string[]) => Promise<void>
+  onScopedModelsChanged: (listener: () => void) => () => void
   getModelCatalog: () => Promise<ModelCatalog>
   /** Re-reads the runtime and pushes the result to every window, including this one. */
   refreshModelCatalog: () => Promise<ModelCatalog>
