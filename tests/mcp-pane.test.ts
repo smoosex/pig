@@ -154,7 +154,7 @@ async function fixture(): Promise<void> {
     assert.equal(installed.querySelectorAll('[data-slot="card"]').length, 2)
     assert.equal(market.querySelectorAll('[data-slot="card"]').length, 2)
     for (const card of host.querySelectorAll<HTMLElement>('[data-slot="card"]')) {
-      for (const token of ['bg-glass-composer-background/60', 'ring-glass-border', 'solid:bg-card', 'solid:ring-foreground/10', 'motion-reduce:transition-none']) {
+      for (const token of ['bg-glass-composer-background/60', 'ring-glass-card-border', 'shadow-glass-card', 'after:shadow-glass-card-edge', 'after:pointer-events-none', 'solid:shadow-none', 'solid:after:shadow-none', 'solid:bg-card', 'solid:ring-foreground/10', 'motion-reduce:transition-none']) {
         assert.ok(card.classList.contains(token), token)
       }
       assert.ok(!card.classList.contains('bg-card') && !card.className.includes('backdrop-'))

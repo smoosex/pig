@@ -70,6 +70,10 @@ async function fixture(): Promise<void> {
     assert.equal(container.querySelectorAll('[data-slot="separator"][data-orientation="horizontal"]').length, 2)
     const card = container.querySelector<HTMLElement>('[data-slot="card"]')!
     assert.ok(card.classList.contains('bg-glass-composer-background/60'))
+    assert.ok(card.classList.contains('shadow-glass-card'))
+    assert.ok(card.classList.contains('after:shadow-glass-card-edge'))
+    assert.ok(card.classList.contains('solid:shadow-none'))
+    assert.ok(!card.className.includes('backdrop-'))
     assert.ok(card.classList.contains('solid:bg-secondary'))
     assert.ok(!card.classList.contains('bg-secondary'))
     assert.ok(container.querySelector('[data-slot="card-content"] .bg-code-background'))

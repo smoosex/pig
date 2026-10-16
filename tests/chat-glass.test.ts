@@ -398,7 +398,7 @@ else {
         const values = new Map([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2]]))
         contracts.push([...values.keys()].sort())
         const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-'))
-        assert.equal(glass.length, 14)
+        assert.equal(glass.length, 24)
         if (materials.has(appearance)) assert.deepEqual(glass, materials.get(appearance), 'glass colors cannot follow the palette')
         else materials.set(appearance, glass)
         assert.match(values.get('glass-background')!, /^color-mix\(in srgb, #[\da-f]{6} 50%, transparent\)$/)
@@ -418,6 +418,31 @@ else {
           assert.match(values.get(role)!, /^#[\da-f]{6}$/)
         }
         assert.equal(values.get('glass-code-gutter-background'), appearance === 'dark' ? 'rgb(57 57 59 / 0.55)' : 'rgb(245 245 245 / 0.42)', 'the gutter has its own translucent neutral fill, independent of composer and palette')
+        assert.equal(values.get('glass-button-background'), appearance === 'dark' ? 'rgb(64 64 68 / 0.72)' : 'rgb(255 255 255 / 0.72)')
+        assert.match(values.get('glass-button-sheen')!, /^linear-gradient\(180deg,/)
+        const primaryShadow = values.get('glass-primary-button-shadow')!
+        assert.ok(primaryShadow.includes(`var(--primary) ${appearance === 'dark' ? 25 : 40}%`), 'primary buttons use the review status tinted shadow')
+        assert.ok(primaryShadow.includes('inset 0 1px 0 color-mix(in srgb, var(--primary) 75%, white)'), 'primary buttons share the review status lit top edge')
+        assert.match(values.get('glass-card-edge-shadow')!, /inset 0 1px/)
+        assert.match(values.get('glass-card-edge-shadow')!, /inset 0 -1px/)
+        assert.match(values.get('glass-card-shadow')!, /0 12px 28px -16px/)
+        for (const role of ['glass-button-shadow', 'glass-button-hover-shadow']) {
+          assert.match(values.get(role)!, /inset 0 1px/)
+          assert.match(values.get(role)!, /inset 0 -1px/)
+        }
+        for (const role of ['glass-button-background', 'glass-button-hover-background']) {
+          const [, r, g, b, alpha] = values.get(role)!.match(/^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/)!
+          const panel = values.get('glass-prompt-background')!
+          for (const sheen of [0, appearance === 'dark' ? 0.12 : 0.45]) {
+            const background = luminance('#' + [r, g, b].map((channel, index) => {
+              const base = parseInt(panel.slice(index * 2 + 1, index * 2 + 3), 16)
+              const fill = Number(channel) * Number(alpha) + base * (1 - Number(alpha))
+              return Math.round(fill * (1 - sheen) + 255 * sheen).toString(16).padStart(2, '0')
+            }).join(''))
+            const text = luminance(values.get('glass-prompt-foreground')!)
+            assert.ok((Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05) >= 4.5, `${appearance} ${role} is readable over the neutral panel including its sheen`)
+          }
+        }
         const foreground = luminance(values.get('glass-prompt-foreground')!)
         const background = luminance(values.get('glass-prompt-background')!)
         assert.ok((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) >= 4.5)

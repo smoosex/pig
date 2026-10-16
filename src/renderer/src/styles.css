@@ -54,6 +54,15 @@
   --color-glass-prompt-background: var(--glass-prompt-background);
   --color-glass-prompt-foreground: var(--glass-prompt-foreground);
   --color-glass-border: var(--glass-border);
+  --color-glass-card-border: var(--glass-card-border);
+  --shadow-glass-card: var(--glass-card-shadow);
+  --shadow-glass-card-edge: var(--glass-card-edge-shadow);
+  --color-glass-button-background: var(--glass-button-background);
+  --color-glass-button-hover-background: var(--glass-button-hover-background);
+  --color-glass-button-border: var(--glass-button-border);
+  --shadow-glass-button: var(--glass-button-shadow);
+  --shadow-glass-primary-button: var(--glass-primary-button-shadow);
+  --shadow-glass-button-hover: var(--glass-button-hover-shadow);
   --shadow-glass-panel: 0 8px 28px -8px var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   --color-user-message-background: var(--user-message-background);
   --color-user-message-foreground: var(--user-message-foreground);

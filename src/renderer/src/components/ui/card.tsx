@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
+/** The edge overlay stays above filled footers so the lower rim remains visible without blurring content. */
 function Card({
   className,
   size = "default",
@@ -11,7 +12,7 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-glass-composer-background/60 py-(--card-spacing) text-sm text-card-foreground ring-1 ring-glass-border transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-card solid:ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "group/card relative flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-glass-composer-background/60 py-(--card-spacing) text-sm text-card-foreground ring-1 ring-glass-card-border shadow-glass-card after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-glass-card-edge solid:shadow-none solid:after:shadow-none transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-card solid:ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
       {...props}
