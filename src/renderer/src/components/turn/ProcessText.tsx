@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
+import { SUBAGENT_RESULT_TYPE } from '../../../../shared/api'
 import type { CustomMessage, TextContent } from '../../pi/types'
 import { formatElapsed } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
@@ -6,6 +7,7 @@ import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Marker, MarkerContent } from '../ui/marker'
+import { SubagentResultNotice } from '../subagents/SubagentLinks'
 import { Chevron, disclosureButton, pre, Rail, StackedIcons, statusMarker } from './ProcessChrome'
 
 export function stripThoughtHeading(text: string): string {
@@ -100,6 +102,7 @@ export const ThinkingRow = memo(function ThinkingRow({
 })
 
 export const CustomProcess = memo(function CustomProcess({ message }: { message: CustomMessage }) {
+  if (message.customType === SUBAGENT_RESULT_TYPE) return <SubagentResultNotice message={message} />
   const text =
     typeof message.content === 'string'
       ? message.content

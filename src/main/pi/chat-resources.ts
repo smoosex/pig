@@ -46,6 +46,7 @@ export function sessionResourceSettings(cwd: string, agentDir: string): Settings
 interface SessionResourceOptions {
   settingsManager?: SettingsManager
   extensionFactories?: ExtensionFactory[]
+  appendSystemPrompt?: string[]
 }
 
 export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {
@@ -57,7 +58,8 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
     extensionFactories: options.extensionFactories,
     noExtensions: true,
     additionalExtensionPaths: pluginPaths,
-    skillsOverride: (base) => applySkillPreferences(base)
+    skillsOverride: (base) => applySkillPreferences(base),
+    ...(options.appendSystemPrompt?.length ? { appendSystemPrompt: options.appendSystemPrompt } : {})
   })
   await loader.reload()
   return loader
@@ -76,7 +78,7 @@ export async function createChatResourceLoader(cwd: string, pluginPaths: string[
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),
     skillsOverride: (base) => applySkillPreferences(base, true),
-    appendSystemPrompt: [CHAT_APPEND_PROMPT]
+    appendSystemPrompt: [CHAT_APPEND_PROMPT, ...(options.appendSystemPrompt ?? [])]
   })
   await loader.reload()
   return loader

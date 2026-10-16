@@ -20,6 +20,12 @@ files:
 extraResources:
   - from: src/main/plugins/pig-ui.ts
     to: system-plugins/pig-ui.ts
+  - from: src/main/plugins/pig-subagent-host.ts
+    to: system-plugins/pig-subagent-host.ts
+  - from: src/main/plugins/pig-subagent
+    to: system-plugins/pig-subagent
+    filter:
+      - '**/*.ts'
   - from: src/main/plugins/observational-memory
     to: system-plugins/observational-memory
     filter:

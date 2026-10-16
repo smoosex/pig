@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { Marker, MarkerContent } from '../ui/marker'
 import { MarkdownText } from '../MarkdownText'
 import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel } from './ProcessChrome'
-import { clusterWork, countTools, iconKinds, processSegments, type WorkRow } from './process-model'
+import { clusterWork, processToolNames, toolUsageSummary, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ThinkingRow } from './ProcessText'
 
@@ -40,10 +40,9 @@ const GroupBody = memo(function GroupBody({ items }: { items: ProcessItem[] }) {
 })
 
 const ActivityGroup = memo(function ActivityGroup({ items }: { items: ProcessItem[] }) {
-  const t = useT()
   const [open, setOpen] = useState(false)
-  const tools = countTools(items)
-  if (tools === 0) {
+  const tools = processToolNames(items)
+  if (tools.length === 0) {
     return (
       <>
         {items.map((item, i) => {
@@ -62,7 +61,7 @@ const ActivityGroup = memo(function ActivityGroup({ items }: { items: ProcessIte
         <Button type="button" variant="ghost" size="sm" className={cn(disclosureButton, 'w-full')}>
           <StackedIcons kinds={iconKinds(items)} />
           <span className="min-w-0 flex-1 truncate text-left">
-            {t('turn.toolsUsed', { count: tools })}
+            {toolUsageSummary(tools)}
           </span>
           <Chevron open={open} />
         </Button>
@@ -171,9 +170,8 @@ const OutlineBody = memo(function OutlineBody({ items, active, streaming }: { it
 })
 
 const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
-  const t = useT()
-  const tools = countTools(items)
-  if (tools === 0) {
+  const tools = processToolNames(items)
+  if (tools.length === 0) {
     return (
       <>
         {items.map((item, i) => {
@@ -194,7 +192,7 @@ const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { 
     <div className="min-w-0">
       <Marker className={statusMarker}>
         <StackedIcons kinds={iconKinds(items)} />
-        <MarkerContent className="flex-1 truncate">{t('turn.usingTool')}</MarkerContent>
+        <MarkerContent className="flex-1 truncate">{toolUsageSummary(tools)}</MarkerContent>
       </Marker>
       <Rail>
         <OutlineBody items={items} active={active} streaming={streaming} />

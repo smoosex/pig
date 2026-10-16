@@ -249,7 +249,8 @@ export interface SessionsStore {
    * rows and the tab titles are patched in place, since the session files are already up to date.
    */
   applySessionNames: (updates: SessionNameUpdate[]) => void
-  closeTab: (tabId: string) => void
+  /** Session tabs with running background subagents ask first unless `confirmed`. */
+  closeTab: (tabId: string, options?: { confirmed?: boolean }) => void
   /**
    * Writes back a dragged half of the strip: the visible ids in their new arrangement, which the store
    * places into the slots those tabs already held so the other half is not disturbed.

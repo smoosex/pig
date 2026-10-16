@@ -9,6 +9,8 @@ import { useWorktreeDeletions } from './hooks/useWorktreeDeletions'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
 import { SystemPluginUI } from './components/SystemPluginUI'
+import { SubagentTranscriptDialog } from './components/subagents/SubagentTranscriptDialog'
+import { SubagentCloseConfirm } from './components/subagents/SubagentCloseConfirm'
 import { ExtensionUI } from './components/ExtensionUI'
 import { useToolSettingsStore } from './stores/tool-settings'
 import { useSessionWindows } from './hooks/useSessionWindows'
@@ -367,6 +369,8 @@ export default function App() {
       <ThemeSync />
       <HighlighterWarmup />
       <SystemPluginUI activeSessionId={activeSessionId} />
+      <SubagentTranscriptDialog />
+      <SubagentCloseConfirm />
       <ExtensionUI />
       <div data-app-surface className="flex h-full flex-col transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">

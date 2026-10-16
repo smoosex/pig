@@ -647,6 +647,77 @@ export interface MemoryPluginSettings {
 
 export type MemoryPluginSettingsPatch = { [K in keyof MemoryPluginSettings]?: MemoryPluginSettings[K] | null }
 
+export type SubagentStatus =
+  | 'queued' | 'running' | 'completed' | 'failed' | 'timeout' | 'turn_limit' | 'aborted' | 'interrupted'
+
+export const SUBAGENT_RESULT_TYPE = 'subagent-result'
+
+/** What the timeline shows of a turn: the same summary as a process group header. */
+export interface SubagentTurn {
+  tools: string[]
+  thinking: boolean
+}
+
+/** One spawned subagent as its parent session sees it; persisted in the parent's subagent index. */
+export interface SubagentInfo {
+  id: string
+  parentSessionId: string
+  /** Used by startup cleanup; absent in indexes created before orphan cleanup existed. */
+  parentSessionFile?: string
+  toolCallId: string
+  title: string
+  prompt: string
+  background: boolean
+  status: SubagentStatus
+  model?: { provider: string; id: string; thinkingLevel?: ThinkingLevel }
+  /** Why the configured model was not used; absent when no fallback happened. */
+  fallbackReason?: string
+  createdAt: number
+  startedAt?: number
+  endedAt?: number
+  turns: number
+  /** 0 means unlimited. */
+  maxTurns: number
+  /** Tool calls of each started turn, for the timeline. */
+  turnTools: SubagentTurn[]
+  toolCounts: Record<string, number>
+  /** Paths changed through edit/write only; bash changes are not attributed. */
+  editedFiles: string[]
+  activity?: string
+  tokens: { input: number; output: number }
+  cost: number
+  output?: string
+  error?: string
+  sessionFile?: string
+  cleared?: boolean
+}
+
+export interface SubagentListUpdate {
+  parentSessionId: string
+  subagents: SubagentInfo[]
+}
+
+/** Details of a subagent-result custom message. */
+export interface SubagentResultDetails {
+  subagents: { id: string; title: string; status: SubagentStatus }[]
+}
+
+export interface SubagentSettings {
+  model?: { provider: string; id: string }
+  thinkingLevel?: ThinkingLevel
+  maxConcurrent: number
+  timeoutMinutes: number
+  maxTurns: number
+}
+
+export type SubagentSettingsPatch = {
+  model?: { provider: string; id: string } | null
+  thinkingLevel?: ThinkingLevel | null
+  maxConcurrent?: number
+  timeoutMinutes?: number
+  maxTurns?: number
+}
+
 export type WebSearchFetchMode = 'readable' | 'raw' | 'answer'
 
 /** A credential field the settings page writes into web-search.json. */
@@ -880,6 +951,14 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi {
   replyReviewUI: (id: string, value: string | null) => Promise<void>
   onSystemUI: (listener: (event: SystemUIEvent) => void) => () => void
   onPluginsChanged: (listener: () => void) => () => void
+  listSubagents: (parentSessionId: string) => Promise<SubagentInfo[]>
+  abortSubagent: (parentSessionId: string, id: string) => Promise<void>
+  abortAllSubagents: (parentSessionId: string) => Promise<void>
+  clearFinishedSubagents: (parentSessionId: string) => Promise<void>
+  getSubagentTranscript: (parentSessionId: string, id: string) => Promise<unknown[]>
+  getSubagentSettings: () => Promise<SubagentSettings>
+  setSubagentSettings: (patch: SubagentSettingsPatch) => Promise<SubagentSettings>
+  onSubagentsChanged: (listener: (update: SubagentListUpdate) => void) => () => void
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
   setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
   setBeamBorderEnabled: (enabled: boolean) => Promise<{ beamBorderEnabled: boolean }>

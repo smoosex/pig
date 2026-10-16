@@ -223,7 +223,7 @@ async function runFixture(name: string): Promise<void> {
         await act(async () => { await Bun.sleep(350); separator().click() })
         if (withTools) {
           const group = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find((button) => button.textContent?.startsWith('使用了'))
+            .find((button) => button.textContent?.includes('read ×'))
           assert.ok(group)
           await act(async () => { group.click() })
         }
@@ -247,9 +247,10 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(shimmer.previousElementSibling?.classList.contains('shimmer'), false)
       assert.ok(shimmer.parentElement?.classList.contains('truncate'))
       assert.equal(shimmer.closest('button')?.getAttribute('aria-expanded'), 'false')
-      for (const header of container.querySelectorAll('[data-slot="marker-content"]')) {
-        if (header.textContent === '正在使用工具') assert.equal(header.querySelector('.shimmer'), null)
-      }
+      const summaries = [...container.querySelectorAll('[data-slot="marker-content"]')]
+        .filter((header) => header.textContent?.startsWith('read ×'))
+      assert.deepEqual(summaries.map((header) => header.textContent), ['read × 1', 'read × 3'])
+      for (const header of summaries) assert.equal(header.querySelector('.shimmer'), null)
       await render(makeTurn({ process, errorMessage: 'request failed' }))
       assert.deepEqual(shimmerText(), [])
       assert.ok(container.textContent?.includes('current.ts'))

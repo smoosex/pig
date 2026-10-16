@@ -19,6 +19,7 @@ import { RetryNotice } from './composer/RetryNotice'
 import { ReviewStatus } from './composer/ReviewStatus'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
+import { SubagentStatus } from './composer/SubagentStatus'
 import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
 
@@ -115,6 +116,7 @@ export function Composer({
               </span>
             </div>
           ) : null}
+          <SubagentStatus sessionId={sessionId} />
           <ReviewStatus key={sessionId ?? 'none'} sessionId={sessionId} />
         </div>
       ) : null}

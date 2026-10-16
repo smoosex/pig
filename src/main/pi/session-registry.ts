@@ -7,7 +7,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
-import { createAgentSession, getAgentDir, SessionManager, type AgentSession, type SessionEntry, type ResourceLoader } from '@earendil-works/pi-coding-agent'
+import { SessionManager, type AgentSession, type SessionEntry } from '@earendil-works/pi-coding-agent'
 import { t } from '../i18n'
 import type {
   DisplayTurnsResult,
@@ -25,14 +25,13 @@ import type {
 import { normalizeWorktreePath as resolve } from '../worktrees'
 import { createChatDir, isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
-import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
-import { sessionToolFactory } from './tool-resources'
+import { assertExtensionResources, createSessionRuntime, SessionResourceError } from './session-runtime'
+import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
 import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
 import { enabledPluginPaths } from './plugins'
 import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
-import { startModelRuntime } from './model-settings'
 import { synchronizeModelCatalog } from './model-catalog'
 import {
   applyPendingControls,
@@ -116,11 +115,6 @@ const drafts = new Map<string, string>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 const resourceFailures = new Map<string, Error>()
-class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
-function assertExtensionResources(loader: ResourceLoader): void {
-  const errors = loader.getExtensions().errors
-  if (errors.length) throw new SessionResourceError(errors.map((item) => `${item.path}: ${item.error}`).join('\n'))
-}
 async function reloadSessionResources(session: LiveSession): Promise<void> {
   try {
     await session.agentSession.reload({ beforeSessionStart: async () => assertExtensionResources(session.agentSession.resourceLoader) })
@@ -173,22 +167,8 @@ async function build(
   configure?: (session: AgentSession) => Promise<void>
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
-  const chat = isChatCwd(cwd)
-  const pluginPaths = await enabledPluginPaths(chat ? 'chat' : 'project')
-  const settingsManager = sessionResourceSettings(cwd, getAgentDir())
-  const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd)] }
-  const resourceLoader = chat
-    ? await createChatResourceLoader(cwd, pluginPaths, resources)
-    : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
-  assertExtensionResources(resourceLoader)
-  const result = await createAgentSession({
-    cwd,
-    sessionManager,
-    modelRuntime: await startModelRuntime(),
-    settingsManager,
-    ...(resourceLoader ? { resourceLoader } : {})
-  })
-  const session = result.session
+  const pluginPaths = await enabledPluginPaths(isChatCwd(cwd) ? 'chat' : 'project')
+  const session = await createSessionRuntime(cwd, sessionManager, pluginPaths)
   const created: LiveSession = {
     sessionId: session.sessionId,
     cwd,
@@ -826,22 +806,40 @@ export async function forkSessionFromMessage(
 }
 
 async function disposeLiveSession(session: LiveSession): Promise<void> {
+  // Children report into this session, so they stop before it does.
+  const shutdownErrors: unknown[] = []
+  try {
+    await closeSubagents(session.sessionId)
+  } catch (error) {
+    // A failed index write must be reported, but must not strand the already-unregistered parent.
+    shutdownErrors.push(error)
+  }
   cancelExtensionUI(session.sessionId)
   detachSystemUI(session.sessionId)
   session.unsubscribe()
   await resourceReloads.get(session.sessionId)?.catch(() => {})
   pendingToolRefresh.delete(session.sessionId)
   resourceFailures.delete(session.sessionId)
+  // Abort and extension shutdown can fail independently; neither may prevent dispose.
   try {
     await session.agentSession.abort()
-  } catch {
+  } catch (error) {
+    shutdownErrors.push(error)
   }
   try {
     await session.agentSession.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
-  } catch {
+  } catch (error) {
+    shutdownErrors.push(error)
   }
-  session.agentSession.dispose()
-  synchronizeModelCatalog()
+  try {
+    session.agentSession.dispose()
+  } catch (error) {
+    shutdownErrors.push(error)
+  } finally {
+    synchronizeModelCatalog()
+  }
+  if (shutdownErrors.length === 1) throw shutdownErrors[0]
+  if (shutdownErrors.length > 1) throw new AggregateError(shutdownErrors, 'Session shutdown failed')
 }
 
 export function closeSession(sessionId: string): Promise<void> {
