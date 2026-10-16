@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { WebSearchSettings } from './WebSearchSettings'
+import { SubagentSettings } from './SubagentSettings'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
@@ -228,7 +229,7 @@ export function PluginsPane() {
             </DropdownMenuGroup></DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.settings ? (
+        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.id === 'pig-subagent' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
@@ -386,6 +387,7 @@ export function PluginsPane() {
         <Button size="sm" className="self-end" disabled={saving} onClick={() => void saveMemory()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>
       </div> : null}
       {selectedPluginId === 'pi-web-access' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
+      {selectedPluginId === 'pig-subagent' ? <SubagentSettings onClose={() => setSelectedPluginId(null)} /> : null}
         </DialogContent>
       </Dialog>
       <Dialog open={!!toRemove} onOpenChange={(open) => { if (!open) setToRemove(null) }}>

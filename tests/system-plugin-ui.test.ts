@@ -35,6 +35,8 @@ async function fixture(scenario: Scenario): Promise<void> {
   window.api = {
     onSystemUI: (callback: typeof listener) => { listener = callback; return () => { listener = undefined } },
     replyReviewUI: async (id: string, value: string | null) => { replies.push([id, value]) },
+    listSubagents: async () => [],
+    onSubagentsChanged: () => () => {},
     prompt: async (sessionId: string, text: string) => { submittedPrompts.push([sessionId, text]) }
   } as unknown as typeof window.api
   const React = await import('react')

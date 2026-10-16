@@ -25,6 +25,7 @@ interface Registry {
   memoryScopes: PluginScope[]
   reviewScopes: PluginScope[]
   webAccessScopes: PluginScope[]
+  subagentScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
 
@@ -38,6 +39,9 @@ const memoryPath = () => app.isPackaged
 const reviewPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-review', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
+const subagentPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pig-subagent', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pig-subagent', 'index.ts')
 const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-web-access', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
@@ -57,7 +61,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], installed: [] }
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -89,6 +93,7 @@ async function readRegistry(): Promise<Registry> {
       : 'reviewEnabled' in value ? (value.reviewEnabled === true ? ['project'] : []) : defaults.reviewScopes,
     webAccessScopes: 'webAccessScopes' in value ? parseScopes(value.webAccessScopes)
       : 'webAccessEnabled' in value ? (value.webAccessEnabled === true ? ['project'] : []) : defaults.webAccessScopes,
+    subagentScopes: 'subagentScopes' in value ? parseScopes(value.subagentScopes) : defaults.subagentScopes,
     installed
   }
 }
@@ -161,7 +166,8 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
   for (const bundled of [
     { scopes: registry.memoryScopes, path: memoryPath(), name: 'observational memory' },
     { scopes: registry.reviewScopes, path: reviewPath(), name: 'code review' },
-    { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' }
+    { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' },
+    { scopes: registry.subagentScopes, path: subagentPath(), name: 'subagent' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
@@ -176,6 +182,12 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     paths.push(...found)
   }
   return [...new Set(paths)]
+}
+
+/** Subagents inherit the parent's plugins, minus memory (not a user conversation) and spawn itself (no recursion). */
+export function subagentPluginPaths(parentPaths: string[]): string[] {
+  const excluded = new Set([memoryPath(), subagentPath()].map((path) => resolve(path)))
+  return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
 function settingsSchema(source: string): PluginSettingsSchema | undefined {
@@ -280,6 +292,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pi-web-access', name: 'Web Access', source: 'Pig built-in',
     kind: 'system', scopes: registry.webAccessScopes, available: existsSync(webAccessPath()),
     ...(!existsSync(webAccessPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pig-subagent', name: 'Subagents', source: 'Pig built-in',
+    kind: 'system', scopes: registry.subagentScopes, available: existsSync(subagentPath()),
+    ...(!existsSync(subagentPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -332,6 +348,9 @@ export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void
     } else if (id === 'pi-web-access') {
       if (addsScope(registry.webAccessScopes) && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
       registry.webAccessScopes = next
+    } else if (id === 'pig-subagent') {
+      if (addsScope(registry.subagentScopes) && !existsSync(subagentPath())) throw new Error('Bundled extension is missing')
+      registry.subagentScopes = next
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')

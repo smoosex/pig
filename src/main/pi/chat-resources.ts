@@ -48,6 +48,7 @@ export function sessionResourceSettings(cwd: string, agentDir: string): Settings
 interface SessionResourceOptions {
   settingsManager?: SettingsManager
   extensionFactories?: ExtensionFactory[]
+  appendSystemPrompt?: string[]
   sessionId?: string
   /** Receives the SDK's skills before Pig's preferences, so the full list can be built on demand. */
   onSkillBase?: (base: SkillBase) => void
@@ -75,7 +76,8 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
     extensionFactories: options.extensionFactories,
     noExtensions: true,
     additionalExtensionPaths: pluginPaths,
-    skillsOverride: (base) => sessionSkills(base, false, options)
+    skillsOverride: (base) => sessionSkills(base, false, options),
+    ...(options.appendSystemPrompt?.length ? { appendSystemPrompt: options.appendSystemPrompt } : {})
   })
   await loader.reload()
   return loader
@@ -94,7 +96,7 @@ export async function createChatResourceLoader(cwd: string, pluginPaths: string[
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),
     skillsOverride: (base) => sessionSkills(base, true, options),
-    appendSystemPrompt: [CHAT_APPEND_PROMPT]
+    appendSystemPrompt: [CHAT_APPEND_PROMPT, ...(options.appendSystemPrompt ?? [])]
   })
   await loader.reload()
   return loader

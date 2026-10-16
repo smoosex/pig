@@ -13,7 +13,7 @@ function deferred() {
 }
 
 async function fixture(name: string): Promise<void> {
-  if (name === 'preparation') {
+  if (name === 'preparation' || name === 'child-close-failure') {
     const root = await mkdtemp(join(tmpdir(), 'pig-controls-preparation-'))
     const previousPig = process.env.PIG_DIR
     process.env.PIG_DIR = join(root, 'pig')
@@ -27,12 +27,22 @@ async function fixture(name: string): Promise<void> {
       getHeader: () => ({ type: 'session', id: 'draft' }),
       setSessionFile() {}
     }
+    let aborted = false
+    let disposed = false
+    let unsubscribed = false
+    const shutdownError = Object.assign(new Error('index write failed'), { code: 'ENOSPC' })
+    if (name === 'child-close-failure') {
+      mock.module(fileURLToPath(new URL('../src/main/subagents/service.ts', import.meta.url)), () => ({
+        closeSubagents: async () => { throw shutdownError }
+      }))
+    }
     const session = {
       sessionId: 'draft', bindExtensions: async () => {},
       getActiveToolNames: () => [], getAllTools: () => [], setActiveToolsByName() {},
       settingsManager: { getDefaultTools: () => undefined },
       agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
-      subscribe: () => () => {}, abort: async () => {}, dispose() {},
+      subscribe: () => () => { unsubscribed = true },
+      abort: async () => { aborted = true }, dispose() { disposed = true },
       extensionRunner: { emit: async () => {} }
     }
     mock.module('electron', () => ({ app: { isPackaged: false } }))
@@ -78,6 +88,13 @@ async function fixture(name: string): Promise<void> {
       release.resolve()
       await Promise.all([preparing, model, thinking])
       assert.deepEqual(applied, [{ kind: 'model', live: true }, { kind: 'thinking', live: true }])
+      if (name === 'child-close-failure') {
+        await assert.rejects(registry.closeSession(sessionId), (error) => error === shutdownError)
+        assert.equal(aborted, true)
+        assert.equal(disposed, true)
+        assert.equal(unsubscribed, true)
+        assert.equal(registry.getLive(sessionId), undefined)
+      }
     } finally {
       release.resolve()
       await registry?.disposeAll()
@@ -589,6 +606,7 @@ if (process.argv[2] === '--main-settings-fixture') {
 } else {
   for (const [name, title] of Object.entries({
     preparation: 'choices made before the publish apply to the live session',
+    'child-close-failure': 'subagent persistence failure cannot strand the parent during close',
     runtime: 'failed startup retries and background refresh errors stay handled',
     controls: 'pending model selection applies the same reasoning level the picker displays',
     auth: 'an old login cannot clear a newer prompt or open a stale login URL',

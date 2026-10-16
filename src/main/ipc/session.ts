@@ -84,6 +84,9 @@ export function registerSessionIpc(): void {
     async (_event, sessionId: string, path: string, cwd: string) => {
       if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
       await closeSession(sessionId)
+      // Loaded on demand: the manager pulls in the SDK runner, which IPC tests do not mock.
+      const { removeSubagents } = await import('../subagents/service')
+      await removeSubagents(sessionId)
       await removeSession(path)
       await forgetOpenProjectSession(sessionId)
     }

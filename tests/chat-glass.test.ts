@@ -15,6 +15,8 @@ async function fixture(scenario: string): Promise<void> {
     onNotificationClick: () => noop,
     getCommands: async () => [],
     isMemoryPluginEnabled: async () => false,
+    listSubagents: async () => [],
+    onSubagentsChanged: () => noop,
     onPluginsChanged: () => noop,
     setSidebarPrefs: async ({ reviewOpen }: { reviewOpen?: boolean }) => ({ sidebarTab: 'projects', split: 0.5, reviewOpen: reviewOpen ?? false })
   } })
@@ -57,7 +59,8 @@ async function fixture(scenario: string): Promise<void> {
         ['Sidebar', 'Sidebar'], ['Composer', 'Composer'], ['SessionGreeting', 'SessionGreeting'],
         ['ChatView', 'ChatView'], ['diff/ChangesView', 'ChangesView'], ['settings/SettingsPage', 'SettingsPage'],
         ['panel/WorkspacePanel', 'WorkspacePanel'], ['ProjectSessionHome', 'ProjectSessionHome'],
-        ['SystemPluginUI', 'SystemPluginUI'], ['ExtensionUI', 'ExtensionUI'], ['ui/googly-eyes-button', 'GooglyEyesButton']
+        ['SystemPluginUI', 'SystemPluginUI'], ['ExtensionUI', 'ExtensionUI'], ['ui/googly-eyes-button', 'GooglyEyesButton'],
+        ['subagents/SubagentTranscriptDialog', 'SubagentTranscriptDialog'], ['subagents/SubagentCloseConfirm', 'SubagentCloseConfirm']
       ]) {
         mock.module(`../src/renderer/src/components/${path}`, () => ({ [name]: () => h('div', { 'data-view': name }) }))
       }

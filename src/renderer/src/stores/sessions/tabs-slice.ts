@@ -4,6 +4,7 @@ import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
 import { renamedPath } from '../../lib/worktree-paths'
 import { useComposerDraftsStore } from '../composer-drafts'
+import { isSubagentActive, useSubagentStore } from '../subagents'
 import { useSplitLayoutStore, collectPaneNodes, findPaneNode } from '../split-layout'
 import { newSessionId } from '../../lib/session-id'
 import { changesTabId } from '../../../../shared/tab-ids'
@@ -925,9 +926,18 @@ export const createTabsSlice: SessionSlice<
       }
     },
 
-    closeTab: (tabId) => {
+    closeTab: (tabId, options) => {
       const tab = get().openTabs.find((item) => item.id === tabId)
       if (!tab || closing.has(tabId)) return
+      if (!options?.confirmed && (tab.kind === 'project' || tab.kind === 'chat')) {
+        // Closing a session interrupts its background subagents, so that loss is confirmed first.
+        const subagents = useSubagentStore.getState()
+        const running = (subagents.bySession[tabId] ?? []).filter((item) => item.background && isSubagentActive(item)).length
+        if (running) {
+          subagents.confirmClose(tabId, running)
+          return
+        }
+      }
       useComposerDraftsStore.getState().discard(tabId)
       // All close entry points remove the pane and prefer the split's surviving selection.
       const layout = useSplitLayoutStore.getState()

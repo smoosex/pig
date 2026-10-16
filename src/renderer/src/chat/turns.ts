@@ -534,6 +534,8 @@ export function toolStepLabel(step: ToolStep, t: Translate): string {
       return args.pattern
         ? t('tool.search', { pattern: oneLine(args.pattern) })
         : t('tool.searchPlain')
+    case 'spawn':
+      return args.title ? t('tool.spawn', { title: oneLine(args.title) }) : t('tool.call', { name: step.name })
     default:
       return t('tool.call', { name: step.name })
   }

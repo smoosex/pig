@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
-import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -224,6 +224,18 @@ const api: SessionApi = {
     const handler = () => listener()
     ipcRenderer.on('plugins:changed', handler)
     return () => ipcRenderer.off('plugins:changed', handler)
+  },
+  listSubagents: (parentSessionId: string) => ipcRenderer.invoke('subagents:list', parentSessionId),
+  abortSubagent: (parentSessionId: string, id: string) => ipcRenderer.invoke('subagents:abort', parentSessionId, id),
+  abortAllSubagents: (parentSessionId: string) => ipcRenderer.invoke('subagents:abort-all', parentSessionId),
+  clearFinishedSubagents: (parentSessionId: string) => ipcRenderer.invoke('subagents:clear-finished', parentSessionId),
+  getSubagentTranscript: (parentSessionId: string, id: string) => ipcRenderer.invoke('subagents:transcript', parentSessionId, id),
+  getSubagentSettings: () => ipcRenderer.invoke('subagents:settings-get'),
+  setSubagentSettings: (patch: SubagentSettingsPatch) => ipcRenderer.invoke('subagents:settings-set', patch),
+  onSubagentsChanged: (listener: (update: SubagentListUpdate) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: SubagentListUpdate) => listener(value)
+    ipcRenderer.on('subagents:changed', handler)
+    return () => ipcRenderer.off('subagents:changed', handler)
   },
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),

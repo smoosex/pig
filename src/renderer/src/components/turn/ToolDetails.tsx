@@ -15,6 +15,7 @@ import { Chevron, disclosureButton, Rail, VerbLabel } from './ProcessChrome'
 import { useT } from '../../hooks/useT'
 import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
 import { NestedToolCalls } from './NestedToolCalls'
+import { SpawnToolBody } from '../subagents/SubagentLinks'
 
 const EditDiffBody = lazy(() => import('../diff/EditDiffBody'))
 
@@ -128,7 +129,12 @@ export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="px-1 pt-1">
-        {step.name === 'bash' && bashCommand ? (
+        {step.name === 'spawn' ? (
+          <>
+            <SpawnToolBody toolCallId={step.id} />
+            {step.result ? <ToolPanel output={output} /> : null}
+          </>
+        ) : step.name === 'bash' && bashCommand ? (
           <BashToolPanel command={bashCommand} output={output} />
         ) : read?.code ? (
           <CodePanel path={path} code={read.code} notice={read.notice} fileListing />

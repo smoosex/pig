@@ -7,7 +7,7 @@ import type { ProcessItem, ToolStep } from '../../chat/turns'
 
 export type IconKind = 'thinking' | 'bash' | 'file' | 'tool'
 
-function stackKindForTool(name: string): IconKind {
+export function stackKindForTool(name: string): IconKind {
   if (name === 'bash') return 'bash'
   if (name === 'read' || name === 'write' || name === 'edit') return 'file'
   return 'tool'
@@ -66,13 +66,18 @@ export function clusterWork(items: ProcessItem[]): WorkRow[] {
   return rows
 }
 
-export function countTools(items: ProcessItem[]): number {
-  let n = 0
-  for (const item of items) {
-    if (item.kind === 'tools') n += item.tools.length
-    else if (item.kind === 'bash') n += 1
-  }
-  return n
+export function processToolNames(items: ProcessItem[]): string[] {
+  return items.flatMap((item) => {
+    if (item.kind === 'tools') return item.tools.map((step) => step.name)
+    return item.kind === 'bash' ? ['bash'] : []
+  })
+}
+
+/** Keep first-use order, matching the order of the group's stacked icons. */
+export function toolUsageSummary(names: readonly string[]): string {
+  const counts = new Map<string, number>()
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
+  return [...counts].map(([name, count]) => `${name} × ${count}`).join(' · ')
 }
 
 export function processSegments(items: ProcessItem[]): Array<{ kind: 'text'; text: string } | { kind: 'group'; items: ProcessItem[] }> {

@@ -9,6 +9,7 @@ import {
 import { pigPath } from '../pig-dir'
 import { sessionMcpConfig } from '../mcp/settings'
 import { readSessionCapabilities } from './session-capabilities'
+import type { SessionCapabilityOverrides } from '../../shared/session-capabilities'
 import { mcpCredentials, mcpSdk } from '../mcp/sdk'
 import { createMcpConnections } from '../mcp/connections'
 import { t } from '../i18n'
@@ -16,9 +17,13 @@ import { openMcpUrl } from '../extension-ui'
 import { loadAllowedRanges } from '../network-address'
 import { webSearchConfigPath } from './web-search-settings'
 
-export function sessionToolFactory(cwd: string, sessionId: string): ExtensionFactory {
+export function sessionToolFactory(
+  cwd: string,
+  sessionId: string,
+  inherited?: Pick<SessionCapabilityOverrides, 'tools' | 'mcp'>
+): ExtensionFactory {
   return async (pi) => {
-    const preferences = readSessionCapabilities(sessionId)
+    const preferences = inherited ?? readSessionCapabilities(sessionId)
     const snapshot = await sessionMcpConfig(cwd, preferences.mcp)
     const codemode = preferences.tools.codemode !== false
     let context: ExtensionContext | undefined
