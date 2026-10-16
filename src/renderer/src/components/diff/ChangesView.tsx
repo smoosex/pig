@@ -305,7 +305,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
   const anyExpanded = sections.some((section) => expanded[section.entry.path] === true)
 
   return (
-    <div className="glass-code-surface flex min-h-0 flex-1 flex-col">
+    <div className="glass-code-surface flex min-h-0 flex-1 flex-col [--diffs-gap-block:0px]">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-glass-border pl-3 pr-2 solid:border-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -396,7 +396,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
             <section
               key={`${scopeKey}\u0000${entry.path}`}
               id={sectionId(entry.path)}
-              className="shrink-0 overflow-hidden rounded-lg border border-glass-border bg-glass-composer-background/60 shadow-sm transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none solid:border-border solid:bg-popover"
+              className="shrink-0 overflow-hidden rounded-lg [clip-path:inset(0_round_var(--radius-lg))] border border-glass-border bg-glass-composer-background/60 shadow-sm transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none solid:border-border solid:bg-popover"
             >
               <button
                 type="button"

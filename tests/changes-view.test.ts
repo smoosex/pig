@@ -242,11 +242,14 @@ async function runFixture(): Promise<void> {
   )
   for (const card of cards()) {
     assert.match(card.className, /rounded-lg/, 'each file is its own card')
+    assert.ok(card.classList.contains('[clip-path:inset(0_round_var(--radius-lg))]'), 'the rounded card explicitly clips the sticky gutter and its backdrop filter')
     assert.match(card.className, /border/, 'the card is outlined')
   }
   const canvas = cards()[0].parentElement!
   assert.ok(canvas.classList.contains('bg-transparent') && canvas.classList.contains('solid:bg-chat-background'), 'the canvas is the conversation surface')
-  assert.ok(canvas.closest('.glass-code-surface'), 'diff bodies let the glass show through')
+  const readingSurface = canvas.closest('.glass-code-surface')!
+  assert.ok(readingSurface, 'diff bodies let the glass show through')
+  assert.ok(readingSurface.classList.contains('[--diffs-gap-block:0px]'), 'diff code and gutters have no top or bottom gap in either layout')
   assert.ok(cards()[0].classList.contains('bg-glass-composer-background/60') && cards()[0].classList.contains('solid:bg-popover'), 'a card is a raised sheet on it')
   assert.deepEqual(
     headers().map((header) => header.getAttribute('aria-expanded')),
