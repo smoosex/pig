@@ -35,6 +35,17 @@ async function fixture(): Promise<void> {
         { key: 'enabled', label: 'Enabled', type: 'boolean' }
       ] }
     } }))
+    assert.equal((await module.listPlugins()).find((item) => item.id === 'pi-review')?.settings?.namespace, 'pi-review')
+    assert.deepEqual(await module.getPluginSettings('pi-review'), {})
+    await assert.rejects(module.setPluginSettings('pi-review', { provider: 'test' }), /both provider and model ID/)
+    await module.setPluginSettings('pi-review', { provider: ' test ', modelId: ' review-model ', thinking: 'high' })
+    assert.deepEqual(await module.getPluginSettings('pi-review'), { provider: 'test', modelId: 'review-model', thinking: 'high' })
+    await assert.rejects(module.setPluginSettings('pi-review', { thinking: 'invalid' }), /Invalid choice/)
+    await assert.rejects(module.setPluginSettings('pi-review', { provider: null }), /both provider and model ID/)
+    await module.setPluginSettings('pi-review', { provider: null, modelId: null })
+    assert.deepEqual(await module.getPluginSettings('pi-review'), { thinking: 'high' })
+    await module.setPluginSettings('pi-review', { thinking: null })
+    assert.deepEqual(await module.getPluginSettings('pi-review'), {})
     const defaultScopes = [[], ['project'], ['project', 'chat']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
     assert.equal(await module.isMemoryPluginEnabled('project'), false)

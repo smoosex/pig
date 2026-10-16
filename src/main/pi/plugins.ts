@@ -10,6 +10,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope, PluginSettingsSchema } from '../../shared/api'
 import { pigPath } from '../pig-dir'
+import { reviewSettingsSchema } from '../plugins/pi-review/settings'
 import { DEFAULTS } from '../plugins/observational-memory/config'
 import { memorySettingsPath } from '../plugins/observational-memory/paths'
 
@@ -255,6 +256,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
   }, {
     id: 'pi-review', name: 'Pi Review', source: 'Pig built-in',
     kind: 'system', scopes: registry.reviewScopes, available: existsSync(reviewPath()),
+    settings: reviewSettingsSchema,
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
     id: 'pi-web-access', name: 'Pi Web Access', source: 'Pig built-in',
@@ -276,7 +278,7 @@ export function installPlugin(source: string): Promise<void> {
       if (!(await resourcesFor(normalized.source)).length) throw new Error('Package contains no Pi extensions')
       const schema = settingsSchema(normalized.source)
       if (schema) {
-        const namespaces = new Set<string>()
+        const namespaces = new Set<string>([reviewSettingsSchema.namespace])
         for (const item of registry.installed) {
           try {
             const existing = settingsSchema(item.source)
@@ -448,6 +450,7 @@ export function setMemoryPluginSettings(patch: MemoryPluginSettingsPatch): Promi
 }
 
 async function pluginSchema(id: string): Promise<PluginSettingsSchema> {
+  if (id === 'pi-review') return reviewSettingsSchema
   const plugin = (await readRegistry()).installed.find((item) => item.id === id)
   if (!plugin) throw new Error('Plugin not found')
   const schema = settingsSchema(plugin.source)
@@ -495,6 +498,16 @@ export function setPluginSettings(id: string, patch: Record<string, string | num
     for (const [key, value] of Object.entries(patch)) {
       if (value === null) delete next[key]
       else next[key] = value
+    }
+    if (id === 'pi-review') {
+      for (const key of ['provider', 'modelId']) {
+        if (typeof next[key] === 'string') {
+          const value = (next[key] as string).trim()
+          if (value) next[key] = value
+          else delete next[key]
+        }
+      }
+      if (Boolean(next.provider) !== Boolean(next.modelId)) throw new Error('Review model requires both provider and model ID')
     }
     settings[schema.namespace] = next
     await saveNamespacedSettings(path, settings)

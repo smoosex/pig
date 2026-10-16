@@ -12,10 +12,12 @@ import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 export function DefaultModelPicker({
   model,
   models,
+  placeholder,
   onSelect
 }: {
   model: SessionModelInfo | null
   models: SessionModelInfo[]
+  placeholder?: string
   onSelect: (model: SessionModelInfo) => void
 }) {
   const t = useT()
@@ -45,7 +47,7 @@ export function DefaultModelPicker({
     >
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" size="sm" className="max-w-64 font-normal">
-          <span className="truncate">{model?.name ?? t('model.select')}</span>
+          <span className="truncate">{model?.name ?? placeholder ?? t('model.select')}</span>
           <ChevronDown data-icon="inline-end" />
         </Button>
       </PopoverTrigger>

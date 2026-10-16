@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
+import { reviewSettingsSchema } from '../src/main/plugins/pi-review/settings'
 
 function deferred() {
   let resolve!: () => void
@@ -14,13 +15,15 @@ async function fixture(): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const patches: MemoryPluginSettingsPatch[] = []
   const scopeChanges: { id: string; scopes: PluginScope[] }[] = []
+  let reviewConfig: Record<string, string | number | boolean> = {}
+  const reviewPatches: Record<string, string | number | boolean | null>[] = []
   const scopeWaits = new Map<string, Promise<void>>()
   const installedSources: string[] = []
   let installation: ReturnType<typeof deferred> | null = null
   let rejectScopeChange = false
   let plugins: PluginInfo[] = [
     { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
-    { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true },
+    { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
   let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
@@ -42,6 +45,12 @@ async function fixture(): Promise<void> {
       return snapshot
     },
     onPluginsChanged: () => () => {},
+    getPluginSettings: async () => reviewConfig,
+    setPluginSettings: async (_id: string, patch: Record<string, string | number | boolean | null>) => {
+      reviewPatches.push(patch)
+      reviewConfig = Object.fromEntries(Object.entries({ ...reviewConfig, ...patch }).filter(([, value]) => value !== null)) as typeof reviewConfig
+      return reviewConfig
+    },
     getMemoryPluginDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
     getMemoryPluginSettings: async () => memoryConfig,
     setMemoryPluginSettings: async (patch: MemoryPluginSettingsPatch) => {
@@ -226,6 +235,41 @@ async function fixture(): Promise<void> {
     await act(async () => { saveDefault.click() })
     await flush()
     assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
+
+    const openReview = document.querySelector<HTMLButtonElement>('[aria-label="配置 Pi Review"]')!
+    await act(async () => { openReview.click() })
+    await flush()
+    assert.equal(document.querySelector('[aria-label="Provider"]'), null, 'provider must not be a text input')
+    assert.equal(document.querySelector('[aria-label="Model ID"]'), null, 'model ID must not be a text input')
+    const reviewPicker = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '继承当前会话')!
+    assert.ok(reviewPicker)
+    await act(async () => { reviewPicker.click() })
+    await flush()
+    const reviewOption = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('Test · test/m1'))!
+    assert.ok(reviewOption, 'one picker lists both provider and model')
+    await act(async () => { reviewOption.click() })
+    await flush()
+    const thinking = document.querySelector<HTMLButtonElement>('[aria-label="思考强度"]')!
+    assert.ok(thinking.textContent?.includes('继承当前会话'))
+    await act(async () => { thinking.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    await flush()
+    const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.textContent === '高')!
+    assert.ok(high)
+    await act(async () => { high.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    await flush()
+    const saveReview = () => [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')!
+    await act(async () => { saveReview().click() })
+    await flush()
+    assert.deepEqual(reviewPatches[0], { provider: 'test', modelId: 'm1', thinking: 'high' })
+    await act(async () => { openReview.click() })
+    await flush()
+    assert.ok(document.querySelector('[aria-label="思考强度"]')?.textContent?.includes('高'))
+    assert.ok([...document.querySelectorAll('button')].some((button) => button.textContent === 'M1'))
+    const clear = document.querySelector<HTMLButtonElement>('[aria-label="继承当前会话"]')!
+    await act(async () => { clear.click() })
+    await act(async () => { saveReview().click() })
+    await flush()
+    assert.deepEqual(reviewPatches[1], { provider: null, modelId: null }, 'model inheritance does not clear explicit thinking effort')
   } finally {
     await act(async () => { root.unmount() })
     host.remove()
