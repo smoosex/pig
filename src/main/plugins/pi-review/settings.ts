@@ -6,8 +6,8 @@ import type { PluginSettingsSchema, ThinkingLevel } from '../../../shared/api'
 export const reviewSettingsSchema: PluginSettingsSchema = {
   namespace: 'pi-review',
   fields: [
-    { key: 'provider', label: 'Provider', type: 'string', description: '模型提供商 ID；与模型 ID 一起填写，留空继承当前会话模型。' },
-    { key: 'modelId', label: 'Model ID', type: 'string', description: 'Review 使用的模型 ID。不可用时自动回退到当前会话模型。' },
+    { key: 'provider', label: 'Provider', type: 'string' },
+    { key: 'modelId', label: 'Model ID', type: 'string' },
     { key: 'thinking', label: 'Thinking effort', type: 'select', options: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] }
   ]
 }
