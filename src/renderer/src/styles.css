@@ -162,10 +162,12 @@
 
 @utility glass-code-surface {
   --code-surface-background: transparent;
-  --code-surface-gutter-background: var(--glass-composer-background);
+  --code-surface-gutter-background: var(--glass-code-gutter-background);
+  --code-surface-gutter-filter: blur(16px);
   @variant solid {
     --code-surface-background: var(--code-background);
     --code-surface-gutter-background: var(--code-background);
+    --code-surface-gutter-filter: none;
   }
 }
 

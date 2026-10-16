@@ -398,7 +398,7 @@ else {
         const values = new Map([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2]]))
         contracts.push([...values.keys()].sort())
         const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-'))
-        assert.equal(glass.length, 13)
+        assert.equal(glass.length, 14)
         if (materials.has(appearance)) assert.deepEqual(glass, materials.get(appearance), 'glass colors cannot follow the palette')
         else materials.set(appearance, glass)
         assert.match(values.get('glass-background')!, /^color-mix\(in srgb, #[\da-f]{6} 50%, transparent\)$/)
@@ -417,6 +417,7 @@ else {
         for (const role of ['glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground']) {
           assert.match(values.get(role)!, /^#[\da-f]{6}$/)
         }
+        assert.equal(values.get('glass-code-gutter-background'), appearance === 'dark' ? 'rgb(57 57 59 / 0.55)' : 'rgb(245 245 245 / 0.42)', 'the gutter has its own translucent neutral fill, independent of composer and palette')
         const foreground = luminance(values.get('glass-prompt-foreground')!)
         const background = luminance(values.get('glass-prompt-background')!)
         assert.ok((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) >= 4.5)
@@ -445,10 +446,12 @@ else {
     }
     assert.ok(css.includes('--shadow-glass-panel:'))
     assert.ok(css.includes('--shadow-glass-tab-active: var(--glass-tab-active-shadow)'))
-    for (const surface of ['@utility glass-code-surface', '--code-surface-background: transparent', '--code-surface-background: var(--code-background)', '--code-surface-gutter-background: var(--glass-composer-background)', '--code-surface-gutter-background: var(--code-background)']) assert.ok(css.includes(surface))
+    for (const surface of ['@utility glass-code-surface', '--code-surface-background: transparent', '--code-surface-background: var(--code-background)', '--code-surface-gutter-background: var(--glass-code-gutter-background)', '--code-surface-gutter-background: var(--code-background)']) assert.ok(css.includes(surface))
+    assert.ok(css.includes('--code-surface-gutter-filter: blur(16px)'))
+    assert.ok(css.includes('--code-surface-gutter-filter: none'))
     const diffOptions = await Bun.file(new URL('../src/renderer/src/components/diff/diff-options.ts', import.meta.url)).text()
     assert.ok(diffOptions.includes('--diffs-bg: var(--code-surface-background, var(--code-background))'), 'tool-output diffs outside reading panes keep the opaque code background')
-    assert.ok(diffOptions.includes('[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)) }'), 'the sticky gutter stays opaque over horizontally scrolled code')
+    assert.ok(diffOptions.includes('[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)); backdrop-filter: var(--code-surface-gutter-filter, none) }'), 'backdrop blur is scoped to the sticky gutter, with no blur for tool-output diffs')
     for (const motion of ['@utility session-tab-motion', 'flex-basis 200ms', 'flex-grow 200ms', 'var(--tab-drag-transition, transform 0s)']) assert.ok(css.includes(motion))
   })
 }
