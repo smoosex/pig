@@ -584,6 +584,8 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(compaction.getAttribute('aria-expanded'), 'true')
       assert.ok(container.textContent?.includes('保留这条记忆'))
       assert.equal(compaction.classList.contains('aria-expanded:bg-transparent'), true)
+      assert.equal(compaction.classList.contains('solid:aria-expanded:bg-transparent'), true)
+      assert.equal(compaction.classList.contains('solid:aria-expanded:bg-muted'), false)
       const box = [...container.querySelectorAll('li')]
         .find((element) => element.textContent === '保留这条记忆')
         ?.closest('[data-slot="collapsible-content"]')?.firstElementChild
@@ -688,6 +690,8 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(summaryHeaders().length, 1, 'the summary is visible before process loading')
       const summary = summaryHeaders()[0]
       assert.equal(summary.closest('[data-slot="collapsible-content"]'), null)
+      assert.equal(summary.classList.contains('solid:aria-expanded:bg-transparent'), true)
+      assert.equal(summary.classList.contains('solid:aria-expanded:bg-muted'), false)
       assert.ok(container.textContent!.indexOf('最后回答') < container.textContent!.indexOf('分支摘要'))
       assert.equal(container.textContent?.includes('Fix the return race.'), false)
       await act(async () => { summary.click(); await Bun.sleep(0) })
@@ -1135,11 +1139,20 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(container.querySelector('button button'), null)
       assert.equal(button.getAttribute('aria-expanded'), 'false')
       assert.equal(button.getAttribute('aria-controls'), null)
-      for (const name of ['text-xs', 'hover:bg-transparent', 'aria-expanded:bg-transparent']) {
+      for (const name of [
+        'text-xs', 'hover:bg-transparent', 'aria-expanded:bg-transparent',
+        'solid:hover:bg-transparent', 'solid:aria-expanded:bg-transparent',
+        'solid:hover:aria-expanded:bg-transparent', 'solid:dark:hover:bg-transparent',
+        'solid:dark:aria-expanded:bg-transparent', 'solid:dark:hover:aria-expanded:bg-transparent',
+        'solid:hover:text-muted-foreground', 'solid:aria-expanded:text-muted-foreground'
+      ]) {
         assert.ok(button.classList.contains(name))
       }
       assert.equal(button.classList.contains('hover:bg-muted'), false)
       assert.equal(button.classList.contains('aria-expanded:bg-muted'), false)
+      assert.equal(button.classList.contains('solid:hover:bg-muted'), false)
+      assert.equal(button.classList.contains('solid:aria-expanded:bg-muted'), false)
+      assert.equal(button.classList.contains('solid:dark:hover:bg-muted/50'), false)
       button.focus()
       assert.equal(document.activeElement, button)
       await act(async () => { button.click() })

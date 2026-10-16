@@ -254,7 +254,7 @@ function AgentTurnView({
                       variant="ghost"
                       disabled={loading}
                       className={cn(
-                        'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent',
+                        'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent solid:hover:bg-transparent solid:hover:text-muted-foreground solid:aria-expanded:bg-transparent solid:aria-expanded:text-muted-foreground solid:hover:aria-expanded:bg-transparent solid:dark:hover:bg-transparent solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-transparent',
                         turn.streaming && 'pointer-events-none'
                       )}
                     >
