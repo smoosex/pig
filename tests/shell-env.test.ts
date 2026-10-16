@@ -148,9 +148,13 @@ test('a shell that answers without a PATH is a failure', async () => {
 })
 
 test('imports into process.env and survives a failing probe', async () => {
-  const previousPath = process.env.PATH
-  const previousKey = process.env.PIG_SHELL_ENV_TEST_KEY
+  const probeOnlyKeys = ['SHELL', 'TERM', 'GIT_TERMINAL_PROMPT', 'APPLE_SUPPRESS_DEVELOPER_TOOL_POPUP'] as const
+  const previous = new Map(
+    ['PATH', 'PIG_SHELL_ENV_TEST_KEY', ...probeOnlyKeys].map((key) => [key, process.env[key]])
+  )
   try {
+    process.env.PATH = '/usr/bin:/bin'
+    delete process.env.PIG_SHELL_ENV_TEST_KEY
     const probe: ShellProbe = async () =>
       probeOutput(
         'PIG_SHELL_ENV_TEST_KEY=from-shell',
@@ -164,9 +168,9 @@ test('imports into process.env and survives a failing probe', async () => {
     assert.equal(result.imported, 1)
     assert.equal(process.env.PIG_SHELL_ENV_TEST_KEY, 'from-shell')
     assert.match(process.env.PATH ?? '', /^\/shell\/bin:\/usr\/bin:/, 'the shell PATH comes first')
-    assert.equal(process.env.TERM, undefined)
-    assert.equal(process.env.GIT_TERMINAL_PROMPT, undefined)
-    assert.equal(process.env.APPLE_SUPPRESS_DEVELOPER_TOOL_POPUP, undefined)
+    for (const key of probeOnlyKeys) {
+      assert.equal(process.env[key], previous.get(key), `${key} is not changed by the probe`)
+    }
 
     process.env.PATH = '/usr/bin:/bin'
     delete process.env.PIG_SHELL_ENV_TEST_KEY
@@ -181,10 +185,10 @@ test('imports into process.env and survives a failing probe', async () => {
     assert.match(process.env.PATH ?? '', /^\/opt\/homebrew\/bin:.*\.bun\/bin:.*:\/usr\/bin:\/bin$/)
     assert.equal(process.env.PIG_SHELL_ENV_TEST_KEY, undefined)
   } finally {
-    if (previousPath === undefined) delete process.env.PATH
-    else process.env.PATH = previousPath
-    if (previousKey === undefined) delete process.env.PIG_SHELL_ENV_TEST_KEY
-    else process.env.PIG_SHELL_ENV_TEST_KEY = previousKey
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
   }
 })
 

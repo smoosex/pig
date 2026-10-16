@@ -54,6 +54,7 @@
         "mermaid": "^12.1.0",
         "motion": "^14.1.0",
         "p-limit": "^7.3.3",
+        "postcss": "^8.5.30",
         "promise.try": "^2.0.2",
         "radix-ui": "^1.8.1",
         "react": "^19.3.0",

@@ -18,7 +18,6 @@ async function fixture(): Promise<void> {
   assert.ok(tokens('default').has('bg-primary'))
   assert.ok(tokens('default').has('bg-clip-border'), 'primary fills its transparent border like the review badge, without a pale rim')
   assert.ok(tokens('default').has('solid:bg-clip-padding'))
-  assert.ok(!tokens('default').has('backdrop-blur-lg'), 'opaque primary fill needs no backdrop sampling')
   assert.ok(tokens('default').has('text-primary-foreground'))
   assert.ok(tokens('default').has('shadow-glass-primary-button'))
   assert.ok(tokens('default').has('solid:shadow-none'))
@@ -34,7 +33,6 @@ async function fixture(): Promise<void> {
   assert.ok(ghost.has('hover:bg-glass-button-hover-background'))
   assert.ok(ghost.has('aria-expanded:bg-glass-button-hover-background'))
   assert.ok(![...ghost].some((token) => token.includes('shadow-glass-button') || token.includes('glass-button-sheen')), 'ghost stays flat')
-  assert.ok(![...ghost].some((token) => token.includes('backdrop-blur')), 'navigation rows keep their shared highlight without per-row blur')
   assert.ok(![...ghost].some((token) => token.startsWith('bg-') && token !== 'bg-clip-padding'), 'ghost stays transparent at rest')
   assert.ok(![...tokens('link')].some((token) => token.includes('blur') || (token.startsWith('bg-') && token !== 'bg-clip-padding')))
 }

@@ -1214,14 +1214,16 @@ async function runFixture(name: string): Promise<void> {
     const pendingControls = state().loadControls(meta.id)
     state().closeTab(meta.id)
     api.getDisplayTurns = async () => history('new')
-    api.getControls = async () => controls(42)
+    const newControls: SessionControls = { ...controls(), thinkingLevel: 'high', thinkingLevels: ['off', 'high'] }
+    api.getControls = async () => newControls
     await state().openExisting(meta)
+    assert.equal(runtime().thinkingLevel, 'high')
     response.resolve(history('stale'))
-    controlResponse.resolve(controls(1))
+    controlResponse.resolve(controls())
     await Promise.all([pending, pendingControls])
     assert.notEqual(runtime().instanceId, oldInstance)
     assert.equal(runtime().turns[0].id, 'new')
-    assert.equal(runtime().contextUsage, null)
+    assert.equal(runtime().thinkingLevel, 'high')
   } else if (name === 'stale-guards-quiet') {
     const window = (leafId: string, startIndex: number, totalTurns: number, id: string): DisplayTurnsResult => ({
       leafId, startIndex, totalTurns,

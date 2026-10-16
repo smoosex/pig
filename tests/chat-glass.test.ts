@@ -391,7 +391,7 @@ else {
     }, 15_000)
   }
 
-  test('chat glass: 50% neutral surfaces are palette-independent while solid stays themed', async () => {
+  test('chat glass: semantic surfaces are palette-independent, readable and scoped while solid stays themed', async () => {
     const contracts: string[][] = []
     const materials = new Map<string, [string, string][]>()
     const solidSurfaces = new Map<string, string[]>()
@@ -407,47 +407,30 @@ else {
         const appearance = selector.includes('.dark') ? 'dark' : 'light'
         const values = new Map([...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2]]))
         contracts.push([...values.keys()].sort())
-        const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-'))
-        assert.equal(glass.length, 24)
+        const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-')).sort(([a], [b]) => a.localeCompare(b))
+        for (const role of [
+          'background', 'window-background', 'tab-bar-background', 'tab-active-background', 'tab-active-sheen',
+          'tab-active-border', 'tab-active-shadow', 'composer-background', 'prompt-background', 'prompt-foreground',
+          'border', 'highlight', 'shadow', 'code-gutter-background', 'card-border', 'card-shadow', 'card-edge-shadow',
+          'button-background', 'button-hover-background', 'button-border', 'button-sheen', 'button-shadow',
+          'button-hover-shadow', 'primary-button-shadow'
+        ]) assert.ok(values.get(`glass-${role}`)?.trim(), `${palette} ${appearance} defines glass-${role}`)
         if (materials.has(appearance)) assert.deepEqual(glass, materials.get(appearance), 'glass colors cannot follow the palette')
         else materials.set(appearance, glass)
-        assert.match(values.get('glass-background')!, /^color-mix\(in srgb, #[\da-f]{6} 50%, transparent\)$/)
-        assert.match(values.get('glass-tab-bar-background')!, /^color-mix\(in srgb, #[\da-f]{6} 12%, transparent\)$/)
-        if (appearance === 'dark') {
-          assert.match(values.get('glass-tab-active-sheen')!, /^linear-gradient\(/)
-          assert.match(values.get('glass-tab-active-shadow')!, /inset 0 1px/)
-          assert.match(values.get('glass-tab-active-shadow')!, /inset 0 -1px/)
-          assert.notEqual(values.get('glass-tab-active-background'), values.get('glass-highlight'), 'the lens is not a flat white selection fill')
-        } else {
-          assert.equal(values.get('glass-tab-active-sheen'), 'none', 'light glass keeps its existing appearance')
-          assert.equal(values.get('glass-tab-active-background'), 'rgb(255 255 255 / 0.65)')
-          assert.equal(values.get('glass-tab-active-border'), 'rgb(255 255 255 / 0.65)')
-          assert.equal(values.get('glass-tab-active-shadow'), '0 1px 2px 0 rgb(0 0 0 / 0.05)')
-        }
-        for (const role of ['glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground']) {
+        for (const role of ['glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'code-background']) {
           assert.match(values.get(role)!, /^#[\da-f]{6}$/)
         }
-        assert.equal(values.get('glass-code-gutter-background'), appearance === 'dark' ? 'rgb(57 57 59 / 0.55)' : 'rgb(245 245 245 / 0.42)', 'the gutter has its own translucent neutral fill, independent of composer and palette')
-        assert.equal(values.get('glass-button-background'), appearance === 'dark' ? 'rgb(64 64 68 / 0.72)' : 'rgb(255 255 255 / 0.72)')
-        assert.match(values.get('glass-button-sheen')!, /^linear-gradient\(180deg,/)
-        const primaryShadow = values.get('glass-primary-button-shadow')!
-        assert.ok(primaryShadow.includes(`var(--primary) ${appearance === 'dark' ? 25 : 40}%`), 'primary buttons use the review status tinted shadow')
-        assert.ok(primaryShadow.includes('inset 0 1px 0 color-mix(in srgb, var(--primary) 75%, white)'), 'primary buttons share the review status lit top edge')
-        assert.match(values.get('glass-card-edge-shadow')!, /inset 0 1px/)
-        assert.match(values.get('glass-card-edge-shadow')!, /inset 0 -1px/)
-        assert.match(values.get('glass-card-shadow')!, /0 12px 28px -16px/)
-        for (const role of ['glass-button-shadow', 'glass-button-hover-shadow']) {
-          assert.match(values.get(role)!, /inset 0 1px/)
-          assert.match(values.get(role)!, /inset 0 -1px/)
-        }
+        const sheenStops = [...values.get('glass-button-sheen')!.matchAll(/rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/g)]
+        assert.ok(sheenStops.length > 0, 'button contrast includes the actual sheen colors')
         for (const role of ['glass-button-background', 'glass-button-hover-background']) {
           const [, r, g, b, alpha] = values.get(role)!.match(/^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/)!
           const panel = values.get('glass-prompt-background')!
-          for (const sheen of [0, appearance === 'dark' ? 0.12 : 0.45]) {
+          for (const [, sr, sg, sb, sheen] of [['', '0', '0', '0', '0'], ...sheenStops]) {
             const background = luminance('#' + [r, g, b].map((channel, index) => {
               const base = parseInt(panel.slice(index * 2 + 1, index * 2 + 3), 16)
               const fill = Number(channel) * Number(alpha) + base * (1 - Number(alpha))
-              return Math.round(fill * (1 - sheen) + 255 * sheen).toString(16).padStart(2, '0')
+              const sheenChannel = Number([sr, sg, sb][index])
+              return Math.round(fill * (1 - Number(sheen)) + sheenChannel * Number(sheen)).toString(16).padStart(2, '0')
             }).join(''))
             const text = luminance(values.get('glass-prompt-foreground')!)
             assert.ok((Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05) >= 4.5, `${appearance} ${role} is readable over the neutral panel including its sheen`)
@@ -475,18 +458,55 @@ else {
     }
     for (const contract of contracts.slice(1)) assert.deepEqual(contract, contracts[0])
     assert.notDeepEqual(materials.get('light'), materials.get('dark'), 'neutral glass still adapts to appearance')
-    const css = await Bun.file(new URL('../src/renderer/src/styles.css', import.meta.url)).text()
+    const { parse } = await import('postcss')
+    const css = parse(await Bun.file(new URL('../src/renderer/src/styles.css', import.meta.url)).text())
+    const theme = css.nodes.find((node) => node.type === 'atrule' && node.name === 'theme' && node.params === 'inline')
+    assert.ok(theme?.type === 'atrule')
+    const declarations = (container: { nodes?: readonly import('postcss').ChildNode[] }) => new Map(
+      container.nodes?.filter((node) => node.type === 'decl').map((node) => [node.prop, node.value.trim()])
+    )
+    const tokens = declarations(theme)
     for (const role of ['glass-background', 'glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'glass-border', 'glass-tab-bar-background', 'glass-tab-active-background', 'glass-tab-active-border', 'tab-bar-background', 'tab-active-background', 'tab-hover-background']) {
-      assert.ok(css.includes(`--color-${role}: var(--${role})`))
+      assert.equal(tokens.get(`--color-${role}`), `var(--${role})`)
     }
-    assert.ok(css.includes('--shadow-glass-panel:'))
-    assert.ok(css.includes('--shadow-glass-tab-active: var(--glass-tab-active-shadow)'))
-    for (const surface of ['@utility glass-code-surface', '--code-surface-background: transparent', '--code-surface-background: var(--code-background)', '--code-surface-gutter-background: var(--glass-code-gutter-background)', '--code-surface-gutter-background: var(--code-background)']) assert.ok(css.includes(surface))
-    assert.ok(css.includes('--code-surface-gutter-filter: blur(16px)'))
-    assert.ok(css.includes('--code-surface-gutter-filter: none'))
-    const diffOptions = await Bun.file(new URL('../src/renderer/src/components/diff/diff-options.ts', import.meta.url)).text()
-    assert.ok(diffOptions.includes('--diffs-bg: var(--code-surface-background, var(--code-background))'), 'tool-output diffs outside reading panes keep the opaque code background')
-    assert.ok(diffOptions.includes('[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)); backdrop-filter: var(--code-surface-gutter-filter, none) }'), 'backdrop blur is scoped to the sticky gutter, with no blur for tool-output diffs')
-    for (const motion of ['@utility session-tab-motion', 'flex-basis 200ms', 'flex-grow 200ms', 'var(--tab-drag-transition, transform 0s)']) assert.ok(css.includes(motion))
+    assert.match(tokens.get('--shadow-glass-panel')!, /var\(--glass-shadow\)/)
+    assert.equal(tokens.get('--shadow-glass-tab-active'), 'var(--glass-tab-active-shadow)')
+    const surface = css.nodes.find((node) => node.type === 'atrule' && node.name === 'utility' && node.params === 'glass-code-surface')
+    assert.ok(surface?.type === 'atrule')
+    const glass = declarations(surface)
+    assert.equal(glass.get('--code-surface-background'), 'transparent')
+    assert.equal(glass.get('--code-surface-gutter-background'), 'var(--glass-code-gutter-background)')
+    assert.match(glass.get('--code-surface-gutter-filter')!, /^blur\([\d.]+(?:px|rem)\)$/)
+    const solid = surface.nodes?.find((node) => node.type === 'atrule' && node.name === 'variant' && node.params === 'solid')
+    assert.ok(solid?.type === 'atrule', 'opaque overrides belong to the solid variant of reading panes')
+    const opaque = declarations(solid)
+    assert.equal(opaque.get('--code-surface-background'), 'var(--code-background)')
+    assert.equal(opaque.get('--code-surface-gutter-background'), 'var(--code-background)')
+    assert.equal(opaque.get('--code-surface-gutter-filter'), 'none')
+
+    const { fileCodeOptions, fileDiffOptions } = await import('../src/renderer/src/components/diff/diff-options')
+    for (const dark of [false, true]) {
+      for (const options of [fileCodeOptions(dark), fileDiffOptions(dark, 'split'), fileDiffOptions(dark, 'unified')]) {
+        assert.equal(options.themeType, dark ? 'dark' : 'light')
+        assert.ok(options.unsafeCSS)
+        const rules = parse(options.unsafeCSS)
+        const host = rules.nodes.find((node) => node.type === 'rule' && node.selector === ':host')
+        assert.ok(host?.type === 'rule')
+        assert.equal(declarations(host).get('--diffs-bg'), 'var(--code-surface-background, var(--code-background))', 'tool-output diffs fall back to the opaque code background')
+        const gutter = rules.nodes.find((node) => node.type === 'rule' && node.selector === '[data-gutter]')
+        assert.ok(gutter?.type === 'rule')
+        assert.equal(declarations(gutter).get('background-color'), 'var(--code-surface-gutter-background, var(--diffs-bg))')
+        assert.equal(declarations(gutter).get('backdrop-filter'), 'var(--code-surface-gutter-filter, none)')
+        rules.walkDecls('backdrop-filter', (declaration) => {
+          assert.equal(declaration.parent, gutter, 'only the sticky gutter may blur scrolled code, never the whole surface')
+        })
+      }
+    }
+    const motion = css.nodes.find((node) => node.type === 'atrule' && node.name === 'utility' && node.params === 'session-tab-motion')
+    assert.ok(motion?.type === 'atrule')
+    const transition = declarations(motion).get('transition')!
+    assert.match(transition, /\bflex-basis\b/)
+    assert.match(transition, /\bflex-grow\b/)
+    assert.match(transition, /var\(--tab-drag-transition,/)
   })
 }

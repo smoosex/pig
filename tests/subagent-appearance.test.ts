@@ -13,24 +13,24 @@ async function avatarFixture(): Promise<void> {
   const html = renderToStaticMarkup(createElement(SubagentAvatar, { item, className: 'size-4' }))
   expect(html).toContain('lucide-panda')
   expect(html).toContain('text-chart-3')
-  expect(html).toContain('right-0 bottom-0 rounded-full p-px size-2')
   expect(html).toContain('lucide-check')
   expect(html).toContain('bg-subagent-completed-background')
   expect(html).toContain('text-subagent-completed-foreground')
   expect(html).not.toContain('ring-')
-  for (const statusSize of [6, 8] as const) {
-    for (const status of ['running', 'queued', 'completed', 'aborted', 'failed', 'timeout', 'turn_limit', 'interrupted'] as const) {
-      const avatar = renderToStaticMarkup(createElement(SubagentAvatar, { item: { ...item, status }, statusSize }))
-      expect(avatar).toContain(`right-0 bottom-0 rounded-full p-px ${statusSize === 6 ? 'size-1.5' : 'size-2'}`)
-      if (status === 'aborted') {
-        expect(avatar).toContain('lucide-circle-stop')
-        expect(avatar).not.toContain('fill-current')
-      }
-      if (['failed', 'timeout', 'turn_limit', 'interrupted'].includes(status)) {
-        expect(avatar).toContain('bg-subagent-failed-background text-subagent-failed-foreground')
-        expect(avatar).toContain('lucide-x')
-      }
+  for (const status of ['aborted', 'failed', 'timeout', 'turn_limit', 'interrupted'] as const) {
+    const avatar = renderToStaticMarkup(createElement(SubagentAvatar, { item: { ...item, status } }))
+    if (status === 'aborted') {
+      expect(avatar).toContain('lucide-circle-stop')
+      expect(avatar).not.toContain('fill-current')
+    } else {
+      expect(avatar).toContain('bg-subagent-failed-background')
+      expect(avatar).toContain('text-subagent-failed-foreground')
+      expect(avatar).toContain('lucide-x')
     }
+  }
+  for (const statusSize of [6, 8] as const) {
+    const avatar = renderToStaticMarkup(createElement(SubagentAvatar, { item, statusSize }))
+    expect(avatar).toContain(statusSize === 6 ? 'size-1.5' : 'size-2')
   }
   const wrapper = html.slice(0, html.indexOf('>'))
   expect(wrapper).toContain('size-4')

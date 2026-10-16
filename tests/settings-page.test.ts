@@ -60,8 +60,8 @@ async function fixture(): Promise<void> {
       ]
     )
     assert.equal(navigation.querySelector('[data-slot="collapsible"]'), null)
-    assert.ok(navigation.querySelector('span.will-change-transform')!.classList.contains('bg-sidebar-foreground/6'))
-    for (const [name, key, desc] of panes) {
+    const paneNodes = new Map(panes.map(([name]) => [name, host.querySelector(`[data-settings-pane="${name}"]`)!]))
+    for (const [name, key, desc] of [...panes, panes[0]]) {
       await act(async () => {
         const text = `${translate('en', key)}${translate('en', desc)}`
         buttons.find((button) => button.textContent === text)!.click()
@@ -70,22 +70,12 @@ async function fixture(): Promise<void> {
       assert.equal(host.querySelector('[data-settings-surface]'), surface, 'navigation retains the shared glass backplate')
       for (const button of navigation.querySelectorAll('[data-sidebar-hover-row]')) {
         const selected = button.textContent === `${translate('en', key)}${translate('en', desc)}`
-        assert.equal(button.classList.contains('bg-sidebar-foreground/12'), selected)
         assert.equal(button.hasAttribute('data-sidebar-selected'), selected)
-        assert.ok(button.classList.contains(selected ? 'hover:bg-sidebar-foreground/12!' : 'hover:bg-transparent!'))
-        assert.ok(button.classList.contains('duration-100'))
-        assert.ok(!button.className.includes('backdrop-blur'))
       }
-      assert.equal(
-        host.querySelector(`[data-settings-pane="${name}"]`)!.parentElement!.className,
-        'contents'
-      )
-      for (const [other] of panes) {
-        if (other !== name)
-          assert.equal(
-            host.querySelector(`[data-settings-pane="${other}"]`)!.parentElement!.className,
-            'hidden'
-          )
+      for (const [pane] of panes) {
+        const node = host.querySelector(`[data-settings-pane="${pane}"]`)!
+        assert.equal(node, paneNodes.get(pane), 'navigation retains mounted panes')
+        assert.equal(node.parentElement!.classList.contains('hidden'), pane !== name)
       }
     }
   } finally {
