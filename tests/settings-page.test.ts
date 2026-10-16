@@ -43,6 +43,12 @@ async function fixture(): Promise<void> {
     await act(async () => {
       root.render(h(SettingsPage, { onClose: () => {} }))
     })
+    const surface = host.querySelector<HTMLElement>('[data-settings-surface]')!
+    assert.ok(surface.hasAttribute('data-app-surface'), 'settings participate in the surface transition handoff')
+    for (const token of ['bg-glass-background', 'shadow-glass-panel', 'ring-glass-border', 'solid:bg-card', 'solid:shadow-none', 'solid:ring-0', 'duration-200', 'motion-reduce:transition-none']) {
+      assert.ok(surface.classList.contains(token), token)
+    }
+    assert.ok(!surface.classList.contains('bg-card') && !surface.className.includes('backdrop-'))
     const navigation = host.querySelector('nav')!
     assert.equal(navigation.firstElementChild?.textContent?.trim(), translate('en', 'sidebar.settings'))
     const buttons = [...navigation.querySelectorAll<HTMLButtonElement>('button')]
@@ -61,6 +67,7 @@ async function fixture(): Promise<void> {
         buttons.find((button) => button.textContent === text)!.click()
       })
       assert.equal(host.querySelector('h1')!.textContent, translate('en', key))
+      assert.equal(host.querySelector('[data-settings-surface]'), surface, 'navigation retains the shared glass backplate')
       for (const button of navigation.querySelectorAll('[data-sidebar-hover-row]')) {
         const selected = button.textContent === `${translate('en', key)}${translate('en', desc)}`
         assert.equal(button.classList.contains('bg-sidebar-foreground/12'), selected)

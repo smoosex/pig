@@ -139,7 +139,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </nav>
-      <div className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-card">
+      <div
+        data-app-surface
+        data-settings-surface
+        className="m-2 min-w-0 flex-1 overflow-hidden rounded-xl bg-glass-background shadow-glass-panel ring-1 ring-glass-border transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-card solid:shadow-none solid:ring-0"
+      >
         <ScrollArea className="h-full [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <div className="mx-auto flex max-w-3xl flex-col gap-8 px-8 py-8">
             <div>
