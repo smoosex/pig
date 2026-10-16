@@ -153,6 +153,17 @@ async function fixture(): Promise<void> {
     assert.equal(host.querySelector('[data-slot="toggle-group"]'), null)
     assert.equal(installed.querySelectorAll('[data-slot="card"]').length, 2)
     assert.equal(market.querySelectorAll('[data-slot="card"]').length, 2)
+    for (const card of host.querySelectorAll<HTMLElement>('[data-slot="card"]')) {
+      for (const token of ['bg-glass-composer-background/60', 'ring-glass-border', 'solid:bg-card', 'solid:ring-foreground/10', 'motion-reduce:transition-none']) {
+        assert.ok(card.classList.contains(token), token)
+      }
+      assert.ok(!card.classList.contains('bg-card') && !card.className.includes('backdrop-'))
+    }
+    for (const footer of market.querySelectorAll<HTMLElement>('[data-slot="card-footer"]')) {
+      for (const token of ['bg-glass-composer-background/30', 'border-glass-border', 'solid:bg-muted/50', 'solid:border-border']) {
+        assert.ok(footer.classList.contains(token), token)
+      }
+    }
     const row = installed.querySelector('[data-slot="card"]')!
     assert.ok(row.querySelector('[data-slot="avatar"]')!.classList.contains('size-10'))
     assert.ok(row.querySelector('[data-slot="card-title"]')!.classList.contains('text-sm'))

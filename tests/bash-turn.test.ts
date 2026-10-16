@@ -68,7 +68,10 @@ async function fixture(): Promise<void> {
     assert.equal(container.querySelector('pre.whitespace-pre-wrap')?.textContent, 'ready\n')
     assert.equal(container.querySelectorAll('[data-slot="card-content"]').length, 2)
     assert.equal(container.querySelectorAll('[data-slot="separator"][data-orientation="horizontal"]').length, 2)
-    assert.ok(container.querySelector('.bg-secondary'))
+    const card = container.querySelector<HTMLElement>('[data-slot="card"]')!
+    assert.ok(card.classList.contains('bg-glass-composer-background/60'))
+    assert.ok(card.classList.contains('solid:bg-secondary'))
+    assert.ok(!card.classList.contains('bg-secondary'))
     assert.ok(container.querySelector('[data-slot="card-content"] .bg-code-background'))
     assert.ok(container.querySelector('[aria-label="Copy command"]'))
     await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Copy output"]')!.click() })

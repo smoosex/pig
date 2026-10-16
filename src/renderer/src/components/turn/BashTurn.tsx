@@ -88,7 +88,7 @@ export function BashTurn({
   }
 
   return (
-    <Card size="sm" className="mb-4 min-w-0 gap-0 bg-secondary py-0">
+    <Card size="sm" className="mb-4 min-w-0 gap-0 solid:bg-secondary py-0">
       <Collapsible
         open={open}
         onOpenChange={(next) => {
