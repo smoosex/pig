@@ -9,7 +9,7 @@ import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { forwardSessionNames } from './session-names'
 import { closeSessionsForCwd, disposeAll } from './pi/session-registry'
-import { removeProjectDir } from './pi/session-loader'
+import { removeProjectSessions } from './pi/session-removal'
 import { startModelRuntime } from './pi/model-settings'
 import { startModelCatalog } from './pi/model-catalog'
 import { worktrees } from './project-worktrees'
@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
   await initLocale(settings.locale)
   await worktrees.startDeletionWorker(async (cwd) => {
     await closeSessionsForCwd(cwd)
-    await removeProjectDir(cwd)
+    await removeProjectSessions(cwd)
     await removeOpenProjectWorkspaces([cwd])
   })
   await removeOpenProjectWorkspaces((await worktrees.listDeletions()).map((job) => job.cwd))

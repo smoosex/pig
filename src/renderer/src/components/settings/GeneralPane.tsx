@@ -15,7 +15,6 @@ import {
 import { Switch } from '../ui/switch'
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
-import { CodemodeSetting } from './ToolSettingsFields'
 
 /** Language names are endonyms, so each locale maps to its own key rather than to a translation. */
 const languageLabels: Record<Locale, MessageKey> = {
@@ -44,7 +43,6 @@ export function GeneralPane() {
 
   return (
     <div className="flex flex-col gap-8">
-      <CodemodeSetting />
       <div>
         <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {t('settings.sectionInterface')}

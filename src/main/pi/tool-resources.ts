@@ -8,6 +8,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { pigPath } from '../pig-dir'
 import { sessionMcpConfig } from '../mcp/settings'
+import { readSessionCapabilities } from './session-capabilities'
 import { mcpCredentials, mcpSdk } from '../mcp/sdk'
 import { createMcpConnections } from '../mcp/connections'
 import { t } from '../i18n'
@@ -15,10 +16,18 @@ import { openMcpUrl } from '../extension-ui'
 import { loadAllowedRanges } from '../network-address'
 import { webSearchConfigPath } from './web-search-settings'
 
-export function sessionToolFactory(cwd: string): ExtensionFactory {
+export function sessionToolFactory(cwd: string, sessionId: string): ExtensionFactory {
   return async (pi) => {
-    const snapshot = await sessionMcpConfig(cwd)
+    const preferences = readSessionCapabilities(sessionId)
+    const snapshot = await sessionMcpConfig(cwd, preferences.mcp)
+    const codemode = preferences.tools.codemode !== false
     let context: ExtensionContext | undefined
+    // Overrides change only through a resource reload, which runs this factory again.
+    pi.on('tool_call', (event) => {
+      if (preferences.tools[event.toolName] === false)
+        return { block: true, reason: 'Tool disabled for this session' }
+      return undefined
+    })
     pi.on('session_start', (_event, ctx) => {
       context = ctx
     })
@@ -36,7 +45,7 @@ export function sessionToolFactory(cwd: string): ExtensionFactory {
       // A user-declared proxy fake-IP range is proxy-owned space, not an internal service.
       () => loadAllowedRanges(webSearchConfigPath())
     )
-    if (snapshot.codemode) await createCodemodeExtension({ mode: 'on' })(pi)
+    await createCodemodeExtension({ mode: 'on' })(pi)
     await createToolSearchExtension()(pi)
     await createMcpExtension({
       loadConfig: () => snapshot,
@@ -57,9 +66,10 @@ export function sessionToolFactory(cwd: string): ExtensionFactory {
       const tools = pi
         .getActiveTools()
         .filter((name) => name !== 'codemode' && name !== 'tool_search')
-      if (snapshot.codemode) tools.push('codemode')
+      // Pi registers codemode inactive; Pig activates it like any other extension tool.
+      if (codemode) tools.push('codemode')
       if (
-        snapshot.codemode ||
+        codemode ||
         pi
           .getAllTools()
           .some((tool) => tool.exposure === 'deferred' || tool.exposure === 'codemode') ||

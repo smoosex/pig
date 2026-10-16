@@ -1,7 +1,9 @@
 /** Load only Pig-approved extensions, preserving Chat's restricted instructions and skills. */
 import { readFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
-import { applySkillPreferences } from '../skills/manager'
+import { applySkillPreferences, listSkillChoices } from '../skills/manager'
+import { capability, readSessionCapabilities } from './session-capabilities'
+import type { SessionCapability } from '../../shared/session-capabilities'
 import {
   DefaultResourceLoader,
   getAgentDir,
@@ -46,6 +48,22 @@ export function sessionResourceSettings(cwd: string, agentDir: string): Settings
 interface SessionResourceOptions {
   settingsManager?: SettingsManager
   extensionFactories?: ExtensionFactory[]
+  sessionId?: string
+  /** Receives the SDK's skills before Pig's preferences, so the full list can be built on demand. */
+  onSkillBase?: (base: SkillBase) => void
+}
+type SkillBase = Parameters<typeof applySkillPreferences>[0]
+
+function sessionSkills(base: SkillBase, chat: boolean, options: SessionResourceOptions) {
+  options.onSkillBase?.(base)
+  const overrides = options.sessionId ? readSessionCapabilities(options.sessionId).skills : {}
+  return applySkillPreferences(base, chat, overrides)
+}
+
+export function sessionSkillChoices(base: SkillBase, chat: boolean, overrides: Record<string, boolean>): SessionCapability[] {
+  const unique = new Map(listSkillChoices(base, chat).map(({ skill, defaultEnabled, source }) => [skill.filePath,
+    { ...capability(skill.filePath, skill.name, defaultEnabled, overrides, skill.description), source }]))
+  return [...unique.values()]
 }
 
 export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {
@@ -57,7 +75,7 @@ export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths:
     extensionFactories: options.extensionFactories,
     noExtensions: true,
     additionalExtensionPaths: pluginPaths,
-    skillsOverride: (base) => applySkillPreferences(base)
+    skillsOverride: (base) => sessionSkills(base, false, options)
   })
   await loader.reload()
   return loader
@@ -75,7 +93,7 @@ export async function createChatResourceLoader(cwd: string, pluginPaths: string[
     agentsFilesOverride: ({ agentsFiles }) => ({
       agentsFiles: agentsFiles.filter((file) => isInside(file.path, agentDir))
     }),
-    skillsOverride: (base) => applySkillPreferences(base, true),
+    skillsOverride: (base) => sessionSkills(base, true, options),
     appendSystemPrompt: [CHAT_APPEND_PROMPT]
   })
   await loader.reload()

@@ -20,19 +20,7 @@ async function fixture(): Promise<void> {
     await writeFile(join(project, '.pi/mcp.json'), foreign)
     await writeFile(join(process.env.PI_CODING_AGENT_DIR, 'mcp.json'), foreign)
     assert.deepEqual(await settings.configuredServers(), [])
-    assert.equal(settings.readToolPreferences().codemode, false)
     await mkdir(process.env.PIG_DIR, { recursive: true })
-    const preferencesFile = join(process.env.PIG_DIR, 'tool-settings.json')
-    for (const codemode of ['false', null, 0, {}, []]) {
-      await writeFile(preferencesFile, JSON.stringify({ codemode }))
-      assert.throws(() => settings.readToolPreferences(), { code: 'ERR_PIG_TOOL_CONFIG' })
-    }
-    await writeFile(
-      preferencesFile,
-      JSON.stringify({ codemode: true, projects: { [project]: {} } })
-    )
-    assert.deepEqual(settings.readToolPreferences(), { codemode: true })
-    await writeFile(preferencesFile, '{}')
     const imported = JSON.stringify({
       mcpServers: {
         docs: { url: 'https://example.invalid/mcp', enabled: true },
@@ -51,36 +39,22 @@ async function fixture(): Promise<void> {
         (entry) => entry.config.enabled === false && entry.config.exposure === 'deferred'
       )
     )
-    assert.equal(snapshot.codemode, false)
     if (process.platform !== 'win32')
       assert.equal((await stat(join(process.env.PIG_DIR, 'mcp.json'))).mode & 0o777, 0o600)
 
-    await Promise.all([settings.setCodemode(true), settings.setMcpEnabled('docs', true)])
-    await writeFile(
-      preferencesFile,
-      JSON.stringify({
-        codemode: true,
-        projects: {
-          [project]: { codemode: false, mcp: { docs: false, files: true } },
-          [other]: { codemode: false, mcp: { docs: false } }
-        }
-      })
-    )
+    await settings.setMcpEnabled('docs', true)
     const cwds = [project, other, join(root, 'worktree'), join(root, 'chat')]
     for (const cwd of cwds) {
       snapshot = await settings.sessionMcpConfig(cwd)
-      assert.equal(snapshot.codemode, true, 'all user sessions use global Codemode')
       assert.equal(snapshot.servers.find((entry) => entry.name === 'docs')?.config.enabled, true)
       assert.equal(snapshot.servers.find((entry) => entry.name === 'files')?.config.enabled, false)
     }
-    await Promise.all([settings.setCodemode(false), settings.setMcpEnabled('docs', false)])
-    assert.deepEqual(JSON.parse(await readFile(preferencesFile, 'utf8')), { codemode: false })
+    await settings.setMcpEnabled('docs', false)
     for (const cwd of cwds) {
       snapshot = await settings.sessionMcpConfig(cwd)
-      assert.equal(snapshot.codemode, false)
       assert.ok(snapshot.servers.every((entry) => entry.config.enabled === false))
     }
-    await Promise.all([settings.setCodemode(true), settings.setMcpEnabled('docs', true)])
+    await settings.setMcpEnabled('docs', true)
 
     const before = await readFile(join(process.env.PIG_DIR, 'mcp.json'), 'utf8')
     await assert.rejects(settings.importMcpServers(imported, []), /Confirm replacement/)
@@ -148,7 +122,6 @@ async function fixture(): Promise<void> {
     await settings.removeMcpServer('docs')
     assert.equal(credentials.tokens('docs', url), undefined)
     assert.equal(settings.mcpIcons().docs, undefined)
-    assert.deepEqual(settings.readToolPreferences(), { codemode: true })
     assert.equal(
       (await settings.configuredServers()).some((entry) => entry.name === 'docs'),
       false

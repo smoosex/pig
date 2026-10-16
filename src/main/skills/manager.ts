@@ -13,6 +13,7 @@ import {
   type LoadSkillsResult, type Skill
 } from '@earendil-works/pi-coding-agent'
 import type { ExternalSkillAgent, SkillInfo, SkillInstallResult, SkillInventory, SkillProbe } from '../../shared/skills'
+import type { SessionSkillSource } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
 import { copyPreparedSkill, githubAvatar, prepareSkillSource, validSkillName, type PreparedSkills, type SkillFetcher } from './source'
 
@@ -78,21 +79,54 @@ function externalSkills(): { agent: ExternalSkillAgent; skills: Skill[]; diagnos
   })
 }
 
-export function applySkillPreferences(base: LoadSkillsResult, chat = false): LoadSkillsResult {
+export interface SkillChoice { skill: Skill; defaultEnabled: boolean; source: SessionSkillSource }
+
+/**
+ * Every skill a session may load, with its global default. Disabled Pig copies and other agents'
+ * directories are read only when `everything` is set: a build needs them only when a session
+ * override turns one on, while the capability list shows them all.
+ */
+function skillChoices(base: LoadSkillsResult, chat: boolean, everything: boolean): { choices: SkillChoice[]; diagnostics: LoadSkillsResult['diagnostics'] } {
   const state = registry()
+  const includeDisabled = everything
   const disabled = new Set(state.disabledPaths)
   const personal = (skill: Skill) => inside(skill.filePath, getAgentDir()) || inside(skill.filePath, join(homedir(), '.agents'))
-  const candidates = allSkills(base).filter((skill) => (!chat || personal(skill)) && !disabled.has(canonical(skill.filePath)))
+  const candidates = allSkills(base).filter((skill) => !chat || personal(skill))
   const extra = loadSkills({
     cwd: homedir(), agentDir: getAgentDir(), includeDefaults: false,
-    skillPaths: state.skills.filter((skill) => skill.enabled).map(skillDirectory)
+    skillPaths: state.skills.filter((skill) => includeDisabled || skill.enabled).map(skillDirectory)
   })
   const optedIn = new Set(state.enabledPaths)
-  const external = optedIn.size ? externalSkills().flatMap((item) => item.skills).filter((skill) => optedIn.has(canonical(skill.filePath))) : []
+  const external = includeDisabled || optedIn.size
+    ? externalSkills().flatMap(({ agent, skills }) => skills.map((skill) => ({ skill, agent }))) : []
+  const managedDefaults = new Map(state.skills.map((entry) => [canonical(join(skillDirectory(entry), 'SKILL.md')), entry]))
+  const choices: SkillChoice[] = [
+    ...candidates.map((skill) => ({
+      skill, defaultEnabled: !disabled.has(canonical(skill.filePath)),
+      source: { kind: inside(skill.filePath, join(homedir(), '.agents')) ? 'agents' as const
+        : personal(skill) ? 'pi' as const : 'project' as const }
+    })),
+    ...extra.skills.map((skill) => {
+      const entry = managedDefaults.get(canonical(skill.filePath))
+      return { skill, defaultEnabled: entry?.enabled === true, source: { kind: 'imported' as const, name: entry?.source } }
+    }),
+    ...external.map(({ skill, agent }) => ({
+      skill, defaultEnabled: optedIn.has(canonical(skill.filePath)), source: { kind: agent }
+    }))
+  ]
+  return { choices, diagnostics: [...base.diagnostics.filter((item) => item.type !== 'collision'), ...extra.diagnostics] }
+}
+
+export function listSkillChoices(base: LoadSkillsResult, chat: boolean): SkillChoice[] {
+  return skillChoices(base, chat, true).choices
+}
+
+export function applySkillPreferences(base: LoadSkillsResult, chat = false, overrides: Record<string, boolean> = {}): LoadSkillsResult {
+  const { choices, diagnostics } = skillChoices(base, chat, Object.values(overrides).some(Boolean))
   const seen = new Set<string>()
   const names = new Map<string, Skill>()
-  const diagnostics = [...base.diagnostics.filter((item) => item.type !== 'collision'), ...extra.diagnostics]
-  for (const skill of [...candidates, ...extra.skills, ...external]) {
+  for (const { skill, defaultEnabled } of choices) {
+    if (!(Object.hasOwn(overrides, skill.filePath) ? overrides[skill.filePath] : defaultEnabled)) continue
     const path = canonical(skill.filePath)
     if (seen.has(path)) continue
     seen.add(path)

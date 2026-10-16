@@ -20,7 +20,7 @@ async function fixture(): Promise<void> {
   let rejectScopeChange = false
   let plugins: PluginInfo[] = [
     { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
-    { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true },
+    { id: 'pi-review', kind: 'system', name: 'Review', source: 'Pig built-in', scopes: ['project'], available: true },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
   let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
@@ -104,7 +104,7 @@ async function fixture(): Promise<void> {
       assert.equal(install.textContent, '安装')
       assert.equal(sourceInput.disabled, false)
     }
-    const otherGroup = document.querySelector('[aria-label="Pi Review 启用范围"]')!
+    const otherGroup = document.querySelector('[aria-label="Review 启用范围"]')!
     const [otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
     const first = deferred()
     const second = deferred()

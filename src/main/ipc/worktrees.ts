@@ -5,7 +5,8 @@ import { loadWorktreeProject, requireOpenedProject, worktrees } from '../project
 import { git, isGitProject } from '../worktrees'
 import { nameWorktreeBranch } from '../pi/branch-namer'
 import { closeSessionsForCwd } from '../pi/session-registry'
-import { readProjectNamingText, removeProjectDir } from '../pi/session-loader'
+import { readProjectNamingText } from '../pi/session-loader'
+import { removeProjectSessions } from '../pi/session-removal'
 import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 import { t } from '../i18n'
 
@@ -83,7 +84,7 @@ export function registerWorktreeIpc(): void {
     if (typeof cwd !== 'string' || !cwd || isChatCwd(cwd) || isChatsRoot(cwd)) throw new Error('Invalid worktree cwd')
     const info = await worktrees.deletionInfo(project, cwd)
     await worktrees.remove(project, cwd,
-      () => closeSessionsForCwd(cwd), () => removeProjectDir(cwd), { background: true })
+      () => closeSessionsForCwd(cwd), () => removeProjectSessions(cwd), { background: true })
     await removeOpenProjectWorkspaces([info.worktree.cwd])
     return { cwd: info.worktree.cwd }
   })

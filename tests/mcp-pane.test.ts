@@ -13,7 +13,6 @@ async function fixture(): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const state: McpSettingsState = {
-    codemode: false,
     pendingSessions: [],
     servers: [
       {

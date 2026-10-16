@@ -22,6 +22,7 @@ async function fixture(): Promise<void> {
   mock.module(modulePath('../src/main/pi/session-registry.ts'), () => ({
     ...Object.fromEntries([
       'activateSession', 'activateSessionInput', 'closeSession', 'createPendingSession', 'discardDraftSession', 'exportSession',
+      'getSessionCapabilities', 'setSessionCapability',
       'forkSessionFromMessage', 'getSessionControls', 'getSessionTokenStats', 'getSessionTrees', 'listSessionCommands', 'openSession',
       'promoteDraftSession', 'renameSession', 'setSessionLabel', 'setSessionModel',
       'setSessionThinking', 'updateFollowUpMessage', 'viewSessionBranch'
@@ -44,9 +45,9 @@ async function fixture(): Promise<void> {
     getDisplayTurns: () => {}, getTurnMessages: () => {}, getTurnWindow: () => {}
   }))
   mock.module(modulePath('../src/main/pi/session-loader.ts'), () => ({
-    removeSessionFile: () => {},
     sessionDirForCwd: () => '/sessions'
   }))
+  mock.module(modulePath('../src/main/pi/session-removal.ts'), () => ({ removeSession: () => {} }))
   mock.module(modulePath('../src/main/pi/session-prompt.ts'), () => ({ promptSession: () => {} }))
   mock.module(modulePath('../src/main/chats.ts'), () => ({
     createChatDir: async () => '/chat',

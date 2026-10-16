@@ -12,6 +12,7 @@ import {
 } from '../../shared/pasted-text'
 import { t } from '../i18n'
 import { normalizeSessionPrompt } from './prompt-input'
+import { readSessionHeader, UnsupportedSessionFile } from './session-jsonl'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
@@ -482,29 +483,47 @@ export async function listProjectFiles(cwd: string): Promise<string[]> {
   return listJsonlFiles(sessionDirForCwd(cwd))
 }
 
-export async function removeSessionFile(path: string): Promise<void> {
-  if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
-  await rm(path, { force: true })
+/** A file without a readable header names no session, so nothing else can be keyed by its id. */
+function sessionIdOf(path: string): string | undefined {
+  try {
+    return readSessionHeader(path).sessionId
+  } catch (error) {
+    if (error instanceof UnsupportedSessionFile) return undefined
+    throw error
+  }
 }
 
-export async function removeProjectDir(cwd: string): Promise<void> {
+/** Returns the removed session's id so its owner can drop Pig's data for it; see `session-removal.ts`. */
+export async function removeSessionFile(path: string): Promise<string | undefined> {
+  if (!isSessionFile(path)) throw new Error(`Invalid session path: ${path}`)
+  const sessionId = sessionIdOf(path)
+  await rm(path, { force: true })
+  return sessionId
+}
+
+/** Returns the ids of the sessions it removed. */
+export async function removeProjectDir(cwd: string): Promise<string[]> {
   if (cwd === '(unknown)') {
     const files = await listProjectFiles(cwd)
-    await Promise.all(files.map((path) => removeSessionFile(path)))
-    return
+    return removed(await Promise.all(files.map((path) => removeSessionFile(path))))
   }
   const dir = resolve(sessionDirForCwd(cwd))
   const root = resolve(sessionsRoot()) + sep
   if (!dir.startsWith(root)) throw new Error(`Invalid project dir: ${dir}`)
   const target = resolve(cwd)
   const sessions = await scanFiles(await listJsonlFiles(dir), { deep: false })
-  await Promise.all(sessions
+  const ids = removed(await Promise.all(sessions
     .filter((session) => session.cwd && resolve(session.cwd) === target)
-    .map((session) => removeSessionFile(session.path)))
+    .map((session) => removeSessionFile(session.path))))
   try {
     await rmdir(dir)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== 'ENOENT' && code !== 'ENOTEMPTY') throw error
   }
+  return ids
+}
+
+function removed(ids: (string | undefined)[]): string[] {
+  return ids.filter((id): id is string => id !== undefined)
 }

@@ -50,7 +50,7 @@ export async function testWebSearchProvider(provider: string | null): Promise<We
       const toolName = await webSearchToolName()
       const runner = session.extensionRunner
       const registered = runner.getAllRegisteredTools().find((tool) => tool.definition.name === toolName)
-      if (!registered) throw new Error(`${toolName} is not registered; enable Pi Web Access and retry`)
+      if (!registered) throw new Error(`${toolName} is not registered; enable Web Access and retry`)
       const tool = wrapRegisteredTool(registered, runner)
       const result = await tool.execute('pig-web-search-test', {
         query: TEST_QUERY,

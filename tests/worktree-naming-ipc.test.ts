@@ -25,6 +25,9 @@ async function runFixture(): Promise<void> {
   mock.module(modulePath('../src/main/pi/session-registry.ts'), () => ({
     closeSessionsForCwd: async () => {}
   }))
+  mock.module(modulePath('../src/main/pi/session-removal.ts'), () => ({
+    removeProjectSessions: async () => {}
+  }))
   mock.module(modulePath('../src/main/pi/branch-namer.ts'), () => ({
     nameWorktreeBranch: async () => 'feat/named'
   }))
