@@ -1,6 +1,6 @@
 import { dialog, ipcMain } from 'electron'
 import { closeSessionsForCwd, createPendingSession } from '../pi/session-registry'
-import { removeProjectDir } from '../pi/session-loader'
+import { removeProjectSessions } from '../pi/session-removal'
 import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
 import { canonicalProject } from '../worktrees'
 import {
@@ -49,7 +49,7 @@ export function registerProjectIpc(): void {
   ipcMain.handle('session:delete-chat', async (_event, cwd: string) => {
     if (!cwd || !isChatCwd(cwd)) throw new Error('Chat cwd is required')
     await closeSessionsForCwd(cwd)
-    await removeProjectDir(cwd)
+    await removeProjectSessions(cwd)
     await removeChatWorkDir(cwd)
   })
 
@@ -73,7 +73,7 @@ export function registerProjectIpc(): void {
       await worktrees.withBlockedCwds([...cwds], async () => {
         for (const path of cwds) {
           await closeSessionsForCwd(path)
-          await removeProjectDir(path)
+          await removeProjectSessions(path)
         }
         await removeOpenProjectWorkspaces(cwds)
         await removeOpenedProject(project)

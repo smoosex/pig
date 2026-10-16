@@ -8,6 +8,8 @@ import {
   exportSession,
   forkSessionFromMessage,
   getSessionControls,
+  getSessionCapabilities,
+  setSessionCapability,
   getSessionTokenStats,
   getSessionTrees,
   listSessionCommands,
@@ -24,7 +26,7 @@ import {
   type SessionTreeView
 } from '../pi/session-registry'
 import { getDisplayTurns, getTurnMessages, getTurnWindow } from '../pi/session-display'
-import { removeSessionFile } from '../pi/session-loader'
+import { removeSession } from '../pi/session-removal'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { forgetOpenProjectSession, rememberOpenProjectSession } from '../open-project-sessions'
 import { promptSession } from '../pi/session-prompt'
@@ -34,6 +36,8 @@ import { windowForEvent } from './window'
 const MAX_WINDOW_TURNS = 200
 
 export function registerSessionIpc(): void {
+  ipcMain.handle('session:capabilities', (_event, sessionId: string) => getSessionCapabilities(sessionId))
+  ipcMain.handle('session:set-capability', (_event, sessionId, group, id, enabled) => setSessionCapability(sessionId, group, id, enabled))
   ipcMain.handle('session:create', async (event, cwd: string, sessionId?: string) => {
     const win = windowForEvent(event)
     if (isChatCwd(cwd) || isChatsRoot(cwd)) {
@@ -80,7 +84,7 @@ export function registerSessionIpc(): void {
     async (_event, sessionId: string, path: string, cwd: string) => {
       if (!sessionId || !path || !cwd) throw new Error('Session id, path, and cwd are required')
       await closeSession(sessionId)
-      await removeSessionFile(path)
+      await removeSession(path)
       await forgetOpenProjectSession(sessionId)
     }
   )

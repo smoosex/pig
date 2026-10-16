@@ -3,9 +3,6 @@ import type { McpServerConfig } from '@earendil-works/pi-coding-agent'
 import type { MessageKey } from './i18n'
 
 export type McpConfig = McpServerConfig
-export interface ToolPreferences {
-  codemode: boolean
-}
 export interface McpServerView {
   name: string
   config: McpConfig
@@ -15,7 +12,7 @@ export interface McpServerView {
   /** The recipe's description in the dictionary, when this server is one the catalog offers. */
   descriptionKey?: MessageKey
 }
-export interface McpSettingsState extends ToolPreferences {
+export interface McpSettingsState {
   servers: McpServerView[]
   pendingSessions: string[]
 }
@@ -78,7 +75,6 @@ export type ExtensionUIEvent =
 
 export interface ToolSettingsApi {
   getMcpSettings(): Promise<McpSettingsState>
-  setCodemode(enabled: boolean): Promise<McpSettingsState>
   saveMcpServer(name: string, config: McpConfig, replace: boolean, icon?: string): Promise<McpSettingsState>
   removeMcpServer(name: string): Promise<McpSettingsState>
   setMcpEnabled(name: string, enabled: boolean): Promise<McpSettingsState>

@@ -1,6 +1,6 @@
 /** Atomic Pig-only global configuration; repository MCP files are never loaded automatically. */
 import { pigDir, pigPath } from '../pig-dir'
-import type { McpConfig, McpImportEntry, ToolPreferences } from '../../shared/tool-settings'
+import type { McpConfig, McpImportEntry } from '../../shared/tool-settings'
 import { mcpCredentials, mcpSdk, privateJson, readJson } from './sdk'
 import { withMcpAuthMutation } from './connections'
 
@@ -34,15 +34,6 @@ export async function flushToolMutations(signal?: AbortSignal): Promise<void> {
   }
 }
 
-class ToolConfigurationError extends Error {
-  readonly code = 'ERR_PIG_TOOL_CONFIG'
-}
-export function readToolPreferences(): ToolPreferences {
-  const raw = object(readJson(pigPath('tool-settings.json'), {}))
-  if (Object.hasOwn(raw, 'codemode') && typeof raw.codemode !== 'boolean')
-    throw new ToolConfigurationError('tool-settings.json: codemode must be a boolean')
-  return { codemode: raw.codemode === true }
-}
 function document(): Record<string, unknown> {
   const raw = object(readJson(pigPath('mcp.json'), { mcpServers: {} }))
   object(raw.mcpServers ?? {})
@@ -67,9 +58,8 @@ export async function configuredServers() {
   if (loaded.errors.length) throw new Error(loaded.errors.join('\n'))
   return loaded.servers
 }
-export async function sessionMcpConfig(cwd: string) {
+export async function sessionMcpConfig(cwd: string, overrides: Record<string, boolean> = {}) {
   await flushToolMutations()
-  const preferences = readToolPreferences()
   return {
     autoEnableCodemode: false,
     errors: [],
@@ -77,7 +67,7 @@ export async function sessionMcpConfig(cwd: string) {
       ...entry,
       config: {
         ...entry.config,
-        enabled: entry.config.enabled === true,
+        enabled: Object.hasOwn(overrides, entry.name) ? overrides[entry.name] : entry.config.enabled === true,
         // Keep MCP reachable by tool_search even when codemode is disabled; honor hidden/direct tools.
         exposure:
           entry.config.exposure === 'codemode' || !entry.config.exposure
@@ -91,7 +81,6 @@ export async function sessionMcpConfig(cwd: string) {
         )
       }
     })),
-    codemode: preferences.codemode,
     cwd
   }
 }
@@ -216,11 +205,5 @@ export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
     const entries = object(raw.mcpServers ?? {})
     entries[name] = { ...object(entries[name]), enabled }
     privateJson(pigPath('mcp.json'), { ...raw, mcpServers: entries })
-  })
-}
-export function setCodemode(enabled: boolean): Promise<void> {
-  return serialize(() => {
-    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean')
-    privateJson(pigPath('tool-settings.json'), { ...readToolPreferences(), codemode: enabled })
   })
 }

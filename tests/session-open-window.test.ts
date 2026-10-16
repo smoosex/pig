@@ -110,7 +110,8 @@ async function runFixture(): Promise<void> {
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
       sessionResourceSettings: () => resourceSettings,
       createChatResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
-      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) })
+      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
+      sessionSkillChoices: () => []
     }))
     // Bun rebinds the module's exports when a mock is registered, so the real function has to be
     // captured as a value before the mock replaces it.

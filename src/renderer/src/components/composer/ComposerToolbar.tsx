@@ -9,6 +9,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
+import { SessionCapabilitiesButton } from './SessionCapabilitiesButton'
 import { ContextUsageButton } from './ContextUsageButton'
 import { ModelPicker, ThinkingPicker } from './ModelControls'
 import { useModelControls } from './useModelControls'
@@ -120,6 +121,7 @@ export function ComposerToolbar({
               disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
             />
             <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming || bashRunning} />
+            <SessionCapabilitiesButton key={sessionId} sessionId={sessionId} busy={isStreaming || bashRunning} />
           </>
         )}
       </div>

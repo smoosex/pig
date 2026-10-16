@@ -31,6 +31,7 @@ async function fixture(): Promise<void> {
   mock.module('../src/main/i18n', () => ({ t: (key: string) => key }))
   mock.module('../src/main/pi/session-registry', () => ({
     activateSession: noop, closeSession: noop, createPendingSession: noop, discardDraftSession: noop,
+    getSessionCapabilities: noop, setSessionCapability: noop,
     exportSession: noop, getSessionControls: noop, getSessionTokenStats: noop, getSessionTrees: noop,
     listSessionCommands: noop, openSession: noop, prepareSession: noop, promoteDraftSession: noop,
     renameSession: noop, setSessionLabel: noop, setSessionModel: noop,
@@ -38,7 +39,7 @@ async function fixture(): Promise<void> {
     forkSessionFromMessage: async () => forked
   }))
   mock.module('../src/main/pi/session-display', () => ({ getDisplayTurns: noop, getTurnMessages: noop, getTurnWindow: noop }))
-  mock.module('../src/main/pi/session-loader', () => ({ removeSessionFile: noop }))
+  mock.module('../src/main/pi/session-removal', () => ({ removeSession: noop }))
   mock.module('../src/main/pi/session-prompt', () => ({ promptSession: noop }))
   mock.module('../src/main/chats', () => ({ isChatCwd: () => false, isChatsRoot: () => false }))
   mock.module('../src/main/ipc/window', () => ({ windowForEvent: noop }))

@@ -29,6 +29,8 @@ async function fixture(name: string): Promise<void> {
     }
     const session = {
       sessionId: 'draft', bindExtensions: async () => {},
+      getActiveToolNames: () => [], getAllTools: () => [], setActiveToolsByName() {},
+      settingsManager: { getDefaultTools: () => undefined },
       agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
       subscribe: () => () => {}, abort: async () => {}, dispose() {},
       extensionRunner: { emit: async () => {} }
@@ -56,7 +58,8 @@ async function fixture(name: string): Promise<void> {
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({
       sessionResourceSettings: () => resourceSettings,
       createChatResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
-      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) })
+      createNoExtensionsResourceLoader: async () => ({ getExtensions: () => ({ extensions: [], errors: [] }) }),
+      sessionSkillChoices: () => []
     }))
     mock.module(fileURLToPath(new URL('../src/main/chats.ts', import.meta.url)), () => ({
       createChatDir: async () => '/chat',
@@ -160,7 +163,7 @@ async function fixture(name: string): Promise<void> {
     } as unknown as import('@earendil-works/pi-coding-agent').AgentSession
     await controls.applyPendingControls(pending, session)
     assert.equal(applied, selected.thinkingLevel)
-    await assert.rejects(controls.setSessionThinking({ sessionId: 'live', cwd: '/tmp', agentSession: session, pluginPaths: [], unsubscribe() {} }, 'max'), /not supported/)
+    await assert.rejects(controls.setSessionThinking({ sessionId: 'live', cwd: '/tmp', agentSession: session, pluginPaths: [], skillChoices: () => [], unsubscribe() {} }, 'max'), /not supported/)
     available = false
     await assert.rejects(controls.applyPendingControls(pending, session), /Model not found/)
 

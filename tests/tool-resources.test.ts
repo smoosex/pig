@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -17,11 +18,58 @@ async function fixture(): Promise<void> {
     '../src/main/pi/chat-resources'
   )
   const { sessionToolFactory } = await import('../src/main/pi/tool-resources')
-  const { setCodemode, saveMcpServer, setMcpEnabled } = await import('../src/main/mcp/settings')
+  const { saveMcpServer, setMcpEnabled, sessionMcpConfig } = await import('../src/main/mcp/settings')
+  const { applySessionTools, copySessionCapabilities, defaultToolNames, removeSessionCapabilities, saveSessionCapability, saveSessionCapabilityGroup, readSessionCapabilities, sessionTools } = await import('../src/main/pi/session-capabilities')
+  saveSessionCapability('bulk-session', 'skills', '/skill/SKILL.md', true)
+  saveSessionCapability('bulk-session', 'tools', 'old-tool', false)
+  saveSessionCapabilityGroup('bulk-session', 'tools', ['read', 'write'], true)
+  assert.deepEqual(readSessionCapabilities('bulk-session').tools, { read: true, write: true })
+  saveSessionCapabilityGroup('bulk-session', 'tools', ['read', 'write'], false)
+  assert.deepEqual(readSessionCapabilities('bulk-session').tools, { read: false, write: false })
+  saveSessionCapabilityGroup('bulk-session', 'tools', ['read', 'write'], null)
+  assert.deepEqual(readSessionCapabilities('bulk-session').tools, {}, 'bulk reset removes overrides, including stale keys')
+  assert.deepEqual(readSessionCapabilities('bulk-session').skills, { '/skill/SKILL.md': true }, 'other capability groups are unchanged')
+  assert.deepEqual(readSessionCapabilities('fixture-session').tools, {}, 'other sessions are unchanged')
+  const sidecar = (id: string) => join(root, 'pig', 'session-capabilities', `${id}.json`)
+  saveSessionCapability('fork-source', 'tools', 'bash', false)
+  copySessionCapabilities('fork-source', 'fork-target')
+  assert.deepEqual(readSessionCapabilities('fork-target').tools, { bash: false }, 'a fork keeps its source overrides')
+  copySessionCapabilities('never-configured', 'fork-empty')
+  assert.equal(existsSync(sidecar('fork-empty')), false, 'a source without overrides leaves no file')
+  await removeSessionCapabilities('fork-target')
+  assert.equal(existsSync(sidecar('fork-target')), false)
+  const { removeSession, removeProjectSessions } = await import('../src/main/pi/session-removal')
+  const { sessionDirForCwd } = await import('../src/main/pi/session-loader')
+  const sessionFile = join(root, 'agent', 'sessions', '--fixture--', 'delete-me.jsonl')
+  await mkdir(join(sessionFile, '..'), { recursive: true })
+  await writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'delete-me', cwd: root }) + '\n')
+  saveSessionCapability('delete-me', 'mcp', 'docs', true)
+  await removeSession(sessionFile)
+  assert.equal(existsSync(sidecar('delete-me')), false, 'deleting a session file removes its overrides')
+  assert.ok(existsSync(sidecar('fork-source')), 'other sessions keep theirs')
+  const projectDir = sessionDirForCwd(root)
+  await mkdir(projectDir, { recursive: true })
+  for (const id of ['bulk-one', 'bulk-two']) {
+    await writeFile(join(projectDir, `${id}.jsonl`), JSON.stringify({ type: 'session', version: 3, id, cwd: root }) + '\n')
+    saveSessionCapability(id, 'skills', '/skill/SKILL.md', false)
+  }
+  await removeProjectSessions(root)
+  for (const id of ['bulk-one', 'bulk-two']) assert.equal(existsSync(sidecar(id)), false, 'bulk deletion removes every sidecar')
+  assert.ok(existsSync(sidecar('fork-source')), 'bulk deletion preserves other sessions')
+  const { Type } = await import('typebox')
+  let registerDeferred!: () => void
   const settingsManager = sessionResourceSettings(root, getAgentDir())
-  const loader = await createNoExtensionsResourceLoader(root, [], {
+  const pluginFile = join(root, 'fixture-plugin.ts')
+  await writeFile(pluginFile, `export default (pi) => pi.registerTool({ name: 'fixture_plugin', label: 'Fixture plugin', description: 'Plugin fixture', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: [], details: {} }) })`)
+  const loader = await createNoExtensionsResourceLoader(root, [pluginFile], {
     settingsManager,
-    extensionFactories: [sessionToolFactory(root)]
+    extensionFactories: [sessionToolFactory(root, 'fixture-session'), (pi) => {
+      registerDeferred = () => pi.registerTool({
+        name: 'fixture_deferred', label: 'Fixture deferred', description: 'Deferred fixture',
+        exposure: 'deferred', parameters: Type.Object({}),
+        execute: async () => ({ content: [{ type: 'text', text: 'called' }], details: {} })
+      })
+    }]
   })
   assert.deepEqual(loader.getExtensions().errors, [])
   const { session } = await createAgentSession({
@@ -38,10 +86,42 @@ async function fixture(): Promise<void> {
         throw new Error(error.error)
       }
     })
-    assert.equal(session.getActiveToolNames().includes('codemode'), false)
-    assert.equal(session.extensionRunner.getToolDefinition('codemode'), undefined)
-    await setCodemode(true)
+    const defaults = await defaultToolNames(session)
+    assert.ok(defaults.includes('read'), 'without a defaultTools setting the SDK list applies')
+    assert.equal(session.getActiveToolNames().includes('codemode'), true, 'codemode is active by default like other extension tools')
+    assert.equal(sessionTools(session, {}, { defaults }).find((tool) => tool.id === 'codemode')?.defaultEnabled, true)
+    const providers = new Map(sessionTools(session, {}, { defaults, plugins: new Map([[pluginFile, 'fixture-plugin']]) }).map((tool) => [tool.id, tool.provider]))
+    for (const name of ['read', 'bash', 'codemode', 'tool_search']) assert.deepEqual(providers.get(name), { kind: 'pi' }, name)
+    assert.deepEqual(providers.get('fixture_plugin'), { kind: 'plugin', name: 'fixture-plugin' })
+    assert.deepEqual(sessionTools(session, {}, { defaults }).find((tool) => tool.id === 'fixture_plugin')?.provider, { kind: 'plugin' }, 'unknown plugin files still count as plugins')
+    registerDeferred()
+    assert.equal(session.getCallableToolNames().includes('fixture_deferred'), true)
+    await applySessionTools(session, { fixture_deferred: false })
+    assert.equal(session.getCallableToolNames().includes('fixture_deferred'), false, 'disabled deferred tools cannot be reached through Codemode or discovery')
+    const blocked = await session.extensionRunner.createToolContext('blocked', new AbortController().signal).executeTool('fixture_deferred', {})
+    assert.equal(blocked.isError, true)
+    await applySessionTools(session, {})
+    assert.equal(session.getCallableToolNames().includes('fixture_deferred'), true)
+    saveSessionCapability('fixture-session', 'tools', 'read', false)
+    await applySessionTools(session, readSessionCapabilities('fixture-session').tools)
+    assert.equal(session.getCallableToolNames().includes('read'), false)
+    assert.equal(session.getActiveToolNames().includes('read'), false)
+    assert.equal(sessionTools(session, {}, { defaults }).find((tool) => tool.id === 'read')?.defaultEnabled, true)
+    assert.deepEqual(readSessionCapabilities('another-session').tools, {}, 'other sessions inherit defaults')
     await session.reload()
+    await applySessionTools(session, readSessionCapabilities('fixture-session').tools, true)
+    assert.equal(session.getCallableToolNames().includes('read'), false, 'reload retains the override')
+    saveSessionCapability('fixture-session', 'tools', 'read', null)
+    await session.reload()
+    await applySessionTools(session, readSessionCapabilities('fixture-session').tools, true)
+    assert.equal(session.getActiveToolNames().includes('read'), true, 'reset restores the default loadout')
+    saveSessionCapability('fixture-session', 'tools', 'codemode', false)
+    await session.reload()
+    await applySessionTools(session, readSessionCapabilities('fixture-session').tools, true)
+    assert.equal(session.getCallableToolNames().includes('codemode'), false, 'a session can disable codemode like any tool')
+    saveSessionCapability('fixture-session', 'tools', 'codemode', null)
+    await session.reload()
+    await applySessionTools(session, readSessionCapabilities('fixture-session').tools, true)
     assert.equal(session.getActiveToolNames().includes('codemode'), true)
     assert.ok(session.getActiveToolNames().includes('read'), 'on mode retains direct tools')
     const tool = session.extensionRunner.getToolDefinition('codemode')!
@@ -57,10 +137,10 @@ async function fixture(): Promise<void> {
       result.content.some((item) => item.type === 'text' && item.text.includes('4')),
       JSON.stringify(result)
     )
-    await setCodemode(false)
+    // Without codemode, discovery depends only on deferred capabilities below.
+    saveSessionCapability('fixture-session', 'tools', 'codemode', false)
     await session.reload()
     assert.equal(session.getActiveToolNames().includes('codemode'), false)
-    assert.equal(session.extensionRunner.getToolDefinition('codemode'), undefined)
     const serverFile = join(root, 'mcp-fixture.cjs')
     await writeFile(
       serverFile,
@@ -79,6 +159,12 @@ async function fixture(): Promise<void> {
     }); process.stdin.on('end', () => process.exit(0));`
     )
     await saveMcpServer('fixture', { command: process.execPath, args: [serverFile] }, false)
+    saveSessionCapability('fixture-session', 'mcp', 'fixture', true)
+    assert.equal((await sessionMcpConfig(root)).servers[0].config.enabled, false, 'session override does not change global MCP settings')
+    assert.equal((await sessionMcpConfig(root, readSessionCapabilities('fixture-session').mcp)).servers[0].config.enabled, true)
+    await session.reload()
+    assert.equal(session.getActiveToolNames().includes('tool_search'), true)
+    saveSessionCapability('fixture-session', 'mcp', 'fixture', null)
     await setMcpEnabled('fixture', true)
     await session.reload()
     assert.equal(session.getActiveToolNames().includes('codemode'), false)
@@ -115,6 +201,10 @@ async function fixture(): Promise<void> {
       discovery.content.some((item) => item.type === 'text' && item.text.includes('echo')),
       JSON.stringify(discovery)
     )
+    await applySessionTools(session, { tool_search: false }, true)
+    assert.equal(session.getActiveToolNames().includes('tool_search'), false)
+    await applySessionTools(session, {})
+    assert.equal(session.getActiveToolNames().includes('tool_search'), true)
     const echo = session.getAllTools().find((entry) => entry.name.includes('echo'))!
     assert.ok(echo, 'tool_search connects deferred MCP and discovers tools')
     assert.ok(
@@ -148,7 +238,7 @@ async function fixture(): Promise<void> {
 }
 if (process.argv.includes('--fixture')) await fixture()
 else
-  test('real SDK: Codemode opt-in, direct tools retained, QuickJS execution, hot disable and auxiliary isolation', async () => {
+  test('real SDK: Codemode as a session tool, direct tools retained, QuickJS execution, hot disable and auxiliary isolation', async () => {
     const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
       stdout: 'pipe',
       stderr: 'pipe'

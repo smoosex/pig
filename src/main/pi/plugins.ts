@@ -217,6 +217,24 @@ function settingsSchema(source: string): PluginSettingsSchema | undefined {
   return { namespace: schema.namespace, fields }
 }
 
+/** Kebab-case tags of the extension files a scope's sessions load, keyed by resolved path, for labelling their tools. */
+export async function pluginNamesByPath(scope: PluginScope): Promise<Map<string, string>> {
+  await mutation
+  const registry = await readRegistry()
+  const names = new Map([
+    [resolve(memoryPath()), 'observational-memory'],
+    [resolve(reviewPath()), 'review'],
+    [resolve(webAccessPath()), 'web-access']
+  ])
+  // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
+  for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
+    // A scoped npm name keeps only the package part: `@scope/pi-foo` is tagged `pi-foo`.
+    const tag = displayName(item.source).split('/').at(-1)!.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    for (const path of await resourcesFor(item.source)) names.set(resolve(path), tag)
+  }
+  return names
+}
+
 export async function listPlugins(): Promise<PluginInfo[]> {
   await mutation
   const registry = await readRegistry()
@@ -254,12 +272,12 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.memoryScopes, available: existsSync(memoryPath()),
     ...(!existsSync(memoryPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pi-review', name: 'Pi Review', source: 'Pig built-in',
+    id: 'pi-review', name: 'Review', source: 'Pig built-in',
     kind: 'system', scopes: registry.reviewScopes, available: existsSync(reviewPath()),
     settings: reviewSettingsSchema,
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pi-web-access', name: 'Pi Web Access', source: 'Pig built-in',
+    id: 'pi-web-access', name: 'Web Access', source: 'Pig built-in',
     kind: 'system', scopes: registry.webAccessScopes, available: existsSync(webAccessPath()),
     ...(!existsSync(webAccessPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]

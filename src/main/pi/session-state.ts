@@ -2,10 +2,13 @@ import type { AgentSession, SessionEntry, SessionManager } from '@earendil-works
 import type { BrowserWindow } from 'electron'
 import type { SessionTokenStats, SessionTreeRow, SessionTreeView, ThinkingLevel } from '../../shared/api'
 import type { SessionFileIndex } from './session-jsonl'
+import type { SessionCapability } from '../../shared/session-capabilities'
 
 export interface LiveSession {
   sessionId: string
   cwd: string
+  /** Computed when asked: listing every candidate reads directories a build may not need. */
+  skillChoices: (overrides: Record<string, boolean>) => SessionCapability[]
   agentSession: AgentSession
   unsubscribe: () => void
   pluginPaths: string[]

@@ -25,12 +25,19 @@ import type {
 import { normalizeWorktreePath as resolve } from '../worktrees'
 import { createChatDir, isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
-import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
+import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings, sessionSkillChoices } from './chat-resources'
 import { sessionToolFactory } from './tool-resources'
+import {
+  applySessionTools, capability, copySessionCapabilities, defaultToolNames, readSessionCapabilities,
+  removeSessionCapabilities, saveSessionCapability, saveSessionCapabilityGroup, sessionTools
+} from './session-capabilities'
+import { configuredServers } from '../mcp/settings'
+import { featuredRecipe } from '../mcp/featured'
+import type { CapabilityGroup, SessionCapabilities } from '../../shared/session-capabilities'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
 import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
-import { enabledPluginPaths } from './plugins'
+import { enabledPluginPaths, pluginNamesByPath } from './plugins'
 import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
 import { startModelRuntime } from './model-settings'
 import { synchronizeModelCatalog } from './model-catalog'
@@ -125,6 +132,7 @@ async function reloadSessionResources(session: LiveSession): Promise<void> {
   try {
     await session.agentSession.reload({ beforeSessionStart: async () => assertExtensionResources(session.agentSession.resourceLoader) })
     assertExtensionResources(session.agentSession.resourceLoader)
+    await applySessionTools(session.agentSession, readSessionCapabilities(session.sessionId).tools, true)
     resourceFailures.delete(session.sessionId)
   } catch (error) {
     // SDK IO failures and loader-recorded factory errors both leave a replaced, unusable runtime.
@@ -176,7 +184,13 @@ async function build(
   const chat = isChatCwd(cwd)
   const pluginPaths = await enabledPluginPaths(chat ? 'chat' : 'project')
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
-  const resources = { settingsManager, extensionFactories: [sessionToolFactory(cwd)] }
+  const sessionId = sessionManager.getSessionId()
+  let skillBase: Parameters<typeof sessionSkillChoices>[0] = { skills: [], diagnostics: [] }
+  const resources = {
+    settingsManager, sessionId,
+    extensionFactories: [sessionToolFactory(cwd, sessionId)],
+    onSkillBase: (base: typeof skillBase) => { skillBase = base }
+  }
   const resourceLoader = chat
     ? await createChatResourceLoader(cwd, pluginPaths, resources)
     : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
@@ -193,6 +207,7 @@ async function build(
     sessionId: session.sessionId,
     cwd,
     agentSession: session,
+    skillChoices: (overrides: Record<string, boolean>) => sessionSkillChoices(skillBase, chat, overrides),
     unsubscribe: () => {},
     pluginPaths,
     win
@@ -232,6 +247,7 @@ async function build(
     synchronizeModelCatalog()
     worktrees.assertAvailable(cwd)
     await configure?.(session)
+    await applySessionTools(session, readSessionCapabilities(session.sessionId).tools, true)
     worktrees.assertAvailable(cwd)
     created.unsubscribe = bridgeEvents(session, session.sessionId, win)
     return created
@@ -364,6 +380,7 @@ export async function discardDraftSession(sessionId: string): Promise<void> {
   if (path === undefined) return
   drafts.delete(sessionId)
   await closeSession(sessionId)
+  await removeSessionCapabilities(sessionId)
   // The path is computed when the draft is created, so a stranger's file may be sitting on it.
   if (!isOwnSessionFile(path, sessionId)) return
   await rm(path, { force: true })
@@ -661,6 +678,46 @@ const queuedPluginRefresh = new Map<string, boolean>()
 const resourceReloads = new Map<string, Promise<void>>()
 const pendingToolRefresh = new Set<string>()
 
+export async function getSessionCapabilities(sessionId: string): Promise<SessionCapabilities> {
+  const session = await prepareSession(sessionId)
+  const preferences = readSessionCapabilities(sessionId)
+  return {
+    tools: sessionTools(session.agentSession, preferences.tools, {
+      defaults: await defaultToolNames(session.agentSession),
+      captureDefaults: !Object.hasOwn(preferences.tools, 'tool_search'),
+      plugins: await pluginNamesByPath(isChatCwd(session.cwd) ? 'chat' : 'project')
+    }),
+    mcp: (await configuredServers()).map((server) => {
+      const descriptionKey = featuredRecipe(server.config)?.descriptionKey
+      return capability(server.name, server.name, server.config.enabled === true, preferences.mcp,
+        descriptionKey ? t(descriptionKey) : server.config.description)
+    }),
+    skills: session.skillChoices(preferences.skills),
+    busy: !canReloadResources(session) || refreshingPlugins.has(sessionId)
+  }
+}
+
+export async function setSessionCapability(sessionId: string, group: CapabilityGroup, id: string | null, enabled: boolean | null): Promise<SessionCapabilities> {
+  if (!['tools', 'mcp', 'skills'].includes(group) || (id !== null && typeof id !== 'string') || (enabled !== null && typeof enabled !== 'boolean'))
+    throw new Error('Invalid session capability')
+  const state = await getSessionCapabilities(sessionId)
+  const session = live.get(sessionId)!
+  if (state.busy || !canReloadResources(session) || refreshingPlugins.has(sessionId) || resourceReloads.has(sessionId)) throw new Error('Session is busy')
+  if (id !== null && !state[group].some((item) => item.id === id)) throw new Error('Unknown session capability')
+  // Write synchronously before publishing the reload gate; concurrent prompts cannot enter in between.
+  if (id === null) saveSessionCapabilityGroup(sessionId, group, state[group].map((item) => item.id), enabled)
+  else saveSessionCapability(sessionId, group, id, enabled)
+  let release!: () => void
+  resourceReloads.set(sessionId, new Promise<void>((resolve) => { release = resolve }))
+  try {
+    await refreshLivePlugins(session, true)
+  } finally {
+    resourceReloads.delete(sessionId)
+    release()
+  }
+  return getSessionCapabilities(sessionId)
+}
+
 export function pendingToolSessions(): string[] { return [...pendingToolRefresh] }
 function canReloadResources(session: LiveSession): boolean {
   return session.agentSession.isIdle && !session.agentSession.isBashRunning && !isSessionRunActive(session.agentSession)
@@ -818,6 +875,7 @@ export async function forkSessionFromMessage(
     targetSessionDir
   )
   const held = holdPendingSession(forked.sessionManager, targetCwd, win, false)
+  copySessionCapabilities(sessionId, held.sessionId)
   return {
     ...previewFor(managerSource(forked.sessionManager), targetCwd),
     sessionId: held.sessionId,

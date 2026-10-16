@@ -48,7 +48,7 @@ async function fixture(failure: Failure): Promise<void> {
     'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },
     'session-names': { forwardSessionNames: noop },
     'pi/session-registry': { closeSessionsForCwd: asyncNoop, disposeAll: asyncNoop },
-    'pi/session-loader': { removeProjectDir: asyncNoop },
+    'pi/session-removal': { removeProjectSessions: asyncNoop },
     'pi/model-settings': { startModelRuntime: asyncNoop },
     'pi/model-catalog': { startModelCatalog: noop },
     'project-worktrees': { worktrees },

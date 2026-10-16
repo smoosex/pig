@@ -95,6 +95,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:view-branch', sessionId, tipId, options),
   forkSession: (sessionId: string, userEntryId: string) =>
     ipcRenderer.invoke('session:fork', sessionId, userEntryId),
+  getSessionCapabilities: (sessionId) => ipcRenderer.invoke('session:capabilities', sessionId),
+  setSessionCapability: (sessionId, group, id, enabled) => ipcRenderer.invoke('session:set-capability', sessionId, group, id, enabled),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
   getScopedModels: () => ipcRenderer.invoke('models:get-scoped'),
@@ -159,7 +161,6 @@ const api: SessionApi = {
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) =>
     ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
   getMcpSettings: () => ipcRenderer.invoke('mcp:get'),
-  setCodemode: (enabled) => ipcRenderer.invoke('mcp:codemode', enabled),
   saveMcpServer: (name, config, replace, icon) => ipcRenderer.invoke('mcp:save', name, config, replace, icon),
   removeMcpServer: (name) => ipcRenderer.invoke('mcp:remove', name),
   setMcpEnabled: (name, enabled) => ipcRenderer.invoke('mcp:enable', name, enabled),

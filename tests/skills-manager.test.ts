@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SessionCapability } from '../src/shared/session-capabilities'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-skills-manager-'))
@@ -34,8 +35,18 @@ async function fixture(): Promise<void> {
     await writeFile(join(packageDir, 'package.json'), JSON.stringify({ pi: { extensions: ['./extensions/index.ts'] } }))
     await writeFile(join(packageDir, 'extensions', 'index.ts'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(executed)}, 'bad'); export default () => {};`)
     await writeFile(join(root, 'pi', 'settings.json'), JSON.stringify({ packages: [packageDir] }))
+    const sdk = await import('@earendil-works/pi-coding-agent')
+    const loadSkills = sdk.loadSkills
+    const scans: string[][] = []
+    mock.module('@earendil-works/pi-coding-agent', () => ({
+      ...sdk,
+      loadSkills: (options: Parameters<typeof loadSkills>[0]) => {
+        scans.push(options?.skillPaths ?? [])
+        return loadSkills(options)
+      }
+    }))
     const manager = await import('../src/main/skills/manager')
-    const { createChatResourceLoader, createNoExtensionsResourceLoader } = await import('../src/main/pi/chat-resources')
+    const { createChatResourceLoader, createNoExtensionsResourceLoader, sessionSkillChoices } = await import('../src/main/pi/chat-resources')
     let inventory = await manager.listSkills()
     assert.deepEqual(inventory.skills.map((skill) => skill.name).sort(), ['shared-workflow', 'user-workflow'])
     assert.equal(inventory.skills.find((skill) => skill.name === 'user-workflow')?.manualOnly, true)
@@ -60,7 +71,15 @@ async function fixture(): Promise<void> {
     assert.match(await manager.readSkill(imported.id), /Instructions/)
     assert.equal(await readFile(join(source, 'imported-workflow', 'references', 'guide.md'), 'utf8'), 'source text')
 
-    const loader = await createNoExtensionsResourceLoader(workspace)
+    let base: Parameters<typeof sessionSkillChoices>[0] = { skills: [], diagnostics: [] }
+    const loader = await createNoExtensionsResourceLoader(workspace, [], { onSkillBase: (next) => { base = next } })
+    // The full list is computed on demand from the SDK base the last reload saw.
+    const choices = (): SessionCapability[] => sessionSkillChoices(base, false, {})
+    assert.deepEqual(choices().find((skill) => skill.name === 'project-workflow')?.source, { kind: 'project' })
+    assert.deepEqual(choices().find((skill) => skill.name === 'user-workflow')?.source, { kind: 'pi' })
+    assert.deepEqual(choices().find((skill) => skill.name === 'shared-workflow')?.source, { kind: 'agents' })
+    assert.deepEqual(choices().find((skill) => skill.name === 'imported-workflow')?.source, { kind: 'imported', name: imported.source })
+    assert.equal(choices().find((skill) => skill.name === 'imported-workflow')?.description, 'Work with imported-workflow')
     assert.ok(loader.getSkills().skills.some((skill) => skill.name === 'project-workflow'))
     assert.ok(loader.getSkills().skills.some((skill) => skill.name === 'imported-workflow'))
     const chat = await createChatResourceLoader(workspace)
@@ -71,10 +90,26 @@ async function fixture(): Promise<void> {
     const before = await readFile(join(shared, 'SKILL.md'), 'utf8')
     await manager.setSkillEnabled(sharedEntry.id, false)
     await manager.setSkillEnabled(imported.id, false)
+    scans.length = 0
     await loader.reload()
+    assert.ok(scans.every((paths) => paths.every((path) => !path.includes(imported.id) && !path.includes('.claude') && !path.includes('.codex'))), 'ordinary reload does not scan disabled copies or external roots')
+    scans.length = 0
+    assert.ok(choices().some((item) => item.id === imported.filePath), 'opening the capabilities list includes disabled copies')
+    assert.ok(scans.some((paths) => paths.some((path) => path.includes(imported.id))), 'disabled copies are scanned on demand')
+    assert.ok(scans.some((paths) => paths.some((path) => path.includes('.claude'))), 'foreign roots are scanned only for the full list')
     assert.equal(loader.getSkills().skills.some((skill) => ['shared-workflow', 'imported-workflow'].includes(skill.name)), false)
     assert.equal(await readFile(join(shared, 'SKILL.md'), 'utf8'), before)
     assert.equal((await manager.listSkills()).skills.find((skill) => skill.id === sharedEntry.id)?.enabled, false)
+    const { saveSessionCapability } = await import('../src/main/pi/session-capabilities')
+    saveSessionCapability('skill-session', 'skills', imported.filePath, true)
+    saveSessionCapability('skill-session', 'skills', join(workspace, '.agents', 'skills', 'project-workflow', 'SKILL.md'), false)
+    const scoped = await createNoExtensionsResourceLoader(workspace, [], { sessionId: 'skill-session' })
+    assert.ok(scoped.getSkills().skills.some((skill) => skill.name === 'imported-workflow'), 'session can enable a globally disabled skill')
+    assert.equal(scoped.getSkills().skills.some((skill) => skill.name === 'project-workflow'), false, 'project skills can be disabled per session')
+    assert.equal(loader.getSkills().skills.some((skill) => skill.name === 'imported-workflow'), false, 'other loaders keep global preferences')
+    saveSessionCapability('skill-session', 'skills', imported.filePath, null)
+    await scoped.reload()
+    assert.equal(scoped.getSkills().skills.some((skill) => skill.name === 'imported-workflow'), false, 'reset follows the global default')
     await assert.rejects(manager.removeSkill(sharedEntry.id), /Only skills imported/)
     await assert.rejects(manager.readSkill('../../secret'), /not found/)
     await manager.setSkillEnabled(imported.id, true)
@@ -118,6 +153,8 @@ async function fixture(): Promise<void> {
     assert.deepEqual(foreign.map((skill) => [skill.name, skill.agent, skill.enabled]).sort(), [['claude-workflow', 'claude', false], ['codex-workflow', 'codex', false]], 'hidden system skills and links to already listed skills are not repeated')
     await loader.reload()
     assert.equal(loader.getSkills().skills.some((skill) => skill.name.endsWith('-workflow') && skill.name.startsWith('c')), false, 'off by default')
+    assert.deepEqual(choices().find((skill) => skill.name === 'claude-workflow')?.source, { kind: 'claude' })
+    assert.deepEqual(choices().find((skill) => skill.name === 'codex-workflow')?.source, { kind: 'codex' })
     const claude = foreign.find((skill) => skill.agent === 'claude')!
     const clash = join(root, 'clash')
     await skill(join(clash, 'claude-workflow'), 'claude-workflow')

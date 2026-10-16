@@ -9,10 +9,8 @@ import {
   importMcpServers,
   mcpIcons,
   previewMcpImport,
-  readToolPreferences,
   removeMcpServer,
   saveMcpServer,
-  setCodemode,
   setMcpEnabled
 } from '../mcp/settings'
 import { mcpCredentials } from '../mcp/sdk'
@@ -33,7 +31,6 @@ export async function mcpSettingsState(): Promise<McpSettingsState> {
   const credentials = await mcpCredentials()
   const icons = mcpIcons()
   return {
-    ...readToolPreferences(),
     pendingSessions: pendingToolSessions(),
     servers: (await configuredServers()).map(({ name, config }) => ({
       name,
@@ -61,10 +58,6 @@ export function registerMcpIpc(): void {
     }
   })
   ipcMain.handle('mcp:get', () => mcpSettingsState())
-  ipcMain.handle('mcp:codemode', async (_event, enabled: boolean) => {
-    await setCodemode(enabled)
-    return changed()
-  })
   ipcMain.handle(
     'mcp:save',
     async (_event, server: string, config: McpConfig, replace: boolean, icon?: string) => {

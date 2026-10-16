@@ -44,7 +44,7 @@ export const useToolSettingsStore = create<Store>((set) => {
     return reading
   }
   return {
-    state: { codemode: false, servers: [], pendingSessions: [] },
+    state: { servers: [], pendingSessions: [] },
     loaded: false,
     busy: false,
     error: null,

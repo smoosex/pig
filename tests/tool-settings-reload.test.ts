@@ -87,6 +87,8 @@ async function fixture(): Promise<void> {
         sessionId: sessionManager.getSessionId(),
         sessionManager,
         agent: { streamFunction: () => { throw new Error('Unexpected model request') } },
+        getActiveToolNames: () => [], getAllTools: () => [], setActiveToolsByName() {},
+        settingsManager: { getDefaultTools: () => undefined },
         resourceLoader,
         paths: resourceLoader.options.additionalExtensionPaths,
         starts: 0,

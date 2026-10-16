@@ -5,6 +5,8 @@
 import type { Locale, LocaleSetting } from './i18n'
 import type { ToolSettingsApi } from './tool-settings'
 import type { SkillsApi } from './skills'
+import type { SessionCapabilitiesApi } from './session-capabilities'
+export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
 import type {
@@ -748,7 +750,7 @@ export interface BashExecutionResult {
   truncated: boolean
 }
 
-export interface SessionApi extends ToolSettingsApi, SkillsApi {
+export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
   listWorktreeSessions: (projectCwd: string, cwd: string) => Promise<SessionMeta[]>

@@ -25,8 +25,8 @@ async function runFixture(): Promise<void> {
     closeSessionsForCwd: async () => { closeCalls++ },
     createPendingSession: () => ({ sessionId: 'session', cwd: '/chat' })
   }))
-  mock.module(modulePath('../src/main/pi/session-loader.ts'), () => ({
-    removeProjectDir: async () => {}
+  mock.module(modulePath('../src/main/pi/session-removal.ts'), () => ({
+    removeProjectSessions: async () => {}
   }))
   mock.module(modulePath('../src/main/opened-projects.ts'), () => ({
     addOpenedProject: async (cwd: string) => cwd,
