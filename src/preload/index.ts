@@ -97,6 +97,13 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:fork', sessionId, userEntryId),
   getControls: (sessionId: string) =>
     ipcRenderer.invoke('session:get-controls', sessionId),
+  getScopedModels: () => ipcRenderer.invoke('models:get-scoped'),
+  setScopedModels: (patterns: string[]) => ipcRenderer.invoke('models:set-scoped', patterns),
+  onScopedModelsChanged: (listener: () => void) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('models:scope-changed', handler)
+    return () => { ipcRenderer.off('models:scope-changed', handler) }
+  },
   getModelCatalog: () => ipcRenderer.invoke('models:get-catalog'),
   refreshModelCatalog: () => ipcRenderer.invoke('models:refresh-catalog'),
   getTokenStats: (sessionId: string) =>

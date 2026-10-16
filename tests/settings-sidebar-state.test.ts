@@ -432,6 +432,8 @@ async function runFixture(name: string): Promise<void> {
   let unmounted = false
   try {
     if (name === 'beam-border-setting') {
+      api.getScopedModels = async () => ({ patterns: [], models: [], warnings: [], selections: [], missingProviderPatterns: [] })
+      api.onScopedModelsChanged = () => () => {}
       let persisted = true
       api.setBeamBorderEnabled = async (enabled) => {
         persisted = enabled
