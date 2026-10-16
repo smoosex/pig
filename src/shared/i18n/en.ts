@@ -150,6 +150,7 @@ export const en: Messages = {
     deleteSession: 'Delete session {title}',
     deleteChat: 'Delete chat {title}',
     deleted: 'Deleted',
+    unread: 'New reply',
     sortingProjects: 'The project order is still being saved',
     cannotDeleteRoot: 'The project directory itself cannot be deleted',
     fileMissing: 'The session file is gone',

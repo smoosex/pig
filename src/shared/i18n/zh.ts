@@ -152,6 +152,7 @@ export const zh = {
     deleteSession: '删除会话 {title}',
     deleteChat: '删除对话 {title}',
     deleted: '已删除',
+    unread: '有新回复',
     sortingProjects: '项目排序正在保存',
     cannotDeleteRoot: '不能删除原项目目录',
     fileMissing: '会话文件不存在',

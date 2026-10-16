@@ -21,6 +21,13 @@ useSettingsStore.subscribe((state, previous) => {
   if (state.locale !== previous.locale) useSessionsStore.getState().relabelTabs()
 })
 
+// Every path that brings a session to the front (sidebar, tab strip, restore, close fallback) ends
+// here, so the unread mark is cleared in one place rather than in each of them.
+useSessionsStore.subscribe((state) => {
+  const sessionId = selectActiveSessionId(state)
+  if (sessionId && state.runtime[sessionId]?.unread) state.markRead(sessionId)
+})
+
 /**
  * The session behind the active tab. A diff or file tab holds the strip without owning a session, so
  * anything that prompts, streams, or reads runtime state asks for this rather than the raw tab id.

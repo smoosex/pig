@@ -15,7 +15,7 @@ import { cn } from '../../lib/utils'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useT } from '../../hooks/useT'
 import { TreeNav } from '../spectrumui/tree-nav'
-import { SessionCloseButton } from './SessionCloseButton'
+import { SessionCloseButton, SessionUnreadDot } from './SessionCloseButton'
 import { SessionDeleteButton } from './SessionDeleteButton'
 import { useProjectAction } from './project-action'
 import { SessionForkIcon } from '../SessionForkIcon'
@@ -67,6 +67,7 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
   const deleteChat = useSessionsStore((state) => state.deleteChat)
   const t = useT()
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
+  const unread = useSessionsStore((state) => state.runtime[session.id]?.unread ?? false)
   const { pending, error, runAction } = useProjectAction()
   const rename = useSessionRename(session.id, session.path)
   return (
@@ -110,11 +111,14 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
                 onClose={() => closeTab(session.id)}
               />
             ) : (
-              <SessionDeleteButton
-                ariaLabel={t('sessions.deleteChat', { title })}
-                disabled={pending !== null}
-                onConfirm={() => void runAction('delete', () => deleteChat(cwd))}
-              />
+              <span className="group/close-slot relative flex size-6 shrink-0 items-center justify-center">
+                {unread ? <SessionUnreadDot /> : null}
+                <SessionDeleteButton
+                  ariaLabel={t('sessions.deleteChat', { title })}
+                  disabled={pending !== null}
+                  onConfirm={() => void runAction('delete', () => deleteChat(cwd))}
+                />
+              </span>
             )}
           </div>
         </ContextMenuTrigger>

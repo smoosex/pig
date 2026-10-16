@@ -42,6 +42,7 @@ export const createConversationSlice: SessionSlice<
   | 'clearQueuedEditText'
   | 'setThinkingLevel'
   | 'setStreaming'
+  | 'markRead'
   | 'beginPrompt'
   | 'rollbackPrompt'
   | 'beginBash'
@@ -427,11 +428,14 @@ export const createConversationSlice: SessionSlice<
     setStreaming: (sessionId, streaming) => update(sessionId, (rt) => ({
       agentRunRevision: rt.agentRunRevision + 1,
       isStreaming: streaming,
+      unread: streaming ? rt.unread : rt.unread || (rt.isStreaming && get().activeTabId !== sessionId),
       toolUpdates: streaming ? rt.toolUpdates : {},
       streamStartedAt: streaming ? (rt.isStreaming ? rt.streamStartedAt : Date.now()) : null,
       streamElapsedMs: streaming ? null : rt.streamStartedAt != null
         ? Date.now() - rt.streamStartedAt : rt.streamElapsedMs
     })),
+
+    markRead: (sessionId) => update(sessionId, (rt) => rt.unread ? { unread: false } : null),
 
     beginPrompt: (sessionId, message) => update(sessionId, (rt) => ({
       isStreaming: true,
