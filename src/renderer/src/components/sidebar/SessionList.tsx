@@ -62,6 +62,7 @@ function SessionRow({ tab, fork }: { tab: OpenTab; fork: SessionTabRow }) {
   const t = useT()
   const active = useSessionsStore((state) => selectActiveSessionId(state) === session.id)
   const streaming = useSessionsStore((state) => state.runtime[session.id]?.isStreaming ?? false)
+  const unread = useSessionsStore((state) => state.runtime[session.id]?.unread ?? false)
   const activateTab = useSessionsStore((state) => state.activateTab)
   const closeTab = useSessionsStore((state) => state.closeTab)
   const rename = useSessionRename(session.id, session.meta?.path)
@@ -101,6 +102,7 @@ function SessionRow({ tab, fork }: { tab: OpenTab; fork: SessionTabRow }) {
             {session.loadState === 'error' ? <CircleAlert className="text-destructive" /> : null}
             <SessionCloseButton
               streaming={streaming}
+              unread={unread}
               ariaLabel={t('sessions.close', { title: session.title })}
               onClose={() => closeTab(session.id)}
             />

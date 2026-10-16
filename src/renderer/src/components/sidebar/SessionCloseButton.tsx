@@ -1,17 +1,32 @@
-/** The sidebar's running indicator and close action share one fixed-width slot. */
+/** The sidebar's running / unread indicators and close action share one fixed-width slot. */
 import { cn } from '../../lib/utils'
 import { ThinkingOrb } from 'thinking-orbs'
 import { useDarkMode } from '../../lib/useDarkMode'
 import { CloseButton } from '../CloseButton'
 import { sidebarButtonSurface } from './sidebar-surface'
+import { useT } from '../../hooks/useT'
+
+/** Gives way to the row's hover action, like the running orb. */
+export function SessionUnreadDot() {
+  const t = useT()
+  return (
+    <span
+      role="img"
+      aria-label={t('sessions.unread')}
+      className="pointer-events-none absolute size-1.5 rounded-full bg-primary transition-opacity group-hover/session:opacity-0 group-focus-within/close-slot:opacity-0"
+    />
+  )
+}
 
 export function SessionCloseButton({
   streaming,
+  unread = false,
   ariaLabel,
   onClose,
   disabled = false
 }: {
   streaming: boolean
+  unread?: boolean
   ariaLabel: string
   onClose: () => void
   disabled?: boolean
@@ -29,6 +44,8 @@ export function SessionCloseButton({
           aria-hidden
           className="pointer-events-none transition-opacity group-hover/session:opacity-0 group-focus-within/close-slot:opacity-0"
         />
+      ) : unread ? (
+        <SessionUnreadDot />
       ) : null}
       <CloseButton
         streaming={streaming}

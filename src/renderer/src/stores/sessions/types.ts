@@ -89,6 +89,8 @@ export interface RuntimeState extends SessionControls {
   elapsedByTurnId: Record<string, number>
   generationByTurnId: Record<string, GenerationStats>
   isStreaming: boolean
+  /** A run finished while another tab was in front; cleared once the session is shown. */
+  unread: boolean
   /** SDK lifecycle changes outrank cleanup of an older optimistic submission. */
   agentRunRevision: number
   streamStartedAt: number | null
@@ -263,6 +265,7 @@ export interface SessionsStore {
   previewSessionTitle: (sessionId: string, title: string, fallback?: SessionPreviewFallback) => void
 
   setStreaming: (sessionId: string, streaming: boolean) => void
+  markRead: (sessionId: string) => void
   beginPrompt: (sessionId: string, message: PiMessage) => void
   rollbackPrompt: (sessionId: string, message: PiMessage, agentRunRevision: number) => void
   beginBash: (sessionId: string, id: string, command: string) => void

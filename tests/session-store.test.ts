@@ -1750,6 +1750,24 @@ async function runFixture(name: string): Promise<void> {
     first.resolve([{ cwd: '/old', name: 'old', sessions: [] }])
     await older
     assert.equal(state().projects[0].cwd, '/new')
+  } else if (name === 'unread-after-background-run') {
+    const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
+    const tab = (id: string) => ({ id, cwd: '/project', title: id, kind: 'project' as const, loadState: 'ready' as const })
+    store.setState({
+      openTabs: [tab('a'), tab('b')],
+      activeTabId: 'a',
+      runtime: { a: emptyRuntime(), b: emptyRuntime() }
+    })
+    state().setStreaming('a', true)
+    state().setStreaming('a', false)
+    assert.equal(state().runtime.a.unread, false, 'a run watched to the end is already read')
+    state().setStreaming('b', false)
+    assert.equal(state().runtime.b.unread, false, 'settling an idle session is not a reply')
+    state().setStreaming('b', true)
+    state().setStreaming('b', false)
+    assert.equal(state().runtime.b.unread, true)
+    store.setState({ activeTabId: 'b' })
+    assert.equal(state().runtime.b.unread, false, 'showing the session clears the mark')
   } else if (name === 'file-tabs') {
     let closes = 0
     api.closeSession = async () => { closes++ }
@@ -2111,7 +2129,8 @@ if (process.argv[2] === '--session-store-fixture') {
     'chat-tabs-written': 'every change to the chats half reaches the list the next launch restores',
     'tab-close-neighbour': 'closing a tab lands on its neighbour, not on the end of the list',
     'chat-tabs-restored': 'the chats half comes back with the tabs it had and the one it showed',
-    'project-load-order': 'a slow project scan cannot replace a newer list'
+    'project-load-order': 'a slow project scan cannot replace a newer list',
+    'unread-after-background-run': 'a run that finishes behind another tab stays unread until shown'
   }
   for (const [name, description] of Object.entries(cases)) {
     test(`session store: ${description}`, async () => {
