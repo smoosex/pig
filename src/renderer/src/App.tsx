@@ -444,13 +444,8 @@ export default function App() {
             <>
               <div
                 data-content-surface
-                className={cn(
-                  'm-2 flex min-w-96 flex-1 flex-col rounded-xl transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none',
-                  // One material backplate per container; reading tabs and panes keep their opaque surfaces.
-                  !isMultiPane && (diffTab || fileTab)
-                    ? 'bg-chat-background shadow-md'
-                    : 'bg-glass-background shadow-glass-panel ring-1 ring-glass-border solid:bg-chat-background solid:shadow-md solid:ring-0'
-                )}
+                // One material backplate for every tab kind; panes and reading views paint nothing over it in glass.
+                className="m-2 flex min-w-96 flex-1 flex-col rounded-xl bg-glass-background shadow-glass-panel ring-1 ring-glass-border transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-chat-background solid:shadow-md solid:ring-0"
               >
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                   <div

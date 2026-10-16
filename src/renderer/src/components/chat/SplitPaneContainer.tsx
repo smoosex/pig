@@ -190,7 +190,7 @@ export function SplitPaneContainer({
         }}
         className={cn(
           'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border shadow-xs transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none',
-          paneTab?.kind === 'project' || paneTab?.kind === 'chat' ? 'bg-transparent solid:bg-card' : 'bg-card',
+          'bg-transparent solid:bg-card',
           isActive ? 'border-primary/80' : 'border-border/60'
         )}
       >

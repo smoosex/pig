@@ -14,9 +14,17 @@ import type { DiffStyle } from '../../stores/diff'
  * and the mixed diff-line colors — so pointing it at the code background is what makes the whole area the
  * same color as the pane. The override rides in the library's `unsafe` layer, which is the one that wins
  * over its own defaults.
+ *
+ * Reading panes opt into `glass-code-surface`, which makes the base transparent in glass: the library's
+ * color-mix derivations then turn into translucent tints of the same hues over the conversation material.
+ * Diffs inside chat tool output are outside that utility and keep the opaque code background.
+ *
+ * The line-number gutter is sticky over horizontally scrolled code and hides it only with its own fill,
+ * so it keeps an opaque background even when the content is transparent.
  */
 const codeSurfaceCSS = [
-  ':host { --diffs-bg: var(--code-background) }',
+  ':host { --diffs-bg: var(--code-surface-background, var(--code-background)) }',
+  '[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)) }',
   'code { scrollbar-width: none } code::-webkit-scrollbar { display: none }'
 ].join('\n')
 

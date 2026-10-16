@@ -95,7 +95,7 @@ function useLineFollow(cwd: string, path: string) {
           title={label}
           // The slot is a light-DOM node the shadow tree stretches over the row's number cell, so it is
           // placed with the app's own spacing and colors rather than the library's built-in button.
-          className="size-4 rounded-sm bg-code-background text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          className="size-4 rounded-sm bg-glass-composer-background text-muted-foreground solid:bg-code-background hover:bg-accent solid:hover:bg-accent hover:text-accent-foreground"
           onClick={() => {
             void openFileTab(cwd, path)
             revealLine(cwd, path, row.lineNumber)

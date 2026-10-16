@@ -71,14 +71,14 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col"
+      className="glass-code-surface flex min-h-0 flex-1 flex-col"
       onKeyDownCapture={(event) => {
         if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return
         event.preventDefault()
         if (dirty && !saving) void saveDocument(cwd, path)
       }}
     >
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-glass-border px-3 solid:border-border">
         <FileTypeIcon path={path} className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-xs font-medium" title={path}>
           {name}

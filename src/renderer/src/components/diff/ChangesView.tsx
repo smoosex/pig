@@ -305,8 +305,8 @@ export function ChangesView({ cwd }: { cwd: string }) {
   const anyExpanded = sections.some((section) => expanded[section.entry.path] === true)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+    <div className="glass-code-surface flex min-h-0 flex-1 flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-glass-border pl-3 pr-2 solid:border-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -366,7 +366,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
       <div
         ref={list}
         className={cn(
-          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-chat-background p-3',
+          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-transparent p-3 solid:bg-chat-background',
           '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         )}
       >
@@ -396,14 +396,14 @@ export function ChangesView({ cwd }: { cwd: string }) {
             <section
               key={`${scopeKey}\u0000${entry.path}`}
               id={sectionId(entry.path)}
-              className="shrink-0 overflow-hidden rounded-lg border border-border bg-popover shadow-sm"
+              className="shrink-0 overflow-hidden rounded-lg border border-glass-border bg-glass-composer-background/60 shadow-sm transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none solid:border-border solid:bg-popover"
             >
               <button
                 type="button"
                 title={entry.path}
                 aria-expanded={open}
                 onClick={() => setExpanded(cwd, { ...expanded, [entry.path]: !open })}
-                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs hover:bg-accent/60"
+                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs hover:bg-glass-prompt-foreground/8 solid:hover:bg-accent/60"
               >
                 <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
                 <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
@@ -422,7 +422,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
                 )}
               </button>
               {open ? (
-                <div className="border-t border-border">
+                <div className="border-t border-glass-border solid:border-border">
                   <SectionBody
                     cwd={cwd}
                     section={section}

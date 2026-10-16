@@ -1,4 +1,4 @@
-/** Glass changes local surfaces, never pane ownership, editor drafts or reading-tab backings. */
+/** Glass changes local surfaces, never pane ownership or editor drafts; every tab kind shares one backplate. */
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { GroupProps, PanelProps } from 'react-resizable-panels'
@@ -253,9 +253,9 @@ async function fixture(scenario: string): Promise<void> {
       }
       for (const id of ['file', 'diff']) {
         await act(async () => { sessions.setState({ activeTabId: id, currentProjectCwd: '/p' }) })
-        assert.ok(surface.classList.contains('bg-chat-background'), `${id} preserves the opaque reading surface`)
-        assert.ok(!surface.classList.contains('bg-glass-background'))
-        assert.ok(surface.classList.contains('shadow-md'))
+        assert.ok(surface.classList.contains('bg-glass-background'), `${id} shows the shared glass backplate`)
+        assert.ok(surface.classList.contains('solid:bg-chat-background'), `${id} stays opaque in solid`)
+        assert.ok(!surface.classList.contains('bg-chat-background'))
         assert.ok(host.querySelector(`[data-view="${id === 'file' ? 'FileView' : 'ChangesView'}"]`))
         assert.ok(host.querySelector('[data-header-trailing] [data-new-tab]'))
       }
@@ -269,8 +269,10 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(host.querySelectorAll('.bg-glass-background').length, 1, 'mixed panes share one material layer')
       const panes = [...host.querySelectorAll<HTMLElement>('[data-split-pane]')]
       assert.equal(panes.length, 4)
-      assert.equal(panes.filter((pane) => pane.classList.contains('bg-transparent')).length, 2)
-      assert.equal(panes.filter((pane) => pane.classList.contains('bg-card')).length, 2)
+      for (const pane of panes) {
+        assert.ok(pane.classList.contains('bg-transparent') && pane.classList.contains('solid:bg-card'), 'reading panes paint nothing over the glass')
+        assert.ok(!pane.classList.contains('bg-card'))
+      }
       for (const pane of panes) {
         assert.ok(pane.classList.contains('duration-200'))
         assert.ok(!pane.className.includes('opacity-') && !pane.className.includes('backdrop-'))
@@ -443,6 +445,10 @@ else {
     }
     assert.ok(css.includes('--shadow-glass-panel:'))
     assert.ok(css.includes('--shadow-glass-tab-active: var(--glass-tab-active-shadow)'))
+    for (const surface of ['@utility glass-code-surface', '--code-surface-background: transparent', '--code-surface-background: var(--code-background)', '--code-surface-gutter-background: var(--glass-composer-background)', '--code-surface-gutter-background: var(--code-background)']) assert.ok(css.includes(surface))
+    const diffOptions = await Bun.file(new URL('../src/renderer/src/components/diff/diff-options.ts', import.meta.url)).text()
+    assert.ok(diffOptions.includes('--diffs-bg: var(--code-surface-background, var(--code-background))'), 'tool-output diffs outside reading panes keep the opaque code background')
+    assert.ok(diffOptions.includes('[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)) }'), 'the sticky gutter stays opaque over horizontally scrolled code')
     for (const motion of ['@utility session-tab-motion', 'flex-basis 200ms', 'flex-grow 200ms', 'var(--tab-drag-transition, transform 0s)']) assert.ok(css.includes(motion))
   })
 }

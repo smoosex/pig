@@ -160,6 +160,15 @@
     var(--tab-drag-transition, transform 0s);
 }
 
+@utility glass-code-surface {
+  --code-surface-background: transparent;
+  --code-surface-gutter-background: var(--glass-composer-background);
+  @variant solid {
+    --code-surface-background: var(--code-background);
+    --code-surface-gutter-background: var(--code-background);
+  }
+}
+
 @utility caret-blink {
   &::after {
     content: '▍';
