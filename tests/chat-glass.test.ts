@@ -183,19 +183,19 @@ async function fixture(scenario: string): Promise<void> {
       }
       const chat = host.querySelector('[data-view="ChatView"]')
       const windowSurface = host.querySelector<HTMLElement>('[data-app-surface]')!
-      assert.ok(windowSurface.classList.contains('bg-glass-window-background/10'))
       assert.ok(windowSurface.classList.contains('solid:bg-background'))
-      assert.ok(!windowSurface.classList.contains('bg-background/10'), 'theme tint cannot leak through the neutral chat material')
+      assert.ok(![...windowSurface.classList].some((name) => name.startsWith('bg-')), 'glass leaves the window to its native material')
       assert.ok(surface.classList.contains('bg-glass-background'))
-      assert.ok(surface.classList.contains('backdrop-blur-xl'))
+      for (const bare of [windowSurface, surface]) {
+        assert.ok(!bare.className.includes('backdrop-'), 'nothing web-painted lies under the window surfaces, so a backdrop-filter only reads back its own last frame')
+      }
       assert.ok(surface.classList.contains('shadow-glass-panel'))
       assert.ok(surface.classList.contains('ring-glass-border'))
       assert.ok(surface.classList.contains('solid:bg-chat-background'))
-      assert.ok(surface.classList.contains('solid:backdrop-blur-none'))
       assert.ok(surface.classList.contains('solid:shadow-md'))
       assert.ok(surface.classList.contains('solid:ring-0'))
       assert.ok(!surface.classList.contains('bg-chat-background'))
-      assert.ok(surface.classList.contains('transition-[background-color,box-shadow,backdrop-filter]'))
+      assert.ok(surface.classList.contains('transition-[background-color,box-shadow]'))
       assert.ok(surface.classList.contains('duration-200'))
       assert.ok(surface.classList.contains('motion-reduce:transition-none'))
       assert.ok(!surface.className.includes('opacity-'))
@@ -210,6 +210,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.ok(tabList.classList.contains('bg-glass-tab-bar-background'))
       assert.ok(tabList.classList.contains('solid:bg-tab-bar-background'))
       assert.ok(tabList.classList.contains('overflow-x-auto'))
+      assert.ok(!tabList.className.includes('backdrop-'), 'the rail sits on the bare window, like the card')
       const faces = [...strip.querySelectorAll<HTMLElement>('[data-session-tab]')]
       assert.equal(faces.length, 2)
       for (const face of faces) {
@@ -222,7 +223,7 @@ async function fixture(scenario: string): Promise<void> {
       for (const effect of ['bg-glass-tab-active-background', 'bg-(image:--glass-tab-active-sheen)', 'shadow-glass-tab-active', 'inset-ring-glass-tab-active-border']) {
         assert.ok(activeTab.classList.contains(effect))
       }
-      assert.ok(!activeTab.className.includes('backdrop-'), 'the rail owns blur, not individual tabs')
+      assert.ok(!activeTab.className.includes('backdrop-'), 'the selected face paints optics, not a blur')
       for (const effect of ['solid:bg-tab-active-background', 'solid:bg-none', 'solid:shadow-xs', 'solid:inset-ring-border']) {
         assert.ok(activeTab.classList.contains(effect), 'solid has no transparent lens or sheen')
       }
@@ -254,7 +255,6 @@ async function fixture(scenario: string): Promise<void> {
         await act(async () => { sessions.setState({ activeTabId: id, currentProjectCwd: '/p' }) })
         assert.ok(surface.classList.contains('bg-chat-background'), `${id} preserves the opaque reading surface`)
         assert.ok(!surface.classList.contains('bg-glass-background'))
-        assert.ok(!surface.classList.contains('backdrop-blur-xl'))
         assert.ok(surface.classList.contains('shadow-md'))
         assert.ok(host.querySelector(`[data-view="${id === 'file' ? 'FileView' : 'ChangesView'}"]`))
         assert.ok(host.querySelector('[data-header-trailing] [data-new-tab]'))
@@ -266,7 +266,7 @@ async function fixture(scenario: string): Promise<void> {
         split.getState().splitPane(pane, 'diff', 'left')
       })
       assert.ok(surface.classList.contains('bg-glass-background'), 'a selected reading tab cannot replace the shared material in a mixed split')
-      assert.equal(host.querySelectorAll('.backdrop-blur-xl').length, 1, 'mixed panes share one material layer')
+      assert.equal(host.querySelectorAll('.bg-glass-background').length, 1, 'mixed panes share one material layer')
       const panes = [...host.querySelectorAll<HTMLElement>('[data-split-pane]')]
       assert.equal(panes.length, 4)
       assert.equal(panes.filter((pane) => pane.classList.contains('bg-transparent')).length, 2)

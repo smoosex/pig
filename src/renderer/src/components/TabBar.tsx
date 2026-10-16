@@ -145,8 +145,8 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
               if (event.propertyName === 'flex-basis' && (event.target as Element).hasAttribute('data-tab-active')) revealActiveTab()
             }}
             className={cn(
-              'flex min-w-0 flex-1 items-stretch overflow-x-auto rounded-full p-0.5 transition-[background-color,backdrop-filter] duration-200 ease-in-out motion-reduce:transition-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-              (displayTabs.length > 0 || reintegratingTab) && 'bg-glass-tab-bar-background backdrop-blur-sm solid:bg-tab-bar-background solid:backdrop-blur-none'
+              'flex min-w-0 flex-1 items-stretch overflow-x-auto rounded-full p-0.5 transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+              (displayTabs.length > 0 || reintegratingTab) && 'bg-glass-tab-bar-background solid:bg-tab-bar-background'
             )}
           >
             {displayTabs.map((tab) => {
@@ -336,7 +336,7 @@ function TabFace({
           : [
             '@container/session-tab w-56 min-w-7 max-w-56 shrink-0 cursor-pointer text-glass-prompt-foreground solid:text-foreground',
             active ? 'basis-56 grow-0' : 'basis-7 grow',
-            // The shared rail owns blur; the selected face only paints the glass optics.
+            // The frost behind the rail is the window's native material; the selected face only paints the glass optics.
             active
               ? 'bg-glass-tab-active-background bg-(image:--glass-tab-active-sheen) shadow-glass-tab-active inset-ring-1 inset-ring-glass-tab-active-border after:opacity-0 solid:bg-tab-active-background solid:bg-none solid:shadow-xs solid:inset-ring-border'
               : 'hover:bg-glass-prompt-foreground/8 focus-within:bg-glass-prompt-foreground/8 solid:hover:bg-tab-hover-background solid:focus-within:bg-tab-hover-background'
