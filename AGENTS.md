@@ -60,6 +60,8 @@ src/
 
 Skills 设置页分「已安装 / 发现」。个人 Pi 配置与 `~/.agents/skills` 自动发现的文件只读，启停仅写 Pig 的 `skills.json`，不修改共享目录。导入保存副本到 `$PIG_DIR/skills/<uuid>/<name>/`，仅这些副本允许移除，移除后留在 `skill-backups/`。GitHub 导入先按不可变 commit 探测 `SKILL.md` 再多选复制，不执行仓库代码，不走 Pi package 安装。`chat-resources.ts` 的两个 loader 都通过 `applySkillPreferences` 动态合并副本与过滤禁用项；Chat 仍排除项目 Skills，空闲会话自动重载，运行中的会话延后到任务结束。另外会扫描 `~/.claude/skills` 与 `~/.codex/skills`（遵循 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，跳过 `.system` 等隐藏目录），它们不是 Pi 的来源，所以默认关闭，启用状态记在 `skills.json` 的 `enabledPaths`，由 `applySkillPreferences` 按原路径直接加载（不复制，Chat 也生效）；这类 Skill 不占用安装时的同名检查。全局清单不依赖项目目录，也不解析或加载用户配置的 packages。
 
+Pi Review 的全局模型偏好复用通用插件配置，保存在 `$PIG_DIR/plugin-settings/pi-review.json` 的 `pi-review` 命名空间（`provider` / `modelId`，必须同时填写或清空；可选 `thinking` 独立配置思考强度）。配置 UI 复用默认模型的供应商／模型合并搜索下拉，不提供 ID 手填；模型与思考强度都可独立继承当前会话。每次 review 开始时读取并校验，默认继承当前会话模型；仅指定模型缺失、鉴权返回失败或切换返回失败时提示并回退，配置 JSON、校验及非 ENOENT 的 IO 错误必须抛出。Review turn 请求失败时恢复原会话模型并继续一次，不循环重试；最终答复或中止的 `turn_end` 即恢复原模型及思考强度（工具调用中间轮次不恢复），确保排队 follow-up 不借用 review 设置，`agent_end` 仅补充清理提前终止的情况。不覆盖用户中途手动选择的模型或思考强度，后续修复使用会话设置。
+
 会话隔离用上游 0.38 的引用计数模型（`holdResults`/`releaseResults`/`loadSessionResults` + `touchClones`/`releaseClonesUnusedSince` + `liveInstances`），不要再做 per-instance storage：Pig 每个 tab 一个扩展实例共用一个进程，最后一个存活 session 结束前不能清 clone 目录。
 
 Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，`PIG_DIR` 作为最高优先级覆盖（见「启动」：开发时不要带上它）。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。

@@ -29,8 +29,10 @@
  * Pig owns the review command panel, notifications, and session review indicator.
  */
 
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { reviewUI } from "../pig-ui.js";
+import { readReviewSettings } from "./settings.js";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 
@@ -598,6 +600,78 @@ type ReviewPresetValue =
 	| "removeInstructions";
 
 export default function reviewExtension(pi: ExtensionAPI) {
+	// Only the review turn borrows a model; follow-up fixes keep the session's original model.
+	const borrowedModels = new Map<string, {
+		original: NonNullable<ExtensionContext["model"]>;
+		review: NonNullable<ExtensionContext["model"]>;
+		originalThinking: ReturnType<ExtensionAPI["getThinkingLevel"]>;
+		reviewThinking: ReturnType<ExtensionAPI["getThinkingLevel"]>;
+		switched: boolean;
+	}>();
+
+	async function selectReviewModel(ctx: ExtensionContext, settings: Awaited<ReturnType<typeof readReviewSettings>>) {
+		const original = ctx.model;
+		if (!original) return;
+		const configured = settings.model;
+		const switched = !!configured && (configured.provider !== original.provider || configured.id !== original.id);
+		if (!switched && settings.thinking === undefined) return;
+		const originalThinking = pi.getThinkingLevel();
+		let model = original;
+		if (switched && configured) {
+			const selected = ctx.modelRegistry.find(configured.provider, configured.id);
+			if (!selected) {
+				reviewUI(ctx).notify(`Review model unavailable; using session model: model not found (${configured.provider}/${configured.id}).`, "warning");
+				return;
+			}
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(selected);
+			if (!auth.ok) {
+				reviewUI(ctx).notify(`Review model unavailable; using session model: ${auth.error}`, "warning");
+				return;
+			}
+			if (!await pi.setModel(selected)) {
+				reviewUI(ctx).notify("Review model unavailable; using session model: could not select review model.", "warning");
+				return;
+			}
+			model = selected;
+		}
+		pi.setThinkingLevel(settings.thinking ?? originalThinking);
+		borrowedModels.set(ctx.sessionManager.getSessionId(), {
+			original, review: model, originalThinking, reviewThinking: pi.getThinkingLevel(), switched,
+		});
+	}
+
+	async function finishReviewTurn(message: AgentMessage | undefined, ctx: ExtensionContext) {
+		const sessionId = ctx.sessionManager.getSessionId();
+		const borrowed = borrowedModels.get(sessionId);
+		if (!borrowed) return;
+		borrowedModels.delete(sessionId);
+		// Do not overwrite a model explicitly changed by the user during the review.
+		if (ctx.model?.provider !== borrowed.review.provider || ctx.model.id !== borrowed.review.id) return;
+		const currentThinking = pi.getThinkingLevel();
+		if (borrowed.switched && !await pi.setModel(borrowed.original)) {
+			reviewUI(ctx).notify("Could not restore the session model after review.", "error");
+			return;
+		}
+		pi.setThinkingLevel(currentThinking === borrowed.reviewThinking ? borrowed.originalThinking : currentThinking);
+		if (borrowed.switched && message?.role === "assistant" && message.stopReason === "error") {
+			reviewUI(ctx).notify("Review model request failed; continuing once with the session model.", "warning");
+			pi.sendUserMessage("Continue the code review requested above using the current model. Preserve completed inspection work and provide the remaining findings.", { deliverAs: "followUp" });
+		}
+	}
+
+	pi.on("turn_end", async (event, ctx) => {
+		const message = event.message;
+		// Pi drains follow-ups before agent_end. Keep the override through tool rounds,
+		// but restore it before the loop starts any queued work after the final answer.
+		if (message.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted" || !message.content.some((part) => part.type === "toolCall"))) {
+			await finishReviewTurn(message, ctx);
+		}
+	});
+	// Also clean up when the loop terminates without a final answer (e.g. a tool ends it).
+	pi.on("agent_end", async (event, ctx) => {
+		await finishReviewTurn(event.messages.at(-1), ctx);
+	});
+
 	function persistReviewSettings(ctx: ExtensionContext) {
 		pi.appendEntry(REVIEW_SETTINGS_TYPE, {
 			customInstructions: getCustomReviewInstructions(ctx),
@@ -701,6 +775,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const sessionId = ctx.sessionManager.getSessionId();
 		reviewOriginIds.delete(sessionId);
 		reviewCustomInstructions.delete(sessionId);
+		borrowedModels.delete(sessionId);
 		endReviewInProgress.delete(sessionId);
 	});
 
@@ -918,6 +993,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const prompt = await buildReviewPrompt(pi, target);
 		const hint = getUserFacingHint(target);
 		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
+		const modelSettings = await readReviewSettings();
 
 		// Handle fresh session mode
 		if (useFreshSession) {
@@ -988,6 +1064,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const modeHint = useFreshSession ? " (fresh session)" : "";
 		reviewUI(ctx).notify(`Starting review: ${hint}${modeHint}`, "info");
 
+		await selectReviewModel(ctx, modelSettings);
 		// Send as a user message that triggers a turn
 		pi.sendUserMessage(fullPrompt);
 		return true;

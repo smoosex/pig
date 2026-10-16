@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, FolderOpen, Plus, Settings, X } from 'lucide-react'
 import { useT } from '../../hooks/useT'
+import { thinkingLevelKeys } from '../../lib/thinking-levels'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo, type PluginScope } from '../../ipc/api'
 import { Button } from '../ui/button'
@@ -58,6 +59,10 @@ export function PluginsPane() {
   const [saving, setSaving] = useState(false)
   const models = useModelCatalogStore((s) => s.models)
   const selectedPlugin = plugins.find((item) => item.id === selectedPluginId)
+  const reviewProvider = pluginDraft.provider ?? '__pig_default__'
+  const reviewId = pluginDraft.modelId ?? '__pig_default__'
+  const hasReviewModel = reviewProvider !== '__pig_default__' && reviewId !== '__pig_default__'
+  const reviewModel = hasReviewModel ? models.find((item) => item.provider === reviewProvider && item.id === reviewId) ?? null : null
   const memoryModel = modelProvider.trim() && modelId.trim()
     ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null
     : null
@@ -273,7 +278,28 @@ export function PluginsPane() {
       {selectedPlugin?.settings ? (
         <div className="flex flex-col gap-3">
           {pluginConfigError ? <p role="alert" className="text-sm text-destructive">{pluginConfigError}</p> : null}
-          <SettingsCard>{selectedPlugin.settings.fields.map((field) => (
+          {selectedPluginId === 'pi-review' ? <SettingsCard>
+            <SettingsRow title={t('plugins.reviewModel')} description={t('plugins.reviewModelHint')}>
+              <div className="flex items-center gap-2">
+                <DefaultModelPicker model={reviewModel} models={models}
+                  placeholder={hasReviewModel ? `${reviewProvider}/${reviewId}` : t('plugins.inheritSession')}
+                  onSelect={(model) => setPluginDraft((current) => ({ ...current, provider: model.provider, modelId: model.id }))} />
+                {hasReviewModel ? <Button size="icon-sm" variant="ghost" aria-label={t('plugins.inheritSession')}
+                  onClick={() => setPluginDraft((current) => ({ ...current, provider: '__pig_default__', modelId: '__pig_default__' }))}><X /></Button> : null}
+              </div>
+            </SettingsRow>
+            <SettingsRow title={t('plugins.thinking')} description={t('plugins.reviewThinkingHint')}>
+              <Select value={pluginDraft.thinking ?? '__pig_default__'} onValueChange={(thinking) => setPluginDraft((current) => ({ ...current, thinking }))}>
+                <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger>
+                <SelectContent><SelectGroup>
+                  <SelectItem value="__pig_default__">{t('plugins.inheritSession')}</SelectItem>
+                  {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => (
+                    <SelectItem key={level} value={level}>{t(thinkingLevelKeys[level])}</SelectItem>
+                  ))}
+                </SelectGroup></SelectContent>
+              </Select>
+            </SettingsRow>
+          </SettingsCard> : <SettingsCard>{selectedPlugin.settings.fields.map((field) => (
             <SettingsRow key={field.key} title={field.label} description={field.description ?? field.key}>
               {field.type === 'boolean' ? (
                 <div className="flex items-center gap-2">
@@ -294,7 +320,7 @@ export function PluginsPane() {
                 </Select>
               )}
             </SettingsRow>
-          ))}</SettingsCard>
+          ))}</SettingsCard>}
           <Button size="sm" className="self-end" disabled={configSaving} onClick={() => void saveConfig()}>{configSaving ? t('plugins.working') : t('plugins.save')}</Button>
         </div>
       ) : null}
