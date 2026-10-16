@@ -251,6 +251,8 @@ export const en: Messages = {
     save: 'Save',
     saving: 'Saving…',
     openWith: 'Open with…',
+    showSource: 'Show source',
+    showPreview: 'Show preview',
     openDefault: 'Open with the default app',
     reveal: 'Reveal in the file manager',
     changedOnDisk: 'The file changed on disk',

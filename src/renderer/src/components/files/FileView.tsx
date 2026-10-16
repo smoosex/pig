@@ -8,8 +8,14 @@
  * the way down: the editor has a keymap of its own, and saving is the tab's business rather than the
  * editor's. A diff row followed into the tab lands the editor on that line, which is what
  * `useFileLineReveal` holds.
+ *
+ * Markdown opens on a rendered preview of the draft. The editor stays mounted behind it, so switching
+ * views keeps unsaved edits and undo history, and a line reveal switches to the source it needs. The
+ * preview resolves relative links and images against the file's own directory, the way a repository
+ * browser reads a README, and renders the sanitized HTML READMEs use for layout.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Components } from 'react-markdown'
 import type { Translate } from '../../../../shared/i18n'
 import {
   Editor,
@@ -34,6 +40,13 @@ import {
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
 import { useFileLineReveal } from './useFileLineReveal'
+import { Code, Eye } from 'lucide-react'
+import { MarkdownText } from '../MarkdownText'
+import { cn } from '../../lib/utils'
+import { useSessionsStore } from '../../stores/sessions'
+import { headingSlug, markdownImageSrc, markdownTarget } from './markdown-links'
+
+const MARKDOWN_PATH = /\.(md|markdown)$/i
 
 const createEditor: EditorFactory<undefined, undefined> = (type, options, editStateKey) =>
   new Editor(type, options, editStateKey)
@@ -57,6 +70,22 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 
   useEffect(() => setActionError(null), [cwd, path])
 
+  // The view choice belongs to one file; the component itself is reused when the tab switches files.
+  const key = fileKey(cwd, path)
+  const [sourceFor, setSourceFor] = useState<ReadonlySet<string>>(() => new Set())
+  const showSource = (file: string, source: boolean) =>
+    setSourceFor((current) => {
+      if (current.has(file) === source) return current
+      const next = new Set(current)
+      if (source) next.add(file)
+      else next.delete(file)
+      return next
+    })
+  const revealPending = useFilesStore((state) => state.reveal?.cwd === cwd && state.reveal?.path === path)
+  useEffect(() => {
+    if (revealPending) showSource(key, true)
+  }, [revealPending, key])
+
   // The line a diff row asked for, and the editor that can be told about it.
   const reveal = useFileLineReveal(cwd, path, document)
 
@@ -65,9 +94,64 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
     void run().catch((error: unknown) => setActionError(failureMessage(error)))
   }
 
+  const previewRef = useRef<HTMLDivElement>(null)
+  const openFileTab = useSessionsStore((state) => state.openFileTab)
+  const previewComponents = useMemo<Components>(() => {
+    // Footnotes and HTML anchors carry ids, which the sanitizer prefixes with `user-content-`;
+    // headings have none, so they are matched by GitHub's slug of their text.
+    const scrollToAnchor = (slug: string) => {
+      const preview = previewRef.current
+      if (!preview) return
+      const ids = new Set([slug, `user-content-${slug}`])
+      const target = [...preview.querySelectorAll<HTMLElement>('[id]')].find((element) => ids.has(element.id)) ??
+        [...preview.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')]
+          .find((heading) => headingSlug(heading.textContent ?? '') === slug.toLowerCase())
+      target?.scrollIntoView({ block: 'start' })
+    }
+    return {
+      a: ({ id, href = '', children }) => {
+        const target = markdownTarget(path, href)
+        return (
+          <a
+            id={id}
+            href={href}
+            className="text-link underline underline-offset-2"
+            {...(target.kind === 'external' ? { target: '_blank', rel: 'noreferrer' } : {})}
+            onClick={(event) => {
+              if (target.kind === 'external') return
+              // Everything else stays inside the app: the window would resolve it against its own URL.
+              event.preventDefault()
+              if (target.kind === 'anchor') scrollToAnchor(target.slug)
+              else if (target.kind === 'file' && target.path === path) {
+                if (target.slug) scrollToAnchor(target.slug)
+              } else if (target.kind === 'file') {
+                runExternal(() => openFileTab(cwd, target.path))
+              }
+            }}
+          >
+            {children}
+          </a>
+        )
+      },
+      img: ({ src, alt, title, width, height }) => (
+        <img
+          src={typeof src === 'string' ? markdownImageSrc(cwd, path, src) : undefined}
+          alt={alt}
+          title={title}
+          width={width}
+          height={height}
+          className="inline max-w-full"
+        />
+      )
+    }
+  }, [cwd, path, openFileTab])
+
   const { name, directory } = splitPath(path)
   const dirty = document ? isDirty(document) : false
   const saving = document?.saving === true
+  const markdown = MARKDOWN_PATH.test(path) && document?.status === 'ready' && document.preview === 'text'
+  // A pending reveal shows the source in the same commit, so the editor is visible when it is focused.
+  const previewing = markdown && !sourceFor.has(key) && !revealPending
 
   return (
     <div
@@ -87,6 +171,20 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
           <span className="min-w-0 truncate text-xs text-muted-foreground">{directory}</span>
         ) : null}
         <span className="flex-1" />
+        {markdown ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground"
+            data-markdown-view-toggle
+            aria-label={previewing ? t('file.showSource') : t('file.showPreview')}
+            title={previewing ? t('file.showSource') : t('file.showPreview')}
+            onClick={() => showSource(key, previewing)}
+          >
+            {previewing ? <Code /> : <Eye />}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -168,14 +266,24 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
       ) : null}
 
       {document?.status === 'ready' && document.preview === 'text' ? (
-        <FileSurface
-          key={`${fileKey(cwd, path)}-${document.revision}`}
-          path={path}
-          contents={document.text}
-          dark={dark}
-          editorOptions={reveal.editorOptions}
-          onEditChange={(text) => setDraft(cwd, path, text)}
-        />
+        // The editor keeps its layout under the preview: hiding it with display would make the virtualizer
+        // measure and paint from scratch when the source comes back, which shows as a flash.
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {previewing ? (
+            <div ref={previewRef} data-markdown-preview className="absolute inset-0 overflow-y-auto px-6 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <MarkdownText className="mx-auto max-w-3xl text-sm" text={document.text} allowHtml overrides={previewComponents} />
+            </div>
+          ) : null}
+          <FileSurface
+            key={`${fileKey(cwd, path)}-${document.revision}`}
+            path={path}
+            contents={document.text}
+            dark={dark}
+            hidden={previewing}
+            editorOptions={reveal.editorOptions}
+            onEditChange={(text) => setDraft(cwd, path, text)}
+          />
+        </div>
       ) : (
         // A read that failed is the one preview with a way out of it: nothing about the file itself says
         // it is unreadable, so the tab offers the read again rather than making the reader close it.
@@ -212,12 +320,14 @@ function FileSurface({
   path,
   contents,
   dark,
+  hidden,
   editorOptions,
   onEditChange
 }: {
   path: string
   contents: string
   dark: boolean
+  hidden: boolean
   editorOptions: { onAttach: (editor: Editor<'file', undefined, undefined>) => void }
   onEditChange: (text: string) => void
 }) {
@@ -225,7 +335,7 @@ function FileSurface({
   const options = useMemo(() => fileCodeOptions(dark), [dark])
   return (
     <EditProvider createEditor={createEditor}>
-      <Virtualizer className="min-h-0 flex-1 overflow-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <Virtualizer className={cn('min-h-0 flex-1 overflow-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', hidden && 'invisible')}>
         <FileCode
           file={file}
           options={options}

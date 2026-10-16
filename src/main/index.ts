@@ -15,6 +15,7 @@ import { startModelCatalog } from './pi/model-catalog'
 import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
+import { handleWorktreeFiles, registerWorktreeFileScheme } from './worktree-file-protocol'
 import { flushOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
@@ -30,10 +31,11 @@ process.env.PIG_DIR ??= pigDir()
 // imported before anything reads process.env. Started here to overlap Electron's own boot.
 const shellEnvironment = importShellEnvironment()
 
-// The renderer loads persisted images and cached catalog icons through these schemes, so both
-// must be granted before ready.
+// The renderer loads persisted images, cached catalog icons and worktree images for the markdown
+// preview through these schemes, so all of them must be granted before ready.
 registerSessionImageScheme()
 registerMcpIconScheme()
+registerWorktreeFileScheme()
 
 // Dev keeps its Electron profile and instance lock beside its project data, separate from the
 // packaged app's profile. setPath requires the directory to exist and must precede the lock.
@@ -60,6 +62,7 @@ app.whenReady().then(async () => {
 
   handleSessionImages()
   handleMcpIcons()
+  handleWorktreeFiles()
   // Reads the catalog from disk and refreshes it in the background: the first paint must not wait
   // on the network, but whatever the refresh finds is pushed to the window when it lands.
   void startModelRuntime()

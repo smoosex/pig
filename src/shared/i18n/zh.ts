@@ -248,6 +248,8 @@ export const zh = {
     save: '保存',
     saving: '保存中…',
     openWith: '打开方式…',
+    showSource: '查看源码',
+    showPreview: '查看预览',
     openDefault: '用默认应用打开',
     reveal: '在文件管理器中显示',
     changedOnDisk: '文件已在磁盘上变化',

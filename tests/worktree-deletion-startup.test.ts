@@ -54,6 +54,7 @@ async function fixture(failure: Failure): Promise<void> {
     'project-worktrees': { worktrees },
     'session-image-protocol': { handleSessionImages: noop, registerSessionImageScheme: noop },
     'mcp/icon-protocol': { handleMcpIcons: noop, registerMcpIconScheme: noop },
+    'worktree-file-protocol': { handleWorktreeFiles: noop, registerWorktreeFileScheme: noop },
     'open-project-sessions': {
       flushOpenProjectSessions: asyncNoop,
       removeOpenProjectWorkspaces: async () => { workspacePrunes++ }

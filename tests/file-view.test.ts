@@ -22,8 +22,8 @@ async function runFixture(name: string): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
-  let disk: Record<string, string> = { 'a.ts': 'AAA alpha\n', 'b.ts': 'BBB bravo\n' }
-  let stamps = { 'a.ts': 1, 'b.ts': 2 }
+  let disk: Record<string, string> = { 'a.ts': 'AAA alpha\n', 'b.ts': 'BBB bravo\n', 'README.md': '# Title\n', 'docs/guide.md': '# Guide\n' }
+  let stamps = { 'a.ts': 1, 'b.ts': 2, 'README.md': 4, 'docs/guide.md': 5 }
   let change: ((cwd: string) => void) | null = null
   const api: Partial<SessionApi> = {
     readFile: async (_cwd, path): Promise<FileReadResult> => {
@@ -45,9 +45,23 @@ async function runFixture(name: string): Promise<void> {
   const mounted: string[] = []
   const { mock } = await import('bun:test')
   mock.module('@pierre/diffs/edit', () => ({ Editor: class {} }))
+  mock.module('../src/renderer/src/components/MarkdownText', () => ({
+    // The preview's own link and image renderers are what this file tests, so the stub renders them.
+    MarkdownText: (props: { text: string; overrides: Record<string, React.ElementType> }) => React.createElement('div', { 'data-rendered': '' },
+      props.text,
+      React.createElement(props.overrides.a, { href: './docs/guide.md' }, 'guide'),
+      React.createElement(props.overrides.a, { href: 'https://example.com' }, 'site'),
+      React.createElement(props.overrides.a, { href: '../outside.md' }, 'outside'),
+      React.createElement(props.overrides.img, { src: 'docs/logo.png', alt: 'logo' }),
+      React.createElement(props.overrides.a, { href: '#fn-1' }, 'note'),
+      React.createElement('h2', null, 'Getting Started'),
+      React.createElement(props.overrides.a, { href: '#getting-started' }, 'start'),
+      React.createElement('li', { id: 'user-content-fn-1' }, 'footnote'))
+  }))
   mock.module('@pierre/diffs/react', () => ({
     EditProvider: (props: { children?: unknown }) => React.createElement('div', null, props.children as never),
-    Virtualizer: (props: { children?: unknown }) => React.createElement('div', null, props.children as never),
+    Virtualizer: (props: { children?: unknown; className?: string }) =>
+      React.createElement('div', { 'data-virtualizer': '', className: props.className }, props.children as never),
     File: (props: { file: { name: string; contents: string } }) => {
       painted.push({ name: props.file.name, contents: props.file.contents })
       React.useEffect(() => {
@@ -210,6 +224,68 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'markdown') {
+    const preview = () => container.querySelector('[data-markdown-preview]')
+    const editorHidden = () => container.querySelector('[data-virtualizer]')!.classList.contains('invisible')
+    const button = () => container.querySelector<HTMLButtonElement>('[data-markdown-view-toggle]')!
+    const toggle = (label: string) => {
+      assert.equal(button().getAttribute('aria-label'), label, 'one button names the view it switches to')
+      return button()
+    }
+
+    await open('a.ts')
+    assert.equal(container.querySelector('[data-markdown-view-toggle]'), null, 'only markdown offers a preview')
+
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    const { worktreeFileUrl } = await import('../src/shared/worktree-files')
+    const followed: string[] = []
+    useSessionsStore.setState({ openFileTab: async (_cwd, target) => { followed.push(target) } })
+
+    await open('README.md')
+    assert.ok(preview(), 'markdown opens on its preview')
+    const link = (text: string) => [...preview()!.querySelectorAll('a')].find((a) => a.textContent === text)!
+    assert.equal(preview()!.querySelector('img')!.getAttribute('src'), worktreeFileUrl(cwd, 'docs/logo.png'), 'images resolve against the file')
+    assert.equal(link('site').getAttribute('target'), '_blank', 'only external links leave the app')
+    assert.equal(link('guide').getAttribute('target'), null)
+    await React.act(async () => { link('guide').click() })
+    await React.act(async () => { link('outside').click() })
+    assert.deepEqual(followed, ['docs/guide.md'], 'a relative link opens its file tab and a path out of the worktree does nothing')
+    const scrolled: string[] = []
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) { scrolled.push(this.id || this.textContent || '') }
+    await React.act(async () => { link('note').click() })
+    await React.act(async () => { link('start').click() })
+    assert.deepEqual(scrolled, ['user-content-fn-1', 'Getting Started'], 'anchors land on an id first, then on a heading slug')
+    assert.ok(editorHidden(), 'the editor stays laid out under the preview instead of leaving the layout')
+    assert.ok(button().querySelector('.lucide-code'))
+    const surfaces = mounted.length
+    await React.act(async () => { toggle('查看源码').click() })
+    assert.equal(preview(), null)
+    assert.ok(!editorHidden())
+    assert.ok(button().querySelector('.lucide-eye'), 'the icon follows the view')
+
+    await React.act(async () => { useFilesStore.getState().setDraft(cwd, 'README.md', '# Edited\n') })
+    await React.act(async () => { toggle('查看预览').click() })
+    assert.ok(preview()!.textContent!.startsWith('# Edited\n'), 'the preview renders the unsaved draft')
+    assert.equal(mounted.length, surfaces, 'switching views keeps the editor and its unsaved state mounted')
+
+    await React.act(async () => { useFilesStore.getState().revealLine(cwd, 'README.md', 1) })
+    assert.equal(preview(), null, 'a line reveal shows the source it lands in')
+    await React.act(async () => { useFilesStore.getState().clearReveal() })
+    assert.equal(preview(), null, 'and stays there once the reveal is done')
+
+    await open('b.ts')
+    await open('README.md')
+    assert.equal(preview(), null, 'the chosen view belongs to the file')
+
+    await open('docs/guide.md')
+    assert.ok(preview(), 'another markdown file has its own choice')
+    await React.act(async () => { toggle('查看源码').click() })
+    await React.act(async () => { toggle('查看预览').click() })
+    await open('README.md')
+    assert.equal(preview(), null, 'choosing a view in one file leaves the others alone')
+    return
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -220,7 +296,8 @@ if (process.argv[2] === '--file-view-fixture') {
     switch: 'a tab that comes back to an open file gives the surface that file\'s bytes',
     reload: 'an external change replaces the surface rather than editing the one already on screen',
     'refresh-failure': 'a refresh that could not read says so and offers only a retry',
-    'open-failure': 'a file the desktop will not open reports the reason on the tab'
+    'open-failure': 'a file the desktop will not open reports the reason on the tab',
+    markdown: 'markdown toggles between a preview of the draft and the mounted source editor'
   })) {
     test(`file view: ${description}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--file-view-fixture', name], {
