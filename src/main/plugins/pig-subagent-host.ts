@@ -9,6 +9,7 @@ import type { ThinkingLevel } from '../../shared/api'
 
 export interface SpawnRequest {
   parentSessionId: string
+  parentTurnId?: string
   parentSessionFile?: string
   toolCallId: string
   cwd: string

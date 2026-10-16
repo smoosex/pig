@@ -680,6 +680,7 @@ export const zh = {
     },
     switch: '切换子 agent',
     clearFinished: '清除已完成',
+    clearedAll: '已清理全部任务',
     stop: '停止',
     stopAll: '全部停止',
     expand: '查看完整对话',

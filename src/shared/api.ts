@@ -6,6 +6,7 @@ import type { Locale, LocaleSetting } from './i18n'
 import type { ToolSettingsApi } from './tool-settings'
 import type { SkillsApi } from './skills'
 import type { SessionCapabilitiesApi } from './session-capabilities'
+import type { SubagentAppearance } from './subagent-appearance'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -672,6 +673,9 @@ export interface SubagentTurn {
 /** One spawned subagent as its parent session sees it; persisted in the parent's subagent index. */
 export interface SubagentInfo {
   id: string
+  /** The user-message entry starting the parent's run; absent in older indexes. */
+  parentTurnId?: string
+  appearance?: SubagentAppearance
   parentSessionId: string
   /** Used by startup cleanup; absent in indexes created before orphan cleanup existed. */
   parentSessionFile?: string

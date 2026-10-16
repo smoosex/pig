@@ -62,6 +62,10 @@ html[data-palette='pig'] {
   --selection-foreground: #292b30;
   --success: #386750;
   --success-background: #e7eee4;
+  --subagent-completed-background: #009b45;
+  --subagent-completed-foreground: #ffffff;
+  --subagent-failed-background: #dc2626;
+  --subagent-failed-foreground: #ffffff;
   --warning: #72581f;
   --warning-background: #f2eedf;
   --info: #35627f;
@@ -154,6 +158,10 @@ html.dark[data-palette='pig'] {
   --selection-foreground: #ececee;
   --success: #83c092;
   --success-background: #323d39;
+  --subagent-completed-background: #00a647;
+  --subagent-completed-foreground: #ffffff;
+  --subagent-failed-background: #dc2626;
+  --subagent-failed-foreground: #ffffff;
   --warning: #c0ae83;
   --warning-background: #3d3a36;
   --info: #83a7c0;

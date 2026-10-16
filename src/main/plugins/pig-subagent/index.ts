@@ -21,6 +21,12 @@ import {
 const RESULT_TYPE = "subagent-result";
 
 export default function subagentExtension(pi: ExtensionAPI) {
+	let parentTurnId: string | undefined;
+	pi.on("agent_start", (_event, ctx) => {
+		parentTurnId = ctx.sessionManager.getBranch().findLast(
+			(entry) => entry.type === "message" && entry.message.role === "user",
+		)?.id;
+	});
 	const deliver = (delivery: SubagentDelivery) => {
 		pi.sendMessage(
 			{ customType: RESULT_TYPE, content: delivery.text, display: true, details: delivery.details },
@@ -53,6 +59,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				if (!host) throw new Error("Subagents are unavailable in this host");
 				const outcome = await host.spawn({
 					parentSessionId: ctx.sessionManager.getSessionId(),
+					parentTurnId,
 					parentSessionFile: ctx.sessionManager.getSessionFile(),
 					toolCallId,
 					cwd: ctx.cwd,

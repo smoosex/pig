@@ -62,6 +62,10 @@ html[data-palette='everforest'] {
   --selection-foreground: #4f5d60;
   --success: #506822;
   --success-background: #e8edd4;
+  --subagent-completed-background: #009b45;
+  --subagent-completed-foreground: #ffffff;
+  --subagent-failed-background: #dc2626;
+  --subagent-failed-foreground: #ffffff;
   --warning: #805e17;
   --warning-background: #faedcd;
   --info: #326c87;
@@ -154,6 +158,10 @@ html.dark[data-palette='everforest'] {
   --selection-foreground: #e2dbc8;
   --success: #a7c080;
   --success-background: #34453c;
+  --subagent-completed-background: #00a647;
+  --subagent-completed-foreground: #ffffff;
+  --subagent-failed-background: #dc2626;
+  --subagent-failed-foreground: #ffffff;
   --warning: #dbbc7f;
   --warning-background: #444338;
   --info: #91c8bf;

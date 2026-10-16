@@ -34,18 +34,27 @@ test('the jiti-loaded spawn tool reaches the host registered by main', async () 
     const controller = new AbortController()
     const ctx = {
       cwd: root,
-      sessionManager: { getSessionId: () => 'parent', getSessionFile: () => '/sessions/parent.jsonl' },
+      sessionManager: {
+        getSessionId: () => 'parent', getSessionFile: () => '/sessions/parent.jsonl',
+        getBranch: () => [
+          { id: 'older-user', type: 'message', message: { role: 'user' } },
+          { id: 'current-user', type: 'message', message: { role: 'user' } },
+          { id: 'tool-round', type: 'message', message: { role: 'assistant' } }
+        ]
+      },
       model: { provider: 'p', id: 'm' },
       thinkingLevel: 'high'
     }
+    await extension.handlers.get('agent_start')![0]({ type: 'agent_start' }, ctx as never)
     const result = await spawn.execute('call-1', { title: 'Map', prompt: 'Do it', background: false }, controller.signal, undefined, ctx as never)
     expect(result).toEqual({ content: [{ type: 'text', text: 'report' }], details: { subagentId: 'abcd1234' }, isError: false })
     expect(requests[0]).toMatchObject({
-      parentSessionId: 'parent', parentSessionFile: '/sessions/parent.jsonl', toolCallId: 'call-1', cwd: root, title: 'Map', prompt: 'Do it', background: false,
+      parentSessionId: 'parent', parentTurnId: 'current-user', parentSessionFile: '/sessions/parent.jsonl', toolCallId: 'call-1', cwd: root, title: 'Map', prompt: 'Do it', background: false,
       parentModel: { provider: 'p', id: 'm' }, parentThinkingLevel: 'high', signal: controller.signal
     })
     await spawn.execute('call-2', { title: 'Bg', prompt: 'Later', background: true }, controller.signal, undefined, ctx as never)
     expect(requests[1].signal).toBeUndefined()
+    expect(requests[1].parentTurnId).toBe('current-user')
     registerSubagentHost(undefined)
   } finally {
     if (previousPig === undefined) delete process.env.PIG_DIR

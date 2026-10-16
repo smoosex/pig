@@ -71,6 +71,10 @@
   --color-selection-foreground: var(--selection-foreground);
   --color-success: var(--success);
   --color-success-background: var(--success-background);
+  --color-subagent-completed-background: var(--subagent-completed-background);
+  --color-subagent-completed-foreground: var(--subagent-completed-foreground);
+  --color-subagent-failed-background: var(--subagent-failed-background);
+  --color-subagent-failed-foreground: var(--subagent-failed-foreground);
   --color-warning: var(--warning);
   --color-warning-background: var(--warning-background);
   --color-info: var(--info);

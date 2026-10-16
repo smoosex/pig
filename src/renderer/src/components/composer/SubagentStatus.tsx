@@ -14,14 +14,15 @@ export function SubagentStatus({ sessionId }: { sessionId: string | null }) {
   const card = useSubagentStore((state) => (sessionId && state.card?.sessionId === sessionId ? state.card : null))
   const openCard = useSubagentStore((state) => state.openCard)
   const closeCard = useSubagentStore((state) => state.closeCard)
+  const clearing = useSubagentStore((state) => state.clearing?.sessionId === sessionId ? state.clearing : null)
   const items = useSessionSubagents(sessionId)
 
   useEffect(() => {
     if (sessionId) ensure(sessionId)
   }, [ensure, sessionId])
 
-  const listed = items.filter((item) => !item.cleared)
-  const selected = card ? items.find((item) => item.id === card.id) : undefined
+  const listed = items.filter((item) => !item.cleared || isSubagentActive(item))
+  const selected = card ? items.find((item) => item.id === card.id && (!item.cleared || isSubagentActive(item) || clearing)) : undefined
   if (!sessionId || (!listed.length && !selected)) return null
 
   const running = listed.filter((item) => item.status === 'running').length
@@ -55,7 +56,7 @@ export function SubagentStatus({ sessionId }: { sessionId: string | null }) {
           aria-label={t('subagents.title')}
         >
           <Icon aria-hidden="true" className={cn('size-3', (running || queued) && 'animate-spin')} />
-          {parts.join(' · ')}
+          {parts.join(' · ') || t('subagents.clearedAll')}
         </Button>
       </PopoverTrigger>
       <PopoverContent side="top" align="end" sideOffset={10} className="w-md gap-0 rounded-2xl p-0">

@@ -14,6 +14,7 @@ import { existsSync } from 'node:fs'
 import type { SubagentInfo, SubagentSettings, SubagentStatus, SubagentTurn, ThinkingLevel } from '../../shared/api'
 import type { SpawnOutcome, SpawnRequest, SubagentDelivery, SubagentHost } from '../plugins/pig-subagent-host'
 import { backgroundAck, combineReports, formatReport } from './result'
+import { chooseSubagentAppearance } from './appearance'
 import type { ModelChoice, RunEvent, RunSpec, SubagentRun, SubagentRunner } from './runner'
 import type { SubagentStore } from './store'
 
@@ -130,9 +131,13 @@ export class SubagentManager implements SubagentHost {
     const id = randomUUID().replace(/-/g, '').slice(0, 8)
     let resolve!: () => void
     const finished = new Promise<void>((done) => { resolve = done })
+    const used = [...parent.entries.values()].flatMap(({ info }) =>
+      info.parentTurnId === request.parentTurnId && info.appearance ? [info.appearance] : [])
     const entry: Entry = {
       info: {
         id,
+        parentTurnId: request.parentTurnId,
+        appearance: chooseSubagentAppearance(used),
         parentSessionId: request.parentSessionId,
         parentSessionFile: request.parentSessionFile,
         toolCallId: request.toolCallId,

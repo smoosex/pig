@@ -70,6 +70,23 @@ function status(manager: Manager): Record<string, string> {
 }
 
 describe('subagent manager', () => {
+  test('parallel spawns persist distinct animals and balanced colors within each user run', async () => {
+    const { manager, saved } = harness({ maxConcurrent: 1 })
+    try {
+      for (const parentTurnId of ['question-one', 'question-two']) {
+        await Promise.all(Array.from({ length: 12 }, (_, i) =>
+          manager.spawn(request(`${parentTurnId}-${i}`, true, { parentTurnId }))))
+        const items = manager.snapshot('parent').filter((item) => item.parentTurnId === parentTurnId)
+        expect(new Set(items.map((item) => item.appearance?.animal)).size).toBe(12)
+        expect(new Set(items.slice(0, 7).map((item) => item.appearance?.color)).size).toBe(7)
+        expect(saved.get('parent')?.filter((item) => item.parentTurnId === parentTurnId).map((item) => item.appearance))
+          .toEqual(items.map((item) => item.appearance))
+      }
+    } finally {
+      await manager.closeParent('parent')
+    }
+  })
+
   test('background children queue beyond the limit; foreground ones start immediately', async () => {
     const { manager, runs } = harness()
     await manager.spawn(request('a', true))

@@ -683,6 +683,7 @@ export const en: Messages = {
     },
     switch: 'Switch subagent',
     clearFinished: 'Clear finished',
+    clearedAll: 'All finished tasks cleared',
     stop: 'Stop',
     stopAll: 'Stop all',
     expand: 'Open full conversation',

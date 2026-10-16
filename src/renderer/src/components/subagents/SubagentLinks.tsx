@@ -1,27 +1,47 @@
 /** Entry points from the main conversation into the subagent card: spawn tool rows and result messages. */
+import { useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import type { CustomMessage, TextContent } from '../../pi/types'
 import type { SubagentResultDetails } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { isSubagentActive, useLocatedSubagent, useSubagentStore, type LocatedSubagent } from '../../stores/subagents'
 import { Button } from '../ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { SubagentCard } from './SubagentCard'
 import { SubagentAvatar, SubagentMeta, useNow } from './subagent-view'
 
 function SubagentLine({ located }: { located: LocatedSubagent }) {
   const t = useT()
   const openCard = useSubagentStore((state) => state.openCard)
+  const closeCard = useSubagentStore((state) => state.closeCard)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const { item, sessionId } = located
   const now = useNow(isSubagentActive(item))
+  const historical = item.cleared && !isSubagentActive(item)
   return (
     <div className="flex min-w-0 items-center gap-2 py-1">
-      <SubagentAvatar item={item} className="size-5" />
+      <SubagentAvatar item={item} className="mt-0.5 size-5 self-start" statusSize={8} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{item.title}</span>
         <SubagentMeta item={item} now={now} />
       </span>
-      <Button type="button" variant="outline" size="xs" onClick={() => openCard(sessionId, item.id)}>
-        {t('subagents.open')}
-      </Button>
+      {historical ? (
+        <Popover open={historyOpen} onOpenChange={(open) => {
+          if (open) closeCard()
+          setHistoryOpen(open)
+        }}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="outline" size="xs">{t('subagents.open')}</Button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="end" sideOffset={10} className="no-drag w-md gap-0 rounded-2xl p-0">
+            <SubagentCard sessionId={sessionId} items={[item]} selected={item} history onClose={() => setHistoryOpen(false)} />
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <Button type="button" variant="outline" size="xs" onClick={() => openCard(sessionId, item.id)}>
+          {t('subagents.open')}
+        </Button>
+      )}
     </div>
   )
 }

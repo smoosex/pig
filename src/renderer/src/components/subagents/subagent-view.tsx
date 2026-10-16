@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Bot, Check, Clock3, LoaderCircle, Square, X } from 'lucide-react'
+import { Bird, Cat, Check, CircleStop, Clock3, Dog, Fish, LoaderCircle, Panda, PiggyBank, Rabbit, Rat, Shrimp, Snail, Squirrel, Turtle, X, type LucideIcon } from 'lucide-react'
 import type { SubagentInfo } from '../../ipc/api'
 import { formatElapsed } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
-import { isSubagentActive, isSubagentProblem, subagentColor } from '../../stores/subagents'
+import { isSubagentActive, isSubagentProblem, subagentAppearance, subagentColor } from '../../stores/subagents'
+import type { SubagentAppearance } from '../../../../shared/subagent-appearance'
+
+const ANIMALS: Record<SubagentAppearance['animal'], LucideIcon> = {
+  panda: Panda, cat: Cat, turtle: Turtle, rat: Rat, squirrel: Squirrel, dog: Dog,
+  fish: Fish, rabbit: Rabbit, bird: Bird, snail: Snail, shrimp: Shrimp, 'piggy-bank': PiggyBank
+}
 
 /** Re-renders every second while `active`, for elapsed times of running subagents. */
 export function useNow(active: boolean): number {
@@ -22,20 +28,21 @@ export function subagentElapsed(item: SubagentInfo, now: number): number {
   return (item.endedAt ?? now) - item.startedAt
 }
 
-function StatusMark({ item }: { item: SubagentInfo }) {
-  const mark = 'absolute -right-0.5 -bottom-0.5 size-3 rounded-full p-px ring-2 ring-popover'
+function StatusMark({ item, size }: { item: SubagentInfo; size: 6 | 8 }) {
+  const mark = cn('absolute right-0 bottom-0 rounded-full p-px', size === 6 ? 'size-1.5' : 'size-2')
   if (item.status === 'running') return <LoaderCircle aria-hidden="true" className={cn(mark, 'animate-spin bg-popover text-foreground')} />
   if (item.status === 'queued') return <Clock3 aria-hidden="true" className={cn(mark, 'bg-popover text-muted-foreground')} />
-  if (item.status === 'completed') return <Check aria-hidden="true" className={cn(mark, 'bg-success text-background')} />
-  if (item.status === 'aborted') return <Square aria-hidden="true" className={cn(mark, 'bg-muted-foreground fill-current p-0.5 text-background')} />
-  return <X aria-hidden="true" className={cn(mark, 'bg-destructive text-background')} />
+  if (item.status === 'completed') return <Check aria-hidden="true" strokeWidth={3} className={cn(mark, 'bg-subagent-completed-background text-subagent-completed-foreground')} />
+  if (item.status === 'aborted') return <CircleStop aria-hidden="true" strokeWidth={3} className={cn(mark, 'bg-popover text-muted-foreground')} />
+  return <X aria-hidden="true" strokeWidth={3} className={cn(mark, 'bg-subagent-failed-background text-subagent-failed-foreground')} />
 }
 
-export function SubagentAvatar({ item, className }: { item: SubagentInfo; className?: string }) {
+export function SubagentAvatar({ item, className, statusSize = 8 }: { item: SubagentInfo; className?: string; statusSize?: 6 | 8 }) {
+  const Animal = ANIMALS[subagentAppearance(item).animal]
   return (
-    <span className={cn('relative inline-flex size-6 shrink-0 items-center justify-center rounded-full text-primary-foreground', subagentColor(item.id), className)}>
-      <Bot aria-hidden="true" className="size-3.5" />
-      <StatusMark item={item} />
+    <span className={cn('relative inline-flex size-5 shrink-0 items-center justify-center', subagentColor(item, true), className)}>
+      <Animal aria-hidden="true" className="size-full" />
+      <StatusMark item={item} size={statusSize} />
     </span>
   )
 }

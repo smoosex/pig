@@ -103,7 +103,7 @@ export function Composer({
         {mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
       </Popover>
       {workspace || sessionId ? (
-        <div className="flex min-w-0 items-center gap-3 px-3.5 pt-2 text-xs text-muted-foreground empty:hidden">
+        <div data-composer-status className="flex min-h-8 min-w-0 items-center gap-3 px-3.5 pt-2 text-xs text-muted-foreground">
           {workspace ? (
             <div className="flex min-w-0 items-center gap-5">
               <span className="flex min-w-0 items-center gap-1.5">
