@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
@@ -11,7 +11,8 @@ import { Input } from '../ui/input'
 import { InputGroupButton } from '../ui/input-group'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { Label } from '../ui/label'
+import { Switch } from '../ui/switch'
 import { useScopedModels } from '../../hooks/useScopedModels'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
@@ -89,6 +90,7 @@ export function ModelPicker({
   const [query, setQuery] = useState('')
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const scope = useScopedModels(open)
+  const scopeId = useId()
   const visibleModels = scope.mode === 'scoped' && scope.patterns.length ? scope.models : models
 
   const filtered = useMemo(() => {
@@ -154,6 +156,17 @@ export function ModelPicker({
             className="h-7 md:text-xs"
             onChange={(e) => setQuery(e.target.value)}
           />
+          <div className="flex shrink-0 items-center gap-1.5 px-1">
+            <Label htmlFor={scopeId} className="text-xs font-normal text-muted-foreground">Scoped</Label>
+            <Switch
+              id={scopeId}
+              size="sm"
+              checked={scope.mode === 'scoped'}
+              aria-label={t('model.scope')}
+              onKeyDown={(event) => event.stopPropagation()}
+              onCheckedChange={(checked) => scope.setMode(checked ? 'scoped' : 'all')}
+            />
+          </div>
           <Button
             type="button"
             variant="ghost"
@@ -165,13 +178,6 @@ export function ModelPicker({
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
           </Button>
         </div>
-        <ToggleGroup type="single" size="sm" value={scope.mode}
-          aria-label={t('model.scope')}
-          onKeyDown={(event) => event.stopPropagation()}
-          onValueChange={(value) => { if (value === 'all' || value === 'scoped') scope.setMode(value) }}>
-          <ToggleGroupItem value="all">All</ToggleGroupItem>
-          <ToggleGroupItem value="scoped">Scoped</ToggleGroupItem>
-        </ToggleGroup>
         {scope.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{scope.error}</p> : null}
         {refreshError ?? actions.error ? (
           <p role="alert" className="px-3 py-1.5 text-xs text-destructive">
