@@ -56,6 +56,11 @@ async function fixture(): Promise<void> {
   try {
     await act(async () => { root.render(view('session-a', false)) })
     await click('button[aria-label="Session capabilities"]')
+    await act(async () => { await Bun.sleep(0) })
+    const content = document.querySelector<HTMLElement>('[data-slot="popover-content"]')!
+    assert.equal(document.activeElement, content, 'opening focuses the panel, not a bulk action or its tooltip')
+    assert.equal(content.tabIndex, -1, 'the panel does not add a Tab stop')
+    assert.equal(document.querySelector('[role="tooltip"]'), null)
     const activePanel = () => document.querySelector<HTMLElement>('[role="tabpanel"][data-state="active"]')!
     assert.ok(activePanel().textContent?.includes('read'))
     const description = () => activePanel().querySelector<HTMLElement>('[data-slot="field-description"]')!

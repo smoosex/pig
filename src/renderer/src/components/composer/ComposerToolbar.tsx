@@ -120,8 +120,8 @@ export function ComposerToolbar({
               actions={actions}
               disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
             />
-            <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming || bashRunning} />
             <SessionCapabilitiesButton key={sessionId} sessionId={sessionId} busy={isStreaming || bashRunning} />
+            <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming || bashRunning} />
           </>
         )}
       </div>

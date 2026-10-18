@@ -1,6 +1,6 @@
 /** Per-session resource switches; the main process owns defaults, persistence and runtime reloads. */
-import { useEffect, useId, useState } from 'react'
-import { Ban, CheckCheck, ChevronRight, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { Ban, CheckCheck, ChevronRight, Cog, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../../../shared/session-capabilities'
 import { api } from '../../ipc/api'
@@ -19,6 +19,7 @@ import { cn, hideScroll } from '../../lib/utils'
 export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: string | null; busy: boolean }) {
   const t = useT()
   const prefix = useId()
+  const contentRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<CapabilityGroup>('tools')
   const [state, setState] = useState<SessionCapabilities | null>(null)
@@ -98,10 +99,20 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <InputGroupButton size="icon-xs" variant="ghost" className="rounded-full [&_svg:not([class*='size-'])]:size-3" disabled={!sessionId} aria-label={t('composer.capabilities')} title={t('composer.capabilities')}>
-          <SlidersHorizontal />
+          <Cog />
         </InputGroupButton>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-88 max-w-[calc(100vw-2rem)] text-xs font-normal">
+      <PopoverContent
+        ref={contentRef}
+        tabIndex={-1}
+        side="top"
+        align="start"
+        className="w-88 max-w-[calc(100vw-2rem)] text-xs font-normal"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          contentRef.current?.focus({ preventScroll: true })
+        }}
+      >
         <PopoverHeader>
           <div className="flex items-center justify-between gap-2">
             <PopoverTitle className="text-xs font-normal">{t('composer.capabilities')}</PopoverTitle>

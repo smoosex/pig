@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, GitBranch, PenLine } from 'lucide-react'
+import { ChevronRight, ListTree, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
@@ -26,9 +26,6 @@ import {
 } from './ui/dialog'
 import { Input } from './ui/input'
 import { InputGroupButton } from './ui/input-group'
-
-const toolbarBtn =
-  "h-6 rounded-full px-2 text-xs font-light [&_svg:not([class*='size-'])]:size-3"
 
 const treeViews: { value: SessionTreeView; labelKey: MessageKey }[] = [
   { value: 'default', labelKey: 'tree.viewDefault' },
@@ -262,9 +259,8 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       }}
     >
       <DialogTrigger asChild>
-        <InputGroupButton className={toolbarBtn} disabled={disabled} aria-label={t('tree.buttonAria')} title={t('tree.buttonAria')}>
-          <GitBranch data-icon="inline-start" />
-          <span className="hidden @min-md/composer:inline">{t('tree.button')}</span>
+        <InputGroupButton size="icon-xs" className="rounded-full [&_svg:not([class*='size-'])]:size-3" disabled={disabled} aria-label={t('tree.buttonAria')} title={t('tree.buttonAria')}>
+          <ListTree />
         </InputGroupButton>
       </DialogTrigger>
       <DialogContent
