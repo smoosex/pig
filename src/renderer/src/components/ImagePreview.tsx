@@ -59,7 +59,7 @@ export function ImagePreview({ src, onClose }: { src: string | null; onClose: ()
     >
       <DialogContent
         showCloseButton
-        className="flex h-[85vh] w-[min(96vw,80rem)] max-w-[min(96vw,80rem)] flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[min(96vw,80rem)]"
+        className="flex h-[85vh] w-[min(96vw,80rem)] max-w-[min(96vw,80rem)] flex-col items-center gap-3 border-0 bg-transparent bg-none p-0 shadow-none ring-0 solid:bg-transparent solid:shadow-none solid:ring-0 sm:max-w-[min(96vw,80rem)]"
       >
         <DialogTitle className="sr-only">{t('composer.imagePreview')}</DialogTitle>
         {src ? (

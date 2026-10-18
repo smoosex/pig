@@ -104,6 +104,7 @@ export function AddProviderDialog({
               <SmoothHoverHighlight
                 activeSelector="[data-selected='true']"
                 activeAttribute="data-selected"
+                highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent"
               >
                 <CommandEmpty>{t('providers.noMatch')}</CommandEmpty>
                 {[

@@ -188,7 +188,7 @@ export function AddSearchEngineDialog({
               onValueChange={setQuery}
             />
             <CommandList className="mt-2 max-h-80">
-              <SmoothHoverHighlight activeSelector="[data-selected='true']" activeAttribute="data-selected">
+              <SmoothHoverHighlight activeSelector="[data-selected='true']" activeAttribute="data-selected" highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent">
                 <CommandEmpty>{t('webSearch.noMatch')}</CommandEmpty>
                 {/* cmdk reorders filtered items inside their group; without one it crashes on a null parent. */}
                 <CommandGroup>
