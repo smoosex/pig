@@ -47,7 +47,7 @@ function alignClass(node: Element | undefined): string | undefined {
 }
 
 function CodeFence({ lang, code }: { lang: string; code: string }) {
-  return <HighlightedCode code={code} lang={lang || 'plaintext'} />
+  return <HighlightedCode code={code} lang={lang || 'plaintext'} variant="markdown" />
 }
 
 function MermaidBlock({ code }: { code: string }) {
@@ -88,23 +88,27 @@ const components: Components = {
   h2: ({ node, children }) => <h2 className={cn('mt-3 mb-2 text-sm font-semibold first:mt-0', alignClass(node))}>{children}</h2>,
   h3: ({ node, children }) => <h3 className={cn('mt-2.5 mb-1.5 text-sm font-semibold first:mt-0', alignClass(node))}>{children}</h3>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground last:mb-0">{children}</blockquote>
+    <blockquote className="mb-2 border-l-2 border-glass-border pl-3 text-muted-foreground last:mb-0 solid:border-border">{children}</blockquote>
   ),
   hr: () => <Separator className="my-3" />,
+  // In glass the frame is a raised card and the table hides its own outer cell borders; the edge overlay sits
+  // outside the scroller so it stays put while wide tables scroll horizontally.
   table: ({ children }) => (
-    <div className="mb-2 overflow-auto last:mb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <table className="w-full border-collapse text-sm">{children}</table>
+    <div className="relative mb-2 overflow-hidden rounded-lg bg-glass-composer-background/60 shadow-glass-card ring-1 ring-glass-card-border after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-glass-card-edge last:mb-0 solid:overflow-visible solid:rounded-none solid:bg-transparent solid:shadow-none solid:ring-0 solid:after:shadow-none">
+      <div className="overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <table className="w-full border-collapse border-hidden text-sm solid:border-none">{children}</table>
+      </div>
     </div>
   ),
-  th: ({ children }) => <th className="border border-border bg-muted/50 px-2 py-1 text-left font-medium">{children}</th>,
-  td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+  th: ({ children }) => <th className="border border-glass-border bg-glass-composer-background/60 px-2 py-1 text-left font-medium solid:border-border solid:bg-muted/50">{children}</th>,
+  td: ({ children }) => <td className="border border-glass-border px-2 py-1 solid:border-border">{children}</td>,
   pre: ({ children }) => <>{children}</>,
   code: ({ className, children }) => {
     const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
     const text = String(children).replace(/\n$/, '')
     if (lang === 'mermaid') return <MermaidBlock code={text} />
     if (!lang && !text.includes('\n')) {
-      return <code className="rounded-sm bg-inline-code-background px-1 py-px font-mono text-xs text-code-foreground">{children}</code>
+      return <code className="rounded-sm bg-foreground/8 px-1 py-px font-mono text-xs text-code-foreground shadow-glass-inline-code box-decoration-clone solid:bg-inline-code-background solid:shadow-none">{children}</code>
     }
     return <CodeFence lang={lang ?? 'plaintext'} code={text} />
   }

@@ -5,6 +5,8 @@ import { cn, hideScroll } from '../lib/utils'
 
 export const codeSurface = 'rounded-lg border border-code-border bg-code-background text-code-foreground'
 export const bashCodeSurface = cn(codeSurface, 'bg-secondary')
+/** Markdown fences sit on reading surfaces, so glass shows the material through a neutral fill; tool output stays opaque. */
+const markdownSurface = 'rounded-lg border border-glass-card-border bg-glass-composer-background/60 text-code-foreground shadow-glass-card-edge transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:border-code-border solid:bg-code-background solid:shadow-none'
 
 const highlightedPre = '[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:text-xs'
 const numberedLines = '[&_code]:[counter-reset:line] [&_.line]:before:mr-3 [&_.line]:before:inline-block [&_.line]:before:w-7 [&_.line]:before:border-r [&_.line]:before:border-code-border [&_.line]:before:pr-2 [&_.line]:before:text-right [&_.line]:before:text-muted-foreground [&_.line]:before:content-[counter(line)] [&_.line]:before:[counter-increment:line]'
@@ -14,11 +16,19 @@ const commandLayout = {
   fallback: 'whitespace-pre-wrap break-words px-3 py-2'
 } as const
 
+const fenceLayout = {
+  pre: '[&_pre]:p-3 [&_pre]:leading-snug',
+  fallback: 'whitespace-pre p-3'
+} as const
+
 const variants = {
   fence: {
     viewport: `${codeSurface} my-2 max-h-80 leading-snug`,
-    pre: '[&_pre]:p-3 [&_pre]:leading-snug',
-    fallback: 'whitespace-pre p-3'
+    ...fenceLayout
+  },
+  markdown: {
+    viewport: `${markdownSurface} my-2 max-h-80 leading-snug`,
+    ...fenceLayout
   },
   file: {
     viewport: 'max-h-80 leading-4',
