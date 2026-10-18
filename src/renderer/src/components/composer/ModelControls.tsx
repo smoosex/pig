@@ -179,7 +179,7 @@ export function ModelPicker({
           </p>
         ) : null}
         <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <SmoothHoverHighlight activeKey={navigation.index}>
+          <SmoothHoverHighlight activeKey={navigation.index} highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
                 {scope.mode === 'scoped' && scope.patterns.length && !visibleModels.length ? t('model.scopeEmpty') : models.length === 0 ? t('model.empty') : t('model.noMatch')}
@@ -284,30 +284,35 @@ export function ThinkingPicker({
       >
         <p className="px-3 py-1.5 text-xs text-muted-foreground">{t('model.thinking')}</p>
         {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
-        {thinkingLevels.map((level, index) => {
-          const selected = level === thinkingLevel
-          return (
-            <Button
-              key={level}
-              type="button"
-              variant="ghost"
-              disabled={actions.pending}
-              className={cn(
-                'h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-accent dark:hover:bg-accent',
-                navigation.index === index && 'bg-accent'
-              )}
-              ref={navigation.index === index ? navigation.activeRef : undefined}
-              onPointerMove={() => navigation.hover(index)}
-              onClick={() => void select(level)}
-            >
-              <span className="w-4 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
-                {index + 1}
-              </span>
-              <ThinkingStrengthIcon level={level} levels={thinkingLevels} active={selected} />
-              {t(thinkingLevelKeys[level])}
-            </Button>
-          )
-        })}
+        <SmoothHoverHighlight
+          activeKey={navigation.index}
+          className="flex flex-col gap-0.5"
+          highlightClassName="rounded-lg bg-glass-prompt-foreground/8 solid:bg-accent"
+        >
+          {thinkingLevels.map((level, index) => {
+            const selected = level === thinkingLevel
+            return (
+              <Button
+                key={level}
+                type="button"
+                variant="ghost"
+                disabled={actions.pending}
+                data-hover-highlight-row
+                data-hover-highlight-active={navigation.index === index ? '' : undefined}
+                className="relative h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-transparent!"
+                ref={navigation.index === index ? navigation.activeRef : undefined}
+                onPointerMove={() => navigation.hover(index)}
+                onClick={() => void select(level)}
+              >
+                <span className="w-4 shrink-0 text-left text-xs tabular-nums text-muted-foreground">
+                  {index + 1}
+                </span>
+                <ThinkingStrengthIcon level={level} levels={thinkingLevels} active={selected} />
+                {t(thinkingLevelKeys[level])}
+              </Button>
+            )
+          })}
+        </SmoothHoverHighlight>
       </PopoverContent>
     </Popover>
   )
