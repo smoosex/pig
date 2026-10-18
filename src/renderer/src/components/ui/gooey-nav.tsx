@@ -14,7 +14,7 @@ const NECK_BREAK = 0.22
 const NECK_H = 100
 const FADE_IN = 'transition-colors duration-[400ms]'
 const FADE_OUT = 'transition-colors duration-0'
-const BAR = 'bg-muted text-muted'
+const BAR = 'bg-[var(--gooey-nav-background)] text-[color:var(--gooey-nav-background)]'
 const SIZES = {
   xs: {
     label: 'gap-1 px-2 py-1.5 text-[11px] leading-4 [&_svg]:size-[11px]',
@@ -160,7 +160,7 @@ function NavLabel({
       'flex cursor-pointer items-center whitespace-nowrap font-medium [&_svg]:shrink-0',
       isActive ? FADE_IN : FADE_OUT,
       SIZES[size].label,
-      !isActive && 'text-muted-foreground'
+      !isActive && 'text-glass-prompt-foreground/70 solid:text-muted-foreground'
     ),
     style: isActive ? { color: activeLabelColor } : undefined,
     onClick: onSelect
@@ -185,8 +185,8 @@ export function GooeyNav({
   defaultValue = 0,
   onChange,
   size = 'md',
-  activeColor = 'var(--primary)',
-  activeLabelColor = 'var(--primary-foreground)',
+  activeColor = 'var(--gooey-nav-active-background)',
+  activeLabelColor = 'var(--gooey-nav-active-foreground)',
   separation,
   radius,
   className,
@@ -204,7 +204,7 @@ export function GooeyNav({
   const fill = (i: number) => (i === active ? activeColor : 'currentColor')
 
   return (
-    <nav data-slot="gooey-nav" className={cn('inline-block', className)} {...props}>
+    <nav data-slot="gooey-nav" className={cn('glass-gooey-nav inline-block', className)} {...props}>
       <ul className="flex items-center">
         {items.map((item, i) => {
           const navItem = toItem(item)
@@ -225,7 +225,7 @@ export function GooeyNav({
                 borderTopRightRadius: open(i + 1) ? corner : 0,
                 borderBottomRightRadius: open(i + 1) ? corner : 0
               }}
-              className={cn(BAR, isActive ? FADE_IN : FADE_OUT)}
+              className={cn(BAR, isActive ? FADE_IN : FADE_OUT, isActive && 'shadow-glass-inline-code solid:shadow-none')}
               style={{ backgroundColor: isActive ? activeColor : undefined }}
             >
               <NavLabel

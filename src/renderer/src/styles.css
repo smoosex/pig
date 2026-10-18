@@ -181,6 +181,18 @@
     var(--tab-drag-transition, transform 0s);
 }
 
+/* SVG necks and segment faces share the same fill variables to keep their animated joins seamless. */
+@utility glass-gooey-nav {
+  --gooey-nav-background: var(--glass-composer-background);
+  --gooey-nav-active-background: var(--glass-button-hover-background);
+  --gooey-nav-active-foreground: var(--glass-prompt-foreground);
+  @variant solid {
+    --gooey-nav-background: var(--muted);
+    --gooey-nav-active-background: var(--primary);
+    --gooey-nav-active-foreground: var(--primary-foreground);
+  }
+}
+
 @utility glass-code-surface {
   --code-surface-background: transparent;
   --code-surface-gutter-background: var(--glass-code-gutter-background);
