@@ -144,8 +144,8 @@ function TurnPreviewCard({
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <p className="line-clamp-1 break-words font-medium text-foreground">{compact(question)}</p>
-      <p className="line-clamp-3 break-words text-muted-foreground">{compact(answer)}</p>
+      <p className="line-clamp-1 break-words font-medium text-glass-prompt-foreground solid:text-foreground">{compact(question)}</p>
+      <p className="line-clamp-3 break-words text-glass-prompt-foreground/70 solid:text-muted-foreground">{compact(answer)}</p>
     </div>
   )
 }
@@ -200,7 +200,7 @@ const MinimapBar = ({
       ref={(element) => registerBar(index, element)}
       className={cn(
         'block h-0.5 origin-right rounded-full transition-[width] duration-300 ease-out',
-        hovered ? 'bg-foreground' : current ? 'bg-primary' : visible ? 'bg-primary/50' : 'bg-border'
+        hovered ? 'bg-glass-prompt-foreground solid:bg-foreground' : current ? 'bg-primary' : visible ? 'bg-primary/50' : 'bg-glass-prompt-foreground/25 solid:bg-border'
       )}
       style={{ width: docked ? width : MIN_WIDTH }}
     />
