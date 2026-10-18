@@ -347,7 +347,7 @@ async function fixture(scenario: string): Promise<void> {
       })
       const bubble = host.querySelector<HTMLElement>('[data-slot="bubble"]')!
       const content = host.querySelector<HTMLElement>('[data-slot="bubble-content"]')!
-      assert.ok(bubble.classList.contains('*:data-[slot=bubble-content]:bg-glass-prompt-background'))
+      assert.ok(bubble.classList.contains('*:data-[slot=bubble-content]:bg-glass-popover-background'))
       assert.ok(bubble.classList.contains('*:data-[slot=bubble-content]:text-glass-prompt-foreground'))
       assert.ok(bubble.classList.contains('solid:*:data-[slot=bubble-content]:bg-user-message-background'))
       assert.ok(bubble.classList.contains('solid:*:data-[slot=bubble-content]:text-user-message-foreground'))
