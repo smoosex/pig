@@ -31,7 +31,7 @@ async function fixture(): Promise<void> {
   assert.ok(!primary.has('bg-clip-padding'), 'class merging removes the base padding-only clip')
   const ghost = tokens('ghost')
   assert.ok(ghost.has('hover:bg-glass-button-hover-background'))
-  assert.ok(ghost.has('aria-expanded:bg-glass-button-hover-background'))
+  assert.ok(ghost.has('aria-[haspopup]:aria-expanded:bg-glass-button-hover-background'), 'only open popup triggers fill; expanded disclosures stay flat')
   assert.ok(![...ghost].some((token) => token.includes('shadow-glass-button') || token.includes('glass-button-sheen')), 'ghost stays flat')
   assert.ok(![...ghost].some((token) => token.startsWith('bg-') && token !== 'bg-clip-padding'), 'ghost stays transparent at rest')
   assert.ok(![...tokens('link')].some((token) => token.includes('blur') || (token.startsWith('bg-') && token !== 'bg-clip-padding')))
