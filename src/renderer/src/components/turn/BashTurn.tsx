@@ -115,8 +115,8 @@ export function BashTurn({
               variant={failed ? 'destructive' : 'secondary'}
               aria-live="polite"
               className={cn(
-                success && 'bg-success-background text-success',
-                turn.bashRunning && 'bg-info-background text-info',
+                success && 'bg-success-background text-success solid:bg-success-background solid:text-success',
+                turn.bashRunning && 'bg-info-background text-info solid:bg-info-background solid:text-info',
               )}
             >
               <StatusIcon

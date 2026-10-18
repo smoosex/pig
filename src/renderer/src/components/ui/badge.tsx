@@ -10,7 +10,7 @@ const badgeVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
         secondary:
-          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
+          "bg-glass-prompt-foreground/8 bg-[image:var(--glass-badge-sheen)] text-glass-prompt-foreground shadow-glass-badge [a]:hover:bg-glass-prompt-foreground/12 solid:bg-secondary solid:bg-none solid:text-secondary-foreground solid:shadow-none solid:[a]:hover:bg-secondary/80",
         destructive:
           "bg-destructive-background text-destructive focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive-background",
         outline:

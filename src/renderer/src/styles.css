@@ -64,6 +64,10 @@
   --color-glass-button-background: var(--glass-button-background);
   --color-glass-button-hover-background: var(--glass-button-hover-background);
   --color-glass-button-border: var(--glass-button-border);
+  --shadow-glass-badge: var(--glass-badge-shadow);
+  --color-glass-switch-thumb: var(--glass-switch-thumb);
+  --shadow-glass-switch-thumb: var(--glass-switch-thumb-shadow);
+  --shadow-glass-switch-track: var(--glass-switch-track-shadow);
   --shadow-glass-button: var(--glass-button-shadow);
   --shadow-glass-primary-button: var(--glass-primary-button-shadow);
   --shadow-glass-button-hover: var(--glass-button-hover-shadow);
