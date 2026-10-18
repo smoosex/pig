@@ -1,4 +1,5 @@
-import { dialog, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
+import { browseProjectDirectories, resolveProjectDirectory } from '../project-directory-browser'
 import { closeSessionsForCwd, createPendingSession } from '../pi/session-registry'
 import { removeProjectSessions } from '../pi/session-removal'
 import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
@@ -26,12 +27,13 @@ export function registerProjectIpc(): void {
   )
   ipcMain.handle('session:list-project', async (_event, cwd: string) => loadProjectForCwd(cwd))
 
-  ipcMain.handle('session:open-project', async (event) => {
-    const win = windowForEvent(event)
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const picked = result.filePaths[0]
-    if (isChatCwd(picked) || isChatsRoot(picked)) return null
+  ipcMain.handle('project:browse-directories', async (_event, path?: string, showHidden?: boolean) =>
+    browseProjectDirectories(path, showHidden)
+  )
+
+  ipcMain.handle('session:open-project', async (_event, path: string) => {
+    const picked = await resolveProjectDirectory(path)
+    if (isChatCwd(picked) || isChatsRoot(picked)) throw new Error('Chat directories cannot be opened as projects')
     const cwd = await addOpenedProject(await canonicalProject(picked))
     return loadWorktreeProject(cwd)
   })

@@ -60,6 +60,7 @@ async function fixture(scenario: string): Promise<void> {
         ['ChatView', 'ChatView'], ['diff/ChangesView', 'ChangesView'], ['settings/SettingsPage', 'SettingsPage'],
         ['panel/WorkspacePanel', 'WorkspacePanel'], ['ProjectSessionHome', 'ProjectSessionHome'],
         ['SystemPluginUI', 'SystemPluginUI'], ['ExtensionUI', 'ExtensionUI'], ['ui/googly-eyes-button', 'GooglyEyesButton'],
+        ['projects/ProjectPickerDialog', 'ProjectPickerDialog'],
         ['subagents/SubagentTranscriptDialog', 'SubagentTranscriptDialog'], ['subagents/SubagentCloseConfirm', 'SubagentCloseConfirm']
       ]) {
         mock.module(`../src/renderer/src/components/${path}`, () => ({ [name]: () => h('div', { 'data-view': name }) }))
@@ -126,6 +127,12 @@ async function fixture(scenario: string): Promise<void> {
         await act(async () => { faces[7].querySelector<HTMLButtonElement>('[data-tab-close-slot] button')!.click() })
         assert.deepEqual(closedTabs, ['chat-7'])
         assert.equal(sessions.getState().activeTabId, 'chat-7', 'closing never bubbles into a second selection')
+        await act(async () => {
+          sessions.setState({ projectPickerOpen: true })
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true }))
+        })
+        assert.deepEqual(closedTabs, ['chat-7'], 'Cmd+W in the project picker must not close a background tab')
+        sessions.setState({ projectPickerOpen: false })
         return
       }
       if (scenario === 'tab-layout') {

@@ -825,6 +825,15 @@ export interface BashExecutionResult {
   truncated: boolean
 }
 
+export interface ProjectDirectoryListing {
+  path: string
+  home: string
+  parent: string | null
+  breadcrumbs: { name: string; path: string }[]
+  directories: { name: string; path: string; git: boolean | null; warning?: string }[]
+  truncated: boolean
+}
+
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
@@ -832,7 +841,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   listProject: (cwd: string) => Promise<ProjectGroup | null>
   listChats: () => Promise<ProjectGroup[]>
   isChatCwd: (cwd: string) => Promise<boolean>
-  openProject: () => Promise<ProjectGroup | null>
+  browseProjectDirectories: (path?: string, showHidden?: boolean) => Promise<ProjectDirectoryListing>
+  openProject: (path: string) => Promise<ProjectGroup>
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<string[]>
   prepareSession: (sessionId: string) => Promise<SessionRef>

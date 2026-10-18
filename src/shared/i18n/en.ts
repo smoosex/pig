@@ -164,6 +164,15 @@ export const en: Messages = {
     loading: 'Loading',
     reintegrate: 'Move to separate tab'
   },
+  projectPicker: {
+    title: 'Add project', description: 'Browse local folders and add the current directory. No project files are created or copied.',
+    path: 'Folder path', pathPlaceholder: 'Enter an absolute path or ~/…', go: 'Go',
+    home: 'Home', parent: 'Parent folder', refresh: 'Refresh folders', search: 'Search folders in this directory…',
+    hidden: 'Show hidden folders', loading: 'Reading folders…', empty: 'No subfolders', noMatch: 'No matching folders',
+    add: 'Add current folder', adding: 'Adding…', truncated: 'Only the first 500 folders are shown. Enter a full path to reach other folders.',
+    hint: '↑↓ Select · Enter Open · ← Back · Tab Complete · ⌘/Ctrl+Enter Add current folder',
+    folders: 'Folders', git: 'Git repository',
+  },
   project: {
     menu: 'More actions for {name}',
     remove: 'Remove from list',

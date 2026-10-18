@@ -11,7 +11,8 @@ const api: SessionApi = {
   listProject: (cwd: string) => ipcRenderer.invoke('session:list-project', cwd),
   listChats: () => ipcRenderer.invoke('session:list-chats'),
   isChatCwd: (cwd: string) => ipcRenderer.invoke('session:is-chat-cwd', cwd),
-  openProject: () => ipcRenderer.invoke('session:open-project'),
+  browseProjectDirectories: (path, showHidden) => ipcRenderer.invoke('project:browse-directories', path, showHidden),
+  openProject: (path) => ipcRenderer.invoke('session:open-project', path),
   unpinProject: (cwd: string) => ipcRenderer.invoke('session:unpin-project', cwd),
   reorderProjects: (cwds: string[]) =>
     ipcRenderer.invoke('session:reorder-projects', cwds),

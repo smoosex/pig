@@ -33,6 +33,8 @@ export const createCatalogSlice: SessionSlice<
   | 'loadWorktreeSessions'
   | 'loadChats'
   | 'openProject'
+  | 'projectPickerOpen'
+  | 'setProjectPickerOpen'
   | 'unpinProject'
   | 'reorderProjects'
   | 'refreshProject'
@@ -80,6 +82,8 @@ export const createCatalogSlice: SessionSlice<
 
   return {
     projects: [],
+    projectPickerOpen: false,
+    setProjectPickerOpen: (open) => set({ projectPickerOpen: open }),
     chats: [],
     isReorderingProjects: false,
     expandedProjects: {},
@@ -200,16 +204,19 @@ export const createCatalogSlice: SessionSlice<
       return operation
     },
 
-    openProject: async () => {
-      const project = await api.openProject()
-      if (!project) return
+    openProject: async (path) => {
+      if (path === undefined) {
+        set({ projectPickerOpen: true })
+        return
+      }
+      const project = await api.openProject(path)
       projectMembershipVersion++
       set((s) => {
         const index = s.projects.findIndex((item) => item.cwd === project.cwd)
         const projects = [...s.projects]
         if (index === -1) projects.push(project)
         else projects[index] = project
-        return { projects }
+        return { projects, projectPickerOpen: false }
       })
     },
 

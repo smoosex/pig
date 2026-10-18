@@ -170,7 +170,9 @@ export interface SessionsStore {
   syncProjectWorktrees: () => Promise<void>
   loadWorktreeSessions: (cwd: string) => Promise<void>
   loadChats: () => Promise<void>
-  openProject: () => Promise<void>
+  projectPickerOpen: boolean
+  setProjectPickerOpen: (open: boolean) => void
+  openProject: (path?: string) => Promise<void>
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>

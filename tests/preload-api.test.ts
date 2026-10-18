@@ -38,6 +38,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   const api = exposed as SessionApi
   assert.equal(api.supportsGlass, supportsGlass, 'native material capability is synchronous and needs no IPC call')
   assert.equal(invokes.length, 0)
+  await api.browseProjectDirectories('/home', true)
+  await api.openProject('/home/project')
   await api.readWorktreeDiff('/repo')
   await api.readWorktreePatch('/repo', 'staged')
   await api.readUntrackedFile('/repo', 'src/new.ts')
@@ -66,6 +68,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.copyPath('/repo', 'src/entry.ts')
 
   assert.deepEqual(invokes, [
+    { channel: 'project:browse-directories', args: ['/home', true] },
+    { channel: 'session:open-project', args: ['/home/project'] },
     { channel: 'diff:read-worktree', args: ['/repo'] },
     { channel: 'diff:read-patch', args: ['/repo', 'staged'] },
     { channel: 'diff:read-untracked', args: ['/repo', 'src/new.ts'] },

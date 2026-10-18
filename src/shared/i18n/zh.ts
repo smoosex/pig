@@ -166,6 +166,15 @@ export const zh = {
     loading: '正在加载',
     reintegrate: '移至独立标签'
   },
+  projectPicker: {
+    title: '添加项目', description: '浏览本机文件夹，添加当前打开的目录。不会创建或复制项目文件。',
+    path: '文件夹路径', pathPlaceholder: '输入绝对路径或 ~/…', go: '前往',
+    home: '个人目录', parent: '上一级', refresh: '刷新目录', search: '搜索当前目录的文件夹…',
+    hidden: '显示隐藏文件夹', loading: '正在读取目录…', empty: '没有子文件夹', noMatch: '没有匹配的文件夹',
+    add: '添加当前文件夹', adding: '正在添加…', truncated: '仅显示前 500 个文件夹。可直接输入完整路径前往其他文件夹。',
+    hint: '↑↓ 选择 · Enter 进入 · ← 返回 · Tab 补全 · ⌘/Ctrl+Enter 添加当前文件夹',
+    folders: '文件夹', git: 'Git 仓库',
+  },
   project: {
     menu: '项目 {name} 更多操作',
     remove: '从列表移除',

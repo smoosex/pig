@@ -68,6 +68,8 @@ pig-subagent 注册 `spawn({ title, prompt, background })`，分两层：`src/ma
 
 Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，`PIG_DIR` 作为最高优先级覆盖（见「启动」：开发时不要带上它）。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。
 
+添加项目使用应用内目录浏览器，不再调用原生选目录窗口。`ProjectPickerDialog` 通过 `project:browse-directories` 浏览本机一层目录，支持路径、面包屑、隐藏项与 Git 标记；最多返回 500 个子目录并提示截断，不递归索引 Home。renderer 只消费 main 返回的路径，不自行拼接平台路径；确认后 `session:open-project` 接收明确路径，main 再校验真实目录并沿用原来的项目注册逻辑。`system:pick-directory` 仍供 Skills 等其他用途使用。打开状态归 sessions catalog，添加按钮与快捷键共享入口。
+
 ## 进程与接口
 
 | 位置                                 | 职责                                                                    |
@@ -79,6 +81,7 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，`PIG_DIR` 
 | `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节                              |
 | `src/main/app-url.ts`                | 窗口只允许停在自己的 UI 上（含重定向）                                  |
 | `src/main/shell-env.ts`              | 启动时从用户登录 shell 导入 PATH 与缺失的环境变量（GUI 启动不继承终端环境） |
+| `src/main/project-directory-browser.ts` | 应用内添加项目的本机目录浏览、真实路径校验与目录列表 |
 | `src/main/open-project-sessions.ts`  | 持久化已打开会话、活动标签与标签顺序（Worktree 和 chats 两半）；与 session 生命周期分离 |
 | `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |
 | `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |

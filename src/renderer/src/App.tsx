@@ -34,6 +34,7 @@ import { WorkspacePanel } from './components/panel/WorkspacePanel'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
+import { ProjectPickerDialog } from './components/projects/ProjectPickerDialog'
 import { SessionGreeting } from './components/SessionGreeting'
 import { useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
@@ -242,6 +243,8 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.metaKey || event.ctrlKey || event.altKey) return
       if (event.isComposing || event.keyCode === 229) return
+      // The directory dialog owns its shortcuts, including Cmd+W; never close a background tab.
+      if (useSessionsStore.getState().projectPickerOpen) return
       if (event.shiftKey) {
         if (event.key.toLowerCase() === 'a') {
           event.preventDefault()
@@ -372,6 +375,7 @@ export default function App() {
       <SubagentTranscriptDialog />
       <SubagentCloseConfirm />
       <ExtensionUI />
+      <ProjectPickerDialog />
       <div data-app-surface className="flex h-full flex-col transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
           <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
