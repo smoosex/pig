@@ -80,7 +80,7 @@ export function UserMessageActions({
             dateTime={new Date(timestamp).toISOString()}
             tabIndex={0}
             aria-label={fullTimestamp}
-            className="mr-2 rounded-sm text-xs tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mr-2 rounded-sm text-xs tabular-nums outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring"
           >
             {clock.format(timestamp)}
           </time>

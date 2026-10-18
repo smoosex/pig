@@ -23,7 +23,7 @@ function ScrollArea({
       <Viewport
         {...(layoutScroll ? { layoutScroll: true } : {})}
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 [&>div]:!block [&>div]:!min-w-0 [&>div]:w-full"
+        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring focus-visible:outline-1 [&>div]:!block [&>div]:!min-w-0 [&>div]:w-full"
       >
         {children}
       </Viewport>

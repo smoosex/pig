@@ -100,6 +100,7 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
+  --color-focus-ring: color-mix(in srgb, var(--ring) var(--focus-ring-opacity), transparent);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -130,6 +131,8 @@
 }
 
 :root {
+  --focus-ring-width: 1px;
+  --focus-ring-opacity: 40%;
 	--font-sans: 'Geist Variable', sans-serif;
 	--font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 	--font-mono: 'Lilex Variable', ui-monospace, monospace;

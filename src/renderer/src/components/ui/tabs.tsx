@@ -11,7 +11,7 @@ function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimi
 }
 
 function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
-  return <TabsPrimitive.Trigger data-slot="tabs-trigger" className={cn('inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-glass-button-hover-background data-[state=active]:bg-[image:var(--glass-button-sheen)] data-[state=active]:text-glass-prompt-foreground data-[state=active]:shadow-glass-button [&_svg]:size-3.5 solid:data-[state=active]:bg-background solid:data-[state=active]:bg-none solid:data-[state=active]:text-foreground solid:data-[state=active]:shadow-xs', className)} {...props} />
+  return <TabsPrimitive.Trigger data-slot="tabs-trigger" className={cn('inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-glass-button-hover-background data-[state=active]:bg-[image:var(--glass-button-sheen)] data-[state=active]:text-glass-prompt-foreground data-[state=active]:shadow-glass-button [&_svg]:size-3.5 solid:data-[state=active]:bg-background solid:data-[state=active]:bg-none solid:data-[state=active]:text-foreground solid:data-[state=active]:shadow-xs', className)} {...props} />
 }
 
 function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
