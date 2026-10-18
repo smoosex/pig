@@ -132,8 +132,8 @@ async function runFixture(): Promise<void> {
     const clusterBtn = container.querySelector('button')!
     assert.equal(clusterBtn.textContent?.includes('Run 2 commands'), true)
     await act(async () => { clusterBtn.click() })
-    const railLine = container.querySelector('[data-slot="collapsible-content"] .bg-border')
-    assert.ok(railLine, 'expected Rail line with bg-border inside ToolCluster')
+    const railLine = container.querySelector('[data-slot="collapsible-content"] .w-px')
+    assert.ok(railLine, 'expected Rail line inside ToolCluster')
     assert.equal(container.querySelectorAll('[data-slot="collapsible-content"] button').length, 2)
 
     await act(async () => {
@@ -147,8 +147,8 @@ async function runFixture(): Promise<void> {
     const bashClusterBtn = container.querySelector('button')!
     assert.equal(bashClusterBtn.textContent?.includes('Run 2 commands'), true)
     await act(async () => { bashClusterBtn.click() })
-    const bashRailLine = container.querySelector('[data-slot="collapsible-content"] .bg-border')
-    assert.ok(bashRailLine, 'expected Rail line with bg-border inside BashCluster')
+    const bashRailLine = container.querySelector('[data-slot="collapsible-content"] .w-px')
+    assert.ok(bashRailLine, 'expected Rail line inside BashCluster')
     assert.equal(container.querySelectorAll('[data-slot="collapsible-content"] button').length, 2)
   } finally {
     await act(async () => { root.unmount() })

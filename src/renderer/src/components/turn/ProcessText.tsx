@@ -73,7 +73,7 @@ export const ThinkingRow = memo(function ThinkingRow({
         const node = event.currentTarget
         following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24
       }}
-      className={cn(pre, 'mt-0 text-muted-foreground', !stacked && 'ml-2.5 border-l border-border px-3 py-1')}
+      className={cn(pre, 'mt-0 text-muted-foreground', !stacked && 'ml-2.5 border-l border-glass-border px-3 py-1 solid:border-border')}
     >
       {body}
     </pre>

@@ -6,7 +6,7 @@ import type { IconKind } from './process-model'
 export const pre = `mt-2 max-h-60 overflow-auto font-mono text-xs leading-snug break-words whitespace-pre-wrap ${hideScroll}`
 export const statusMarker = 'pointer-events-none h-7 min-w-0 gap-1.5 px-1 text-xs font-normal'
 export const disclosureButton =
-  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 text-xs font-normal text-muted-foreground aria-expanded:bg-transparent hover:aria-expanded:bg-muted dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-muted'
+  'h-7 w-full min-w-0 justify-start gap-1.5 rounded-md px-1 text-xs font-normal text-muted-foreground hover:bg-glass-prompt-foreground/8 aria-expanded:bg-transparent hover:aria-expanded:bg-glass-prompt-foreground/8 solid:hover:bg-muted solid:aria-expanded:bg-transparent solid:hover:aria-expanded:bg-muted solid:dark:hover:bg-muted/50 solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-muted'
 
 export function VerbLabel({ text, failed, active }: { text: string; failed?: boolean; active?: boolean }) {
   return (
@@ -31,7 +31,7 @@ const ICONS: Record<IconKind, LucideIcon> = {
 export function Rail({ children }: { children: ReactNode }) {
   return (
     <div className="relative">
-      <div className="absolute inset-y-0 left-3.5 w-px -translate-x-1/2 bg-border" />
+      <div className="absolute inset-y-0 left-3.5 w-px -translate-x-1/2 bg-glass-border solid:bg-border" />
       <div className="min-w-0 py-1 pl-6">{children}</div>
     </div>
   )
@@ -46,7 +46,7 @@ export function StackedIcons({ kinds }: { kinds: IconKind[] }) {
           <span
             key={`${kind}-${i}`}
             className={cn(
-              'relative flex size-5 items-center justify-center rounded-full border border-border bg-card',
+              'relative flex size-5 items-center justify-center rounded-full border border-glass-button-border bg-glass-button-hover-background bg-[image:var(--glass-button-sheen)] shadow-glass-button solid:border-border solid:bg-card solid:bg-none solid:shadow-none',
               i > 0 && '-ml-1.5'
             )}
             style={{ zIndex: i }}
