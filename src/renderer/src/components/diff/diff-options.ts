@@ -17,10 +17,10 @@ import type { DiffStyle } from '../../stores/diff'
  *
  * Reading panes opt into `glass-code-surface`, which makes the base transparent in glass: the library's
  * color-mix derivations then turn into translucent tints of the same hues over the conversation material.
- * Diffs inside chat tool output are outside that utility and keep the opaque code background.
+ * The edit tool's diff in the conversation opts in too; anything outside the utility keeps the opaque code background.
  *
  * The sticky gutter overlays horizontally scrolled code. Reading panes use a translucent fill and
- * localized backdrop blur in glass; solid and tool-output diffs retain their opaque, unfiltered gutter.
+ * localized backdrop blur in glass; solid and surfaces outside the utility retain their opaque, unfiltered gutter.
  */
 const codeSurfaceCSS = [
   ':host { --diffs-bg: var(--code-surface-background, var(--code-background)) }',

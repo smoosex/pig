@@ -4,12 +4,13 @@ import { useHighlightHtml } from '../lib/highlight'
 import { cn, hideScroll } from '../lib/utils'
 
 export const codeSurface = 'rounded-lg border border-code-border bg-code-background text-code-foreground'
-export const bashCodeSurface = cn(codeSurface, 'bg-secondary')
-/** Markdown fences sit on reading surfaces, so glass shows the material through a neutral fill; tool output stays opaque. */
-const markdownSurface = 'rounded-lg border border-glass-card-border bg-glass-composer-background/60 text-code-foreground shadow-glass-card-edge transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:border-code-border solid:bg-code-background solid:shadow-none'
+/** Code inside the conversation (Markdown fences, expanded tool steps) lets glass show the material through a neutral fill. */
+export const glassCodeSurface = 'rounded-lg border border-glass-card-border bg-glass-composer-background/60 text-code-foreground shadow-glass-card-edge transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:border-code-border solid:bg-code-background solid:shadow-none'
+export const glassCommandSurface = cn(glassCodeSurface, 'solid:bg-secondary')
 
 const highlightedPre = '[&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:text-xs'
-const numberedLines = '[&_code]:[counter-reset:line] [&_.line]:before:mr-3 [&_.line]:before:inline-block [&_.line]:before:w-7 [&_.line]:before:border-r [&_.line]:before:border-code-border [&_.line]:before:pr-2 [&_.line]:before:text-right [&_.line]:before:text-muted-foreground [&_.line]:before:content-[counter(line)] [&_.line]:before:[counter-increment:line]'
+
+const numberedLines = '[&_code]:[counter-reset:line] [&_.line]:before:mr-3 [&_.line]:before:inline-block [&_.line]:before:w-7 [&_.line]:before:border-r [&_.line]:before:border-glass-card-border solid:[&_.line]:before:border-code-border [&_.line]:before:pr-2 [&_.line]:before:text-right [&_.line]:before:text-muted-foreground [&_.line]:before:content-[counter(line)] [&_.line]:before:[counter-increment:line]'
 
 const commandLayout = {
   pre: '[&_pre]:px-3 [&_pre]:py-2 [&_pre]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:leading-snug',
@@ -27,7 +28,7 @@ const variants = {
     ...fenceLayout
   },
   markdown: {
-    viewport: `${markdownSurface} my-2 max-h-80 leading-snug`,
+    viewport: `${glassCodeSurface} my-2 max-h-80 leading-snug`,
     ...fenceLayout
   },
   file: {
@@ -36,7 +37,7 @@ const variants = {
     fallback: 'whitespace-pre p-3'
   },
   command: {
-    viewport: `${bashCodeSurface} max-h-60 leading-snug`,
+    viewport: `${glassCommandSurface} max-h-60 leading-snug`,
     ...commandLayout
   },
   terminal: {
@@ -76,7 +77,7 @@ export function HighlightedCode({
         <pre className="m-0 py-3 whitespace-pre">
           {code.split('\n').map((line, index) => (
             <span key={index} className="block min-w-max px-3">
-              <span className="mr-3 inline-block w-7 select-none border-r border-code-border pr-2 text-right text-muted-foreground">
+              <span className="mr-3 inline-block w-7 select-none border-r border-glass-card-border pr-2 solid:border-code-border text-right text-muted-foreground">
                 {index + 1}
               </span>
               {line || '\u200b'}

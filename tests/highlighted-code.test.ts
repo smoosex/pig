@@ -28,9 +28,9 @@ async function runFixture(): Promise<void> {
   try {
     await act(async () => { root.render(createElement(HighlightedCode, { code: 'echo ok', lang: 'bash', variant: 'command' })) })
     assert.equal(panel().classList.contains('max-h-60'), true)
-    assert.equal(panel().classList.contains('border-code-border'), true)
+    assert.equal(panel().classList.contains('solid:border-code-border'), true)
     assert.equal(panel().querySelector('.token')?.textContent, 'echo ok')
-    assert.equal(panel().classList.contains('bg-secondary'), true)
+    assert.equal(panel().classList.contains('solid:bg-secondary'), true)
 
     await act(async () => { root.render(createElement(HighlightedCode, { code: 'pwd', lang: 'bash', variant: 'terminal' })) })
     assert.equal(panel().classList.contains('bg-code-background'), true)

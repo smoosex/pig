@@ -103,7 +103,7 @@ async function runFixture(): Promise<void> {
     assert.doesNotMatch(bash.textContent ?? '', /output/)
     const read = trigger('Read src/read.ts').closest('[data-slot="collapsible"]')!
     assert.equal(read.querySelector('pre')?.textContent, 'src/read.ts')
-    assert.equal(read.querySelector('.border-code-border'), null)
+    assert.equal(read.querySelector('.solid\\:border-code-border'), null)
 
     const omitted = await open('Write a file')
     assert.match(omitted.textContent ?? '', /Unfinished.*Arguments omitted \(9000 bytes\)/)

@@ -32,14 +32,14 @@ async function runFixture(): Promise<void> {
   try {
     await act(async () => { root.render(createElement(ToolRow, { step })) })
     await act(async () => { container.querySelector('button')!.click() })
-    const panels = () => [...container.querySelectorAll<HTMLElement>('.rounded-lg.border-code-border')]
+    const panels = () => [...container.querySelectorAll<HTMLElement>('.rounded-lg.solid\\:border-code-border')]
     assert.deepEqual(languages, ['bash'])
     assert.equal(container.textContent?.includes('command'), true)
     assert.equal(container.textContent?.includes('output'), false)
     assert.equal(panels().length, 1)
     assert.equal(panels()[0].textContent, 'echo done')
     assert.ok(panels()[0].querySelector('.token'))
-    assert.equal(panels()[0].classList.contains('bg-secondary'), true)
+    assert.equal(panels()[0].classList.contains('solid:bg-secondary'), true)
 
     for (const text of ['first', 'first\nsecond']) {
       await act(async () => {
@@ -65,8 +65,8 @@ async function runFixture(): Promise<void> {
     })
     assert.equal(container.textContent?.includes('output'), true)
     assert.deepEqual(panels().map((panel) => panel.textContent), ['echo done', 'first\nsecond'])
-    assert.ok(panels().every((panel) => panel.classList.contains('bg-secondary')))
-    assert.ok(panels().every((panel) => !panel.classList.contains('bg-code-background')))
+    assert.ok(panels().every((panel) => panel.classList.contains('solid:bg-secondary')))
+    assert.ok(panels().every((panel) => !panel.classList.contains('solid:bg-code-background')))
     assert.equal(panels()[1].querySelector('.token'), null)
 
     const missingCommand = { id: 'bash-empty', name: 'bash', args: {} }
@@ -97,7 +97,7 @@ async function runFixture(): Promise<void> {
     })
     await act(async () => { container.querySelector('button')!.click() })
     assert.equal(panels().length, 0)
-    assert.equal(container.querySelector('.bg-secondary'), null)
+    assert.equal(container.querySelector('.solid\\:bg-secondary'), null)
     assert.equal(container.querySelector('pre')?.textContent, '$ echo done')
     assert.equal(container.textContent?.includes('command'), false)
 
@@ -115,8 +115,8 @@ async function runFixture(): Promise<void> {
     })
     await act(async () => { container.querySelector('button')!.click() })
     assert.equal(panels().length, 1)
-    assert.equal(panels()[0].classList.contains('bg-code-background'), true)
-    assert.equal(panels()[0].classList.contains('border-code-border'), true)
+    assert.equal(panels()[0].classList.contains('solid:bg-code-background'), true)
+    assert.equal(panels()[0].classList.contains('solid:border-code-border'), true)
     assert.equal(panels()[0].querySelector('.max-h-80')?.classList.contains('bg-code-background'), false)
     assert.equal(panels()[0].querySelector('.token')?.textContent, 'file contents')
 

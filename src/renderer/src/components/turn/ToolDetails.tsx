@@ -6,7 +6,7 @@ import { resultText, toolStepLabel, type ToolStep } from '../../chat/turns'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { langFromPath } from '../../lib/highlight'
 import { cn, hideScroll } from '../../lib/utils'
-import { bashCodeSurface, codeSurface, HighlightedCode } from '../HighlightedCode'
+import { glassCodeSurface, glassCommandSurface, HighlightedCode } from '../HighlightedCode'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -38,9 +38,9 @@ function CodePanel({
   const filename = path.split(/[/\\]/).pop() || path || t('common.file')
 
   return (
-    <div className={`overflow-hidden ${codeSurface}`}>
+    <div className={`overflow-hidden ${glassCodeSurface}`}>
       {fileListing ? (
-        <div className="flex h-10 items-center gap-2 border-b border-code-border px-3 text-xs">
+        <div className="flex h-10 items-center gap-2 border-b border-glass-card-border px-3 text-xs solid:border-code-border">
           <FileCode2 className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-mono" title={path}>{filename}</span>
           <Button
@@ -64,9 +64,9 @@ function CodePanel({
 function ToolPanel({ input, output }: { input?: string; output?: string }) {
   if (!input && !output) return null
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <div className={cn('overflow-hidden', glassCodeSurface, 'solid:border-border solid:bg-transparent')}>
       {input ? <pre className={panelCell}>{input}</pre> : null}
-      {input && output ? <Separator /> : null}
+      {input && output ? <Separator className="bg-glass-card-border solid:bg-border" /> : null}
       {output ? <pre className={panelCell}>{output}</pre> : null}
     </div>
   )
@@ -74,7 +74,7 @@ function ToolPanel({ input, output }: { input?: string; output?: string }) {
 
 function BashToolPanel({ command, output }: { command: string; output?: string }) {
   const t = useT()
-  const surface = `${bashCodeSurface} max-h-60 overflow-auto font-mono text-xs leading-snug ${hideScroll}`
+  const surface = `${glassCommandSurface} max-h-60 overflow-auto font-mono text-xs leading-snug ${hideScroll}`
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="min-w-0">

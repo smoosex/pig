@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { parseDiffFromFile } from '@pierre/diffs'
 import { FileDiff, Virtualizer } from '@pierre/diffs/react'
 import { useDarkMode } from '../../lib/useDarkMode'
+import { cn } from '../../lib/utils'
+import { glassCodeSurface } from '../HighlightedCode'
 import { fileDiffOptions } from './diff-options'
 
 /**
@@ -30,12 +32,12 @@ export default function EditDiffBody({
     [edits, path]
   )
   return (
-    <div className="overflow-hidden rounded-lg border border-code-border">
+    <div className={cn('glass-code-surface overflow-hidden [--diffs-gap-block:0px]', glassCodeSurface)}>
       <Virtualizer className="max-h-80 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {diffs.map((fileDiff, index) => (
           <div key={index}>
             {diffs.length > 1 ? (
-              <div className={`${index > 0 ? 'border-t ' : ''}border-b border-code-border px-3 py-1.5 font-mono text-xs text-muted-foreground`}>
+              <div className={`${index > 0 ? 'border-t ' : ''}border-b border-glass-card-border px-3 py-1.5 solid:border-code-border font-mono text-xs text-muted-foreground`}>
                 {`// — edit ${index + 1} —`}
               </div>
             ) : null}
