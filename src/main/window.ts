@@ -34,6 +34,9 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     title: 'Pig',
+    icon: process.platform === 'linux'
+      ? is.dev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png')
+      : undefined,
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 14 },
     ...windowSurfaceOptions(),

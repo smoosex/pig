@@ -18,6 +18,8 @@ files:
       - docs/**/*.md
       - examples/**/*
 extraResources:
+  - from: build/icon.png
+    to: icon.png
   - from: src/main/plugins/pig-ui.ts
     to: system-plugins/pig-ui.ts
   - from: src/main/plugins/pig-subagent-host.ts
@@ -44,13 +46,16 @@ extraResources:
 asarUnpack:
   - resources/**
 win:
+  icon: build/icon.ico
   executableName: Pig
 mac:
+  icon: build/icon.icns
   target:
     - dmg
   category: public.app-category.developer-tools
   identity: pig
 linux:
+  icon: build/icon.png
   target:
     - AppImage
     - deb

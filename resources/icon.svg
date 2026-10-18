@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Pig</title>
+  <desc>Colored adaptation of the user-supplied streamline-pixel--business-product-piggy-bank.svg. Original pixel paths are preserved.</desc>
+  <defs>
+    <linearGradient id="tile" x2="0.85" y2="1">
+      <stop stop-color="#34594e" />
+      <stop offset="1" stop-color="#193d35" />
+    </linearGradient>
+    <linearGradient id="body" x2="0.7" y2="1">
+      <stop stop-color="#f7c6bc" />
+      <stop offset="1" stop-color="#e99a9d" />
+    </linearGradient>
+  </defs>
+  <rect x="64" y="76" width="896" height="896" rx="200" fill="#102c27" opacity=".18" />
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)" />
+  <rect x="66" y="66" width="892" height="892" rx="198" fill="none" stroke="#c8e5d2" stroke-opacity=".16" stroke-width="4" />
+  <g transform="translate(152 140) scale(22.5)">
+    <path fill="url(#body)" d="M6.1 17.525H7.62V16H9.14V14.475H13.71V11.425H16.76V14.475H21.33V11.425H24.38V14.475H25.91V16H27.43V19.045H22.86V20.565H21.33V26.665H22.86V28.185H21.33V28.185H12.19V29.715H9.14V26.665H7.62V25.145H6.1Z" />
+    <path fill="#b95469" d="M30.48 19.045h-1.53V16h-1.52v3.05h-4.57v1.52h-1.53v6.1h1.53v1.52h1.52v1.53h1.53v-1.53h3.04v-1.52h1.53v-1.52H32v-4.58h-1.52Zm-4.57 6.1h-1.53V22.1h1.53Zm3.04 0h-1.52V22.1h1.52Zm-3.04-10.67h1.52v1.52h-1.52Z" />
+    <path fill="#b95469" d="M24.380 15.995H25.910V17.525H24.380Z" />
+    <path fill="#b95469" d="M24.380 11.425H25.910V14.475H24.380Z" />
+    <path fill="#b95469" d="M21.330 9.905H24.380V11.425H21.330Z" />
+    <path fill="#a9d6bd" d="M22.860 3.805H24.380V5.335H22.860Z" />
+    <path fill="#b95469" d="M21.330 29.715H24.380V31.235H21.330Z" />
+    <path fill="#b95469" d="M12.190 28.185H21.330V29.715H12.190Z" />
+    <path fill="#b95469" d="M19.810 15.995H21.330V17.525H19.810Z" />
+    <path fill="#b95469" d="M18.290 8.375H19.810V9.905H18.290Z" />
+    <path fill="#a9d6bd" d="M19.810 3.805H21.330V2.285H19.810V0.765H18.290V2.285H16.760V3.805H18.290V5.335H19.810Z" />
+    <path fill="#b95469" d="M21.330 14.475V11.425H19.810V12.955H18.290V11.425H16.760V14.475Z" />
+    <path fill="#b95469" d="M13.710 9.905H16.760V11.425H13.710Z" />
+    <path fill="#a9d6bd" d="M15.240 5.335H16.760V6.855H15.240Z" />
+    <path fill="#f2c76b" d="M12.190 3.805H13.710V8.375H12.190Z" />
+    <path fill="#b95469" d="M13.710 14.475V11.425H12.190V12.955H9.140V14.475Z" />
+    <path fill="#f2c76b" d="M10.670 8.375H12.190V9.905H10.670Z" />
+    <path fill="#f2c76b" d="M10.670 2.285H12.190V3.805H10.670Z" />
+    <path fill="#b95469" d="M9.140 29.715H12.190V31.235H9.140Z" />
+    <path fill="#b95469" d="M7.620 26.665H9.140V29.715H7.620Z" />
+    <path fill="#b95469" d="M7.620 14.475H9.140V15.995H7.620Z" />
+    <path fill="#f2c76b" d="M6.100 9.905H10.670V11.425H6.100Z" />
+    <path fill="#f2c76b" d="M6.100 3.805H10.670V8.375H6.100Z" />
+    <path fill="#f2c76b" d="M6.100 0.765H10.670V2.285H6.100Z" />
+    <path fill="#b95469" d="M6.100 25.145H7.620V26.665H6.100Z" />
+    <path fill="#b95469" d="M6.100 15.995H7.620V17.525H6.100Z" />
+    <path fill="#b95469" d="M4.570 17.525H6.100V25.145H4.570Z" />
+    <path fill="#f2c76b" d="M4.570 8.375H6.100V9.905H4.570Z" />
+    <path fill="#f2c76b" d="M4.570 2.285H6.100V3.805H4.570Z" />
+    <path fill="#a9d6bd" d="M3.050 12.955H4.570V14.475H3.050Z" />
+    <path fill="#f2c76b" d="M3.050 3.805H4.570V8.375H3.050Z" />
+    <path fill="#a9d6bd" d="M1.520 14.475H3.050V15.995H1.520Z" />
+    <path fill="#a9d6bd" d="M1.520 11.425H3.050V12.955H1.520Z" />
+    <path fill="#a9d6bd" d="M1.520 0.765H3.050V2.285H1.520Z" />
+    <path fill="#a9d6bd" d="M0.000 12.955H1.520V14.475H0.000Z" />
+    <path fill="#a9d6bd" d="M0.000 6.855H1.520V8.375H0.000Z" />
+    <path fill="#683b43" d="M19.81 15.995h1.52v1.53h-1.52zM24.38 22.1h1.53v3.045h-1.53zM27.43 22.1h1.52v3.045h-1.52z" />
+  </g>
+</svg>
