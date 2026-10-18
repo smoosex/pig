@@ -22,10 +22,10 @@ export function McpIcon({
   className?: string
 }) {
   return (
-    <Avatar className={cn(TILE, className)}>
+    <Avatar className={cn(TILE, 'shadow-glass-inline-code after:pointer-events-none after:border-glass-button-border after:mix-blend-normal dark:after:mix-blend-normal solid:shadow-none solid:after:border-border solid:after:mix-blend-darken solid:dark:after:mix-blend-lighten', className)}>
       {/* Radix swaps in the fallback when the image is missing or fails to load. */}
       {source ? <AvatarImage src={mcpIconUrl(source)} alt="" className={TILE} /> : null}
-      <AvatarFallback className={cn(TILE, 'bg-muted text-xs')}>
+      <AvatarFallback className={cn(TILE, 'bg-glass-button-background bg-[image:var(--glass-button-sheen)] text-xs text-glass-prompt-foreground solid:bg-muted solid:bg-none solid:text-muted-foreground')}>
         {fallback ??
           (name
             .replace(/^[^a-z0-9]+/i, '')

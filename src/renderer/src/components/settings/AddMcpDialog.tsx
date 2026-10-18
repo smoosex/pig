@@ -20,7 +20,6 @@ import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '../ui/field'
 import { Input } from '../ui/input'
-import { Avatar, AvatarFallback } from '../ui/avatar'
 import { Switch } from '../ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -206,11 +205,11 @@ export function AddMcpDialog({
           </DialogHeader>
         ) : (
           <DialogHeader className="-mx-4 -mt-4 flex-row items-center gap-3 border-b p-4">
-            <Avatar size="sm" className="rounded-lg after:rounded-lg after:border-0">
-              <AvatarFallback className="rounded-lg [&>svg]:size-3.5">
-                {form.transport === 'stdio' ? <SquareTerminal /> : <Globe />}
-              </AvatarFallback>
-            </Avatar>
+            <McpIcon
+              name={server?.name || t('mcp.newServer')}
+              fallback={form.transport === 'stdio' ? <SquareTerminal className="size-3.5" /> : <Globe className="size-3.5" />}
+              className="size-6 solid:after:border-0"
+            />
             <DialogTitle className="min-w-0 truncate text-sm">
               {server ? server.name : t('mcp.newServer')}
             </DialogTitle>
