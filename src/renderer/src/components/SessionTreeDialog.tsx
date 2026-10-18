@@ -5,6 +5,7 @@ import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
+import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import {
   ContextMenu,
@@ -390,9 +391,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                               {row.text}
                             </span>
                             {row.label ? (
-                              <span className="ml-1.5 max-w-40 shrink-0 truncate rounded border border-primary/40 px-1 text-[10px] leading-4 text-primary">
-                                {row.label}
-                              </span>
+                              <Badge variant="secondary" className="ml-1.5 h-4 max-w-40 min-w-0 px-1.5 text-[10px] leading-4 font-normal" title={row.label}>
+                                <span className="truncate">{row.label}</span>
+                              </Badge>
                             ) : null}
                           </Button>
                         )}
