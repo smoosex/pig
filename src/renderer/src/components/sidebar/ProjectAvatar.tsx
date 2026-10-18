@@ -11,10 +11,10 @@ const projectAvatarBg = [
 
 export function ProjectAvatar({ name, index }: { name: string; index: number }) {
   return (
-    <Avatar className="size-5 rounded-sm after:rounded-sm">
+    <Avatar className="size-5 rounded-sm after:pointer-events-none after:rounded-sm after:border-glass-button-border after:mix-blend-normal dark:after:mix-blend-normal solid:after:border-border solid:after:mix-blend-darken solid:dark:after:mix-blend-lighten">
       <AvatarFallback
         className={cn(
-          'rounded-sm text-xs font-normal text-primary-foreground',
+          'rounded-sm bg-[image:var(--glass-badge-sheen)] text-xs font-normal text-primary-foreground shadow-glass-badge solid:bg-none solid:shadow-none',
           projectAvatarBg[index % projectAvatarBg.length]
         )}
       >
