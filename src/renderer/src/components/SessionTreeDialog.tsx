@@ -14,6 +14,7 @@ import {
   ContextMenuTrigger
 } from './ui/context-menu'
 import { SessionRenameField } from './SessionRenameField'
+import { GooeyNav } from './ui/gooey-nav'
 import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
 import {
   Dialog,
@@ -25,7 +26,6 @@ import {
 } from './ui/dialog'
 import { Input } from './ui/input'
 import { InputGroupButton } from './ui/input-group'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 const toolbarBtn =
   "h-6 rounded-full px-2 text-xs font-light [&_svg:not([class*='size-'])]:size-3"
@@ -280,35 +280,19 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           <DialogTitle>{t('tree.buttonAria')}</DialogTitle>
           <DialogDescription>{t('tree.description')}</DialogDescription>
         </DialogHeader>
-        <SmoothHoverHighlight activeKey={view}>
-          <ToggleGroup
-            type="single"
-            size="xs"
-            value={view}
-            onValueChange={(next) => {
-              if (!next) return
-              // pi clears its folds on every filter change; the rows below are already here.
-              const mode = next as SessionTreeView
-              setView(mode)
-              setFolded(new Set())
-              ensureView(mode)
-            }}
-            aria-label={t('tree.viewAria')}
-            className="justify-start"
-          >
-            {treeViews.map((item) => (
-              <ToggleGroupItem
-                key={item.value}
-                value={item.value}
-                data-hover-highlight-row
-                data-hover-highlight-active={item.value === view ? '' : undefined}
-                className="relative !bg-transparent data-[state=on]:text-accent-foreground"
-              >
-                {t(item.labelKey)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </SmoothHoverHighlight>
+        <GooeyNav
+          size="xs"
+          items={treeViews.map((item) => t(item.labelKey))}
+          value={treeViews.findIndex((item) => item.value === view)}
+          onChange={(index) => {
+            // pi clears its folds on every filter change; the rows below are already here.
+            const mode = treeViews[index].value
+            setView(mode)
+            setFolded(new Set())
+            ensureView(mode)
+          }}
+          aria-label={t('tree.viewAria')}
+        />
         <Input
           value={query}
           placeholder={t('tree.search')}
@@ -326,7 +310,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           ) : visible.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{t('tree.empty')}</div>
           ) : (
-            <>
+            <SmoothHoverHighlight highlightClassName="rounded-none bg-glass-prompt-foreground/8 solid:bg-accent">
               <div style={{ height: first * ROW_H }} />
               {windowRows.map((row) => {
                 const collapsed = folded.has(row.id)
@@ -334,9 +318,10 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                   <ContextMenu key={row.id}>
                     <ContextMenuTrigger asChild disabled={labelingId === row.id}>
                       <div
+                        data-hover-highlight-row
                         className={cn(
-                          'flex h-6.5 min-w-0 items-center',
-                          row.current && 'bg-accent text-accent-foreground'
+                          'relative flex h-6.5 min-w-0 items-center',
+                          row.current && 'bg-glass-prompt-foreground/12 text-glass-prompt-foreground solid:bg-accent solid:text-accent-foreground'
                         )}
                       >
                         <span className="shrink-0 whitespace-pre text-muted-foreground">
@@ -347,7 +332,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             type="button"
                             variant="ghost"
                             size="icon-xs"
-                            className="shrink-0"
+                            className="shrink-0 hover:bg-transparent!"
                             aria-label={collapsed ? t('tree.expand') : t('tree.collapse')}
                             onClick={() => {
                               setFolded((current) => {
@@ -374,7 +359,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             type="button"
                             variant="ghost"
                             className={cn(
-                              'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal',
+                              'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal hover:bg-transparent!',
                               !row.current && kindClass(row.kind)
                             )}
                             onClick={() => {
@@ -409,7 +394,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                 )
               })}
               <div style={{ height: (visible.length - last) * ROW_H }} />
-            </>
+            </SmoothHoverHighlight>
           )}
         </div>
         <div className="text-xs text-muted-foreground">
