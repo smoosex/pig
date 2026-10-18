@@ -58,6 +58,8 @@
   --shadow-glass-card: var(--glass-card-shadow);
   --shadow-glass-card-edge: var(--glass-card-edge-shadow);
   --shadow-glass-inline-code: var(--glass-inline-code-shadow);
+  --color-glass-popover-background: var(--glass-popover-background);
+  --shadow-glass-popover: var(--glass-popover-shadow);
   --shadow-glass-bubble: 0 0 0 1px var(--glass-card-border), var(--glass-card-shadow), var(--glass-card-edge-shadow);
   --color-glass-button-background: var(--glass-button-background);
   --color-glass-button-hover-background: var(--glass-button-hover-background);
