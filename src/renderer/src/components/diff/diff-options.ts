@@ -19,12 +19,13 @@ import type { DiffStyle } from '../../stores/diff'
  * color-mix derivations then turn into translucent tints of the same hues over the conversation material.
  * The edit tool's diff in the conversation opts in too; anything outside the utility keeps the opaque code background.
  *
- * The sticky gutter overlays horizontally scrolled code. Reading panes use a translucent fill and
- * localized backdrop blur in glass; solid and surfaces outside the utility retain their opaque, unfiltered gutter.
+ * The sticky gutter overlays horizontally scrolled code. Reading panes give it a translucent neutral fill in
+ * glass, without a backdrop blur (it cannot work over the transparent window); solid and surfaces outside the
+ * utility retain their opaque gutter.
  */
 const codeSurfaceCSS = [
   ':host { --diffs-bg: var(--code-surface-background, var(--code-background)) }',
-  '[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)); backdrop-filter: var(--code-surface-gutter-filter, none) }',
+  '[data-gutter] { background-color: var(--code-surface-gutter-background, var(--diffs-bg)) }',
   'code { scrollbar-width: none } code::-webkit-scrollbar { display: none }'
 ].join('\n')
 

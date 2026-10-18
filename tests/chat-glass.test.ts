@@ -476,13 +476,12 @@ else {
     const glass = declarations(surface)
     assert.equal(glass.get('--code-surface-background'), 'transparent')
     assert.equal(glass.get('--code-surface-gutter-background'), 'var(--glass-code-gutter-background)')
-    assert.match(glass.get('--code-surface-gutter-filter')!, /^blur\([\d.]+(?:px|rem)\)$/)
+    assert.ok(!glass.has('--code-surface-gutter-filter'), 'backdrop blur cannot work over the transparent window')
     const solid = surface.nodes?.find((node) => node.type === 'atrule' && node.name === 'variant' && node.params === 'solid')
     assert.ok(solid?.type === 'atrule', 'opaque overrides belong to the solid variant of reading panes')
     const opaque = declarations(solid)
     assert.equal(opaque.get('--code-surface-background'), 'var(--code-background)')
     assert.equal(opaque.get('--code-surface-gutter-background'), 'var(--code-background)')
-    assert.equal(opaque.get('--code-surface-gutter-filter'), 'none')
 
     const { fileCodeOptions, fileDiffOptions } = await import('../src/renderer/src/components/diff/diff-options')
     for (const dark of [false, true]) {
@@ -496,9 +495,8 @@ else {
         const gutter = rules.nodes.find((node) => node.type === 'rule' && node.selector === '[data-gutter]')
         assert.ok(gutter?.type === 'rule')
         assert.equal(declarations(gutter).get('background-color'), 'var(--code-surface-gutter-background, var(--diffs-bg))')
-        assert.equal(declarations(gutter).get('backdrop-filter'), 'var(--code-surface-gutter-filter, none)')
-        rules.walkDecls('backdrop-filter', (declaration) => {
-          assert.equal(declaration.parent, gutter, 'only the sticky gutter may blur scrolled code, never the whole surface')
+        rules.walkDecls('backdrop-filter', () => {
+          assert.fail('code surfaces must not use backdrop-filter: it layers over unblurred content in the transparent window')
         })
       }
     }

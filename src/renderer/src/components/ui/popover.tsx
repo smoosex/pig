@@ -15,7 +15,10 @@ function PopoverTrigger({
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
-/** Popovers float over page content, so glass may blur what is beneath them; solid keeps the opaque themed surface. */
+/**
+ * Glass popovers rely on a dense neutral fill, edge light and shadow rather than a backdrop blur: in the
+ * transparent vibrancy window Chromium layers the blur over unblurred, non-opaque content instead of replacing it.
+ */
 function PopoverContent({
   className,
   align = "center",
@@ -29,7 +32,7 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "z-50 flex w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-2.5 rounded-lg bg-glass-popover-background bg-[image:var(--glass-popover-sheen)] p-2.5 text-sm text-glass-prompt-foreground shadow-glass-popover ring-1 ring-glass-card-border backdrop-blur-xl backdrop-saturate-150 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 solid:bg-popover solid:bg-none solid:text-popover-foreground solid:shadow-md solid:ring-foreground/10 solid:backdrop-blur-none solid:backdrop-saturate-100",
+          "z-50 flex w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-2.5 rounded-lg bg-glass-popover-background bg-[image:var(--glass-popover-sheen)] p-2.5 text-sm text-glass-prompt-foreground shadow-glass-popover ring-1 ring-glass-card-border outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 solid:bg-popover solid:bg-none solid:text-popover-foreground solid:shadow-md solid:ring-foreground/10",
           className
         )}
         {...props}

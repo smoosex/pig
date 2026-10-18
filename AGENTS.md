@@ -120,7 +120,7 @@ tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型�
 
 - 能用 `components/ui` 里的 shadcn 组件就不要写原生标签：按钮、输入、选择、对话框等都走现成封装。图标用 `lucide-react`，不要手画 SVG。
 - 主题：`src/renderer/src/themes/` 定义完整语义颜色；`styles.css` 只注册 Tailwind token，不绑定基础色板。切换靠 `html[data-palette]` + `.dark`，组件不要引用色板编号或写死颜色。
-- glass 的磨砂来自网页下面的原生材质（macOS `vibrancy`、Windows `acrylic`）。直接铺在窗口上的表面（标题栏、标签栏、对话卡片）不要加 `backdrop-filter`：底下没有网页内容可以模糊，局部重绘时模糊还会读回自己上一帧的画面，出现半截变色。浮在网页内容之上的遮罩（如对话框）不受此限。
+- glass 的磨砂来自网页下面的原生材质（macOS `vibrancy`、Windows `acrylic`）。glass 下不要依赖 `backdrop-filter`：窗口透明，网页内容大多半透明，Chromium 会把模糊结果叠在未模糊的原内容上而不是替换（[electron#19765](https://github.com/electron/electron/issues/19765)、[Chromium 380416865](https://issues.chromium.org/issues/380416865)），直接铺在窗口上时还会读回上一帧，出现半截变色。浮层、卡片、按钮的层次靠填充不透明度、边缘高光与投影表达；solid 下底色不透明，遮罩可用 `solid:` 前缀保留模糊。
 - Composer：IME 组字时 Enter 不能发送。工作耗时那一行不要 hover / `aria-expanded` 高亮。
 - Tailwind 写在组件 `className` 里。能用间距刻度就不要任意值：`--spacing` 是 `0.25rem`，`Npx / 4` 即类名（`px-[18px]` → `px-4.5`）。百分比用分数（`max-w-1/2`）。只有刻度表达不了、或 keyframes / `::after` 才用 `*.module.css` 或 `[…]`。
 - 中文引号字体是 LXGW WenKai Lite，其余 Geist Variable。
