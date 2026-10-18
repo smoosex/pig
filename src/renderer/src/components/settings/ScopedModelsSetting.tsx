@@ -8,7 +8,7 @@ import { useScopedModels } from '../../hooks/useScopedModels'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { api, type SessionModelInfo } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
-import { cn } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Button } from '../ui/button'
 import { Checkbox } from '../ui/checkbox'
@@ -33,7 +33,7 @@ function ScopeRow({ pattern, models, disabled, onRemove }: {
     useSortable({ id: pattern, disabled })
   return (
     <div ref={setNodeRef} data-scope-pattern={pattern}
-      className={cn('relative flex items-center gap-2 rounded-md bg-popover px-2 py-2', isDragging && 'opacity-50')}
+      className={cn('relative flex items-center gap-2 rounded-md bg-glass-prompt-foreground/6 px-2 py-2 hover:bg-glass-prompt-foreground/8 solid:bg-popover solid:hover:bg-popover', isDragging && 'opacity-50')}
       style={{ transform: CSS.Transform.toString(transform), transition }}>
       <Button type="button" variant="ghost" size="icon-xs" ref={setActivatorNodeRef}
         className="touch-none shrink-0" disabled={disabled}
@@ -131,7 +131,7 @@ export function ScopedModelsSetting() {
           <PopoverContent align="end" className="w-96 max-w-[var(--radix-popover-content-available-width)] gap-2 p-2">
             <Input autoFocus value={query} aria-label={t('model.search')} placeholder={t('model.search')}
               onChange={(event) => setQuery(event.target.value)} />
-            <div className="max-h-80 overflow-y-auto">
+            <div className={cn('max-h-80 overflow-auto', hideScroll)}>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
                 if (!over || active.id === over.id) return
                 const from = patterns.indexOf(String(active.id))
@@ -145,7 +145,7 @@ export function ScopedModelsSetting() {
                       onRemove={() => void save(patterns.filter((pattern) => pattern !== entry.pattern))} />)}
                   </SortableContext>
                   {available.map((model) => (
-                    <FieldLabel key={reference(model)} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-accent">
+                    <FieldLabel key={reference(model)} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-glass-prompt-foreground/8 solid:hover:bg-accent">
                       <Checkbox checked={false} disabled={disabled} onCheckedChange={() => void save([...patterns, reference(model)])} />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate text-xs">{model.name}</span>

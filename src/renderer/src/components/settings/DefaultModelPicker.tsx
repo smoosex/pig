@@ -61,7 +61,7 @@ export function DefaultModelPicker({
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="max-h-80 min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <SmoothHoverHighlight activeKey={navigation.index}>
+          <SmoothHoverHighlight activeKey={navigation.index} highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
                 {models.length === 0 ? t('model.empty') : t('model.noMatch')}
@@ -75,7 +75,7 @@ export function DefaultModelPicker({
                 data-hover-highlight-row
                 data-hover-highlight-active={navigation.index === index ? '' : undefined}
                 ref={navigation.index === index ? navigation.activeRef : undefined}
-                className="relative h-auto w-full justify-start px-2 py-2 text-left font-normal hover:bg-transparent! hover:text-accent-foreground!"
+                className="relative h-auto w-full justify-start px-2 py-2 text-left font-normal hover:bg-transparent! hover:text-glass-prompt-foreground! solid:hover:text-accent-foreground!"
                 onPointerMove={() => navigation.hover(index)}
                 onClick={() => select(item)}
               >
