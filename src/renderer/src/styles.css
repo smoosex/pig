@@ -345,6 +345,12 @@ body,
   height: 100%;
 }
 
+/* Glass modals blur the app itself: backdrop-filter cannot see the native vibrancy and ghosts over
+   translucent content, while filter rasterizes the app once. Dialogs portal to body, so stay sharp. */
+html[data-surface-style='glass']:has([data-slot='dialog-overlay'][data-state='open'], [data-slot='alert-dialog-overlay'][data-state='open']) [data-modal-blur-root] {
+  filter: blur(8px);
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);

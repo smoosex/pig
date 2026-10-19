@@ -376,7 +376,7 @@ export default function App() {
       <SubagentCloseConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
-      <div data-app-surface className="flex h-full flex-col transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
+      <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
           <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : (
