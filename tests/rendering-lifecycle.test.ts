@@ -139,6 +139,7 @@ async function fixture(scenario: string): Promise<void> {
       const store = create(() => ({
         runtime: { one: { instanceId: 1, controlsPending: false, controlsError: null as string | null } },
         applyControls: () => { applied++ },
+        syncModelThinkingPreference: () => {},
         setControlsStatus: (id: string, status: Record<string, unknown>) => store.setState((state) => ({
           runtime: { ...state.runtime, [id]: { ...state.runtime[id], ...status } }
         }))
