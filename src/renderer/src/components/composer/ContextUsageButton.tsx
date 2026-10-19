@@ -171,7 +171,7 @@ export function ContextUsageButton({
 
 function ContextMeter({ percent }: { percent: number | null }) {
   const value = Math.max(0, Math.min(100, percent ?? 0))
-  const r = 11
+  const r = 13
   const c = 2 * Math.PI * r
   return (
     <span className="relative inline-flex size-8 items-center justify-center">
@@ -188,7 +188,7 @@ function ContextMeter({ percent }: { percent: number | null }) {
           strokeLinecap="round"
         />
       </svg>
-      <span className="absolute text-[9px] tabular-nums text-muted-foreground">
+      <span className="absolute whitespace-nowrap text-[8px] leading-none tabular-nums tracking-tight text-muted-foreground">
         {percent == null ? '–' : `${Math.round(value)}%`}
       </span>
     </span>
