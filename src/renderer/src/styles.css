@@ -345,6 +345,32 @@ body,
   height: 100%;
 }
 
+/* Material reveal (surface-transition.ts): the new snapshot grows as a circle while the old one is cut
+   away under it, since a translucent new glass snapshot would otherwise show the opaque old one. */
+@property --surface-reveal-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+html[data-surface-reveal] [data-app-surface] {
+  transition: none;
+}
+
+html[data-surface-reveal]::view-transition-old(root),
+html[data-surface-reveal]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-surface-reveal]::view-transition-new(root) {
+  clip-path: circle(var(--surface-reveal-radius) at var(--surface-reveal-x) var(--surface-reveal-y));
+}
+
+html[data-surface-reveal]::view-transition-old(root) {
+  mask-image: radial-gradient(circle at var(--surface-reveal-x) var(--surface-reveal-y), transparent var(--surface-reveal-radius), #000 calc(var(--surface-reveal-radius) + 1px));
+}
+
 /* Glass modals blur the app itself: backdrop-filter cannot see the native vibrancy and ghosts over
    translucent content, while filter rasterizes the app once. Dialogs portal to body, so stay sharp. */
 html[data-surface-style='glass']:has([data-slot='dialog-overlay'][data-state='open'], [data-slot='alert-dialog-overlay'][data-state='open']) [data-modal-blur-root] {

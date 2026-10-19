@@ -1,5 +1,6 @@
 import type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 import { parseSurfaceStyle } from '../../../shared/surface-style'
+import { applySurfaceStyle } from './surface-transition'
 
 export type { Appearance, PaletteId, ThemePrefs } from '../../../shared/api'
 
@@ -36,7 +37,7 @@ export function applyDocumentTheme(prefs: ThemePrefs): void {
   const root = document.documentElement
   root.classList.toggle('dark', scheme === 'dark')
   root.dataset.palette = palette
-  root.dataset.surfaceStyle = prefs.surfaceStyle
+  applySurfaceStyle(root, prefs.surfaceStyle)
   root.style.colorScheme = scheme
   localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
 }
