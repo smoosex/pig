@@ -347,8 +347,8 @@ body,
   height: 100%;
 }
 
-/* Material reveal (surface-transition.ts): the new snapshot grows as a circle while the old one is cut
-   away under it, since a translucent new glass snapshot would otherwise show the opaque old one. */
+/* Solid owns the circle, glass its inverse: expand for solid, contract for glass. The complementary
+   mask removes the old opaque pixels instead of letting them show through translucent glass. */
 @property --surface-reveal-radius {
   syntax: '<length>';
   inherits: false;
@@ -365,11 +365,13 @@ html[data-surface-reveal]::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
-html[data-surface-reveal]::view-transition-new(root) {
+html[data-surface-reveal='solid']::view-transition-new(root),
+html[data-surface-reveal='glass']::view-transition-old(root) {
   clip-path: circle(var(--surface-reveal-radius) at var(--surface-reveal-x) var(--surface-reveal-y));
 }
 
-html[data-surface-reveal]::view-transition-old(root) {
+html[data-surface-reveal='solid']::view-transition-old(root),
+html[data-surface-reveal='glass']::view-transition-new(root) {
   mask-image: radial-gradient(circle at var(--surface-reveal-x) var(--surface-reveal-y), transparent var(--surface-reveal-radius), #000 calc(var(--surface-reveal-radius) + 1px));
 }
 

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 async function fixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
-  const { applySurfaceStyle, waitForSurfacePaint } = await import('../src/renderer/src/lib/surface-transition')
+  const { applySurfaceStyle, setSurfaceRevealOrigin, waitForSurfacePaint } = await import('../src/renderer/src/lib/surface-transition')
   let visibility: DocumentVisibilityState = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   const surface = document.createElement('div')
@@ -75,6 +75,52 @@ async function fixture(name: string): Promise<void> {
       assert.equal(frames.size, 1)
       tick()
       await waiting
+    } else if (name === 'directions') {
+      const root = document.documentElement
+      root.dataset.surfaceStyle = 'glass'
+      const control = document.createElement('button')
+      control.getBoundingClientRect = () => new DOMRect(10, 20, 24, 24)
+      const motions: { frames: PropertyIndexedKeyframes; options: KeyframeAnimationOptions }[] = []
+      root.animate = ((frames: PropertyIndexedKeyframes, options: KeyframeAnimationOptions) => {
+        motions.push({ frames, options })
+        return {} as Animation
+      }) as typeof root.animate
+      let finish!: () => void
+      Object.assign(document, {
+        startViewTransition: (update: () => void) => {
+          update()
+          return {
+            ready: Promise.resolve(),
+            finished: new Promise<void>((done) => { finish = done }),
+            skipTransition: () => finish()
+          }
+        }
+      })
+      for (const style of ['solid', 'glass'] as const) {
+        motions.length = 0
+        setSurfaceRevealOrigin(control)
+        applySurfaceStyle(root, style)
+        await flush()
+        assert.equal(root.dataset.surfaceReveal, style, 'the clip and inverse mask follow the target material')
+        assert.equal(root.style.getPropertyValue('--surface-reveal-x'), '22px')
+        assert.equal(root.style.getPropertyValue('--surface-reveal-y'), '32px')
+        assert.deepEqual(motions.map(({ options }) => options.pseudoElement), ['::view-transition-old(root)', '::view-transition-new(root)'])
+        for (const { frames, options } of motions) {
+          const radii = frames['--surface-reveal-radius'] as string[]
+          const [start, end] = radii.map(parseFloat)
+          if (style === 'solid') {
+            assert.equal(start, 0)
+            assert.ok(end > 0, 'solid expands from the toggle')
+          } else {
+            assert.ok(start > 0, 'glass begins with the old solid covering the window')
+            assert.equal(end, 0, 'solid contracts to the toggle when switching to glass')
+          }
+          assert.equal(options.duration, 500)
+        }
+        finish()
+        await flush()
+        assert.equal(root.dataset.surfaceReveal, undefined)
+      }
     } else if (name === 'reveal') {
       animations = []
       const root = document.documentElement
@@ -130,6 +176,7 @@ else {
     cancel: 'rapid reversals release animation and RAF barriers',
     reduced: 'reduced motion paints immediately without an animation delay',
     reveal: 'the circular reveal changes style inside its snapshot and holds the native material until it ends',
+    directions: 'solid expands and glass contracts around the toggle with complementary snapshots',
     hidden: 'hidden windows do not strand preference writes behind suspended RAF'
   })) {
     test(`surface transition: ${title}`, async () => {

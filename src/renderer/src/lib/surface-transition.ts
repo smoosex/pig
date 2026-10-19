@@ -2,8 +2,8 @@
  * The native material can disappear only after the opaque background has finished and painted.
  * A reversed choice cancels this barrier; hidden windows finish the background without waiting for RAF.
  *
- * A material change is revealed as a circle growing from the control that requested it. The view
- * transition snapshots only web content, so the native material must stay on for the whole reveal:
+ * Solid expands from the requesting control; glass reveals around the old solid circle as it shrinks.
+ * The transition snapshots only web content, so the native material stays on for the whole reveal:
  * glass is enabled before its reveal starts, and solid removes it only after the reveal finished.
  */
 import type { SurfaceStyle } from '../../../shared/api'
@@ -35,13 +35,18 @@ export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle): void 
   const radius = Math.hypot(Math.max(origin.x, innerWidth - origin.x), Math.max(origin.y, innerHeight - origin.y))
   root.style.setProperty('--surface-reveal-x', `${origin.x}px`)
   root.style.setProperty('--surface-reveal-y', `${origin.y}px`)
-  root.dataset.surfaceReveal = ''
-  const transition = document.startViewTransition(() => { root.dataset.surfaceStyle = revealTarget })
+  root.dataset.surfaceReveal = style
+  const transition = document.startViewTransition(() => {
+    root.dataset.surfaceStyle = revealTarget
+    root.dataset.surfaceReveal = revealTarget
+  })
   reveal = transition
   transition.ready.then(() => {
+    if (reveal !== transition) return
+    const radii = root.dataset.surfaceStyle === 'solid' ? ['0px', `${radius}px`] : [`${radius}px`, '0px']
     for (const pseudoElement of ['::view-transition-old(root)', '::view-transition-new(root)']) {
       root.animate(
-        { '--surface-reveal-radius': ['0px', `${radius}px`] },
+        { '--surface-reveal-radius': radii },
         { duration: REVEAL_MS, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards', pseudoElement }
       )
     }
