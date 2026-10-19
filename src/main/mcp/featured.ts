@@ -87,6 +87,7 @@ const ownerAvatar = (owner: string): string => `https://github.com/${owner}.png?
 const featuredHomepages: Record<FeaturedName, string> = {
   context7: 'https://context7.com',
   playwright: 'https://github.com/microsoft/playwright-mcp',
+  'open-computer-use': 'https://github.com/iFurySt/open-computer-use',
   'chrome-devtools': 'https://github.com/ChromeDevTools/chrome-devtools-mcp',
   github: 'https://github.com/github/github-mcp-server',
   deepwiki: 'https://deepwiki.com',
@@ -117,6 +118,7 @@ const featuredHomepages: Record<FeaturedName, string> = {
 const featuredIcons: Record<FeaturedName, string> = {
   context7: ownerAvatar('upstash'),
   playwright: 'https://playwright.dev/img/playwright-logo.svg',
+  'open-computer-use': ownerAvatar('iFurySt'),
   'chrome-devtools': ownerAvatar('ChromeDevTools'),
   github: ownerAvatar('github'),
   deepwiki: ownerAvatar('CognitionAI'),
@@ -142,7 +144,17 @@ const featuredIcons: Record<FeaturedName, string> = {
   firecrawl: ownerAvatar('firecrawl'),
   tavily: ownerAvatar('tavily-ai')
 }
+export const openComputerUseMcp = local(
+  'open-computer-use',
+  'Open Computer Use',
+  'iFurySt',
+  'npx',
+  ['-y', 'open-computer-use@1.1.2', 'mcp'],
+  'Control desktop apps through accessibility and screenshots. macOS requires Accessibility and Screen Recording permissions; Windows and Linux support is experimental.'
+)
+
 export const featuredMcpServers: McpMarketServer[] = [
+  openComputerUseMcp,
   remote(
     'context7',
     'Context7',

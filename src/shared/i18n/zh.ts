@@ -66,6 +66,7 @@ export const zh = {
     featured: {
       context7: { description: '任意库的最新文档与代码示例，直接送进提示词。', input: { CONTEXT7_API_KEY: { label: 'API 密钥', description: '可选 — 提高速率限制。在 context7.com/dashboard 获取' } } },
       playwright: { description: '驱动真实浏览器：打开页面、点击、输入，并通过无障碍树读取页面。' },
+      'open-computer-use': { description: '通过无障碍接口和截图操作桌面应用。macOS 需授予 Open Computer Use 辅助功能和录屏权限；Windows/Linux 为实验性支持。首次启用需要 Node.js/npx 和网络下载运行时。' },
       'chrome-devtools': { description: '控制并检查运行中的 Chrome：控制台、网络、性能追踪和截图。' },
       github: { description: 'GitHub 上的仓库、Issue、PR、Actions 和代码搜索。', input: { Authorization: { label: '个人访问令牌', description: 'github.com/settings/personal-access-tokens' } } },
       deepwiki: { description: '就任意公开 GitHub 仓库提问，并阅读自动生成的 Wiki。' },

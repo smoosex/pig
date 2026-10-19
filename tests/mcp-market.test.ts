@@ -198,7 +198,8 @@ test('Registry conversion supports HTTP headers and required stdio inputs, but n
       (server) =>
         !('command' in server.config) ||
         server.config.command !== 'npx' ||
-        server.config.args?.[1].endsWith('@latest')
+        server.config.args?.[1].endsWith('@latest') ||
+        (server.name === 'open-computer-use' && server.config.args?.[1] === 'open-computer-use@1.1.2')
     )
   )
   assert.ok(

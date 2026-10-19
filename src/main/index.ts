@@ -21,7 +21,7 @@ import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
 import { importShellEnvironment } from './shell-env'
 import { cancelMcpOperations } from './mcp/manager'
-import { flushToolMutations } from './mcp/settings'
+import { flushToolMutations, initializeMcpDefaults } from './mcp/settings'
 
 // Pig-dir resolution needs Electron, but bundled extensions load through a module loader that
 // cannot resolve 'electron'. Publish the resolved directory so extensions stay dependency-free.
@@ -68,6 +68,7 @@ app.whenReady().then(async () => {
   void startModelRuntime()
     .then(() => startModelCatalog())
     .catch((error) => console.error('Model runtime initialization failed:', error))
+  await initializeMcpDefaults()
   registerIpc()
   const settings = await loadPigSettings()
   nativeTheme.themeSource = settings.appearance

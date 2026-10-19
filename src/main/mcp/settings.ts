@@ -3,6 +3,7 @@ import { pigDir, pigPath } from '../pig-dir'
 import type { McpConfig, McpImportEntry } from '../../shared/tool-settings'
 import { mcpCredentials, mcpSdk, privateJson, readJson } from './sdk'
 import { withMcpAuthMutation } from './connections'
+import { openComputerUseMcp } from './featured'
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -52,6 +53,29 @@ function iconDocument(): Record<string, string> {
 export function mcpIcons(): Record<string, string> {
   return iconDocument()
 }
+/** Seed once, not on every catalog read: ordinary edits, disabling and removal must remain durable. */
+export function initializeMcpDefaults(): Promise<void> {
+  return serialize(async () => {
+    const raw = document()
+    const defaults = object(raw.pigDefaults ?? {})
+    const name = openComputerUseMcp.name
+    if (Object.hasOwn(defaults, name)) {
+      if (defaults[name] !== true) throw new Error(`Invalid MCP default marker: ${name}`)
+      return
+    }
+    const existing = await configuredServers()
+    const { core } = await mcpSdk()
+    const servers = object(raw.mcpServers ?? {})
+    // A pre-existing or namespace-equivalent entry belongs to the user, including its enabled state.
+    if (!existing.some((entry) => core.mcpNamespace(entry.name) === core.mcpNamespace(name))) {
+      servers[name] = { ...openComputerUseMcp.config }
+    }
+    privateJson(pigPath('mcp.json'), {
+      ...raw, mcpServers: servers, pigDefaults: { ...defaults, [name]: true }
+    })
+  })
+}
+
 export async function configuredServers() {
   const { config } = await mcpSdk()
   const loaded = config.loadMcpConfig({ agentDir: pigDir(), cwd: pigDir(), projectTrusted: false })

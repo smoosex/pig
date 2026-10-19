@@ -63,7 +63,7 @@ async function fixture(failure: Failure): Promise<void> {
     'pig-dir': { pigDir: () => root },
     'shell-env': { importShellEnvironment: asyncNoop },
     'mcp/manager': { cancelMcpOperations: asyncNoop },
-    'mcp/settings': { flushToolMutations: asyncNoop }
+    'mcp/settings': { flushToolMutations: asyncNoop, initializeMcpDefaults: asyncNoop }
   }
   for (const [path, exports] of Object.entries(modules)) {
     mock.module(fileURLToPath(new URL(`../src/main/${path}.ts`, import.meta.url)), () => exports)

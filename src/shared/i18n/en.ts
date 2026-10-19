@@ -64,6 +64,7 @@ export const en: Messages = {
     featured: {
       context7: { description: 'Current library documentation and code examples.', input: { CONTEXT7_API_KEY: { label: 'API key', description: 'Optional — raises the rate limit. Get one at context7.com/dashboard' } } },
       playwright: { description: 'Browser automation through the accessibility tree.' },
+      'open-computer-use': { description: 'Control desktop apps through accessibility and screenshots. macOS requires Accessibility and Screen Recording permissions for Open Computer Use; Windows/Linux support is experimental. First use needs Node.js/npx and an online runtime download.' },
       'chrome-devtools': { description: 'Inspect Chrome, network requests, console and performance.' },
       github: { description: 'Repositories, issues, pull requests and code search.', input: { Authorization: { label: 'Personal access token', description: 'github.com/settings/personal-access-tokens' } } },
       deepwiki: { description: 'Explore documentation for public GitHub repositories.' },

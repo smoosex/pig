@@ -35,7 +35,7 @@ export async function mcpSettingsState(): Promise<McpSettingsState> {
     servers: (await configuredServers()).map(({ name, config }) => ({
       name,
       config,
-      icon: icons[name],
+      icon: icons[name] ?? featuredRecipe({ ...config, description: undefined })?.icon,
       // An installed server shows the recipe's copy in the app language while its description is
       // still the recipe's own; one the user rewrote keeps their words.
       descriptionKey: featuredRecipe(config)?.descriptionKey,
