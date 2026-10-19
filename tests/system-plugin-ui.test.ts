@@ -198,7 +198,11 @@ async function fixture(scenario: Scenario): Promise<void> {
       const compiler = await compile(`${contract}\n@tailwind utilities;`)
       const styles = document.createElement('style')
       styles.textContent = (await Promise.all(['pig', 'everforest'].map((palette) => Bun.file(new URL(`../src/renderer/src/themes/theme-${palette}.css`, import.meta.url)).text()))).join('\n')
-        + compiler.build(['text-muted-foreground!', 'hover:bg-accent!', 'hover:border-border!', 'fixed', 'z-40'])
+        + compiler.build([
+          'text-muted-foreground!', 'hover:bg-accent!', 'hover:border-border!', 'fixed', 'z-40',
+          'text-glass-prompt-foreground!', 'opacity-70', 'bg-[image:var(--glass-popover-sheen)]!',
+          'shadow-glass-popover!', 'bg-[image:var(--glass-button-sheen)]!', 'shadow-glass-button!', 'bg-glass-popover-background!'
+        ])
       document.head.append(styles)
       const message = `Observer failed\n${'detail '.repeat(60)}`
       await emit({ kind: 'notify', sessionId: 'one', plugin: 'memory', level: 'error', message })
@@ -211,27 +215,30 @@ async function fixture(scenario: Scenario): Promise<void> {
         const channel = value / 255
         return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
       }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
-      const contrast = (foreground: string, background: string) => {
-        const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+      const contrast = (foreground: string, background: string, opacity = 1) => {
+        const base = channels(background)
+        const blended = `rgb(${channels(foreground).map((value, index) => value * opacity + base[index] * (1 - opacity)).join(',')})`
+        const values = [luminance(blended), luminance(background)].sort((a, b) => b - a)
         return (values[0] + 0.05) / (values[1] + 0.05)
       }
-      for (const palette of ['pig', 'everforest'] as const) {
+      for (const surfaceStyle of ['solid', 'glass'] as const) for (const palette of ['pig', 'everforest'] as const) {
         for (const appearance of ['light', 'dark'] as const) {
           await act(async () => {
-            useSettingsStore.setState({ appearance })
-            applyDocumentTheme({ appearance, lightTheme: palette, darkTheme: palette, surfaceStyle: 'glass' })
+            useSettingsStore.setState({ appearance, surfaceStyle })
+            applyDocumentTheme({ appearance, lightTheme: palette, darkTheme: palette, surfaceStyle })
           })
           assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), appearance)
           const notice = document.querySelector<HTMLElement>('[data-sonner-toast]')!
           const description = notice.querySelector<HTMLElement>('[data-description]')!
           const surface = getComputedStyle(notice)
           const descriptionColor = getComputedStyle(description).color
-          assert.deepEqual(channels(descriptionColor), channels(getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground')))
-          assert.ok(contrast(descriptionColor, surface.backgroundColor) >= 4.5, `${palette}/${appearance} description contrast`)
+          const theme = getComputedStyle(document.documentElement)
+          assert.deepEqual(channels(descriptionColor), channels(theme.getPropertyValue(surfaceStyle === 'glass' ? '--glass-prompt-foreground' : '--muted-foreground')))
+          assert.ok(contrast(descriptionColor, surface.backgroundColor, Number(getComputedStyle(description).opacity) || 1) >= 4.5, `${surfaceStyle}/${palette}/${appearance} description contrast`)
           assert.ok(contrast(surface.color, surface.backgroundColor) >= 4.5, `${palette}/${appearance} text contrast`)
           for (const button of notice.querySelectorAll('button')) {
             const control = getComputedStyle(button)
-            assert.ok(contrast(control.color, control.backgroundColor) >= 4.5, `${palette}/${appearance} button contrast`)
+            assert.ok(contrast(control.color, control.backgroundColor) >= 4.5, `${surfaceStyle}/${palette}/${appearance} button contrast`)
           }
         }
       }

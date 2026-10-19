@@ -14,6 +14,7 @@ import { InputGroup, InputGroupInput, InputGroupTextarea } from './ui/input-grou
 
 type Prompt = Extract<SystemUIEvent, { kind: 'review-prompt' }>
 type Notice = Extract<SystemUIEvent, { kind: 'notify' }> & { id: string; expiresAt: number }
+const glassToastButton = 'bg-[image:var(--glass-button-sheen)]! shadow-glass-button! focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring'
 const NOTICE_TTL_MS = 8_000
 const MAX_SESSION_NOTICES = 5
 const MAX_NOTICES = 20
@@ -103,6 +104,7 @@ function ReviewPanel({ prompt, reply }: { prompt: Prompt; reply: (value: string 
 export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | null }) {
   const t = useT()
   const appearance = useSettingsStore((state) => state.appearance)
+  const glass = useSettingsStore((state) => state.surfaceStyle === 'glass')
   const [prompts, setPrompts] = useState<Prompt[]>([])
   const [notices, setNotices] = useState<Notice[]>([])
   const [detail, setDetail] = useState<Notice | null>(null)
@@ -175,13 +177,19 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
     <>
       <Toaster theme={appearance} position="bottom-right" closeButton
         style={{
-          '--normal-bg': 'var(--popover)',
-          '--normal-text': 'var(--popover-foreground)',
-          '--normal-border': 'var(--border)',
-          '--normal-bg-hover': 'var(--accent)',
-          '--normal-border-hover': 'var(--border)'
+          '--normal-bg': glass ? 'var(--glass-popover-background)' : 'var(--popover)',
+          '--normal-text': glass ? 'var(--glass-prompt-foreground)' : 'var(--popover-foreground)',
+          '--normal-border': glass ? 'var(--glass-card-border)' : 'var(--border)',
+          '--normal-bg-hover': glass ? 'var(--glass-button-hover-background)' : 'var(--accent)',
+          '--normal-border-hover': glass ? 'var(--glass-button-border)' : 'var(--border)'
         } as CSSProperties}
-        toastOptions={{ classNames: { description: 'text-muted-foreground!', closeButton: 'hover:bg-accent! hover:border-border!' } }}
+        toastOptions={{ classNames: {
+          toast: glass ? 'bg-glass-popover-background! bg-[image:var(--glass-popover-sheen)]! shadow-glass-popover! focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring' : undefined,
+          description: glass ? 'text-glass-prompt-foreground! opacity-70' : 'text-muted-foreground!',
+          closeButton: glass ? 'bg-glass-popover-background! bg-[image:var(--glass-button-sheen)]! shadow-glass-button! hover:bg-glass-button-hover-background! hover:border-glass-button-border! focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring' : 'hover:bg-accent! hover:border-border!',
+          actionButton: glass ? glassToastButton : undefined,
+          cancelButton: glass ? glassToastButton : undefined
+        } }}
       />
       {prompt ? <ReviewPanel key={prompt.id} prompt={prompt} reply={reply} /> : null}
       <Dialog open={!!activeDetail} onOpenChange={(open) => { if (!open) setDetail(null) }}>
