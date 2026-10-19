@@ -4,7 +4,6 @@ import { useDiffStore } from '../stores/diff'
 import { useSettingsStore } from '../stores/settings'
 import type { SidebarTab } from '../../../shared/api'
 import { Button } from './ui/button'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Kbd } from './ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { ScrollArea } from './ui/scroll-area'
@@ -13,7 +12,8 @@ import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
-import { sidebarButtonSurface, sidebarSurfaceHover, sidebarSurfaceToggle } from './sidebar/sidebar-surface'
+import { sidebarButtonSurface, sidebarSurfaceHover } from './sidebar/sidebar-surface'
+import { SurfaceStyleToggle } from './sidebar/SurfaceStyleToggle'
 import { useProjectAction } from './sidebar/project-action'
 
 export function Sidebar({
@@ -119,18 +119,16 @@ export function Sidebar({
           </Tooltip>
           <span className="flex-1" />
           {supportsGlass ? (
-            <ToggleGroup
-              type="single"
-              size="xs"
-              value={surfaceStyle}
-              onValueChange={(value) => {
-                if (value === 'glass' || value === 'solid') void setTheme({ surfaceStyle: value })
-              }}
-              aria-label={t('sidebar.surfaceStyle')}
-            >
-              <ToggleGroupItem value="glass" className={sidebarSurfaceToggle}>glass</ToggleGroupItem>
-              <ToggleGroupItem value="solid" className={sidebarSurfaceToggle}>solid</ToggleGroupItem>
-            </ToggleGroup>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SurfaceStyleToggle
+                  value={surfaceStyle}
+                  onChange={(value) => void setTheme({ surfaceStyle: value })}
+                  aria-label={t('sidebar.surfaceStyle')}
+                />
+              </TooltipTrigger>
+              <TooltipContent>{t('sidebar.surfaceStyle')} · {surfaceStyle}</TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
       </div>

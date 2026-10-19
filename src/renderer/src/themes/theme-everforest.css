@@ -54,6 +54,9 @@ html[data-palette='everforest'] {
   --glass-switch-thumb-shadow: 0 1px 3px rgb(0 0 0 / 0.25), 0 2px 6px -1px rgb(0 0 0 / 0.14), 0 0 0 0.5px rgb(0 0 0 / 0.08);
   --glass-switch-track-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.32), rgb(255 255 255 / 0) 55%, rgb(0 0 0 / 0.06));
   --glass-switch-track-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 2px 5px -2px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.5), inset 0 -1px 0 rgb(0 0 0 / 0.1);
+  --glass-orb-background: rgb(255 255 255 / 0.45);
+  --glass-orb-sheen: radial-gradient(ellipse 38% 20% at 36% 22%, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0)), radial-gradient(ellipse 42% 22% at 64% 84%, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0)), radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0.1) 35%, rgb(0 0 0 / 0.04) 65%, rgb(0 0 0 / 0.2));
+  --glass-orb-shadow: 0 3px 8px -2px rgb(0 0 0 / 0.35), 0 1px 2px rgb(0 0 0 / 0.18), inset 0 0 0 1px rgb(255 255 255 / 0.6);
   --glass-primary-button-shadow: 0 4px 6px -1px color-mix(in srgb, var(--primary) 40%, transparent), 0 2px 4px -2px color-mix(in srgb, var(--primary) 40%, transparent), inset 0 1px 0 color-mix(in srgb, var(--primary) 75%, white);
   --glass-button-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.6), rgb(0 0 0 / 0.03));
   --glass-button-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 4px 10px -2px rgb(0 0 0 / 0.1), 0 10px 20px -10px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 1), inset 0 -1px 0 rgb(0 0 0 / 0.08);
@@ -161,6 +164,9 @@ html.dark[data-palette='everforest'] {
   --glass-switch-thumb-shadow: 0 1px 3px rgb(0 0 0 / 0.55), 0 2px 6px -1px rgb(0 0 0 / 0.35), 0 0 0 0.5px rgb(0 0 0 / 0.25), inset 0 1px 0 rgb(255 255 255 / 0.5);
   --glass-switch-track-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0) 55%, rgb(0 0 0 / 0.12));
   --glass-switch-track-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 5px -2px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.18), inset 0 -1px 0 rgb(0 0 0 / 0.3);
+  --glass-orb-background: rgb(255 255 255 / 0.08);
+  --glass-orb-sheen: radial-gradient(ellipse 38% 20% at 36% 22%, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0)), radial-gradient(ellipse 42% 22% at 64% 84%, rgb(255 255 255 / 0.35), rgb(255 255 255 / 0)), radial-gradient(circle at 35% 28%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.06) 35%, rgb(0 0 0 / 0.12) 65%, rgb(0 0 0 / 0.48));
+  --glass-orb-shadow: 0 4px 10px -2px rgb(0 0 0 / 0.75), 0 0 8px rgb(255 255 255 / 0.1), inset 0 0 0 1px rgb(255 255 255 / 0.35);
   --glass-primary-button-shadow: 0 4px 6px -1px color-mix(in srgb, var(--primary) 25%, transparent), 0 2px 4px -2px color-mix(in srgb, var(--primary) 25%, transparent), inset 0 1px 0 color-mix(in srgb, var(--primary) 75%, white);
   --glass-button-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(0 0 0 / 0.06));
   --glass-button-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 10px -2px rgb(0 0 0 / 0.3), 0 10px 20px -10px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.24), inset 0 -1px 0 rgb(0 0 0 / 0.3);

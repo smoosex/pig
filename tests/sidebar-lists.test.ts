@@ -79,19 +79,14 @@ describe('sidebar list per half', () => {
       assert.ok(sidebar.classList.contains('solid:bg-sidebar'))
       assert.ok(sidebar.classList.contains('w-62'), 'both sidebars share the same width utility')
       assert.ok(sidebar.firstElementChild!.classList.contains('w-62'))
-      const switcher = container.querySelector<HTMLElement>('[data-slot=toggle-group][aria-label="界面风格"]')!
-      assert.equal(switcher.getAttribute('data-size'), 'xs')
-      const [glass, solid] = [...switcher.querySelectorAll<HTMLButtonElement>('button')]
-      assert.deepEqual([glass.textContent, solid.textContent], ['glass', 'solid'])
-      assert.equal(glass.getAttribute('data-state'), 'on')
+      const switcher = container.querySelector<HTMLButtonElement>('button[role=switch][aria-label="界面风格"]')!
+      assert.equal(switcher.getAttribute('aria-checked'), 'true')
       const before = styleChanges.length
-      await act(async () => { glass.click() })
-      assert.equal(styleChanges.length, before, 'the active style cannot be deselected')
-      await act(async () => { solid.click() })
-      assert.equal(solid.getAttribute('data-state'), 'on')
-      await act(async () => { glass.click() })
+      await act(async () => { switcher.click() })
+      assert.equal(switcher.getAttribute('aria-checked'), 'false')
+      await act(async () => { switcher.click() })
       assert.deepEqual(styleChanges.slice(before), ['solid', 'glass'])
-      assert.equal(glass.getAttribute('data-state'), 'on')
+      assert.equal(switcher.getAttribute('aria-checked'), 'true')
       await act(async () => { useSettingsStore.setState({ supportsGlass: false, surfaceStyle: 'solid' }) })
       assert.equal(container.querySelector('[aria-label="界面风格"]'), null, 'unsupported platforms never offer a material switch')
       await act(async () => { useSettingsStore.setState({ supportsGlass: true, surfaceStyle: 'glass' }) })

@@ -420,7 +420,7 @@ else {
           'tab-active-border', 'tab-active-shadow', 'composer-background', 'prompt-background', 'prompt-foreground',
           'border', 'highlight', 'shadow', 'code-gutter-background', 'card-border', 'card-shadow', 'card-edge-shadow',
           'button-background', 'button-hover-background', 'button-border', 'button-sheen', 'button-shadow',
-          'button-hover-shadow', 'primary-button-shadow', 'inline-code-shadow', 'popover-background', 'popover-sheen', 'badge-sheen', 'badge-shadow', 'switch-thumb', 'switch-thumb-sheen', 'switch-thumb-shadow', 'switch-track-sheen', 'switch-track-shadow', 'popover-shadow'
+          'button-hover-shadow', 'primary-button-shadow', 'inline-code-shadow', 'popover-background', 'popover-sheen', 'badge-sheen', 'badge-shadow', 'switch-thumb', 'switch-thumb-sheen', 'switch-thumb-shadow', 'switch-track-sheen', 'switch-track-shadow', 'orb-background', 'orb-sheen', 'orb-shadow', 'popover-shadow'
         ]) assert.ok(values.get(`glass-${role}`)?.trim(), `${palette} ${appearance} defines glass-${role}`)
         if (materials.has(appearance)) assert.deepEqual(glass, materials.get(appearance), 'glass colors cannot follow the palette')
         else materials.set(appearance, glass)
