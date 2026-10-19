@@ -40,8 +40,11 @@ async function fixture(): Promise<void> {
   let probeState: 'failed' | 'needs-auth' = 'failed'
   const pendingProbes = new Map<string, Promise<McpProbeResult>>()
   let pendingLogin: Promise<void> | undefined
+  let rejectInitialRead!: (error: Error) => void
+  const initialRead = new Promise<McpSettingsState>((_resolve, reject) => { rejectInitialRead = reject })
+  let reads = 0
   const service = {
-    getMcpSettings: async () => state,
+    getMcpSettings: async () => ++reads === 1 ? initialRead : state,
     searchMcpMarket: async (query: string) => {
       calls.push(['search', query])
       return { servers: recipes }
@@ -103,7 +106,7 @@ async function fixture(): Promise<void> {
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
   const { useToolSettingsStore: store } = await import('../src/renderer/src/stores/tool-settings')
-  store.setState({ state, loaded: true })
+  store.setState({ state: { servers: [], pendingSessions: [] }, loaded: false })
   const { McpPane } = await import('../src/renderer/src/components/settings/McpPane')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const host = document.createElement('div')
@@ -134,6 +137,18 @@ async function fixture(): Promise<void> {
     const installed = host.querySelector('section[aria-labelledby="mcp-installed"]')!
     const market = host.querySelector('section[aria-labelledby="mcp-market"]')!
     assert.ok(installed)
+    assert.equal(reads, 1, 'mounting the MCP pane loads its catalog without any prior mutation')
+    assert.ok(installed.querySelector('[role="status"]'), 'the initial request has a loading state')
+    assert.ok(!installed.textContent?.includes('No MCP servers added'), 'an unread catalog is not empty')
+    await act(async () => { rejectInitialRead(new Error('Cannot read MCP settings')) })
+    assert.ok(host.textContent?.includes('Cannot read MCP settings'), 'load failures are visible')
+    assert.ok(!installed.querySelector('[role="status"]'))
+    assert.ok(!installed.textContent?.includes('No MCP servers added'), 'a failed read is not empty')
+    await click('Retry')
+    await flush()
+    assert.equal(reads, 2)
+    assert.equal(store.getState().loaded, true)
+    assert.equal(store.getState().error, null)
     const add = button('Add MCP')
     assert.equal(add.parentElement, installed.firstElementChild, 'add stays in the top action row')
     assert.ok(add.querySelector('svg'))
@@ -427,6 +442,9 @@ async function fixture(): Promise<void> {
     assert.ok(calls.some(([kind, name]) => kind === 'remove' && name === 'docs'))
     assert.equal(installed.querySelectorAll('[data-slot="card"]').length, 1)
     assert.equal(button('Add docs').disabled, false)
+    state.servers = []
+    await act(async () => { await store.getState().load() })
+    assert.ok(installed.textContent?.includes('No MCP servers added'), 'only a successful empty response shows the empty state')
   } finally {
     await act(async () => {
       root.unmount()

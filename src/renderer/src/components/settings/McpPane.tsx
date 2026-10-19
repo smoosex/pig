@@ -128,7 +128,12 @@ export function McpPane() {
   const t = useT()
   const state = useToolSettingsStore((s) => s.state)
   const busy = useToolSettingsStore((s) => s.busy)
+  const loaded = useToolSettingsStore((s) => s.loaded)
+  const loading = useToolSettingsStore((s) => s.loading)
+  const error = useToolSettingsStore((s) => s.error)
+  const load = useToolSettingsStore((s) => s.load)
   const run = useToolSettingsStore((s) => s.run)
+  useEffect(() => { void load() }, [load])
   const [query, setQuery] = useState('')
   const [market, setMarket] = useState<McpMarketResult>({ servers: [] })
   const [searching, setSearching] = useState(false)
@@ -205,7 +210,13 @@ export function McpPane() {
             {t('mcp.cancelLogin')}
           </Button>
         ) : null}
-        {!state.servers.length ? (
+        {loading || (!loaded && !error) ? (
+          <p role="status" className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin" />{t('mcp.loading')}
+          </p>
+        ) : null}
+        {error && !loading ? <Button variant="outline" size="sm" className="self-start" onClick={() => void load()}>{t('common.retry')}</Button> : null}
+        {loaded && !loading && !error && !state.servers.length ? (
           <Empty className="min-h-40 border">
             <EmptyHeader>
               <EmptyTitle>{t('mcp.empty')}</EmptyTitle>

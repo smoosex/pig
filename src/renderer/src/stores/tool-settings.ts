@@ -9,6 +9,7 @@ import { api, type McpSettingsState } from '../ipc/api'
 interface Store {
   state: McpSettingsState
   loaded: boolean
+  loading: boolean
   busy: boolean
   error: string | null
   load(): Promise<void>
@@ -23,6 +24,7 @@ export const useToolSettingsStore = create<Store>((set) => {
     revision++
     dirty = true
     if (reading) return reading
+    set({ loading: true, error: null })
     reading = (async () => {
       try {
         while (dirty) {
@@ -39,6 +41,7 @@ export const useToolSettingsStore = create<Store>((set) => {
         set({ error: error instanceof Error ? error.message : String(error) })
       } finally {
         reading = undefined
+        set({ loading: false })
       }
     })()
     return reading
@@ -46,6 +49,7 @@ export const useToolSettingsStore = create<Store>((set) => {
   return {
     state: { servers: [], pendingSessions: [] },
     loaded: false,
+    loading: false,
     busy: false,
     error: null,
     load,
