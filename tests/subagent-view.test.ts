@@ -52,6 +52,45 @@ async function fixture(): Promise<void> {
     assert.equal(host.querySelector('[data-subagent-status]')?.getAttribute('aria-expanded'), 'false')
     await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click() })
 
+    const statuses = ['running', 'queued', 'completed', 'failed', 'timeout', 'turn_limit', 'aborted', 'interrupted'] as const
+    const mixed = statuses.map((status) => ({ ...item, id: status, toolCallId: status, status, cleared: false }))
+    await act(async () => {
+      store.getState().apply({ parentSessionId: 'parent', subagents: [item, ...mixed] })
+    })
+    const statusButton = host.querySelector<HTMLButtonElement>('[data-subagent-status]')!
+    assert.equal(statusButton.textContent, '', 'the footer is icon-only')
+    assert.equal(statusButton.querySelector('[data-subagent-ring]')?.getAttribute('data-running'), 'true')
+    assert.ok(statusButton.querySelector('[data-subagent-problem]'), 'problems remain visible without hovering')
+    await act(async () => { statusButton.focus() })
+    const tooltip = document.querySelector('[data-slot="tooltip-content"]')!
+    assert.ok(tooltip, 'focusing the icon shows the same details as hovering')
+    const expected = 'subagent: working x 1 | Queued x 1 | Done x 1 | Failed x 1 | Timed out x 1 | Turn limit x 1 | Stopped x 1 | Interrupted x 1'
+    assert.equal(tooltip.firstChild?.textContent, expected, 'one-line summary distinguishes terminal states and excludes cleared history')
+    assert.equal(statusButton.getAttribute('aria-label'), expected)
+    await act(async () => { statusButton.click() })
+    assert.equal(store.getState().card?.id, 'running', 'the icon still opens the existing task card')
+    assert.ok(document.querySelector('[data-subagent-selected="running"]'))
+    assert.equal(document.querySelector('[data-slot="tooltip-content"]'), null, 'tooltip does not cover the task card')
+    await act(async () => {
+      statusButton.blur()
+      store.getState().closeCard()
+      store.getState().apply({ parentSessionId: 'parent', subagents: [{ ...item, status: 'queued', cleared: false }] })
+    })
+    assert.equal(statusButton.querySelector('[data-subagent-ring]')?.getAttribute('data-running'), 'false', 'queued-only work does not animate')
+    assert.equal(statusButton.querySelector('[data-subagent-problem]'), null)
+    await act(async () => { statusButton.focus() })
+    assert.equal(document.querySelector('[data-slot="tooltip-content"]')?.firstChild?.textContent, 'subagent: Queued x 1', 'only nonzero statuses are shown')
+    await act(async () => {
+      useSettingsStore.setState({ locale: 'zh-CN' })
+      store.getState().apply({ parentSessionId: 'parent', subagents: [
+        { ...item, id: 'working', status: 'running', cleared: false },
+        { ...item, id: 'done-1', cleared: false },
+        { ...item, id: 'done-2', cleared: false }
+      ] })
+    })
+    assert.equal(document.querySelector('[data-slot="tooltip-content"]')?.firstChild?.textContent, '子代理: 运行中 x 1 | 已完成 x 2')
+    await act(async () => { statusButton.blur(); useSettingsStore.setState({ locale: 'en' }) })
+
     for (const status of ['running', 'completed'] as const) {
       await act(async () => {
         store.getState().closeCard()
@@ -61,6 +100,7 @@ async function fixture(): Promise<void> {
       assert.equal(store.getState().card?.id, item.id)
       assert.equal(host.querySelector('[data-subagent-status]')?.getAttribute('aria-expanded'), 'true')
       assert.ok(document.querySelector('[aria-label="Switch subagent"]'), 'active and uncleared completed tasks use the footer switcher')
+      assert.equal(host.querySelector('[data-subagent-ring]')?.getAttribute('data-running'), String(status === 'running'))
     }
   } finally {
     await act(async () => { root.unmount(); store.getState().closeCard() })

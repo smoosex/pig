@@ -696,6 +696,8 @@ export const en: Messages = {
   },
   subagents: {
     title: 'Subagents',
+    statusSummary: 'subagent: {statuses}',
+    summaryWorking: 'working',
     running: '{n} running',
     queued: '{n} queued',
     completed: '{n} done',

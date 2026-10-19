@@ -693,6 +693,8 @@ export const zh = {
   },
   subagents: {
     title: '子 agent',
+    statusSummary: '子代理: {statuses}',
+    summaryWorking: '运行中',
     running: '{n} 运行中',
     queued: '{n} 排队',
     completed: '{n} 已完成',
