@@ -9,13 +9,15 @@ const activeNotifications = new Set<Notification>()
 export async function sendCompletionNotification(
   sessionId: string,
   win: BrowserWindow,
-  signal: AbortSignal
+  signal: AbortSignal,
+  content: { title: string; reply: string }
 ): Promise<void> {
   if (signal.aborted || win.isDestroyed() || win.isFocused() || !Notification.isSupported()) return
   if (!(await loadPigSettings()).completionNotifications) return
   if (signal.aborted || win.isDestroyed() || win.webContents.isDestroyed() || win.isFocused()) return
 
-  const notification = new Notification({ title: 'Pig', body: t('notification.replyReady') })
+  const body = content.reply.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 2).join('\n')
+  const notification = new Notification({ title: content.title, body: body || t('notification.replyReady') })
   if (activeNotifications.size >= 32) {
     const oldest = activeNotifications.values().next().value
     if (oldest) activeNotifications.delete(oldest)

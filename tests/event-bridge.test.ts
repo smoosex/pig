@@ -27,11 +27,14 @@ function fixture(
   const listeners = new Set<(event: AgentSessionEvent) => void>()
   const events: AgentSessionEvent[] = []
   const notifications: string[] = []
+  const notificationContents: { title: string; reply: string }[] = []
   const emit = (event: AgentSessionEvent) => {
     for (const listener of listeners) listener(event)
   }
   const emitQueue = () => emit({ type: 'queue_update', steering: [...steering], followUp: [...followUp] })
   const session = {
+    sessionName: '测试会话',
+    sessionManager: { getEntries: () => [] },
     agent: { streamFunction },
     subscribe(listener: (event: AgentSessionEvent) => void) {
       listeners.add(listener)
@@ -64,8 +67,9 @@ function fixture(
       }
     }
   } as unknown as BrowserWindow
-  const unsubscribe = bridgeEvents(session, 'test-session', win, async (sessionId) => {
+  const unsubscribe = bridgeEvents(session, 'test-session', win, async (sessionId, _win, _signal, content) => {
     notifications.push(sessionId)
+    notificationContents.push(content)
   }, now)
   const startResponse = async (message: AssistantMessage) => {
     const stream = await session.agent.streamFunction(
@@ -83,16 +87,55 @@ function fixture(
     emit({ type: 'message_end', message })
   }
   return {
-    session, events, notifications, emit, unsubscribe, startResponse, endResponse, streamFunction,
+    session, events, notifications, notificationContents, emit, unsubscribe, startResponse, endResponse, streamFunction,
     destroy: () => { destroyed = true }
   }
 }
 
-function assistantEnd(stopReason: 'stop' | 'length' | 'error' | 'aborted'): AgentSessionEvent {
-  return { type: 'message_end', message: { role: 'assistant', stopReason } } as AgentSessionEvent
+function assistantEnd(
+  stopReason: 'stop' | 'length' | 'error' | 'aborted',
+  content: AssistantMessage['content'] = []
+): AgentSessionEvent {
+  return { type: 'message_end', message: {
+    role: 'assistant', stopReason, content, api: 'openai-responses', provider: 'test', model: 'test', timestamp: 1,
+    usage: {
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    }
+  } }
 }
 
 describe('completion notifications', () => {
+  test('uses the current session title and only the last reply text, excluding thinking', () => {
+    const state = fixture()
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop', [{ type: 'text', text: '旧回复' }]))
+    state.emit(assistantEnd('stop', [
+      { type: 'thinking', thinking: '不展示思考' },
+      { type: 'text', text: '最后回复第一行\n第二行' },
+      { type: 'text', text: '第三行' }
+    ]))
+    Object.defineProperty(state.session, 'sessionName', { value: '重命名后的会话' })
+    state.emit({ type: 'agent_settled', aborted: false })
+    expect(state.notificationContents).toEqual([{ title: '重命名后的会话', reply: '最后回复第一行\n第二行\n第三行' }])
+    state.unsubscribe()
+  })
+
+  test('unnamed sessions use the first user text as the title', () => {
+    const state = fixture()
+    Object.assign(state.session, {
+      sessionName: undefined,
+      sessionManager: { getEntries: () => [
+        { type: 'message', message: { role: 'user', content: [{ type: 'text', text: '修复登录问题' }] } },
+        { type: 'message', message: { role: 'user', content: '后续问题' } }
+      ] }
+    })
+    state.emit({ type: 'agent_start' })
+    state.emit(assistantEnd('stop'))
+    state.emit({ type: 'agent_settled', aborted: false })
+    expect(state.notificationContents[0].title).toBe('修复登录问题')
+    state.unsubscribe()
+  })
   test('waits until the entire run settles and sends at most once', () => {
     const state = fixture()
     state.emit({ type: 'agent_start' })

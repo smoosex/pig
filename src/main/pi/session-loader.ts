@@ -13,6 +13,7 @@ import {
 import { t } from '../i18n'
 import { normalizeSessionPrompt } from './prompt-input'
 import { readSessionHeader, UnsupportedSessionFile } from './session-jsonl'
+import { contentText, hasImage, previewText } from './session-preview'
 
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
@@ -62,20 +63,6 @@ async function readPrefix(filePath: string): Promise<string[]> {
   } finally {
     await handle.close()
   }
-}
-
-function contentText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter((block): block is { type: string; text?: string } => block?.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text ?? '')
-    .join('')
-}
-
-function hasImage(content: unknown): boolean {
-  if (!Array.isArray(content)) return false
-  return content.some((block) => block?.type === 'image')
 }
 
 function readJsonString(source: string, quoteIndex: number): string {
@@ -162,17 +149,6 @@ function parseEntry(line: string, truncated = false): ScanEntry | null {
     if (/"type"\s*:\s*"image"/.test(line)) content.push({ type: 'image' })
     return { type, message: { role, content } }
   }
-}
-
-/**
- * The row's title falls back to the first user message with text. Images on their own are a fact
- * rather than copy, so they are reported as a flag and the renderer picks the word: a scanned
- * placeholder would freeze in whichever language happened to be active when the listing ran.
- */
-function previewText(content: unknown): { text: string; image: boolean } {
-  const text = contentText(stripImageHintsFromContent(content)).trim()
-  if (text) return { text: text.slice(0, 500), image: false }
-  return { text: '', image: hasImage(content) }
 }
 
 type NameScan = { sessionId: string; path: string; size: number; dropped?: boolean }

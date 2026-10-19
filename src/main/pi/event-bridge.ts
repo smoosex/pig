@@ -6,6 +6,8 @@ import type { GenerationStats } from '../../shared/api'
 import { GenerationSampler } from './generation-stats'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
+import { t } from '../i18n'
+import { previewText } from './session-preview'
 
 const bridged = new WeakSet<AgentSession>()
 const activeRuns = new WeakSet<AgentSession>()
@@ -23,9 +25,26 @@ export function isSessionRunActive(session: AgentSession): boolean {
   return activeRuns.has(session) || (activeInputs.get(session) ?? 0) > 0
 }
 
-async function notifyOnCompletion(sessionId: string, win: BrowserWindow, signal: AbortSignal): Promise<void> {
+async function notifyOnCompletion(
+  sessionId: string,
+  win: BrowserWindow,
+  signal: AbortSignal,
+  content: { title: string; reply: string }
+): Promise<void> {
   const { sendCompletionNotification } = await import('../completion-notification')
-  await sendCompletionNotification(sessionId, win, signal)
+  await sendCompletionNotification(sessionId, win, signal, content)
+}
+
+function notificationTitle(session: AgentSession): string {
+  if (session.sessionName?.trim()) return session.sessionName
+  let hasImage = false
+  for (const entry of session.sessionManager.getEntries()) {
+    if (entry.type !== 'message' || entry.message.role !== 'user') continue
+    const preview = previewText(entry.message.content)
+    if (preview.text) return preview.text
+    hasImage ||= preview.image
+  }
+  return t(hasImage ? 'sessions.imagePreview' : 'sessions.newTitle')
 }
 
 interface QueueUpdateBatch {
@@ -274,6 +293,7 @@ export function bridgeEvents(
   let subscribed = true
   let runActive = false
   let lastAnswerSucceeded = false
+  let lastReply = ''
   const sampled = new WeakMap<AssistantMessage, GenerationStats>()
   const streamFunction = session.agent.streamFunction
   // Session events reach this bridge only after awaited extension hooks, so they would skew both
@@ -305,10 +325,12 @@ export function bridgeEvents(
       activeRuns.add(session)
       runActive = true
       lastAnswerSucceeded = false
+      lastReply = ''
     }
     let generation: GenerationStats | undefined
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       lastAnswerSucceeded = event.message.stopReason === 'stop' || event.message.stopReason === 'length'
+      lastReply = event.message.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')
       // A message that never came from a stream (a failed request) still counts as an unmeasured call.
       generation = sampled.get(event.message) ?? new GenerationSampler().finish(event.message, undefined)
     }
@@ -376,7 +398,7 @@ export function bridgeEvents(
     if (event.type === 'agent_settled') {
       activeRuns.delete(session)
       if (runActive && lastAnswerSucceeded && !event.aborted) {
-        void notify(sessionId, win, lifetime.signal).catch((error: unknown) => {
+        void notify(sessionId, win, lifetime.signal, { title: notificationTitle(session), reply: lastReply }).catch((error: unknown) => {
           console.error('Could not send completion notification:', error)
         })
       }

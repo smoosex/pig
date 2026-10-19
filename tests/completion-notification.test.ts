@@ -46,10 +46,12 @@ async function runFixture(): Promise<void> {
       }
     } as unknown as BrowserWindow
 
-    await sendCompletionNotification('chat-1', win, new AbortController().signal)
+    await sendCompletionNotification('chat-1', win, new AbortController().signal, {
+      title: '修复登录问题', reply: '\n第一行回复\r\n\n第二行回复\n第三行不显示'
+    })
     assert.equal(FakeNotification.instances.length, 1)
     assert.equal(FakeNotification.instances[0].shown, true)
-    assert.deepEqual(FakeNotification.instances[0].options, { title: 'Pig', body: t('notification.replyReady') })
+    assert.deepEqual(FakeNotification.instances[0].options, { title: '修复登录问题', body: '第一行回复\n第二行回复' })
     const errors: unknown[][] = []
     const originalError = console.error
     try {
@@ -63,18 +65,21 @@ async function runFixture(): Promise<void> {
     assert.deepEqual(windowActions, ['restore', 'show', 'focus'])
     assert.deepEqual(events, [{ channel: 'notification:click', sessionId: 'chat-1' }])
 
+    await sendCompletionNotification('empty-reply', win, new AbortController().signal, { title: '空回复', reply: ' \n' })
+    assert.deepEqual(FakeNotification.instances[1].options, { title: '空回复', body: t('notification.replyReady') })
+
     focused = true
-    await sendCompletionNotification('chat-2', win, new AbortController().signal)
+    await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
     focused = false
     await savePigSettings({ completionNotifications: false })
-    await sendCompletionNotification('chat-2', win, new AbortController().signal)
+    await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
     await savePigSettings({ completionNotifications: true })
     const cancelled = new AbortController()
     cancelled.abort()
-    await sendCompletionNotification('chat-2', win, cancelled.signal)
+    await sendCompletionNotification('chat-2', win, cancelled.signal, { title: '标题', reply: '回复' })
     FakeNotification.supported = false
-    await sendCompletionNotification('chat-2', win, new AbortController().signal)
-    assert.equal(FakeNotification.instances.length, 1)
+    await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
+    assert.equal(FakeNotification.instances.length, 2)
 
     destroyed = true
     FakeNotification.instances[0].emit('click')
