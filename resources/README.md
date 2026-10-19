@@ -2,7 +2,7 @@
 
 `icon.svg` is the editable, colored application artwork, adapted from the user-supplied
 `streamline-pixel--business-product-piggy-bank.svg` (Streamline Pixel). It retains the source's
-pixel shapes, with a forest-green tile, a warm pink pig, a gold coin and mint sparkles.
+pixel shapes, with an indigo tile, a pink pig with a berry outline, a gold coin and pale-gold sparkles.
 The SVG description records the source; this repository does not assert a new license for the original artwork.
 
 The committed packaging assets are `build/icon.icns` (macOS), `build/icon.ico` (Windows,
