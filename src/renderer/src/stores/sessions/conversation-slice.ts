@@ -36,6 +36,7 @@ export const createConversationSlice: SessionSlice<
   | 'applySessionWindow'
   | 'loadControls'
   | 'applyControls'
+  | 'syncModelThinkingPreference'
   | 'setControlsStatus'
   | 'setFollowUpMessages'
   | 'queueFollowUpAction'
@@ -402,8 +403,25 @@ export const createConversationSlice: SessionSlice<
 
     applyControls: (sessionId, controls) => update(sessionId, (rt) => ({
       ...controls,
+      // A preference-only save must not reset picker navigation just because IPC cloned the array.
+      thinkingLevels: controls.thinkingLevels.length === rt.thinkingLevels.length &&
+        controls.thinkingLevels.every((level, index) => level === rt.thinkingLevels[index])
+        ? rt.thinkingLevels : controls.thinkingLevels,
       controlsRevision: rt.controlsRevision + 1
     })),
+
+    syncModelThinkingPreference: ({ model, modelThinkingLevel }) => {
+      if (!model || modelThinkingLevel === undefined) return
+      set((state) => {
+        const runtime = { ...state.runtime }
+        for (const [id, rt] of Object.entries(runtime)) {
+          if (rt.model?.provider !== model.provider || rt.model.id !== model.id) continue
+          // Even an unchanged marker invalidates reads started before this saved preference.
+          runtime[id] = { ...rt, modelThinkingLevel, controlsRevision: rt.controlsRevision + 1 }
+        }
+        return { runtime }
+      })
+    },
 
     setControlsStatus: (sessionId, status) => update(sessionId, status),
 

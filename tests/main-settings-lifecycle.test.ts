@@ -63,6 +63,7 @@ async function fixture(name: string): Promise<void> {
       setSessionModel: async (state: object) => { applied.push({ kind: 'model', live: 'agentSession' in state }) },
       setSessionThinking: async (state: object) => { applied.push({ kind: 'thinking', live: 'agentSession' in state }) },
       controlsFor() {},
+      setSessionModelThinkingPreference() {},
       tokenStatsFor: () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 })
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/chat-resources.ts', import.meta.url)), () => ({

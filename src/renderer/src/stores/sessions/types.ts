@@ -195,6 +195,7 @@ export interface SessionsStore {
   applySessionWindow: (update: SessionWindowMessage) => void
   loadControls: (sessionId: string) => Promise<void>
   applyControls: (sessionId: string, controls: SessionControls) => void
+  syncModelThinkingPreference: (controls: SessionControls) => void
   setControlsStatus: (
     sessionId: string,
     status: Partial<Pick<RuntimeState, 'controlsPending' | 'controlsError'>>

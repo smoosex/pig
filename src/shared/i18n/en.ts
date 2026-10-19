@@ -770,6 +770,11 @@ export const en: Messages = {
     thinking: 'Thinking effort',
     switched: 'Model switched to {name}',
     thinkingSwitched: 'Thinking effort set to {level}',
+    rememberThinking: 'Remember effort for this model',
+    rememberThinkingTooltip: 'Remember this model’s current thinking effort and save future manual adjustments',
+    forgetThinkingTooltip: 'Thinking effort is remembered for this model. Click to forget and inherit the default on future switches',
+    thinkingRemembered: 'Thinking effort remembered for this model',
+    thinkingForgotten: 'Thinking effort preference cleared for this model',
     appliesNextRequest: 'Takes effect on the next request'
   },
   providers: {

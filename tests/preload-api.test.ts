@@ -42,6 +42,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.searchProjectDirectories('/home', 'web', false)
   await api.cancelProjectDirectorySearch()
   await api.openProject('/home/project')
+  await api.setModelThinkingPreference('session-1', true)
   await api.readWorktreeDiff('/repo')
   await api.readWorktreePatch('/repo', 'staged')
   await api.readUntrackedFile('/repo', 'src/new.ts')
@@ -74,6 +75,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'project:search-directories', args: ['/home', 'web', false] },
     { channel: 'project:cancel-directory-search', args: [] },
     { channel: 'session:open-project', args: ['/home/project'] },
+    { channel: 'session:set-model-thinking-preference', args: ['session-1', true] },
     { channel: 'diff:read-worktree', args: ['/repo'] },
     { channel: 'diff:read-patch', args: ['/repo', 'staged'] },
     { channel: 'diff:read-untracked', args: ['/repo', 'src/new.ts'] },

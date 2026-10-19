@@ -12,6 +12,7 @@ import {
   type SessionContext,
   type SessionEntry
 } from '@earendil-works/pi-coding-agent'
+import { clampThinkingLevel } from '@earendil-works/pi-ai'
 import type {
   SessionContextUsage,
   SessionControls,
@@ -27,6 +28,8 @@ import {
   clampThinking,
   defaultModelFromSettings,
   defaultThinkingFromSettings,
+  modelThinkingFromSettings,
+  saveModelThinkingPreference,
   findModel,
   HIDDEN_THINKING_LEVELS,
   pickerThinkingLevels,
@@ -122,6 +125,7 @@ function pendingControls(session: MemorySession): SessionControls {
       session.thinkingLevel ?? recorded ?? defaultThinkingFromSettings(model),
       picker.length > 0 ? picker : supported
     ),
+    modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
     contextUsage: persistedContextUsage(model, context.messages, branch),
     followUpMessages: [],
@@ -248,6 +252,7 @@ function fileControls(
       session.thinkingLevel ?? settings.thinkingLevel ?? defaultThinkingFromSettings(model),
       picker.length > 0 ? picker : supported
     ),
+    modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
     contextUsage: fileContextUsage(file, model),
     followUpMessages: [],
@@ -305,6 +310,7 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
     return {
       model,
       thinkingLevel: session.agentSession.thinkingLevel,
+      modelThinkingLevel: modelThinkingFromSettings(model),
       thinkingLevels: pickerThinkingLevels(
         session.agentSession.getAvailableThinkingLevels() as SessionThinkingLevel[]
       ),
@@ -333,19 +339,24 @@ export async function setSessionModel(
   const model = (await startModelRuntime()).getModel(provider, id)
   if (!model) throw new Error(`Model not found: ${provider}/${id}`)
 
+  const current = await controlsFor(session)
+  const supported = thinkingLevelsFor(model)
+  const picker = pickerThinkingLevels(supported)
+  // SDK sessions have their own settings snapshots. Resolve from shared preferences for both
+  // live and unbuilt sessions, so another tab's explicit save is visible without recreating a session.
+  const level = clampThinking(
+    clampThinkingLevel(model, defaultThinkingFromSettings(model) ?? current.thinkingLevel ?? 'medium'),
+    picker.length > 0 ? picker : supported
+  )
   if ('agentSession' in session) {
     await session.agentSession.setModel(model)
+    session.agentSession.setThinkingLevel(level)
     return controlsFor(session)
   }
 
   session.modelProvider = provider
   session.modelId = id
-  const supported = thinkingLevelsFor(model)
-  const picker = pickerThinkingLevels(supported)
-  session.thinkingLevel = clampThinking(
-    session.thinkingLevel ?? defaultThinkingFromSettings(model),
-    picker.length > 0 ? picker : supported
-  )
+  session.thinkingLevel = level
   return controlsFor(session)
 }
 
@@ -358,17 +369,32 @@ export async function setSessionThinking(
     throw new Error(`Invalid thinking level: ${level}`)
   }
 
-  if ('agentSession' in session) {
-    if (!session.agentSession.getAvailableThinkingLevels().includes(level)) {
-      throw new Error(`Thinking level not supported: ${level}`)
-    }
-    session.agentSession.setThinkingLevel(level)
-    return controlsFor(session)
+  if ('agentSession' in session && !session.agentSession.getAvailableThinkingLevels().includes(level)) {
+    throw new Error(`Thinking level not supported: ${level}`)
   }
-
-  // Same source as the picker: an opened session answers for the model its branch recorded.
+  // This entry point is UI-only: extensions/review call the SDK directly and must not persist
+  // temporary choices. A remembered model follows subsequent explicit user selections.
   const current = await controlsFor(session)
   if (!current.thinkingLevels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
-  session.thinkingLevel = level
-  return { ...current, thinkingLevel: level }
+  if (current.model && current.modelThinkingLevel != null) {
+    await saveModelThinkingPreference(current.model, level)
+  }
+  if ('agentSession' in session) session.agentSession.setThinkingLevel(level)
+  else session.thinkingLevel = level
+  return controlsFor(session)
+}
+
+export async function setSessionModelThinkingPreference(
+  session: SessionState,
+  remember: boolean
+): Promise<SessionControls> {
+  if (typeof remember !== 'boolean') throw new Error('Remember thinking preference must be a boolean')
+  const current = await controlsFor(session)
+  if (!current.model) throw new Error('No model selected')
+  if (remember && !current.thinkingLevels.includes(current.thinkingLevel)) {
+    throw new Error(`Thinking level not supported: ${current.thinkingLevel}`)
+  }
+  await saveModelThinkingPreference(current.model, remember ? current.thinkingLevel : null)
+  // Removing the preference changes only future model switches, not this session's current level.
+  return controlsFor(session)
 }

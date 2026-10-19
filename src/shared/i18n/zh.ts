@@ -767,6 +767,11 @@ export const zh = {
     thinking: '推理强度',
     switched: '已切换模型：{name}',
     thinkingSwitched: '推理强度已设为{level}',
+    rememberThinking: '记住此模型的强度',
+    rememberThinkingTooltip: '记住此模型当前的思考强度，后续手动调整也会保存',
+    forgetThinkingTooltip: '已记住此模型的思考强度。点击取消，之后切入将继承默认强度',
+    thinkingRemembered: '已记住此模型的强度',
+    thinkingForgotten: '已清除此模型的强度偏好',
     appliesNextRequest: '下一次请求生效'
   },
   providers: {

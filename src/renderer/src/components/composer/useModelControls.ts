@@ -3,6 +3,7 @@ import { useSessionsStore } from '../../stores/sessions'
 
 /** Serialize toolbar mutations per session; every reply reaches the session instance that asked. */
 export function useModelControls(sessionId: string | null) {
+  const instanceId = useSessionsStore((s) => sessionId ? s.runtime[sessionId]?.instanceId : undefined)
   const pending = useSessionsStore((s) =>
     sessionId ? s.runtime[sessionId]?.controlsPending ?? false : false)
   const error = useSessionsStore((s) =>
@@ -11,7 +12,7 @@ export function useModelControls(sessionId: string | null) {
   async function run(operation: () => Promise<SessionControls>): Promise<boolean> {
     const target = sessionId
     const started = target ? useSessionsStore.getState().runtime[target] : undefined
-    if (!target || !started || started.controlsPending) return false
+    if (!target || !started || started.instanceId !== instanceId || started.controlsPending) return false
     const startedAt = started.instanceId
     // Closing the session builds a new runtime: a late write must not touch the new instance's flags.
     const isInstance = () => useSessionsStore.getState().runtime[target]?.instanceId === startedAt
@@ -22,6 +23,8 @@ export function useModelControls(sessionId: string | null) {
     write({ controlsPending: true, controlsError: null })
     try {
       const controls = await operation()
+      // The saved preference is shared even if the requesting tab closed; its other controls are not.
+      useSessionsStore.getState().syncModelThinkingPreference(controls)
       if (!isInstance()) return false
       useSessionsStore.getState().applyControls(target, controls)
       return true

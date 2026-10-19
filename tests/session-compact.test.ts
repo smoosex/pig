@@ -25,7 +25,7 @@ async function fixture(): Promise<void> {
       'getSessionCapabilities', 'setSessionCapability',
       'forkSessionFromMessage', 'getSessionControls', 'getSessionTokenStats', 'getSessionTrees', 'listSessionCommands', 'openSession',
       'promoteDraftSession', 'renameSession', 'setSessionLabel', 'setSessionModel',
-      'setSessionThinking', 'updateFollowUpMessage', 'viewSessionBranch'
+      'setSessionThinking', 'setSessionModelThinkingPreference', 'updateFollowUpMessage', 'viewSessionBranch'
     ].map((name) => [name, () => {}])),
     prepareSession: async (sessionId: string) => {
       assert.equal(sessionId, 'session')

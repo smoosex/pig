@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { Pin, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
@@ -13,6 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { useSessionsStore } from '../../stores/sessions'
 import { useScopedModels } from '../../hooks/useScopedModels'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
@@ -244,8 +246,16 @@ export function ThinkingPicker({
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
+  const remembered = useSessionsStore((state) =>
+    sessionId ? state.runtime[sessionId]?.modelThinkingLevel != null : false)
+  const preferenceDisabled = disabled || actions.pending || !sessionId
+
+  const remember = async (checked: boolean) => {
+    if (sessionId) await actions.run(() => api.setModelThinkingPreference(sessionId, checked))
+  }
 
   const select = async (level: ThinkingLevel) => {
+    if (actions.pending) return
     if (level === thinkingLevel) {
       setOpen(false)
       return
@@ -288,7 +298,27 @@ export function ThinkingPicker({
         }}
         onKeyDown={navigation.onKeyDown}
       >
-        <p className="px-3 py-1.5 text-xs text-muted-foreground">{t('model.thinking')}</p>
+        <div className="flex items-center justify-between gap-2 py-1 pr-1 pl-3">
+          <p className="text-xs text-muted-foreground">{t('model.thinking')}</p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t('model.rememberThinking')}
+                aria-pressed={remembered}
+                disabled={disabled || !sessionId}
+                aria-disabled={preferenceDisabled}
+                className={cn('rounded-full', remembered && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary solid:bg-primary/10 solid:text-primary solid:hover:bg-primary/15 solid:hover:text-primary')}
+                onKeyDown={(event) => event.stopPropagation()}
+                onClick={() => void remember(!remembered)}
+              >
+                <Pin />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t(remembered ? 'model.forgetThinkingTooltip' : 'model.rememberThinkingTooltip')}</TooltipContent>
+          </Tooltip>
+        </div>
         {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
         <SmoothHoverHighlight
           activeKey={navigation.index}
@@ -302,7 +332,8 @@ export function ThinkingPicker({
                 key={level}
                 type="button"
                 variant="ghost"
-                disabled={actions.pending}
+                disabled={disabled}
+                aria-disabled={actions.pending}
                 data-hover-highlight-row
                 data-hover-highlight-active={navigation.index === index ? '' : undefined}
                 className="relative h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-transparent!"

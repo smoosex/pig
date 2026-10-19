@@ -27,6 +27,7 @@ export const HIDDEN_THINKING_LEVELS = new Set<SessionThinkingLevel>(['off', 'min
 let modelRuntime: ModelRuntime | undefined
 let modelRuntimePromise: Promise<ModelRuntime> | undefined
 let settingsManager: SettingsManager | undefined
+let thinkingSettingsNeedValidation = false
 
 export function startModelRuntime(): Promise<ModelRuntime> {
   if (!modelRuntimePromise) {
@@ -124,10 +125,56 @@ export function defaultModelFromSettings(): SessionModelInfo | null {
   return findModel(provider, id)
 }
 
+function thinkingSettings(): SettingsManager {
+  const settings = appSettings()
+  if (thinkingSettingsNeedValidation) {
+    const errors = settings.drainErrors()
+    if (errors.length) {
+      settingsManager = undefined
+      throw new AggregateError(errors.map(({ error }) => error), 'Could not reload thinking preferences')
+    }
+    thinkingSettingsNeedValidation = false
+  }
+  return settings
+}
+
+export function modelThinkingFromSettings(
+  model: { provider: string; id: string } | null
+): SessionThinkingLevel | null {
+  if (!model) return null
+  return (thinkingSettings().getModelThinkingLevel(model.provider, model.id) as SessionThinkingLevel | undefined) ?? null
+}
+
+// Only explicit UI preference actions write here. SDK/plugin changes and session restoration never do.
+export async function saveModelThinkingPreference(
+  model: { provider: string; id: string },
+  level: SessionThinkingLevel | null
+): Promise<void> {
+  const settings = thinkingSettings()
+  await settings.reload()
+  const loadErrors = settings.drainErrors()
+  if (loadErrors.length) {
+    settingsManager = undefined
+    thinkingSettingsNeedValidation = true
+    throw new AggregateError(loadErrors.map(({ error }) => error), 'Could not read thinking preferences')
+  }
+  if (level === null) settings.removeModelThinkingLevel(model.provider, model.id)
+  else settings.setModelThinkingLevel(model.provider, model.id, level)
+  await settings.flush()
+  const errors = settings.drainErrors()
+  if (errors.length) {
+    // The SDK retains failed writes in memory, and reload can itself fail while retaining that
+    // value. Discard the instance instead; the next reader must successfully load a fresh one.
+    settingsManager = undefined
+    thinkingSettingsNeedValidation = true
+    throw new AggregateError(errors.map(({ error }) => error), 'Could not save thinking preferences')
+  }
+}
+
 export function defaultThinkingFromSettings(
   model: { provider: string; id: string } | null
 ): SessionThinkingLevel | undefined {
-  const settings = appSettings()
+  const settings = thinkingSettings()
   if (model) {
     const perModel = settings.getModelThinkingLevel(model.provider, model.id)
     if (perModel) return perModel as SessionThinkingLevel

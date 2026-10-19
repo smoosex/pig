@@ -223,6 +223,8 @@ export interface ModelCatalog {
 export interface SessionControls {
   model: SessionModelInfo | null
   thinkingLevel: ThinkingLevel
+  /** Saved per-model preference, independent of this session's current (possibly temporary) level. */
+  modelThinkingLevel?: ThinkingLevel | null
   thinkingLevels: ThinkingLevel[]
   contextUsage: SessionContextUsage | null
   followUpMessages: string[]
@@ -915,6 +917,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   exportSession: (sessionId: string) => Promise<{ path: string } | null>
   setModel: (sessionId: string, provider: string, id: string) => Promise<SessionControls>
   setThinking: (sessionId: string, level: ThinkingLevel) => Promise<SessionControls>
+  setModelThinkingPreference: (sessionId: string, remember: boolean) => Promise<SessionControls>
   /** The shared catalog, always read latest; a session id only says which probes to skip. */
   getScopedModels: () => Promise<ScopedModelSettings>
   setScopedModels: (patterns: string[]) => Promise<void>

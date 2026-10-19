@@ -46,7 +46,8 @@ import {
   controlsFor,
   tokenStatsFor,
   setSessionModel as applyModel,
-  setSessionThinking as applyThinking
+  setSessionThinking as applyThinking,
+  setSessionModelThinkingPreference as applyModelThinkingPreference
 } from './session-controls'
 import {
   exportSession as exportAgentSession,
@@ -968,6 +969,12 @@ export async function setSessionThinking(sessionId: string, level: ThinkingLevel
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
   return retryAfterIndexFallback(sessionId, () => applyThinking(sessionState(sessionId), level))
+}
+
+export async function setSessionModelThinkingPreference(sessionId: string, remember: boolean) {
+  const preparation = preparing.get(sessionId)
+  if (preparation) await preparation.promise
+  return retryAfterIndexFallback(sessionId, () => applyModelThinkingPreference(sessionState(sessionId), remember))
 }
 
 export async function updateFollowUpMessage(sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) {

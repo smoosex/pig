@@ -20,6 +20,7 @@ import {
   setSessionLabel,
   setSessionModel,
   setSessionThinking,
+  setSessionModelThinkingPreference,
   updateFollowUpMessage,
   viewSessionBranch,
   type SessionThinkingLevel,
@@ -234,6 +235,10 @@ export function registerSessionIpc(): void {
     async (_event, sessionId: string, level: SessionThinkingLevel) => {
       return setSessionThinking(sessionId, level)
     }
+  )
+
+  ipcMain.handle('session:set-model-thinking-preference', async (_event, sessionId: string, remember: boolean) =>
+    setSessionModelThinkingPreference(sessionId, remember)
   )
 
   ipcMain.handle(

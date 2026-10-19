@@ -121,6 +121,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:set-model', sessionId, provider, id),
   setThinking: (sessionId: string, level: string) =>
     ipcRenderer.invoke('session:set-thinking', sessionId, level),
+  setModelThinkingPreference: (sessionId, remember) =>
+    ipcRenderer.invoke('session:set-model-thinking-preference', sessionId, remember),
   followUpAction: (sessionId, index, action, mode) =>
     ipcRenderer.invoke('session:follow-up-action', sessionId, index, action, mode),
   pickDirectory: () => ipcRenderer.invoke('system:pick-directory'),

@@ -68,6 +68,203 @@ async function fixture(scenario: string): Promise<void> {
   try {
     await act(async () => { root.render(createElement(Probe)) })
 
+    if (scenario === 'shared-save' || scenario === 'shared-clear') {
+      const { api } = await import('../src/renderer/src/ipc/api')
+      const saving = scenario === 'shared-save'
+      const before = saving ? null : 'high'
+      const after = saving ? 'high' : null
+      await act(async () => {
+        useSessionsStore.setState((state) => ({
+          openTabs: [...state.openTabs,
+            { id: 'c', cwd: '/project', title: 'C', kind: 'project', loadState: 'ready' },
+            { id: 'd', cwd: '/project', title: 'D', kind: 'project', loadState: 'ready' }
+          ],
+          runtime: {
+            ...state.runtime,
+            a: { ...state.runtime.a!, thinkingLevel: 'high', modelThinkingLevel: before },
+            b: { ...state.runtime.b!, model: model('old'), thinkingLevel: 'low',
+              modelThinkingLevel: before, followUpMessages: ['queued'], steeringMessages: ['steer'] },
+            c: { ...emptyRuntime(), model: { ...model('old'), id: 'different' }, modelThinkingLevel: 'off' },
+            d: { ...emptyRuntime(), model: { ...model('old'), provider: 'different' }, modelThinkingLevel: 'off' }
+          }
+        }))
+      })
+      const b = runtime().b!
+      const c = runtime().c!
+      const d = runtime().d!
+      const late = deferred<never>()
+      api.getControls = () => late.promise
+      const reading = useSessionsStore.getState().loadControls('b')
+      api.setModelThinkingPreference = async () => ({
+        ...controls('old', 'high'), modelThinkingLevel: after
+      } as never)
+      await act(async () => {
+        assert.equal(await actions.run(() => api.setModelThinkingPreference('a', saving)), true)
+        await useSessionsStore.getState().activateTab('b')
+      })
+      assert.equal(runtime().a?.modelThinkingLevel, after)
+      assert.equal(runtime().b?.modelThinkingLevel, after, 'ready tab immediately shares the saved marker')
+      assert.equal(runtime().a?.thinkingLevel, 'high')
+      assert.equal(runtime().b?.thinkingLevel, 'low', 'other sessions keep their current effort')
+      assert.equal(runtime().b?.model, b.model)
+      assert.equal(runtime().b?.followUpMessages, b.followUpMessages)
+      assert.equal(runtime().b?.steeringMessages, b.steeringMessages)
+      assert.equal(runtime().c, c, 'same provider with a different model is unaffected')
+      assert.equal(runtime().d, d, 'same model id with a different provider is unaffected')
+      assert.ok(runtime().b!.controlsRevision > b.controlsRevision)
+      await act(async () => {
+        late.resolve({ ...controls('old', 'off'), modelThinkingLevel: before } as never)
+        await reading
+        await useSessionsStore.getState().activateTab('a')
+        await useSessionsStore.getState().activateTab('b')
+      })
+      assert.equal(runtime().b?.modelThinkingLevel, after, 'late controls cannot undo the preference')
+      assert.equal(runtime().b?.thinkingLevel, 'low')
+      assert.equal(runtime().b?.followUpMessages, b.followUpMessages)
+
+      // Changing effort also returns the freshly saved model preference.
+      api.setThinking = async () => ({ ...controls('old', 'low'), modelThinkingLevel: 'low' } as never)
+      await act(async () => { assert.equal(await actions.run(() => api.setThinking('b', 'low')), true) })
+      assert.equal(runtime().a?.modelThinkingLevel, 'low')
+      assert.equal(runtime().a?.thinkingLevel, 'high')
+      await act(async () => { await actions.run(async () => controls('old', 'low') as never) })
+      assert.equal(runtime().a?.modelThinkingLevel, 'low', 'legacy replies do not clear shared preferences')
+      assert.equal(runtime().b?.modelThinkingLevel, 'low')
+      return
+    }
+
+    if (scenario === 'replaced-preference') {
+      const oldActions = actions
+      const reply = deferred<never>()
+      let accepted!: Promise<boolean>
+      await act(async () => {
+        useSessionsStore.setState((state) => ({ runtime: {
+          ...state.runtime, b: { ...state.runtime.b!, model: model('old'), thinkingLevel: 'low' }
+        } }))
+        accepted = actions.run(() => reply.promise)
+      })
+      await act(async () => {
+        useSessionsStore.setState((state) => ({ runtime: {
+          ...state.runtime, a: { ...emptyRuntime(), model: model('old'), thinkingLevel: 'off',
+            followUpMessages: ['new queue'] }
+        } }))
+      })
+      let called = false
+      await act(async () => {
+        assert.equal(await oldActions.run(async () => {
+          called = true
+          return controls('stale') as never
+        }), false, 'an old hook callback cannot start work for the replacement')
+        useSessionsStore.getState().setControlsStatus('a', { controlsPending: true })
+        reply.resolve({ ...controls('old', 'high'), modelThinkingLevel: 'high' } as never)
+        assert.equal(await accepted, false)
+      })
+      assert.equal(called, false)
+      assert.equal(runtime().a?.modelThinkingLevel, 'high', 'the saved preference also belongs to the replacement model')
+      assert.equal(runtime().b?.modelThinkingLevel, 'high')
+      assert.equal(runtime().b?.thinkingLevel, 'low')
+      assert.equal(runtime().a?.thinkingLevel, 'off', 'old session controls cannot overwrite the replacement')
+      assert.deepEqual(runtime().a?.followUpMessages, ['new queue'])
+      assert.equal(runtime().a?.controlsPending, true, 'old completion cannot release new flags')
+      return
+    }
+
+    if (scenario === 'thinking-preference') {
+      class NoopResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+      Object.assign(globalThis, { ResizeObserver: NoopResizeObserver })
+      Object.assign(window, { ResizeObserver: NoopResizeObserver })
+      HTMLElement.prototype.scrollIntoView = () => {}
+      const { ThinkingPicker } = await import('../src/renderer/src/components/composer/ModelControls')
+      const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+      const { api } = await import('../src/renderer/src/ipc/api')
+      const calls: Array<[string, boolean]> = []
+      let reply = deferred<never>()
+      api.setModelThinkingPreference = (id, remember) => {
+        calls.push([id, remember])
+        return reply.promise
+      }
+      api.setThinking = async () => { throw new Error('preference toggle must not change session effort') }
+      function Picker() {
+        const current = useSessionsStore((s) => s.runtime.a!)
+        const pickerActions = useModelControls('a')
+        return createElement(ThinkingPicker, {
+          sessionId: 'a', thinkingLevel: current.thinkingLevel,
+          thinkingLevels: current.thinkingLevels, actions: pickerActions
+        })
+      }
+      await act(async () => {
+        useSessionsStore.getState().applyControls('a', controls('old', 'high') as never)
+        root.render(createElement(TooltipProvider, null, createElement(Picker)))
+      })
+      await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click() })
+      const toggle = () => {
+        const element = document.querySelector<HTMLButtonElement>('button[aria-pressed]')
+        assert.ok(element, 'the thinking menu contains a preference icon button')
+        return element
+      }
+      assert.equal(toggle().getAttribute('aria-pressed'), 'false', 'undefined preference is not pressed')
+      assert.ok(toggle().getAttribute('aria-label'), 'the icon button has an accessible label')
+      const firstOption = document.querySelector<HTMLButtonElement>('[data-hover-highlight-row]')!
+      const levels = runtime().a!.thinkingLevels
+      await act(async () => { firstOption.dispatchEvent(new PointerEvent('pointermove', { bubbles: true })) })
+      assert.ok(firstOption.hasAttribute('data-hover-highlight-active'))
+      await act(async () => { toggle().click() })
+      assert.deepEqual(calls, [['a', true]])
+      assert.equal(toggle().disabled, false, 'saving does not invoke the visually dimmed native disabled state')
+      assert.equal(toggle().getAttribute('aria-disabled'), 'true')
+      assert.equal(firstOption.disabled, false, 'the strength options retain their normal visual state')
+      assert.equal(firstOption.getAttribute('aria-disabled'), 'true')
+      await act(async () => { toggle().click(); firstOption.click() })
+      assert.deepEqual(calls, [['a', true]], 'busy controls still reject repeated operations')
+      assert.ok(document.querySelector('[data-slot="popover-content"]'), 'a busy selection must not close the picker')
+      await act(async () => {
+        reply.resolve({ ...controls('old', 'high'), modelThinkingLevel: 'high' } as never)
+      })
+      assert.equal(toggle().getAttribute('aria-pressed'), 'true', 'the returned controls activate the button')
+      assert.equal(toggle().disabled, false)
+      assert.equal(runtime().a?.thinkingLevel, 'high')
+      assert.equal(runtime().a!.thinkingLevels, levels, 'identical levels retain their reference across preference saves')
+      assert.ok(firstOption.hasAttribute('data-hover-highlight-active'), 'saving keeps the picker navigation highlight')
+
+      // Focused preference button keys must not select the hovered thinking option.
+      await act(async () => {
+        firstOption.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
+        toggle().focus()
+        toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      assert.ok(document.querySelector('button[aria-pressed]'), 'button keyboard input leaves the menu open')
+      assert.deepEqual(calls, [['a', true]])
+
+      reply = deferred<never>()
+      await act(async () => { toggle().click() })
+      assert.deepEqual(calls, [['a', true], ['a', false]])
+      await act(async () => { reply.reject(new Error('save failed')) })
+      assert.equal(toggle().getAttribute('aria-pressed'), 'true', 'failed changes keep the stored state')
+      assert.equal(document.querySelector('[role="alert"]')?.textContent, 'save failed')
+      assert.equal(toggle().disabled, false)
+
+      reply = deferred<never>()
+      await act(async () => { toggle().click() })
+      await act(async () => {
+        reply.resolve({ ...controls('old', 'high'), modelThinkingLevel: null } as never)
+      })
+      assert.equal(toggle().getAttribute('aria-pressed'), 'false', 'null preference is not pressed')
+      assert.equal(runtime().a?.thinkingLevel, 'high', 'forgetting does not change current effort')
+      assert.equal(runtime().a?.controlsError, null)
+
+      await act(async () => {
+        useSessionsStore.getState().applyControls('a', {
+          ...controls('other', 'high'), modelThinkingLevel: 'off'
+        } as never)
+      })
+      assert.equal(toggle().getAttribute('aria-pressed'), 'true', 'off is a saved preference too')
+      return
+    }
+
     if (scenario === 'mounted-twice') {
       // Two toolbar mounts share one in-flight mutation through the runtime flag.
       let first!: ReturnType<typeof useModelControls>
@@ -167,7 +364,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--model-controls-fixture') {
   await fixture(process.argv[3] ?? 'switched')
 } else {
-  for (const scenario of ['switched', 'replaced', 'mounted-twice']) {
+  for (const scenario of ['switched', 'replaced', 'mounted-twice', 'thinking-preference', 'shared-save', 'shared-clear', 'replaced-preference']) {
     test(`model controls survive a ${scenario} session`, async () => {
       const child = Bun.spawn(
         [process.execPath, import.meta.path, '--model-controls-fixture', scenario],
