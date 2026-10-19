@@ -90,23 +90,33 @@ export const createConversationSlice: SessionSlice<
     const initial = get().runtime[sessionId]
     if (!initial) return
     const branchRequest = initial.branchRequest + 1
-    update(sessionId, { branchRequest, toolUpdates: {}, liveCompactions: [], retryNotice: null })
-    const branch = await api.viewBranch(sessionId, tipId, options)
-    const latest = currentInstance(sessionId, initial)
-    if (!latest || latest.branchRequest !== branchRequest) return
-    const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
-      : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
-    const hydrated = await get().hydrateTurns(sessionId, {
-      expectedLeafId: branch.leafId,
-      expectedBranchRequest: branchRequest,
-      branchViewId,
-      display: branch
-    })
-    if (!hydrated || currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
-    if (restoreDraft && branch.restoredPrompt) restorePromptDraft(sessionId, branch.restoredPrompt)
-    await get().loadControls(sessionId)
-    if (currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
-    return { initial, branchRequest, prompt: branch.restoredPrompt }
+    update(sessionId, { branchRequest, isNavigatingBranch: true })
+    try {
+      const branch = await api.viewBranch(sessionId, tipId, options)
+      const latest = currentInstance(sessionId, initial)
+      if (!latest || latest.branchRequest !== branchRequest || branch.cancelled) return
+      update(sessionId, { toolUpdates: {}, liveCompactions: [], retryNotice: null })
+      const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
+        : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
+      const hydrated = await get().hydrateTurns(sessionId, {
+        expectedLeafId: branch.leafId,
+        expectedBranchRequest: branchRequest,
+        branchViewId,
+        display: branch
+      })
+      const current = currentInstance(sessionId, initial)
+      if (!current || current.branchRequest !== branchRequest) return
+      if (!hydrated) throw new Error(current.turnError ?? 'Could not load the destination branch')
+      if (restoreDraft && branch.restoredPrompt) restorePromptDraft(sessionId, branch.restoredPrompt)
+      await get().loadControls(sessionId)
+      if (currentInstance(sessionId, initial)?.branchRequest !== branchRequest) return
+      return { initial, branchRequest, prompt: branch.restoredPrompt }
+    } finally {
+      // A closed/reopened tab owns a new flag; a late navigation may not clear it.
+      if (currentInstance(sessionId, initial)?.branchRequest === branchRequest) {
+        update(sessionId, { isNavigatingBranch: false })
+      }
+    }
   }
 
   return {
@@ -579,7 +589,7 @@ export const createConversationSlice: SessionSlice<
     })),
 
     viewBranch: async (sessionId, tipId, options) => {
-      await navigateBranch(sessionId, tipId, options, true)
+      return !!await navigateBranch(sessionId, tipId, options, true)
     },
 
     retryUserMessage: async (sessionId, userEntryId) => {

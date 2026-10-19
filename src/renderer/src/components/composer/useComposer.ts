@@ -20,7 +20,10 @@ export function useComposer(
   const effectiveActiveSessionId = (explicitSessionId != null && explicitSessionId !== '') ? explicitSessionId : activeSessionId
   const sessionId = effectiveActiveSessionId ?? draftSessionId ?? null
   const isDraftSession = Boolean(!effectiveActiveSessionId && draftCwd && draftSessionId)
-  const inputDisabled = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
+  const reviewReturning = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
+  // Sending into a branch while Pi summarizes or switches it would race the new leaf.
+  const navigating = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isNavigatingBranch ?? false) : false)
+  const inputDisabled = reviewReturning || navigating
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)

@@ -55,7 +55,7 @@ import {
   updateFollowUpMessage as updateFollowUp
 } from './session-actions'
 import { buildSessionTreeViews, SESSION_TREE_VIEWS } from './session-tree'
-import { switchSessionBranch } from './session-branch'
+import { switchSessionBranch, validateSessionBranchOptions } from './session-branch'
 import { forkSessionManager } from './session-fork'
 import {
   displayWindow,
@@ -124,6 +124,20 @@ const drafts = new Map<string, string>()
 const preparing = new Map<string, Preparation>()
 const closing = new Map<string, { cwd: string; promise: Promise<void> }>()
 const resourceFailures = new Map<string, Error>()
+/** One stop signal per tree navigation, created before preparation so an early stop is kept. */
+const navigatingBranches = new Map<string, AbortController>()
+
+export function isNavigatingSessionBranch(sessionId: string): boolean {
+  return navigatingBranches.has(sessionId)
+}
+
+export function abortSessionBranchSummary(sessionId: string): void {
+  navigatingBranches.get(sessionId)?.abort()
+}
+
+function assertSessionBranchAvailable(sessionId: string): void {
+  if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
+}
 async function reloadSessionResources(session: LiveSession): Promise<void> {
   try {
     await session.agentSession.reload({ beforeSessionStart: async () => assertExtensionResources(session.agentSession.resourceLoader) })
@@ -429,11 +443,14 @@ export async function activateSession(
 }
 
 export async function activateSessionInput(sessionId: string) {
+  assertSessionBranchAvailable(sessionId)
   const activated = await activateSession(sessionId)
   while (resourceReloads.has(sessionId)) await prepareSession(sessionId)
   if (closing.has(sessionId) || live.get(sessionId) !== activated.session) throw new Error(`Session is closing: ${sessionId}`)
   const failure = resourceFailures.get(sessionId)
   if (failure) throw failure
+  // No await between this check and the input lease: navigation must see preflight inputs as busy.
+  assertSessionBranchAvailable(sessionId)
   return { ...activated, releaseInput: beginSessionInput(activated.session.agentSession) }
 }
 
@@ -822,8 +839,26 @@ export function sessionEntryLookup(sessionId: string, entryId: string): Promise<
 }
 
 export async function viewSessionBranch(sessionId: string, tipId: string, options?: SessionBranchOptions) {
-  const ls = await prepareSession(sessionId)
-  return switchSessionBranch(ls.agentSession, tipId, options)
+  validateSessionBranchOptions(options)
+  assertSessionBranchAvailable(sessionId)
+  // Reserve before preparation, including pending-to-live builds and resource reloads.
+  const stop = new AbortController()
+  navigatingBranches.set(sessionId, stop)
+  try {
+    const existing = live.get(sessionId)?.agentSession
+    if (existing && (!existing.isIdle || existing.isStreaming || existing.isBashRunning ||
+        existing.isCompacting || isSessionRunActive(existing))) throw new Error('Session is busy')
+    const ls = await prepareSession(sessionId)
+    if (isSessionRunActive(ls.agentSession)) throw new Error('Session is busy')
+    const releaseInput = beginSessionInput(ls.agentSession)
+    try {
+      return await switchSessionBranch(ls.agentSession, tipId, options, stop.signal)
+    } finally {
+      releaseInput()
+    }
+  } finally {
+    navigatingBranches.delete(sessionId)
+  }
 }
 
 export async function forkSessionFromMessage(

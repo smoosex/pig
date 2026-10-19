@@ -59,7 +59,8 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
   }, [recoverable, document.draft, attachments.images, sessionId])
 
   async function send(streamingBehavior: PromptStreamingBehavior = 'followUp'): Promise<void> {
-    if (!document.editor || (sessionId && useSystemUIStore.getState().returningReviewSessions[sessionId])) return
+    if (!document.editor || (sessionId && (useSystemUIStore.getState().returningReviewSessions[sessionId] ||
+      useSessionsStore.getState().runtime[sessionId]?.isNavigatingBranch))) return
     const serialized = document.getDraft()
     const images = attachments.getImages()
     const hasAttachments = serialized.attachments.length > 0

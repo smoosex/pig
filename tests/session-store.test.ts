@@ -1090,6 +1090,27 @@ async function runFixture(name: string): Promise<void> {
     api.viewBranch = async () => history('assistant-node')
     await state().viewBranch(meta.id, 'assistant-node', { restoreUserInput: true })
     assert.equal(drafts.getState().drafts[meta.id], draft, 'a non-user node preserves unsent input')
+  } else if (name === 'branch-navigation-flag') {
+    const before = runtime().turns
+    for (const outcome of ['cancelled', 'failed', 'done'] as const) {
+      const response = deferred<SessionBranchRef>()
+      api.viewBranch = () => response.promise
+      const navigating = state().viewBranch(meta.id, 'summary-node', { restoreUserInput: true, summarize: true })
+      assert.equal(runtime().isNavigatingBranch, true, 'summary navigation marks the session busy until hydration')
+      if (outcome === 'cancelled') {
+        response.resolve({ ...history('ignored'), cancelled: true })
+        assert.equal(await navigating, false)
+        assert.equal(runtime().turns, before, 'a cancelled summary keeps the visible branch')
+      } else if (outcome === 'failed') {
+        response.reject(new Error('summary failed'))
+        await assert.rejects(navigating, /summary failed/)
+      } else {
+        response.resolve(history('summary-node'))
+        assert.equal(await navigating, true)
+        assert.equal(runtime().leafId, 'summary-node')
+      }
+      assert.equal(runtime().isNavigatingBranch, false, `${outcome} navigation releases the composer`)
+    }
   } else if (name === 'branch-restore-stale') {
     const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
     const response = deferred<SessionBranchRef>()
@@ -2055,6 +2076,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'generation-hydration': 'generation speed survives hydration when prompts share timestamp and content',
     'queued-edit-draft': 'withdrawn steering prompts retain their images and cannot overwrite a reopened session',
     'branch-restores-prompt': 'tree restoration replaces unsent text and images without replaying the selected turn',
+    'branch-navigation-flag': 'tree navigation stays busy until it completes, cancels or fails',
     'branch-restore-stale': 'a stale tree restoration cannot replace the current draft',
     'fork-session': 'forking a user message opens a separate session and restores its prompt',
     'retry-user-success': 'retry resends the Pi entry with images and attachments without replacing the draft',

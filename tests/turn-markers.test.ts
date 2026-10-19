@@ -1064,7 +1064,7 @@ async function runFixture(name: string): Promise<void> {
           await pendingFork
         },
         retryUserMessage: async (sessionId, userEntryId) => { retries.push([sessionId, userEntryId]) },
-        viewBranch: async (...args) => { edits.push(args) }
+        viewBranch: async (...args) => { edits.push(args); return true }
       })
       let copied = ''
       Object.defineProperty(navigator, 'clipboard', {

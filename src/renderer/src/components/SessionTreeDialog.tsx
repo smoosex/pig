@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ListTree, PenLine } from 'lucide-react'
+import { ChevronRight, ListTree, LoaderCircle, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
@@ -24,6 +24,10 @@ import {
   DialogTitle,
   DialogTrigger
 } from './ui/dialog'
+import { Alert, AlertDescription } from './ui/alert'
+import { Field, FieldGroup, FieldLabel } from './ui/field'
+import { Textarea } from './ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Input } from './ui/input'
 import { InputGroupButton } from './ui/input-group'
 
@@ -99,7 +103,56 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     return tab?.meta?.path
   })
   const viewBranch = useSessionsStore((s) => s.viewBranch)
+  const navigating = useSessionsStore((s) => !!(activeSessionId && s.runtime[activeSessionId]?.isNavigatingBranch))
   const [open, setOpen] = useState(false)
+  const [selection, setSelection] = useState<{ sessionId: string; tipId: string; text: string } | null>(null)
+  const [summaryMode, setSummaryMode] = useState('none')
+  const [instructions, setInstructions] = useState('')
+  const [branchError, setBranchError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const pendingRef = useRef(false)
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+  const sessionRef = useRef(activeSessionId)
+  sessionRef.current = activeSessionId
+  const busy = pending || navigating
+
+  useEffect(() => {
+    setSelection(null)
+    setBranchError(null)
+    setInstructions('')
+    setSummaryMode('none')
+  }, [activeSessionId])
+
+  const confirmBranch = async () => {
+    const target = selection
+    if (!target || busy || pendingRef.current || sessionRef.current !== target.sessionId) return
+    pendingRef.current = true
+    setPending(true)
+    setStopping(false)
+    setBranchError(null)
+    try {
+      const changed = await viewBranch(target.sessionId, target.tipId, {
+        restoreUserInput: true,
+        summarize: summaryMode !== 'none',
+        ...(summaryMode === 'custom' ? { customInstructions: instructions.trim() } : {})
+      })
+      if (changed && sessionRef.current === target.sessionId && selectionRef.current === target) {
+        setOpen(false)
+        setSelection(null)
+        setQuery('')
+      }
+    } catch (reason: unknown) {
+      if (sessionRef.current === target.sessionId && selectionRef.current === target) {
+        setBranchError(reason instanceof Error ? reason.message : String(reason))
+      }
+    } finally {
+      pendingRef.current = false
+      setPending(false)
+      setStopping(false)
+    }
+  }
   const [view, setView] = useState<SessionTreeView>('default')
   const [labelingId, setLabelingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -207,7 +260,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     // Clamping the virtual window alone does not move the real viewport after filtering/folding.
     list.scrollTop = top
     if (scrollTop !== top) setScrollTop(top)
-  }, [open, top, scrollTop])
+  }, [open, top, scrollTop, selection])
 
   const startLabel = (id: string) => {
     // A menu holds its focus trap until a tick after it closes. The field has to mount behind that,
@@ -262,11 +315,14 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (busy || pendingRef.current) return
         setOpen(next)
         if (next) setView('default')
         else {
           setQuery('')
           setLabelingId(null)
+          setSelection(null)
+          setBranchError(null)
         }
       }}
     >
@@ -277,22 +333,82 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       </DialogTrigger>
       <DialogContent
         className="max-h-[80vh] sm:max-w-3xl"
-        showCloseButton
+        showCloseButton={!busy}
+        aria-busy={busy}
+        onInteractOutside={(event) => {
+          if (busy || pendingRef.current) event.preventDefault()
+        }}
         // The menu's own layer listens for Escape on the document capture phase, ahead of the field:
         // while a label is being edited Escape cancels the edit instead of closing the dialog.
         onEscapeKeyDown={(event) => {
-          if (labelingId !== null) event.preventDefault()
+          if (busy || pendingRef.current || labelingId !== null) event.preventDefault()
         }}
       >
         <DialogHeader>
           <DialogTitle>{t('tree.buttonAria')}</DialogTitle>
           <DialogDescription>{t('tree.description')}</DialogDescription>
         </DialogHeader>
+        {selection && (
+          <div className="flex flex-col gap-4">
+            <p className="truncate text-sm" title={selection.text}>{selection.text}</p>
+            <FieldGroup>
+              <Field data-disabled={busy}>
+                <FieldLabel id="branch-summary-label">{t('tree.summaryChoice')}</FieldLabel>
+                <ToggleGroup
+                  type="single"
+                  value={summaryMode}
+                  onValueChange={(value) => { if (value && !busy) setSummaryMode(value) }}
+                  disabled={busy}
+                  variant="outline"
+                  aria-labelledby="branch-summary-label"
+                  className="flex-wrap"
+                >
+                  <ToggleGroupItem value="none">{t('tree.noSummary')}</ToggleGroupItem>
+                  <ToggleGroupItem value="summary">{t('tree.summarize')}</ToggleGroupItem>
+                  <ToggleGroupItem value="custom">{t('tree.customSummary')}</ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+              {summaryMode === 'custom' && (
+                <Field data-disabled={busy}>
+                  <FieldLabel htmlFor="branch-summary-instructions">{t('tree.customInstructions')}</FieldLabel>
+                  <Textarea
+                    id="branch-summary-instructions"
+                    value={instructions}
+                    onChange={(event) => setInstructions(event.target.value)}
+                    disabled={busy}
+                  />
+                </Field>
+              )}
+            </FieldGroup>
+            {branchError && <Alert variant="destructive"><AlertDescription>{branchError}</AlertDescription></Alert>}
+            {busy && (
+              <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm">
+                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                <span className="flex-1">{t(summaryMode === 'none' ? 'tree.switching' : 'tree.summarizing')}</span>
+                {summaryMode !== 'none' ? (
+                  <Button variant="outline" size="sm" disabled={stopping} onClick={() => {
+                    setStopping(true)
+                    void api.abortBranchSummary(selection.sessionId).catch((reason: unknown) => {
+                      setBranchError(reason instanceof Error ? reason.message : String(reason))
+                    })
+                  }}>{t('tree.stopSummary')}</Button>
+                ) : null}
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" disabled={busy} onClick={() => { setSelection(null); setBranchError(null) }}>{t('tree.backToTree')}</Button>
+              <Button variant="outline" disabled={busy} onClick={() => { setOpen(false); setSelection(null); setBranchError(null); setQuery('') }}>{t('tree.cancel')}</Button>
+              <Button disabled={busy || (summaryMode === 'custom' && !instructions.trim())} onClick={() => void confirmBranch()}>{t('tree.confirm')}</Button>
+            </div>
+          </div>
+        )}
+        <div hidden={!!selection} inert={busy || !!selection} className="grid gap-4">
         <GooeyNav
           size="xs"
           items={treeViews.map((item) => t(item.labelKey))}
           value={treeViews.findIndex((item) => item.value === view)}
           onChange={(index) => {
+            if (busy || selection) return
             // pi clears its folds on every filter change; the rows below are already here.
             const mode = treeViews[index].value
             setView(mode)
@@ -303,6 +419,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
         />
         <Input
           value={query}
+          disabled={busy}
           placeholder={t('tree.search')}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -371,12 +488,11 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                               !row.current && kindClass(row.kind)
                             )}
                             onClick={() => {
-                              if (!activeSessionId) return
-                              viewBranch(activeSessionId, row.id, { restoreUserInput: true }).then(
-                                () => setOpen(false),
-                                (reason: unknown) =>
-                                  setError(reason instanceof Error ? reason.message : String(reason))
-                              )
+                              if (!activeSessionId || busy || pendingRef.current || selection) return
+                              setSelection({ sessionId: activeSessionId, tipId: row.id, text: row.text })
+                              setSummaryMode('none')
+                              setInstructions('')
+                              setBranchError(null)
                             }}
                           >
                             <span className="min-w-0 flex-1 truncate">
@@ -407,6 +523,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
         </div>
         <div className="text-xs text-muted-foreground">
           {visible.length}/{rows.length}
+        </div>
         </div>
       </DialogContent>
     </Dialog>

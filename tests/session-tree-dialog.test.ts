@@ -41,6 +41,7 @@ async function runFixture(name: string): Promise<void> {
   const manyRows = (count: number): SessionTreeRow[] =>
     Array.from({ length: count }, (_, index) => row(`r${index}`, `user: 行${index}`))
   const calls: [string, SessionTreeView[] | undefined][] = []
+  const aborts: string[] = []
   const labels: { sessionId: string; targetId: string; label: string; path?: string }[] = []
   const resolvers: ((views: Partial<Record<SessionTreeView, SessionTreeRow[]>>) => void)[] = []
   Object.assign(window, {
@@ -74,6 +75,7 @@ async function runFixture(name: string): Promise<void> {
         if (!views?.length) return Promise.resolve(full)
         return Promise.resolve(Object.fromEntries(views.map((view) => [view, full[view]])))
       },
+      abortBranchSummary: async (sessionId: string) => { aborts.push(sessionId) },
       setSessionLabel: async (sessionId: string, targetId: string, label: string, path?: string) => {
         labels.push({ sessionId, targetId, label, path })
       }
@@ -117,6 +119,16 @@ async function runFixture(name: string): Promise<void> {
       }
     ],
     activeTabId: 's1'
+  })
+
+  const branchCalls: Parameters<ReturnType<typeof useSessionsStore.getState>['viewBranch']>[] = []
+  let finishBranch: (value: boolean) => void = () => {}
+  let rejectBranch: (reason: Error) => void = () => {}
+  useSessionsStore.setState({
+    viewBranch: (...args) => {
+      branchCalls.push(args)
+      return new Promise<boolean>((resolve, reject) => { finishBranch = resolve; rejectBranch = reject })
+    }
   })
 
   const { act, createElement: h } = await import('react')
@@ -171,6 +183,99 @@ async function runFixture(name: string): Promise<void> {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     })
     await flush()
+  }
+
+  if (name.startsWith('branch-')) {
+    await act(async () => { button('会话树').click() })
+    await flush()
+    const selectNode = async () => {
+      const node = [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.includes('user: 问题'))!
+      await act(async () => { node.click() })
+    }
+    await selectNode()
+    assert.equal(branchCalls.length, 0, 'selecting a node only opens confirmation')
+    assert.ok(button('不总结'))
+    assert.ok(button('总结'))
+    assert.ok(button('自定义提示总结'))
+
+    if (name === 'branch-summary' || name === 'branch-pending') {
+      await act(async () => { button('总结').click() })
+    }
+    if (name === 'branch-custom') {
+      await act(async () => { button('自定义提示总结').click() })
+      assert.equal(button('确认切换').disabled, true, 'custom instructions must not be empty')
+      const input = document.querySelector<HTMLTextAreaElement>('textarea')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '  仅总结关键决定  ')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await act(async () => { button('确认切换').click() })
+    assert.deepEqual(branchCalls, [['s1', 'u1', {
+      restoreUserInput: true,
+      summarize: name === 'branch-summary' || name === 'branch-pending' || name === 'branch-custom',
+      ...(name === 'branch-custom' ? { customInstructions: '仅总结关键决定' } : {})
+    }]])
+    const content = document.querySelector('[data-slot="dialog-content"]')!
+    assert.equal(content.getAttribute('aria-busy'), 'true')
+    const status = document.querySelector('[role="status"]')!
+    const summarizing = name === 'branch-summary' || name === 'branch-pending' || name === 'branch-custom'
+    assert.equal(status.textContent, summarizing ? '正在总结分支…停止总结' : '正在切换分支…', 'only summaries can be stopped')
+    assert.ok(status.querySelector('svg.animate-spin'), 'status includes a spinning loader')
+    assert.equal(button('返回树').disabled, true)
+    assert.equal(button('取消').disabled, true)
+    assert.equal(document.querySelector<HTMLInputElement>('input[placeholder="搜索节点"]')!.disabled, true)
+    await act(async () => {
+      button('确认切换').click()
+      button('取消').click()
+      button('返回树').click()
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      document.querySelector('[data-slot="dialog-overlay"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0 }))
+    })
+    await flush()
+    assert.equal(branchCalls.length, 1, 'pending confirmation cannot run twice')
+    assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'pending dialog cannot close')
+    assert.equal(document.querySelector('button[data-slot="dialog-close"]'), null)
+
+    if (name === 'branch-failure') {
+      await act(async () => { rejectBranch(new Error('总结失败')) })
+      assert.ok(document.querySelector('[role="alert"]')?.textContent?.includes('总结失败'))
+      assert.equal(button('确认切换').disabled, false)
+      await act(async () => { button('确认切换').click() })
+      assert.equal(branchCalls.length, 2, 'failure can retry')
+      await act(async () => { finishBranch(false) })
+      assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'SDK cancel keeps confirmation open')
+      assert.equal(button('返回树').disabled, false)
+      await act(async () => { button('返回树').click() })
+      assert.equal(document.querySelector('[role="alert"]'), null)
+      await selectNode()
+      await act(async () => { button('取消').click() })
+      assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
+      return
+    }
+    if (name === 'branch-session-switch') {
+      await act(async () => { useSessionsStore.setState({ activeTabId: 's2' }) })
+      await flush()
+      assert.equal(document.querySelector('[data-slot="toggle-group"]'), null, 'switching tabs clears confirmation')
+      await act(async () => { finishBranch(true) })
+      assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'old request must not close the new session tree')
+      assert.ok(document.body.textContent?.includes('user: 别的'))
+      return
+    }
+    if (name === 'branch-cancelled') {
+      await act(async () => { finishBranch(false) })
+      assert.ok(document.querySelector('[data-slot="dialog-content"]'))
+      assert.equal(button('确认切换').disabled, false, 'cancel/stale unlocks the confirmation')
+      return
+    }
+    if (name === 'branch-pending') {
+      await act(async () => { button('停止总结').click() })
+      assert.deepEqual(aborts, ['s1'], 'a long summary can be stopped instead of looking stuck')
+      assert.equal(button('停止总结').disabled, true, 'stop is sent once')
+    }
+    await act(async () => { finishBranch(true) })
+    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null, 'successful navigation closes the dialog')
+    return
   }
 
   if (name === 'tree-window-limits') {
@@ -351,6 +456,13 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
   await runFixture(process.argv[process.argv.indexOf('--session-tree-dialog-fixture') + 1]!)
 } else {
   for (const [flag, title] of [
+    ['branch-none', 'tree: no-summary confirmation passes explicit navigation options'],
+    ['branch-summary', 'tree: summary confirmation passes summarize true'],
+    ['branch-custom', 'tree: custom summary requires and trims instructions'],
+    ['branch-pending', 'tree: pending summary locks dismissal and duplicate requests with busy status'],
+    ['branch-failure', 'tree: failed navigation can retry, return, and cancel'],
+    ['branch-cancelled', 'tree: cancelled or stale navigation leaves confirmation interactive'],
+    ['branch-session-switch', 'tree: session switches invalidate pending confirmation'],
     ['tree-view-tabs', 'tree: tabs switch the session view pi cycles with Ctrl+O'],
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
     ['tree-filter-scroll', 'tree: switching to user-only from a long tree tail shows the filtered rows'],

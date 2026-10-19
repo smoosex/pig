@@ -35,7 +35,7 @@ async function fixture(): Promise<void> {
     exportSession: noop, getSessionControls: noop, getSessionTokenStats: noop, getSessionTrees: noop,
     listSessionCommands: noop, openSession: noop, prepareSession: noop, promoteDraftSession: noop,
     renameSession: noop, setSessionLabel: noop, setSessionModel: noop,
-    setSessionThinking: noop, setSessionModelThinkingPreference: noop, updateFollowUpMessage: noop, viewSessionBranch: noop,
+    setSessionThinking: noop, setSessionModelThinkingPreference: noop, isNavigatingSessionBranch: noop, abortSessionBranchSummary: noop, updateFollowUpMessage: noop, viewSessionBranch: noop,
     forkSessionFromMessage: async () => forked
   }))
   mock.module('../src/main/pi/session-display', () => ({ getDisplayTurns: noop, getTurnMessages: noop, getTurnWindow: noop }))

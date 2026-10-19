@@ -74,6 +74,8 @@ Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，`PIG_DIR` 
 
 Open Computer Use 作为普通 stdio MCP 预置，不增加专用审批、宿主生命周期或 project/chat 限制。启动时 `initializeMcpDefaults()` 一次性写入 `npx -y open-computer-use@1.1.2 mcp`（默认停用、`deferred`）；`mcp.json` 的 `pigDefaults` 记录已初始化项，保留已有同名/同 namespace 配置，修改、启停和删除都走普通 MCP 流程且重启不恢复已删除项。首次启用需 Node.js/npx 与联网下载，macOS 权限授给 Open Computer Use，不授给 Pig；安装包不内嵌 OCU。MCP 直接调用会转发图片；codemode 脚本需显式 `image(block)`，仅 `text(result)` 不会把截图交给模型。
 
+会话树选中节点后先确认「不总结 / 总结 / 自定义提示总结」。总结走 SDK `navigateTree`（summary 接在 Pi 自己选的叶子上，不再按轻量恢复重新 branch），不总结保留原轻量切换；两者都复用 `restoreSessionUserPrompt` 恢复图片与粘贴附件。main 用 `isNavigatingSessionBranch` 在准备会话前占位，prompt、bash、`/compact` 入口都会拒绝；renderer 的 `isNavigatingBranch` 覆盖请求到目标分支 hydrate 完成，期间输入框禁用、树对话框不可关闭并显示进度，总结可经 `abortBranchSummary` 停止，取消结果保留当前分支与草稿。
+
 ## 进程与接口
 
 | 位置                                 | 职责                                                                    |

@@ -483,6 +483,9 @@ export interface SessionNameUpdate {
 export interface SessionBranchOptions {
   /** Tree restoration stops before a user message and returns it as unsent input. */
   restoreUserInput?: boolean
+  /** Preserve the branch being left using Pi's branch-summary flow. */
+  summarize?: boolean
+  customInstructions?: string
 }
 
 export interface RestoredSessionPrompt {
@@ -498,6 +501,7 @@ export interface ForkedSessionRef extends OpenSessionRef {
 
 /** Switching a branch answers with the new window and any input restored from the selected node. */
 export interface SessionBranchRef extends DisplayTurnsResult {
+  cancelled?: boolean
   restoredPrompt?: RestoredSessionPrompt
 }
 
@@ -896,6 +900,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   abortBash: (sessionId: string) => Promise<void>
   /** Cancels the compaction in progress without touching a running agent or its queued prompts. */
   abortCompaction: (sessionId: string) => Promise<void>
+  /** Stops a tree-navigation branch summary; the navigation then resolves as cancelled. */
+  abortBranchSummary: (sessionId: string) => Promise<void>
   /**
    * Compacts the session context on demand. Any run in progress is aborted first, and a manual
    * compaction never resumes it. Failures reach the renderer as `compaction_end`, not as rejection.

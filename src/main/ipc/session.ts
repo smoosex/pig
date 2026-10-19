@@ -21,6 +21,8 @@ import {
   setSessionModel,
   setSessionThinking,
   setSessionModelThinkingPreference,
+  isNavigatingSessionBranch,
+  abortSessionBranchSummary,
   updateFollowUpMessage,
   viewSessionBranch,
   type SessionThinkingLevel,
@@ -132,8 +134,9 @@ export function registerSessionIpc(): void {
     if (!sessionId || typeof command !== 'string' || !command.trim() || typeof id !== 'string' || !id) {
       throw new Error('Session id, command and execution id are required')
     }
+    if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
     const { agentSession } = (await activateSession(sessionId)).session
-    if (agentSession.isStreaming || agentSession.isBashRunning) throw new Error('Session is busy')
+    if (isNavigatingSessionBranch(sessionId) || agentSession.isStreaming || agentSession.isBashRunning) throw new Error('Session is busy')
     return agentSession.executeBash(command, undefined, { id })
   })
 
@@ -149,8 +152,14 @@ export function registerSessionIpc(): void {
     agentSession.abortCompaction()
   })
 
+  ipcMain.handle('session:abort-branch-summary', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    abortSessionBranchSummary(sessionId)
+  })
+
   ipcMain.handle('session:compact', async (_event, sessionId: string, instructions?: unknown) => {
     if (!sessionId) throw new Error('Session id is required')
+    if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
     const { agentSession } = await prepareSession(sessionId)
     const customInstructions = typeof instructions === 'string' ? instructions.trim() : ''
     // `compaction_end` carries the message the user needs, and the CLI drops this rejection the same way.

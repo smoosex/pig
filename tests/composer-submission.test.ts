@@ -158,6 +158,16 @@ async function fixture(scenario: string): Promise<void> {
         images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
       }
     })
+    if (scenario === 'branch-navigating') {
+      sessions.setState((current) => ({ runtime: { ...current.runtime, one: { ...current.runtime.one, isNavigatingBranch: true } } }))
+      for (const mode of ['followUp', 'steer'] as const) await act(async () => { await state.send(mode) })
+      assert.equal(promptCalls, 0, 'nothing is sent while the tree is summarizing or switching')
+      assert.equal(editor.getDraft().text, '原文附件', 'the draft is kept for after navigation')
+      sessions.setState((current) => ({ runtime: { ...current.runtime, one: { ...current.runtime.one, isNavigatingBranch: false } } }))
+      await act(async () => { prepared.resolve(); await state.send() })
+      assert.equal(promptCalls, 1)
+      return
+    }
     if (scenario === 'review-returning') {
       const { useSystemUIStore } = await import('../src/renderer/src/stores/system-ui')
       useSystemUIStore.getState().setReviewReturning('one', true)
@@ -363,7 +373,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments', 'review-returning']) {
+  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments', 'review-returning', 'branch-navigating']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

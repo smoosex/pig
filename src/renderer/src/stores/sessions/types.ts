@@ -80,6 +80,8 @@ export interface RuntimeState extends SessionControls {
   branchViewId: string
   branchViews: Record<string, string>
   branchRequest: number
+  /** A tree navigation/summary is in flight, including hydration of the destination branch. */
+  isNavigatingBranch: boolean
   liveMessages: PiMessage[]
   toolUpdates: ToolUpdates
   bashExecution: { id: string; message: BashExecutionMessage } | null
@@ -288,7 +290,7 @@ export interface SessionsStore {
   startCompaction: (sessionId: string, mark: LiveCompaction) => void
   updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void
   dropCompaction: (sessionId: string, id: string) => void
-  viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<void>
+  viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<boolean>
   retryUserMessage: (sessionId: string, userEntryId: string) => Promise<void>
 }
 

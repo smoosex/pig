@@ -26,6 +26,7 @@ export const emptyRuntime = (): RuntimeState => ({
   branchViewId: createBranchViewId(),
   branchViews: {},
   branchRequest: 0,
+  isNavigatingBranch: false,
   liveMessages: [],
   toolUpdates: {},
   bashExecution: null,
