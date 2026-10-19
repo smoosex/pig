@@ -102,6 +102,7 @@ async function fixture(scenario: Scenario): Promise<void> {
       await act(async () => { returnButton().click() })
       assert.deepEqual(submittedPrompts, [['one', '/end-review'], ['one', '/end-review']])
       assert.equal(returnButton().disabled, true)
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'false', 'the glow stops immediately when return is requested')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(editor().getAttribute('contenteditable'), 'false')
       assert.equal(sendButton().disabled, true)
@@ -128,6 +129,11 @@ async function fixture(scenario: Scenario): Promise<void> {
     }
     if (scenario === 'returning') {
       await emit({ kind: 'review-state', sessionId: 'one', active: true })
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'true')
+      await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'false', 'the review glow stops while returning')
+      await emit({ kind: 'review-returning', sessionId: 'one', returning: false })
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'true', 'an unfinished review resumes its glow')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true)
       assert.equal(document.querySelector<HTMLButtonElement>('[data-review-status] button')?.disabled, true)

@@ -6,6 +6,8 @@ import { api } from '../../ipc/api'
 import { useSystemUIStore } from '../../stores/system-ui'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
+import { cn } from '../../lib/utils'
+import styles from './ReviewStatus.module.css'
 
 export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   const t = useT()
@@ -32,7 +34,11 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   }
 
   return (
-    <div data-review-status className="ml-auto flex shrink-0 items-center [[data-subagent-status]+&]:ml-0">
+    <div
+      data-review-status
+      data-review-glow={active && !ending}
+      className={cn('relative ml-auto flex shrink-0 items-center rounded-full [[data-subagent-status]+&]:ml-0', styles.edgeGlow)}
+    >
       {/* Review is a mode, not a note: the whole row carries the primary fill, a lit top edge and a
           tinted drop shadow so it reads as raised above the rest of the status line. The action sits
           inside the pill, so its focus ring is inset — an outer ring would be clipped by the badge. */}
