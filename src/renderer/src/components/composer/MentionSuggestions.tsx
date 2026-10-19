@@ -45,8 +45,8 @@ export function MentionSuggestions({
               type="button"
               variant="ghost"
               className={cn(
-                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-accent',
-                index === selectedIndex && 'bg-accent'
+                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-glass-prompt-foreground/8 solid:hover:bg-accent',
+                index === selectedIndex && 'bg-glass-prompt-foreground/8 solid:bg-accent'
               )}
               onMouseEnter={() => mentions.setIndex(index)}
               onClick={() => mentions.select(item)}
