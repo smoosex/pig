@@ -550,6 +550,7 @@ export const zh = {
     tps: '{value} tok/s',
     tpsDescription: '流式输出速度估算，仅汇总可靠采样；有思考且输出正文时仅统计正文，不包含首字等待和工具执行时间',
     tpsSamples: '{measured}/{total} 次调用',
+    tpsSamplesDescription: '本轮共调用模型 {total} 次，其中 {measured} 次采样可靠并计入速度；过短、成批到达或无法区分思考与正文的调用不计入',
     tpsMixedModels: '本轮切换过模型（{models}），这是它们的混合速度',
     createFork: '创建分支',
     forkFailed: '创建分支失败',

@@ -952,6 +952,7 @@ async function runFixture(name: string): Promise<void> {
       const speed = separator().querySelector<HTMLElement>('[title]')!
       assert.equal(speed.textContent?.trim(), '· 40.0 tok/s · 2/3 次调用')
       assert.match(speed.title, /流式输出速度估算.*仅统计正文.*不包含首字等待和工具执行时间/)
+      assert.match(speed.querySelector<HTMLElement>('[title]')!.title, /共调用模型 3 次，其中 2 次采样可靠/)
 
       // A model switch mid-turn sums two models' samples into one figure, so the legend has to name
       // both rather than present the blend as a single model's decode speed.

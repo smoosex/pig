@@ -95,10 +95,10 @@ function WorkedLabel({ turn, landmarks, block, sessionId }: {
       <span>{t(turn.streaming ? 'turn.worked' : 'turn.workedFor', { duration: formatElapsed(workedMs[block] ?? 0, t) })}</span>
       {tps && generation ? (
         <span className="tabular-nums" title={tpsTooltip(t, turn)}>
-          · {t('turn.tps', { value: tps })} · {t('turn.tpsSamples', {
-            measured: generation.measuredCalls,
-            total: generation.totalCalls
-          })}
+          · {t('turn.tps', { value: tps })} ·{' '}
+          <span title={t('turn.tpsSamplesDescription', { measured: generation.measuredCalls, total: generation.totalCalls })}>
+            {t('turn.tpsSamples', { measured: generation.measuredCalls, total: generation.totalCalls })}
+          </span>
         </span>
       ) : null}
     </span>

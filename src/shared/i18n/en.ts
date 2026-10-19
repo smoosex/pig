@@ -553,6 +553,7 @@ export const en: Messages = {
     tps: '{value} tok/s',
     tpsDescription: 'Estimated streamed output speed from reliable samples, excluding first-token wait and tool execution; reasoning replies with answer text count only the answer',
     tpsSamples: '{measured}/{total} calls',
+    tpsSamplesDescription: '{measured} of {total} model calls this turn had reliable timing and count toward the speed; calls that were too short, arrived in bursts, or mixed reasoning with the answer are excluded',
     tpsMixedModels: 'The model changed during this turn ({models}); this speed blends them',
     createFork: 'Create fork',
     forkFailed: 'Could not create fork',
