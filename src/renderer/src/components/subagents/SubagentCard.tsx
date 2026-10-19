@@ -258,7 +258,7 @@ export function SubagentCard({ sessionId, items, selected, history = false, onCl
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu> : null}
-        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-full border border-border px-1.5">
+        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-full border border-glass-button-border bg-glass-button-background bg-[image:var(--glass-button-sheen)] bg-clip-padding px-1.5 shadow-glass-button solid:border-border solid:bg-transparent solid:bg-none solid:shadow-none">
           <SubagentAvatar item={selected} className="size-4" statusSize={6} />
           <span className="truncate text-sm font-medium">{selected.title}</span>
           <span className={cn('shrink-0 text-xs text-muted-foreground', isSubagentProblem(selected) && 'text-destructive')}>
