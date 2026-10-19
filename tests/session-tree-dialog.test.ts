@@ -50,7 +50,7 @@ async function runFixture(name: string): Promise<void> {
         if (name === 'tree-label-refetch-order') {
           return new Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>((resolve) => resolvers.push(resolve))
         }
-        const full: Record<SessionTreeView, SessionTreeRow[]> =
+        let full: Record<SessionTreeView, SessionTreeRow[]> =
           sessionId === 's2'
             ? record([row('x1', 'user: 别的')])
             : name === 'tree-view-tabs'
@@ -64,6 +64,13 @@ async function runFixture(name: string): Promise<void> {
                   ...record([row('u1', 'user: 问题', '旧标')]),
                   default: [row('u1', 'user: 问题', '旧标'), toolRow(), row('u2', 'user: 继续')]
                 }
+        if (name === 'tree-filter-scroll') {
+          const all = manyRows(2388).map<SessionTreeRow>((item, index) => ({
+            ...item, current: index === 2387, kind: index < 289 ? 'user' : 'assistant',
+            text: `${index < 289 ? 'user' : 'assistant'}: 行${index}`
+          }))
+          full = { ...record(all), 'user-only': all.slice(0, 289) }
+        }
         if (!views?.length) return Promise.resolve(full)
         return Promise.resolve(Object.fromEntries(views.map((view) => [view, full[view]])))
       },
@@ -179,6 +186,33 @@ async function runFixture(name: string): Promise<void> {
       false,
       'the far end of the list is not mounted'
     )
+    return
+  }
+
+  if (name === 'tree-filter-scroll') {
+    await act(async () => { button('会话树').click() })
+    await flush()
+    const list = document.querySelector<HTMLDivElement>('div.font-mono')!
+    assert.ok(list.scrollTop > 289 * 26, 'the default tree starts near its current final assistant row')
+    assert.ok(list.textContent?.includes('assistant: 行2387'))
+    list.scrollLeft = 600
+    await act(async () => { button('用户').click() })
+    await flush()
+    assert.ok(document.body.textContent?.includes('289/289'))
+    assert.equal(list.scrollTop, 0, 'when the current node is filtered out, reset the actual viewport')
+    assert.equal(list.scrollLeft, 0, 'filtered rows cannot remain off-screen horizontally')
+    assert.ok(list.textContent?.includes('user: 行0'))
+
+    await act(async () => { button('默认').click() })
+    await flush()
+    assert.ok(list.scrollTop > 289 * 26, 'returning to the full tree locates its current node')
+    const search = document.querySelector<HTMLInputElement>('input[placeholder="搜索节点"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'user: 行0')
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    assert.equal(list.scrollTop, 0, 'search also synchronizes the real viewport after reducing the virtual range')
+    assert.ok(list.textContent?.includes('user: 行0'))
     return
   }
 
@@ -319,6 +353,7 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
   for (const [flag, title] of [
     ['tree-view-tabs', 'tree: tabs switch the session view pi cycles with Ctrl+O'],
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
+    ['tree-filter-scroll', 'tree: switching to user-only from a long tree tail shows the filtered rows'],
     ['tree-label-menu', 'tree: the context menu labels a row in place'],
     ['tree-label-close-cancels', 'tree: closing mid-edit strands no label field'],
     ['tree-label-session-switch', 'tree: switching sessions strands no label field'],

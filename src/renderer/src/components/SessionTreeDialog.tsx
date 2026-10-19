@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, ListTree, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
@@ -201,6 +201,14 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   const last = Math.min(visible.length, Math.ceil((top + viewport) / ROW_H) + OVERSCAN)
   const windowRows = visible.slice(first, last)
 
+  useLayoutEffect(() => {
+    const list = listRef.current
+    if (!open || !list) return
+    // Clamping the virtual window alone does not move the real viewport after filtering/folding.
+    list.scrollTop = top
+    if (scrollTop !== top) setScrollTop(top)
+  }, [open, top, scrollTop])
+
   const startLabel = (id: string) => {
     // A menu holds its focus trap until a tick after it closes. The field has to mount behind that,
     // or the trap pulls the caret back out of it and the field sits there unable to be typed into.
@@ -236,15 +244,19 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
 
   // The current row is often outside the mounted window, so scrollIntoView has nothing to find:
   // its offset is arithmetic now. Same trigger as before, so folding or searching does not jump.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const list = listRef.current
+    if (!open || !list) return
     const index = visible.findIndex((row) => row.current)
-    if (!open || !list || index < 0) return
     const height = list.clientHeight || viewportH || ROW_H * 12
-    const target = Math.max(0, index * ROW_H - (height - ROW_H) / 2)
+    const target = index < 0 ? 0 : Math.min(
+      Math.max(0, index * ROW_H - (height - ROW_H) / 2),
+      Math.max(0, visible.length * ROW_H - height)
+    )
     list.scrollTop = target
+    list.scrollLeft = 0
     setScrollTop(target)
-  }, [open, rows])
+  }, [open, rows, view])
 
   return (
     <Dialog
@@ -306,7 +318,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           ) : visible.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">{t('tree.empty')}</div>
           ) : (
-            <SmoothHoverHighlight highlightClassName="rounded-none bg-glass-prompt-foreground/8 solid:bg-accent">
+            <SmoothHoverHighlight className="overflow-y-clip" highlightClassName="rounded-none bg-glass-prompt-foreground/8 solid:bg-accent">
               <div style={{ height: first * ROW_H }} />
               {windowRows.map((row) => {
                 const collapsed = folded.has(row.id)
