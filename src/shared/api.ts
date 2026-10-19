@@ -834,6 +834,14 @@ export interface ProjectDirectoryListing {
   truncated: boolean
 }
 
+/** Folders whose names match below one directory; `truncated` means the search stopped at a limit. */
+export interface ProjectDirectorySearch {
+  path: string
+  query: string
+  directories: { name: string; path: string; relativePath: string; git: boolean | null; warning?: string }[]
+  truncated: boolean
+}
+
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
@@ -842,6 +850,9 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   listChats: () => Promise<ProjectGroup[]>
   isChatCwd: (cwd: string) => Promise<boolean>
   browseProjectDirectories: (path?: string, showHidden?: boolean) => Promise<ProjectDirectoryListing>
+  searchProjectDirectories: (path: string, query: string, showHidden: boolean) => Promise<ProjectDirectorySearch>
+  /** Stops this window's in-flight folder search; a new search also supersedes the previous one. */
+  cancelProjectDirectorySearch: () => Promise<void>
   openProject: (path: string) => Promise<ProjectGroup>
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<string[]>

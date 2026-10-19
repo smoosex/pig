@@ -167,6 +167,7 @@ export const zh = {
     reintegrate: '移至独立标签'
   },
   projectPicker: {
+    deep: '搜索子文件夹', searching: '正在搜索子文件夹…', searchTruncated: '结果过多或层级过深，搜索已提前停止。请输入更具体的名称，或先进入更近的文件夹。',
     title: '添加项目', description: '浏览本机文件夹，添加当前打开的目录。不会创建或复制项目文件。',
     path: '文件夹路径', pathPlaceholder: '输入绝对路径或 ~/…', go: '前往',
     home: '个人目录', parent: '上一级', refresh: '刷新目录', search: '搜索当前目录的文件夹…',

@@ -1,7 +1,7 @@
 /** Local directory browser; main owns filesystem access and the existing project registration flow. */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowUp, ChevronRight, Folder, GitBranch, Home, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react'
-import { api, type ProjectDirectoryListing } from '../../ipc/api'
+import { api, type ProjectDirectoryListing, type ProjectDirectorySearch } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { cn, hideScroll } from '../../lib/utils'
@@ -37,6 +37,11 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [browseError, setBrowseError] = useState<string | null>(null)
+  const [deep, setDeep] = useState(false)
+  const [search, setSearch] = useState<ProjectDirectorySearch | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const needle = query.trim()
+  const deepActive = deep && !!needle && !!listing && !browseError
 
   useEffect(() => {
     // Old requests may finish after navigating again or closing; only this location owns the result.
@@ -58,11 +63,41 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
     return () => { current = false }
   }, [target, showHidden, revision])
 
-  const folders = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase()
-    return (listing?.directories ?? []).filter((folder) => folder.name.toLocaleLowerCase().includes(needle))
-      .sort((a, b) => Number(b.name.toLocaleLowerCase().startsWith(needle)) - Number(a.name.toLocaleLowerCase().startsWith(needle)))
-  }, [listing, query])
+  useEffect(() => {
+    setSearch(null)
+    setSearchError(null)
+    if (!deepActive) return
+    // Typing restarts the walk after a pause; a result only counts for the folder/query/visibility it was asked for.
+    let current = true
+    let started = false
+    const timer = setTimeout(() => {
+      started = true
+      void api.searchProjectDirectories(listing.path, needle, showHidden).then((next) => {
+        if (current) setSearch(next)
+      }, (failure: unknown) => {
+        if (current) setSearchError(failure instanceof Error ? failure.message : String(failure))
+      })
+    }, 200)
+    return () => {
+      current = false
+      clearTimeout(timer)
+      // Closing, turning search off or changing the query also stops the walk in main, not just its result.
+      if (started) void api.cancelProjectDirectorySearch()
+    }
+  }, [deepActive, listing, needle, showHidden])
+
+  const searching = deepActive && !search && !searchError
+  const folders = useMemo((): { name: string; path: string; git: boolean | null; warning?: string; location?: string }[] => {
+    if (deepActive) {
+      return (search?.directories ?? []).map((folder) => {
+        const parent = folder.relativePath.slice(0, folder.relativePath.length - folder.name.length).replace(/[\\/]$/, '')
+        return { ...folder, location: parent || undefined }
+      })
+    }
+    const lower = needle.toLocaleLowerCase()
+    return (listing?.directories ?? []).filter((folder) => folder.name.toLocaleLowerCase().includes(lower))
+      .sort((a, b) => Number(b.name.toLocaleLowerCase().startsWith(lower)) - Number(a.name.toLocaleLowerCase().startsWith(lower)))
+  }, [deepActive, search, listing, needle])
   const selected = folders[active]
   const canAdd = !!listing && !loading && !adding && !browseError && pathInput === listing.path
 
@@ -98,7 +133,7 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
   }
 
   const navigateKeys = (event: KeyboardEvent<HTMLElement>) => {
-    if (loading || adding) return
+    if (loading || searching || adding) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       setActive((index) => folders.length ? (index + (event.key === 'ArrowDown' ? 1 : -1) + folders.length) % folders.length : 0)
@@ -170,6 +205,7 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
         </nav> : null}
         <div className="flex items-center gap-3">
           <Input
+            className="min-w-0 flex-1"
             ref={searchRef}
             value={query}
             disabled={adding}
@@ -179,16 +215,24 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
             aria-autocomplete="list"
             aria-expanded
             aria-controls={`${id}-folders`}
-            aria-activedescendant={!loading && selected ? `${id}-folder-${active}` : undefined}
+            aria-activedescendant={!loading && !searching && selected ? `${id}-folder-${active}` : undefined}
             onChange={(event) => { setQuery(event.target.value); setActive(0) }}
             onKeyDown={(event) => { if (!event.nativeEvent.isComposing && !event.metaKey && !event.ctrlKey) navigateKeys(event) }}
           />
-          <Label htmlFor={`${id}-hidden`} className="shrink-0 text-xs font-normal">{t('projectPicker.hidden')}</Label>
-          <Switch id={`${id}-hidden`} size="sm" checked={showHidden} disabled={adding} onCheckedChange={(checked) => { setShowHidden(checked); setQuery('') }} />
+          <div className="flex h-8 shrink-0 flex-col justify-center gap-1">
+            <div className="flex h-3.5 items-center justify-end gap-2">
+              <Label htmlFor={`${id}-deep`} className="text-[0.6875rem] leading-none font-normal">{t('projectPicker.deep')}</Label>
+              <Switch id={`${id}-deep`} size="sm" checked={deep} disabled={adding} onCheckedChange={(checked) => { setDeep(checked); setActive(0) }} />
+            </div>
+            <div className="flex h-3.5 items-center justify-end gap-2">
+              <Label htmlFor={`${id}-hidden`} className="text-[0.6875rem] leading-none font-normal">{t('projectPicker.hidden')}</Label>
+              <Switch id={`${id}-hidden`} size="sm" checked={showHidden} disabled={adding} onCheckedChange={(checked) => { setShowHidden(checked); if (!deep) setQuery('') }} />
+            </div>
+          </div>
         </div>
-        {browseError ?? error ? <p role="alert" className="break-words text-xs text-destructive">{browseError ?? error}</p> : null}
-        <div ref={listRef} id={`${id}-folders`} role="listbox" aria-label={t('projectPicker.folders')} aria-busy={loading} aria-activedescendant={!loading && selected ? `${id}-folder-${active}` : undefined} tabIndex={0} onKeyDown={(event) => { if (!event.nativeEvent.isComposing && !event.metaKey && !event.ctrlKey) navigateKeys(event) }} className={cn('h-64 min-h-0 overflow-auto outline-none', hideScroll)}>
-          {loading ? <p role="status" className="flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />{t('projectPicker.loading')}</p> : !folders.length ? <p className="py-12 text-center text-xs text-muted-foreground">{t(query ? 'projectPicker.noMatch' : 'projectPicker.empty')}</p> : <SmoothHoverHighlight activeKey={active} highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent">
+        {browseError ?? searchError ?? error ? <p role="alert" className="break-words text-xs text-destructive">{browseError ?? searchError ?? error}</p> : null}
+        <div ref={listRef} id={`${id}-folders`} role="listbox" aria-label={t('projectPicker.folders')} aria-busy={loading || searching} aria-activedescendant={!loading && !searching && selected ? `${id}-folder-${active}` : undefined} tabIndex={0} onKeyDown={(event) => { if (!event.nativeEvent.isComposing && !event.metaKey && !event.ctrlKey) navigateKeys(event) }} className={cn('h-64 min-h-0 overflow-auto outline-none', hideScroll)}>
+          {loading || searching ? <p role="status" className="flex items-center justify-center gap-2 py-12 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />{t(loading ? 'projectPicker.loading' : 'projectPicker.searching')}</p> : !folders.length ? <p className="py-12 text-center text-xs text-muted-foreground">{t(query ? 'projectPicker.noMatch' : 'projectPicker.empty')}</p> : <SmoothHoverHighlight activeKey={active} highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent">
             {folders.map((folder, index) => <Button
               key={folder.path}
               id={`${id}-folder-${index}`}
@@ -205,13 +249,16 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
               onClick={() => navigate(folder.path)}
             >
               <Folder className="text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-left text-xs">{folder.name}</span>
+              <span className="min-w-0 flex-1 truncate text-left text-xs">
+                {folder.name}
+                {folder.location ? <span className="ml-2 text-muted-foreground">{folder.location}</span> : null}
+              </span>
               {folder.warning ? <span title={folder.warning}><TriangleAlert className="size-4 text-warning" aria-label={folder.warning} /></span> : folder.git ? <GitBranch className="text-muted-foreground" aria-label={t('projectPicker.git')} /> : null}
               <ChevronRight className="text-muted-foreground" />
             </Button>)}
           </SmoothHoverHighlight>}
         </div>
-        {listing?.truncated ? <p className="text-xs text-warning">{t('projectPicker.truncated')}</p> : null}
+        {deepActive ? search?.truncated ? <p className="text-xs text-warning">{t('projectPicker.searchTruncated')}</p> : null : listing?.truncated ? <p className="text-xs text-warning">{t('projectPicker.truncated')}</p> : null}
         <p className="text-xs text-muted-foreground">{t('projectPicker.hint')}</p>
         <DialogFooter className="items-center">
           <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={listing?.path}>{listing?.path}</p>

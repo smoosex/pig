@@ -1,7 +1,7 @@
 /** Exercise the in-app browser and its session-catalog action without leaking the DOM/module graph. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { ProjectDirectoryListing, SessionApi } from '../src/shared/api'
+import type { ProjectDirectoryListing, ProjectDirectorySearch, SessionApi } from '../src/shared/api'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -15,6 +15,10 @@ async function fixture(): Promise<void> {
   let failAdd = false
   let resolveSlow!: (value: ProjectDirectoryListing) => void
   const slow = new Promise<ProjectDirectoryListing>((resolve) => { resolveSlow = resolve })
+  const searches: { path: string; query: string; hidden: boolean }[] = []
+  let cancels = 0
+  let resolveSlowSearch!: (value: ProjectDirectorySearch) => void
+  const slowSearch = new Promise<ProjectDirectorySearch>((resolve) => { resolveSlowSearch = resolve })
   const listing = (path: string): ProjectDirectoryListing => ({
     path, home: '/home', parent: path === '/' ? null : path === '/home' ? '/' : '/home',
     breadcrumbs: [{ name: '/', path: '/' }, { name: 'home', path: '/home' }, ...(path !== '/home' ? [{ name: path.split('/').at(-1)!, path }] : [])],
@@ -29,6 +33,15 @@ async function fixture(): Promise<void> {
       if (path === '/home/denied') throw new Error('Permission denied')
       return listing(path ?? '/home')
     },
+    searchProjectDirectories: async (path, query, hidden) => {
+      searches.push({ path, query, hidden })
+      if (query === 'slow') return slowSearch
+      return {
+        path, query, truncated: false,
+        directories: [{ name: 'web-app', path: '/home/apps/web-app', relativePath: 'apps/web-app', git: true }]
+      }
+    },
+    cancelProjectDirectorySearch: async () => { cancels++ },
     openProject: async (path) => {
       added.push(path)
       if (failAdd) throw new Error('Cannot save project')
@@ -64,6 +77,11 @@ async function fixture(): Promise<void> {
     await act(async () => { input(label).dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true })) })
     await flush()
   }
+  const toggle = async (label: string) => {
+    const target = [...document.querySelectorAll<HTMLLabelElement>('label')].find((node) => node.textContent === label)!
+    await act(async () => { document.getElementById(target.htmlFor)!.click() })
+    await flush()
+  }
   const path = 'Folder path'
   const search = 'Search folders in this directory…'
   try {
@@ -86,9 +104,31 @@ async function fixture(): Promise<void> {
     assert.equal(input(path).value, '/home/beta')
     await click('Parent folder')
     assert.equal(input(path).value, '/home')
-    await act(async () => { document.querySelector<HTMLButtonElement>('[role="switch"]')!.click() })
-    await flush()
+    await toggle('Show hidden folders')
     assert.equal(calls.at(-1)?.hidden, true)
+
+    await toggle('Search subfolders')
+    await type(search, 'slow')
+    await act(async () => { await Bun.sleep(250) })
+    await type(search, 'web')
+    assert.equal(searches.length, 1, 'typing waits for a pause before walking the folder')
+    assert.equal(cancels, 1, 'a new query stops the walk already running in main')
+    await act(async () => { await Bun.sleep(250) })
+    assert.deepEqual(searches.at(-1), { path: '/home', query: 'web', hidden: true })
+    await act(async () => { resolveSlowSearch({ path: '/home', query: 'slow', truncated: false, directories: [] }) })
+    await flush()
+    const options = [...document.querySelectorAll('[role="option"]')]
+    assert.equal(options.length, 1, 'a late result for an older query is ignored')
+    assert.equal(options[0].textContent, 'web-appapps')
+    await key(search, 'Enter')
+    assert.equal(input(path).value, '/home/apps/web-app', 'a nested match opens directly')
+    assert.equal(input(search).value, '')
+    const cancelsBeforeOff = cancels
+    await type(search, 'web')
+    await act(async () => { await Bun.sleep(250) })
+    await toggle('Search subfolders')
+    assert.equal(cancels, cancelsBeforeOff + 1, 'turning search off stops its walk in main')
+    await click('Home')
 
     await type(path, '/home/slow')
     await key(path, 'Enter')

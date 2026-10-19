@@ -68,7 +68,7 @@ pig-subagent 注册 `spawn({ title, prompt, background })`，分两层：`src/ma
 
 Pig 自己的数据：开发时 `cwd/.pig`，打包后 `$HOME/.pig`，`PIG_DIR` 作为最高优先级覆盖（见「启动」：开发时不要带上它）。Worktree 在该目录下 `worktrees/<项目名>/<uuid>`，同名项目撞目录时才加路径哈希；重命名只改 Git 分支，不改目录。pi 登录态读 `~/.pi/agent/auth.json`。
 
-添加项目使用应用内目录浏览器，不再调用原生选目录窗口。`ProjectPickerDialog` 通过 `project:browse-directories` 浏览本机一层目录，支持路径、面包屑、隐藏项与 Git 标记；最多返回 500 个子目录并提示截断，不递归索引 Home。renderer 只消费 main 返回的路径，不自行拼接平台路径；确认后 `session:open-project` 接收明确路径，main 再校验真实目录并沿用原来的项目注册逻辑。`system:pick-directory` 仍供 Skills 等其他用途使用。打开状态归 sessions catalog，添加按钮与快捷键共享入口。
+添加项目使用应用内目录浏览器，不再调用原生选目录窗口。`ProjectPickerDialog` 通过 `project:browse-directories` 浏览本机一层目录，支持路径、面包屑、隐藏项与 Git 标记；最多返回 500 个子目录并提示截断，不建立 Home 索引。打开「搜索子文件夹」后，`project:search-directories` 从当前目录按层广度优先匹配名称：不跟随符号链接，不进入 Git 仓库和 `node_modules` 等依赖/构建目录，无权限子目录标为 Git 未知（`git: null` 加警告，与浏览一致）且不进入；Git 探测与 readdir 都按 32 个一批并计入 4 万次文件系统操作上限，达到 200 个结果、该上限或 8 层时停止并标记截断。每个窗口最多一个搜索在跑：新请求或 `project:cancel-directory-search`（输入变化、关闭开关或对话框时由 renderer 发出）会中止上一个，遍历在每批之前检查 `AbortSignal`。renderer 只消费 main 返回的路径，不自行拼接平台路径；确认后 `session:open-project` 接收明确路径，main 再校验真实目录并沿用原来的项目注册逻辑。`system:pick-directory` 仍供 Skills 等其他用途使用。打开状态归 sessions catalog，添加按钮与快捷键共享入口。
 
 ## 进程与接口
 

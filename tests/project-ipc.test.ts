@@ -99,6 +99,8 @@ async function runFixture(): Promise<void> {
 
   const browse = handlers.get('project:browse-directories')
   const open = handlers.get('session:open-project')
+  const search = handlers.get('project:search-directories')!
+  const cancelSearch = handlers.get('project:cancel-directory-search')!
   assert.ok(browse)
   assert.ok(open)
   const temp = await mkdtemp(join(tmpdir(), 'pig-project-ipc-'))
@@ -111,6 +113,17 @@ async function runFixture(): Promise<void> {
     const listing = await browse({}, project, true) as { path: string; directories: { name: string }[] }
     assert.equal(listing.path, project)
     assert.deepEqual(listing.directories.map((item) => item.name), ['.hidden'])
+    // One walk per window: a newer request aborts the older one, cancel aborts the current one.
+    const sender = (id: number) => ({ sender: { id, once: () => {}, off: () => {} } })
+    const superseded = search(sender(1), path, 'project', false) as Promise<unknown>
+    const otherWindow = search(sender(2), path, 'project', false) as Promise<{ directories: unknown[] }>
+    const latest = search(sender(1), path, 'project', false) as Promise<{ directories: unknown[] }>
+    await assert.rejects(superseded, { name: 'AbortError' })
+    assert.equal((await otherWindow).directories.length, 1, 'other windows keep their own search')
+    assert.equal((await latest).directories.length, 1)
+    const cancelled = search(sender(1), path, 'project', false) as Promise<unknown>
+    cancelSearch(sender(1))
+    await assert.rejects(cancelled, { name: 'AbortError' })
     assert.deepEqual(await open({}, join(path, 'alias')), { cwd: project })
     assert.deepEqual(openCalls, [`canonical:${project}`, `add:${project}`, `load:${project}`])
     openCalls.length = 0

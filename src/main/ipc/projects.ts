@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { browseProjectDirectories, resolveProjectDirectory } from '../project-directory-browser'
+import { browseProjectDirectories, resolveProjectDirectory, searchProjectDirectories } from '../project-directory-browser'
 import { closeSessionsForCwd, createPendingSession } from '../pi/session-registry'
 import { removeProjectSessions } from '../pi/session-removal'
 import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
@@ -30,6 +30,26 @@ export function registerProjectIpc(): void {
   ipcMain.handle('project:browse-directories', async (_event, path?: string, showHidden?: boolean) =>
     browseProjectDirectories(path, showHidden)
   )
+  // At most one folder walk per window: a new request or an explicit cancel aborts the previous one,
+  // so pauses while typing cannot pile up concurrent walks on the libuv threadpool.
+  const searches = new Map<number, AbortController>()
+  ipcMain.handle('project:search-directories', async (event, path: string, query: string, showHidden: boolean) => {
+    const id = event.sender.id
+    searches.get(id)?.abort()
+    const controller = new AbortController()
+    searches.set(id, controller)
+    const abort = () => controller.abort()
+    event.sender.once('destroyed', abort)
+    try {
+      return await searchProjectDirectories(path, query, showHidden, controller.signal)
+    } finally {
+      event.sender.off('destroyed', abort)
+      if (searches.get(id) === controller) searches.delete(id)
+    }
+  })
+  ipcMain.handle('project:cancel-directory-search', (event) => {
+    searches.get(event.sender.id)?.abort()
+  })
 
   ipcMain.handle('session:open-project', async (_event, path: string) => {
     const picked = await resolveProjectDirectory(path)

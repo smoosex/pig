@@ -39,6 +39,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.equal(api.supportsGlass, supportsGlass, 'native material capability is synchronous and needs no IPC call')
   assert.equal(invokes.length, 0)
   await api.browseProjectDirectories('/home', true)
+  await api.searchProjectDirectories('/home', 'web', false)
+  await api.cancelProjectDirectorySearch()
   await api.openProject('/home/project')
   await api.readWorktreeDiff('/repo')
   await api.readWorktreePatch('/repo', 'staged')
@@ -69,6 +71,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
 
   assert.deepEqual(invokes, [
     { channel: 'project:browse-directories', args: ['/home', true] },
+    { channel: 'project:search-directories', args: ['/home', 'web', false] },
+    { channel: 'project:cancel-directory-search', args: [] },
     { channel: 'session:open-project', args: ['/home/project'] },
     { channel: 'diff:read-worktree', args: ['/repo'] },
     { channel: 'diff:read-patch', args: ['/repo', 'staged'] },

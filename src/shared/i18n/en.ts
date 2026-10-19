@@ -165,6 +165,7 @@ export const en: Messages = {
     reintegrate: 'Move to separate tab'
   },
   projectPicker: {
+    deep: 'Search subfolders', searching: 'Searching subfolders…', searchTruncated: 'Too many results or folders; the search stopped early. Use a more specific name or open a closer folder first.',
     title: 'Add project', description: 'Browse local folders and add the current directory. No project files are created or copied.',
     path: 'Folder path', pathPlaceholder: 'Enter an absolute path or ~/…', go: 'Go',
     home: 'Home', parent: 'Parent folder', refresh: 'Refresh folders', search: 'Search folders in this directory…',
