@@ -10,6 +10,7 @@ import type { BrowserBounds, BrowserPickerOptions } from '../../shared/browser'
 export function registerBrowserIpc(): void {
   const owners = new Map<string, BrowserWindow>()
   const watched = new WeakSet<BrowserWindow>()
+  const reloading = new WeakSet<BrowserWindow>()
   // DevTools front-end gets a default sandboxed view; only the inspected page uses the guest preload.
   const host = new BrowserHost((kind) => kind === 'devtools' ? new WebContentsView() : new WebContentsView({ webPreferences: {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
@@ -19,6 +20,7 @@ export function registerBrowserIpc(): void {
   function ui(event: IpcMainInvokeEvent, id: string): BrowserWindow {
     const win = windowForEvent(event)
     assertBrowserSender(event, win)
+    if (reloading.has(win)) throw new Error('Browser UI is reloading')
     if (typeof id !== 'string' || !/^browser:[a-z\d-]{1,128}$/i.test(id)) throw new Error('Invalid browser id')
     return win
   }
@@ -33,9 +35,23 @@ export function registerBrowserIpc(): void {
     owners.set(id, win)
     if (!watched.has(win)) {
       watched.add(win)
-      win.once('closed', () => {
+      const clear = () => {
         for (const [id, owner] of owners) if (owner === win) owners.delete(id)
+        host.closeWindow(win)
+      }
+      // Renderer teardown cannot reliably run React cleanup. Native panes must not outlive
+      // their owning UI document, including DevTools and previews hidden in the LRU cache.
+      win.webContents.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+        if (!isMainFrame || isInPlace) return
+        reloading.add(win)
+        clear()
       })
+      win.webContents.on('render-process-gone', () => {
+        reloading.add(win)
+        clear()
+      })
+      win.webContents.on('dom-ready', () => reloading.delete(win))
+      win.once('closed', clear)
     }
     return host.getState(win, id)
   })

@@ -12,7 +12,7 @@ async function fixture(): Promise<void> {
   let createView!: () => unknown
   let viewOptions: any
   const makeWindow = () => Object.assign(new EventEmitter(), {
-    webContents: { mainFrame: {}, isDestroyed: () => false }, isDestroyed: () => false
+    webContents: Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false }), isDestroyed: () => false
   })
   const win = makeWindow()
   const other = makeWindow()
@@ -31,6 +31,7 @@ async function fixture(): Promise<void> {
       inspect(_win: unknown, id: string) { calls.push(['inspect', id]) }
       setBounds(_win: unknown, id: string, bounds: unknown) { calls.push(['bounds', id, bounds]) }
       close(_win: unknown, id: string) { calls.push(['close', id]) }
+      closeWindow(win: unknown) { calls.push(['closeWindow', win]) }
     }
   }))
   const { registerBrowserIpc } = await import('../src/main/ipc/browser')
@@ -77,6 +78,32 @@ async function fixture(): Promise<void> {
     assert.throws(() => handlers.get('browser:copy-url')!(event, 'browser:owned'), /No HTTP/)
   }
   assert.equal(external.length, 1)
+
+  create(foreign, 'browser:foreign')
+  ui.emit('did-start-navigation', {}, 'https://ui.test/frame', false, false)
+  ui.emit('did-start-navigation', {}, 'https://ui.test/#hash', true, true)
+  assert.equal(get(event, 'browser:owned').browserId, 'browser:owned', 'subframe and same-document navigation keep panes')
+  assert.equal(calls.filter(([kind]) => kind === 'closeWindow').length, 0)
+  ui.emit('did-start-navigation', {}, 'https://ui.test/', false, true)
+  assert.deepEqual(calls.at(-1), ['closeWindow', win])
+  assert.throws(() => create(event, 'browser:late'), /reloading/, 'old UI cannot recreate views during reload')
+  assert.throws(() => get(event, 'browser:owned'), /reloading/)
+  assert.equal(get(foreign, 'browser:foreign').browserId, 'browser:foreign', 'another window is untouched')
+  ui.emit('dom-ready')
+  assert.throws(() => get(event, 'browser:owned'), /does not belong/, 'old registrations are gone after reload')
+  assert.throws(() => handlers.get('browser:set-bounds')!(event, 'browser:owned', { x: 0, y: 0, width: 100, height: 100 }), /does not belong/)
+  pageUrl = undefined
+  assert.deepEqual(create(event, 'browser:fresh'), { browserId: 'browser:fresh' })
+  assert.equal(ui.listenerCount('did-start-navigation'), 1, 'repeated UI documents do not accumulate lifecycle listeners')
+  ui.emit('render-process-gone', {}, { reason: 'crashed' })
+  assert.deepEqual(calls.at(-1), ['closeWindow', win])
+  assert.throws(() => create(event, 'browser:late'), /reloading/)
+  ui.emit('dom-ready')
+  assert.throws(() => get(event, 'browser:fresh'), /does not belong/)
+  create(event, 'browser:recovered')
+  win.emit('closed')
+  assert.deepEqual(calls.at(-1), ['closeWindow', win])
+  assert.throws(() => get(event, 'browser:recovered'), /does not belong/)
 }
 
 if (process.argv.includes('--browser-ipc-fixture')) await fixture()

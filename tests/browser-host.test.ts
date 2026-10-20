@@ -46,18 +46,19 @@ class FakeView {
 }
 function fixture() {
   const views: FakeView[] = []
+  const removed: unknown[] = []
   const win = Object.assign(new EventEmitter(), {
     webContents: new FakeContents(), dead: false,
     isDestroyed() { return this.dead },
     getContentSize: () => [600, 400],
-    contentView: { addChildView: () => {}, removeChildView: () => {} }
+    contentView: { addChildView: () => {}, removeChildView: (view: unknown) => { removed.push(view) } }
   })
   const host = new BrowserHost(() => {
     const view = new FakeView()
     views.push(view)
     return view as unknown as WebContentsView
   })
-  return { host, win, owner: win as unknown as BrowserWindow, views }
+  return { host, win, owner: win as unknown as BrowserWindow, views, removed }
 }
 const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
@@ -104,6 +105,54 @@ describe('browser host', () => {
     win.emit('closed')
     expect(views.every(v => v.webContents.dead)).toBe(true)
     expect(() => host.getState(owner, 'e')).toThrow()
+  })
+
+  test('window reset disposes visible and cached pages, DevTools and in-flight captures without retaining UI state', async () => {
+    const { host, owner, win, views, removed } = fixture()
+    host.setBounds(owner, 'a', bounds)
+    await host.navigate(owner, 'a', 'https://example.test/a')
+    host.setSelecting(owner, 'a', true)
+    const wc = views[0].webContents
+    wc.emit('ipc-message', { sender: wc, senderFrame: wc.mainFrame }, BROWSER_SELECTION_CHANNEL, {
+      documentId: host.getState(owner, 'a').documentId, element, comment: 'old document'
+    })
+    expect(host.getState(owner, 'a').annotations).toHaveLength(1)
+    host.inspect(owner, 'a')
+    host.setBounds(owner, 'cached', bounds)
+    await host.navigate(owner, 'cached', 'https://example.test/cached')
+    host.setBounds(owner, 'cached', null)
+    const image = await wc.capturePage()
+    let finish!: (value: typeof image) => void
+    const waiting = new Promise<typeof image>(resolve => { finish = resolve })
+    wc.capturePage = () => waiting
+    const capture = host.capture(owner, 'a')
+    const snapshot = host.snapshot(owner, 'a')
+    const pushes = win.webContents.sent.length
+    host.closeWindow(owner)
+    expect(views).toHaveLength(3)
+    expect(views.every(view => view.webContents.dead)).toBe(true)
+    expect(removed).toHaveLength(3)
+    expect(win.webContents.sent).toHaveLength(pushes)
+    host.closeWindow(owner)
+    expect(removed).toHaveLength(3)
+    finish(image)
+    await expect(capture).rejects.toThrow('Browser page changed during capture')
+    expect(await snapshot).toBeNull()
+    for (const id of ['a', 'cached']) {
+      expect(host.getState(owner, id)).toMatchObject({ url: '', documentId: '', annotations: [], devtools: false })
+    }
+    host.setBounds(owner, 'fresh', bounds)
+    await host.navigate(owner, 'fresh', 'https://example.test/new')
+    const fresh = views.at(-1)!
+    expect(fresh.visible).toBe(true)
+    expect(fresh.webContents.dead).toBe(false)
+    expect(win.listenerCount('resize')).toBe(1)
+    expect(win.listenerCount('closed')).toBe(1)
+    fresh.bounds = undefined
+    win.emit('resize')
+    expect(fresh.bounds).toEqual({ x: 15, y: 30, width: 450, height: 300 })
+    win.emit('closed')
+    expect(fresh.webContents.dead).toBe(true)
   })
 
   test('only current-document main-frame selections accepted; navigation cancels picking', async () => {

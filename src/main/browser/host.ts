@@ -49,6 +49,7 @@ export function emptyBrowserState(browserId: string): BrowserState {
 
 export class BrowserHost {
   private windows = new Map<BrowserWindow, WindowPages>()
+  private watched = new WeakSet<BrowserWindow>()
   private clock = 0
 
   constructor(private createView: (kind: 'page' | 'devtools') => WebContentsView) {}
@@ -59,21 +60,29 @@ export class BrowserHost {
     if (!owner) {
       owner = { win, pages: new Map(), urls: new Map(), annotations: new Map(), ordinals: new Map(), disposed: false }
       this.windows.set(win, owner)
-      const current = owner
-      win.once('closed', () => {
-        current.disposed = true
-        for (const page of current.pages.values()) this.dispose(current, page)
-        current.pages.clear()
-        current.urls.clear()
-        current.annotations.clear()
-        current.ordinals.clear()
-        this.windows.delete(win)
-      })
-      win.on('resize', () => {
-        if (!current.disposed) for (const page of current.pages.values()) this.layout(current, page)
-      })
+      if (!this.watched.has(win)) {
+        this.watched.add(win)
+        win.once('closed', () => this.closeWindow(win))
+        win.on('resize', () => {
+          const current = this.windows.get(win)
+          if (current && !current.disposed) for (const page of current.pages.values()) this.layout(current, page)
+        })
+      }
     }
     return owner
+  }
+
+  /** Invalidate async page work before disposal; a reloaded UI gets a fresh window owner. */
+  closeWindow(win: BrowserWindow): void {
+    const owner = this.windows.get(win)
+    if (!owner) return
+    owner.disposed = true
+    this.windows.delete(win)
+    for (const page of owner.pages.values()) this.dispose(owner, page)
+    owner.pages.clear()
+    owner.urls.clear()
+    owner.annotations.clear()
+    owner.ordinals.clear()
   }
 
   private alive(owner: WindowPages, page: Page): boolean {
