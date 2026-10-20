@@ -10,7 +10,7 @@ async function fixture() {
   const { mock } = await import('bun:test')
   mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: string) => key }))
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class {
-    observe() {} disconnect() {}
+    observe() {} unobserve() {} disconnect() {}
   } })
   const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null })
   let pushState: (next: BrowserState) => void = () => {}
@@ -164,7 +164,13 @@ async function fixture() {
   assert.ok(container.querySelector('[aria-label="browser.sendMarks"]'))
   assert.ok(container.querySelector('[aria-label="browser.clearMarks"]'))
   assert.equal(document.querySelector('[role="menu"]'), null)
+  const destinationButton = container.querySelector<HTMLButtonElement>('[aria-label="browser.chooseSession"]')!
+  await act(async () => { destinationButton.focus() })
+  await flush()
+  assert.ok(document.querySelector('[role="tooltip"]')?.textContent?.includes('browser.chooseSession'), 'the destination arrow has its own tooltip')
+  await act(async () => { destinationButton.blur() })
   await click('sendMarks')
+  assert.equal(document.querySelector('[role="tooltip"]'), null, 'the destination tooltip closes while choosing a chat')
   assert.ok(document.querySelector('[role="menu"]'), 'without a chosen chat, Send opens the target menu instead of writing anywhere')
   assert.equal(serializeComposerDocument(drafts.getState().drafts['session-a']!.content!).text, 'Existing')
   await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })

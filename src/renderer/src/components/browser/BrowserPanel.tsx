@@ -181,9 +181,14 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
             () => selectedDestination ? addToDraft(selectedDestination.id) : setMenuOpen(true), sending, undefined,
             selectedDestination ? t('browser.sendMarksTo', { title: selectedDestination.title }) : t('browser.chooseSession'))}
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="icon-sm" aria-label={t('browser.chooseSession')} disabled={sending}><ChevronDown className="size-3.5" /></Button>
-            </DropdownMenuTrigger>
+            <Tooltip open={menuOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={t('browser.chooseSession')} disabled={sending}><ChevronDown className="size-3.5" /></Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>{t('browser.chooseSession')}</TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>{t('browser.currentChat')}</DropdownMenuSubTrigger>
