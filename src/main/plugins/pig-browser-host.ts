@@ -4,12 +4,20 @@
  * The extension only declares tools; pages, windows and session ownership live in main. Both module
  * instances meet on globalThis, like pig-subagent-host.
  */
+import type { BrowserInteraction } from '../browser/agent-interaction'
+
 export interface BrowserToolResult {
   text: string
   image?: { data: string; mimeType: string }
 }
 
 export type BrowserHistoryAction = 'back' | 'forward' | 'reload'
+export interface BrowserWaitOptions {
+  ref?: string
+  selector?: string
+  state?: 'visible' | 'hidden' | 'attached' | 'detached'
+  timeout?: number
+}
 
 export interface BrowserAgentHost {
   tabs(sessionId: string): Promise<BrowserToolResult>
@@ -20,6 +28,8 @@ export interface BrowserAgentHost {
   screenshot(sessionId: string, signal?: AbortSignal): Promise<BrowserToolResult>
   console(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult>
   annotations(sessionId: string): Promise<BrowserToolResult>
+  interact(sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<BrowserToolResult>
+  wait(sessionId: string, options: BrowserWaitOptions, signal?: AbortSignal): Promise<BrowserToolResult>
 }
 
 const key = Symbol.for('pig:browser-agent-host')

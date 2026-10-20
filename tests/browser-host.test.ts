@@ -52,7 +52,7 @@ class FakeContents extends EventEmitter {
   evaluation: () => Promise<unknown> = async () => 'result'
   executeJavaScriptInIsolatedWorld(world: number, scripts: Array<{ code: string }>) {
     this.evaluated.push([world, scripts[0]!.code])
-    return this.evaluation()
+    return this.evaluation().then(value => ({ ok: true, value }))
   }
 }
 class FakeView {
@@ -387,7 +387,8 @@ describe('browser host', () => {
     expect(host.consoleEntries(owner, 'browser:a')).toHaveLength(0)
 
     expect(await host.evaluate(owner, 'browser:a', 7, 'code')).toBe('result')
-    expect(contents.evaluated).toEqual([[7, 'code']])
+    expect(contents.evaluated[0]![0]).toBe(7)
+    expect(contents.evaluated[0]![1]).toContain('value: await (code)')
     contents.evaluation = async () => { contents.emit('did-start-navigation', {}, 'https://example.test/other', false, true); return 'stale' }
     await expect(host.evaluate(owner, 'browser:a', 7, 'code')).rejects.toThrow('navigated')
 
@@ -399,6 +400,38 @@ describe('browser host', () => {
     contents.loading = false
     expect(await host.waitForLoad(owner, 'browser:a', 5)).toBe(true)
     expect(() => host.waitForLoad(owner, 'browser:missing', 5)).toThrow('not open')
+  })
+
+  test('page interaction stops before input if control or the document changes during preparation', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'browser:a', 'session-1')
+    await host.navigate(owner, 'browser:a', 'https://example.test')
+    const contents = views[0]!.webContents
+    const click = { action: 'click' as const, ref: 'e1' }
+    await expect(host.interact(owner, 'browser:a', 'session-2', click)).rejects.toThrow('released')
+    expect(contents.evaluated).toHaveLength(0)
+    contents.evaluation = async () => {
+      host.setAgent(owner, 'browser:a', null)
+      return { x: 10, y: 10 }
+    }
+    await expect(host.interact(owner, 'browser:a', 'session-1', click)).rejects.toThrow('released')
+    expect(contents.debuggerCommands).toHaveLength(0)
+    host.setAgent(owner, 'browser:a', 'session-1')
+    contents.evaluation = async () => {
+      contents.emit('did-start-navigation', {}, 'https://example.test/next', false, true)
+      return { x: 10, y: 10 }
+    }
+    await expect(host.interact(owner, 'browser:a', 'session-1', click)).rejects.toThrow('page changed')
+    expect(contents.debuggerCommands).toHaveLength(0)
+    contents.evaluation = async () => ({ x: 10, y: 10 })
+    await host.interact(owner, 'browser:a', 'session-1', click)
+    expect(contents.debuggerCommands).toEqual([
+      ['Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10 }],
+      ['Input.dispatchMouseEvent', { type: 'mousePressed', x: 10, y: 10, button: 'left', clickCount: 1 }],
+      ['Input.dispatchMouseEvent', { type: 'mouseReleased', x: 10, y: 10, button: 'left', clickCount: 1 }]
+    ])
+    expect(views[0]!.visible).toBe(false)
+    expect(contents.debuggerAttached).toBe(false)
   })
 
   test('agent takeover reloads the saved URL of an evicted tab without waiting for it to become visible', async () => {

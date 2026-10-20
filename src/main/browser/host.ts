@@ -7,6 +7,8 @@ import {
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
+import { executeBrowserScript } from './browser-script'
+import { interactWithPage, type BrowserInteraction } from './agent-interaction'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
 interface Page {
@@ -485,6 +487,20 @@ export class BrowserHost {
     if (restoreUrl) this.restorePage(win, id, restoreUrl)
   }
 
+  async interact(win: BrowserWindow, id: string, sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<void> {
+    const { owner, page } = this.page(win, id, false)
+    if (!page) throw new Error('Browser page is not open')
+    const documentId = page.state.documentId
+    const assertCurrent = () => {
+      signal?.throwIfAborted()
+      if (!this.alive(owner, page) || documentId !== page.state.documentId) throw new Error('Browser page changed during interaction')
+      if (owner.agents.get(id) !== sessionId) throw new Error('Browser control was released or transferred')
+      if (!isBrowserUrl(page.state.url) || page.state.error) throw new Error('Browser page is not ready')
+    }
+    assertCurrent()
+    await interactWithPage(page.view.webContents, request, signal, assertCurrent)
+  }
+
   /** Resolves true once the main frame stopped loading, false when `timeout` elapsed first. */
   waitForLoad(win: BrowserWindow, id: string, timeout: number): Promise<boolean> {
     const { owner, page } = this.page(win, id, false)
@@ -505,7 +521,7 @@ export class BrowserHost {
     const { owner, page } = this.page(win, id, false)
     if (!page || !this.alive(owner, page) || !isBrowserUrl(page.state.url)) throw new Error('No HTTP(S) page is open')
     const documentId = page.state.documentId
-    const result = await page.view.webContents.executeJavaScriptInIsolatedWorld(world, [{ code }]) as T
+    const result = await executeBrowserScript<T>(page.view.webContents, world, code)
     if (!this.alive(owner, page) || documentId !== page.state.documentId) throw new Error('Browser page navigated while it was being read')
     return result
   }

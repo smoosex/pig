@@ -19,7 +19,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
     expect(loader.getExtensions().errors).toEqual([])
     const extension = loader.getExtensions().extensions.find((item) => item.path === path)!
     expect([...extension.tools.keys()].sort()).toEqual([
-      'browser_annotations', 'browser_console', 'browser_history', 'browser_navigate', 'browser_open', 'browser_screenshot', 'browser_snapshot', 'browser_tabs'
+      'browser_annotations', 'browser_click', 'browser_console', 'browser_history', 'browser_navigate', 'browser_open', 'browser_press', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_tabs', 'browser_type', 'browser_wait'
     ])
     const tool = (name: string) => extension.tools.get(name)!.definition
     const ctx = { cwd: root, sessionManager: { getSessionId: () => 'session-1' } }
@@ -30,7 +30,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
     const text = (name: string) => async (...args: unknown[]) => { calls.push([name, ...args]); return { text: name } }
     registerBrowserAgentHost({
       tabs: text('tabs'), open: text('open'), navigate: text('navigate'), history: text('history'),
-      snapshot: text('snapshot'), console: text('console'), annotations: text('annotations'),
+      snapshot: text('snapshot'), console: text('console'), annotations: text('annotations'), interact: text('interact'), wait: text('wait'),
       screenshot: async (...args) => { calls.push(['screenshot', ...args]); return { text: 'shot', image: { data: 'PNG', mimeType: 'image/png' } } }
     } satisfies BrowserAgentHost)
     await tool('browser_open').execute('c1', { url: 'http://localhost:3000' }, controller.signal, undefined, ctx as never)
@@ -44,6 +44,21 @@ test('the jiti-loaded browser tools forward the session to the host registered b
     expect(await tool('browser_screenshot').execute('c4', {}, controller.signal, undefined, ctx as never)).toEqual({
       content: [{ type: 'text', text: 'shot' }, { type: 'image', data: 'PNG', mimeType: 'image/png' }], details: undefined
     })
+    calls.length = 0
+    await tool('browser_click').execute('c5', { ref: 'e1' }, controller.signal, undefined, ctx as never)
+    await tool('browser_type').execute('c6', { ref: 'e2', text: 'hello' }, controller.signal, undefined, ctx as never)
+    await tool('browser_press').execute('c7', { key: 'Enter' }, controller.signal, undefined, ctx as never)
+    await tool('browser_scroll').execute('c8', { deltaY: 400 }, controller.signal, undefined, ctx as never)
+    await tool('browser_select').execute('c9', { ref: 'e3', values: ['pro'] }, controller.signal, undefined, ctx as never)
+    await tool('browser_wait').execute('c10', { selector: '#ready', state: 'visible' }, controller.signal, undefined, ctx as never)
+    expect(calls).toEqual([
+      ['interact', 'session-1', { action: 'click', ref: 'e1' }, controller.signal],
+      ['interact', 'session-1', { action: 'type', ref: 'e2', text: 'hello', replace: true }, controller.signal],
+      ['interact', 'session-1', { action: 'press', key: 'Enter', ref: undefined }, controller.signal],
+      ['interact', 'session-1', { action: 'scroll', deltaY: 400, deltaX: undefined, ref: undefined }, controller.signal],
+      ['interact', 'session-1', { action: 'select', ref: 'e3', values: ['pro'] }, controller.signal],
+      ['wait', 'session-1', { selector: '#ready', state: 'visible' }, controller.signal]
+    ])
     for (const { definition } of extension.tools.values()) {
       expect(definition.exposure).toBe('deferred')
       expect(definition.namespace?.name).toBe('browser')
