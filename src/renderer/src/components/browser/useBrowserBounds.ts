@@ -2,45 +2,62 @@
 import { useLayoutEffect, type RefObject } from 'react'
 import type { BrowserBounds } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
+import { waitForBrowserPaint } from './browser-frame'
 
 let writes: Promise<void> = Promise.resolve()
 const owners = new Map<string, object>()
 
-const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-radix-popper-content-wrapper]'
+const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"]'
 const REVEAL = '[data-surface-reveal]'
-const RELEVANT = `${OVERLAY}, ${REVEAL}`
+// Positioning wrappers trigger remeasurement, but their boxes are not visible occluders.
+const RELEVANT = `${OVERLAY}, ${REVEAL}, [data-radix-popper-content-wrapper]`
 
 export function useBrowserBounds(
   browserId: string,
   visible: boolean,
   viewport: RefObject<HTMLDivElement | null>,
   onError: (error: unknown) => void,
-  onFreeze: (frame: string | null) => void
+  onFreeze: (frame: string | null, signal: AbortSignal) => void | Promise<void>
 ): void {
   useLayoutEffect(() => {
     const token = {}
     if (visible) owners.set(browserId, token)
     let last = ''
+    let applied: string | undefined
     let frame = 0
-    const enqueue = (bounds: BrowserBounds | null, hide = false, freeze = false, key?: string) => {
+    let pending: AbortController | undefined
+    const enqueue = (bounds: BrowserBounds | null, freeze: boolean, key: string, signal: AbortSignal) => {
+      const current = () => !signal.aborted && owners.get(browserId) === token
       writes = writes.then(async () => {
-        const owner = owners.get(browserId)
-        if (hide ? owner && owner !== token : owner !== token) return
-        // A failed capture cannot prevent mandatory occlusion. Report it after attempting to hide,
-        // including when setBounds also fails; neither IPC failure is translated into success.
+        if (!current()) return
         let captureFailure: { error: unknown } | undefined
-        if (freeze) {
-          try { onFreeze(await api.browser.snapshot(browserId)) }
-          catch (error) { captureFailure = { error } }
+        if (freeze && applied !== key) {
+          try {
+            const snapshot = await api.browser.snapshot(browserId)
+            if (!current()) return
+            // A page already hidden by the previous owner may have no new frame. Keep its placeholder.
+            if (snapshot !== null) await onFreeze(snapshot, signal)
+          } catch (error) { captureFailure = { error } }
         }
+        if (!current()) return
+        // A failed capture/decode cannot prevent mandatory occlusion. Report it after attempting
+        // to hide, including when setBounds also fails, without caching failed native writes.
         try {
-          await api.browser.setBounds(browserId, bounds)
-          if (!freeze) onFreeze(null)
+          if (applied !== key) {
+            await api.browser.setBounds(browserId, bounds)
+            applied = key
+          }
+          if (bounds !== null && current()) {
+            // IPC acknowledgement is not a native presentation acknowledgement. Keep the decoded
+            // frame across the next paint opportunity rather than removing it in the IPC microtask.
+            await waitForBrowserPaint(signal)
+            if (current()) await onFreeze(null, signal)
+          }
         } finally {
           if (captureFailure) onError(captureFailure.error)
         }
       }).catch(error => {
-        if (key !== undefined && last === key) last = ''
+        if (current()) last = ''
         onError(error)
       })
     }
@@ -51,6 +68,7 @@ export function useBrowserBounds(
         .some((element) => {
           const style = getComputedStyle(element)
           if (element.dataset.state === 'closed' || element.hidden || style.display === 'none' || style.visibility === 'hidden') return false
+          if (style.opacity === '0' && (!style.animationName || style.animationName === 'none')) return false
           if (element.matches('[role="dialog"], [role="alertdialog"]')) return true
           const overlay = element.getBoundingClientRect()
           return rect && overlay.width > 0 && overlay.height > 0 && overlay.left < rect.right &&
@@ -61,7 +79,9 @@ export function useBrowserBounds(
       const key = JSON.stringify(bounds)
       if (last === key) return
       last = key
-      enqueue(bounds, false, visible && blocked && !!rect && rect.width > 0 && rect.height > 0, key)
+      pending?.abort()
+      pending = new AbortController()
+      enqueue(bounds, visible && blocked && !!rect && rect.width > 0 && rect.height > 0, key, pending.signal)
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
     const observer = new ResizeObserver(schedule)
@@ -80,13 +100,17 @@ export function useBrowserBounds(
     window.addEventListener('scroll', schedule, true)
     schedule()
     return () => {
+      pending?.abort()
       if (owners.get(browserId) === token) owners.delete(browserId)
       cancelAnimationFrame(frame)
       observer.disconnect()
       mutations.disconnect()
       window.removeEventListener('resize', schedule)
       window.removeEventListener('scroll', schedule, true)
-      enqueue(null, true)
+      writes = writes.then(async () => {
+        const owner = owners.get(browserId)
+        if (!owner || owner === token) await api.browser.setBounds(browserId, null)
+      }).catch(onError)
     }
   }, [browserId, visible, viewport, onError, onFreeze])
 }

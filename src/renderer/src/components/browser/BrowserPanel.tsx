@@ -1,5 +1,6 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
@@ -10,13 +11,14 @@ import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Badge } from '../ui/badge'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '../ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { useSessionsStore } from '../../stores/sessions'
 import { addBrowserAnnotationsToDraft, browserPickerOptions } from './browser-annotations'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { appendBrowserScreenshotDraft } from './browser-draft'
 import { useBrowserBounds } from './useBrowserBounds'
+import { decodeBrowserFrame, waitForBrowserPaint } from './browser-frame'
 
 interface BrowserPanelProps {
   browserId: string
@@ -93,7 +95,13 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   useEffect(() => {
     if (!active) invalidateCapture()
   }, [active, invalidateCapture])
-  const freeze = useCallback((frame: string | null) => { if (alive.current) setFrozen(frame) }, [])
+  const freeze = useCallback(async (frame: string | null, signal: AbortSignal) => {
+    if (frame !== null) await decodeBrowserFrame(frame, signal)
+    if (!alive.current || signal.aborted) return
+    // Commit the decoded placeholder before its paint barrier; setState alone is not a DOM handoff.
+    flushSync(() => setFrozen(frame))
+    if (frame !== null) await waitForBrowserPaint(signal)
+  }, [])
   useBrowserBounds(browserId, active && !!state?.url, viewport, report, freeze)
 
   const pickerOptions = useCallback(() => browserPickerOptions({
@@ -192,11 +200,13 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>{t('browser.currentChat')}</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-64">
-                  {destinations.length ? destinations.map((tab) => <DropdownMenuItem key={tab.id} onSelect={() => useSessionsStore.getState().setBrowserTarget(browserId, tab.id)}>
-                    {tab.id === selectedDestination?.id ? <Check /> : null}<span className="min-w-0 truncate">{tab.title}</span>
-                  </DropdownMenuItem>) : <DropdownMenuItem disabled>{t('browser.noSessions')}</DropdownMenuItem>}
-                </DropdownMenuSubContent>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent className="w-64" sideOffset={8}>
+                    {destinations.length ? destinations.map((tab) => <DropdownMenuItem key={tab.id} onSelect={() => useSessionsStore.getState().setBrowserTarget(browserId, tab.id)}>
+                      {tab.id === selectedDestination?.id ? <Check /> : null}<span className="min-w-0 truncate">{tab.title}</span>
+                    </DropdownMenuItem>) : <DropdownMenuItem disabled>{t('browser.noSessions')}</DropdownMenuItem>}
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={addToNewChat}>{t('browser.newChat')}</DropdownMenuItem>
