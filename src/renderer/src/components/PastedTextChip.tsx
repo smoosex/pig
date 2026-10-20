@@ -14,7 +14,7 @@ export function PastedTextChip({
 }) {
   const t = useT()
   return (
-    <PastedTextPreview text={attachment.text} byteSize={attachment.byteSize}>
+    <PastedTextPreview text={attachment.text} byteSize={attachment.byteSize} title={attachment.filename}>
       <Button
         type="button"
         variant="outline"

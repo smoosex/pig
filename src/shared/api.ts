@@ -848,7 +848,10 @@ export interface ProjectDirectorySearch {
   truncated: boolean
 }
 
+export type * from './browser'
+
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
+  browser: import('./browser').BrowserApi
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>
   listWorktreeSessions: (projectCwd: string, cwd: string) => Promise<SessionMeta[]>

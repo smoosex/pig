@@ -115,6 +115,7 @@ export const UserBubble = memo(function UserBubble({
                   key={attachment.id}
                   text={attachment.text}
                   byteSize={attachment.byteSize}
+                  title={attachment.filename}
                 >
                   <Button
                     type="button"
@@ -124,7 +125,7 @@ export const UserBubble = memo(function UserBubble({
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 text-xs font-medium">
                         <FileText data-icon="inline-start" />
-                        <span>{t('composer.pastedText')}</span>
+                        <span>{attachment.filename ?? t('composer.pastedText')}</span>
                       </span>
                       <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
                         {attachment.text}

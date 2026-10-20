@@ -3,6 +3,7 @@ import { createCatalogSlice } from './sessions/catalog-slice'
 import { createConversationSlice } from './sessions/conversation-slice'
 import { createTabsSlice } from './sessions/tabs-slice'
 import { useSettingsStore } from './settings'
+import { api } from '../ipc/api'
 import type { SessionsStore } from './sessions/types'
 
 export type { ProjectGroup, SessionMeta, WorktreeGroup } from '../ipc/api'
@@ -26,6 +27,18 @@ useSettingsStore.subscribe((state, previous) => {
 useSessionsStore.subscribe((state) => {
   const sessionId = selectActiveSessionId(state)
   if (sessionId && state.runtime[sessionId]?.unread) state.markRead(sessionId)
+})
+
+// Browser tabs own native resources even when a project removal bypasses closeTab.
+useSessionsStore.subscribe((state, previous) => {
+  if (state.openTabs === previous.openTabs) return
+  const remaining = new Set(state.openTabs.map((tab) => tab.id))
+  for (const tab of previous.openTabs) {
+    if (tab.kind !== 'browser' || remaining.has(tab.id)) continue
+    void api.browser.close(tab.id).catch((error: unknown) => {
+      useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+    })
+  }
 })
 
 /**

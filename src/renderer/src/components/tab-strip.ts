@@ -1,4 +1,5 @@
 import type { OpenTab } from '../stores/sessions/types'
+import { isChatScope } from '../stores/sessions/tab-order'
 import type { SidebarTab } from '../../../shared/api'
 
 /**
@@ -17,8 +18,8 @@ export function visibleTabsFor(
   currentProjectCwd: string | null
 ): OpenTab[] {
   return stripShowsChats(tab, currentProjectCwd)
-    ? tabs.filter((item) => item.kind === 'chat')
-    : tabs.filter((item) => item.kind !== 'chat' && item.cwd === currentProjectCwd)
+    ? tabs.filter(isChatScope)
+    : tabs.filter((item) => !isChatScope(item) && item.cwd === currentProjectCwd)
 }
 
 /**
@@ -52,20 +53,20 @@ export function halfSwitch(
 ): HalfSwitch {
   const active = tabs.find((item) => item.id === activeTabId)
   if (next === 'chats') {
-    if (active?.kind === 'chat') return { kind: 'none' }
-    const chats = tabs.filter((item) => item.kind === 'chat')
+    if (active && isChatScope(active)) return { kind: 'none' }
+    const chats = tabs.filter(isChatScope)
     const target = chats.find((item) => item.id === lastChatTabId) ?? chats.at(-1)
     return target ? { kind: 'chat', tabId: target.id } : { kind: 'chatHome' }
   }
-  if (active && active.kind !== 'chat') return { kind: 'none' }
+  if (active && !isChatScope(active)) return { kind: 'none' }
   const held = (cwd: string | null): string | null =>
-    cwd && (knownProjectCwds.has(cwd) || tabs.some((tab) => tab.kind !== 'chat' && tab.cwd === cwd))
+    cwd && (knownProjectCwds.has(cwd) || tabs.some((tab) => !isChatScope(tab) && tab.cwd === cwd))
       ? cwd
       : null
   const cwd = held(lastProjectCwd) ?? held(currentProjectCwd)
   if (cwd) return { kind: 'project', cwd }
   // Without a worktree the strip falls back to chats, so the pane has nothing of this half to show.
   if (currentProjectCwd === null) return { kind: 'none' }
-  const newest = tabs.findLast((item) => item.kind !== 'chat')
+  const newest = tabs.findLast((item) => !isChatScope(item))
   return newest ? { kind: 'project', cwd: newest.cwd } : { kind: 'none' }
 }

@@ -69,6 +69,24 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.renameEntry('/repo', 'src/thing.ts', 'entry.ts')
   await api.trashEntry('/repo', 'src/entry.ts')
   await api.copyPath('/repo', 'src/entry.ts')
+  await api.browser.create('browser:one')
+  await api.browser.getState('session-1')
+  await api.browser.navigate('session-1', 'http://localhost:3000')
+  await api.browser.back('session-1')
+  await api.browser.forward('session-1')
+  await api.browser.reload('session-1')
+  await api.browser.setBounds('session-1', { x: 10, y: 20, width: 500, height: 600 })
+  await api.browser.setBounds('session-1', null)
+  await api.browser.setSelecting('session-1', true)
+  await api.browser.removeAnnotations('browser:one', ['note-1', 'note-2'])
+  await api.browser.capture('session-1')
+  await api.browser.snapshot('browser:one')
+  await api.browser.copyUrl('browser:one')
+  await api.browser.openExternal('browser:one')
+  await api.browser.inspect('browser:one')
+  await api.browser.close('session-1')
+  api.browser.onState(() => {})()
+  api.browser.onSelection(() => {})()
 
   assert.deepEqual(invokes, [
     { channel: 'project:browse-directories', args: ['/home', true] },
@@ -102,12 +120,30 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'files:create-directory', args: ['/repo', 'src/nested'] },
     { channel: 'files:rename', args: ['/repo', 'src/thing.ts', 'entry.ts'] },
     { channel: 'files:trash', args: ['/repo', 'src/entry.ts'] },
-    { channel: 'files:copy-path', args: ['/repo', 'src/entry.ts'] }
+    { channel: 'files:copy-path', args: ['/repo', 'src/entry.ts'] },
+    { channel: 'browser:create', args: ['browser:one'] },
+    { channel: 'browser:get-state', args: ['session-1'] },
+    { channel: 'browser:navigate', args: ['session-1', 'http://localhost:3000'] },
+    { channel: 'browser:back', args: ['session-1'] },
+    { channel: 'browser:forward', args: ['session-1'] },
+    { channel: 'browser:reload', args: ['session-1'] },
+    { channel: 'browser:set-bounds', args: ['session-1', { x: 10, y: 20, width: 500, height: 600 }] },
+    { channel: 'browser:set-bounds', args: ['session-1', null] },
+    { channel: 'browser:set-selecting', args: ['session-1', true, undefined] },
+    { channel: 'browser:remove-annotations', args: ['browser:one', ['note-1', 'note-2']] },
+    { channel: 'browser:capture', args: ['session-1'] },
+    { channel: 'browser:snapshot', args: ['browser:one'] },
+    { channel: 'browser:copy-url', args: ['browser:one'] },
+    { channel: 'browser:open-external', args: ['browser:one'] },
+    { channel: 'browser:inspect', args: ['browser:one'] },
+    { channel: 'browser:close', args: ['session-1'] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
   assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')
   assert.ok(listeners.includes('system-plugins:ui'))
+  assert.ok(listeners.includes('browser:state'))
+  assert.ok(listeners.includes('browser:selection'))
   assert.equal('replyPluginUI' in api, false)
   assert.equal('onPluginUI' in api, false)
 }

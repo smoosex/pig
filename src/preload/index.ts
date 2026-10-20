@@ -4,6 +4,33 @@ import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, Wo
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
+  browser: {
+    create: (browserId) => ipcRenderer.invoke('browser:create', browserId),
+    getState: (browserId) => ipcRenderer.invoke('browser:get-state', browserId),
+    navigate: (browserId, url) => ipcRenderer.invoke('browser:navigate', browserId, url),
+    back: (browserId) => ipcRenderer.invoke('browser:back', browserId),
+    forward: (browserId) => ipcRenderer.invoke('browser:forward', browserId),
+    reload: (browserId) => ipcRenderer.invoke('browser:reload', browserId),
+    setBounds: (browserId, bounds) => ipcRenderer.invoke('browser:set-bounds', browserId, bounds),
+    setSelecting: (browserId, selecting, options) => ipcRenderer.invoke('browser:set-selecting', browserId, selecting, options),
+    removeAnnotations: (browserId, ids) => ipcRenderer.invoke('browser:remove-annotations', browserId, ids),
+    capture: (browserId) => ipcRenderer.invoke('browser:capture', browserId),
+    snapshot: (browserId) => ipcRenderer.invoke('browser:snapshot', browserId),
+    copyUrl: (browserId) => ipcRenderer.invoke('browser:copy-url', browserId),
+    openExternal: (browserId) => ipcRenderer.invoke('browser:open-external', browserId),
+    inspect: (browserId) => ipcRenderer.invoke('browser:inspect', browserId),
+    close: (browserId) => ipcRenderer.invoke('browser:close', browserId),
+    onState: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import('../shared/browser').BrowserState) => listener(state)
+      ipcRenderer.on('browser:state', handler)
+      return () => ipcRenderer.off('browser:state', handler)
+    },
+    onSelection: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, selection: import('../shared/browser').BrowserSelection) => listener(selection)
+      ipcRenderer.on('browser:selection', handler)
+      return () => ipcRenderer.off('browser:selection', handler)
+    }
+  },
   listProjects: () => ipcRenderer.invoke('session:list-projects'),
   discoverOpenedWorktrees: () => ipcRenderer.invoke('project:discover-opened-worktrees'),
   listWorktreeSessions: (projectCwd: string, cwd: string) =>

@@ -14,10 +14,12 @@ import {
 export function PastedTextPreview({
   text,
   byteSize,
+  title,
   children
 }: {
   text: string
   byteSize: number
+  title?: string
   children: ReactElement
 }) {
   const t = useT()
@@ -46,7 +48,7 @@ export function PastedTextPreview({
         className="max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] w-[min(32rem,calc(100vw-2rem))] overflow-hidden rounded-xl p-3"
       >
         <PopoverHeader className="flex-row items-center justify-between gap-3">
-          <PopoverTitle className="text-sm">{t('composer.pastedText')}</PopoverTitle>
+          <PopoverTitle className="text-sm">{title ?? t('composer.pastedText')}</PopoverTitle>
           <div className="flex shrink-0 items-center gap-1">
             <span className="text-xs text-muted-foreground">
               UTF-8 {formatPastedTextSize(byteSize)}

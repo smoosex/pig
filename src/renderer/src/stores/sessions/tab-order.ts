@@ -14,14 +14,19 @@ import type { OpenTab } from './types'
  * back at the tail later, where the restore appends it.
  */
 export function persistableIds(tabs: OpenTab[]): string[] {
-  return tabs.filter((tab) => tab.kind !== 'file').map((tab) => tab.id)
+  return tabs.filter((tab) => tab.kind !== 'file' && tab.kind !== 'browser').map((tab) => tab.id)
+}
+
+/** Chat browsers have no worktree; real chat sessions keep their own storage cwd. */
+export function isChatScope(tab: OpenTab): boolean {
+  return tab.kind === 'chat' || (tab.kind === 'browser' && tab.cwd === '')
 }
 
 /** The strip sequence a tab belongs to: the chats half's, or its own worktree's project tabs. */
 export function sameScopeTabs(tabs: OpenTab[], tab: OpenTab): OpenTab[] {
-  return tab.kind === 'chat'
-    ? tabs.filter((item) => item.kind === 'chat')
-    : tabs.filter((item) => item.kind !== 'chat' && item.cwd === tab.cwd)
+  return isChatScope(tab)
+    ? tabs.filter(isChatScope)
+    : tabs.filter((item) => !isChatScope(item) && item.cwd === tab.cwd)
 }
 
 /**

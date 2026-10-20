@@ -164,6 +164,13 @@ async function fixture(scenario: string): Promise<void> {
         assert.equal(useDiffStore.getState().reviewOpen, false)
         checkBounds()
 
+        const chooseSession = async (label = 'Session') => {
+          await act(async () => { newButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' })) })
+          const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)
+          assert.ok(item, 'the add menu offers a session')
+          assert.ok([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === 'Browser'), 'the add menu also offers an independent browser')
+          await act(async () => { item.click() })
+        }
         const created: string[] = []
         let finishCreate!: () => void
         await act(async () => { sessions.setState({
@@ -172,22 +179,25 @@ async function fixture(scenario: string): Promise<void> {
             await new Promise<void>((resolve) => { finishCreate = resolve })
             return 'created-project'
           },
-          newChat: async () => { created.push('chat') }
+          newChat: async () => { created.push('chat'); return 'created-chat' },
+          openBrowserTab: async (cwd) => { created.push(`browser:${cwd ?? 'chat'}`) }
         }) })
-        await act(async () => { newButton.click() })
+        await chooseSession()
         assert.equal(newButton.disabled, true)
         assert.equal(newButton.getAttribute('aria-busy'), 'true')
         await act(async () => { finishCreate() })
         assert.equal(newButton.disabled, false)
         await act(async () => { sessions.setState({ newSession: async () => { throw new Error('cannot create session') } }) })
-        await act(async () => { newButton.click() })
+        await chooseSession()
         assert.equal(newButton.title, 'cannot create session')
         assert.ok(newButton.querySelector('.lucide-circle-alert'))
         await act(async () => { sessions.setState({ activeTabId: 'chat', currentProjectCwd: null }) })
         assert.equal(toolbar.querySelectorAll('button').length, 1, 'chats still have the add action without a project sidebar toggle')
-        await act(async () => { newButton.click() })
+        await chooseSession()
         assert.deepEqual(created, ['/p', 'chat'])
         assert.ok(newButton.querySelector('.lucide-plus'), 'a successful retry clears the creation error')
+        await chooseSession('Browser')
+        assert.deepEqual(created, ['/p', 'chat', 'browser:chat'], 'the browser item creates a browser pane, not another Pi session')
         checkBounds()
         return
       }

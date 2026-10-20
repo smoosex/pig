@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
-import { ArrowUpToLine, CircleAlert, Dog, Download, FileDiff, LoaderCircle, PenLine, Plus } from 'lucide-react'
+import { ArrowUpToLine, CircleAlert, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -9,6 +9,7 @@ import { useProjectAction } from './sidebar/project-action'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from './ui/dropdown-menu'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -78,7 +79,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const combinedTitle = uniqueSplitTabs.length > 0
     ? uniqueSplitTabs.map((t) => t.title).join(' / ')
     : ''
-  const splitDogCount = isSplit ? Math.max(2, uniqueSplitTabs.length) : undefined
+  const splitKinds = isSplit ? uniqueSplitTabs.map((tab) => tab.kind) : undefined
 
   let displayTabs: OpenTab[] = visibleTabs
   if (isSplit && representativeTab) {
@@ -175,7 +176,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                       ? uniqueSplitTabs.find((t) => t.loadState === 'error')?.loadError
                       : (tab.loadState === 'error' ? tab.loadError : undefined)
                   }
-                  splitDogCount={isCombined ? splitDogCount : undefined}
+                  splitKinds={isCombined ? splitKinds : undefined}
                   splitTabIds={isCombined ? splitTabIds : undefined}
                   onSelect={() => selectTab(tab.id)}
                   onClose={() => {
@@ -211,7 +212,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
               label={isSplit && activeTab.id === representativeTab?.id ? combinedTitle : activeTab.title}
               kind={activeTab.kind}
               path={activeTab.path}
-              splitDogCount={isSplit && activeTab.id === representativeTab?.id ? splitDogCount : undefined}
+              splitKinds={isSplit && activeTab.id === representativeTab?.id ? splitKinds : undefined}
               dragging
             />
           ) : null}
@@ -227,21 +228,26 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const workspaceError = useSessionsStore((state) => state.workspaceError)
   const newSession = useSessionsStore((state) => state.newSession)
   const newChat = useSessionsStore((state) => state.newChat)
+  const openBrowserTab = useSessionsStore((state) => state.openBrowserTab)
+  const creatingRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const createTab = async () => {
-    if (creating) return
+  const createTab = async (kind: 'session' | 'browser') => {
+    if (creatingRef.current) return
+    creatingRef.current = true
     setCreating(true)
     setCreateError(null)
     try {
       // The button makes whatever the strip is listing, so the projects half only creates a session
       // once there is a worktree for it to belong to.
-      if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
+      if (kind === 'browser') await openBrowserTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
+      else if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
       else if (currentProjectCwd) await newSession(currentProjectCwd)
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : String(error))
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -253,26 +259,39 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
           <CircleAlert />
         </span>
       ) : null}
-      <Button
-        data-new-tab
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="translate-y-px rounded-full text-glass-prompt-foreground hover:bg-glass-prompt-foreground/8! hover:text-inherit solid:text-foreground solid:hover:bg-tab-hover-background!"
-        aria-label={t('tabBar.new')}
-        aria-busy={creating}
-        title={createError ?? t('tabBar.new')}
-        disabled={creating}
-        onClick={() => void createTab()}
-      >
-        {creating ? (
-          <LoaderCircle className="animate-spin" />
-        ) : createError ? (
-          <CircleAlert className="text-destructive" />
-        ) : (
-          <Plus />
-        )}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            data-new-tab
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="translate-y-px rounded-full text-glass-prompt-foreground hover:bg-glass-prompt-foreground/8! hover:text-inherit solid:text-foreground solid:hover:bg-tab-hover-background!"
+            aria-label={t('tabBar.new')}
+            aria-busy={creating}
+            title={createError ?? t('tabBar.new')}
+            disabled={creating}
+          >
+            {creating ? (
+              <LoaderCircle className="animate-spin" />
+            ) : createError ? (
+              <CircleAlert className="text-destructive" />
+            ) : (
+              <Plus />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem disabled={creating} onSelect={() => void createTab('session')}>
+              <Dog />{t('tabBar.newSession')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={creating} onSelect={() => void createTab('browser')}>
+              <Globe />{t('tabBar.newBrowser')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -289,7 +308,7 @@ interface TabFaceProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onSelect'> 
   dragging?: boolean
   editing?: boolean
   error?: string
-  splitDogCount?: number
+  splitKinds?: OpenTab['kind'][]
   onSelect?: () => void
   onClose?: () => void
   onRenameCommit?: (name: string) => void
@@ -312,7 +331,7 @@ function TabFace({
   dragging = false,
   editing = false,
   error,
-  splitDogCount,
+  splitKinds,
   className,
   onSelect,
   onClose,
@@ -359,12 +378,15 @@ function TabFace({
         </span>
       ) : null}
       <span className={cn('flex min-w-0 items-center justify-center overflow-hidden', dragging ? 'gap-1.5' : 'w-full gap-0 transition-[padding,gap] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:gap-1.5 @min-[7rem]/session-tab:px-8')}>
-        {splitDogCount && splitDogCount > 1 ? (
+        {splitKinds && splitKinds.length > 1 ? (
           <span className="flex shrink-0 items-center">
-            {Array.from({ length: splitDogCount }).map((_, index) => (
-              <Dog key={index} className={cn('size-3.5', index > 0 && '-ml-1.5', index > 0 && !dragging && 'hidden @min-[7rem]/session-tab:block')} aria-hidden />
-            ))}
+            {splitKinds.map((splitKind, index) => {
+              const Icon = splitKind === 'browser' ? Globe : splitKind === 'file' || splitKind === 'diff' ? FileDiff : Dog
+              return <Icon key={index} className={cn('size-3.5', index > 0 && '-ml-1.5', index > 0 && !dragging && 'hidden @min-[7rem]/session-tab:block')} aria-hidden />
+            })}
           </span>
+        ) : kind === 'browser' ? (
+          <Globe className="size-3.5 shrink-0" aria-hidden />
         ) : kind === 'diff' ? (
           <FileDiff className="size-3.5 shrink-0" aria-hidden />
         ) : kind === 'file' ? (
@@ -412,7 +434,7 @@ function Tab({
   active,
   loading,
   error,
-  splitDogCount,
+  splitKinds,
   splitTabIds,
   onSelect,
   onClose
@@ -426,7 +448,7 @@ function Tab({
   active: boolean
   loading: boolean
   error?: string
-  splitDogCount?: number
+  splitKinds?: OpenTab['kind'][]
   splitTabIds?: string[]
   onSelect: () => void
   onClose: () => void
@@ -466,7 +488,7 @@ function Tab({
       loading={loading}
       dirty={dirty}
       streaming={streaming}
-      splitDogCount={splitDogCount}
+      splitKinds={splitKinds}
       editing={rename.editing}
       error={failure}
       title={failure ?? title}

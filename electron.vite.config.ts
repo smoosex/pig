@@ -24,7 +24,10 @@ preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          'browser-guest': resolve(__dirname, 'src/preload/browser-guest.ts')
+        },
         output: { format: 'cjs' }
       }
     }

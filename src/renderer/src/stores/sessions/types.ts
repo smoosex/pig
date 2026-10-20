@@ -103,7 +103,7 @@ export interface RuntimeState extends SessionControls {
   queuedEditText: string | null
 }
 
-export type TabKind = 'project' | 'chat' | 'diff' | 'file'
+export type TabKind = 'project' | 'chat' | 'diff' | 'file' | 'browser'
 export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
 
 /**
@@ -134,6 +134,8 @@ export interface OpenTab {
   path?: string
   /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
   diffScope?: DiffScope
+  /** Optional real session that receives browser annotations; never the browser's own id. */
+  browserTargetSessionId?: string
 }
 
 export interface SessionsStore {
@@ -221,6 +223,8 @@ export interface SessionsStore {
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
   /** Brings a file's tab to the front, opening it when the strip does not hold it. */
   openFileTab: (cwd: string, path: string) => Promise<void>
+  openBrowserTab: (cwd?: string | null) => Promise<void>
+  setBrowserTarget: (browserId: string, sessionId: string) => void
   /** Follows a file the tree renamed: the tab keeps its place and takes the row's new name. */
   moveFileTab: (cwd: string, from: string, to: string) => void
   /** The toolbar's scope control: one changes tab, its title and its contents following the choice. */
@@ -239,7 +243,7 @@ export interface SessionsStore {
   invalidateSelection: () => void
   newSession: (cwd: string) => Promise<string | null>
   forkSession: (sessionId: string, userEntryId: string) => Promise<void>
-  newChat: () => Promise<void>
+  newChat: () => Promise<string>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string) => Promise<void>
   applyWorktreeDeletions: (cwds: string[]) => void

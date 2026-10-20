@@ -76,6 +76,8 @@ Open Computer Use 作为普通 stdio MCP 预置，不增加专用审批、宿主
 
 会话树选中节点后先确认「不总结 / 总结 / 自定义提示总结」。总结走 SDK `navigateTree`（summary 接在 Pi 自己选的叶子上，不再按轻量恢复重新 branch），不总结保留原轻量切换；两者都复用 `restoreSessionUserPrompt` 恢复图片与粘贴附件。main 用 `isNavigatingSessionBranch` 在准备会话前占位，prompt、bash、`/compact` 入口都会拒绝；renderer 的 `isNavigatingBranch` 覆盖请求到目标分支 hydrate 完成，期间输入框禁用、树对话框不可关闭并显示进度，总结可经 `abortBranchSummary` 停止，取消结果保留当前分支与草稿。
 
+内置浏览器先只提供人工预览与元素标注，不注册 Agent 自动化工具。浏览器是与会话／文件同级的独立标签和分屏面板，顶部 `+` 可选择「会话 / 浏览器」，项目和 Chat 都可创建；右侧栏仍只有文件／变更。浏览器使用 `browser:<uuid>` 独立身份，不创建 Pi session/runtime，也不随目标会话关闭；当前不跨应用重启恢复。`src/shared/browser.ts` 是唯一 IPC 契约；`browser:create` 由 UI 注册所属窗口，后续控制请求只接受同一窗口的 UI 主 frame，页面 guest 不能创建或控制预览；不通过 Pi session 校验身份。页面启用 sandbox/contextIsolation、禁用 Node 和宿主 API，使用独立 `persist:pig-browser` partition；仅允许无凭据的 HTTP(S)，拒绝权限、下载及新窗口。每窗口最多保留 4 个原生预览，多个分屏可同时可见，隐藏项 LRU 淘汰；网址独立于原生视图保留，淘汰后切回按保留地址重新加载，网络加载不阻塞 bounds 队列，加载失败通过浏览器状态及 main 日志报告；关闭标签或窗口才清掉地址。`browser-guest.ts` 构建为独立 **`out/preload/browser-guest.cjs`**；closed Shadow DOM 拾取仅支持主文档，不深入 iframe 或页面 Shadow DOM，不采集表单值。main 按页面 documentId 验证拾取事件，导航前先取消旧 documentId 的拾取；拾取后在元素旁的 guest 浮层填写可选评论，不占宿主顶部空间；添加后继续拾取并显示编号 pin，hover 只读查看，点击打开编辑框可更新（`browser:marker-update`，按 documentId 校验）或删除，标记同步不覆盖未保存的编辑，浮层用宿主计算后的语义主题值与 constructed stylesheet 适配 glass/solid 和严格 CSP，不用 backdrop-filter。标记由 main 的 `BrowserState.annotations` 持有，原生 LRU 淘汰不能清掉待发标记；每条保留 documentId 和页面快照，失效 DOM 的 pin 隐藏而不改绑到复用 selector 的新节点；最多 100 条、评论最多 4000 字。顶部显示数量、「放入输入框」按钮、目标下拉和清空：目标默认是打开浏览器时所在的会话，没有则不选；下拉里选会话只记录目标（存于浏览器标签的 `browserTargetSessionId`），点按钮才写入，未选目标时按钮改为弹出下拉；下拉的「当前聊天」子菜单在项目内只列浏览器所在 worktree 的已打开会话（Chat 首页的浏览器列出全部项目/Chat 会话）；「新建聊天」不展开，直接在所属 worktree 新建会话（无项目时新建 Chat）；`newChat()` 返回新建会话 ID，标记写入必须用该 ID，不能从创建结束时的 activeTabId 猜测。标记批次渲染为 Markdown（页面字段标为不可信、页面文本用比内容更长的 fence 包裹），作为名为「浏览器标注」的 pastedText 附件追加到目标会话草稿（保留已有 Tiptap 附件与图片），激活该标签由用户确认后发送，不自动发起 Pi 消息，也不能以 browserId 创建伪会话；写入草稿后只移除该批 IDs，期间新增的标记保留。截图仍单独加入关联会话的图片草稿，无目标时提示先打开会话。工具栏单行，有独立 glass 填充与上下留白，地址栏回车导航，元素选择和截图在刷新按钮右侧，地址栏右侧为复制 URL／外部浏览器打开／检查元素；复制与外部打开只使用 main 校验后的当前 HTTP(S) 页面 URL，检查元素切换该网页自己的 DevTools，经 `setDevToolsWebContents` 停靠在同一面板下方约 45% 的第二个原生视图里（以 `mode: 'bottom'` 打开，外部目标下 Electron 不移动视图，只让前端显示停靠工具栏及关闭按钮；`detach` 会隐藏关闭按钮）（页面至少保留 120 DIP，随面板隐藏/淘汰/关闭一起处理，DevTools 自带的关闭按钮也会收回；不检查 Pig UI）；视口不是独立容器（无背景、无圆角），空白时直接露出面板本身的颜色。renderer 串行同步 CSS bounds（main 按宿主 zoom 换算），隐藏面板、模态弹窗、实际遮挡网页的浮层及材质切换期间隐藏原生视图，不靠 z-index 或根 filter 覆盖它；因浮层隐藏前先经 `browser:snapshot` 截一帧 JPEG 放在视口里占位，恢复显示后移除，避免下拉一开网页就消失；截帧失败仍执行隐藏并报告错误，bounds 写入失败不缓存为已应用状态，下一次布局更新可重试。页面本身不强行 glass 化，工具栏复用语义玻璃材质。
+
 ## 进程与接口
 
 | 位置                                 | 职责                                                                    |
@@ -87,6 +89,8 @@ Open Computer Use 作为普通 stdio MCP 预置，不增加专用审批、宿主
 | `src/main/session-image-protocol.ts` | 注册 `pig-image` scheme 并按需返回图片字节                              |
 | `src/main/app-url.ts`                | 窗口只允许停在自己的 UI 上（含重定向）                                  |
 | `src/main/shell-env.ts`              | 启动时从用户登录 shell 导入 PATH 与缺失的环境变量（GUI 启动不继承终端环境） |
+| `src/main/browser/`                  | 内嵌预览的视图生命周期、导航安全、截图与元素拾取事件 |
+| `src/preload/browser-guest.ts`        | 网页隔离上下文中的元素拾取，不暴露 Pig API |
 | `src/main/project-directory-browser.ts` | 应用内添加项目的本机目录浏览、真实路径校验与目录列表 |
 | `src/main/open-project-sessions.ts`  | 持久化已打开会话、活动标签与标签顺序（Worktree 和 chats 两半）；与 session 生命周期分离 |
 | `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |

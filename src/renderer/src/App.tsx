@@ -28,6 +28,9 @@ import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/
 import type { SidebarTab } from '../../shared/api'
 import { NewTabButton, TabBar } from './components/TabBar'
 import { halfSwitch } from './components/tab-strip'
+import { isChatScope } from './stores/sessions/tab-order'
+import type { OpenTab } from './stores/sessions'
+import { BrowserPanel } from './components/browser/BrowserPanel'
 import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
 import { WorkspacePanel } from './components/panel/WorkspacePanel'
@@ -97,6 +100,24 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
   )
 }
 
+function BrowserTabContent({ tab }: { tab: OpenTab }) {
+  const targetSessionId = useSessionsStore((state) => {
+    const realTarget = (id: string | null | undefined) => state.openTabs.find((item) =>
+      item.id === id && (item.kind === 'project' || item.kind === 'chat') &&
+      (!tab.cwd || item.cwd === tab.cwd)
+    )?.id
+    // No guessing: the session the browser was opened from, or one the user picked; otherwise none.
+    return realTarget(tab.browserTargetSessionId) ?? null
+  })
+  // A mounted pane is visible even when another split pane owns keyboard focus.
+  return <BrowserPanel browserId={tab.id} targetSessionId={targetSessionId} active onFocus={() => {
+    const layout = useSplitLayoutStore.getState()
+    const pane = collectPaneNodes(layout.root).find((pane) => pane.tabId === tab.id)
+    if (pane) layout.setActivePane(pane.id)
+    useSessionsStore.getState().setActive(tab.id)
+  }} />
+}
+
 export function PaneViewContent({
   node,
   isActive,
@@ -117,6 +138,7 @@ export function PaneViewContent({
       paneTab &&
       !isDiff &&
       !isFile &&
+      paneTab.kind !== 'browser' &&
       paneTab.loadState === 'cold'
     ) {
       void useSessionsStore.getState().activateTab(node.tabId)
@@ -137,7 +159,9 @@ export function PaneViewContent({
 
   return (
     <div className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col">
-      {isDiff ? (
+      {paneTab?.kind === 'browser' ? (
+        <BrowserTabContent tab={paneTab} />
+      ) : isDiff ? (
         <ChangesView cwd={paneTab.cwd} />
       ) : isFile && paneTab.path ? (
         <Suspense
@@ -339,7 +363,7 @@ export default function App() {
       if (currentProjectCwd) projectFocusCwd.current = currentProjectCwd
       return
     }
-    if (activeTab.kind === 'chat') chatFocusTabId.current = activeTab.id
+    if (isChatScope(activeTab)) chatFocusTabId.current = activeTab.id
     else projectFocusCwd.current = activeTab.cwd
   }, [activeTab, currentProjectCwd])
 
@@ -398,7 +422,7 @@ export default function App() {
           <div data-header-tabs className="absolute inset-x-64 inset-y-1 flex min-w-0 items-center justify-center">
             {!settingsOpen && (currentProjectCwd || activeTabId) ? <TabBar sidebarTab={sidebarTab} /> : null}
           </div>
-          {!settingsOpen && (currentProjectCwd || activeTabId) ? (
+          {!settingsOpen ? (
             <div data-header-trailing className="flex h-full shrink-0 items-center gap-1 pl-2 pr-3">
               <NewTabButton sidebarTab={sidebarTab} />
               {currentProjectCwd ? (
@@ -467,6 +491,8 @@ export default function App() {
                           <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
                         )}
                       />
+                    ) : activeTab?.kind === 'browser' ? (
+                      <BrowserTabContent tab={activeTab} />
                     ) : diffTab ? (
                       <ChangesView cwd={diffTab.cwd} />
                     ) : fileTab?.path ? (

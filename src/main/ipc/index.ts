@@ -9,6 +9,7 @@ import { registerMcpIpc } from './mcp'
 import { registerModelIpc } from './models'
 import { registerSkillsIpc } from './skills'
 import { registerSubagentIpc } from './subagents'
+import { registerBrowserIpc } from './browser'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -22,4 +23,5 @@ export function registerIpc(): void {
   registerModelIpc()
   registerSkillsIpc()
   registerSubagentIpc()
+  registerBrowserIpc()
 }

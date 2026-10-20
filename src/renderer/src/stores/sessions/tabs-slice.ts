@@ -13,7 +13,7 @@ import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
 import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './session-title'
 import { restorePromptDraft } from './restore-prompt'
-import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs } from './tab-order'
+import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs, isChatScope } from './tab-order'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
 
 /** The scope a changes tab starts on, and what a workspace restored without one shows. */
@@ -61,6 +61,8 @@ export const createTabsSlice: SessionSlice<
   | 'openExisting'
   | 'openChangesTab'
   | 'openFileTab'
+  | 'openBrowserTab'
+  | 'setBrowserTarget'
   | 'moveFileTab'
   | 'setChangesScope'
   | 'acquireProjectDraft'
@@ -171,7 +173,7 @@ export const createTabsSlice: SessionSlice<
 
   /** What a worktree was left on: its active session, and the tab the strip was showing. */
   function persistSelection(cwd: string, sessionId: string | null, activeTabId: string | null): void {
-    persist(api.selectOpenProjectWorkspace(cwd, sessionId, activeTabId))
+    persist(api.selectOpenProjectWorkspace(cwd, sessionId, persistentTabId(activeTabId)))
   }
 
   /**
@@ -211,10 +213,14 @@ export const createTabsSlice: SessionSlice<
     }
   }
 
+  function persistentTabId(id: string | null): string | null {
+    return id?.startsWith('browser:') ? null : id
+  }
+
   /** The renderer owns the changes tab, so whether one worktree keeps it open is mirrored here. */
   function persistChangesTab(cwd: string): void {
     const open = get().openTabs.some((tab) => tab.kind === 'diff' && tab.cwd === cwd)
-    persist(api.saveOpenProjectChangesTab(cwd, open, get().activeTabId))
+    persist(api.saveOpenProjectChangesTab(cwd, open, persistentTabId(get().activeTabId)))
   }
 
   function addReadyTab(tab: OpenTab, selection: number): boolean {
@@ -443,7 +449,7 @@ export const createTabsSlice: SessionSlice<
             ...restoredTabs.map((tab) => liveTabs.get(tab.id) ?? tab),
             ...state.openTabs.filter(
               (tab) =>
-                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file') &&
+                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser') &&
                 !restoredIds.has(tab.id)
             )
           ]
@@ -537,14 +543,13 @@ export const createTabsSlice: SessionSlice<
         persistChangesTab(tab.cwd)
         return
       }
-      if (tab.kind === 'file') {
-        // A file tab owns no session either: its bytes belong to the files store, which reads them when
-        // the view mounts. Nothing here is persisted, because a file tab is not part of what a worktree
-        // remembers across launches — only the strip's own memory of it within this run.
+      if (tab.kind === 'file' || tab.kind === 'browser') {
+        // These views load their own data, never Pi controls or history. Their strip selection is
+        // remembered only within this process, not as a persisted session.
         ++selectionVersion
         set((state) => ({
-          ...activeTabPatch(state, tab.id, tab.cwd),
-          currentProjectCwd: tab.cwd,
+          ...activeTabPatch(state, tab.id, tab.cwd || null),
+          currentProjectCwd: tab.cwd || null,
           openTabs: state.openTabs
         }))
         return
@@ -675,6 +680,36 @@ export const createTabsSlice: SessionSlice<
       }
       await get().activateTab(id)
     },
+
+    openBrowserTab: async (cwd) => {
+      const selection = ++selectionVersion
+      const scopeCwd = cwd ?? ''
+      const state = get()
+      const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
+      const target = active && (active.kind === 'project' || active.kind === 'chat') &&
+        (scopeCwd ? active.kind === 'project' && active.cwd === scopeCwd : active.kind === 'chat')
+        ? active.id
+        : state.openTabs.find((tab) => tab.kind === 'project' && tab.cwd === scopeCwd &&
+          tab.id === state.activeSessionByCwd[scopeCwd])?.id
+      const id = `browser:${crypto.randomUUID()}`
+      await api.browser.create(id)
+      // Selection may have moved during creation; the completed view remains available in the strip.
+      set((current) => ({
+        openTabs: [...current.openTabs, {
+          id, cwd: scopeCwd, title: t('tabBar.newBrowser'), kind: 'browser', loadState: 'ready',
+          browserTargetSessionId: target
+        }],
+        ...(selection === selectionVersion ? {
+          ...activeTabPatch(current, id, scopeCwd || null),
+          currentProjectCwd: scopeCwd || null
+        } : {})
+      }))
+    },
+
+    setBrowserTarget: (browserId, sessionId) => set((current) => ({
+      openTabs: current.openTabs.map((tab) => tab.id === browserId && tab.kind === 'browser'
+        ? { ...tab, browserTargetSessionId: sessionId } : tab)
+    })),
 
     openExisting: async (meta, kind: 'project' | 'chat' = 'project') => {
       const existing = get().openTabs.find((tab) => tab.meta?.path === meta.path || tab.id === meta.id)
@@ -924,6 +959,7 @@ export const createTabsSlice: SessionSlice<
       }, selection)) {
         await get().loadControls(ref.sessionId)
       }
+      return ref.sessionId
     },
 
     closeTab: (tabId, options) => {
@@ -955,10 +991,10 @@ export const createTabsSlice: SessionSlice<
       const wasActive = state.activeTabId === tabId
       const fallback =
         splitFallback?.id ?? neighbourTab(state.openTabs, tab)?.id ??
-        (tab.kind === 'diff' || tab.kind === 'file' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
+        (tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
       const fallbackCwd = splitFallback
-        ? (splitFallback.kind === 'chat' ? null : splitFallback.cwd)
-        : (tab.kind === 'chat' ? null : tab.cwd)
+        ? (isChatScope(splitFallback) ? null : splitFallback.cwd)
+        : (isChatScope(tab) ? null : tab.cwd)
       const fallbackSelection = (current: SessionsStore): Partial<SessionsStore> => ({
         ...activeTabPatch(current, fallback, fallbackCwd),
         currentProjectCwd: fallbackCwd,
@@ -966,6 +1002,15 @@ export const createTabsSlice: SessionSlice<
           ? { activeSessionByCwd: { ...current.activeSessionByCwd, [splitFallback.cwd]: splitFallback.id } }
           : {})
       })
+      if (tab.kind === 'browser') {
+        if (wasActive) ++selectionVersion
+        set((current) => ({
+          openTabs: current.openTabs.filter((item) => item.id !== tabId),
+          ...(wasActive ? fallbackSelection(current) : {})
+        }))
+        if (wasActive && fallback) void get().activateTab(fallback)
+        return
+      }
       if (tab.kind === 'diff') {
         // A diff tab owns no session: closing it hands the strip back to a neighbour, and the worktree's
         // session is the last one standing when nothing else of it is open.
@@ -1055,7 +1100,7 @@ export const createTabsSlice: SessionSlice<
         .map((id) => openTabs.find((tab) => tab.id === id))
         .find((tab) => tab !== undefined)
       if (!scope) return
-      if (scope.kind === 'chat') {
+      if (isChatScope(scope)) {
         persistChatTabs()
         return
       }
@@ -1132,6 +1177,7 @@ export const createTabsSlice: SessionSlice<
      */
     relabelTabs: () => set((state) => ({
       openTabs: state.openTabs.map((tab) => {
+        if (tab.kind === 'browser') return { ...tab, title: t('tabBar.newBrowser') }
         if (tab.kind === 'diff') {
           return { ...tab, title: scopeLabel(t, tab.diffScope ?? DEFAULT_SCOPE) }
         }
