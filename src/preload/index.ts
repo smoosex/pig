@@ -20,6 +20,11 @@ const api: SessionApi = {
     openExternal: (browserId) => ipcRenderer.invoke('browser:open-external', browserId),
     inspect: (browserId) => ipcRenderer.invoke('browser:inspect', browserId),
     close: (browserId) => ipcRenderer.invoke('browser:close', browserId),
+    onCloseRequested: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, browserId: string) => listener(browserId)
+      ipcRenderer.on('browser:close-tab-requested', handler)
+      return () => ipcRenderer.off('browser:close-tab-requested', handler)
+    },
     onState: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: import('../shared/browser').BrowserState) => listener(state)
       ipcRenderer.on('browser:state', handler)

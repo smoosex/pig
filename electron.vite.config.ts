@@ -20,8 +20,18 @@ export default defineConfig({
       }
     }
   },
-preload: {
-    plugins: [externalizeDepsPlugin()],
+  preload: {
+    plugins: [externalizeDepsPlugin(), {
+      name: 'sandboxed-preload-single-files',
+      generateBundle(_options, bundle) {
+        // Sandboxed preload require() cannot load local chunks shared by multiple entries.
+        for (const output of Object.values(bundle)) {
+          if (output.type === 'chunk' && !output.isEntry) {
+            this.error(`Sandboxed preloads must be standalone: unexpected chunk ${output.fileName}`)
+          }
+        }
+      }
+    }],
     build: {
       rollupOptions: {
         input: {

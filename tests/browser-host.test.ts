@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import type { BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../src/main/browser/host'
 import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl } from '../src/main/browser/validation'
-import { BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
+import { BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
 
 class FakeContents extends EventEmitter {
   dead = false
@@ -72,6 +72,39 @@ describe('browser host', () => {
     expect(() => assertBrowserSender({ ...event, sender: new FakeContents() } as unknown as IpcMainInvokeEvent, owner)).toThrow()
     win.dead = true
     expect(() => assertBrowserSender(event, owner)).toThrow()
+  })
+
+  test('Cmd+W in the page or docked DevTools cancels window closing and requests its owning tab', async () => {
+    const { host, owner, win, views } = fixture()
+    host.setBounds(owner, 'browser:owned', bounds)
+    await host.navigate(owner, 'browser:owned', 'https://example.test')
+    host.inspect(owner, 'browser:owned')
+    const input = { type: 'keyDown', key: 'w', meta: true, control: false, alt: false, shift: false, isAutoRepeat: false }
+    const requested = () => win.webContents.sent.filter(([channel]) => channel === BROWSER_CLOSE_TAB_CHANNEL)
+    const press = (contents: FakeContents, overrides: Partial<typeof input> = {}) => {
+      let prevented = false
+      contents.emit('before-input-event', { preventDefault() { prevented = true } }, { ...input, ...overrides })
+      return prevented
+    }
+    for (const view of views) {
+      expect(press(view.webContents)).toBe(true)
+      const count = requested().length
+      expect(press(view.webContents, { isAutoRepeat: true })).toBe(true)
+      expect(requested()).toHaveLength(count)
+      for (const other of [
+        { type: 'keyUp' }, { shift: true }, { alt: true }, { control: true },
+        { meta: false }, { key: 'r' }, { meta: false, control: true }
+      ]) expect(press(view.webContents, other)).toBe(false)
+      expect(requested()).toHaveLength(count)
+    }
+    expect(requested()).toEqual([
+      [BROWSER_CLOSE_TAB_CHANNEL, 'browser:owned'], [BROWSER_CLOSE_TAB_CHANNEL, 'browser:owned']
+    ])
+    host.inspect(owner, 'browser:owned')
+    expect(press(views[1].webContents)).toBe(false)
+    host.closeWindow(owner)
+    expect(press(views[0].webContents)).toBe(false)
+    expect(requested()).toHaveLength(2)
   })
 
   test('URL and guest input validation, zoom and clipping', () => {

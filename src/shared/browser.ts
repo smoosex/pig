@@ -87,10 +87,12 @@ export interface BrowserApi {
   openExternal(browserId: string): Promise<void>
   inspect(browserId: string): Promise<void>
   close(browserId: string): Promise<void>
+  onCloseRequested(listener: (browserId: string) => void): () => void
   onState(listener: (state: BrowserState) => void): () => void
   onSelection(listener: (selection: BrowserSelection) => void): () => void
 }
 
+export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
 export const BROWSER_PICKER_CHANNEL = 'browser:picker'
 export const BROWSER_SELECTION_CHANNEL = 'browser:element-selected'
 export const BROWSER_PICKER_CANCEL_CHANNEL = 'browser:picker-cancelled'

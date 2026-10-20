@@ -81,6 +81,9 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
       if (next.focused && enabled.current) focus.current?.()
       accept(next)
     })
+    const offClose = api.browser.onCloseRequested((id) => {
+      if (!disposed && id === browserId) useSessionsStore.getState().closeTab(browserId)
+    })
     void api.browser.getState(browserId).then((next) => {
       if (!disposed && !pushed) accept(next)
     }).catch(report)
@@ -89,6 +92,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
       alive.current = false
       generation.current++
       offState()
+      offClose()
     }
   }, [browserId, invalidateCapture, report])
 

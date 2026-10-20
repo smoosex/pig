@@ -31,6 +31,7 @@ async function fixture() {
     browser: {
       getState: async () => browserState,
       onState: () => () => {},
+      onCloseRequested: () => () => {},
       setSelecting: async () => {},
       removeAnnotations: async (_id: string, ids: string[]) => { removed.push(ids) }
     }

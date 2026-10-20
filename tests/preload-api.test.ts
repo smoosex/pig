@@ -85,6 +85,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.openExternal('browser:one')
   await api.browser.inspect('browser:one')
   await api.browser.close('session-1')
+  api.browser.onCloseRequested(() => {})()
   api.browser.onState(() => {})()
   api.browser.onSelection(() => {})()
 
@@ -142,6 +143,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
   assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')
   assert.ok(listeners.includes('system-plugins:ui'))
+  assert.ok(listeners.includes('browser:close-tab-requested'))
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('browser:selection'))
   assert.equal('replyPluginUI' in api, false)

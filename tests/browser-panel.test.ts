@@ -15,6 +15,7 @@ async function fixture() {
   const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null })
   let pushState: (next: BrowserState) => void = () => {}
   let pushSelection: (next: BrowserSelection) => void = () => {}
+  let requestClose: (browserId: string) => void = () => {}
   let initial!: (next: BrowserState) => void
   let capture!: (next: BrowserScreenshot) => void
   const bounds: { browserId: string; bounds: BrowserBounds | null }[] = []
@@ -48,6 +49,7 @@ async function fixture() {
     copyUrl: async (id) => { pageActions.push(['copyUrl', id]) },
     openExternal: async (id) => { pageActions.push(['openExternal', id]) },
     inspect: async (id) => { pageActions.push(['inspect', id]) },
+    onCloseRequested: (listener) => { requestClose = listener; return () => { requestClose = () => {} } },
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }
   }
@@ -57,6 +59,9 @@ async function fixture() {
   const { BrowserPanel } = await import('../src/renderer/src/components/browser/BrowserPanel')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
+  const { useSessionsStore: sessions } = await import('../src/renderer/src/stores/sessions')
+  const closedTabs: string[] = []
+  sessions.setState({ closeTab: (id) => { closedTabs.push(id) } })
   const { serializeComposerDocument, textToComposerDocument } = await import('../src/renderer/src/components/composer/document')
   const container = document.createElement('div')
   document.body.append(container)
@@ -79,6 +84,11 @@ async function fixture() {
     element: { selector: '#save', tagName: 'BUTTON', role: 'button', name: 'Save', text: 'Page text', bounds: { x: 0, y: 0, width: 10, height: 10 }, styles: {} }
   })
   await render()
+  await act(async () => { requestClose('other-browser') })
+  assert.deepEqual(closedTabs, [], 'a native shortcut only closes its owning browser tab')
+  await act(async () => { requestClose('a') })
+  assert.deepEqual(closedTabs, ['a'], 'native Cmd+W uses the existing closeTab store action')
+  const oldCloseListener = requestClose
   await act(async () => { pushState(state('b', 'wrong')) })
   assert.ok(!container.textContent!.includes('wrong'))
   await act(async () => { pushState(state('a', 'fresh')); initial(state('a', 'old')) })
@@ -208,6 +218,10 @@ async function fixture() {
   assert.deepEqual(drafts.getState().drafts['session-b'], saved)
   assert.equal(closed, 0, 'the pane lifecycle, not the page toolbar, owns closing')
   await act(async () => { root.unmount() })
+  const closesBeforeUnmount = closedTabs.length
+  oldCloseListener('a')
+  requestClose('a')
+  assert.equal(closedTabs.length, closesBeforeUnmount, 'disposed panels ignore delayed shortcut messages')
   await flush()
   assert.equal(bounds.at(-1)?.bounds, null)
   container.remove()
