@@ -84,6 +84,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.copyUrl('browser:one')
   await api.browser.openExternal('browser:one')
   await api.browser.inspect('browser:one')
+  await api.browser.listCookieSources('browser:one')
+  await api.browser.previewCookies('browser:one', 'chrome:profile', 'site')
+  await api.browser.importCookies('browser:one', 'chrome:profile', 'all', null)
+  await api.browser.clearSiteCookies('browser:one', 'example.com')
   await api.browser.close('session-1')
   api.browser.onCloseRequested(() => {})()
   api.browser.onState(() => {})()
@@ -137,6 +141,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:copy-url', args: ['browser:one'] },
     { channel: 'browser:open-external', args: ['browser:one'] },
     { channel: 'browser:inspect', args: ['browser:one'] },
+    { channel: 'browser:list-cookie-sources', args: ['browser:one'] },
+    { channel: 'browser:preview-cookies', args: ['browser:one', 'chrome:profile', 'site'] },
+    { channel: 'browser:import-cookies', args: ['browser:one', 'chrome:profile', 'all', null] },
+    { channel: 'browser:clear-site-cookies', args: ['browser:one', 'example.com'] },
     { channel: 'browser:close', args: ['session-1'] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')

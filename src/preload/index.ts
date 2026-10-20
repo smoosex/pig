@@ -20,6 +20,10 @@ const api: SessionApi = {
     openExternal: (browserId) => ipcRenderer.invoke('browser:open-external', browserId),
     inspect: (browserId) => ipcRenderer.invoke('browser:inspect', browserId),
     close: (browserId) => ipcRenderer.invoke('browser:close', browserId),
+    listCookieSources: (browserId) => ipcRenderer.invoke('browser:list-cookie-sources', browserId),
+    previewCookies: (browserId, sourceId, scope) => ipcRenderer.invoke('browser:preview-cookies', browserId, sourceId, scope),
+    importCookies: (browserId, sourceId, scope, expectedSite) => ipcRenderer.invoke('browser:import-cookies', browserId, sourceId, scope, expectedSite),
+    clearSiteCookies: (browserId, expectedSite) => ipcRenderer.invoke('browser:clear-site-cookies', browserId, expectedSite),
     onCloseRequested: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, browserId: string) => listener(browserId)
       ipcRenderer.on('browser:close-tab-requested', handler)

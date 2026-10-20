@@ -49,6 +49,10 @@ async function fixture() {
     copyUrl: async (id) => { pageActions.push(['copyUrl', id]) },
     openExternal: async (id) => { pageActions.push(['openExternal', id]) },
     inspect: async (id) => { pageActions.push(['inspect', id]) },
+    listCookieSources: async () => ({ supported: false, site: null, sources: [] }),
+    previewCookies: async () => ({ site: null, count: 0, domains: [], skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
+    importCookies: async () => ({ imported: 0, failed: 0, skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
+    clearSiteCookies: async () => ({ removed: 0, failed: 0 }),
     onCloseRequested: (listener) => { requestClose = listener; return () => { requestClose = () => {} } },
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }
@@ -101,7 +105,7 @@ async function fixture() {
     assert.ok(toolbar.querySelector(`button[aria-label="browser.${action}"]`), 'all actions share one toolbar')
   }
   const buttons = [...toolbar.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))
-  assert.deepEqual(buttons, ['browser.back', 'browser.forward', 'browser.reload', 'browser.select', 'browser.screenshot', 'browser.copyUrl', 'browser.openExternal', 'browser.inspect'])
+  assert.deepEqual(buttons, ['browser.back', 'browser.forward', 'browser.reload', 'browser.select', 'browser.screenshot', 'browser.cookieImport', 'browser.copyUrl', 'browser.openExternal', 'browser.inspect'])
   assert.ok(address.compareDocumentPosition(toolbar.querySelector('[aria-label="browser.copyUrl"]')!) & Node.DOCUMENT_POSITION_FOLLOWING, 'page actions follow the address bar')
   for (const action of ['copyUrl', 'openExternal', 'inspect']) await click(action)
   assert.deepEqual(pageActions, [['copyUrl', 'a'], ['openExternal', 'a'], ['inspect', 'a']])

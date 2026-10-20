@@ -1,16 +1,18 @@
 /** Independent browser panes belong to the creating UI window, never to a Pi session or page guest. */
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clipboard, shell, ipcMain, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, shell, ipcMain, session, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../browser/host'
+import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { assertBrowserSender, isBrowserUrl } from '../browser/validation'
 import { windowForEvent } from './window'
-import type { BrowserBounds, BrowserPickerOptions } from '../../shared/browser'
+import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope } from '../../shared/browser'
 
 export function registerBrowserIpc(): void {
   const owners = new Map<string, BrowserWindow>()
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
+  const cookies = new BrowserCookieImporter(session.fromPartition('persist:pig-browser').cookies)
   // DevTools front-end gets a default sandboxed view; only the inspected page uses the guest preload.
   const host = new BrowserHost((kind) => kind === 'devtools' ? new WebContentsView() : new WebContentsView({ webPreferences: {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
@@ -55,6 +57,15 @@ export function registerBrowserIpc(): void {
     }
     return host.getState(win, id)
   })
+  function cookieContext(event: IpcMainInvokeEvent, id: string): () => string {
+    owner(event, id)
+    // Revalidate after every asynchronous read/write so a reload/close cannot authorize late imports.
+    return () => host.getState(owner(event, id), id).url
+  }
+  ipcMain.handle('browser:list-cookie-sources', (event, id: string) => cookies.list(cookieContext(event, id)))
+  ipcMain.handle('browser:preview-cookies', (event, id: string, sourceId: string, scope: BrowserCookieScope) => cookies.preview(cookieContext(event, id), sourceId, scope))
+  ipcMain.handle('browser:import-cookies', (event, id: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null) => cookies.import(cookieContext(event, id), sourceId, scope, expectedSite))
+  ipcMain.handle('browser:clear-site-cookies', (event, id: string, expectedSite: string) => cookies.clear(cookieContext(event, id), expectedSite))
   ipcMain.handle('browser:get-state', (event, id: string) => host.getState(owner(event, id), id))
   ipcMain.handle('browser:navigate', (event, id: string, url: string) => host.navigate(owner(event, id), id, url))
   ipcMain.handle('browser:back', (event, id: string) => host.history(owner(event, id), id, 'back'))

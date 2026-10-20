@@ -1,7 +1,7 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { appendBrowserScreenshotDraft } from './browser-draft'
 import { useBrowserBounds } from './useBrowserBounds'
 import { decodeBrowserFrame, waitForBrowserPaint } from './browser-frame'
+import { CookieImportDialog } from './CookieImportDialog'
 
 interface BrowserPanelProps {
   browserId: string
@@ -35,6 +36,10 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   const t = useT()
   const [state, setState] = useState<BrowserState | null>(null)
   const [address, setAddress] = useState('')
+  const [cookieOpen, setCookieOpen] = useState(false)
+  const reloadCookies = useCallback(async () => {
+    if (latest.current?.url) await api.browser.reload(browserId)
+  }, [browserId])
   const tabs = useSessionsStore((store) => store.openTabs)
   const browserCwd = tabs.find((tab) => tab.id === browserId)?.cwd || null
   // Inside a project only the browser's own worktree is a sensible target; chat-home browsers keep every session.
@@ -225,12 +230,14 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           }}
           className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs border-glass-card-border bg-glass-prompt-foreground/4! solid:border-input solid:bg-background! solid:dark:bg-input/30!" />
         <div className="flex shrink-0 items-center gap-1">
+          {iconButton(t('browser.cookieImport'), <Cookie />, () => setCookieOpen(true))}
           {iconButton(t('browser.copyUrl'), <Copy />, () => run(() => api.browser.copyUrl(browserId)), !state?.url)}
           {iconButton(t('browser.openExternal'), <ExternalLink />, () => run(() => api.browser.openExternal(browserId)), !state?.url)}
           {iconButton(t('browser.inspect'), <Crosshair />, () => run(() => api.browser.inspect(browserId)), !state?.url, state?.devtools ?? false)}
         </div>
         <span className="sr-only" role="status">{busy || state?.loading || (!state && !error) ? t('browser.loading') : state?.title}</span>
       </form>
+      <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
       {error || state?.error ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
       <div ref={viewport} data-browser-viewport className="min-h-0 flex-1 overflow-hidden">
         {frozen && state?.url ? <img src={frozen} alt="" draggable={false} className="pointer-events-none size-full object-contain object-top select-none" /> : null}

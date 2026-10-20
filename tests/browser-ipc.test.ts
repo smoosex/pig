@@ -8,6 +8,8 @@ async function fixture(): Promise<void> {
   const calls: unknown[][] = []
   const clipboard: string[] = []
   const external: string[] = []
+  const cookieCalls: unknown[][] = []
+  const cookieContexts: (() => string)[] = []
   let pageUrl: string | undefined
   let createView!: () => unknown
   let viewOptions: any
@@ -18,6 +20,10 @@ async function fixture(): Promise<void> {
   const other = makeWindow()
   const ui = win.webContents
   mock.module('electron', () => ({
+    session: { fromPartition: (partition: string) => {
+      assert.equal(partition, 'persist:pig-browser')
+      return { cookies: {} }
+    } },
     clipboard: { writeText: (url: string) => { clipboard.push(url) } },
     shell: { openExternal: async (url: string) => { external.push(url) } },
     ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler) },
@@ -34,6 +40,12 @@ async function fixture(): Promise<void> {
       closeWindow(win: unknown) { calls.push(['closeWindow', win]) }
     }
   }))
+  mock.module('../src/main/browser/cookies/importer', () => ({ BrowserCookieImporter: class {
+    list(context: () => string) { cookieCalls.push(['list', context()]); cookieContexts.push(context) }
+    preview(context: () => string, sourceId: string, scope: string) { cookieCalls.push(['preview', context(), sourceId, scope]) }
+    import(context: () => string, sourceId: string, scope: string, expectedSite: string | null) { cookieCalls.push(['import', context(), sourceId, scope, expectedSite]) }
+    clear(context: () => string, expectedSite: string) { cookieCalls.push(['clear', context(), expectedSite]) }
+  } }))
   const { registerBrowserIpc } = await import('../src/main/ipc/browser')
   registerBrowserIpc()
   createView()
@@ -78,6 +90,19 @@ async function fixture(): Promise<void> {
     assert.throws(() => handlers.get('browser:copy-url')!(event, 'browser:owned'), /No HTTP/)
   }
   assert.equal(external.length, 1)
+  pageUrl = 'https://example.test/current-page'
+  handlers.get('browser:list-cookie-sources')!(event, 'browser:owned')
+  handlers.get('browser:preview-cookies')!(event, 'browser:owned', 'chrome:profile', 'site')
+  handlers.get('browser:import-cookies')!(event, 'browser:owned', 'chrome:profile', 'all', null)
+  handlers.get('browser:clear-site-cookies')!(event, 'browser:owned', 'example.test')
+  assert.deepEqual(cookieCalls, [
+    ['list', pageUrl], ['preview', pageUrl, 'chrome:profile', 'site'],
+    ['import', pageUrl, 'chrome:profile', 'all', null], ['clear', pageUrl, 'example.test']
+  ])
+  for (const channel of ['browser:list-cookie-sources', 'browser:preview-cookies', 'browser:import-cookies', 'browser:clear-site-cookies']) {
+    assert.throws(() => handlers.get(channel)!(foreign, 'browser:owned'), /does not belong/)
+    assert.throws(() => handlers.get(channel)!({ sender: ui, senderFrame: {} }, 'browser:owned'), /UI main frame/)
+  }
 
   create(foreign, 'browser:foreign')
   ui.emit('did-start-navigation', {}, 'https://ui.test/frame', false, false)
@@ -91,6 +116,7 @@ async function fixture(): Promise<void> {
   assert.equal(get(foreign, 'browser:foreign').browserId, 'browser:foreign', 'another window is untouched')
   ui.emit('dom-ready')
   assert.throws(() => get(event, 'browser:owned'), /does not belong/, 'old registrations are gone after reload')
+  assert.throws(() => cookieContexts[0]!(), /does not belong/, 'late cookie IO loses authorization after UI reload')
   assert.throws(() => handlers.get('browser:set-bounds')!(event, 'browser:owned', { x: 0, y: 0, width: 100, height: 100 }), /does not belong/)
   pageUrl = undefined
   assert.deepEqual(create(event, 'browser:fresh'), { browserId: 'browser:fresh' })

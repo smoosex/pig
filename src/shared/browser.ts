@@ -69,6 +69,45 @@ export interface BrowserPickerOptions {
   }
 }
 
+export type BrowserCookieScope = 'site' | 'all'
+
+export interface BrowserCookieSource {
+  id: string
+  browser: 'chrome'
+  name: string
+}
+
+export interface BrowserCookieSkips {
+  expired: number
+  partitioned: number
+  unsupported: number
+}
+
+export interface BrowserCookieSources {
+  supported: boolean
+  site: string | null
+  sources: BrowserCookieSource[]
+}
+
+/** Cookie names and values never cross the host/UI boundary. Preview counts may change before import. */
+export interface BrowserCookiePreview {
+  site: string | null
+  count: number
+  domains: { domain: string; count: number }[]
+  skipped: BrowserCookieSkips
+}
+
+export interface BrowserCookieImportResult {
+  imported: number
+  failed: number
+  skipped: BrowserCookieSkips
+}
+
+export interface BrowserCookieClearResult {
+  removed: number
+  failed: number
+}
+
 /** Only the Pig UI can create/control these panes; page guests never receive this API. */
 export interface BrowserApi {
   create(browserId: string): Promise<BrowserState>
@@ -87,6 +126,10 @@ export interface BrowserApi {
   openExternal(browserId: string): Promise<void>
   inspect(browserId: string): Promise<void>
   close(browserId: string): Promise<void>
+  listCookieSources(browserId: string): Promise<BrowserCookieSources>
+  previewCookies(browserId: string, sourceId: string, scope: BrowserCookieScope): Promise<BrowserCookiePreview>
+  importCookies(browserId: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null): Promise<BrowserCookieImportResult>
+  clearSiteCookies(browserId: string, expectedSite: string): Promise<BrowserCookieClearResult>
   onCloseRequested(listener: (browserId: string) => void): () => void
   onState(listener: (state: BrowserState) => void): () => void
   onSelection(listener: (selection: BrowserSelection) => void): () => void
