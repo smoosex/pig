@@ -295,6 +295,8 @@ export interface SessionsStore {
   updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void
   dropCompaction: (sessionId: string, id: string) => void
   viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<boolean>
+  /** Rebinds the view to a leaf main already moved (extension navigation); never navigates itself. */
+  syncBranch: (sessionId: string) => Promise<void>
   retryUserMessage: (sessionId: string, userEntryId: string) => Promise<void>
 }
 

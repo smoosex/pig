@@ -145,18 +145,15 @@ export function subscribeSessionEvents(): () => void {
     }
     cancelFrame()
   })
-  // Extension tree navigation moves the leaf behind the renderer's back, so the view rebinds to
-  // the new branch through the same path as the tree dialog; a root leaf has no node to pass on.
-  const offBranch = api.onSessionBranchChanged((sessionId, leafId) => {
+  // Extension tree navigation already moved the leaf in main, usually mid-run. Re-navigating would
+  // hit the busy guard, so the view only re-reads the current branch.
+  const offBranch = api.onSessionBranchChanged((sessionId) => {
     const store = useSessionsStore.getState()
     if (!store.runtime[sessionId]) return
     toolSnapshots.delete(sessionId)
     setRetryNotice(sessionId, null)
     cancelFrame()
-    const refresh = leafId === null
-      ? store.hydrateTurns(sessionId, { keepOlderTurns: true })
-      : store.viewBranch(sessionId, leafId).catch(() => store.hydrateTurns(sessionId, { keepOlderTurns: true }))
-    void refresh.catch(reportError('refresh the session branch'))
+    void store.syncBranch(sessionId).catch(reportError('refresh the session branch'))
   })
   const off = api.onEvent((raw) => {
     const payload = raw as { sessionId: string; event: PiSessionEvent }

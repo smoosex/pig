@@ -58,6 +58,7 @@ export const createConversationSlice: SessionSlice<
   | 'updateCompaction'
   | 'dropCompaction'
   | 'viewBranch'
+  | 'syncBranch'
   | 'retryUserMessage'
 > = (set, get) => {
   const historyRequests = new Map<number, object>()
@@ -83,16 +84,19 @@ export const createConversationSlice: SessionSlice<
 
   async function navigateBranch(
     sessionId: string,
-    tipId: string,
+    tipId: string | null,
     options: SessionBranchOptions | undefined,
     restoreDraft: boolean
   ) {
     const initial = get().runtime[sessionId]
     if (!initial) return
     const branchRequest = initial.branchRequest + 1
-    update(sessionId, { branchRequest, isNavigatingBranch: true })
+    // A null tip rebinds to a leaf main already moved; it navigates nothing, so input stays enabled.
+    update(sessionId, tipId === null ? { branchRequest } : { branchRequest, isNavigatingBranch: true })
     try {
-      const branch = await api.viewBranch(sessionId, tipId, options)
+      const branch = tipId === null
+        ? { ...await api.getDisplayTurns(sessionId), cancelled: false, restoredPrompt: undefined }
+        : await api.viewBranch(sessionId, tipId, options)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest || branch.cancelled) return
       update(sessionId, { toolUpdates: {}, liveCompactions: [], retryNotice: null })
@@ -590,6 +594,10 @@ export const createConversationSlice: SessionSlice<
 
     viewBranch: async (sessionId, tipId, options) => {
       return !!await navigateBranch(sessionId, tipId, options, true)
+    },
+
+    syncBranch: async (sessionId) => {
+      await navigateBranch(sessionId, null, undefined, false)
     },
 
     retryUserMessage: async (sessionId, userEntryId) => {

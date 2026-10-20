@@ -21,7 +21,7 @@ async function runFixture(name: string): Promise<void> {
       contextUsage: null,
       followUpMessages: [], steeringMessages: []
     }),
-    getDisplayTurns: async () => ({ leafId: null, turns: [] }),
+    getDisplayTurns: async () => ({ leafId: null as string | null, turns: [] }),
     viewBranch: async (_sessionId: string, tipId: string) => ({ leafId: tipId, turns: [], startIndex: 0, totalTurns: 0 }),
     onEvent: (callback: (event: unknown) => void) => {
       listener = callback
@@ -614,6 +614,9 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(runtime().isStreaming, false)
     } else if (name === 'branch') {
       assert.equal(runtime().leafId, null)
+      let mainLeaf: string | null = 'leaf-1'
+      api.getDisplayTurns = async () => ({ leafId: mainLeaf, turns: [], startIndex: 0, totalTurns: 0 })
+      api.viewBranch = async () => { throw new Error('Session is busy') }
       emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'old branch' }] } })
       flush()
       assert.ok(runtime().toolUpdates['old-tool'])
@@ -621,8 +624,10 @@ async function runFixture(name: string): Promise<void> {
       branchListener?.('session', 'leaf-1')
       flush()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      assert.equal(runtime().leafId, 'leaf-1')
+      assert.equal(runtime().leafId, 'leaf-1', 'extension navigation rebinds without re-navigating a busy session')
+      assert.equal(runtime().isNavigatingBranch, false, 'a rebind never disables the composer')
       assert.deepEqual(runtime().toolUpdates, {})
+      mainLeaf = null
       emit({ type: 'tool_execution_update', toolCallId: 'old-tool', partialResult: { content: [{ type: 'text', text: 'queued before root' }] } })
       branchListener?.('session', null)
       assert.equal(frames.size, 0)
