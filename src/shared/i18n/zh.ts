@@ -324,6 +324,8 @@ export const zh = {
     label: '标注'
   },
   browser: {
+    releaseAgent: '释放 Agent 控制',
+    agentControlled: 'Agent 正在使用此标签，点击释放控制',
     cookieImport: 'Cookie 导入',
     cookieKeychainError: '无法读取 Chrome Safe Storage，请检查钥匙串访问权限。',
     cookieUnsafePath: 'Chrome Cookie 数据库或配置目录路径不安全。',
@@ -715,6 +717,9 @@ export const zh = {
     capabilitiesSourceAgents: '共享技能（.agents）',
     capabilitiesSourceProject: '项目技能',
     capabilitiesSourceOther: '其他来源',
+    capabilitiesToolsBuiltIn: '内置',
+    capabilitiesToolsPig: 'Pig 插件',
+    capabilitiesPluginTools: '{n} 个工具：{names}',
     messageLabel: '消息',
     bashMode: 'Bash 模式',
     bashModeHint: '当前为 bash 模式，Esc 退出 bash 模式',

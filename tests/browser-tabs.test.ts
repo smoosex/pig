@@ -32,11 +32,13 @@ async function fixture() {
   const browserCloses: string[] = []
   const writes: unknown[] = []
   const piCalls: string[] = []
+  const answers: unknown[][] = []
   let create: (id: string) => Promise<unknown> = async () => ({})
   const api = new Proxy({
     browser: {
       create: async (id: string) => { browserCreates.push(id); return create(id) },
-      close: async (id: string) => { browserCloses.push(id) }
+      close: async (id: string) => { browserCloses.push(id) },
+      answerAgentOpen: async (...args: unknown[]) => { answers.push(args) }
     },
     saveOpenProjectTabOrder: async (...args: unknown[]) => { writes.push(args) },
     saveOpenProjectChangesTab: async (...args: unknown[]) => { writes.push(args) },
@@ -103,6 +105,21 @@ async function fixture() {
   assert.ok(browserCloses.includes(dropped), 'project/catalog removal also disposes browser resources')
   await state().openBrowserTab('/project')
   assert.equal(state().openTabs.at(-1)?.browserTargetSessionId, session.id)
+  const { answerBrowserAgentOpen } = await import('../src/renderer/src/hooks/useBrowserAgentRequests')
+  const beforeAgent = { active: state().activeTabId, cwd: state().currentProjectCwd }
+  await answerBrowserAgentOpen({ requestId: 'r1', sessionId: session.id })
+  const agentTab = state().openTabs.at(-1)!
+  assert.deepEqual(answers.at(-1), ['r1', { browserId: agentTab.id }])
+  assert.equal(agentTab.kind, 'browser')
+  assert.equal(agentTab.cwd, '/project', 'agent tabs open in the session worktree')
+  assert.equal(agentTab.browserTargetSessionId, session.id)
+  assert.deepEqual({ active: state().activeTabId, cwd: state().currentProjectCwd }, beforeAgent, 'agent tabs open in the background')
+  await answerBrowserAgentOpen({ requestId: 'r2', sessionId: 'closed-session' })
+  assert.deepEqual(answers.at(-1), ['r2', { error: 'The session is not open in this window' }])
+  create = async () => { throw new Error('view refused') }
+  await answerBrowserAgentOpen({ requestId: 'r3', sessionId: session.id })
+  assert.deepEqual(answers.at(-1), ['r3', { error: 'view refused' }])
+  create = async () => ({})
   await state().openBrowserTab()
   const chatBrowser = state().openTabs.at(-1)!
   assert.equal(chatBrowser.cwd, '')

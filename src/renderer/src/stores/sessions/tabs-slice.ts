@@ -681,16 +681,16 @@ export const createTabsSlice: SessionSlice<
       await get().activateTab(id)
     },
 
-    openBrowserTab: async (cwd) => {
-      const selection = ++selectionVersion
+    openBrowserTab: async (cwd, options) => {
+      const selection = options?.background ? selectionVersion : ++selectionVersion
       const scopeCwd = cwd ?? ''
       const state = get()
       const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
-      const target = active && (active.kind === 'project' || active.kind === 'chat') &&
+      const target = options?.targetSessionId ?? (active && (active.kind === 'project' || active.kind === 'chat') &&
         (scopeCwd ? active.kind === 'project' && active.cwd === scopeCwd : active.kind === 'chat')
         ? active.id
         : state.openTabs.find((tab) => tab.kind === 'project' && tab.cwd === scopeCwd &&
-          tab.id === state.activeSessionByCwd[scopeCwd])?.id
+          tab.id === state.activeSessionByCwd[scopeCwd])?.id)
       const id = `browser:${crypto.randomUUID()}`
       await api.browser.create(id)
       // Selection may have moved during creation; the completed view remains available in the strip.
@@ -699,11 +699,12 @@ export const createTabsSlice: SessionSlice<
           id, cwd: scopeCwd, title: t('tabBar.newBrowser'), kind: 'browser', loadState: 'ready',
           browserTargetSessionId: target
         }],
-        ...(selection === selectionVersion ? {
+        ...(!options?.background && selection === selectionVersion ? {
           ...activeTabPatch(current, id, scopeCwd || null),
           currentProjectCwd: scopeCwd || null
         } : {})
       }))
+      return id
     },
 
     setBrowserTarget: (browserId, sessionId) => set((current) => ({

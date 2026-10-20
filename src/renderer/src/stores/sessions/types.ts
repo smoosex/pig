@@ -223,7 +223,8 @@ export interface SessionsStore {
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
   /** Brings a file's tab to the front, opening it when the strip does not hold it. */
   openFileTab: (cwd: string, path: string) => Promise<void>
-  openBrowserTab: (cwd?: string | null) => Promise<void>
+  /** Resolves the new tab's id. `background` keeps the current selection (agent-opened tabs). */
+  openBrowserTab: (cwd?: string | null, options?: { background?: boolean; targetSessionId?: string }) => Promise<string>
   setBrowserTarget: (browserId: string, sessionId: string) => void
   /** Follows a file the tree renamed: the tab keeps its place and takes the row's new name. */
   moveFileTab: (cwd: string, from: string, to: string) => void

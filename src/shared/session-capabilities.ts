@@ -5,17 +5,16 @@ export interface SessionSkillSource {
   kind: 'pi' | 'agents' | 'project' | 'claude' | 'codex' | 'imported'
   name?: string
 }
-/** Who provides a tool: Pi itself (built-ins and its bundled extensions) or a plugin. */
-export interface SessionToolProvider {
-  kind: 'pi' | 'plugin'
-  name?: string
-}
+/** Who provides a tool: Pi itself (built-ins and its bundled extensions), a Pig built-in plugin or another plugin. */
+export type SessionToolProvider = { kind: 'pi' } | { kind: 'pig' | 'plugin'; id: string; name: string }
 export interface SessionCapability {
   id: string
   name: string
   description?: string
   source?: SessionSkillSource
   provider?: SessionToolProvider
+  /** A plugin is one switch for all of its tools; these are their names. */
+  tools?: string[]
   enabled: boolean
   defaultEnabled: boolean
   overridden: boolean

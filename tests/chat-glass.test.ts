@@ -49,7 +49,7 @@ async function fixture(scenario: string): Promise<void> {
     if (scenario === 'canvas' || scenario === 'tab-layout' || scenario === 'tab-sizing') {
       const closedTabs: string[] = []
       sessions.setState({ openTabs: [...tabs, { id: 'chat-two', kind: 'chat', cwd: '/chats/b', title: 'Another chat with a much longer title', loadState: 'ready' }] })
-      for (const name of ['useEventBridge', 'useSessionNames', 'useSessionWindows', 'useWorktreeDeletions', 'useModelCatalog']) {
+      for (const name of ['useEventBridge', 'useSessionNames', 'useSessionWindows', 'useWorktreeDeletions', 'useBrowserAgentRequests', 'useModelCatalog']) {
         mock.module(`../src/renderer/src/hooks/${name}`, () => ({ [name]: noop }))
       }
       mock.module('../src/renderer/src/components/sidebar/use-sidebar-preferences', () => ({
@@ -180,7 +180,7 @@ async function fixture(scenario: string): Promise<void> {
             return 'created-project'
           },
           newChat: async () => { created.push('chat'); return 'created-chat' },
-          openBrowserTab: async (cwd) => { created.push(`browser:${cwd ?? 'chat'}`) }
+          openBrowserTab: async (cwd) => { created.push(`browser:${cwd ?? 'chat'}`); return 'browser:created' }
         }) })
         await chooseSession()
         assert.equal(newButton.disabled, true)

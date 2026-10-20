@@ -29,6 +29,13 @@ const api: SessionApi = {
       ipcRenderer.on('browser:close-tab-requested', handler)
       return () => ipcRenderer.off('browser:close-tab-requested', handler)
     },
+    releaseAgent: (browserId) => ipcRenderer.invoke('browser:release-agent', browserId),
+    onAgentOpenRequest: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/browser').BrowserAgentOpenRequest) => listener(request)
+      ipcRenderer.on('browser:agent-open-request', handler)
+      return () => ipcRenderer.off('browser:agent-open-request', handler)
+    },
+    answerAgentOpen: (requestId, result) => ipcRenderer.invoke('browser:agent-open-answer', requestId, result),
     onState: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: import('../shared/browser').BrowserState) => listener(state)
       ipcRenderer.on('browser:state', handler)

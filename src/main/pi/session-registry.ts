@@ -28,17 +28,17 @@ import { worktrees } from '../project-worktrees'
 import { sessionSkillChoices } from './chat-resources'
 import {
   applySessionTools, capability, copySessionCapabilities, defaultToolNames, readSessionCapabilities,
-  removeSessionCapabilities, saveSessionCapability, saveSessionCapabilityGroup, sessionTools
+  groupPluginTools, removeSessionCapabilities, saveSessionCapability, saveSessionCapabilityGroup, sessionTools
 } from './session-capabilities'
 import { configuredServers } from '../mcp/settings'
 import { featuredRecipe } from '../mcp/featured'
-import type { CapabilityGroup, SessionCapabilities } from '../../shared/session-capabilities'
+import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../shared/session-capabilities'
 import { assertExtensionResources, createSessionRuntime, SessionResourceError } from './session-runtime'
 import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
 import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
-import { enabledPluginPaths, pluginNamesByPath } from './plugins'
+import { enabledPluginPaths, toolProvidersByPath } from './plugins'
 import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
 import { synchronizeModelCatalog } from './model-catalog'
 import {
@@ -679,11 +679,11 @@ export async function getSessionCapabilities(sessionId: string): Promise<Session
   const session = await prepareSession(sessionId)
   const preferences = readSessionCapabilities(sessionId)
   return {
-    tools: sessionTools(session.agentSession, preferences.tools, {
+    tools: groupPluginTools(sessionTools(session.agentSession, preferences.tools, {
       defaults: await defaultToolNames(session.agentSession),
       captureDefaults: !Object.hasOwn(preferences.tools, 'tool_search'),
-      plugins: await pluginNamesByPath(isChatCwd(session.cwd) ? 'chat' : 'project')
-    }),
+      plugins: await toolProvidersByPath(isChatCwd(session.cwd) ? 'chat' : 'project')
+    })),
     mcp: (await configuredServers()).map((server) => {
       const descriptionKey = featuredRecipe(server.config)?.descriptionKey
       return capability(server.name, server.name, server.config.enabled === true, preferences.mcp,
@@ -700,10 +700,13 @@ export async function setSessionCapability(sessionId: string, group: CapabilityG
   const state = await getSessionCapabilities(sessionId)
   const session = live.get(sessionId)!
   if (state.busy || !canReloadResources(session) || refreshingPlugins.has(sessionId) || resourceReloads.has(sessionId)) throw new Error('Session is busy')
-  if (id !== null && !state[group].some((item) => item.id === id)) throw new Error('Unknown session capability')
+  const item = id === null ? undefined : state[group].find((candidate) => candidate.id === id)
+  if (id !== null && !item) throw new Error('Unknown session capability')
+  // A plugin row stands for its tools; preferences stay per tool, as subagents and Pi apply them.
+  const ids = (items: SessionCapability[]) => items.flatMap((candidate) => candidate.tools ?? [candidate.id])
   // Write synchronously before publishing the reload gate; concurrent prompts cannot enter in between.
-  if (id === null) saveSessionCapabilityGroup(sessionId, group, state[group].map((item) => item.id), enabled)
-  else saveSessionCapability(sessionId, group, id, enabled)
+  if (!item) saveSessionCapabilityGroup(sessionId, group, ids(state[group]), enabled)
+  else saveSessionCapability(sessionId, group, ids([item]), enabled)
   let release!: () => void
   resourceReloads.set(sessionId, new Promise<void>((resolve) => { release = resolve }))
   try {

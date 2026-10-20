@@ -1,7 +1,7 @@
 /** Pig-only sidecars keep resource preferences out of Pi's message/branch history. */
 import { existsSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { CapabilityGroup, SessionCapability, SessionCapabilityOverrides, SessionToolProvider } from '../../shared/session-capabilities'
@@ -23,10 +23,13 @@ export function readSessionCapabilities(sessionId: string): SessionCapabilityOve
   }
   return raw
 }
-export function saveSessionCapability(sessionId: string, group: CapabilityGroup, id: string, enabled: boolean | null): void {
+/** Several ids are written at once for a plugin, whose single switch covers all of its tools. */
+export function saveSessionCapability(sessionId: string, group: CapabilityGroup, ids: string | readonly string[], enabled: boolean | null): void {
   const prefs = readSessionCapabilities(sessionId)
-  if (enabled === null) delete prefs[group][id]
-  else Object.defineProperty(prefs[group], id, { value: enabled, enumerable: true, configurable: true, writable: true })
+  for (const id of typeof ids === 'string' ? [ids] : ids) {
+    if (enabled === null) delete prefs[group][id]
+    else Object.defineProperty(prefs[group], id, { value: enabled, enumerable: true, configurable: true, writable: true })
+  }
   privateJson(preferencePath(sessionId), prefs)
 }
 /** A fork starts with its source's overrides; a session without any leaves no file behind. */
@@ -51,10 +54,13 @@ export function capability(id: string, name: string, defaultEnabled: boolean, ov
 const originals = new WeakMap<object, { exposure: ReturnType<AgentSession['getAllTools']>[number]['exposure']; enabled: boolean }>()
 // Pi's built-ins are `builtin`; its codemode / tool_search / MCP extensions reach the session as
 // Pig's inline factories. Everything loaded from an extension file comes from a plugin.
-function toolProvider(source: { source: string; path: string }, plugins: ReadonlyMap<string, string>): SessionToolProvider {
+function toolProvider(source: { source: string; path: string }, plugins: ReadonlyMap<string, SessionToolProvider>): SessionToolProvider {
   if (source.source === 'builtin' || source.source === 'inline') return { kind: 'pi' }
-  const name = plugins.get(resolve(source.path))
-  return name ? { kind: 'plugin', name } : { kind: 'plugin' }
+  const known = plugins.get(resolve(source.path))
+  if (known) return known
+  // An extension Pig did not install (e.g. Pi's own extensions directory) is named after its file.
+  const file = basename(source.path, extname(source.path))
+  return { kind: 'plugin', id: resolve(source.path), name: file === 'index' ? basename(dirname(source.path)) : file }
 }
 let sdkDefaultTools: Promise<readonly string[]> | undefined
 /** The built-ins a session starts with: the `defaultTools` setting, else the SDK's own list (not exported from its entry). */
@@ -69,7 +75,7 @@ interface SessionToolOptions {
   /** Resolved names from {@link defaultToolNames}. */
   defaults: readonly string[]
   captureDefaults?: boolean
-  plugins?: ReadonlyMap<string, string>
+  plugins?: ReadonlyMap<string, SessionToolProvider>
 }
 export function sessionTools(agent: AgentSession, overrides: Record<string, boolean>, { defaults, captureDefaults = false, plugins = new Map() }: SessionToolOptions): SessionCapability[] {
   return agent.getAllTools().filter((tool) => !tool.name.startsWith('mcp__')).flatMap((tool) => {
@@ -87,6 +93,29 @@ export function sessionTools(agent: AgentSession, overrides: Record<string, bool
     return [{ ...capability(tool.name, tool.name, original.enabled, overrides, tool.description), provider: toolProvider(tool.sourceInfo, plugins) }]
   })
 }
+/** Pi's tools stay individual switches; each plugin becomes one switch that is on only when all its tools are. */
+export function groupPluginTools(tools: readonly SessionCapability[]): SessionCapability[] {
+  const rows: SessionCapability[] = []
+  const plugins = new Map<string, SessionCapability>()
+  for (const tool of tools) {
+    const provider = tool.provider
+    if (!provider || provider.kind === 'pi') { rows.push(tool); continue }
+    const id = `plugin:${provider.kind}:${provider.id}`
+    const row = plugins.get(id)
+    if (!row) {
+      const created = { id, name: provider.name, provider, tools: [tool.id], enabled: tool.enabled, defaultEnabled: tool.defaultEnabled, overridden: tool.overridden }
+      plugins.set(id, created)
+      rows.push(created)
+      continue
+    }
+    row.tools!.push(tool.id)
+    row.enabled &&= tool.enabled
+    row.defaultEnabled &&= tool.defaultEnabled
+    row.overridden ||= tool.overridden
+  }
+  return rows
+}
+
 const applied = new WeakMap<AgentSession, Record<string, boolean>>()
 export async function applySessionTools(agent: AgentSession, overrides: Record<string, boolean>, captureDefaults = false): Promise<void> {
   const previous = applied.get(agent)

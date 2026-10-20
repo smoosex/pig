@@ -21,6 +21,14 @@ export interface BrowserState {
   focused?: boolean
   annotations: BrowserAnnotation[]
   error: string | null
+  /** The Pi session whose agent controls this page through the browser tools, if any. */
+  agentSessionId: string | null
+}
+
+/** Main asks the session's window to open a background browser tab for that session's agent. */
+export interface BrowserAgentOpenRequest {
+  requestId: string
+  sessionId: string
 }
 
 export interface BrowserScreenshot {
@@ -131,6 +139,11 @@ export interface BrowserApi {
   importCookies(browserId: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null): Promise<BrowserCookieImportResult>
   clearSiteCookies(browserId: string, expectedSite: string): Promise<BrowserCookieClearResult>
   onCloseRequested(listener: (browserId: string) => void): () => void
+  /** Ends agent control of the page; the agent must call browser_open again to resume. */
+  releaseAgent(browserId: string): Promise<void>
+  onAgentOpenRequest(listener: (request: BrowserAgentOpenRequest) => void): () => void
+  /** Answers an agent open request with the created tab, or the reason it could not be created. */
+  answerAgentOpen(requestId: string, result: { browserId: string } | { error: string }): Promise<void>
   onState(listener: (state: BrowserState) => void): () => void
   onSelection(listener: (selection: BrowserSelection) => void): () => void
 }

@@ -28,6 +28,12 @@ extraResources:
     to: system-plugins/pig-subagent
     filter:
       - '**/*.ts'
+  - from: src/main/plugins/pig-browser-host.ts
+    to: system-plugins/pig-browser-host.ts
+  - from: src/main/plugins/pig-browser
+    to: system-plugins/pig-browser
+    filter:
+      - '**/*.ts'
   - from: src/main/plugins/observational-memory
     to: system-plugins/observational-memory
     filter:

@@ -12,7 +12,7 @@ async function fixture() {
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class {
     observe() {} unobserve() {} disconnect() {}
   } })
-  const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null })
+  const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, agentSessionId: null })
   let pushState: (next: BrowserState) => void = () => {}
   let pushSelection: (next: BrowserSelection) => void = () => {}
   let requestClose: (browserId: string) => void = () => {}
@@ -53,6 +53,9 @@ async function fixture() {
     previewCookies: async () => ({ site: null, count: 0, domains: [], skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
     importCookies: async () => ({ imported: 0, failed: 0, skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
     clearSiteCookies: async () => ({ removed: 0, failed: 0 }),
+    releaseAgent: async () => {},
+    onAgentOpenRequest: () => () => {},
+    answerAgentOpen: async () => {},
     onCloseRequested: (listener) => { requestClose = listener; return () => { requestClose = () => {} } },
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }

@@ -46,7 +46,7 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getPluginSettings('pi-review'), { thinking: 'high' })
     await module.setPluginSettings('pi-review', { thinking: null })
     assert.deepEqual(await module.getPluginSettings('pi-review'), {})
-    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project']]
+    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
     assert.equal(await module.isMemoryPluginEnabled('project'), false)
     assert.equal(await module.isMemoryPluginEnabled('chat'), false)
@@ -56,7 +56,9 @@ async function fixture(): Promise<void> {
     assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
     const subagentPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-subagent', 'index.ts')))
     assert.ok(subagentPath, 'subagents default to projects only')
-    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => path !== subagentPath), 'children cannot spawn')
+    const browserPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-browser', 'index.ts')))
+    assert.ok(browserPath, 'browser tools default to projects only')
+    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => path !== subagentPath && path !== browserPath), 'children cannot spawn or drive the parent window browser')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))), existsSync(webAccessBundle))
     const registryFile = join(root, 'pig', 'plugins.json')
     await mkdir(join(root, 'pig'), { recursive: true })
@@ -66,7 +68,7 @@ async function fixture(): Promise<void> {
       version: 1, memoryEnabled: true, reviewEnabled: false, webAccessEnabled: true,
       installed: [{ id: 'legacy', source: plugin, kind: 'local', enabled: true }]
     }))
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project']])
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project']])
     assert.deepEqual(await module.enabledPluginPaths('chat'), [], 'legacy switches never enable chats')
     await module.setPluginScopes('legacy', ['chat', 'project', 'chat'])
     const migrated = JSON.parse(await readFile(registryFile, 'utf8'))
@@ -75,11 +77,11 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.reviewScopes, [])
     assert.deepEqual(migrated.webAccessScopes, ['project'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project', 'chat']], 'saved scopes override defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project', 'chat']], 'saved scopes override defaults')
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent']) await module.setPluginScopes(id, [])
+    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     await module.setPluginScopes('pi-review', ['chat'])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])

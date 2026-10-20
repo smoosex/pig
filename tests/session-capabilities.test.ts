@@ -13,8 +13,8 @@ async function fixture(): Promise<void> {
   const state: SessionCapabilities = {
     tools: [
       { id: 'read', name: 'read', description: 'Read files and images', provider: { kind: 'pi' }, enabled: true, defaultEnabled: true, overridden: false },
-      { id: 'web_search', name: 'web_search', provider: { kind: 'plugin', name: 'web-access' }, enabled: true, defaultEnabled: true, overridden: false },
-      { id: 'mystery', name: 'mystery', provider: { kind: 'plugin' }, enabled: true, defaultEnabled: true, overridden: false }
+      { id: 'plugin:pig:pi-web-access', name: 'Web Access', provider: { kind: 'pig', id: 'pi-web-access', name: 'Web Access' }, tools: ['web_search', 'fetch_content'], enabled: true, defaultEnabled: true, overridden: false },
+      { id: 'plugin:plugin:/mystery.ts', name: 'mystery', provider: { kind: 'plugin', id: '/mystery.ts', name: 'mystery' }, tools: ['mystery'], enabled: true, defaultEnabled: true, overridden: false }
     ],
     mcp: [{ id: 'server', name: 'server', description: 'Search remote documentation', enabled: false, defaultEnabled: false, overridden: false }],
     skills: [
@@ -71,7 +71,10 @@ async function fixture(): Promise<void> {
       assert.ok(node.classList.contains('text-xs'))
       assert.ok(node.classList.contains('font-normal'))
     }
-    assert.deepEqual([...activePanel().querySelectorAll('[data-slot="badge"]')].map((node) => node.textContent), ['built-in', 'web-access', 'plugin'])
+    assert.equal(activePanel().querySelector('[data-slot="badge"]'), null, 'section headers name the source')
+    assert.deepEqual([...activePanel().querySelectorAll('[data-slot="collapsible-trigger"]')].map((node) => node.textContent), ['Built-in1', 'Pig plugins1', 'Other sources1'])
+    assert.deepEqual([...activePanel().querySelectorAll('[data-slot="field-label"]')].map((node) => node.textContent), ['read', 'Web Access', 'mystery'], 'a plugin is one row')
+    assert.equal([...activePanel().querySelectorAll('[data-slot="field-description"]')][1]!.textContent, '2 tools: web_search, fetch_content')
     assert.equal(activePanel().querySelector('[role="switch"]')?.getAttribute('aria-describedby'), description().id)
     assert.equal(document.body.textContent?.includes('workflow'), false)
     assert.ok(activePanel().classList.contains('overflow-x-hidden'))

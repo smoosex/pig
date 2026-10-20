@@ -5,7 +5,6 @@ import { toast } from 'sonner'
 import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../../../shared/session-capabilities'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
-import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '../ui/field'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
@@ -62,7 +61,8 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
     project: t('composer.capabilitiesSourceProject'), claude: t('skills.agentClaude'),
     codex: t('skills.agentCodex'), imported: t('skills.managed')
   }
-  const skillGroups = new Map<string, { label: string; items: SessionCapability[] }>()
+  type Section = { label: string; items: SessionCapability[] }
+  const skillGroups = new Map<string, Section>()
   for (const item of state?.skills ?? []) {
     const source = item.source
     const key = source ? `${source.kind}:${source.name ?? ''}` : 'other'
@@ -72,18 +72,22 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
     group.items.push(item)
     skillGroups.set(key, group)
   }
-  // Tags are identifiers, not prose, so they stay untranslated.
-  const provider = (item: SessionCapability) => item.provider?.kind === 'pi' ? 'built-in' : item.provider?.name ?? 'plugin'
+  const toolGroups = new Map<string, Section>([
+    ['pi', { label: t('composer.capabilitiesToolsBuiltIn'), items: [] }],
+    ['pig', { label: t('composer.capabilitiesToolsPig'), items: [] }],
+    ['plugin', { label: t('composer.capabilitiesSourceOther'), items: [] }]
+  ])
+  for (const item of state?.tools ?? []) toolGroups.get(item.provider?.kind ?? 'pi')!.items.push(item)
+  const sections = (group: CapabilityGroup) => [...(group === 'skills' ? skillGroups : toolGroups)].filter(([, section]) => section.items.length)
   const row = (group: CapabilityGroup, item: SessionCapability) => {
     const id = `${prefix}-${group}-${encodeURIComponent(item.id)}`
-    const description = item.description?.trim() || t('composer.capabilitiesNoDescription')
+    const description = item.tools
+      ? t('composer.capabilitiesPluginTools', { n: item.tools.length, names: item.tools.join(', ') })
+      : item.description?.trim() || t('composer.capabilitiesNoDescription')
     return (
       <Field key={item.id} orientation="horizontal">
         <FieldContent className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <FieldLabel htmlFor={id} className="block min-w-0 truncate text-xs font-normal" title={item.name}>{item.name}</FieldLabel>
-            {item.provider ? <Badge variant="secondary" className="min-w-0 max-w-1/2 font-normal" title={provider(item)}><span className="truncate">{provider(item)}</span></Badge> : null}
-          </div>
+          <FieldLabel htmlFor={id} className="block min-w-0 truncate text-xs font-normal" title={item.name}>{item.name}</FieldLabel>
           <FieldDescription id={`${id}-description`} className="line-clamp-2 wrap-anywhere text-xs font-normal" title={description}>{description}</FieldDescription>
         </FieldContent>
         {item.overridden ? (
@@ -139,7 +143,7 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
             <TabsContent key={group} value={group} className={cn('h-80 overflow-x-hidden overflow-y-auto p-1', hideScroll)}>
               <FieldGroup>
                 {state[group].length === 0 ? <p className="text-xs text-muted-foreground">{t('composer.capabilitiesEmpty')}</p> : null}
-                {group === 'skills' ? [...skillGroups].map(([key, source]) => (
+                {group !== 'mcp' ? sections(group).map(([key, source]) => (
                   <Collapsible key={key} defaultOpen className="flex min-w-0 flex-col gap-3">
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" className="group h-8 w-full justify-start border-0 px-1 py-0 text-left text-xs font-normal">
@@ -149,7 +153,7 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
                       </Button>
                     </CollapsibleTrigger>
                     {/* 9px: the header padding plus the whitespace inside the 16px chevron, so rows start under its glyph. */}
-                    <CollapsibleContent><FieldGroup className="pr-1 pl-2.25">{source.items.map((item) => row('skills', item))}</FieldGroup></CollapsibleContent>
+                    <CollapsibleContent><FieldGroup className="pr-1 pl-2.25">{source.items.map((item) => row(group, item))}</FieldGroup></CollapsibleContent>
                   </Collapsible>
                 )) : state[group].map((item) => row(group, item))}
               </FieldGroup>

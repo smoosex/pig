@@ -327,6 +327,8 @@ export const en: Messages = {
     label: 'Label'
   },
   browser: {
+    releaseAgent: 'Release agent control',
+    agentControlled: 'An agent is using this tab. Click to release control.',
     cookieImport: 'Cookie import',
     cookieKeychainError: 'Could not access Chrome Safe Storage; check Keychain permissions.',
     cookieUnsafePath: 'Unsafe Chrome cookie database or profile path.',
@@ -718,6 +720,9 @@ export const en: Messages = {
     capabilitiesSourceAgents: 'Shared skills (.agents)',
     capabilitiesSourceProject: 'Project skills',
     capabilitiesSourceOther: 'Other sources',
+    capabilitiesToolsBuiltIn: 'Built-in',
+    capabilitiesToolsPig: 'Pig plugins',
+    capabilitiesPluginTools: '{n} tools: {names}',
     messageLabel: 'Message',
     bashMode: 'Bash mode',
     bashModeHint: 'Bash mode · press Esc to exit',

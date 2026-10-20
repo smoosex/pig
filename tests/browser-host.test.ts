@@ -35,6 +35,25 @@ class FakeContents extends EventEmitter {
     this.emit('did-navigate', {}, url)
   }
   async capturePage() { return { isEmpty: () => false, toPNG: () => Buffer.from('png'), toJPEG: () => Buffer.from('jpg') } }
+  debuggerAttached = false
+  debuggerCommands: unknown[] = []
+  debugger = {
+    isAttached: () => this.debuggerAttached,
+    attach: () => { this.debuggerAttached = true },
+    detach: () => { this.debuggerAttached = false },
+    sendCommand: async (method: string, params: unknown) => {
+      this.debuggerCommands.push([method, params])
+      return { data: Buffer.from('png').toString('base64') }
+    }
+  }
+  throttling = true
+  setBackgroundThrottling(value: boolean) { this.throttling = value }
+  evaluated: Array<[number, string]> = []
+  evaluation: () => Promise<unknown> = async () => 'result'
+  executeJavaScriptInIsolatedWorld(world: number, scripts: Array<{ code: string }>) {
+    this.evaluated.push([world, scripts[0]!.code])
+    return this.evaluation()
+  }
 }
 class FakeView {
   webContents = new FakeContents()
@@ -44,7 +63,7 @@ class FakeView {
   getVisible() { return this.visible }
   setBounds(value: unknown) { this.bounds = value }
 }
-function fixture() {
+function fixture(live: (sessionId: string) => boolean = () => true) {
   const views: FakeView[] = []
   const removed: unknown[] = []
   const win = Object.assign(new EventEmitter(), {
@@ -57,7 +76,7 @@ function fixture() {
     const view = new FakeView()
     views.push(view)
     return view as unknown as WebContentsView
-  })
+  }, live)
   return { host, win, owner: win as unknown as BrowserWindow, views, removed }
 }
 const bounds = { x: 10, y: 20, width: 300, height: 200 }
@@ -318,6 +337,101 @@ describe('browser host', () => {
     host.inspect(owner, 'a')
     expect(views[3].webContents.dead).toBe(true)
     expect(page.webContents.isDevToolsOpened()).toBe(false)
+  })
+
+  test('agent control keeps hidden pages sized, unthrottled and pinned while the session lives', async () => {
+    const live = new Set(['session-1'])
+    const { host, owner, win, views } = fixture((id) => live.has(id))
+    host.setAgent(owner, 'browser:agent', 'session-1')
+    const agentView = views[0]!
+    expect(agentView.bounds).toEqual({ x: 0, y: 0, width: 1280, height: 800 })
+    expect(agentView.visible).toBe(false)
+    expect(agentView.webContents.throttling).toBe(false)
+    expect(host.getState(owner, 'browser:agent').agentSessionId).toBe('session-1')
+    expect(win.webContents.sent.at(-1)).toEqual(['browser:state', expect.objectContaining({ browserId: 'browser:agent', agentSessionId: 'session-1' })])
+    for (const id of ['browser:b', 'browser:c', 'browser:d']) await host.navigate(owner, id, 'https://example.test')
+    await host.navigate(owner, 'browser:e', 'https://example.test')
+    expect(agentView.webContents.dead).toBe(false)
+    expect(views[1]!.webContents.dead).toBe(true)
+    live.delete('session-1')
+    await host.navigate(owner, 'browser:f', 'https://example.test')
+    expect(agentView.webContents.dead).toBe(true)
+    expect(host.agentOf(owner, 'browser:agent')).toBe('session-1')
+    live.add('session-1')
+    await host.navigate(owner, 'browser:agent', 'https://example.test')
+    const recreated = views.at(-1)!
+    expect(recreated.webContents.throttling).toBe(false)
+    expect(host.getState(owner, 'browser:agent').agentSessionId).toBe('session-1')
+    host.setAgent(owner, 'browser:agent', null)
+    expect(recreated.webContents.throttling).toBe(true)
+    expect(host.getState(owner, 'browser:agent').agentSessionId).toBeNull()
+    host.setAgent(owner, 'browser:agent', 'session-1')
+    host.close(owner, 'browser:agent')
+    expect(host.agentOf(owner, 'browser:agent')).toBeNull()
+  })
+
+  test('agent reads: console per document, isolated evaluation and load waiting', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'browser:a', 'session-1')
+    const contents = views[0]!.webContents
+    await expect(host.evaluate(owner, 'browser:a', 7, 'code')).rejects.toThrow('No HTTP(S) page')
+    await host.navigate(owner, 'browser:a', 'https://example.test')
+    for (let index = 0; index < 205; index++) contents.emit('console-message', { level: 'error', message: `m${index}`, sourceId: 'app.js', lineNumber: index })
+    expect(host.consoleEntries(owner, 'browser:a')).toHaveLength(200)
+    expect(host.consoleEntries(owner, 'browser:a')[0]).toEqual({ level: 'error', message: 'm5', source: 'app.js:5' })
+    contents.emit('did-start-navigation', {}, 'https://example.test/#x', true, true)
+    expect(host.consoleEntries(owner, 'browser:a')).toHaveLength(200)
+    contents.emit('did-start-navigation', {}, 'https://example.test/next', false, false)
+    expect(host.consoleEntries(owner, 'browser:a')).toHaveLength(200)
+    contents.emit('did-start-navigation', {}, 'https://example.test/next', false, true)
+    expect(host.consoleEntries(owner, 'browser:a')).toHaveLength(0)
+
+    expect(await host.evaluate(owner, 'browser:a', 7, 'code')).toBe('result')
+    expect(contents.evaluated).toEqual([[7, 'code']])
+    contents.evaluation = async () => { contents.emit('did-start-navigation', {}, 'https://example.test/other', false, true); return 'stale' }
+    await expect(host.evaluate(owner, 'browser:a', 7, 'code')).rejects.toThrow('navigated')
+
+    contents.loading = true
+    const waiting = host.waitForLoad(owner, 'browser:a', 1000)
+    contents.emit('did-stop-loading')
+    expect(await waiting).toBe(true)
+    expect(await host.waitForLoad(owner, 'browser:a', 5)).toBe(false)
+    contents.loading = false
+    expect(await host.waitForLoad(owner, 'browser:a', 5)).toBe(true)
+    expect(() => host.waitForLoad(owner, 'browser:missing', 5)).toThrow('not open')
+  })
+
+  test('agent takeover reloads the saved URL of an evicted tab without waiting for it to become visible', async () => {
+    const { host, owner, views } = fixture()
+    await host.navigate(owner, 'browser:a', 'https://example.test/saved')
+    const oldDocument = host.getState(owner, 'browser:a').documentId
+    for (const id of ['b', 'c', 'd', 'e']) await host.navigate(owner, `browser:${id}`, 'https://example.test/other')
+    expect(views[0]!.webContents.dead).toBe(true)
+    host.setAgent(owner, 'browser:a', 'session-1')
+    const restored = views.at(-1)!
+    expect(restored.webContents.url).toBe('https://example.test/saved')
+    expect(host.getState(owner, 'browser:a').documentId).not.toBe(oldDocument)
+    expect(restored.visible).toBe(false)
+    expect(restored.webContents.throttling).toBe(false)
+    expect(await host.evaluate(owner, 'browser:a', 1207, 'snapshot')).toBe('result')
+    expect(await host.capture(owner, 'browser:a')).toMatchObject({ mimeType: 'image/png' })
+    let reloads = 0
+    restored.webContents.loadURL = async () => { reloads++ }
+    host.setAgent(owner, 'browser:a', 'session-1')
+    host.setBounds(owner, 'browser:a', bounds)
+    expect(reloads).toBe(0)
+  })
+
+  test('never-shown pages request a CDP frame without showing or selecting their view', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'browser:hidden', 'session-1')
+    await host.navigate(owner, 'browser:hidden', 'https://example.test')
+    const view = views[0]!
+    view.webContents.capturePage = async () => { throw new Error('Current display surface not available for capture') }
+    expect(await host.capture(owner, 'browser:hidden')).toEqual({ mimeType: 'image/png', data: Buffer.from('png').toString('base64') })
+    expect(view.visible).toBe(false)
+    expect(view.webContents.debuggerAttached).toBe(false)
+    expect(view.webContents.debuggerCommands).toEqual([['Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }]])
   })
 
   test('capture rejects blank/loading pages and returns PNG; capture race rejects', async () => {

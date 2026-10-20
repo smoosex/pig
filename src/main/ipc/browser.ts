@@ -1,15 +1,31 @@
 /** Independent browser panes belong to the creating UI window, never to a Pi session or page guest. */
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clipboard, shell, ipcMain, session, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../browser/host'
 import { BrowserCookieImporter } from '../browser/cookies/importer'
+import { BrowserAgentController } from '../browser/agent'
+import { registerBrowserAgentHost } from '../plugins/pig-browser-host'
 import { assertBrowserSender, isBrowserUrl } from '../browser/validation'
 import { windowForEvent } from './window'
 import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope } from '../../shared/browser'
 
-export function registerBrowserIpc(): void {
+/** Live Pi sessions, for agent browser control. Without it the browser tools report the browser unavailable. */
+export interface BrowserSessions {
+  sessionWindow(sessionId: string): BrowserWindow | undefined
+  isSessionLive(sessionId: string): boolean
+}
+
+interface PendingOpen {
+  win: BrowserWindow
+  settle(result: { browserId: string } | { error: string }): void
+  fail(error: Error): void
+}
+
+export function registerBrowserIpc(sessions?: BrowserSessions): void {
   const owners = new Map<string, BrowserWindow>()
+  const pendingOpens = new Map<string, PendingOpen>()
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
   const cookies = new BrowserCookieImporter(session.fromPartition('persist:pig-browser').cookies)
@@ -18,7 +34,37 @@ export function registerBrowserIpc(): void {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
     partition: 'persist:pig-browser', sandbox: true, contextIsolation: true,
     nodeIntegration: false, webSecurity: true, webviewTag: false
-  } }))
+  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false)
+  function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal): Promise<string> {
+    if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')
+    signal?.throwIfAborted()
+    return new Promise((resolve, reject) => {
+      const requestId = randomUUID()
+      const finish = (settle: () => void) => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
+        pendingOpens.delete(requestId)
+        settle()
+      }
+      const abort = () => finish(() => reject(signal!.reason))
+      const timer = setTimeout(() => finish(() => reject(new Error('The window did not open a browser tab in time'))), 15_000)
+      signal?.addEventListener('abort', abort, { once: true })
+      pendingOpens.set(requestId, {
+        win,
+        settle: (result) => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.browserId)),
+        fail: (error) => finish(() => reject(error))
+      })
+      win.webContents.send('browser:agent-open-request', { requestId, sessionId })
+    })
+  }
+  if (sessions) {
+    registerBrowserAgentHost(new BrowserAgentController({
+      host, requestTab,
+      sessionWindow: sessions.sessionWindow,
+      isSessionLive: sessions.isSessionLive,
+      browsers: (win) => [...owners].filter(([, owner]) => owner === win).map(([id]) => id)
+    }))
+  }
   function ui(event: IpcMainInvokeEvent, id: string): BrowserWindow {
     const win = windowForEvent(event)
     assertBrowserSender(event, win)
@@ -39,6 +85,7 @@ export function registerBrowserIpc(): void {
       watched.add(win)
       const clear = () => {
         for (const [id, owner] of owners) if (owner === win) owners.delete(id)
+        for (const pending of [...pendingOpens.values()]) if (pending.win === win) pending.fail(new Error('Browser UI was reloaded or closed'))
         host.closeWindow(win)
       }
       // Renderer teardown cannot reliably run React cleanup. Native panes must not outlive
@@ -91,6 +138,21 @@ export function registerBrowserIpc(): void {
   }
   ipcMain.handle('browser:copy-url', (event, id: string) => clipboard.writeText(currentUrl(event, id)))
   ipcMain.handle('browser:open-external', (event, id: string) => shell.openExternal(currentUrl(event, id)))
+  ipcMain.handle('browser:release-agent', (event, id: string) => host.setAgent(owner(event, id), id, null))
+  ipcMain.handle('browser:agent-open-answer', (event, requestId: string, result: { browserId: string } | { error: string }) => {
+    const win = windowForEvent(event)
+    assertBrowserSender(event, win)
+    const pending = typeof requestId === 'string' ? pendingOpens.get(requestId) : undefined
+    if (!pending || pending.win !== win) throw new Error('Unknown browser open request')
+    if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
+      pending.settle({ error: result.error.slice(0, 1000) })
+    } else if (result && typeof result === 'object' && 'browserId' in result && typeof result.browserId === 'string' && owners.get(result.browserId) === win) {
+      pending.settle({ browserId: result.browserId })
+    } else {
+      pending.fail(new Error('Invalid browser open answer'))
+      throw new Error('Invalid browser open answer')
+    }
+  })
   ipcMain.handle('browser:inspect', (event, id: string) => host.inspect(owner(event, id), id))
   ipcMain.handle('browser:close', (event, id: string) => {
     const win = ui(event, id)

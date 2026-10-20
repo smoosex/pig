@@ -6,6 +6,7 @@ import {
   BROWSER_CLOSE_TAB_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
+import { captureHiddenPage } from './hidden-screenshot'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
 interface Page {
@@ -17,13 +18,25 @@ interface Page {
   disposed: boolean
   pickerOptions?: BrowserPickerOptions
   annotationLimitReached?: boolean
+  /** Latest console messages of the current document, for the agent's browser_console tool. */
+  console: BrowserConsoleEntry[]
 }
+export interface BrowserConsoleEntry {
+  level: 'debug' | 'info' | 'warning' | 'error'
+  message: string
+  source: string
+}
+const CONSOLE_LIMIT = 200
+// A hidden page that was never laid out has no size; agent snapshots and captures need a viewport.
+const AGENT_VIEWPORT = { x: 0, y: 0, width: 1280, height: 800 }
 interface WindowPages {
   win: BrowserWindow
   pages: Map<string, Page>
   urls: Map<string, string>
   annotations: Map<string, BrowserAnnotation[]>
   ordinals: Map<string, number>
+  /** browserId → controlling Pi session; survives LRU eviction like the retained URL. */
+  agents: Map<string, string>
   disposed: boolean
 }
 const securedSessions = new WeakSet<Session>()
@@ -44,7 +57,7 @@ function liveContents(view: WebContentsView): Electron.WebContents | null {
 }
 
 export function emptyBrowserState(browserId: string): BrowserState {
-  return { browserId, documentId: '', url: '', title: '', loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null }
+  return { browserId, documentId: '', url: '', title: '', loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, agentSessionId: null }
 }
 
 export class BrowserHost {
@@ -52,13 +65,17 @@ export class BrowserHost {
   private watched = new WeakSet<BrowserWindow>()
   private clock = 0
 
-  constructor(private createView: (kind: 'page' | 'devtools') => WebContentsView) {}
+  /** `isAgentLive` lets a closed session's control lapse: its page is no longer pinned against eviction. */
+  constructor(
+    private createView: (kind: 'page' | 'devtools') => WebContentsView,
+    private isAgentLive: (sessionId: string) => boolean = () => true
+  ) {}
 
   private owner(win: BrowserWindow): WindowPages {
     if (win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser window is closed')
     let owner = this.windows.get(win)
     if (!owner) {
-      owner = { win, pages: new Map(), urls: new Map(), annotations: new Map(), ordinals: new Map(), disposed: false }
+      owner = { win, pages: new Map(), urls: new Map(), annotations: new Map(), ordinals: new Map(), agents: new Map(), disposed: false }
       this.windows.set(win, owner)
       if (!this.watched.has(win)) {
         this.watched.add(win)
@@ -83,6 +100,7 @@ export class BrowserHost {
     owner.urls.clear()
     owner.annotations.clear()
     owner.ordinals.clear()
+    owner.agents.clear()
   }
 
   private alive(owner: WindowPages, page: Page): boolean {
@@ -154,16 +172,22 @@ export class BrowserHost {
     }
     if (!page && create) {
       if (owner.pages.size >= 4) {
-        const candidate = [...owner.pages.entries()].filter(([, p]) => !p.bounds).sort((a, b) => a[1].used - b[1].used)[0]
+        const candidate = [...owner.pages.entries()].filter(([id, p]) => !p.bounds && !this.pinned(owner, id)).sort((a, b) => a[1].used - b[1].used)[0]
         if (!candidate) throw new Error('No hidden browser preview to evict')
         this.dispose(owner, candidate[1])
         owner.pages.delete(candidate[0])
       }
       const view = this.createView('page')
-      page = { view, state: { ...emptyBrowserState(browserId), url: owner.urls.get(browserId) ?? '', documentId: randomUUID() }, bounds: null, used: ++this.clock, disposed: false }
+      const agentSessionId = owner.agents.get(browserId) ?? null
+      page = {
+        view, state: { ...emptyBrowserState(browserId), url: owner.urls.get(browserId) ?? '', documentId: randomUUID(), agentSessionId },
+        bounds: null, used: ++this.clock, disposed: false, console: []
+      }
       owner.pages.set(browserId, page)
       secureSession(view.webContents.session)
+      view.setBounds(AGENT_VIEWPORT)
       view.setVisible(false)
+      if (agentSessionId) view.webContents.setBackgroundThrottling(false)
       win.contentView.addChildView(view)
       this.bind(owner, page)
     }
@@ -205,8 +229,13 @@ export class BrowserHost {
       if (!isBrowserUrl(url)) event.preventDefault()
     })
     wc.on('will-attach-webview', event => event.preventDefault())
-    wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
+    wc.on('console-message', (event) => {
+      page.console.push({ level: event.level, message: event.message.slice(0, 2000), source: `${event.sourceId}:${event.lineNumber}` })
+      if (page.console.length > CONSOLE_LIMIT) page.console.splice(0, page.console.length - CONSOLE_LIMIT)
+    })
+    wc.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame) return
+      if (!inPlace) page.console = []
       this.picker(owner, page, false)
       page.state.documentId = randomUUID()
       page.annotationLimitReached = false
@@ -303,7 +332,7 @@ export class BrowserHost {
 
   getState(win: BrowserWindow, id: string): BrowserState {
     const { owner, page } = this.page(win, id, false)
-    return { ...(page?.state ?? { ...emptyBrowserState(id), url: owner.urls.get(id) ?? '' }), annotations: [...(owner.annotations.get(id) ?? [])] }
+    return { ...(page?.state ?? { ...emptyBrowserState(id), url: owner.urls.get(id) ?? '', agentSessionId: owner.agents.get(id) ?? null }), annotations: [...(owner.annotations.get(id) ?? [])] }
   }
 
   async navigate(win: BrowserWindow, id: string, input: unknown): Promise<void> {
@@ -340,11 +369,13 @@ export class BrowserHost {
     if (!bounds) this.picker(owner, page, false)
     this.layout(owner, page)
     this.push(owner, page)
-    if (restoreUrl) {
-      // Restoration must not block the bounds queue on network IO. navigate publishes load failures
-      // as browser state; this background-entry boundary also reports them to the main log.
-      void this.navigate(win, id, restoreUrl).catch(error => console.error('Browser preview restoration failed:', error))
-    }
+    if (restoreUrl) this.restorePage(win, id, restoreUrl)
+  }
+
+  private restorePage(win: BrowserWindow, id: string, url: string): void {
+    // Restoration must not block UI bounds or control changes on network IO. navigate publishes
+    // failures as browser state; this background-entry boundary also reports them to the main log.
+    void this.navigate(win, id, url).catch(error => console.error('Browser preview restoration failed:', error))
   }
 
   setSelecting(win: BrowserWindow, id: string, selecting: boolean, options?: BrowserPickerOptions): void {
@@ -379,10 +410,16 @@ export class BrowserHost {
     const { owner, page } = this.page(win, id, false)
     if (!page || page.state.loading || page.view.webContents.isLoading() || page.state.error || !isBrowserUrl(page.state.url)) throw new Error('Browser page is not ready')
     const documentId = page.state.documentId
-    const image = await page.view.webContents.capturePage()
+    let data: string
+    if (page.view.getVisible()) {
+      const image = await page.view.webContents.capturePage()
+      if (image.isEmpty()) throw new Error('Browser screenshot is empty')
+      data = image.toPNG().toString('base64')
+    } else {
+      data = await captureHiddenPage(page.view.webContents)
+    }
     if (!this.alive(owner, page) || documentId !== page.state.documentId || page.state.loading) throw new Error('Browser page changed during capture')
-    if (image.isEmpty()) throw new Error('Browser screenshot is empty')
-    return { mimeType: 'image/png', data: image.toPNG().toString('base64') }
+    return { mimeType: 'image/png', data }
   }
 
   async snapshot(win: BrowserWindow, id: string): Promise<string | null> {
@@ -425,9 +462,62 @@ export class BrowserHost {
     this.push(owner, page)
   }
 
+  private pinned(owner: WindowPages, id: string): boolean {
+    const sessionId = owner.agents.get(id)
+    return !!sessionId && this.isAgentLive(sessionId)
+  }
+
+  agentOf(win: BrowserWindow, id: string): string | null {
+    return this.owner(win).agents.get(id) ?? null
+  }
+
+  /** Grants or ends agent control. A controlled page exists even while hidden and keeps running at full speed. */
+  setAgent(win: BrowserWindow, id: string, sessionId: string | null): void {
+    const retained = this.page(win, id, false)
+    const restoreUrl = !retained.page && sessionId !== null ? retained.owner.urls.get(id) : undefined
+    const { owner, page } = sessionId === null ? retained : this.page(win, id)
+    if (sessionId) owner.agents.set(id, sessionId)
+    else owner.agents.delete(id)
+    if (!page) return
+    page.state.agentSessionId = sessionId
+    page.view.webContents.setBackgroundThrottling(!sessionId)
+    this.push(owner, page)
+    if (restoreUrl) this.restorePage(win, id, restoreUrl)
+  }
+
+  /** Resolves true once the main frame stopped loading, false when `timeout` elapsed first. */
+  waitForLoad(win: BrowserWindow, id: string, timeout: number): Promise<boolean> {
+    const { owner, page } = this.page(win, id, false)
+    if (!page || !this.alive(owner, page)) throw new Error('Browser page is not open')
+    const wc = page.view.webContents
+    if (!wc.isLoading()) return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const done = (value: boolean) => { clearTimeout(timer); wc.off('did-stop-loading', stopped); wc.off('destroyed', stopped); resolve(value) }
+      const stopped = () => done(true)
+      const timer = setTimeout(() => done(false), timeout)
+      wc.once('did-stop-loading', stopped)
+      wc.once('destroyed', stopped)
+    })
+  }
+
+  /** Runs code in the agent's isolated world of the main frame; a navigation meanwhile fails the call. */
+  async evaluate<T>(win: BrowserWindow, id: string, world: number, code: string): Promise<T> {
+    const { owner, page } = this.page(win, id, false)
+    if (!page || !this.alive(owner, page) || !isBrowserUrl(page.state.url)) throw new Error('No HTTP(S) page is open')
+    const documentId = page.state.documentId
+    const result = await page.view.webContents.executeJavaScriptInIsolatedWorld(world, [{ code }]) as T
+    if (!this.alive(owner, page) || documentId !== page.state.documentId) throw new Error('Browser page navigated while it was being read')
+    return result
+  }
+
+  consoleEntries(win: BrowserWindow, id: string): BrowserConsoleEntry[] {
+    return [...(this.page(win, id, false).page?.console ?? [])]
+  }
+
   close(win: BrowserWindow, id: string): void {
     const { owner, page } = this.page(win, id, false)
     if (page) this.dispose(owner, page)
+    owner.agents.delete(id)
     owner.pages.delete(id)
     owner.urls.delete(id)
     owner.annotations.delete(id)

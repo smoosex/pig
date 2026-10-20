@@ -17,7 +17,7 @@ async function fixture() {
   const removed: string[][] = []
   const browserState: BrowserState = {
     browserId: 'browser:preview', documentId: 'document', url: 'https://example.com', title: 'Page',
-    loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, error: null,
+    loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, error: null, agentSessionId: null,
     annotations: [{
       id: 'mark', browserId: 'browser:preview', documentId: 'document', url: 'https://example.com', title: 'Page',
       capturedAt: 1, ordinal: 1, comment: 'Fix this',
@@ -32,6 +32,9 @@ async function fixture() {
       getState: async () => browserState,
       onState: () => () => {},
       onCloseRequested: () => () => {},
+      releaseAgent: async () => {},
+      onAgentOpenRequest: () => () => {},
+      answerAgentOpen: async () => {},
       setSelecting: async () => {},
       removeAnnotations: async (_id: string, ids: string[]) => { removed.push(ids) }
     }

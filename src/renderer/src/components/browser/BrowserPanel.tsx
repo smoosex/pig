@@ -1,7 +1,7 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
@@ -230,6 +230,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           }}
           className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs border-glass-card-border bg-glass-prompt-foreground/4! solid:border-input solid:bg-background! solid:dark:bg-input/30!" />
         <div className="flex shrink-0 items-center gap-1">
+          {state?.agentSessionId ? iconButton(t('browser.releaseAgent'), <Bot />, () => run(() => api.browser.releaseAgent(browserId)), false, true, t('browser.agentControlled')) : null}
           {iconButton(t('browser.cookieImport'), <Cookie />, () => setCookieOpen(true))}
           {iconButton(t('browser.copyUrl'), <Copy />, () => run(() => api.browser.copyUrl(browserId)), !state?.url)}
           {iconButton(t('browser.openExternal'), <ExternalLink />, () => run(() => api.browser.openExternal(browserId)), !state?.url)}
