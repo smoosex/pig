@@ -159,8 +159,8 @@ export function ContextUsageButton({
         {detailError ? <p role="alert" className="text-sm text-destructive">{t('context.memoryFailed', { error: detailError })}</p> : null}
         {!text && !detailError ? <p className="text-sm text-muted-foreground">{t('context.memoryLoading')}</p> : null}
         {text ? <>
-          <ScrollArea className="h-[min(60vh,32rem)] rounded-md border border-code-border bg-code-background">
-            <pre className="whitespace-pre-wrap break-words p-4 font-mono text-xs text-code-foreground">{text}</pre>
+          <ScrollArea className="h-[min(60vh,32rem)] rounded-md border border-glass-card-border bg-glass-composer-background/60 text-glass-prompt-foreground shadow-glass-card-edge transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:border-code-border solid:bg-code-background solid:text-code-foreground solid:shadow-none">
+            <pre className="whitespace-pre-wrap break-words p-4 font-mono text-xs">{text}</pre>
           </ScrollArea>
         </> : null}
       </DialogContent>
