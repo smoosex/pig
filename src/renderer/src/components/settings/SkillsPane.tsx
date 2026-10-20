@@ -1,6 +1,6 @@
 /** Global skill inventory separates Pig-owned copies from files discovered in the user's Pi setup. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, BookOpen, ChevronRight, Copy, FolderOpen, Info, LoaderCircle, MoreHorizontal, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { AlertTriangle, BookOpen, ChevronRight, Copy, FolderOpen, Info, LoaderCircle, MoreHorizontal, Plus, RotateCw, Search, Trash2 } from 'lucide-react'
 import { api, type SkillInfo, type SkillInventory } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { Alert, AlertDescription } from '../ui/alert'
@@ -111,7 +111,7 @@ export function SkillsPane() {
             <TabsTrigger value="discover">{t('skills.discover')}</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
-            <Button size="icon-sm" variant="ghost" aria-label={t('skills.refresh')} disabled={loading} onClick={() => { setLoading(true); void load() }}>{loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}</Button>
+            <Button size="icon-sm" variant="ghost" aria-label={t('skills.refresh')} disabled={loading} onClick={() => { setLoading(true); void load() }}>{loading ? <LoaderCircle className="animate-spin" /> : <RotateCw />}</Button>
             <Button size="sm" onClick={() => setAdd({ source: '' })}><Plus data-icon="inline-start" />{t('skills.add')}</Button>
           </div>
         </div>

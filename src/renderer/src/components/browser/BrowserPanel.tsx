@@ -1,6 +1,6 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RefreshCw, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Camera, Check, ChevronDown, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
@@ -172,7 +172,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
       }}>
         {iconButton(t('browser.back'), <ArrowLeft />, () => navigate(() => api.browser.back(browserId)), !state?.canGoBack)}
         {iconButton(t('browser.forward'), <ArrowRight />, () => navigate(() => api.browser.forward(browserId)), !state?.canGoForward)}
-        {iconButton(t('browser.reload'), <RefreshCw className={busy || state?.loading ? 'animate-spin' : undefined} />, () => navigate(() => api.browser.reload(browserId)), !state?.url)}
+        {iconButton(t('browser.reload'), <RotateCw className={busy || state?.loading ? 'animate-spin' : undefined} />, () => navigate(() => api.browser.reload(browserId)), !state?.url)}
         {iconButton(t('browser.select'), <MousePointer2 />, () => run(() => api.browser.setSelecting(browserId, !state?.selecting, pickerOptions())), !state?.url || state.loading || !!state.error, state?.selecting ?? false)}
         {iconButton(t('browser.screenshot'), <Camera />, capture, !targetSessionId || !state?.url || state.loading || !!state.error, undefined, t(targetSessionId ? 'browser.screenshot' : 'browser.noTarget'))}
         {state?.annotations.length ? <>

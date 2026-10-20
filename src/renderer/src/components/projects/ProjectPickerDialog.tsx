@@ -1,6 +1,6 @@
 /** Local directory browser; main owns filesystem access and the existing project registration flow. */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowUp, ChevronRight, Folder, GitBranch, Home, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react'
+import { ArrowUp, ChevronRight, Folder, GitBranch, Home, LoaderCircle, RotateCw, TriangleAlert } from 'lucide-react'
 import { api, type ProjectDirectoryListing, type ProjectDirectorySearch } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
@@ -195,7 +195,7 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
             }}
           />
           <Button variant="outline" size="sm" disabled={!pathInput.trim() || adding} onClick={() => navigate(pathInput)}>{t('projectPicker.go')}</Button>
-          <Button variant="ghost" size="icon-sm" title={t('projectPicker.refresh')} aria-label={t('projectPicker.refresh')} disabled={loading || adding} onClick={() => navigate(target)}><RefreshCw className={loading ? 'animate-spin' : undefined} /></Button>
+          <Button variant="ghost" size="icon-sm" title={t('projectPicker.refresh')} aria-label={t('projectPicker.refresh')} disabled={loading || adding} onClick={() => navigate(target)}><RotateCw className={loading ? 'animate-spin' : undefined} /></Button>
         </div>
         {listing ? <nav aria-label={t('projectPicker.path')} className={cn('flex shrink-0 items-center gap-0.5 overflow-x-auto', hideScroll)}>
           {listing.breadcrumbs.map((crumb, index) => <div key={crumb.path} className="flex shrink-0 items-center">

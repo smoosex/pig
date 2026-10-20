@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef, useState } from 'react'
-import { Pin, RefreshCw } from 'lucide-react'
+import { Pin, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type SessionModelInfo, type ThinkingLevel } from '../../ipc/api'
 import { useModelNavigation } from '../../hooks/useModelNavigation'
@@ -177,7 +177,7 @@ export function ModelPicker({
             disabled={refreshing}
             onClick={() => void refresh()}
           >
-            <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
+            <RotateCw className={refreshing ? 'animate-spin' : undefined} />
           </Button>
         </div>
         {scope.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{scope.error}</p> : null}

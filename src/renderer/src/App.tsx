@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { PanelLeft, PanelRight, RefreshCw } from 'lucide-react'
+import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
@@ -150,7 +150,7 @@ export function PaneViewContent({
       <Empty>
         <EmptyDescription role="alert">{paneTab.loadError || t('app.loadFailed')}</EmptyDescription>
         <Button variant="outline" size="xs" onClick={() => void useSessionsStore.getState().activateTab(node.tabId)}>
-          <RefreshCw data-icon="inline-start" />
+          <RotateCw data-icon="inline-start" />
           {t('common.retry')}
         </Button>
       </Empty>
@@ -513,7 +513,7 @@ export default function App() {
                               <span className="flex items-center gap-2">
                                 {chatDraftError}
                                 <Button variant="outline" size="xs" onClick={retryChatDraft}>
-                                  <RefreshCw />
+                                  <RotateCw />
                                   {t('common.retry')}
                                 </Button>
                               </span>
@@ -546,7 +546,7 @@ export default function App() {
                             size="sm"
                             onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
                           >
-                            <RefreshCw />
+                            <RotateCw />
                             {t('app.retryRestore')}
                           </Button>
                         ) : null}

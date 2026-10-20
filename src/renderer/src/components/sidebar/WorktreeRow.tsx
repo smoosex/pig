@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { AlertCircle, ChevronRight, LoaderCircle, LockKeyhole, Plus, RefreshCw } from 'lucide-react'
+import { AlertCircle, ChevronRight, LoaderCircle, LockKeyhole, Plus, RotateCw } from 'lucide-react'
 import { api } from '../../ipc/api'
 import { useSessionsStore, type WorktreeGroup } from '../../stores/sessions'
 import { cn } from '../../lib/utils'
@@ -88,7 +88,7 @@ export function WorktreeRow({
             )
           }
         >
-          {retrying ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+          {retrying ? <LoaderCircle className="animate-spin" /> : <RotateCw />}
         </Button>
       </TooltipTrigger>
       <TooltipContent className="max-w-60 flex-col items-start gap-0.5">
