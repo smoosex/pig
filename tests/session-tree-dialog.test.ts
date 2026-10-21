@@ -7,8 +7,9 @@ async function runFixture(name: string): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
+  const observed: Element[] = []
   class NoopResizeObserver {
-    observe() {}
+    observe(target: Element) { observed.push(target) }
     unobserve() {}
     disconnect() {}
   }
@@ -295,6 +296,14 @@ async function runFixture(name: string): Promise<void> {
     const list = document.querySelector<HTMLDivElement>('div.font-mono')!
     assert.ok(list.scrollTop > 289 * 26, 'the default tree starts near its current final assistant row')
     assert.ok(list.textContent?.includes('assistant: 行2387'))
+    assert.ok(observed.includes(list), 'the portal-mounted list is measured once it exists')
+    // The other views fill in after an idle delay; that refresh must not drag a list the user moved.
+    await act(async () => {
+      list.scrollTop = 260
+      list.dispatchEvent(new Event('scroll'))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)) })
+    assert.equal(list.scrollTop, 260, 'the idle fill keeps the user scroll position')
     list.scrollLeft = 600
     await act(async () => { button('用户').click() })
     await flush()

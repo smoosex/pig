@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CornerDownRight, ListCollapse, ListTree, LoaderCircle, MessageSquareText, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
@@ -46,11 +46,11 @@ const treeViews: { value: SessionTreeView; labelKey: MessageKey }[] = [
   { value: 'all', labelKey: 'tree.viewAll' }
 ]
 
-// The tree list mounts only the rows its window can show. The height is fixed so the scroll math
-// can be plain arithmetic: every row carries `h-6.5` (26px) below and these two must stay in step.
 type BranchTarget = { sessionId: string; tipId: string }
 type BranchMode = 'none' | 'summary' | 'custom'
 
+// The tree list mounts only the rows its window can show. The height is fixed so the scroll math
+// can be plain arithmetic: every row carries `h-6.5` (26px) below and these two must stay in step.
 const ROW_H = 26
 const OVERSCAN = 8
 
@@ -181,6 +181,23 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(0)
+  // The view last centred on its current node; null after each (re)load so the first rows centre once.
+  // Later row refreshes (the idle fill, a relabel) must not yank a list the user is scrolling.
+  const centeredView = useRef<SessionTreeView | null>(null)
+  // The dialog body mounts through a portal a render after `open` flips, so measuring has to follow
+  // the element itself rather than an effect keyed on `open`.
+  const attachList = useCallback((list: HTMLDivElement | null) => {
+    listRef.current = list
+    if (!list) return
+    const measure = (): void => setViewportH(list.clientHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(list)
+    return () => {
+      observer.disconnect()
+      listRef.current = null
+    }
+  }, [])
   // Every tree read bumps this: a slower read that lands after a newer one must not paint over it.
   const readGen = useRef(0)
 
@@ -190,6 +207,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     let cancelled = false
     let unfill: (() => void) | undefined
     setTrees(null)
+    centeredView.current = null
     setFolded(new Set())
     setError(null)
     setLabelingId(null)
@@ -301,21 +319,12 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       })
   }
 
-  useEffect(() => {
-    const list = listRef.current
-    if (!open || !list) return
-    const measure = (): void => setViewportH(list.clientHeight)
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(list)
-    return () => observer.disconnect()
-  }, [open])
-
   // The current row is often outside the mounted window, so scrollIntoView has nothing to find:
-  // its offset is arithmetic now. Same trigger as before, so folding or searching does not jump.
+  // its offset is arithmetic now. Folding or searching does not recentre.
   useLayoutEffect(() => {
     const list = listRef.current
-    if (!open || !list) return
+    if (!open || !list || !trees?.[view] || centeredView.current === view) return
+    centeredView.current = view
     const index = visible.findIndex((row) => row.current)
     const height = list.clientHeight || viewportH || ROW_H * 12
     const target = index < 0 ? 0 : Math.min(
@@ -325,7 +334,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     list.scrollTop = target
     list.scrollLeft = 0
     setScrollTop(target)
-  }, [open, rows, view])
+  }, [open, trees, view, visible, viewportH])
 
   return (
     <Dialog
@@ -386,9 +395,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           onChange={(event) => setQuery(event.target.value)}
         />
         <div
-          ref={listRef}
+          ref={attachList}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className="h-[52vh] overflow-auto font-mono text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="h-[52vh] overflow-auto font-mono text-xs [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {error ? (
             <div className="py-8 text-center text-destructive">{error}</div>
