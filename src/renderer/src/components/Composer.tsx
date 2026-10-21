@@ -17,10 +17,8 @@ import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
 import { RetryNotice } from './composer/RetryNotice'
-import { ReviewStatus } from './composer/ReviewStatus'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
-import { SubagentStatus } from './composer/SubagentStatus'
 import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
 
@@ -120,22 +118,17 @@ export function Composer({
         {commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
         {mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
       </Popover>
-      {workspace || sessionId ? (
-        <div data-composer-status className="flex min-h-8 min-w-0 items-center gap-3 px-3.5 pt-2 text-xs text-muted-foreground">
-          {workspace ? (
-            <div className="flex min-w-0 items-center gap-5">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Folder className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate" title={workspace.project}>{workspace.project}</span>
-              </span>
-              <span className="flex min-w-0 items-center gap-1.5">
-                <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate" title={workspace.branch}>{workspace.branch}</span>
-              </span>
-            </div>
-          ) : null}
-          <SubagentStatus sessionId={sessionId} />
-          <ReviewStatus key={sessionId ?? 'none'} sessionId={sessionId} />
+      {/* Where a new conversation will start matters before it exists; inside one the sidebar already says so. */}
+      {centered && workspace ? (
+        <div data-composer-status className="flex min-h-8 min-w-0 items-center gap-5 px-3.5 pt-2 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate" title={workspace.project}>{workspace.project}</span>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate" title={workspace.branch}>{workspace.branch}</span>
+          </span>
         </div>
       ) : null}
       <ImagePreview src={attachments.preview} onClose={() => attachments.setPreview(null)} />

@@ -349,10 +349,8 @@ async function fixture(scenario: string): Promise<void> {
       await act(async () => {
         drafts.getState().restoreDraft('chat', { content: textToComposerDocument('unsent draft'), images: [] })
       })
-      const status = host.querySelector<HTMLElement>('[data-composer-status]')!
-      assert.ok(status.classList.contains('min-h-8'), 'reserve a 24px status control plus 8px top spacing even when empty')
-      assert.ok(!status.classList.contains('empty:hidden'), 'empty status rows must keep their reserved height')
-      const statusClass = status.className
+      assert.equal(host.querySelector('[data-composer-status]'), null, 'a conversation reserves no row under the box')
+      const toolbar = host.querySelector<HTMLElement>('[data-slot="input-group-addon"]')!
       const draft = drafts.getState().drafts.chat!.content
       for (const palette of ['pig', 'everforest'] as const) {
         for (const appearance of ['light', 'dark'] as const) {
@@ -368,9 +366,7 @@ async function fixture(scenario: string): Promise<void> {
       const { useSystemUIStore } = await import('../src/renderer/src/stores/system-ui')
       await act(async () => { useSystemUIStore.setState({ returningReviewSessions: { chat: true } }) })
       assert.equal(editor.getAttribute('aria-disabled'), 'true')
-      assert.ok(status.querySelector('[data-review-status]'))
-      assert.equal(host.querySelector('[data-composer-status]'), status)
-      assert.equal(status.className, statusClass, 'review uses the already reserved row without changing its layout')
+      assert.ok(toolbar.querySelector('[data-review-status]'), 'review sits in the toolbar beside the context meter')
       assert.ok(group.classList.contains('bg-glass-composer-background/60!'))
       assert.ok(group.classList.contains('has-disabled:opacity-100'))
     } else if (scenario === 'prompt') {

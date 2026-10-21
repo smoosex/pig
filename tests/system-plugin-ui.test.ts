@@ -70,7 +70,7 @@ async function fixture(scenario: Scenario): Promise<void> {
       React.createElement(SystemPluginUI, { activeSessionId: session }),
       Composer ? React.createElement(TooltipProvider, null,
         React.createElement<NonNullable<Parameters<typeof Composer>[0]>>(Composer, { explicitSessionId: session }))
-        : React.createElement('div', { className: '@container/composer-column' }, React.createElement(ReviewStatus, { key: session, sessionId: session }))
+        : React.createElement(TooltipProvider, null, React.createElement(ReviewStatus, { key: session, sessionId: session }))
     )))
   }
   const emit = async (event: SystemUIEvent) => { await act(async () => listener!(event)) }
@@ -86,7 +86,7 @@ async function fixture(scenario: Scenario): Promise<void> {
         return submittedPrompts.length === 1 ? original : duplicate
       }
       const editor = () => document.querySelector<HTMLElement>('.ProseMirror')!
-      const returnButton = () => document.querySelector<HTMLButtonElement>('[data-review-status] button')!
+      const returnButton = () => document.querySelector<HTMLButtonElement>('button[data-review-status]')!
       const sendButton = () => document.querySelector<HTMLButtonElement>('button[aria-label="Send"], button[aria-label="Queue"]')!
       const paste = (text: string) => {
         const clipboardData = new DataTransfer()
@@ -97,12 +97,15 @@ async function fixture(scenario: Scenario): Promise<void> {
       await act(async () => { paste('/end-review') })
       await act(async () => { sendButton().click() })
       assert.deepEqual(submittedPrompts, [['one', '/end-review']])
-      assert.equal(returnButton().disabled, false, 'the host event has not reached the button yet')
+      assert.equal(returnButton().getAttribute('data-review-phase'), 'running', 'the optimistic prompt marks the session busy')
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      await act(async () => { useSessionsStore.getState().setStreaming('one', false) })
+      assert.equal(returnButton().getAttribute('aria-disabled'), 'false', 'the host event has not reached the button yet')
       await act(async () => { paste('Keep this draft') })
       await act(async () => { returnButton().click() })
       assert.deepEqual(submittedPrompts, [['one', '/end-review'], ['one', '/end-review']])
-      assert.equal(returnButton().disabled, true)
-      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'false', 'the glow stops immediately when return is requested')
+      assert.equal(returnButton().getAttribute('aria-disabled'), 'true')
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'returning', 'the ring reverses as soon as return is requested')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(editor().getAttribute('contenteditable'), 'false')
       assert.equal(sendButton().disabled, true)
@@ -111,7 +114,7 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.equal(shown.length, 1, 'the rejected duplicate is reported at the UI boundary')
       assert.equal(shown[0].options.description, rejection.message)
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true, 'a duplicate rejection cannot release the original return lock')
-      assert.equal(returnButton().disabled, true)
+      assert.equal(returnButton().getAttribute('aria-disabled'), 'true')
       assert.equal(editor().getAttribute('contenteditable'), 'false')
       assert.equal(sendButton().disabled, true)
       await render('two')
@@ -124,25 +127,25 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.equal(editor().getAttribute('contenteditable'), 'true')
       assert.equal(editor().textContent, 'Keep this draft')
       assert.equal(sendButton().disabled, false)
-      assert.equal(returnButton().disabled, false)
+      assert.equal(returnButton().getAttribute('aria-disabled'), 'false')
       return
     }
     if (scenario === 'returning') {
       await emit({ kind: 'review-state', sessionId: 'one', active: true })
-      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'true')
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'done')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
-      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'false', 'the review glow stops while returning')
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'returning')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: false })
-      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-glow'), 'true', 'an unfinished review resumes its glow')
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'done', 'an unfinished return makes the review returnable again')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true)
-      assert.equal(document.querySelector<HTMLButtonElement>('[data-review-status] button')?.disabled, true)
-      assert.match(document.querySelector('[data-review-status]')?.textContent ?? '', /Returning/)
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('aria-disabled'), 'true')
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('aria-label'), 'Returning…')
       await render('two')
       assert.equal(useSystemUIStore.getState().returningReviewSessions.two, undefined)
       assert.equal(document.querySelector('[data-review-status]'), null)
       await render('one')
-      assert.equal(document.querySelector<HTMLButtonElement>('[data-review-status] button')?.disabled, true)
+      assert.equal(document.querySelector('[data-review-status]')?.getAttribute('aria-disabled'), 'true')
       await emit({ kind: 'review-state', sessionId: 'one', active: false })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true, 'return stays locked after leaving review mode')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: false })
@@ -268,9 +271,18 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.ok(document.documentElement.classList.contains('dark'))
       assert.equal(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme'), 'dark')
       await emit({ kind: 'review-state', sessionId: 'one', active: true })
-      const reviewStatus = document.querySelector<HTMLElement>('[data-review-status]')!
-      assert.match(reviewStatus.textContent ?? '', /Review active/)
-      await act(async () => reviewStatus.querySelector('button')!.click())
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
+      await act(async () => { useSessionsStore.setState({ runtime: { one: { ...emptyRuntime(), isStreaming: true } } }) })
+      const reviewStatus = document.querySelector<HTMLButtonElement>('button[data-review-status]')!
+      assert.equal(reviewStatus.getAttribute('data-review-phase'), 'running')
+      assert.match(reviewStatus.getAttribute('aria-label') ?? '', /in progress/)
+      await act(async () => reviewStatus.click())
+      assert.deepEqual(submittedPrompts, [], 'a running review cannot return because Pi refuses to navigate mid-response')
+      await act(async () => { useSessionsStore.setState({ runtime: { one: emptyRuntime() } }) })
+      assert.equal(reviewStatus.getAttribute('data-review-phase'), 'done')
+      assert.match(reviewStatus.getAttribute('aria-label') ?? '', /click to return/)
+      await act(async () => reviewStatus.click())
       assert.deepEqual(submittedPrompts, [['one', '/end-review']])
       await act(async () => document.querySelector<HTMLButtonElement>('[data-action]')!.click())
       assert.ok(document.body.textContent?.includes(message))

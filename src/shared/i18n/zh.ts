@@ -850,8 +850,8 @@ export const zh = {
     returnAndFix: '返回并修复问题', returnAndFixDescription: '追加一条任务，处理审查发现的问题。',
     returnAndSummarize: '生成摘要后返回', returnAndSummarizeDescription: '将审查发现保存在分支摘要中。',
     prPlaceholder: 'PR 编号或 GitHub Pull Request 链接', foldersPlaceholder: '用空格或换行分隔路径',
-    instructionsPlaceholder: '希望审查重点关注什么？', active: 'Review 中', activeCompact: 'Review',
-    returning: '正在返回…', endReview: '返回原对话', endFailed: '无法结束 Review'
+    instructionsPlaceholder: '希望审查重点关注什么？', running: 'Review 进行中，完成后可返回原对话', done: 'Review 已完成，点击返回原对话',
+    returning: '正在返回…', endFailed: '无法结束 Review'
   },
   thinking: {
     off: '关闭',

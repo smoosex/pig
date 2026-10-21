@@ -1,25 +1,31 @@
+/** Composer toolbar badge for review mode; clicking it returns to the conversation the review branched from. */
 import { useState } from 'react'
-import { ArrowLeft, LoaderCircle, ScanEye } from 'lucide-react'
+import { ScanEye } from 'lucide-react'
 import { toast } from 'sonner'
 import { useT } from '../../hooks/useT'
 import { api } from '../../ipc/api'
+import { useSessionsStore } from '../../stores/sessions'
 import { useSystemUIStore } from '../../stores/system-ui'
-import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { cn } from '../../lib/utils'
-import styles from './ReviewStatus.module.css'
 
 export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   const t = useT()
   const active = useSystemUIStore((state) => !!sessionId && !!state.reviewSessions[sessionId])
   const returning = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
+  const running = useSessionsStore((state) => !!sessionId && !!state.runtime[sessionId]?.isStreaming)
   const [pending, setPending] = useState(false)
   const ending = returning || pending
 
   if (!sessionId || (!active && !ending)) return null
 
+  // Pi refuses tree navigation while a response streams, so a running review cannot return yet.
+  const phase = ending ? 'returning' : running ? 'running' : 'done'
+  const label = t(phase === 'returning' ? 'reviewUI.returning' : phase === 'running' ? 'reviewUI.running' : 'reviewUI.done')
+
   const endReview = async () => {
-    if (pending || useSystemUIStore.getState().returningReviewSessions[sessionId]) return
+    if (phase !== 'done' || useSystemUIStore.getState().returningReviewSessions[sessionId]) return
     setPending(true)
     try {
       await api.prompt(sessionId, '/end-review')
@@ -34,34 +40,32 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   }
 
   return (
-    <div
-      data-review-status
-      data-review-glow={active && !ending}
-      className={cn('relative ml-auto flex shrink-0 items-center rounded-full [[data-subagent-status]+&]:ml-0', styles.edgeGlow)}
-    >
-      {/* Review is a mode, not a note: the whole row carries the primary fill, a lit top edge and a
-          tinted drop shadow so it reads as raised above the rest of the status line. The action sits
-          inside the pill, so its focus ring is inset — an outer ring would be clipped by the badge. */}
-      <Badge className="h-6 gap-1.5 py-0.5 pr-1 pl-2.5 shadow-md shadow-primary/40 inset-shadow-[0_1px_0_0_color-mix(in_srgb,var(--primary)_75%,white)] dark:shadow-primary/25">
-        <span role="status" className="flex items-center gap-1.5">
-          <ScanEye aria-hidden="true" className="size-3" />
-          <span className="hidden @min-md/composer-column:inline">{t(ending ? 'reviewUI.returning' : 'reviewUI.active')}</span>
-          <span className="@min-md/composer-column:hidden">{t(ending ? 'reviewUI.returning' : 'reviewUI.activeCompact')}</span>
-        </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* aria-disabled instead of disabled: a disabled button gets no pointer events, which would hide the tooltip. */}
         <Button
           type="button"
-          variant="ghost"
-          size="xs"
-          disabled={ending}
-          className="h-5 rounded-full px-1.5 text-primary-foreground hover:bg-primary-foreground/12 hover:text-primary-foreground focus-visible:border-primary-foreground/40 focus-visible:ring-primary-foreground/60 focus-visible:ring-inset dark:hover:bg-primary-foreground/12 dark:hover:text-primary-foreground"
-          aria-label={t('reviewUI.endReview')}
-          title={t('reviewUI.endReview')}
+          variant="outline"
+          size="icon-xs"
+          data-review-status
+          data-review-phase={phase}
+          aria-disabled={phase !== 'done'}
+          aria-label={label}
+          className="relative rounded-full aria-disabled:cursor-default"
           onClick={() => void endReview()}
         >
-          {ending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <ArrowLeft aria-hidden="true" />}
-          <span className="hidden @min-md/composer-column:inline">{t('reviewUI.endReview')}</span>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute -inset-0.5 rounded-full border border-primary',
+              phase !== 'done' && 'animate-spin border-t-transparent motion-reduce:animate-none',
+              phase === 'returning' && '[animation-direction:reverse]'
+            )}
+          />
+          <ScanEye aria-hidden="true" />
         </Button>
-      </Badge>
-    </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={8}>{label}</TooltipContent>
+    </Tooltip>
   )
 }

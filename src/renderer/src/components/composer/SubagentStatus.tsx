@@ -1,4 +1,4 @@
-/** Status-line badge for the session's subagents; it anchors the floating subagent card. */
+/** Composer toolbar badge for the session's subagents; it anchors the floating subagent card. */
 import { useEffect } from 'react'
 import { BrainCircuit } from 'lucide-react'
 import { useT } from '../../hooks/useT'
@@ -51,7 +51,7 @@ export function SubagentStatus({ sessionId }: { sessionId: string | null }) {
               variant="outline"
               size="icon-xs"
               data-subagent-status
-              className="relative ml-auto rounded-full"
+              className="relative rounded-full"
               aria-label={summary}
             >
               <span

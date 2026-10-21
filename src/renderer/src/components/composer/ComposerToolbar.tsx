@@ -11,6 +11,8 @@ import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
 import { SessionCapabilitiesButton } from './SessionCapabilitiesButton'
 import { ContextUsageButton } from './ContextUsageButton'
+import { ReviewStatus } from './ReviewStatus'
+import { SubagentStatus } from './SubagentStatus'
 import { ModelPicker, ThinkingPicker } from './ModelControls'
 import { useModelControls } from './useModelControls'
 
@@ -105,7 +107,8 @@ export function ComposerToolbar({
 
   return (
     <InputGroupAddon align="block-end" className="shrink-0 justify-between px-2.5 pb-2.5">
-      <div className="flex min-w-0 items-center gap-1">
+      {/* Labels collapse on the space left beside the right-hand controls, which grow with session states. */}
+      <div className="@container/composer-tools flex min-w-0 flex-1 items-center gap-1">
         {bashMode ? (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <SquareTerminal className="size-3.5" /> {t('composer.bashMode')}
@@ -135,6 +138,9 @@ export function ComposerToolbar({
         )}
       </div>
       <div className="flex items-center gap-1.5">
+        {/* Transient session states sit beside the context meter instead of reserving a row around the box. */}
+        <SubagentStatus sessionId={sessionId} />
+        <ReviewStatus key={sessionId ?? 'none'} sessionId={sessionId} />
         {!bashMode ? <SessionContextUsage sessionId={sessionId} /> : null}
         {bashRunning || (isStreaming && (!hasDraft || bashMode)) ? (
           <InputGroupButton

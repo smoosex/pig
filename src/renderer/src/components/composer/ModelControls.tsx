@@ -146,7 +146,7 @@ export function ModelPicker({
           title={model?.name ?? t('model.pickerFallback')}
         >
           <ModelBrandIcon model={model} />
-          <span className="hidden min-w-0 truncate @min-md/composer:block">{model?.name ?? t('model.pickerFallback')}</span>
+          <span className="hidden min-w-0 truncate @min-[22rem]/composer-tools:block">{model?.name ?? t('model.pickerFallback')}</span>
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-80 gap-1 rounded-2xl p-1.5" onKeyDown={navigation.onKeyDown}>
@@ -283,7 +283,7 @@ export function ThinkingPicker({
           title={t(thinkingLevelKeys[thinkingLevel])}
         >
           <ThinkingStrengthIcon level={thinkingLevel} levels={thinkingLevels} active />
-          <span className="hidden @min-md/composer:inline">{t(thinkingLevelKeys[thinkingLevel])}</span>
+          <span className="hidden @min-[22rem]/composer-tools:inline">{t(thinkingLevelKeys[thinkingLevel])}</span>
         </InputGroupButton>
       </PopoverTrigger>
       <PopoverContent
