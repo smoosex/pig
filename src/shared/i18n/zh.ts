@@ -307,6 +307,7 @@ export const zh = {
     back: '返回',
     switching: '正在切换分支…',
     summarizing: '正在总结分支…',
+    hiddenDepth: '左侧还有 {n} 层缩进未显示',
     stopSummary: '停止总结',
     viewAria: '会话树视角',
     viewDefault: '默认',

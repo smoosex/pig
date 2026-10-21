@@ -310,6 +310,7 @@ export const en: Messages = {
     back: 'Back',
     switching: 'Switching branches…',
     summarizing: 'Summarizing branch…',
+    hiddenDepth: '{n} more indent levels hidden on the left',
     stopSummary: 'Stop summary',
     viewAria: 'Session tree view',
     viewDefault: 'Default',

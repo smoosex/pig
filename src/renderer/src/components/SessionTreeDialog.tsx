@@ -35,6 +35,7 @@ import {
   AlertDialogTitle
 } from './ui/alert-dialog'
 import { Textarea } from './ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Input } from './ui/input'
 import { InputGroupButton } from './ui/input-group'
 
@@ -69,8 +70,21 @@ function kindClass(kind: SessionTreeRow['kind']): string {
   return 'text-muted-foreground'
 }
 
-function treePrefix(row: SessionTreeRow, multipleRoots: boolean): string {
+// Deep forks would otherwise spend the whole row on gutters. Past MAX_DEPTH the leftmost levels are
+// dropped in DEPTH_STEP chunks: rows within one chunk keep their relative indent, and only a chunk
+// boundary shifts the drawing left.
+const MAX_DEPTH = 6
+// Rows sit back to back; a short delay keeps sweeping the pointer down the list from flashing tips.
+const TOOLTIP_DELAY = 300
+const DEPTH_STEP = 4
+
+function hiddenDepth(displayIndent: number): number {
+  return displayIndent > MAX_DEPTH ? Math.ceil((displayIndent - MAX_DEPTH) / DEPTH_STEP) * DEPTH_STEP : 0
+}
+
+function treePrefix(row: SessionTreeRow, multipleRoots: boolean): { hidden: number; text: string } {
   const displayIndent = multipleRoots ? Math.max(0, row.indent - 1) : row.indent
+  const hidden = hiddenDepth(displayIndent)
   const connector = row.showConnector && !row.isVirtualRootChild
   const connectorPosition = connector ? displayIndent - 1 : -1
   const chars: string[] = []
@@ -89,7 +103,8 @@ function treePrefix(row: SessionTreeRow, multipleRoots: boolean): string {
       chars.push(' ')
     }
   }
-  return chars.join('')
+  const text = chars.slice(hidden * 3).join('')
+  return { hidden, text: hidden ? `…+${hidden} ${text}` : text }
 }
 
 function isFoldedAway(
@@ -410,6 +425,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
               <div style={{ height: first * ROW_H }} />
               {windowRows.map((row) => {
                 const collapsed = folded.has(row.id)
+                const prefix = treePrefix(row, multipleRoots)
                 return (
                   <ContextMenu key={row.id}>
                     <ContextMenuTrigger asChild disabled={labelingId === row.id}>
@@ -420,9 +436,21 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                           row.current && 'bg-glass-prompt-foreground/12 text-glass-prompt-foreground solid:bg-accent solid:text-accent-foreground'
                         )}
                       >
-                        <span className="shrink-0 whitespace-pre text-muted-foreground">
-                          {treePrefix(row, multipleRoots)}
-                        </span>
+                        {/* Overflowing flex-end content clips on the left, keeping the levels nearest the node. */}
+                        {prefix.hidden ? (
+                          <Tooltip delayDuration={TOOLTIP_DELAY}>
+                            <TooltipTrigger asChild>
+                              <span className="flex max-w-[45%] shrink-0 justify-end overflow-hidden text-muted-foreground">
+                                <span className="shrink-0 whitespace-pre">{prefix.text}</span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('tree.hiddenDepth', { n: prefix.hidden })}</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="flex max-w-[45%] shrink-0 justify-end overflow-hidden text-muted-foreground">
+                            <span className="shrink-0 whitespace-pre">{prefix.text}</span>
+                          </span>
+                        )}
                         {row.foldable ? (
                           <Button
                             type="button"
@@ -451,27 +479,34 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                             ariaLabel={t('tree.label')}
                           />
                         ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className={cn(
-                              'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal hover:bg-transparent!',
-                              !row.current && kindClass(row.kind)
-                            )}
-                            onClick={() => {
-                              if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'none')
-                            }}
-                          >
-                            <span className="min-w-0 flex-1 truncate">
-                              {row.onPath ? '• ' : ''}
-                              {row.text}
-                            </span>
-                            {row.label ? (
-                              <Badge variant="secondary" className="ml-1.5 h-4 max-w-40 min-w-0 px-1.5 text-[10px] leading-4 font-normal" title={row.label}>
-                                <span className="truncate">{row.label}</span>
-                              </Badge>
-                            ) : null}
-                          </Button>
+                          <Tooltip delayDuration={TOOLTIP_DELAY}>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className={cn(
+                                  'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal hover:bg-transparent!',
+                                  !row.current && kindClass(row.kind)
+                                )}
+                                onClick={() => {
+                                  if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'none')
+                                }}
+                              >
+                                <span className="min-w-0 flex-1 truncate">
+                                  {row.onPath ? '• ' : ''}
+                                  {row.text}
+                                </span>
+                                {row.label ? (
+                                  <Badge variant="secondary" className="ml-1.5 h-4 max-w-40 min-w-0 px-1.5 text-[10px] leading-4 font-normal" title={row.label}>
+                                    <span className="truncate">{row.label}</span>
+                                  </Badge>
+                                ) : null}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" align="start" className="max-w-md">
+                              <span className="line-clamp-8 whitespace-pre-wrap wrap-anywhere">{row.text}</span>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
                     </ContextMenuTrigger>

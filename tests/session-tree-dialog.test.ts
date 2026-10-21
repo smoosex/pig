@@ -62,6 +62,12 @@ async function runFixture(name: string): Promise<void> {
                 }
               : name === 'tree-window-limits'
                 ? record(manyRows(300))
+              : name === 'tree-deep-indent'
+                ? record([5, 6, 7, 10, 11, 17].map((indent) => ({
+                    ...row(`d${indent}`, `user: 深${indent}`),
+                    indent,
+                    gutters: Array.from({ length: indent }, (_, position) => ({ position, show: true }))
+                  })))
               : {
                   ...record([row('u1', 'user: 问题', '旧标')]),
                   default: [row('u1', 'user: 问题', '旧标'), toolRow(), row('u2', 'user: 继续')]
@@ -142,7 +148,8 @@ async function runFixture(name: string): Promise<void> {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
-  await act(async () => { root.render(h(SessionTreeButton, null)) })
+  const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+  await act(async () => { root.render(h(TooltipProvider, null, h(SessionTreeButton, null))) })
   const flush = async () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
   }
@@ -287,6 +294,31 @@ async function runFixture(name: string): Promise<void> {
       false,
       'the far end of the list is not mounted'
     )
+    return
+  }
+
+  if (name === 'tree-deep-indent') {
+    await act(async () => { button('会话树').click() })
+    await flush()
+    const tip = () => document.querySelector('[data-slot="tooltip-content"]')?.textContent ?? null
+    const prefixOf = (text: string) => {
+      const node = [...document.querySelectorAll<HTMLButtonElement>('div.font-mono button')].find((item) => item.textContent?.includes(text))!
+      return node.closest('[data-hover-highlight-row]')!.firstElementChild as HTMLElement
+    }
+    const levels = (text: string) => (prefixOf(text).textContent!.match(/│/g) ?? []).length
+    assert.equal(levels('user: 深5'), 5)
+    assert.equal(levels('user: 深6'), 6, 'up to six levels are drawn in full')
+    assert.equal(prefixOf('user: 深6').getAttribute('data-slot'), null, 'shallow rows have no depth tip')
+    assert.equal(levels('user: 深7'), 3, 'deeper rows drop leftmost levels in a chunk')
+    assert.equal(levels('user: 深10'), 6, 'rows inside one chunk keep their relative indent')
+    assert.equal(levels('user: 深11'), 3)
+    assert.equal(levels('user: 深17'), 5, 'no row draws more than six levels')
+    assert.ok(prefixOf('user: 深17').textContent!.startsWith('…+12 '))
+    const deep = [...document.querySelectorAll<HTMLButtonElement>('div.font-mono button')].find((item) => item.textContent?.includes('user: 深17'))!
+    await act(async () => { deep.focus() })
+    await flush()
+    assert.ok(tip()?.includes('user: 深17'), 'the full node text shows in a tooltip')
+    assert.equal(prefixOf('user: 深17').getAttribute('data-slot'), 'tooltip-trigger', 'hidden levels explain themselves in a tooltip')
     return
   }
 
@@ -469,6 +501,7 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
     ['branch-session-switch', 'tree: session switches invalidate the pending switch'],
     ['tree-view-tabs', 'tree: tabs switch the session view pi cycles with Ctrl+O'],
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
+    ['tree-deep-indent', 'tree: deep forks cap drawn indent so node text stays visible'],
     ['tree-filter-scroll', 'tree: switching to user-only from a long tree tail shows the filtered rows'],
     ['tree-label-menu', 'tree: the context menu labels a row in place'],
     ['tree-label-close-cancels', 'tree: closing mid-edit strands no label field'],
