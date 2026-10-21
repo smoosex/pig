@@ -18,6 +18,7 @@ import { TabKindIcon } from './TabKindIcon'
 import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
+import { collapseLeavingTab, interleave, useTabStripMotion, type LeavingTab } from './use-tab-strip-motion'
 import { useSplitLayoutStore, collectPaneNodes } from '../stores/split-layout'
 
 /** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
@@ -91,7 +92,36 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
     }
   }
 
-  useLayoutEffect(revealActiveTab, [activeTabId, currentProjectCwd, sidebarTab, representativeTab?.id, displayTabs.length, revealActiveTab])
+  // One face per strip slot, shared by the live tab and the copy that collapses when it closes.
+  const entries = displayTabs.map((tab) => {
+    const isCombined = isSplit && tab.id === representativeTab?.id
+    return {
+      key: tab.id,
+      tab,
+      isCombined,
+      snapshot: {
+        label: isCombined ? combinedTitle : tab.title,
+        kind: tab.kind,
+        path: tab.path,
+        active: isCombined ? Boolean(activeTabId && splitTabIdSet.has(activeTabId)) : tab.id === activeTabId,
+        split: isCombined && merged
+      } satisfies LeavingSnapshot
+    }
+  })
+  const { leaving, finishLeaving } = useTabStripMotion<LeavingSnapshot>({
+    listRef: tabListRef,
+    context: `${sidebarTab}\n${currentProjectCwd ?? ''}`,
+    entries,
+    still: splitTabIdSet,
+    onEntered: revealActiveTab
+  })
+
+  // Runs after the motion hook has started any entry: a tab still growing is revealed once it has its
+  // width, by its transitionend or its entry's finish, instead of scrolling twice.
+  useLayoutEffect(() => {
+    if (tabListRef.current?.querySelector('[data-tab-active]')?.getAnimations().length) return
+    revealActiveTab()
+  }, [activeTabId, currentProjectCwd, sidebarTab, representativeTab?.id, displayTabs.length, revealActiveTab])
 
   const { sensors, activeTab, clickGuard, handleDragStart, handleDragEnd, handleDragCancel } =
     useTabStripDnd(displayTabs, representativeTab
@@ -141,25 +171,25 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
             }}
             className={cn(
               'flex min-w-0 flex-1 items-stretch overflow-x-auto rounded-full p-0.5 transition-[background-color] duration-200 ease-in-out motion-reduce:transition-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-              (displayTabs.length > 0 || reintegratingTab) && 'bg-glass-tab-bar-background solid:bg-tab-bar-background'
+              (displayTabs.length > 0 || leaving.length > 0 || reintegratingTab) && 'bg-glass-tab-bar-background solid:bg-tab-bar-background'
             )}
           >
-            {displayTabs.map((tab) => {
-              const isCombined = isSplit && tab.id === representativeTab?.id
+            {interleave(entries, (entry) => entry.key, leaving).map((slot) => {
+              if ('leaving' in slot) {
+                const ghost = slot.leaving
+                return <LeavingTabFace key={`leaving:${ghost.key}`} ghost={ghost} onDone={() => finishLeaving(ghost.key)} />
+              }
+              const { tab, isCombined, snapshot } = slot.item
               return (
                 <Tab
                   key={tab.id}
                   tabId={tab.id}
                   cwd={tab.cwd}
-                  title={isCombined ? combinedTitle : tab.title}
+                  title={snapshot.label}
                   kind={tab.kind}
                   path={tab.path}
                   sessionPath={tab.meta?.path}
-                  active={
-                    isCombined
-                      ? Boolean(activeTabId && splitTabIdSet.has(activeTabId))
-                      : tab.id === activeTabId
-                  }
+                  active={snapshot.active}
                   loading={
                     isCombined
                       ? uniqueSplitTabs.some((t) => t.loadState === 'opening')
@@ -170,7 +200,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                       ? uniqueSplitTabs.find((t) => t.loadState === 'error')?.loadError
                       : (tab.loadState === 'error' ? tab.loadError : undefined)
                   }
-                  split={isCombined && merged}
+                  split={snapshot.split}
                   splitTabIds={isCombined ? splitTabIds : undefined}
                   onSelect={() => selectTab(tab.id)}
                   onClose={() => {
@@ -306,6 +336,8 @@ interface TabFaceProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onSelect'> 
   /** The floating copy: no pointer affordances, wider name, and it keeps its own background. */
   dragging?: boolean
   editing?: boolean
+  /** A closed tab's inert copy collapsing out of the strip. */
+  leaving?: boolean
   error?: string
   split?: boolean
   onSelect?: () => void
@@ -329,6 +361,7 @@ function TabFace({
   streaming = false,
   dragging = false,
   editing = false,
+  leaving = false,
   error,
   split,
   className,
@@ -340,18 +373,21 @@ function TabFace({
   ...rest
 }: TabFaceProps) {
   const t = useT()
+  const listed = !dragging && !leaving
   return (
     <div
       ref={ref}
-      data-session-tab={dragging ? undefined : true}
-      data-tab-active={active && !dragging ? true : undefined}
-      aria-current={active && !dragging ? true : undefined}
+      data-session-tab={listed ? true : undefined}
+      data-tab-active={active && listed ? true : undefined}
+      aria-current={active && listed ? true : undefined}
+      aria-hidden={leaving || undefined}
       className={cn(
         'close-reveal group/tab no-drag relative flex h-7 touch-none select-none items-center gap-1 rounded-full px-1.5 text-xs whitespace-nowrap session-tab-motion motion-reduce:transition-none after:pointer-events-none after:absolute after:inset-y-2 after:right-0 after:w-px after:bg-glass-prompt-foreground/16 after:transition-opacity last:after:opacity-0 has-[+[data-tab-active]]:after:opacity-0 has-[+:hover]:after:opacity-0 hover:after:opacity-0 focus-within:after:opacity-0 solid:after:bg-foreground/16',
         // A floating copy stays opaque and name-sized; only tabs in the strip share the available width.
         dragging
           ? 'pointer-events-none w-max bg-card text-foreground shadow-md after:opacity-0'
           : [
+            leaving && 'pointer-events-none overflow-hidden',
             '@container/session-tab w-56 min-w-7 max-w-56 shrink-0 cursor-pointer text-glass-prompt-foreground solid:text-foreground',
             active ? 'basis-56 grow-0' : 'basis-7 grow',
             // The frost behind the rail is the window's native material; the selected face only paints the glass optics.
@@ -382,7 +418,7 @@ function TabFace({
         ) : (
           <TabKindIcon kind={kind} path={path} />
         )}
-        <span data-tab-label className={cn('min-w-0 truncate', dragging ? 'max-w-60' : ['max-w-0 transition-[max-width] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full', editing && 'max-w-full flex-1'])}>
+        <span data-tab-label className={cn('min-w-0 truncate', dragging ? 'max-w-60' : ['max-w-0 opacity-0 transition-[max-width,opacity] duration-150 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full @min-[7rem]/session-tab:opacity-100', editing && 'max-w-full flex-1'])}>
           {editing && onRenameCommit && onRenameCancel ? (
             <SessionRenameField
               // Renaming keeps text selectable without lifting the sortable tab.
@@ -409,6 +445,35 @@ function TabFace({
         </span>
       ) : null}
     </div>
+  )
+}
+
+interface LeavingSnapshot {
+  label: string
+  kind: OpenTab['kind']
+  path?: string
+  active: boolean
+  split: boolean
+}
+
+function LeavingTabFace({ ghost, onDone }: { ghost: LeavingTab<LeavingSnapshot>; onDone: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    collapseLeavingTab(ref.current!, ghost.width, onDone)
+    // The collapse is started once for this copy; later renders only reposition it.
+  }, [])
+  const { label, kind, path, active, split } = ghost.snapshot
+  return (
+    <TabFace
+      ref={ref}
+      leaving
+      label={label}
+      kind={kind}
+      path={path}
+      active={active}
+      split={split}
+      style={{ flexBasis: ghost.width, flexGrow: 0, minWidth: 0 }}
+    />
   )
 }
 
@@ -463,6 +528,7 @@ function Tab({
   const body = (
     <TabFace
       ref={setNodeRef}
+      data-tab-key={tabId}
       {...(listeners as unknown as HTMLAttributes<HTMLDivElement>)}
       className={cn(isDragging && 'opacity-40')}
       style={{ transform: CSS.Transform.toString(transform), '--tab-drag-transition': transition } as CSSProperties}
