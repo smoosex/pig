@@ -9,7 +9,9 @@ async function fixture(scenario: string): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const noop = () => {}
+  let browserShortcut: (action: import('../src/shared/browser').BrowserHostShortcut) => void = noop
   Object.assign(window, { api: {
+    browser: { onShortcutRequested: (listener: typeof browserShortcut) => { browserShortcut = listener; return () => { browserShortcut = noop } } },
     supportsGlass: true,
     onMcpChanged: () => noop,
     onNotificationClick: () => noop,
@@ -159,6 +161,14 @@ async function fixture(scenario: string): Promise<void> {
           assert.equal(host.querySelector('[data-view="Sidebar"]')!.getAttribute('aria-hidden'), String(leftHidden))
           assert.equal(host.querySelector('[data-view="WorkspacePanel"]')!.getAttribute('aria-hidden'), String(rightHidden))
           checkBounds()
+        }
+        for (const [action, leftHidden, rightHidden] of [
+          ['toggle-sidebar', true, false], ['toggle-workspace', true, true],
+          ['toggle-sidebar', false, true], ['toggle-workspace', false, false]
+        ] as const) {
+          await act(async () => { browserShortcut(action) })
+          assert.equal(host.querySelector('[data-view="Sidebar"]')!.getAttribute('aria-hidden'), String(leftHidden))
+          assert.equal(host.querySelector('[data-view="WorkspacePanel"]')!.getAttribute('aria-hidden'), String(rightHidden))
         }
         await act(async () => { buttons[1].click() })
         assert.equal(useDiffStore.getState().reviewOpen, false)

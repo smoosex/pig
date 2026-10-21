@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import type { WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
-  BROWSER_CLOSE_TAB_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
+  BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
@@ -201,20 +201,34 @@ export class BrowserHost {
     return { owner, page }
   }
 
-  private bindCloseShortcut(owner: WindowPages, page: Page, contents: Electron.WebContents): void {
-    // Guest keyboard events never reach App's keydown listener. Cancel the native window-close
-    // accelerator here, then let the renderer close the owning tab through its normal store action.
+  private bindHostShortcuts(owner: WindowPages, page: Page, contents: Electron.WebContents): void {
+    // Guest events never reach App's keydown listener. Only Pig's shortcuts cross this boundary;
+    // editing and page shortcuts remain with the focused guest.
     contents.on('before-input-event', (event, input) => {
       if (!this.alive(owner, page) || contents.isDestroyed()) return
-      if (input.type !== 'keyDown' || input.key.toLowerCase() !== 'w' || !input.meta || input.control || input.alt || input.shift) return
+      if (input.type !== 'keyDown' || !input.meta || input.control || input.alt || input.isComposing) return
+      const key = input.key.toLowerCase()
+      if (key === 'w' && !input.shift) {
+        event.preventDefault()
+        if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_CLOSE_TAB_CHANNEL, page.state.browserId)
+        return
+      }
+      const action = key === 'e'
+        ? (input.shift ? 'toggle-workspace' : 'toggle-sidebar')
+        : key === ',' && !input.shift
+          ? 'toggle-settings'
+          : key === 'a' && input.shift
+            ? 'open-project'
+            : null
+      if (!action) return
       event.preventDefault()
-      if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_CLOSE_TAB_CHANNEL, page.state.browserId)
+      if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_SHORTCUT_CHANNEL, action)
     })
   }
 
   private bind(owner: WindowPages, page: Page): void {
     const wc = page.view.webContents
-    this.bindCloseShortcut(owner, page, wc)
+    this.bindHostShortcuts(owner, page, wc)
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     wc.on('focus', () => this.push(owner, page, true))
     // Also fires when the user closes DevTools from their own toolbar.
@@ -453,7 +467,7 @@ export class BrowserHost {
       owner.win.contentView.addChildView(devtools)
       page.devtools = devtools
       page.state.devtools = true
-      this.bindCloseShortcut(owner, page, devtools.webContents)
+      this.bindHostShortcuts(owner, page, devtools.webContents)
       // The DevTools × destroys this WebContents; the page then emits devtools-closed.
       devtools.webContents.once('destroyed', () => {
         if (page.devtools !== devtools) return

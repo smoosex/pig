@@ -139,6 +139,7 @@ export interface BrowserApi {
   importCookies(browserId: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null): Promise<BrowserCookieImportResult>
   clearSiteCookies(browserId: string, expectedSite: string): Promise<BrowserCookieClearResult>
   onCloseRequested(listener: (browserId: string) => void): () => void
+  onShortcutRequested(listener: (action: BrowserHostShortcut) => void): () => void
   /** Ends agent control of the page; the agent must call browser_open again to resume. */
   releaseAgent(browserId: string): Promise<void>
   onAgentOpenRequest(listener: (request: BrowserAgentOpenRequest) => void): () => void
@@ -148,6 +149,8 @@ export interface BrowserApi {
   onSelection(listener: (selection: BrowserSelection) => void): () => void
 }
 
+export type BrowserHostShortcut = 'toggle-sidebar' | 'toggle-workspace' | 'toggle-settings' | 'open-project'
+export const BROWSER_SHORTCUT_CHANNEL = 'browser:host-shortcut-requested'
 export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
 export const BROWSER_PICKER_CHANNEL = 'browser:picker'
 export const BROWSER_SELECTION_CHANNEL = 'browser:element-selected'

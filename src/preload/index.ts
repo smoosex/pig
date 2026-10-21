@@ -29,6 +29,11 @@ const api: SessionApi = {
       ipcRenderer.on('browser:close-tab-requested', handler)
       return () => ipcRenderer.off('browser:close-tab-requested', handler)
     },
+    onShortcutRequested: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, action: import('../shared/browser').BrowserHostShortcut) => listener(action)
+      ipcRenderer.on('browser:host-shortcut-requested', handler)
+      return () => ipcRenderer.off('browser:host-shortcut-requested', handler)
+    },
     releaseAgent: (browserId) => ipcRenderer.invoke('browser:release-agent', browserId),
     onAgentOpenRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/browser').BrowserAgentOpenRequest) => listener(request)

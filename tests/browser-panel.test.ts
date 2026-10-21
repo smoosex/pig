@@ -56,6 +56,7 @@ async function fixture() {
     releaseAgent: async () => {},
     onAgentOpenRequest: () => () => {},
     answerAgentOpen: async () => {},
+    onShortcutRequested: () => () => {},
     onCloseRequested: (listener) => { requestClose = listener; return () => { requestClose = () => {} } },
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }

@@ -266,6 +266,21 @@ export default function App() {
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
 
   useEffect(() => {
+    const runShortcut = (action: import('../../shared/browser').BrowserHostShortcut) => {
+      if (useSessionsStore.getState().projectPickerOpen) return
+      switch (action) {
+        case 'open-project': void openProject(); break
+        case 'toggle-sidebar': setSidebarOpen((open) => !open); break
+        case 'toggle-settings': setSettingsOpen((open) => !open); break
+        case 'toggle-workspace': {
+          if (!currentProjectCwd) break
+          const diff = useDiffStore.getState()
+          diff.setReviewOpen(!diff.reviewOpen)
+          break
+        }
+      }
+    }
+    const offBrowserShortcut = api.browser.onShortcutRequested(runShortcut)
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.metaKey || event.ctrlKey || event.altKey) return
       if (event.isComposing || event.keyCode === 229) return
@@ -274,30 +289,29 @@ export default function App() {
       if (event.shiftKey) {
         if (event.key.toLowerCase() === 'a') {
           event.preventDefault()
-          if (!event.repeat) void openProject()
+          if (!event.repeat) runShortcut('open-project')
         } else if (event.key.toLowerCase() === 'e') {
           event.preventDefault()
-          // The right column only exists inside a project, so outside one the key does nothing.
-          if (!event.repeat && currentProjectCwd) {
-            const diff = useDiffStore.getState()
-            diff.setReviewOpen(!diff.reviewOpen)
-          }
+          if (!event.repeat) runShortcut('toggle-workspace')
         }
         return
       }
       if (event.key.toLowerCase() === 'e') {
         event.preventDefault()
-        setSidebarOpen((open) => !open)
+        if (!event.repeat) runShortcut('toggle-sidebar')
       } else if (event.key.toLowerCase() === 'w') {
         event.preventDefault()
         if (!event.repeat && activeTabId) closeTab(activeTabId)
       } else if (event.key === ',') {
         event.preventDefault()
-        if (!event.repeat) setSettingsOpen((open) => !open)
+        if (!event.repeat) runShortcut('toggle-settings')
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      offBrowserShortcut()
+    }
   }, [activeTabId, closeTab, currentProjectCwd, openProject])
 
   useEffect(() => {

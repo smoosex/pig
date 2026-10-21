@@ -93,6 +93,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onAgentOpenRequest(() => {})()
   await api.browser.close('session-1')
   api.browser.onCloseRequested(() => {})()
+  api.browser.onShortcutRequested(() => {})()
   api.browser.onState(() => {})()
   api.browser.onSelection(() => {})()
 

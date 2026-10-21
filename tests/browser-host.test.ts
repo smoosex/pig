@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import type { BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../src/main/browser/host'
 import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl } from '../src/main/browser/validation'
-import { BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
+import { BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
 
 let nextContentsId = 0
 class FakeContents extends EventEmitter {
@@ -146,6 +146,19 @@ describe('browser host', () => {
         { meta: false }, { key: 'r' }, { meta: false, control: true }
       ]) expect(press(view.webContents, other)).toBe(false)
       expect(requested()).toHaveLength(count)
+      for (const [key, shift, action] of [
+        ['e', false, 'toggle-sidebar'], ['e', true, 'toggle-workspace'],
+        [',', false, 'toggle-settings'], ['a', true, 'open-project']
+      ] as const) {
+        expect(press(view.webContents, { key, shift })).toBe(true)
+        expect(win.webContents.sent.at(-1)).toEqual([BROWSER_SHORTCUT_CHANNEL, action])
+        const sent = win.webContents.sent.length
+        expect(press(view.webContents, { key, shift, isAutoRepeat: true })).toBe(true)
+        expect(win.webContents.sent).toHaveLength(sent)
+      }
+      for (const key of ['a', 'c', 'v', 'x', 'z', 'l', 't']) {
+        expect(press(view.webContents, { key })).toBe(false)
+      }
     }
     expect(requested()).toEqual([
       [BROWSER_CLOSE_TAB_CHANNEL, 'browser:owned'], [BROWSER_CLOSE_TAB_CHANNEL, 'browser:owned']
