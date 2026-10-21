@@ -1,18 +1,20 @@
-import { Helix } from 'ldrs/react'
-import 'ldrs/react/Helix.css'
+import { ThinkingOrb } from 'thinking-orbs'
+import { useDarkMode } from '../lib/useDarkMode'
 import { cn } from '../lib/utils'
 
-export function SquaresSpinner({ className }: { className?: string }) {
+/** A running session's indicator in session lists (sidebar rows, the history popover). */
+export function SessionRunningOrb({ className }: { className?: string }) {
+  // Pig only ever toggles the `dark` class, so let the orb read it instead of
+  // resolving `auto` against prefers-color-scheme, which a pinned appearance overrides.
+  const dark = useDarkMode()
   return (
-    <span
-      className={cn(
-        'flex size-6 shrink-0 items-center justify-center text-muted-foreground',
-        className
-      )}
+    <ThinkingOrb
+      state="breathing"
+      size={20}
+      theme={dark ? 'dark' : 'light'}
       aria-hidden
-    >
-      <Helix size="14" speed="2.5" color="currentColor" />
-    </span>
+      className={cn('pointer-events-none', className)}
+    />
   )
 }
 

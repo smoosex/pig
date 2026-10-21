@@ -1,7 +1,6 @@
 /** The sidebar's running / unread indicators and close action share one fixed-width slot. */
 import { cn } from '../../lib/utils'
-import { ThinkingOrb } from 'thinking-orbs'
-import { useDarkMode } from '../../lib/useDarkMode'
+import { SessionRunningOrb } from '../RunningSpinners'
 import { CloseButton } from '../CloseButton'
 import { sidebarButtonSurface } from './sidebar-surface'
 import { useT } from '../../hooks/useT'
@@ -31,19 +30,10 @@ export function SessionCloseButton({
   onClose: () => void
   disabled?: boolean
 }) {
-  // Pig only ever toggles the `dark` class, so let the orb read it instead of
-  // resolving `auto` against prefers-color-scheme, which a pinned appearance overrides.
-  const dark = useDarkMode()
   return (
     <span className="group/close-slot relative flex size-6 shrink-0 items-center justify-center">
       {streaming ? (
-        <ThinkingOrb
-          state="breathing"
-          size={20}
-          theme={dark ? 'dark' : 'light'}
-          aria-hidden
-          className="pointer-events-none transition-opacity group-hover/session:opacity-0 group-focus-within/close-slot:opacity-0"
-        />
+        <SessionRunningOrb className="transition-opacity group-hover/session:opacity-0 group-focus-within/close-slot:opacity-0" />
       ) : unread ? (
         <SessionUnreadDot />
       ) : null}

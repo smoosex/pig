@@ -9,7 +9,7 @@ import { sessionTitle } from '../stores/sessions/session-title'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
-import { SquaresSpinner } from './RunningSpinners'
+import { SessionRunningOrb } from './RunningSpinners'
 import { SessionSizeDots } from './SessionSizeDots'
 import { SessionDeleteButton } from './sidebar/SessionDeleteButton'
 import { SessionForkIcon } from './SessionForkIcon'
@@ -152,7 +152,9 @@ function HistoryRow({
       </Button>
       <div className="pointer-events-none absolute right-1 z-10 flex w-12 items-center justify-end">
         {streaming || pending === row.id ? (
-          <SquaresSpinner />
+          <span className="flex size-6 shrink-0 items-center justify-center">
+            <SessionRunningOrb />
+          </span>
         ) : (
           <SessionDeleteButton
             ariaLabel={t('sessions.deleteSession', { title })}
