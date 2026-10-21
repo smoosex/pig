@@ -10,6 +10,7 @@ import { registerModelIpc } from './models'
 import { registerSkillsIpc } from './skills'
 import { registerSubagentIpc } from './subagents'
 import { registerBrowserIpc } from './browser'
+import { registerTerminalIpc } from './terminal'
 import { getLive } from '../pi/session-registry'
 
 export function registerIpc(): void {
@@ -24,5 +25,6 @@ export function registerIpc(): void {
   registerModelIpc()
   registerSkillsIpc()
   registerSubagentIpc()
+  registerTerminalIpc()
   registerBrowserIpc({ sessionWindow: (id) => getLive(id)?.win, isSessionLive: (id) => getLive(id) !== undefined })
 }

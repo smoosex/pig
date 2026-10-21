@@ -165,6 +165,7 @@ export const en: Messages = {
     new: 'New tab',
     newSession: 'Session',
     newBrowser: 'Browser',
+    newTerminal: 'Terminal',
     unsaved: 'Unsaved',
     loading: 'Loading',
     reintegrate: 'Move to separate tab'
@@ -326,6 +327,14 @@ export const en: Messages = {
     expand: 'Expand',
     collapse: 'Collapse',
     label: 'Label'
+  },
+  terminal: {
+    directoryMissing: 'Directory does not exist: {path}',
+    exited: 'Process exited (code {code})',
+    failed: 'Terminal stopped: {message}',
+    writeFailed: 'Terminal input failed: {message}',
+    fontFailed: 'Terminal font failed to load; using a fallback font: {message}',
+    startFailed: 'Could not start the terminal: {message}'
   },
   browser: {
     releaseAgent: 'Release agent control',

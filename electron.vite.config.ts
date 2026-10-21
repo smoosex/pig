@@ -10,7 +10,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'branch-namer-worker': resolve(__dirname, 'src/main/pi/branch-namer-worker.ts')
+          'branch-namer-worker': resolve(__dirname, 'src/main/pi/branch-namer-worker.ts'),
+          'pty-host-worker': resolve(__dirname, 'src/main/terminal/pty-host-worker.ts')
         }
       }
     },

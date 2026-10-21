@@ -7,7 +7,7 @@
   "author": "smoose",
   "license": "MIT",
   "scripts": {
-    "postinstall": "bun run icons:generate && node node_modules/electron/install.js",
+    "postinstall": "bun run icons:generate && bun scripts/prepare-node-pty.ts && node node_modules/electron/install.js",
     "icons:generate": "bun scripts/generate-file-icons.ts",
     "app-icons:generate": "bun scripts/generate-app-icons.ts",
     "plugins:build": "bun scripts/build-system-plugins.ts",
@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.2.0",
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -56,6 +57,11 @@
     "@types/react-dom": "^19.3.0",
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^5.2.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -106,6 +112,7 @@
     "electron",
     "electron-winstaller",
     "esbuild",
+    "node-pty",
     "protobufjs"
   ],
   "patchedDependencies": {

@@ -52,6 +52,20 @@ const api: SessionApi = {
       return () => ipcRenderer.off('browser:selection', handler)
     }
   },
+  terminal: {
+    create: (terminalId, cwd, cols, rows) => ipcRenderer.invoke('terminal:create', terminalId, cwd, cols, rows),
+    write: (terminalId, data, binary) => binary === undefined
+      ? ipcRenderer.invoke('terminal:write', terminalId, data)
+      : ipcRenderer.invoke('terminal:write', terminalId, data, binary),
+    resize: (terminalId, cols, rows) => ipcRenderer.invoke('terminal:resize', terminalId, cols, rows),
+    ack: (terminalId, length) => ipcRenderer.invoke('terminal:ack', terminalId, length),
+    close: (terminalId) => ipcRenderer.invoke('terminal:close', terminalId),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, event: import('../shared/terminal').TerminalEvent) => listener(event)
+      ipcRenderer.on('terminal:event', handler)
+      return () => ipcRenderer.off('terminal:event', handler)
+    }
+  },
   listProjects: () => ipcRenderer.invoke('session:list-projects'),
   discoverOpenedWorktrees: () => ipcRenderer.invoke('project:discover-opened-worktrees'),
   listWorktreeSessions: (projectCwd: string, cwd: string) =>

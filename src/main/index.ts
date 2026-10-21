@@ -6,6 +6,8 @@ import { createMainWindow } from './window'
 import { installTabCloseMenu } from './tab-close-menu'
 import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
+import { shutdownTerminals } from './ipc/terminal'
+import { exitAfterCleanup } from './shutdown'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { forwardSessionNames } from './session-names'
@@ -117,8 +119,8 @@ let isDisposing = false
 const QUIT_DEADLINE_MS = 5_000
 
 app.on('before-quit', (event) => {
-  if (isDisposing) return
   event.preventDefault()
+  if (isDisposing) return
   isDisposing = true
   const teardown = Promise.allSettled([
     worktrees.shutdown(),
@@ -128,8 +130,8 @@ app.on('before-quit', (event) => {
   ])
     .then(() => disposeAll())
     .catch(() => {})
-  void Promise.race([
+  void exitAfterCleanup(shutdownTerminals(), Promise.race([
     teardown,
     new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))
-  ]).finally(() => app.exit(0))
+  ]), (code) => app.exit(code))
 })

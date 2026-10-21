@@ -52,6 +52,7 @@ import { SplitPaneOverlay } from './components/chat/SplitPaneOverlay'
 
 // The editor is the heaviest thing a tab can pull in, so it arrives with the first file that is opened.
 const FileView = lazy(() => import('./components/files/FileView'))
+const TerminalPanel = lazy(() => import('./components/terminal/TerminalPanel'))
 
 function ThemeSync() {
   const appearance = useSettingsStore((s) => s.appearance)
@@ -120,6 +121,19 @@ function BrowserTabContent({ tab }: { tab: OpenTab }) {
   }} />
 }
 
+function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) {
+  return (
+    <Suspense fallback={null}>
+      <TerminalPanel terminalId={tab.id} cwd={tab.cwd || null} active={active} onFocus={() => {
+        const layout = useSplitLayoutStore.getState()
+        const pane = collectPaneNodes(layout.root).find((pane) => pane.tabId === tab.id)
+        if (pane && layout.activePaneId !== pane.id) layout.setActivePane(pane.id)
+        if (useSessionsStore.getState().activeTabId !== tab.id) useSessionsStore.getState().setActive(tab.id)
+      }} />
+    </Suspense>
+  )
+}
+
 export function PaneViewContent({
   node,
   isActive,
@@ -142,6 +156,7 @@ export function PaneViewContent({
       !isDiff &&
       !isFile &&
       paneTab.kind !== 'browser' &&
+      paneTab.kind !== 'terminal' &&
       paneTab.loadState === 'cold'
     ) {
       void useSessionsStore.getState().activateTab(node.tabId)
@@ -164,6 +179,8 @@ export function PaneViewContent({
     <div className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col">
       {paneTab?.kind === 'browser' ? (
         <BrowserTabContent tab={paneTab} />
+      ) : paneTab?.kind === 'terminal' ? (
+        <TerminalTabContent tab={paneTab} active={isActive} />
       ) : isDiff ? (
         <ChangesView cwd={paneTab.cwd} />
       ) : isFile && paneTab.path ? (
@@ -515,6 +532,8 @@ export default function App() {
                       />
                     ) : activeTab?.kind === 'browser' ? (
                       <BrowserTabContent tab={activeTab} />
+                    ) : activeTab?.kind === 'terminal' ? (
+                      <TerminalTabContent tab={activeTab} active />
                     ) : diffTab ? (
                       <ChangesView cwd={diffTab.cwd} />
                     ) : fileTab?.path ? (

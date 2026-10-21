@@ -167,6 +167,7 @@ export const zh = {
     new: '新建标签页',
     newSession: '会话',
     newBrowser: '浏览器',
+    newTerminal: '终端',
     unsaved: '未保存',
     loading: '正在加载',
     reintegrate: '移至独立标签'
@@ -323,6 +324,14 @@ export const zh = {
     expand: '展开',
     collapse: '折叠',
     label: '标注'
+  },
+  terminal: {
+    directoryMissing: '目录不存在：{path}',
+    exited: '进程已退出（代码 {code}）',
+    failed: '终端已中断：{message}',
+    writeFailed: '终端输入失败：{message}',
+    fontFailed: '终端字体加载失败，已使用备用字体：{message}',
+    startFailed: '无法启动终端：{message}'
   },
   browser: {
     releaseAgent: '释放 Agent 控制',

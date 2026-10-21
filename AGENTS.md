@@ -90,6 +90,8 @@ Agent 浏览器能力由内置插件 pig-browser 提供（默认仅项目启用�
 
 浏览器工具栏的 Cookie 导入首版仅支持 macOS Chrome（Default / Profile N），Safari、其他浏览器、文件导入和非 macOS 解密暂不支持。来源 ID 由 main 检测生成，不接收任意文件路径；预览只读 SQLite 事务快照（含 WAL），不请求钥匙串，导入才通过 `/usr/bin/security` 获取 Chrome Safe Storage 密钥并校验 v24 域名哈希。Cookie 名称、值和密钥不进入 renderer、不写日志或 Pig 配置，解密密钥仅本次使用，源数据库不复制、不修改。当前站点按 PSL（含私有后缀）计算，支持明确确认后导入全部；过期、分区及不支持属性分别统计，保持 host-only / domain、path、SameSite、Secure、HttpOnly 与有效期语义。同键覆盖、一次复制，不做同步，所有浏览器标签共享 `persist:pig-browser` 登录态；清除本站需确认且不可撤销。导入重新读取来源，预览计数可能变化；读取/解密失败直接报错，单条 Chromium 写入或删除拒绝是显式部分结果边界（只返回失败计数，避免原生错误泄漏值），flush 失败仍抛出。跨标签写入和清除经 Promise 链排队串行；读取前后重新校验 UI 归属及站点，开始写入或删除后不再中断，必定 flush 并返回计数，避免留下未计数的部分写入。macOS Chrome 对 Cookies 库只持有 SQLite 共享锁（独占访问仅 Windows），读取带 5 秒 busy timeout，仍为 `SQLITE_BUSY`/`SQLITE_LOCKED` 时按 errcode 报“Chrome 正在写入”，其他 SQLite 错误保留 `cause`；成功变更后刷新页面，刷新失败与导入结果分开展示。Cookies 不涵盖 localStorage、设备绑定凭据等，不能保证复用所有站点登录。
 
+内置终端是与会话／浏览器同级的 `terminal:<uuid>` 标签，顶部 `+` 选「终端」创建，可分屏；项目内在当前 worktree 目录启动，Chat 侧（标签 cwd 为空）在 `$HOME` 启动，目录不存在直接报错。不绑定 Pi session，不持久化，不跨重启恢复。shell 跑在 main 懒启动的 `utilityProcess`（`src/main/terminal/pty-host-worker.ts`，构建为独立入口 `out/main/pty-host-worker.js`）里，node-pty 崩溃不影响 main；进程退出时各终端收到 `failed`，下一个终端重新拉起。main 的 `TerminalHost` 只持有终端→窗口归属，IPC 仅接受所属 UI 主 frame，宿主页面跨文档导航、renderer 退出或窗口关闭时统一 kill；关闭幂等，仍在启动中的 shell 也会被 kill（kill 消息排在 spawn 之后）。kill 先 SIGHUP，1 秒后对 shell 自身的进程组 SIGKILL；交互 shell 开启 job control 后每个任务另有进程组，忽略 SIGHUP 的任务会存活（与其他终端关闭窗口时的 nohup 语义一致）。shell 取 `shellCandidates()` 首个并加 `-l`（Windows 为 powershell）；环境以已导入登录 shell 环境的 `process.env` 为底，去掉启动终端的 `TERM*`/`COLORTERM`/各终端标识、`NO_COLOR`/`FORCE_COLOR`、`ELECTRON_RUN_AS_NODE` 和 **`PIG_DIR`**（否则在该终端里起的开发实例会共用安装版数据目录），固定 `TERM=xterm-256color`、`COLORTERM=truecolor`、`TERM_PROGRAM=Pig`，无任何 locale 时补 `LANG=en_US.UTF-8`。输出在 worker 内按 16ms／128K 合批，renderer 在 xterm 解析完成后按 UTF-16 长度 ack；未确认超过 100K 暂停 PTY，降到 5K 恢复，10 秒无 ack 强制恢复。renderer 的 xterm 实例随标签存活（`src/renderer/src/terminal/runtime.ts`），切换标签只把元素挪进屏外 parking 容器，标签从 store 消失时释放并关闭 shell；`TerminalPanel` 懒加载。字体只给终端用 Nerd Fonts v3.5.1 的 Lilex Nerd Font Mono（四个字重 woff2，OFL，`src/renderer/src/assets/fonts/lilex-nerd-font-mono/`），等字体加载后才 open/测量并启动 shell；聊天与代码块仍用 `@fontsource-variable/lilex`。WebGL 渲染失败或丢失上下文时退回 DOM 渲染。背景透明，前景、光标、选区与 16 色来自各主题的 `--terminal-*`，随 `<html>` 属性变化同步。Command 组合键除 C/V（复制粘贴）、K（清屏）、A（全选）外都交给应用快捷键；按住 Cmd/Ctrl 点击链接才用系统浏览器打开。打包：node-pty 在 `dependencies` 并 `asarUnpack`；1.1.0 的 macOS `spawn-helper` 发布时缺执行位，`postinstall` 的 `scripts/prepare-node-pty.ts` 补 0755；macOS/Windows 用其 N-API 预编译，Linux 需 `trustedDependencies` 放行现场编译。
+
 ## 进程与接口
 
 | 位置                                 | 职责                                                                    |
@@ -102,6 +104,7 @@ Agent 浏览器能力由内置插件 pig-browser 提供（默认仅项目启用�
 | `src/main/app-url.ts`                | 窗口只允许停在自己的 UI 上（含重定向）                                  |
 | `src/main/shell-env.ts`              | 启动时从用户登录 shell 导入 PATH 与缺失的环境变量（GUI 启动不继承终端环境） |
 | `src/main/browser/`                  | 内嵌预览的视图生命周期、导航安全、截图与元素拾取事件 |
+| `src/main/terminal/`                 | 终端归属、shell 与环境选择，PTY utility process（合批与背压） |
 | `src/preload/browser-guest.ts`        | 网页隔离上下文中的元素拾取，不暴露 Pig API |
 | `src/main/project-directory-browser.ts` | 应用内添加项目的本机目录浏览、真实路径校验与目录列表 |
 | `src/main/open-project-sessions.ts`  | 持久化已打开会话、活动标签与标签顺序（Worktree 和 chats 两半）；与 session 生命周期分离 |

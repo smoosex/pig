@@ -14,6 +14,10 @@ if (!process.argv.includes('--browser-tabs-fixture')) test('browser tabs share t
   const chat = tab('chat', 'chat', '/chats/chat')
   const chatBrowser = tab('browser:chat', 'browser', '')
   const other = tab('browser:other', 'browser', '/other')
+  const terminal = tab('terminal:project', 'terminal')
+  const chatTerminal = tab('terminal:chat', 'terminal', '')
+  assert.deepEqual(persistableIds([project, terminal, chatTerminal]), ['project'])
+  assert.deepEqual(sameScopeTabs([project, terminal, chat, chatTerminal], chatTerminal), [chat, chatTerminal])
   const tabs = [project, browser, chat, chatBrowser, other]
   assert.deepEqual(persistableIds(tabs), ['project', 'chat'])
   assert.deepEqual(sameScopeTabs(tabs, browser), [project, browser])
@@ -142,6 +146,20 @@ async function fixture() {
   assert.deepEqual(state().runtime, {})
   assert.ok(!JSON.stringify(writes).includes('browser:'))
   assert.equal(new Set(browserCreates).size, browserCreates.length)
+
+  const terminal = state().openTerminalTab('/project')
+  assert.match(terminal, /^terminal:/)
+  assert.equal(state().activeTabId, terminal)
+  assert.equal(state().currentProjectCwd, '/project')
+  assert.equal(selectActiveSessionId(state()), null, 'a terminal owns no Pi session')
+  state().closeTab(terminal)
+  assert.equal(state().openTabs.some((item) => item.id === terminal), false)
+  const homeTerminal = state().openTerminalTab(null)
+  assert.equal(state().openTabs.find((item) => item.id === homeTerminal)?.cwd, '', 'outside a project the terminal starts at home')
+  assert.equal(state().currentProjectCwd, null)
+  state().closeTab(homeTerminal)
+  assert.deepEqual(piCalls, [])
+  assert.ok(!JSON.stringify(writes).includes('terminal:'), 'terminal tabs are never persisted')
 }
 
 if (process.argv.includes('--browser-tabs-fixture')) {

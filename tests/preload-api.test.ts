@@ -96,6 +96,15 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onShortcutRequested(() => {})()
   api.browser.onState(() => {})()
   api.browser.onSelection(() => {})()
+  await api.terminal.create('terminal:one', '/repo', 80, 24)
+  await api.terminal.create('terminal:two', null, 100, 30)
+  await api.terminal.write('terminal:one', 'ls\r')
+  await api.terminal.write('terminal:one', '\x00\x80\xff', true)
+  await api.terminal.write('terminal:one', '中文', false)
+  await api.terminal.resize('terminal:one', 120, 40)
+  await api.terminal.ack('terminal:one', 512)
+  await api.terminal.close('terminal:one')
+  api.terminal.onEvent(() => {})()
 
   assert.deepEqual(invokes, [
     { channel: 'project:browse-directories', args: ['/home', true] },
@@ -151,7 +160,15 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:clear-site-cookies', args: ['browser:one', 'example.com'] },
     { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
-    { channel: 'browser:close', args: ['session-1'] }
+    { channel: 'browser:close', args: ['session-1'] },
+    { channel: 'terminal:create', args: ['terminal:one', '/repo', 80, 24] },
+    { channel: 'terminal:create', args: ['terminal:two', null, 100, 30] },
+    { channel: 'terminal:write', args: ['terminal:one', 'ls\r'] },
+    { channel: 'terminal:write', args: ['terminal:one', '\x00\x80\xff', true] },
+    { channel: 'terminal:write', args: ['terminal:one', '中文', false] },
+    { channel: 'terminal:resize', args: ['terminal:one', 120, 40] },
+    { channel: 'terminal:ack', args: ['terminal:one', 512] },
+    { channel: 'terminal:close', args: ['terminal:one'] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
@@ -161,6 +178,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('browser:agent-open-request'))
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('browser:selection'))
+  assert.ok(listeners.includes('terminal:event'))
   assert.equal('replyPluginUI' in api, false)
   assert.equal('onPluginUI' in api, false)
 }

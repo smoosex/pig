@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
-import { ArrowUpToLine, CircleAlert, Copy, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus } from 'lucide-react'
+import { ArrowUpToLine, CircleAlert, Copy, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus, SquareTerminal } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -229,11 +229,12 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const newSession = useSessionsStore((state) => state.newSession)
   const newChat = useSessionsStore((state) => state.newChat)
   const openBrowserTab = useSessionsStore((state) => state.openBrowserTab)
+  const openTerminalTab = useSessionsStore((state) => state.openTerminalTab)
   const creatingRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const createTab = async (kind: 'session' | 'browser') => {
+  const createTab = async (kind: 'session' | 'browser' | 'terminal') => {
     if (creatingRef.current) return
     creatingRef.current = true
     setCreating(true)
@@ -242,6 +243,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
       // The button makes whatever the strip is listing, so the projects half only creates a session
       // once there is a worktree for it to belong to.
       if (kind === 'browser') await openBrowserTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
+      else if (kind === 'terminal') openTerminalTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
       else if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
       else if (currentProjectCwd) await newSession(currentProjectCwd)
     } catch (error) {
@@ -288,6 +290,9 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
             </DropdownMenuItem>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('browser')}>
               <Globe />{t('tabBar.newBrowser')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={creating} onSelect={() => void createTab('terminal')}>
+              <SquareTerminal />{t('tabBar.newTerminal')}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
@@ -381,12 +386,14 @@ function TabFace({
         {splitKinds && splitKinds.length > 1 ? (
           <span className="flex shrink-0 items-center">
             {splitKinds.map((splitKind, index) => {
-              const Icon = splitKind === 'browser' ? Globe : splitKind === 'file' || splitKind === 'diff' ? FileDiff : Dog
+              const Icon = splitKind === 'browser' ? Globe : splitKind === 'terminal' ? SquareTerminal : splitKind === 'file' || splitKind === 'diff' ? FileDiff : Dog
               return <Icon key={index} className={cn('size-3.5', index > 0 && '-ml-1.5', index > 0 && !dragging && 'hidden @min-[7rem]/session-tab:block')} aria-hidden />
             })}
           </span>
         ) : kind === 'browser' ? (
           <Globe className="size-3.5 shrink-0" aria-hidden />
+        ) : kind === 'terminal' ? (
+          <SquareTerminal className="size-3.5 shrink-0" aria-hidden />
         ) : kind === 'diff' ? (
           <FileDiff className="size-3.5 shrink-0" aria-hidden />
         ) : kind === 'file' ? (

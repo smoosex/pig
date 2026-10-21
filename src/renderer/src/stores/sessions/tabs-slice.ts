@@ -62,6 +62,7 @@ export const createTabsSlice: SessionSlice<
   | 'openChangesTab'
   | 'openFileTab'
   | 'openBrowserTab'
+  | 'openTerminalTab'
   | 'setBrowserTarget'
   | 'moveFileTab'
   | 'setChangesScope'
@@ -214,7 +215,7 @@ export const createTabsSlice: SessionSlice<
   }
 
   function persistentTabId(id: string | null): string | null {
-    return id?.startsWith('browser:') ? null : id
+    return id?.startsWith('browser:') || id?.startsWith('terminal:') ? null : id
   }
 
   /** The renderer owns the changes tab, so whether one worktree keeps it open is mirrored here. */
@@ -449,7 +450,7 @@ export const createTabsSlice: SessionSlice<
             ...restoredTabs.map((tab) => liveTabs.get(tab.id) ?? tab),
             ...state.openTabs.filter(
               (tab) =>
-                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser') &&
+                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') &&
                 !restoredIds.has(tab.id)
             )
           ]
@@ -543,7 +544,7 @@ export const createTabsSlice: SessionSlice<
         persistChangesTab(tab.cwd)
         return
       }
-      if (tab.kind === 'file' || tab.kind === 'browser') {
+      if (tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') {
         // These views load their own data, never Pi controls or history. Their strip selection is
         // remembered only within this process, not as a persisted session.
         ++selectionVersion
@@ -703,6 +704,19 @@ export const createTabsSlice: SessionSlice<
           ...activeTabPatch(current, id, scopeCwd || null),
           currentProjectCwd: scopeCwd || null
         } : {})
+      }))
+      return id
+    },
+
+    openTerminalTab: (cwd) => {
+      ++selectionVersion
+      const scopeCwd = cwd ?? ''
+      const id = `terminal:${crypto.randomUUID()}`
+      // The pane starts its shell once mounted and sized; the tab itself owns nothing in main yet.
+      set((current) => ({
+        openTabs: [...current.openTabs, { id, cwd: scopeCwd, title: t('tabBar.newTerminal'), kind: 'terminal', loadState: 'ready' }],
+        ...activeTabPatch(current, id, scopeCwd || null),
+        currentProjectCwd: scopeCwd || null
       }))
       return id
     },
@@ -992,7 +1006,7 @@ export const createTabsSlice: SessionSlice<
       const wasActive = state.activeTabId === tabId
       const fallback =
         splitFallback?.id ?? neighbourTab(state.openTabs, tab)?.id ??
-        (tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
+        (tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
       const fallbackCwd = splitFallback
         ? (isChatScope(splitFallback) ? null : splitFallback.cwd)
         : (isChatScope(tab) ? null : tab.cwd)
@@ -1003,7 +1017,7 @@ export const createTabsSlice: SessionSlice<
           ? { activeSessionByCwd: { ...current.activeSessionByCwd, [splitFallback.cwd]: splitFallback.id } }
           : {})
       })
-      if (tab.kind === 'browser') {
+      if (tab.kind === 'browser' || tab.kind === 'terminal') {
         if (wasActive) ++selectionVersion
         set((current) => ({
           openTabs: current.openTabs.filter((item) => item.id !== tabId),
@@ -1179,6 +1193,7 @@ export const createTabsSlice: SessionSlice<
     relabelTabs: () => set((state) => ({
       openTabs: state.openTabs.map((tab) => {
         if (tab.kind === 'browser') return { ...tab, title: t('tabBar.newBrowser') }
+        if (tab.kind === 'terminal') return { ...tab, title: t('tabBar.newTerminal') }
         if (tab.kind === 'diff') {
           return { ...tab, title: scopeLabel(t, tab.diffScope ?? DEFAULT_SCOPE) }
         }

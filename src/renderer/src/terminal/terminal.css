@@ -1,0 +1,44 @@
+/* Terminal-only font: Lilex with Nerd Font icons, single-cell wide (the Mono variant). */
+@font-face {
+  font-family: 'Lilex Nerd Font Mono';
+  src: url('../assets/fonts/lilex-nerd-font-mono/LilexNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Lilex Nerd Font Mono';
+  src: url('../assets/fonts/lilex-nerd-font-mono/LilexNerdFontMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Lilex Nerd Font Mono';
+  src: url('../assets/fonts/lilex-nerd-font-mono/LilexNerdFontMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Lilex Nerd Font Mono';
+  src: url('../assets/fonts/lilex-nerd-font-mono/LilexNerdFontMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
+/* xterm.css paints the viewport black under the canvas; the theme background is transparent so the pane surface shows. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+  scrollbar-width: none;
+}
+
+/* Scrolling stays on the wheel and keyboard; neither the native nor xterm's own scrollbar is drawn. */
+.xterm .xterm-viewport::-webkit-scrollbar,
+.xterm .xterm-scrollable-element > .scrollbar {
+  display: none;
+}

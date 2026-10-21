@@ -1,0 +1,150 @@
+/**
+ * PTY utility process. node-pty is native and ConPTY keeps worker threads of its own, so the shells
+ * live here rather than in main beside the Pi sessions: a crash takes down terminals only.
+ *
+ * Output is coalesced per frame and metered: the pane acknowledges what it has parsed, and a shell
+ * whose unacknowledged output passes the budget is paused at the PTY, so `cat` of a huge file cannot
+ * flood IPC or the renderer. A pane that stops acknowledging is resumed after a timeout instead of
+ * freezing its shell forever.
+ */
+import { spawn, type IPty } from 'node-pty'
+import type { PtyHostMessage, PtyHostRequest } from '../../shared/terminal'
+
+const FLUSH_MS = 16
+const FLUSH_LENGTH = 128 * 1024
+const PAUSE_AT = 100_000
+const RESUME_AT = 5_000
+const ACK_TIMEOUT_MS = 10_000
+const KILL_GRACE_MS = 1_000
+
+interface Session {
+  pty: IPty
+  buffer: string[]
+  buffered: number
+  flushTimer?: NodeJS.Timeout
+  unacked: number
+  paused: boolean
+  watchdog?: NodeJS.Timeout
+  killTimer?: NodeJS.Timeout
+  /** The PTY fd is closed; the exit event follows once waitpid reports. */
+  closed: boolean
+}
+
+const sessions = new Map<string, Session>()
+// Closed panes and exited shells can still have a group-kill timer outstanding.
+const pendingKills = new Set<Promise<void>>()
+let shuttingDown = false
+
+function post(message: PtyHostMessage): void {
+  process.parentPort.postMessage(message)
+}
+
+function flush(id: string, session: Session): void {
+  clearTimeout(session.flushTimer)
+  session.flushTimer = undefined
+  if (!session.buffered) return
+  const data = session.buffer.join('')
+  session.buffer = []
+  session.buffered = 0
+  post({ type: 'output', id, data })
+  session.unacked += data.length
+  if (!session.paused && session.unacked > PAUSE_AT) {
+    session.paused = true
+    session.pty.pause()
+    armWatchdog(session)
+  }
+}
+
+function armWatchdog(session: Session): void {
+  clearTimeout(session.watchdog)
+  session.watchdog = setTimeout(() => {
+    session.unacked = 0
+    resume(session)
+  }, ACK_TIMEOUT_MS)
+}
+
+function resume(session: Session): void {
+  clearTimeout(session.watchdog)
+  if (!session.paused) return
+  session.paused = false
+  session.pty.resume()
+}
+
+function start(request: Extract<PtyHostRequest, { type: 'spawn' }>): void {
+  let pty: IPty
+  try {
+    pty = spawn(request.file, request.args, {
+      name: request.env.TERM, cols: request.cols, rows: request.rows, cwd: request.cwd, env: request.env
+    })
+  } catch (error) {
+    // Spawn failures (missing shell, posix_spawnp, bad cwd) belong to this one pane, not the host.
+    post({ type: 'spawn-failed', id: request.id, message: error instanceof Error ? error.message : String(error) })
+    return
+  }
+  const session: Session = { pty, buffer: [], buffered: 0, unacked: 0, paused: false, closed: false }
+  sessions.set(request.id, session)
+  // node-pty closes the fd on EIO before onExit fires; resizing that fd throws EBADF, which would crash
+  // every terminal in this process, or hits another pty that reused the number. IPty's typings omit 'close'.
+  ;(pty as unknown as NodeJS.EventEmitter).on('close', () => { session.closed = true })
+  pty.onData((data) => {
+    session.buffer.push(data)
+    session.buffered += data.length
+    if (session.buffered >= FLUSH_LENGTH) flush(request.id, session)
+    else session.flushTimer ??= setTimeout(() => flush(request.id, session), FLUSH_MS)
+  })
+  pty.onExit(({ exitCode, signal }) => {
+    flush(request.id, session)
+    clearTimeout(session.watchdog)
+    // The shell can exit before other members of its group that ignore SIGHUP; keep the group-kill timer alive.
+    sessions.delete(request.id)
+    post({ type: 'exit', id: request.id, exitCode, signal: signal || null })
+  })
+  post({ type: 'spawned', id: request.id, pid: pty.pid })
+}
+
+function kill(session: Session): void {
+  if (session.killTimer) return
+  // SIGHUP is what closing a terminal sends. The SIGKILL fallback reaches only the shell's own process group:
+  // with job control each job has its own group, so jobs that ignore SIGHUP survive, as with nohup elsewhere.
+  session.pty.kill()
+  if (process.platform === 'win32') return
+  let complete!: () => void
+  const pending = new Promise<void>((resolve) => { complete = resolve })
+  pendingKills.add(pending)
+  session.killTimer = setTimeout(() => {
+    try {
+      process.kill(-session.pty.pid, 'SIGKILL')
+    } catch (error) {
+      // The group may have exited between the hang-up and this timer.
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
+    pendingKills.delete(pending)
+    complete()
+  }, KILL_GRACE_MS)
+}
+
+process.parentPort.on('message', ({ data }: { data: PtyHostRequest }) => {
+  if (data.type === 'shutdown') {
+    shuttingDown = true
+    for (const session of sessions.values()) kill(session)
+    void Promise.all(pendingKills).then(() => post({ type: 'shutdown-complete' }))
+    return
+  }
+  if (shuttingDown) throw new Error('Terminal host is shutting down')
+  if (data.type === 'spawn') return start(data)
+  // Input racing a shell's exit finds no session; the exit event already told main.
+  const session = sessions.get(data.id)
+  if (!session) return
+  switch (data.type) {
+    case 'write': session.pty.write(data.binary ? Buffer.from(data.data, 'latin1') : data.data); break
+    case 'resize': if (!session.closed) session.pty.resize(data.cols, data.rows); break
+    case 'ack':
+      session.unacked = Math.max(0, session.unacked - data.length)
+      if (session.paused) {
+        if (session.unacked <= RESUME_AT) resume(session)
+        else armWatchdog(session)
+      }
+      break
+    case 'kill': kill(session); break
+  }
+})
