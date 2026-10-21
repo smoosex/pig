@@ -36,7 +36,7 @@ function CompactionRow({ sessionId, mark }: { sessionId: string; mark: LiveCompa
   const [cancelling, setCancelling] = useState(false)
   const running = mark.status === 'running'
   return (
-    <div className="mb-2 flex min-w-0 items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs">
+    <div className="relative mb-2 flex min-w-0 items-center gap-2 rounded-xl bg-glass-composer-background/60 px-3 py-2 text-xs text-glass-prompt-foreground ring-1 ring-glass-card-border shadow-glass-card transition-[background-color,box-shadow] duration-200 ease-in-out after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-glass-card-edge motion-reduce:transition-none solid:bg-card solid:text-card-foreground solid:ring-border solid:shadow-none solid:after:shadow-none">
       {running ? (
         <LoaderCircle className="size-3.5 shrink-0 animate-spin" />
       ) : (
