@@ -13,6 +13,9 @@ async function fixture(): Promise<void> {
   const calls: { path?: string; hidden?: boolean }[] = []
   const added: string[] = []
   let failAdd = false
+  let nativeClose: (action: 'close-active-tab') => void = () => {}
+  let pendingSave: Promise<void> | undefined
+  let finishSave!: () => void
   let resolveSlow!: (value: ProjectDirectoryListing) => void
   const slow = new Promise<ProjectDirectoryListing>((resolve) => { resolveSlow = resolve })
   const searches: { path: string; query: string; hidden: boolean }[] = []
@@ -26,6 +29,7 @@ async function fixture(): Promise<void> {
     truncated: false
   })
   const service = {
+    browser: { onShortcutRequested: (listener: typeof nativeClose) => { nativeClose = listener; return () => { nativeClose = () => {} } } } as SessionApi['browser'],
     supportsGlass: false,
     browseProjectDirectories: async (path, hidden) => {
       calls.push({ path, hidden })
@@ -44,6 +48,7 @@ async function fixture(): Promise<void> {
     cancelProjectDirectorySearch: async () => { cancels++ },
     openProject: async (path) => {
       added.push(path)
+      await pendingSave
       if (failAdd) throw new Error('Cannot save project')
       return { cwd: path, name: path.split('/').at(-1)!, sessions: [] }
     }
@@ -94,6 +99,14 @@ async function fixture(): Promise<void> {
     assert.equal(document.activeElement as Element | null, input(search))
     assert.equal(document.querySelectorAll('[role="option"]').length, 4)
     assert.ok(document.querySelector('[aria-label="Git repository"]'))
+    await act(async () => { nativeClose('close-active-tab') })
+    assert.equal(useSessionsStore.getState().projectPickerOpen, false, 'native menu close dismisses the picker')
+    for (let attempt = 0; attempt < 20 && document.activeElement !== trigger; attempt++) {
+      await act(async () => { await Bun.sleep(10) })
+    }
+    assert.equal(document.activeElement, trigger)
+    await act(async () => { await useSessionsStore.getState().openProject() })
+    await flush()
 
     await type(search, 'bet')
     await key(search, 'ArrowRight')
@@ -148,7 +161,12 @@ async function fixture(): Promise<void> {
     assert.equal(document.querySelector('[role="alert"]')?.textContent, 'Cannot save project')
     assert.equal(button('Add current folder').disabled, false, 'a registration failure can be retried explicitly')
     failAdd = false
+    pendingSave = new Promise<void>((resolve) => { finishSave = resolve })
     await act(async () => { input(search).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })) })
+    await flush()
+    await act(async () => { nativeClose('close-active-tab') })
+    assert.equal(useSessionsStore.getState().projectPickerOpen, true, 'native close respects the picker save lock')
+    await act(async () => { finishSave() })
     await flush()
     assert.deepEqual(added, ['/home', '/home'])
     assert.equal(useSessionsStore.getState().projectPickerOpen, false)

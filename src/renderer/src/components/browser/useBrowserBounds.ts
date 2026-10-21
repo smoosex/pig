@@ -63,7 +63,21 @@ export function useBrowserBounds(
     }
     const update = () => {
       frame = 0
-      const rect = viewport.current?.getBoundingClientRect()
+      const element = viewport.current
+      const rect = element?.getBoundingClientRect()
+      const surface = element?.closest<HTMLElement>('[data-content-surface]')
+      const surfaceRect = surface?.getBoundingClientRect()
+      let bottomLeftRadius = 0
+      let bottomRightRadius = 0
+      if (rect && surface && surfaceRect && Math.abs(rect.bottom - surfaceRect.bottom) < 1) {
+        const style = getComputedStyle(surface)
+        if (Math.abs(rect.left - surfaceRect.left) < 1) bottomLeftRadius = parseFloat(style.borderBottomLeftRadius) || 0
+        if (Math.abs(rect.right - surfaceRect.right) < 1) bottomRightRadius = parseFloat(style.borderBottomRightRadius) || 0
+      }
+      if (element) {
+        element.style.borderBottomLeftRadius = `${bottomLeftRadius}px`
+        element.style.borderBottomRightRadius = `${bottomRightRadius}px`
+      }
       const blocked = document.documentElement.matches(REVEAL) || [...document.querySelectorAll<HTMLElement>(OVERLAY)]
         .some((element) => {
           const style = getComputedStyle(element)
@@ -75,7 +89,8 @@ export function useBrowserBounds(
             overlay.right > rect.left && overlay.top < rect.bottom && overlay.bottom > rect.top
         })
       const bounds = visible && !blocked && rect && rect.width > 0 && rect.height > 0
-        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null
+        ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}) } : null
       const key = JSON.stringify(bounds)
       if (last === key) return
       last = key

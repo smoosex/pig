@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../i18n'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clipboard, shell, ipcMain, session, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, shell, ipcMain, session, View, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../browser/host'
 import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { BrowserAgentController } from '../browser/agent'
@@ -38,7 +38,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
     partition: 'persist:pig-browser', sandbox: true, contextIsolation: true,
     nodeIntegration: false, webSecurity: true, webviewTag: false
-  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false)
+  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View())
   function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; browserId: string }): Promise<string> {
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')
     signal?.throwIfAborted()

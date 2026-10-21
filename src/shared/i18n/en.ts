@@ -160,6 +160,7 @@ export const en: Messages = {
     export: 'Export session'
   },
   tabBar: {
+    closeTab: 'Close Tab',
     new: 'New tab',
     newSession: 'Session',
     newBrowser: 'Browser',

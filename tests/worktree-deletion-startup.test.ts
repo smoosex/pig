@@ -20,6 +20,7 @@ async function fixture(failure: Failure): Promise<void> {
   let exit!: (code: number) => void
   const exited = new Promise<number>((resolve) => { exit = resolve })
   let windows = 0
+  let menuInstalls = 0
   let workspacePrunes = 0
   let chatPrunes = 0
   const nativeTheme = { themeSource: 'system' }
@@ -43,6 +44,7 @@ async function fixture(failure: Failure): Promise<void> {
   }))
   const modules: Record<string, Record<string, unknown>> = {
     'window': { createMainWindow: () => { windows++ } },
+    'tab-close-menu': { installTabCloseMenu: () => { menuInstalls++ } },
     'ipc/index': { registerIpc: noop },
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },
@@ -79,6 +81,7 @@ async function fixture(failure: Failure): Promise<void> {
     assert.equal(windowSurfaceOptions().vibrancy, undefined)
     assert.equal(windowSurfaceOptions().backgroundColor, supportsGlass ? '#00000000' : '#1a1a1a', 'solid uses an opaque document without changing the native backing')
     assert.equal(windows, 0)
+    assert.equal(menuInstalls, 0, 'a failed startup cannot replace the native menu')
     assert.equal(workspacePrunes, 0)
     assert.equal(chatPrunes, 0)
     assert.equal(handlers.has('activate'), false)

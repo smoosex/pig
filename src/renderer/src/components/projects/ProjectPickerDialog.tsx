@@ -43,6 +43,10 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
   const needle = query.trim()
   const deepActive = deep && !!needle && !!listing && !browseError
 
+  useEffect(() => api.browser.onShortcutRequested((action) => {
+    if (action === 'close-active-tab' && !savingRef.current) onClose()
+  }), [onClose])
+
   useEffect(() => {
     // Old requests may finish after navigating again or closing; only this location owns the result.
     let current = true

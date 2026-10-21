@@ -267,8 +267,10 @@ export default function App() {
 
   useEffect(() => {
     const runShortcut = (action: import('../../shared/browser').BrowserHostShortcut) => {
+      // The picker handles close requests itself, including its in-flight save lock.
       if (useSessionsStore.getState().projectPickerOpen) return
       switch (action) {
+        case 'close-active-tab': if (activeTabId) closeTab(activeTabId); break
         case 'open-project': void openProject(); break
         case 'toggle-sidebar': setSidebarOpen((open) => !open); break
         case 'toggle-settings': setSettingsOpen((open) => !open); break

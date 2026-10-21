@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createMainWindow } from './window'
+import { installTabCloseMenu } from './tab-close-menu'
 import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
 import { initLocale } from './i18n'
@@ -83,6 +84,7 @@ app.whenReady().then(async () => {
   // Before the window can make one: a chat the last run left behind is nobody's.
   await pruneEmptyChatDirs().catch(() => {})
   forwardSessionNames()
+  installTabCloseMenu()
   createMainWindow()
 
   app.on('activate', () => {

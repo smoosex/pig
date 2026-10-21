@@ -1,7 +1,7 @@
 /** Native previews belong to a window, not the agent runtime. Hidden views are LRU cached;
  * document tokens invalidate delayed guest selections on every main-frame navigation. */
 import { randomUUID } from 'node:crypto'
-import type { WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
+import type { View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
   BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
@@ -16,6 +16,7 @@ import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, 
 interface Page {
   view: WebContentsView
   devtools?: WebContentsView
+  clip?: View
   state: BrowserState
   bounds: BrowserBounds | null
   used: number
@@ -73,7 +74,8 @@ export class BrowserHost {
   /** `isAgentLive` lets a closed session's control lapse: its page is no longer pinned against eviction. */
   constructor(
     private createView: (kind: 'page' | 'devtools') => WebContentsView,
-    private isAgentLive: (sessionId: string) => boolean = () => true
+    private isAgentLive: (sessionId: string) => boolean,
+    private createClip: () => View
   ) {}
 
   private owner(win: BrowserWindow): WindowPages {
@@ -134,6 +136,7 @@ export class BrowserHost {
   private layout(owner: WindowPages, page: Page): void {
     if (!this.alive(owner, page)) return
     if (!page.bounds) {
+      page.clip?.setVisible(false)
       page.view.setVisible(false)
       page.devtools?.setVisible(false)
       return
@@ -142,10 +145,41 @@ export class BrowserHost {
     const bounds = browserDipBounds(page.bounds, owner.win.webContents.getZoomFactor(), width, height)
     // Docked DevTools take the lower part of the pane, leaving the page at least 120 DIP.
     const tools = page.devtools ? Math.max(0, Math.min(Math.max(Math.round(bounds.height * 0.45), 160), bounds.height - 120)) : 0
-    page.view.setBounds({ ...bounds, height: bounds.height - tools })
+    const zoom = owner.win.webContents.getZoomFactor()
+    const left = Math.min(Math.round((page.bounds.bottomLeftRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bounds.height / 2))
+    const right = Math.min(Math.round((page.bounds.bottomRightRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bounds.height / 2))
+    const radius = Math.max(left, right)
+    if (radius > 0 && !page.clip) {
+      const clip = this.createClip()
+      // Electron's zero-blur setter creates a transparent compositor layer. Without a layer,
+      // View.setBorderRadius only clips ordinary paint, not child WebContentsView layers.
+      clip.setBackgroundBlur(0)
+      owner.win.contentView.removeChildView(page.view)
+      clip.addChildView(page.view)
+      if (page.devtools) {
+        owner.win.contentView.removeChildView(page.devtools)
+        clip.addChildView(page.devtools)
+      }
+      owner.win.contentView.addChildView(clip)
+      page.clip = clip
+    }
+    // Move the upper corners above the page; extend square split-pane edges past the clip.
+    // Only the outer panel's lower corners intersect rendered web content.
+    const offsetX = page.clip && !left ? radius : 0
+    const offsetY = page.clip ? radius : 0
+    if (page.clip) {
+      page.clip.setBounds({
+        x: bounds.x - offsetX, y: bounds.y - offsetY,
+        width: bounds.width + offsetX + (!right ? radius : 0), height: bounds.height + offsetY
+      })
+      page.clip.setBorderRadius(radius)
+      page.clip.setVisible(bounds.width > 0 && bounds.height > 0)
+    }
+    const child = page.clip ? { ...bounds, x: offsetX, y: offsetY } : bounds
+    page.view.setBounds({ ...child, height: bounds.height - tools })
     page.view.setVisible(bounds.width > 0 && bounds.height - tools > 0)
     if (page.devtools) {
-      page.devtools.setBounds({ x: bounds.x, y: bounds.y + bounds.height - tools, width: bounds.width, height: tools })
+      page.devtools.setBounds({ x: child.x, y: child.y + bounds.height - tools, width: bounds.width, height: tools })
       page.devtools.setVisible(bounds.width > 0 && tools > 0)
     }
   }
@@ -155,7 +189,7 @@ export class BrowserHost {
     if (!devtools) return
     page.devtools = undefined
     page.state.devtools = false
-    if (!owner.win.isDestroyed()) owner.win.contentView.removeChildView(devtools)
+    if (!owner.win.isDestroyed()) (page.clip ?? owner.win.contentView).removeChildView(devtools)
     liveContents(devtools)?.close({ waitForBeforeUnload: false })
   }
 
@@ -164,7 +198,10 @@ export class BrowserHost {
     page.disposed = true
     page.network.dispose()
     this.detachDevTools(owner, page)
-    if (!owner.win.isDestroyed()) owner.win.contentView.removeChildView(page.view)
+    if (!owner.win.isDestroyed()) {
+      (page.clip ?? owner.win.contentView).removeChildView(page.view)
+      if (page.clip) owner.win.contentView.removeChildView(page.clip)
+    }
     liveContents(page.view)?.close({ waitForBeforeUnload: false })
   }
 
@@ -464,7 +501,8 @@ export class BrowserHost {
     } else {
       const devtools = this.createView('devtools')
       devtools.setVisible(false)
-      owner.win.contentView.addChildView(devtools)
+      const parent = page.clip ?? owner.win.contentView
+      parent.addChildView(devtools)
       page.devtools = devtools
       page.state.devtools = true
       this.bindHostShortcuts(owner, page, devtools.webContents)

@@ -162,6 +162,7 @@ export const zh = {
     export: '导出会话'
   },
   tabBar: {
+    closeTab: '关闭标签页',
     new: '新建标签页',
     newSession: '会话',
     newBrowser: '浏览器',

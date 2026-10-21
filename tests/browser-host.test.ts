@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
-import type { BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
+import type { View, BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../src/main/browser/host'
 import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl } from '../src/main/browser/validation'
 import { BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
@@ -72,8 +72,22 @@ class FakeView {
   getVisible() { return this.visible }
   setBounds(value: unknown) { this.bounds = value }
 }
+class FakeClip {
+  bounds: unknown
+  radius = 0
+  layered = false
+  visible = false
+  children: unknown[] = []
+  setBounds(value: unknown) { this.bounds = value }
+  setBackgroundBlur(value: number) { expect(value).toBe(0); this.layered = true }
+  setBorderRadius(value: number) { expect(this.layered).toBe(true); this.radius = value }
+  setVisible(value: boolean) { this.visible = value }
+  addChildView(view: unknown) { this.children.push(view) }
+  removeChildView(view: unknown) { this.children = this.children.filter((child) => child !== view) }
+}
 function fixture(live: (sessionId: string) => boolean = () => true) {
   const views: FakeView[] = []
+  const clips: FakeClip[] = []
   const removed: unknown[] = []
   const win = Object.assign(new EventEmitter(), {
     webContents: new FakeContents(), dead: false,
@@ -85,13 +99,42 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
     const view = new FakeView()
     views.push(view)
     return view as unknown as WebContentsView
-  }, live)
-  return { host, win, owner: win as unknown as BrowserWindow, views, removed }
+  }, live, () => { const clip = new FakeClip(); clips.push(clip); return clip as unknown as View })
+  return { host, win, owner: win as unknown as BrowserWindow, views, clips, removed }
 }
 const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
 
 describe('browser host', () => {
+  test('native clipping follows only outer bottom corners, including docked DevTools and zoom', async () => {
+    const { host, owner, win, views, clips, removed } = fixture()
+    win.webContents.getZoomFactor = () => 1.5
+    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 12, bottomRightRadius: 12 })
+    const clip = clips[0]!
+    expect(clip.layered).toBe(true)
+    expect(clip.radius).toBe(18)
+    expect(clip.bounds).toEqual({ x: 15, y: 12, width: 450, height: 318 })
+    expect(views[0].bounds).toEqual({ x: 0, y: 18, width: 450, height: 300 })
+    expect(clip.children).toEqual([views[0]])
+    await host.navigate(owner, 'rounded', 'https://example.test')
+    host.inspect(owner, 'rounded')
+    expect(clip.children).toEqual([views[0], views[1]])
+    expect(views[1].bounds).toEqual({ x: 0, y: 158, width: 450, height: 160 })
+    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 0, bottomRightRadius: 12 })
+    expect(clip.bounds).toEqual({ x: -3, y: 12, width: 468, height: 318 })
+    expect(views[0].bounds).toEqual({ x: 18, y: 18, width: 450, height: 140 })
+    host.setBounds(owner, 'rounded', null)
+    expect(clip.visible).toBe(false)
+    expect(views.every((view) => !view.visible)).toBe(true)
+    host.setBounds(owner, 'rounded', bounds)
+    expect(clip.radius).toBe(0)
+    expect(clips).toHaveLength(1)
+    host.closeWindow(owner)
+    expect(clip.children).toEqual([])
+    expect(removed).toContain(clip)
+    expect(views.every((view) => view.webContents.dead)).toBe(true)
+  })
+
   test('network metadata follows page navigation and disposal without leaking raw URLs', async () => {
     const { host, owner, views } = fixture()
     host.setAgent(owner, 'browser:a', 'session-1')

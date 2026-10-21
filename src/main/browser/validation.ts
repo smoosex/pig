@@ -34,6 +34,9 @@ export function validateBounds(value: unknown): asserts value is BrowserBounds {
   if (![b.x, b.y, b.width, b.height].every(Number.isFinite) || b.width < 0 || b.height < 0) {
     throw new Error('Invalid browser bounds')
   }
+  for (const radius of [b.bottomLeftRadius, b.bottomRightRadius]) {
+    if (radius !== undefined && (!Number.isFinite(radius) || radius < 0)) throw new Error('Invalid browser corner radius')
+  }
 }
 
 export function browserDipBounds(bounds: BrowserBounds, zoom: number, width: number, height: number): BrowserBounds {

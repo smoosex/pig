@@ -4,6 +4,8 @@ export interface BrowserBounds {
   y: number
   width: number
   height: number
+  bottomLeftRadius?: number
+  bottomRightRadius?: number
 }
 
 export interface BrowserState {
@@ -149,7 +151,7 @@ export interface BrowserApi {
   onSelection(listener: (selection: BrowserSelection) => void): () => void
 }
 
-export type BrowserHostShortcut = 'toggle-sidebar' | 'toggle-workspace' | 'toggle-settings' | 'open-project'
+export type BrowserHostShortcut = 'close-active-tab' | 'toggle-sidebar' | 'toggle-workspace' | 'toggle-settings' | 'open-project'
 export const BROWSER_SHORTCUT_CHANNEL = 'browser:host-shortcut-requested'
 export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
 export const BROWSER_PICKER_CHANNEL = 'browser:picker'

@@ -130,11 +130,19 @@ async function fixture(scenario: string): Promise<void> {
         assert.deepEqual(closedTabs, ['chat-7'])
         assert.equal(sessions.getState().activeTabId, 'chat-7', 'closing never bubbles into a second selection')
         await act(async () => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true }))
+          for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true, repeat: true }))
+        })
+        assert.equal(closedTabs.length, 2, 'holding Cmd+W closes only one tab per physical keypress')
+        await act(async () => {
           sessions.setState({ projectPickerOpen: true })
           window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true }))
         })
-        assert.deepEqual(closedTabs, ['chat-7'], 'Cmd+W in the project picker must not close a background tab')
+        await act(async () => { browserShortcut('close-active-tab') })
+        assert.deepEqual(closedTabs, ['chat-7', 'chat-7'], 'Cmd+W in the project picker must not close a background tab')
         sessions.setState({ projectPickerOpen: false })
+        await act(async () => { browserShortcut('close-active-tab') })
+        assert.deepEqual(closedTabs, ['chat-7', 'chat-7', 'chat-7'], 'the native menu requests the active tab close through the store')
         return
       }
       if (scenario === 'tab-layout') {

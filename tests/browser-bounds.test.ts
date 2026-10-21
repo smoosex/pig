@@ -62,6 +62,12 @@ async function fixture(scenario: string) {
     } })
   }
   const container = document.createElement('div')
+  let surfaceLeft = 100
+  if (scenario === 'corners') {
+    container.setAttribute('data-content-surface', '')
+    container.style.borderRadius = '12px'
+    container.getBoundingClientRect = () => new DOMRect(surfaceLeft, 50, 500 - surfaceLeft, 350)
+  }
   document.body.append(container)
   const root = createRoot(container)
   const drain = async () => {
@@ -93,7 +99,18 @@ async function fixture(scenario: string) {
     calls.length = 0
     freezes.length = 0
 
-    if (scenario === 'wrapper') {
+    if (scenario === 'corners') {
+      assert.equal((native as BrowserBounds | null)?.bottomLeftRadius, 12)
+      assert.equal((native as BrowserBounds | null)?.bottomRightRadius, 12)
+      assert.equal(container.firstElementChild?.getAttribute('style')?.includes('12px'), true)
+      surfaceLeft = 50
+      window.dispatchEvent(new Event('resize'))
+      await settle()
+      assert.equal((native as BrowserBounds | null)?.bottomLeftRadius, 0, 'an internal split edge stays square')
+      assert.equal((native as BrowserBounds | null)?.bottomRightRadius, 12)
+      assert.equal((container.firstElementChild as HTMLElement).style.borderBottomLeftRadius, '0px')
+      assert.equal((container.firstElementChild as HTMLElement).style.borderBottomRightRadius, '12px')
+    } else if (scenario === 'wrapper') {
       const wrapper = document.createElement('div')
       wrapper.setAttribute('data-radix-popper-content-wrapper', '')
       wrapper.getBoundingClientRect = () => new DOMRect(100, 100, 400, 300)
@@ -286,6 +303,7 @@ async function fixture(scenario: string) {
 }
 
 const scenarios = {
+  corners: 'native bounds and frozen frame inherit only the outer panel bottom corners',
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',
   'freeze-barrier': 'hide awaits the asynchronous still-frame paint barrier',
