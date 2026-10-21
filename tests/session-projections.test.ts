@@ -91,6 +91,32 @@ describe('session tree projection', () => {
     expect(rows[2]).toMatchObject({ parentId: 'user', onPath: false, current: false })
   })
 
+  test('trailing custom records anchor and highlight the preceding non-custom entry', () => {
+    const entries = [
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: '问题' } },
+      { id: 'answer', parentId: 'u1', type: 'message', message: { role: 'assistant', content: '答案' } },
+      { id: 'custom1', parentId: 'answer', type: 'custom' },
+      { id: 'custom2', parentId: 'custom1', type: 'custom' },
+      { id: 'alternate', parentId: 'u1', type: 'message', message: { role: 'assistant', content: '另一个分支' } }
+    ] as unknown as SessionEntry[]
+    const source = {
+      leafId: () => 'custom2',
+      treeEntries: () => entries,
+      branchIds: () => ['u1', 'answer', 'custom1', 'custom2']
+    } as SessionSource
+    for (const view of ['default', 'no-tools', 'all'] as const) {
+      const rows = sessionTreeRows(source, view)
+      expect(rows.filter((row) => row.current).map((row) => row.id)).toEqual(['answer'])
+      expect(rows.find((row) => row.id === 'answer')).toMatchObject({ onPath: true })
+    }
+    const all = sessionTreeRows(source, 'all')
+    expect(all.find((row) => row.id === 'custom1')).toMatchObject({ current: false, onPath: true })
+    expect(all.find((row) => row.id === 'custom2')).toMatchObject({ current: false, onPath: true })
+    expect(source.leafId()).toBe('custom2')
+    expect(sessionTreeRows({ ...source, leafId: () => 'answer' }).filter((row) => row.current)
+      .map((row) => row.id)).toEqual(['answer'])
+  })
+
   test('tree views mirror pi Ctrl+O: no-tools, user-only, labeled-only, all', () => {
     const entries = [
       { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: '问题' } },

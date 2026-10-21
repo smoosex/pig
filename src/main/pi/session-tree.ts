@@ -434,8 +434,17 @@ type PreparedTree = {
 /** The one walk every view shares: pi flattens once per dialog, then each Ctrl+O is just a filter. */
 function prepareTree(source: SessionSource): PreparedTree {
   const entries = source.treeEntries()
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  let leafId = source.leafId()
+  // Extension bookkeeping can advance the SDK leaf after the last conversational entry.
+  // Keep custom rows in the all view, but anchor and highlight the preceding non-custom entry.
+  while (leafId !== null) {
+    const entry = byId.get(leafId)
+    if (entry?.type !== 'custom') break
+    leafId = entry.parentId
+  }
   return {
-    leafId: source.leafId(),
+    leafId,
     pathSet: new Set(source.branchIds()),
     labels: labelsOf(entries),
     roots: treeOf(entries)
