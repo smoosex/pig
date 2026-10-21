@@ -144,7 +144,7 @@ async function runFixture(): Promise<void> {
         getDefaultProvider: () => 'test',
         getDefaultModel: () => 'plain',
         getModelThinkingLevel: () => 'medium',
-        getDefaultThinkingLevel: () => 'low'
+        getDefaultThinkingLevel: () => 'low', getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 })
       }) },
       createAgentSession: async () => ({
         session: {

@@ -21,7 +21,7 @@ async function fixture(): Promise<void> {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
-  const props = { sessionId: 'draft', memoryAvailable: true, usage: null, tokens: null, onOpen: () => {} }
+  const props = { sessionId: 'draft', memoryAvailable: true, usage: null, tokens: null, onOpen: () => {}, compactBlock: null }
   const button = (name: string) => {
     const found = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
       (item) => item.textContent === name || item.getAttribute('aria-label') === name

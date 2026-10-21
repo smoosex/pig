@@ -726,7 +726,6 @@ export const en: Messages = {
     bashMode: 'Bash mode',
     bashModeHint: 'Bash mode · press Esc to exit',
     bashAttachments: 'Remove images and attachments before running a Bash command.',
-    compactAttachments: 'Remove images and attachments before running /compact.',
     bashBusy: 'The session started working; the command was not run.',
     runBash: 'Run command',
     stopBash: 'Stop command',
@@ -766,14 +765,23 @@ export const en: Messages = {
     cacheWrite: 'Cache write',
     output: 'Output',
     total: 'Total in and out',
-    effectiveInput: 'Effective input'
+    effectiveInput: 'Effective input',
+    compact: 'Compact',
+    compacting: 'Compacting…',
+    compactInstructionsToggle: 'Custom compaction instructions',
+    compactInstructions: 'Compaction instructions',
+    compactPlaceholder: 'e.g. Keep confirmed conclusions and open tasks',
+    compactWithInstructions: 'Compact with instructions',
+    compactRunning: 'The session is running; compact after it finishes',
+    compactNavigating: 'Switching branches; compact after it finishes',
+    compactEmpty: 'Nothing to compact yet',
+    compactFailed: 'Compaction failed: {error}',
+    autoCompactAt: 'Auto-compacts at about {tokens} ({percent}%)'
   },
   commands: {
-    builtin: 'Built-in',
     prompt: 'Template',
     extension: 'Extension',
-    skill: 'Skills',
-    compact: 'Manually compact the session context'
+    skill: 'Skills'
   },
   systemUI: {
     review: 'Code review', memory: 'Observational memory', host: 'Pig', details: 'Notification details'

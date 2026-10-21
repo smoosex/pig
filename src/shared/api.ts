@@ -169,6 +169,8 @@ export interface SessionModelInfo {
 export interface SessionContextUsage {
   tokens: number | null
   contextWindow: number
+  /** Context tokens past which Pi compacts automatically; null when auto-compaction is off. */
+  autoCompactAt: number | null
   percent: number | null
 }
 
@@ -233,7 +235,7 @@ export interface SessionControls {
 
 export type FollowUpAction = 'steer' | 'edit' | 'dismiss'
 
-export type SlashCommandSource = 'builtin' | 'extension' | 'prompt' | 'skill'
+export type SlashCommandSource = 'extension' | 'prompt' | 'skill'
 export interface SlashCommand {
   name: string
   description?: string

@@ -2,8 +2,6 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { FollowUpAction, PromptStreamingBehavior, RestoredSessionPrompt, SlashCommand as SessionSlashCommand } from '../../shared/api'
 import { batchQueueUpdates, queuedUserImages, removePendingUserMessage, updatePendingUserMessageMode } from './event-bridge'
 
-const BUILTIN_COMMANDS: SessionSlashCommand[] = [{ name: 'compact', source: 'builtin' }]
-
 export async function updateFollowUpMessage(
   session: AgentSession,
   index: number,
@@ -56,7 +54,7 @@ export async function listSessionCommands(session: AgentSession): Promise<Sessio
     description: skill.description,
     source: 'skill' as const
   }))
-  return [...BUILTIN_COMMANDS, ...extensionCommands, ...templates, ...skills]
+  return [...extensionCommands, ...templates, ...skills]
 }
 
 export async function exportSession(session: AgentSession, outputPath: string): Promise<string> {

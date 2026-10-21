@@ -100,6 +100,16 @@ function appSettings(): SettingsManager {
   return settingsManager
 }
 
+/** Pi's `shouldCompact` boundary: auto-compaction runs once context tokens exceed this. */
+export function autoCompactAt(
+  contextWindow: number,
+  model: { provider: string; id: string } | null,
+  settings: SettingsManager = appSettings()
+): number | null {
+  const compaction = settings.getCompactionSettings(model ?? undefined)
+  return compaction.enabled ? Math.max(0, contextWindow - compaction.reserveTokens) : null
+}
+
 export async function getOrCreateDeviceId(): Promise<string> {
   const settings = appSettings()
   // Reload drops IDs left in memory by failed writes; the SDK buffers errors instead of throwing them.

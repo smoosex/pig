@@ -2,28 +2,15 @@ import type { MessageKey } from '../../../../shared/i18n'
 import type { SlashCommand } from '../../ipc/api'
 
 export const slashGroups = {
-  builtin: { order: 0, labelKey: 'commands.builtin' },
-  prompt: { order: 1, labelKey: 'commands.prompt' },
-  extension: { order: 2, labelKey: 'commands.extension' },
-  skill: { order: 3, labelKey: 'commands.skill' }
+  prompt: { order: 0, labelKey: 'commands.prompt' },
+  extension: { order: 1, labelKey: 'commands.extension' },
+  skill: { order: 2, labelKey: 'commands.skill' }
 } satisfies Record<SlashCommand['source'], { order: number; labelKey: MessageKey }>
 
 export function slashQuery(text: string): string | null {
   if (!text.startsWith('/')) return null
   const rest = text.slice(1)
   return /\s/.test(rest) ? null : rest
-}
-
-const COMPACT = '/compact'
-
-export function compactInstructions(text: string): string | null {
-  const trimmed = text.trim()
-  if (trimmed !== COMPACT && !trimmed.startsWith(`${COMPACT} `)) return null
-  return trimmed.slice(COMPACT.length).trim()
-}
-
-export function builtinCommandKey(name: string): MessageKey | null {
-  return name === 'compact' ? 'commands.compact' : null
 }
 
 export function filterSlashCommands(commands: SlashCommand[], query: string | null): SlashCommand[] {

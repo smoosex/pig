@@ -157,7 +157,7 @@ async function fixture(name: string): Promise<void> {
       }) },
       SettingsManager: { create: () => ({
         getDefaultProvider: () => 'test', getDefaultModel: () => 'reasoner',
-        getModelThinkingLevel: () => 'high', getDefaultThinkingLevel: () => 'medium'
+        getModelThinkingLevel: () => 'high', getDefaultThinkingLevel: () => 'medium', getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 })
       }) }
     }))
     const controls = await import('../src/main/pi/session-controls')

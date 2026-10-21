@@ -84,7 +84,6 @@ async function fixture(): Promise<void> {
     resourceLoader: { getSkills: () => ({ skills: [{ name: 'test', description: 'Write tests' }] }) }
   } as unknown as AgentSession
   assert.deepEqual(await listSessionCommands(session), [
-    { name: 'compact', source: 'builtin' },
     { name: 'review', description: 'Review changes', source: 'extension' },
     { name: 'explain', description: 'Explain code', source: 'prompt' },
     { name: 'skill:test', description: 'Write tests', source: 'skill' }
@@ -94,7 +93,7 @@ async function fixture(): Promise<void> {
 if (process.argv[2] === '--compact-fixture') {
   await fixture()
 } else {
-  test('native compact IPC runs during streaming, reports failures through events, and is advertised as a builtin', async () => {
+  test('native compact IPC runs during streaming, reports failures through events, and is not a slash command', async () => {
     const child = Bun.spawn([process.execPath, import.meta.path, '--compact-fixture'], { stdout: 'pipe', stderr: 'pipe' })
     const timeout = setTimeout(() => child.kill(), 10_000)
     try {

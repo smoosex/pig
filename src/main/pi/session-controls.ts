@@ -24,6 +24,7 @@ import { readEntryById, readRows, readRowsStrict, type SessionFileEntry, type Se
 import { sessionIndex } from './session-source'
 import { followUpMessagesForDisplay, steeringMessagesForDisplay } from './event-bridge'
 import {
+  autoCompactAt,
   availableModels,
   clampThinking,
   defaultModelFromSettings,
@@ -94,15 +95,16 @@ function persistedContextUsage(
 ): SessionContextUsage | null {
   const contextWindow = model?.contextWindow ?? 0
   if (contextWindow <= 0) return null
+  const compactAt = autoCompactAt(contextWindow, model)
   const compaction = getLatestCompactionEntry(branch)
   if (compaction) {
     const after = branch.slice(branch.lastIndexOf(compaction) + 1)
     if (!after.some((entry) => entry.type === 'message' && assistantUsage(entry.message))) {
-      return { tokens: null, contextWindow, percent: null }
+      return { tokens: null, contextWindow, autoCompactAt: compactAt, percent: null }
     }
   }
   const tokens = estimateContextTokens(messages)
-  return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+  return { tokens, contextWindow, autoCompactAt: compactAt, percent: (tokens / contextWindow) * 100 }
 }
 
 /**
@@ -207,6 +209,7 @@ export function fileContextUsage(
 ): SessionContextUsage | null {
   const contextWindow = model?.contextWindow ?? 0
   if (contextWindow <= 0) return null
+  const compactAt = autoCompactAt(contextWindow, model)
   const rows = file.index.branch
   const compactionAt = lastRowOf(rows, (row) => row.type === 'compaction')
   let usage: ReturnType<typeof assistantUsage> = undefined
@@ -222,19 +225,19 @@ export function fileContextUsage(
     }
   }
   if (!usage) {
-    if (compactionAt >= 0) return { tokens: null, contextWindow, percent: null }
+    if (compactionAt >= 0) return { tokens: null, contextWindow, autoCompactAt: compactAt, percent: null }
     // Nothing usable to start from: the SDK estimates every message of the context instead.
     const entries = readRows(file.path, rows)
     const byId = new Map(entries.map((entry) => [entry.id, entry]))
     const messages = buildSessionContext(entries, file.index.leafId, byId).messages
     const tokens = messages.reduce((total, message) => total + estimateTokens(message), 0)
-    return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+    return { tokens, contextWindow, autoCompactAt: compactAt, percent: (tokens / contextWindow) * 100 }
   }
   let tokens = calculateContextTokens(usage)
   for (const entry of readRows(file.path, rows.slice(usageAt + 1))) {
     for (const message of sessionEntryToContextMessages(entry)) tokens += estimateTokens(message)
   }
-  return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 }
+  return { tokens, contextWindow, autoCompactAt: compactAt, percent: (tokens / contextWindow) * 100 }
 }
 
 function fileControls(
@@ -318,6 +321,11 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
         ? {
             tokens: usage.tokens,
             contextWindow: usage.contextWindow,
+            autoCompactAt: autoCompactAt(
+              usage.contextWindow,
+              session.agentSession.model ?? null,
+              session.agentSession.settingsManager
+            ),
             percent: usage.percent
           }
         : null,

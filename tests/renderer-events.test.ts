@@ -365,7 +365,7 @@ async function runFixture(name: string): Promise<void> {
         controlReads++
         return {
           model: null, thinkingLevel: 'off', thinkingLevels: ['off'],
-          contextUsage: { tokens: controlReads * 100, contextWindow: 1000, percent: controlReads * 10 },
+          contextUsage: { tokens: controlReads * 100, contextWindow: 1000, autoCompactAt: null, percent: controlReads * 10 },
           followUpMessages: [], steeringMessages: []
         }
       }

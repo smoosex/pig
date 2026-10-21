@@ -100,7 +100,7 @@ async function fixture(scenario: string): Promise<void> {
         fromStorage: sdk.SettingsManager.fromStorage,
         create: () => ({
           getModelThinkingLevel: () => undefined,
-          getDefaultThinkingLevel: () => undefined,
+          getDefaultThinkingLevel: () => undefined, getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 }),
           getDefaultProvider: () => fallback.provider,
           getDefaultModel: () => fallback.id,
           flush: async () => {}

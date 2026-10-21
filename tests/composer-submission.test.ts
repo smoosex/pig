@@ -26,11 +26,7 @@ async function fixture(scenario: string): Promise<void> {
   let promoteCalls = 0
   let bashCalls = 0
   let bashEnds = 0
-  let compactCalls = 0
-  let compactInstructions: string | undefined
   let sentPrompt = ''
-  const isCompact = scenario.startsWith('compact')
-  const compactText = scenario === 'compact-streaming' ? '/compact  Preserve decisions' : '/compact '
   const { useSessionsStore: sessions } = await import('../src/renderer/src/stores/sessions')
   const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
   sessions.setState({
@@ -98,12 +94,6 @@ async function fixture(scenario: string): Promise<void> {
         if (scenario === 'accepted-error') throw new Error('Run failed after acknowledgement')
       }
     },
-    compactSession: async (id: string, instructions?: string) => {
-      assert.equal(id, 'one')
-      compactCalls++
-      compactInstructions = instructions
-      await prepared.promise
-    },
     executeBash: async (_id: string, command: string) => {
       bashCalls++
       assert.equal(command, 'echo done')
@@ -145,16 +135,15 @@ async function fixture(scenario: string): Promise<void> {
   }
 
   try {
-    await render('one', scenario.startsWith('draft-') || scenario === 'bash-draft' || scenario === 'compact-draft')
-    if (scenario === 'compact-streaming') store.runtime.one.isStreaming = true
+    await render('one', scenario.startsWith('draft-') || scenario === 'bash-draft')
     await act(async () => {
       if (scenario !== 'duplicate-images') {
         editor.restore({ type: 'doc', content: [{ type: 'paragraph', content: [
-          { type: 'text', text: continuation ? '/end-review' : isCompact ? compactText : scenario === 'escaped-bash' ? '!echo done' : scenario.startsWith('bash') ? 'echo done' : '原文' },
-          ...(scenario.startsWith('bash') || isCompact || scenario === 'escaped-bash' || continuation ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
+          { type: 'text', text: continuation ? '/end-review' : scenario === 'escaped-bash' ? '!echo done' : scenario.startsWith('bash') ? 'echo done' : '原文' },
+          ...(scenario.startsWith('bash') || scenario === 'escaped-bash' || continuation ? [] : [{ type: 'pastedText', attrs: { id: 'paste', text: '附件', byteSize: 6 } }])
         ] }] })
       }
-      if (scenario === 'bash-attachments' || scenario === 'compact-attachments' || (!scenario.startsWith('bash') && !isCompact && scenario !== 'escaped-bash' && !continuation)) {
+      if (scenario === 'bash-attachments' || (!scenario.startsWith('bash') && scenario !== 'escaped-bash' && !continuation)) {
         images.restore([{ id: 'image', mimeType: 'image/png', data: 'AA==', url: 'blob:original' }])
       }
     })
@@ -210,7 +199,7 @@ async function fixture(scenario: string): Promise<void> {
     }
     if (scenario === 'reopened') store.runtime.one.instanceId++
     await act(async () => {
-      if (['newer-draft', 'switch', 'remount', 'reopened', 'draft-failure', 'compact-error'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
+      if (['newer-draft', 'switch', 'remount', 'reopened', 'draft-failure'].includes(scenario)) prepared.reject(new Error('Prepare failed'))
       else prepared.resolve()
       await sending
       await duplicate
@@ -244,30 +233,6 @@ async function fixture(scenario: string): Promise<void> {
       }
       sessions.getState().setStreaming('one', false)
       assert.equal(store.runtime.one.isStreaming, false)
-    } else if (isCompact) {
-      assert.equal(promptCalls, 0)
-      assert.equal(bashCalls, 0)
-      assert.equal(rollbackCalls, 0)
-      assert.equal(hydrationCalls, 0)
-      assert.equal(store.runtime.one.pendingUserMessage, false)
-      if (scenario === 'compact-attachments') {
-        assert.equal(compactCalls, 0)
-        assert.equal(editor.getDraft().text, compactText)
-        assert.equal(images.images.length, 1)
-        assert.match(state.error ?? '', /Remove images and attachments/)
-      } else {
-        assert.equal(compactCalls, 1)
-        assert.equal(compactInstructions, scenario === 'compact-streaming' ? 'Preserve decisions' : undefined)
-        if (scenario === 'compact-error') {
-          assert.match(state.error ?? '', /Prepare failed/)
-          assert.equal(editor.getDraft().text, compactText)
-        } else {
-          assert.equal(editor.getDraft().text, '')
-          assert.equal(state.error, undefined)
-          if (scenario === 'compact-draft') assert.equal(promoteCalls, 1)
-          if (scenario === 'compact-streaming') assert.equal(store.runtime.one.isStreaming, true)
-        }
-      }
     } else if (scenario === 'newer-draft') {
       assert.equal(editor.getDraft().text, '新输入')
       assert.equal(state.canRestore, true)
@@ -373,7 +338,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'compact', 'compact-streaming', 'compact-error', 'compact-draft', 'compact-attachments', 'review-returning', 'branch-navigating']) {
+  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'review-returning', 'branch-navigating']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
       const timeout = setTimeout(() => child.kill(), 10_000)

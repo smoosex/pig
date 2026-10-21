@@ -44,6 +44,14 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
   const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? null) : null)
   const tokensError = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokensError ?? null) : null)
   const loadTokenStats = useSessionsStore((s) => s.loadTokenStats)
+  const compactBlock = useSessionsStore((s) => {
+    const runtime = sessionId ? s.runtime[sessionId] : undefined
+    if (!runtime) return null
+    if (runtime.liveCompactions.some((mark) => mark.status === 'running')) return 'compacting'
+    if (runtime.isNavigatingBranch) return 'navigating'
+    // Pi's compact aborts the run in flight; a one-click button must not stop work silently.
+    return runtime.isStreaming ? 'running' : null
+  })
   return (
     <ContextUsageButton
       sessionId={sessionId}
@@ -52,6 +60,7 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
       tokens={tokens}
       error={tokensError}
       onOpen={() => { if (sessionId && ready) void loadTokenStats(sessionId) }}
+      compactBlock={compactBlock}
       disabled={!ready}
     />
   )

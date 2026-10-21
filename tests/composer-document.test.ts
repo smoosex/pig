@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
-import { builtinCommandKey, compactInstructions, filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
+import { filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
 import type { SlashCommand } from '../src/shared/api'
 
 describe('composer document protocol', () => {
@@ -94,17 +94,6 @@ describe('composer document protocol', () => {
 })
 
 describe('composer commands', () => {
-  test('parses only the native compact command and its optional instructions', () => {
-    expect(compactInstructions('/compact')).toBe('')
-    expect(compactInstructions('/compact ')).toBe('')
-    expect(compactInstructions('/compact  Keep decisions\n and paths  ')).toBe('Keep decisions\n and paths')
-    for (const text of ['hello /compact', '/compact-other', '/compaction', '/compact\tinstructions']) {
-      expect(compactInstructions(text)).toBeNull()
-    }
-    expect(builtinCommandKey('compact')).toBe('commands.compact')
-    expect(builtinCommandKey('other')).toBeNull()
-  })
-
   test('only treats a single initial command token as a suggestion query', () => {
     expect(slashQuery('/')).toBe('')
     expect(slashQuery('/ex')).toBe('ex')
@@ -114,9 +103,9 @@ describe('composer commands', () => {
   test('sorts within command source groups without mutating the catalog', () => {
     const commands = [
       { name: 'export', source: 'skill' },
-      { name: 'next', source: 'builtin' },
-      { name: 'export', source: 'builtin' },
-      { name: 'clear', source: 'builtin' }
+      { name: 'next', source: 'prompt' },
+      { name: 'export', source: 'prompt' },
+      { name: 'clear', source: 'prompt' }
     ] as SlashCommand[]
     expect(filterSlashCommands(commands, 'ex')).toEqual([commands[2], commands[1], commands[0]])
     expect(commands[0].source).toBe('skill')

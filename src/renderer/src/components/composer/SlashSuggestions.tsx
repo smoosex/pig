@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils'
 import { useT } from '../../hooks/useT'
 import { Button } from '../ui/button'
 import { PopoverContent } from '../ui/popover'
-import { builtinCommandKey, slashGroups } from './commands'
+import { slashGroups } from './commands'
 import type { SlashCommands } from './useSlashCommands'
 
 export function SlashSuggestions({
@@ -38,8 +38,7 @@ export function SlashSuggestions({
     >
       <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {filtered.map((command, index) => {
-          const descriptionKey = command.source === 'builtin' ? builtinCommandKey(command.name) : null
-          const description = descriptionKey ? t(descriptionKey) : command.description
+          const description = command.description
           return (
             <Fragment key={`${command.source}:${command.name}`}>
               {index === 0 || filtered[index - 1].source !== command.source ? (

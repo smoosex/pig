@@ -346,7 +346,7 @@ test('mirrors the SDK settings and context usage from the file alone', async () 
     const afterSession = { kind: 'file', sessionId: after.sessionId, path, index: after, cwd: '/tmp' }
     expect(
       fileContextUsage(afterSession as never, { contextWindow: 1000 } as never)
-    ).toEqual({ tokens: null, contextWindow: 1000, percent: null })
+    ).toMatchObject({ tokens: null, contextWindow: 1000, percent: null })
 
     // Lifetime spend covers every assistant line in the file and is only paid when it is asked for.
     const first = await tokenStatsFor(afterSession as never)

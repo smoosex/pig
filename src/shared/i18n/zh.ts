@@ -723,7 +723,6 @@ export const zh = {
     bashMode: 'Bash 模式',
     bashModeHint: '当前为 bash 模式，Esc 退出 bash 模式',
     bashAttachments: 'Bash 模式不支持图片或附件，请先移除。',
-    compactAttachments: '执行 /compact 前请先移除图片和附件。',
     bashBusy: '会话已经开始工作，命令未执行。',
     runBash: '运行命令',
     stopBash: '停止命令',
@@ -763,14 +762,23 @@ export const zh = {
     cacheWrite: '缓存写入',
     output: '输出',
     total: '总输入输出',
-    effectiveInput: '有效输入'
+    effectiveInput: '有效输入',
+    compact: '压缩',
+    compacting: '压缩中…',
+    compactInstructionsToggle: '自定义压缩说明',
+    compactInstructions: '压缩说明',
+    compactPlaceholder: '例如：保留已确认的结论和未完成的任务',
+    compactWithInstructions: '按说明压缩',
+    compactRunning: '会话运行中，结束后才能压缩',
+    compactNavigating: '正在切换分支，完成后才能压缩',
+    compactEmpty: '暂无可压缩的上下文',
+    compactFailed: '压缩失败：{error}',
+    autoCompactAt: '约在 {tokens}（{percent}%）自动压缩'
   },
   commands: {
-    builtin: '内建',
     prompt: '模板',
     extension: '扩展',
-    skill: 'Skills',
-    compact: '手动压缩会话上下文'
+    skill: 'Skills'
   },
   systemUI: {
     review: '代码审查', memory: '观测记忆', host: 'Pig', details: '通知详情'
