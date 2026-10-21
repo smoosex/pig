@@ -20,6 +20,8 @@ const shared = {
     description: "Pig's built-in interactive terminal: the same shell and screen the user sees.",
     instructions: [
       'Call terminal_open first. Without terminalId it creates a background terminal in this session\'s worktree (Home for Chat); with an id from terminal_tabs it takes control of that existing terminal.',
+      'Use terminal_wait after input to wait for text, new output or a quiet interval, then terminal_read. These observations never guarantee command completion. Pass the version from a prior terminal_read as afterVersion when new output is required; it gates the snapshot version, not the age of a text occurrence.',
+      'terminal_switch takes over another terminal, releasing the old one without killing it. It stays in the background unless activate=true. terminal_close ends the shell and is allowed only for terminals this session created, never a user terminal it took over.',
       'A session controls one terminal at a time. Another live session\'s terminal cannot be taken over. Users can still type and release control; re-read the terminal after unexpected changes.',
       'Read terminal_read before typing: the foreground program may be a shell, editor, password prompt or another interactive process. Never assume it is a shell.',
       'Do not run terminal state-changing tools in parallel. Input success means only that input was sent, not that a command completed. Read the screen to check the result; no prompt or idle heuristic guarantees completion.',
@@ -63,6 +65,29 @@ export default function terminalExtension(pi: ExtensionAPI) {
     description: 'Send one terminal key: Enter, Tab, Shift+Tab, Escape, Backspace, Delete, Insert, Home, End, PageUp, PageDown, ArrowUp/Down/Left/Right, F1–F12, Ctrl+A through Ctrl+Z, or Ctrl+Space. Ctrl+C interrupts the foreground program. Application/window shortcuts are not supported.',
     parameters: Type.Object({ key: Type.String() }),
     async execute(_id, params, signal, _update, ctx) { return result(await host().press(sessionId(ctx), params.key, signal)) }
+  }))
+  pi.registerTool(defineTool({
+    ...shared, name: 'terminal_wait', label: 'Wait for terminal output',
+    description: 'Wait for a literal single-line text substring in the last 500 parsed lines (32K characters), an idle interval, or new output when neither is given. Text and idle are mutually exclusive. Without afterVersion, text may already be present and idle counts from this call; with it, the snapshot version must advance first. No regex, command completion or exit-code inference. Timeout throws; stopping never sends Ctrl+C.',
+    parameters: Type.Object({
+      text: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
+      afterVersion: Type.Optional(Type.Integer({ minimum: 0, description: 'Output version from terminal_read; requires a newer snapshot, not necessarily a new occurrence of text' })),
+      idleMs: Type.Optional(Type.Integer({ minimum: 100, maximum: 119999, description: 'Quiet interval in ms, shorter than timeoutMs' })),
+      timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000, description: 'Default 10000 ms, maximum 120000 ms' }))
+    }),
+    async execute(_id, params, signal, _update, ctx) { return result(await host().wait(sessionId(ctx), params, signal)) }
+  }))
+  pi.registerTool(defineTool({
+    ...shared, name: 'terminal_switch', label: 'Switch terminal',
+    description: 'Take control of an initialized terminalId from terminal_tabs, releasing the previous terminal without ending its shell. Does not change the active UI tab unless activate=true. Another live session’s terminal cannot be taken over.',
+    parameters: Type.Object({ terminalId: Type.String(), activate: Type.Optional(Type.Boolean({ description: 'Also show the tab in the UI; default false' })) }),
+    async execute(_id, params, signal, _update, ctx) { return result(await host().switchTab(sessionId(ctx), params.terminalId, params.activate ?? false, signal)) }
+  }))
+  pi.registerTool(defineTool({
+    ...shared, name: 'terminal_close', label: 'Close terminal',
+    description: 'Close the currently controlled terminal and end its shell. Only allowed for a terminal this session created with terminal_open. For a user terminal or one created by another session, use terminal_release instead. Already-running work may be interrupted; only close when authorized by the user’s task.',
+    parameters: Type.Object({}),
+    async execute(_id, _params, signal, _update, ctx) { return result(await host().close(sessionId(ctx), signal)) }
   }))
   pi.registerTool(defineTool({
     ...shared, name: 'terminal_release', label: 'Release terminal',

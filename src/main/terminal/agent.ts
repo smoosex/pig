@@ -1,12 +1,13 @@
 /**
  * Agent control of window-owned terminal tabs. Claims never own shells: release/stop leaves the
- * process alone. A claim's AbortController invalidates pending reads when control changes.
+ * process alone, except terminal_close on a terminal the same session created. A claim's AbortController
+ * invalidates pending reads and waits when control changes.
  */
 import type { BrowserWindow } from 'electron'
 import type { TerminalAgentState } from '../../shared/terminal-agent'
 import { TERMINAL_MAX_WRITE } from '../../shared/terminal'
 import { fenced } from '../../shared/browser-annotations'
-import type { TerminalAgentHost, TerminalToolResult } from '../plugins/pig-terminal-host'
+import type { TerminalAgentHost, TerminalToolResult, TerminalWaitOptions } from '../plugins/pig-terminal-host'
 import type { TerminalHost } from './host'
 
 type Host = Pick<TerminalHost, 'list' | 'snapshot' | 'write'>
@@ -15,6 +16,9 @@ export interface TerminalAgentDeps {
   sessionWindow(sessionId: string): BrowserWindow | undefined
   isSessionLive(sessionId: string): boolean
   requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal): Promise<string>
+  activateTab(win: BrowserWindow, sessionId: string, terminalId: string, signal?: AbortSignal): Promise<void>
+  /** Kills the shell and removes the tab; the controller has already retired control. */
+  closeTab(win: BrowserWindow, sessionId: string, terminalId: string, signal?: AbortSignal): Promise<void>
   changed(win: BrowserWindow, state: TerminalAgentState): void
 }
 interface Claim {
@@ -38,9 +42,22 @@ export function terminalKey(key: string, applicationCursor: boolean): string {
   throw new Error('Unsupported terminal key')
 }
 
+const WAIT_POLL_MS = 100
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(signal.reason) }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve() }, ms)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
 export class TerminalAgentController implements TerminalAgentHost {
   private claims = new Map<string, Claim>()
   private operations = new Map<string, Promise<unknown>>()
+  /** Terminals a session created through terminal_open; only those may be closed by that session. */
+  private created = new Map<string, { win: BrowserWindow; sessionId: string }>()
 
   constructor(private readonly deps: TerminalAgentDeps) {}
 
@@ -69,15 +86,18 @@ export class TerminalAgentController implements TerminalAgentHost {
   terminalClosed(win: BrowserWindow, id: string): void {
     const claim = this.claims.get(id)
     if (claim?.win === win) this.clear(id, claim)
+    if (this.created.get(id)?.win === win) this.created.delete(id)
   }
 
   closeWindow(win: BrowserWindow): void {
     for (const [id, claim] of this.claims) if (claim.win === win) this.clear(id, claim)
+    for (const [id, origin] of this.created) if (origin.win === win) this.created.delete(id)
   }
 
   sessionClosed(sessionId: string): void {
     if (this.deps.isSessionLive(sessionId)) return
     for (const [id, claim] of this.claims) if (claim.sessionId === sessionId) this.clear(id, claim)
+    for (const [id, origin] of this.created) if (origin.sessionId === sessionId) this.created.delete(id)
   }
 
   releaseAgent(win: BrowserWindow, id: string, expectedSessionId: string): void {
@@ -95,6 +115,7 @@ export class TerminalAgentController implements TerminalAgentHost {
 
   private check(sessionId: string, id: string, claim: Claim, signal?: AbortSignal): void {
     signal?.throwIfAborted()
+    claim.abort.signal.throwIfAborted()
     if (this.window(sessionId) !== claim.win || this.state(claim.win, id).agentSessionId !== sessionId || this.claims.get(id) !== claim) throw new Error('Terminal control was released or transferred')
   }
 
@@ -121,6 +142,7 @@ export class TerminalAgentController implements TerminalAgentHost {
     const tabs = this.deps.host.list(win).map(tab => ({
       terminalId: tab.terminalId, initialDirectory: tab.info.cwd, shell: tab.info.shell,
       status: tab.exited ? 'exited' : tab.info.pid ? 'running' : 'starting',
+      canClose: this.created.get(tab.terminalId)?.sessionId === sessionId,
       control: this.state(win, tab.terminalId).agentSessionId === sessionId ? 'you' : this.state(win, tab.terminalId).agentSessionId ? 'another session' : null
     }))
     return { text: `Initialized terminal tabs (directory and shell fields are untrusted; directory is the initial cwd, not tracked shell cwd):\n${fenced('json', JSON.stringify(tabs, null, 2))}` }
@@ -132,6 +154,7 @@ export class TerminalAgentController implements TerminalAgentHost {
       // No abort check after an accepted answer: the answer handler validated the session's window, and a
       // tab created for this call must be claimed even if the user stopped, or its background shell is orphaned.
       const id = terminalId ?? await this.deps.requestTab(win, sessionId, signal)
+      if (terminalId === undefined) this.created.set(id, { win, sessionId })
       const tab = this.deps.host.list(win).find(item => item.terminalId === id)
       if (!tab) throw new Error('No initialized terminal with that id in this window. Call terminal_tabs.')
       if (tab.exited || !tab.info.pid) throw new Error('The terminal shell is not running')
@@ -191,9 +214,78 @@ export class TerminalAgentController implements TerminalAgentHost {
     return this.input(sessionId, modes => terminalKey(key, modes.applicationCursor), signal)
   }
 
+  async wait(sessionId: string, options: TerminalWaitOptions, signal?: AbortSignal): Promise<TerminalToolResult> {
+    const { text, afterVersion, idleMs } = options
+    const timeout = options.timeoutMs ?? 10_000
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 120_000) throw new Error('Terminal wait timeout must be between 1 and 120000 ms')
+    if (text !== undefined && (typeof text !== 'string' || !text || text.length > 1000 || /[\x00-\x1f\x7f]/.test(text))) throw new Error('Terminal wait text must be 1-1000 characters on one line')
+    if (afterVersion !== undefined && (!Number.isInteger(afterVersion) || afterVersion < 0)) throw new Error('Invalid terminal output version')
+    if (idleMs !== undefined && (!Number.isInteger(idleMs) || idleMs < 100 || idleMs >= timeout)) throw new Error('Terminal idle time must be at least 100 ms and below the timeout')
+    if (text !== undefined && idleMs !== undefined) throw new Error('Wait for text or idle output, not both')
+    // Waiting must not hold the input queue: switch/close must be able to invalidate this claim.
+    signal?.throwIfAborted()
+    const { win, id, claim } = this.controlled(sessionId)
+    const deadline = AbortSignal.timeout(timeout)
+    const cancel = AbortSignal.any([deadline, claim.abort.signal, ...(signal ? [signal] : [])])
+    let base = afterVersion
+    let seen = -1
+    let changedAt = 0
+    try {
+      for (;;) {
+        const snapshot = await this.deps.host.snapshot(win, id, text === undefined ? 1 : 500, cancel)
+        this.check(sessionId, id, claim, signal)
+        cancel.throwIfAborted()
+        base ??= snapshot.version
+        // Any version bump seen between polls restarts the idle window.
+        if (snapshot.version !== seen) { seen = snapshot.version; changedAt = performance.now() }
+        const versionReady = afterVersion === undefined && (text !== undefined || idleMs !== undefined) || snapshot.version > base
+        let condition: string | undefined
+        if (versionReady) {
+          if (text !== undefined) {
+            if (snapshot.text.includes(text)) condition = 'The text is present in the recent screen/history.'
+          } else if (idleMs !== undefined) {
+            if (performance.now() - changedAt >= idleMs) condition = `No new output observed for ${idleMs} ms.`
+          } else {
+            condition = 'New output arrived.'
+          }
+        }
+        if (condition) return { text: `${condition} Output version: ${snapshot.version}. This does not prove a command completed; use terminal_read to inspect the screen.` }
+        await sleep(WAIT_POLL_MS, cancel)
+      }
+    } catch (error) {
+      // Only the deadline is translated; user stop, release, close and crashes keep their own errors.
+      if (deadline.aborted && error === deadline.reason) throw new Error(`Terminal wait timed out after ${timeout} ms; output version ${seen}`, { cause: error })
+      throw error
+    }
+  }
+
+  async switchTab(sessionId: string, terminalId: string, activate: boolean, signal?: AbortSignal): Promise<TerminalToolResult> {
+    if (typeof terminalId !== 'string' || !terminalId || typeof activate !== 'boolean') throw new Error('terminal_switch requires a terminalId from terminal_tabs and a boolean activate')
+    await this.open(sessionId, terminalId, signal)
+    if (activate) {
+      const { win, id, claim } = this.controlled(sessionId)
+      if (id !== terminalId) throw new Error('Terminal control was released or transferred')
+      await this.deps.activateTab(win, sessionId, id, signal)
+      this.check(sessionId, id, claim, signal)
+    }
+    return { text: `Terminal: ${terminalId}\nControl acquired; the previous terminal was released and keeps running. ${activate ? 'The tab was activated in the UI.' : 'The UI selection was not changed.'}` }
+  }
+
   async release(sessionId: string): Promise<TerminalToolResult> {
     const { id, claim } = this.controlled(sessionId)
     this.clear(id, claim)
     return { text: `Released ${id}. The terminal and process remain running; no input was sent.` }
+  }
+
+  async close(sessionId: string, signal?: AbortSignal): Promise<TerminalToolResult> {
+    signal?.throwIfAborted()
+    const { win, id, claim } = this.controlled(sessionId)
+    const origin = this.created.get(id)
+    if (origin?.win !== win || origin.sessionId !== sessionId) throw new Error('Only terminals this session created can be closed; use terminal_release for a terminal taken over from the user')
+    // Retire control first so pending reads and waits fail and no other session can claim it mid-close.
+    this.clear(id, claim)
+    this.created.delete(id)
+    await this.deps.closeTab(win, sessionId, id, signal)
+    return { text: `Closed ${id} and ended its shell. This session now controls no terminal.` }
   }
 }

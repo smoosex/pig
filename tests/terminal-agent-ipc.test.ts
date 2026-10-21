@@ -5,7 +5,7 @@ import type { PtyHostRequest } from '../src/shared/terminal'
 
 async function fixture() {
   const handlers = new Map<string, (...args: any[]) => any>()
-  type Request = { requestId: string; sessionId: string }
+  type Request = import('../src/shared/terminal-agent').TerminalAgentOpenRequest
   let onRequest: ((request: Request) => void) | undefined
   const makeWindow = () => Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
@@ -38,11 +38,12 @@ async function fixture() {
   const guest = { sender: win.webContents, senderFrame: {} }
   const answer = handlers.get('terminal:agent-open-answer')!
   const create = handlers.get('terminal:create')!
-  const start = async (signal?: AbortSignal) => {
+  const request = async <T>(operation: () => Promise<T>) => {
     const requested = new Promise<Request>(resolve => { onRequest = resolve })
-    const pending = agent.open('s1', undefined, signal)
+    const pending = operation()
     return { pending, request: await requested }
   }
+  const start = (signal?: AbortSignal) => request(() => agent.open('s1', undefined, signal))
 
   expect(() => create(guest, 'terminal:guest', process.cwd(), 120, 30)).toThrow()
   const first = await start()
@@ -61,6 +62,31 @@ async function fixture() {
   expect(() => handlers.get('terminal:release-agent')!(event, 'terminal:agent', 's2')).toThrow('control changed')
   handlers.get('terminal:release-agent')!(event, 'terminal:agent', 's1')
   expect(handlers.get('terminal:get-agent-state')!(event, 'terminal:agent').agentSessionId).toBeNull()
+
+  await create(event, 'terminal:other', process.cwd(), 120, 30)
+  const mismatched = await request(() => agent.switchTab('s1', 'terminal:other', true))
+  expect(mismatched.request.action).toBe('activate')
+  expect(() => answer(event, mismatched.request.requestId, { terminalId: 'terminal:agent' })).toThrow('Invalid terminal open answer')
+  await expect(mismatched.pending).rejects.toThrow('Invalid terminal open answer')
+
+  const transferred = await request(() => agent.switchTab('s1', 'terminal:other', true))
+  await agent.release('s1')
+  expect(() => answer(event, transferred.request.requestId, { terminalId: 'terminal:other' })).toThrow('released or transferred')
+  await expect(transferred.pending).rejects.toThrow('released or transferred')
+  const activated = await request(() => agent.switchTab('s1', 'terminal:other', true))
+  answer(event, activated.request.requestId, { terminalId: 'terminal:other' })
+  await expect(activated.pending).resolves.toMatchObject({ text: expect.stringContaining('activated') })
+  await expect(agent.close('s1')).rejects.toThrow('Only terminals this session created')
+  await agent.switchTab('s1', 'terminal:agent', false)
+  const closing = await request(() => agent.close('s1'))
+  expect(closing.request.action).toBe('close')
+  expect(() => handlers.get('terminal:get-agent-state')!(event, 'terminal:agent')).toThrow('Unknown terminal')
+  await expect(agent.open('s2', 'terminal:agent')).rejects.toThrow('No initialized terminal')
+  live.delete('s1')
+  answer(event, closing.request.requestId, { terminalId: 'terminal:agent' })
+  await expect(closing.pending).resolves.toMatchObject({ text: expect.stringContaining('Closed') })
+  live.add('s1')
+  expect(() => answer(event, closing.request.requestId, { terminalId: 'terminal:agent' })).toThrow('Unknown terminal open request')
 
   const abort = new AbortController()
   const cancelled = await start(abort.signal)

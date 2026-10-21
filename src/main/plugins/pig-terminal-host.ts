@@ -1,13 +1,23 @@
 /** Jiti-loaded terminal tools meet the main-process controller through this shared registry. */
 export interface TerminalToolResult { text: string }
 
+export interface TerminalWaitOptions {
+  text?: string
+  afterVersion?: number
+  idleMs?: number
+  timeoutMs?: number
+}
+
 export interface TerminalAgentHost {
   tabs(sessionId: string): Promise<TerminalToolResult>
   open(sessionId: string, terminalId?: string, signal?: AbortSignal): Promise<TerminalToolResult>
   read(sessionId: string, lines: number, signal?: AbortSignal): Promise<TerminalToolResult>
   type(sessionId: string, text: string, submit: boolean, signal?: AbortSignal): Promise<TerminalToolResult>
   press(sessionId: string, key: string, signal?: AbortSignal): Promise<TerminalToolResult>
+  wait(sessionId: string, options: TerminalWaitOptions, signal?: AbortSignal): Promise<TerminalToolResult>
+  switchTab(sessionId: string, terminalId: string, activate: boolean, signal?: AbortSignal): Promise<TerminalToolResult>
   release(sessionId: string): Promise<TerminalToolResult>
+  close(sessionId: string, signal?: AbortSignal): Promise<TerminalToolResult>
   sessionClosed(sessionId: string): void
 }
 

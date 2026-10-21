@@ -1,4 +1,4 @@
-/** Only the requesting session's window may create its background terminal tab. */
+/** Main authorizes terminal ownership; this window applies tab creation, activation and close. */
 import { useEffect } from 'react'
 import type { TerminalAgentOpenRequest, TerminalAgentOpenAnswer } from '../../../shared/terminal-agent'
 import { api } from '../ipc/api'
@@ -11,15 +11,26 @@ export async function answerTerminalAgentOpen(request: TerminalAgentOpenRequest)
   let terminalId: string | undefined
   let result: TerminalAgentOpenAnswer
   try {
-    if (!session) throw new Error('The session is not open in this window')
-    const cwd = session.kind === 'chat' ? null : session.cwd
-    terminalId = store.openTerminalTab(cwd, { background: true })
-    // Keep xterm lazy for windows that never use terminals, but start parsing/ACKing before answering.
-    const { ensureTerminal } = await import('../terminal/runtime')
-    if (!useSessionsStore.getState().openTabs.some((tab) => tab.id === terminalId)) throw new Error('Terminal tab closed')
-    await ensureTerminal(terminalId, cwd)
-    if (!useSessionsStore.getState().openTabs.some((tab) => tab.id === request.sessionId)) throw new Error('Session closed during terminal startup')
-    result = { terminalId }
+    if (!session && request.action !== 'close') throw new Error('The session is not open in this window')
+    if (request.action === 'activate' || request.action === 'close') {
+      const tab = store.openTabs.find((tab) => tab.id === request.terminalId && tab.kind === 'terminal')
+      if (request.action === 'activate') {
+        if (!tab) throw new Error('The terminal tab is no longer open')
+        await store.activateTab(tab.id)
+      } else if (tab) {
+        store.closeTab(tab.id)
+      }
+      result = { terminalId: request.terminalId }
+    } else {
+      const cwd = session!.kind === 'chat' ? null : session!.cwd
+      terminalId = store.openTerminalTab(cwd, { background: true })
+      // Keep xterm lazy for windows that never use terminals, but start parsing/ACKing before answering.
+      const { ensureTerminal } = await import('../terminal/runtime')
+      if (!useSessionsStore.getState().openTabs.some((tab) => tab.id === terminalId)) throw new Error('Terminal tab closed')
+      await ensureTerminal(terminalId, cwd)
+      if (!useSessionsStore.getState().openTabs.some((tab) => tab.id === request.sessionId)) throw new Error('Session closed during terminal startup')
+      result = { terminalId }
+    }
   } catch (error) {
     if (terminalId) useSessionsStore.getState().closeTab(terminalId)
     terminalId = undefined

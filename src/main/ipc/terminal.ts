@@ -50,32 +50,43 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
   const host = terminalHost = new TerminalHost(forkPtyHost, app.getVersion())
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
-  const pendingOpens = new Map<string, { win: BrowserWindow; sessionId: string; settle(result: TerminalAgentOpenAnswer): void; fail(error: unknown): void }>()
-  const controller = sessions ? new TerminalAgentController({
-    host, ...sessions,
-    requestTab: (win, sessionId, signal) => {
-      signal?.throwIfAborted()
-      if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Terminal UI is reloading')
-      watch(win)
-      return new Promise((resolve, reject) => {
-        const requestId = randomUUID()
-        const finish = (settle: () => void) => {
-          clearTimeout(timer)
-          signal?.removeEventListener('abort', abort)
-          pendingOpens.delete(requestId)
-          settle()
-        }
-        const abort = () => finish(() => reject(signal!.reason))
-        const timer = setTimeout(() => finish(() => reject(new Error('The window did not open a terminal in time'))), 15_000)
-        signal?.addEventListener('abort', abort, { once: true })
-        pendingOpens.set(requestId, {
-          win, sessionId,
-          settle: result => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.terminalId)),
-          fail: error => finish(() => reject(error))
-        })
-        const request: TerminalAgentOpenRequest = { requestId, sessionId }
-        win.webContents.send('terminal:agent-open-request', request)
+  const pendingOpens = new Map<string, {
+    win: BrowserWindow; sessionId: string; change?: { action: 'activate' | 'close'; terminalId: string }
+    settle(result: TerminalAgentOpenAnswer): void; fail(error: unknown): void
+  }>()
+  function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; terminalId: string }): Promise<string> {
+    signal?.throwIfAborted()
+    if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Terminal UI is reloading')
+    watch(win)
+    return new Promise((resolve, reject) => {
+      const requestId = randomUUID()
+      const finish = (settle: () => void) => {
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
+        pendingOpens.delete(requestId)
+        settle()
+      }
+      const abort = () => finish(() => reject(signal!.reason))
+      const timer = setTimeout(() => finish(() => reject(new Error('The window did not apply the terminal tab request in time'))), 15_000)
+      signal?.addEventListener('abort', abort, { once: true })
+      pendingOpens.set(requestId, {
+        win, sessionId, change,
+        settle: result => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.terminalId)),
+        fail: error => finish(() => reject(error))
       })
+      const request: TerminalAgentOpenRequest = change ? { requestId, sessionId, ...change } : { requestId, sessionId }
+      win.webContents.send('terminal:agent-open-request', request)
+    })
+  }
+  const controller = sessions ? new TerminalAgentController({
+    host, ...sessions, requestTab,
+    activateTab: async (win, sessionId, terminalId, signal) => { await requestTab(win, sessionId, signal, { action: 'activate', terminalId }) },
+    closeTab: async (win, sessionId, terminalId, signal) => {
+      signal?.throwIfAborted()
+      // Remove the PTY before the UI round-trip, preventing another session from taking it over.
+      host.close(win, terminalId)
+      // Once killing starts, finish UI cleanup even if the tool is cancelled in the meantime.
+      await requestTab(win, sessionId, undefined, { action: 'close', terminalId })
     },
     changed: (win, state) => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('terminal:agent-state', state) }
   }) : undefined
@@ -140,14 +151,22 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
     assertBrowserSender(event, win)
     const pending = typeof requestId === 'string' ? pendingOpens.get(requestId) : undefined
     if (!pending || pending.win !== win) throw new Error('Unknown terminal open request')
-    if (!sessions?.isSessionLive(pending.sessionId) || sessions.sessionWindow(pending.sessionId) !== win) {
+    if (pending.change?.action !== 'close' && (!sessions?.isSessionLive(pending.sessionId) || sessions.sessionWindow(pending.sessionId) !== win)) {
       const error = new Error('The requesting session is no longer open')
       pending.fail(error)
       throw error
     } else if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
       pending.settle({ error: result.error.slice(0, 1000) })
     } else if (result && typeof result === 'object' && 'terminalId' in result && typeof result.terminalId === 'string'
-      && host.list(win).some(tab => tab.terminalId === result.terminalId && tab.info.pid > 0 && !tab.exited)) {
+      && (pending.change === undefined || pending.change.terminalId === result.terminalId)
+      && (pending.change?.action === 'close'
+        ? !host.list(win).some(tab => tab.terminalId === result.terminalId)
+        : host.list(win).some(tab => tab.terminalId === result.terminalId && tab.info.pid > 0 && !tab.exited))) {
+      if (pending.change?.action === 'activate' && controller?.state(win, result.terminalId).agentSessionId !== pending.sessionId) {
+        const error = new Error('Terminal control was released or transferred')
+        pending.fail(error)
+        throw error
+      }
       pending.settle({ terminalId: result.terminalId })
     } else {
       pending.fail(new Error('Invalid terminal open answer'))

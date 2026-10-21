@@ -4,10 +4,11 @@ export interface TerminalAgentState {
   agentSessionId: string | null
 }
 
-export interface TerminalAgentOpenRequest {
-  requestId: string
-  sessionId: string
-}
+/** Main asks the owning window to create, activate or remove a tab; the answer echoes the exact id. */
+export type TerminalAgentOpenRequest = { requestId: string; sessionId: string } & (
+  | { action?: 'open' }
+  | { action: 'activate' | 'close'; terminalId: string }
+)
 
 export type TerminalAgentOpenAnswer = { terminalId: string } | { error: string }
 
