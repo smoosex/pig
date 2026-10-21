@@ -26,5 +26,5 @@ test('the selected composer model uses a monochrome provider icon', () => {
 test('an unknown provider retains the generic model icon', () => {
   const markup = renderToStaticMarkup(<ModelBrandIcon model={model('private-provider')} />)
   expect(markup).not.toContain('data-brand=')
-  expect(markup).toContain('lucide-box')
+  expect(markup).toContain('lucide-cpu-ai')
 })

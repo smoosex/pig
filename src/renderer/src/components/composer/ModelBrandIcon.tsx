@@ -1,4 +1,4 @@
-import { Box } from 'lucide-react'
+import { CpuAi } from 'lucide-react'
 import {
   siAlibabacloud,
   siAnthropic,
@@ -52,7 +52,7 @@ const providerIcons: Record<string, SimpleIcon> = {
 
 export function ModelBrandIcon({ model }: { model: SessionModelInfo | null }) {
   const icon = model ? providerIcons[model.provider.toLowerCase()] : undefined
-  if (!icon) return <Box data-icon="inline-start" />
+  if (!icon) return <CpuAi data-icon="inline-start" />
   return (
     <svg
       data-icon="inline-start"

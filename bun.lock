@@ -47,7 +47,7 @@
         "esbuild": "^0.28.2",
         "katex": "^0.19.0",
         "linkedom": "^0.18.13",
-        "lucide-react": "^1.55.0",
+        "lucide-react": "^1.61.0",
         "lxgw-wenkai-lite-webfont": "^1.7.0",
         "material-icon-theme": "^5.39.0",
         "mermaid": "^12.1.0",
@@ -1676,7 +1676,7 @@
 
     "lru_map": ["lru_map@0.4.1", "", {}, "sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg=="],
 
-    "lucide-react": ["lucide-react@1.55.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-bSozQHiI3/8q7JvgoqVRGOYUi7fYT3siAZwmZsljjsOH2Husp/2ODdFf/leD+ZC/2yKfn7r8oh6yeoR3ITR5vA=="],
+    "lucide-react": ["lucide-react@1.61.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-v2SQPPPNjnr+BlhL9Spuzmo5yR+hLkftfuE4E3jaxdNPgSH0hJKPcLJBP7yAta87jQNPsSERS59PJjCJ/CorBA=="],
 
     "lxgw-wenkai-lite-webfont": ["lxgw-wenkai-lite-webfont@1.7.0", "", {}, "sha512-VcQYNRpdXAxaZsJ18rfT1mmAreGqkIFNZ/9pdVLbT2Tkb+2lLWJDXq4zYxMEk9AcecSnxO31R2LHh5ieLlxjRg=="],
 
