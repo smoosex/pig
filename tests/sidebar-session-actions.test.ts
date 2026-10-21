@@ -27,6 +27,15 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
   const tab: OpenTab = {
     id: session.id, cwd: session.cwd, title: session.firstMessage, kind, loadState: 'ready', meta: session
   }
+  const copied: string[] = []
+  let copyError: Error | null = null
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async (text: string) => {
+      if (copyError) throw copyError
+      copied.push(text)
+    } }
+  })
   const closed: string[] = []
   const deleted: string[] = []
   const selected: string[] = []
@@ -142,6 +151,29 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.ok(unselected.classList.contains('hover:bg-transparent!'), 'the shared layer owns hover tint')
     assert.ok(!unselected.classList.contains('bg-sidebar-foreground/12'))
     assert.ok(!unselected.hasAttribute('data-sidebar-selected'))
+
+    const copyFromMenu = async (trigger: HTMLElement) => {
+      await act(async () => {
+        trigger.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+      })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+      const copy = [...document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')]
+        .find((item) => item.textContent === '复制会话 ID')
+      assert.ok(copy, 'session context menu offers copying its ID')
+      await act(async () => { copy.click() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    }
+    await copyFromMenu(unselected)
+    const tabTrigger = container.querySelector<HTMLElement>('[data-tabs] [data-slot="context-menu-trigger"]')!
+    assert.ok(tabTrigger)
+    await copyFromMenu(tabTrigger)
+    assert.deepEqual(copied, [session.id, session.id], 'both menus copy the clicked session, even when inactive')
+    assert.deepEqual(selected, [], 'copying does not activate the session')
+
+    copyError = new Error('Clipboard permission denied')
+    await copyFromMenu(unselected)
+    assert.ok(container.querySelector('[role="alert"]')?.textContent?.includes(copyError.message))
+    assert.deepEqual(copied, [session.id, session.id], 'clipboard failures are shown rather than reported as success')
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

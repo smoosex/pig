@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
-import { ArrowUpToLine, CircleAlert, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus } from 'lucide-react'
+import { ArrowUpToLine, CircleAlert, Copy, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -509,6 +509,13 @@ function Tab({
         <ContextMenuItem onSelect={() => { onSelect(); rename.start() }}>
           <PenLine data-icon="inline-start" />
           {t('common.rename')}
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={pending !== null}
+          onSelect={() => void runAction('copy-id', () => navigator.clipboard.writeText(tabId))}
+        >
+          <Copy data-icon="inline-start" />
+          {t('sessions.copyId')}
         </ContextMenuItem>
         <ContextMenuItem
           disabled={pending !== null}

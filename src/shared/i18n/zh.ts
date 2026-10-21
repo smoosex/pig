@@ -159,6 +159,7 @@ export const zh = {
     sizeAria: '会话大小 {size}',
     imagePreview: '图片',
     unknownProject: '未知项目',
+    copyId: '复制会话 ID',
     export: '导出会话'
   },
   tabBar: {

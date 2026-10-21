@@ -157,6 +157,7 @@ export const en: Messages = {
     sizeAria: 'Session size {size}',
     imagePreview: 'Image',
     unknownProject: 'Unknown project',
+    copyId: 'Copy session ID',
     export: 'Export session'
   },
   tabBar: {

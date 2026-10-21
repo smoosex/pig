@@ -9,7 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger
 } from '../ui/context-menu'
-import { Download, PenLine } from 'lucide-react'
+import { Copy, Download, PenLine } from 'lucide-react'
 import { api } from '../../ipc/api'
 import { cn } from '../../lib/utils'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
@@ -126,6 +126,13 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
             {t('common.rename')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={pending !== null}
+            onSelect={() => void runAction('copy-id', () => navigator.clipboard.writeText(session.id))}
+          >
+            <Copy data-icon="inline-start" />
+            {t('sessions.copyId')}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={pending !== null}

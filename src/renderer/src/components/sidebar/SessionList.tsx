@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { CircleAlert, Download, LoaderCircle, PenLine } from 'lucide-react'
+import { CircleAlert, Copy, Download, LoaderCircle, PenLine } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../../stores/sessions'
 import { withSessionForks, type SessionFork } from '../../../../shared/session-lineage'
 import { api } from '../../ipc/api'
@@ -112,6 +112,13 @@ function SessionRow({ tab, fork }: { tab: OpenTab; fork: SessionTabRow }) {
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
             {t('common.rename')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={pending !== null}
+            onSelect={() => void runAction('copy-id', () => navigator.clipboard.writeText(session.id))}
+          >
+            <Copy data-icon="inline-start" />
+            {t('sessions.copyId')}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={pending !== null}
