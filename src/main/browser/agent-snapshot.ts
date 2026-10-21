@@ -37,7 +37,7 @@ export function snapshotPage(limit: number): PageSnapshot {
     'listitem', 'table', 'row', 'region', 'complementary', 'menu', 'menubar', 'tablist', 'tabpanel', 'tree', 'grid', 'group'])
   const inputRoles: Record<string, string> = {
     checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton', search: 'searchbox',
-    submit: 'button', button: 'button', reset: 'button', image: 'button'
+    submit: 'button', button: 'button', reset: 'button', image: 'button', file: 'button'
   }
   const implicitRole = (el: Element): string => {
     const tag = el.tagName.toLowerCase()
@@ -85,8 +85,10 @@ export function snapshotPage(limit: number): PageSnapshot {
     if (style.display === 'none' || style.visibility === 'hidden') return true
     return style.display !== 'contents' && el.getClientRects().length === 0
   }
-  const describe = (el: Element, role: string): string => {
-    const name = nameOf(el, role)
+  const describe = (el: Element, role: string, uploadOnly = false): string => {
+    const name = uploadOnly
+      ? clean(el.getAttribute('aria-label') ?? el.getAttribute('title') ?? el.getAttribute('name'), 160)
+      : nameOf(el, role)
     let line = name ? `${role} ${quote(name)}` : role
     if (role === 'heading') line += ` [level=${/^H([1-6])$/.exec(el.tagName)?.[1] ?? el.getAttribute('aria-level') ?? '2'}]`
     if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
@@ -100,7 +102,11 @@ export function snapshotPage(limit: number): PageSnapshot {
       refs.set(ref, el)
       line += ` [ref=${ref}]`
     }
-    if (el instanceof HTMLInputElement && el.type === 'password') {
+    if (el instanceof HTMLInputElement && el.type === 'file') {
+      line += ' [type=file]'
+      if (el.multiple) line += ' [multiple]'
+      if (el.accept) line += ` [accept=${quote(clean(el.accept, 200))}]`
+    } else if (el instanceof HTMLInputElement && el.type === 'password') {
       if (el.value) line += ' value=(hidden)'
     } else if ((el instanceof HTMLInputElement && ['textbox', 'searchbox', 'spinbutton', 'slider', 'combobox'].includes(role)) || el instanceof HTMLTextAreaElement) {
       if (el.value) line += ` value=${quote(clean(el.value, 200))}`
@@ -164,5 +170,19 @@ export function snapshotPage(limit: number): PageSnapshot {
     if (!pending) flush()
   }
   if (document.body) walk(document.body, 0)
+  // Upload controls are often hidden behind a styled button. Expose only their file-input metadata,
+  // not other hidden content; refs still bind the original node rather than a later selector match.
+  const outlined = new Set(refs.values())
+  const uploads = (root: ParentNode) => {
+    if (truncated) return
+    for (const element of Array.from(root.querySelectorAll('*'))) {
+      if (truncated) break
+      if (element instanceof HTMLInputElement && element.type === 'file' && !outlined.has(element)) {
+        emit(0, `${describe(element, 'button', true)} [upload-only]`)
+      }
+      if (element.shadowRoot) uploads(element.shadowRoot)
+    }
+  }
+  uploads(document)
   return { text: lines.join('\n'), refs: refs.size, truncated }
 }

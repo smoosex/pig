@@ -13,7 +13,7 @@ async function fixture() {
   document.body.innerHTML = `<button id="button">Go</button><input id="input" value="old"><input id="password" type="password">
     <textarea id="readonly" readonly></textarea><button id="disabled" disabled>Disabled</button>
     <select id="select"><option value="a">A</option><option value="b">B</option></select>
-    <select id="multi" multiple><option value="a">A</option><option value="b">B</option></select><div id="cover"></div>`
+    <select id="multi" multiple><option value="a">A</option><option value="b">B</option></select><div id="cover"></div><input id="file" type="file">`
   snapshotPage(10_000)
   const refs = (globalThis as unknown as { __pigAgentRefs: Map<string, Element> }).__pigAgentRefs
   const ref = (id: string) => [...refs].find(([, el]) => el.id === id)![0]
@@ -58,6 +58,9 @@ async function fixture() {
   await assert.rejects(run({ action: 'click', ref: ref('button') }), /covered/)
   covered = false
   await assert.rejects(run({ action: 'click', ref: 'missing' }), /stale/)
+  const beforeFile = calls.length
+  await assert.rejects(run({ action: 'click', ref: ref('file') }), /use browser_upload/)
+  assert.equal(calls.length, beforeFile, 'file inputs never receive a click that would open the native dialog')
   await assert.rejects(run({ action: 'click' } as BrowserInteraction), /Browser ref is required/)
   const button = document.getElementById('button')!
   button.remove()

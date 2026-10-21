@@ -9,7 +9,7 @@ import { BrowserAgentController } from '../browser/agent'
 import { registerBrowserAgentHost } from '../plugins/pig-browser-host'
 import { assertBrowserSender, isBrowserUrl } from '../browser/validation'
 import { windowForEvent } from './window'
-import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope } from '../../shared/browser'
+import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest } from '../../shared/browser'
 
 /** Live Pi sessions, for agent browser control. Without it the browser tools report the browser unavailable. */
 export interface BrowserSessions {
@@ -19,6 +19,9 @@ export interface BrowserSessions {
 
 interface PendingOpen {
   win: BrowserWindow
+  sessionId: string
+  action?: 'open' | 'activate' | 'close'
+  browserId?: string
   settle(result: { browserId: string } | { error: string }): void
   fail(error: Error): void
 }
@@ -35,7 +38,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     partition: 'persist:pig-browser', sandbox: true, contextIsolation: true,
     nodeIntegration: false, webSecurity: true, webviewTag: false
   } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false)
-  function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal): Promise<string> {
+  function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; browserId: string }): Promise<string> {
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')
     signal?.throwIfAborted()
     return new Promise((resolve, reject) => {
@@ -50,16 +53,26 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
       const timer = setTimeout(() => finish(() => reject(new Error('The window did not open a browser tab in time'))), 15_000)
       signal?.addEventListener('abort', abort, { once: true })
       pendingOpens.set(requestId, {
-        win,
+        win, sessionId, ...change,
         settle: (result) => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.browserId)),
         fail: (error) => finish(() => reject(error))
       })
-      win.webContents.send('browser:agent-open-request', { requestId, sessionId })
+      const request: BrowserAgentOpenRequest = change ? { requestId, sessionId, ...change } : { requestId, sessionId }
+      win.webContents.send('browser:agent-open-request', request)
     })
   }
   if (sessions) {
     registerBrowserAgentHost(new BrowserAgentController({
       host, requestTab,
+      activateTab: async (win, sessionId, browserId, signal) => { await requestTab(win, sessionId, signal, { action: 'activate', browserId }) },
+      closeTab: async (win, sessionId, browserId, signal) => {
+        signal?.throwIfAborted()
+        // Retire main ownership before asking UI to remove the tab: no other agent can acquire it
+        // while the renderer round-trip is pending. A late UI close remains idempotent.
+        host.close(win, browserId)
+        owners.delete(browserId)
+        await requestTab(win, sessionId, signal, { action: 'close', browserId })
+      },
       sessionWindow: sessions.sessionWindow,
       isSessionLive: sessions.isSessionLive,
       browsers: (win) => [...owners].filter(([, owner]) => owner === win).map(([id]) => id)
@@ -146,8 +159,16 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (!pending || pending.win !== win) throw new Error('Unknown browser open request')
     if (result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
       pending.settle({ error: result.error.slice(0, 1000) })
-    } else if (result && typeof result === 'object' && 'browserId' in result && typeof result.browserId === 'string' && owners.get(result.browserId) === win) {
-      pending.settle({ browserId: result.browserId })
+    } else if (result && typeof result === 'object' && 'browserId' in result && typeof result.browserId === 'string'
+      && (pending.browserId === undefined || result.browserId === pending.browserId)
+      && (owners.get(result.browserId) === win || (pending.action === 'close' && !owners.has(result.browserId)))) {
+      if (!sessions?.isSessionLive(pending.sessionId) || sessions.sessionWindow(pending.sessionId) !== win) {
+        pending.fail(new Error('The requesting session is no longer open'))
+      } else if (pending.action === 'activate' && host.agentOf(win, result.browserId) !== pending.sessionId) {
+        pending.fail(new Error('Browser control was released or transferred'))
+      } else {
+        pending.settle({ browserId: result.browserId })
+      }
     } else {
       pending.fail(new Error('Invalid browser open answer'))
       throw new Error('Invalid browser open answer')

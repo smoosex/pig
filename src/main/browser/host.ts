@@ -8,6 +8,8 @@ import {
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
 import { executeBrowserScript } from './browser-script'
+import { attachBrowserNetwork, type BrowserNetworkLog, type BrowserNetworkEntry } from './network-log'
+import { uploadBrowserFiles } from './agent-upload'
 import { interactWithPage, type BrowserInteraction } from './agent-interaction'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
@@ -22,6 +24,7 @@ interface Page {
   annotationLimitReached?: boolean
   /** Latest console messages of the current document, for the agent's browser_console tool. */
   console: BrowserConsoleEntry[]
+  network: BrowserNetworkLog
 }
 export interface BrowserConsoleEntry {
   level: 'debug' | 'info' | 'warning' | 'error'
@@ -159,6 +162,7 @@ export class BrowserHost {
   private dispose(owner: WindowPages, page: Page): void {
     if (page.disposed) return
     page.disposed = true
+    page.network.dispose()
     this.detachDevTools(owner, page)
     if (!owner.win.isDestroyed()) owner.win.contentView.removeChildView(page.view)
     liveContents(page.view)?.close({ waitForBeforeUnload: false })
@@ -183,7 +187,7 @@ export class BrowserHost {
       const agentSessionId = owner.agents.get(browserId) ?? null
       page = {
         view, state: { ...emptyBrowserState(browserId), url: owner.urls.get(browserId) ?? '', documentId: randomUUID(), agentSessionId },
-        bounds: null, used: ++this.clock, disposed: false, console: []
+        bounds: null, used: ++this.clock, disposed: false, console: [], network: attachBrowserNetwork(view.webContents)
       }
       owner.pages.set(browserId, page)
       secureSession(view.webContents.session)
@@ -237,7 +241,10 @@ export class BrowserHost {
     })
     wc.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame) return
-      if (!inPlace) page.console = []
+      if (!inPlace) {
+        page.console = []
+        page.network.clear()
+      }
       this.picker(owner, page, false)
       page.state.documentId = randomUUID()
       page.annotationLimitReached = false
@@ -487,7 +494,7 @@ export class BrowserHost {
     if (restoreUrl) this.restorePage(win, id, restoreUrl)
   }
 
-  async interact(win: BrowserWindow, id: string, sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<void> {
+  private agentPage(win: BrowserWindow, id: string, sessionId: string, signal?: AbortSignal) {
     const { owner, page } = this.page(win, id, false)
     if (!page) throw new Error('Browser page is not open')
     const documentId = page.state.documentId
@@ -498,7 +505,21 @@ export class BrowserHost {
       if (!isBrowserUrl(page.state.url) || page.state.error) throw new Error('Browser page is not ready')
     }
     assertCurrent()
+    return { page, assertCurrent }
+  }
+
+  async interact(win: BrowserWindow, id: string, sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<void> {
+    const { page, assertCurrent } = this.agentPage(win, id, sessionId, signal)
     await interactWithPage(page.view.webContents, request, signal, assertCurrent)
+  }
+
+  async upload(win: BrowserWindow, id: string, sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<void> {
+    const { page, assertCurrent } = this.agentPage(win, id, sessionId, signal)
+    await uploadBrowserFiles(page.view.webContents, ref, files, signal, assertCurrent)
+  }
+
+  networkEntries(win: BrowserWindow, id: string): BrowserNetworkEntry[] {
+    return this.page(win, id, false).page?.network.entries() ?? []
   }
 
   /** Resolves true once the main frame stopped loading, false when `timeout` elapsed first. */

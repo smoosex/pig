@@ -25,11 +25,11 @@ export interface BrowserState {
   agentSessionId: string | null
 }
 
-/** Main asks the session's window to open a background browser tab for that session's agent. */
-export interface BrowserAgentOpenRequest {
-  requestId: string
-  sessionId: string
-}
+/** Agent tab changes round-trip through the owning UI, which holds tab-strip state. */
+export type BrowserAgentOpenRequest = { requestId: string; sessionId: string } & (
+  | { action?: 'open' }
+  | { action: 'activate' | 'close'; browserId: string }
+)
 
 export interface BrowserScreenshot {
   mimeType: 'image/png'

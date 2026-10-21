@@ -30,6 +30,11 @@ export interface BrowserAgentHost {
   annotations(sessionId: string): Promise<BrowserToolResult>
   interact(sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<BrowserToolResult>
   wait(sessionId: string, options: BrowserWaitOptions, signal?: AbortSignal): Promise<BrowserToolResult>
+  switchTab(sessionId: string, browserId: string, activate: boolean, signal?: AbortSignal): Promise<BrowserToolResult>
+  release(sessionId: string): Promise<BrowserToolResult>
+  close(sessionId: string, signal?: AbortSignal): Promise<BrowserToolResult>
+  network(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult>
+  upload(sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<BrowserToolResult>
 }
 
 const key = Symbol.for('pig:browser-agent-host')

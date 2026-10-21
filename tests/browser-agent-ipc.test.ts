@@ -31,6 +31,7 @@ async function fixture(): Promise<void> {
       getState(_win: unknown, id: string) { return { browserId: id, url: '', title: '', agentSessionId: agents.get(id) ?? null } }
       agentOf(_win: unknown, id: string) { return agents.get(id) ?? null }
       setAgent(_win: unknown, id: string, sessionId: string | null) { agents.set(id, sessionId) }
+      close(_win: unknown, id: string) { agents.delete(id) }
       closeWindow() {}
     }
   }))
@@ -61,6 +62,27 @@ async function fixture(): Promise<void> {
   assert.throws(() => handlers.get('browser:release-agent')!(foreign, 'browser:agent'), /does not belong/)
   handlers.get('browser:release-agent')!(event, 'browser:agent')
   assert.equal(agents.get('browser:agent'), null)
+
+  handlers.get('browser:create')!(event, 'browser:second')
+  const activating = agent.switchTab('s1', 'browser:second', true)
+  await Promise.resolve()
+  const activatingRequest = lastRequest() as ReturnType<typeof lastRequest> & { action: string; browserId: string }
+  assert.equal(activatingRequest.action, 'activate')
+  assert.equal(activatingRequest.browserId, 'browser:second')
+  assert.throws(() => answer(event, activatingRequest.requestId, { browserId: 'browser:agent' }), /Invalid browser open answer/, 'activation acknowledgement must match the exact requested tab')
+  await assert.rejects(activating, /Invalid browser open answer/)
+  const retryActivation = agent.switchTab('s1', 'browser:second', true)
+  await Promise.resolve()
+  answer(event, lastRequest().requestId, { browserId: 'browser:second' })
+  await retryActivation
+  const closing = agent.close('s1')
+  const closingRequest = lastRequest() as ReturnType<typeof lastRequest> & { action: string; browserId: string }
+  assert.equal(closingRequest.action, 'close')
+  assert.equal(agents.has('browser:second'), false, 'main ownership retires before the UI round-trip')
+  await assert.rejects(agent.open('s1', { browserId: 'browser:second' }), /No browser tab/)
+  answer(event, closingRequest.requestId, { browserId: 'browser:second' })
+  await closing
+  await assert.rejects(agent.close('s1'), /no browser tab/)
 
   const refused = agent.open('s1', {})
   answer(event, lastRequest().requestId, { error: 'The session is not open in this window' })

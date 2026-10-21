@@ -61,6 +61,19 @@ async function fixture() {
   const filtered = run()
   assert.equal(filtered.text, '- text: Before Shown bold after.', 'inline descendants use the same hidden and script filters without breaking sentences')
 
+  document.body.innerHTML = '<input type="file" aria-label="Visible upload" multiple accept="image/*"><div hidden><span id="secret-label">HIDDEN_SECRET</span><input type="file" aria-label="Hidden upload" aria-labelledby="secret-label"></div><div role="button" id="upload-host">Custom upload</div>'
+  const fileInput = document.querySelector('input')!
+  Object.defineProperty(fileInput, 'value', { value: 'C:\\fakepath\\SECRET_FILE.txt' })
+  const shadow = document.getElementById('upload-host')!.attachShadow({ mode: 'open' })
+  shadow.innerHTML = '<input type="file" style="display:none" aria-label="Shadow upload">'
+  const uploadPage = run()
+  assert.ok(uploadPage.text.includes('button "Visible upload" [ref=e1] [type=file] [multiple] [accept="image/*"]'))
+  assert.ok(uploadPage.text.includes('"Hidden upload"') && uploadPage.text.includes('[upload-only]'))
+  assert.ok(uploadPage.text.includes('"Shadow upload"'))
+  assert.ok(!uploadPage.text.includes('SECRET'), 'file values and unrelated hidden content stay out of upload metadata')
+  const uploadRefs = (globalThis as unknown as { __pigAgentRefs: Map<string, Element> }).__pigAgentRefs
+  assert.ok([...uploadRefs.values()].includes(shadow.querySelector('input')!))
+
   document.body.innerHTML = '<p>' + 'visible text '.repeat(100) + '</p>'
   const small = snapshotPage(120)
   assert.equal(small.truncated, true)

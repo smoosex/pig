@@ -17,7 +17,7 @@ import { AGENT_WORLD_ID, snapshotPage, type PageSnapshot } from './agent-snapsho
 import type { BrowserHost } from './host'
 import { isBrowserUrl } from './validation'
 
-type Host = Pick<BrowserHost, 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact'>
+type Host = Pick<BrowserHost, 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact' | 'networkEntries' | 'upload'>
 
 export interface BrowserAgentDeps {
   host: Host
@@ -28,6 +28,8 @@ export interface BrowserAgentDeps {
   browsers(win: BrowserWindow): string[]
   /** Asks the window's UI to open a background browser tab for the session; resolves its id. */
   requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal): Promise<string>
+  activateTab(win: BrowserWindow, sessionId: string, browserId: string, signal?: AbortSignal): Promise<void>
+  closeTab(win: BrowserWindow, sessionId: string, browserId: string, signal?: AbortSignal): Promise<void>
   navigationTimeout?: number
   loadTimeout?: number
 }
@@ -98,6 +100,7 @@ export class BrowserAgentController implements BrowserAgentHost {
   }
 
   async open(sessionId: string, options: { browserId?: string; url?: string }, signal?: AbortSignal): Promise<BrowserToolResult> {
+    signal?.throwIfAborted()
     const win = this.window(sessionId)
     let id = options.browserId
     if (id !== undefined) {
@@ -113,6 +116,49 @@ export class BrowserAgentController implements BrowserAgentHost {
     this.deps.host.setAgent(win, id, sessionId)
     if (options.url) await this.load(win, id, options.url, signal)
     return { text: `${this.describe(this.deps.host.getState(win, id))}\nThis tab is now controlled by this session. Read it with browser_snapshot.` }
+  }
+
+  async switchTab(sessionId: string, browserId: string, activate: boolean, signal?: AbortSignal): Promise<BrowserToolResult> {
+    const result = await this.open(sessionId, { browserId }, signal)
+    if (activate) {
+      const { win, id } = this.controlled(sessionId)
+      if (id !== browserId) throw new Error('Browser control was released or transferred')
+      await this.deps.activateTab(win, sessionId, id, signal)
+    }
+    return { text: `${result.text}${activate ? '\nThe tab was activated in the UI.' : '\nThe UI selection was not changed.'}` }
+  }
+
+  async release(sessionId: string): Promise<BrowserToolResult> {
+    const { win, id } = this.controlled(sessionId)
+    this.deps.host.setAgent(win, id, null)
+    return { text: `Released control of ${id}. The tab remains open.` }
+  }
+
+  async close(sessionId: string, signal?: AbortSignal): Promise<BrowserToolResult> {
+    signal?.throwIfAborted()
+    const { win, id } = this.controlled(sessionId)
+    await this.deps.closeTab(win, sessionId, id, signal)
+    return { text: `Closed ${id}. This session now controls no tab; use browser_open or browser_switch next.` }
+  }
+
+  async network(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult> {
+    const { win, id } = this.controlled(sessionId)
+    const entries = this.deps.host.networkEntries(win, id)
+      .filter(entry => !errorsOnly || entry.failed || entry.error || (entry.statusCode !== undefined && entry.statusCode >= 400)).slice(-50)
+    return { text: [
+      this.describe(this.deps.host.getState(win, id)),
+      'Recent network metadata since the main-document navigation (up to 50 entries). URL credentials, query and fragment are removed; headers and bodies are not collected.',
+      UNTRUSTED,
+      fenced('json', JSON.stringify(entries, null, 2))
+    ].join('\n') }
+  }
+
+  async upload(sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<BrowserToolResult> {
+    signal?.throwIfAborted()
+    const { win, id } = this.controlled(sessionId)
+    await this.ready(win, id, signal)
+    await abortable(this.deps.host.upload(win, id, sessionId, ref, files, signal), signal)
+    return { text: `Assigned ${files.length} file(s) to the file input. The page may upload automatically; use browser_snapshot and browser_network to inspect the result. File contents and paths are not echoed.` }
   }
 
   async navigate(sessionId: string, url: string, signal?: AbortSignal): Promise<BrowserToolResult> {

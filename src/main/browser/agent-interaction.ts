@@ -42,6 +42,9 @@ function prepareInteraction(request: BrowserInteraction, validateFocusOnly = fal
     return { x: 0, y: 0 }
   }
   if (!element && ['click', 'type', 'select'].includes(request.action)) throw new Error('Browser ref is required')
+  if (request.action === 'click' && element instanceof HTMLInputElement && element.type === 'file') {
+    throw new Error('Clicking a file input opens the native file dialog; use browser_upload instead')
+  }
   if (element) element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
   let x = innerWidth / 2
   let y = innerHeight / 2

@@ -5,7 +5,10 @@ import { BrowserHost } from '../src/main/browser/host'
 import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl } from '../src/main/browser/validation'
 import { BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
 
+let nextContentsId = 0
 class FakeContents extends EventEmitter {
+  id = ++nextContentsId
+  networkHandlers = new Map<string, (...args: any[]) => void>()
   dead = false
   url = ''
   loading = false
@@ -13,7 +16,13 @@ class FakeContents extends EventEmitter {
   sent: Array<[string, unknown]> = []
   devTools: unknown[] = []
   session = Object.assign(new EventEmitter(), {
-    setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, setDevicePermissionHandler: () => {}
+    setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, setDevicePermissionHandler: () => {},
+    webRequest: {
+      onBeforeRequest: (listener: (...args: any[]) => void) => { this.networkHandlers.set('before', listener) },
+      onCompleted: (listener: (...args: any[]) => void) => { this.networkHandlers.set('completed', listener) },
+      onErrorOccurred: (listener: (...args: any[]) => void) => { this.networkHandlers.set('error', listener) },
+      onBeforeRedirect: (listener: (...args: any[]) => void) => { this.networkHandlers.set('redirect', listener) }
+    }
   })
   navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} }
   isDestroyed() { return this.dead }
@@ -83,6 +92,28 @@ const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
 
 describe('browser host', () => {
+  test('network metadata follows page navigation and disposal without leaking raw URLs', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'browser:a', 'session-1')
+    await host.navigate(owner, 'browser:a', 'https://example.test')
+    const contents = views[0]!.webContents
+    const details = { id: 7, webContentsId: contents.id, url: 'https://user:secret@example.test/api?token=secret#secret', method: 'GET', resourceType: 'xhr', timestamp: 100 }
+    const responses: object[] = []
+    contents.networkHandlers.get('before')!(details, (response: object) => responses.push(response))
+    contents.networkHandlers.get('completed')!({ ...details, statusCode: 503, timestamp: 130 })
+    expect(responses).toEqual([{}])
+    expect(host.networkEntries(owner, 'browser:a')).toMatchObject([{ url: 'https://example.test/api', statusCode: 503, durationMs: 30 }])
+    contents.emit('did-start-navigation', {}, 'https://example.test/#part', true, true)
+    expect(host.networkEntries(owner, 'browser:a')).toHaveLength(1)
+    contents.emit('did-start-navigation', {}, 'https://example.test/next', false, true)
+    expect(host.networkEntries(owner, 'browser:a')).toEqual([])
+    contents.networkHandlers.get('completed')!({ ...details, statusCode: 200, timestamp: 140 })
+    expect(host.networkEntries(owner, 'browser:a')).toEqual([])
+    host.close(owner, 'browser:a')
+    contents.networkHandlers.get('before')!({ ...details, id: 8 }, () => {})
+    expect(host.networkEntries(owner, 'browser:a')).toEqual([])
+  })
+
   test('control IPC rejects guests and subframes', () => {
     const { owner, win } = fixture()
     const event = { sender: win.webContents, senderFrame: win.webContents.mainFrame } as unknown as IpcMainInvokeEvent
