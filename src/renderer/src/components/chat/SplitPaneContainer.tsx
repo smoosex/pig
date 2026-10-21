@@ -77,7 +77,8 @@ export function SplitPaneContainer({
       if (!dragging) return
       const layout = useSplitLayoutStore.getState()
       const elements = document.elementsFromPoint(event.clientX, event.clientY)
-      if (elements.some((element) => element.closest('[data-tab-strip]'))) {
+      // The whole header row takes the pane back: the strip itself shrinks to one merged tab while split.
+      if (elements.some((element) => element.closest('[data-app-header]'))) {
         layout.setReintegratingTab({ paneId: pane.id, tabId: pane.tabId })
         layout.setDragOver(null)
         return

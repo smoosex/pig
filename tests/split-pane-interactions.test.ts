@@ -433,9 +433,9 @@ async function fixture(scenario: string): Promise<void> {
       })
       assert.equal(split.getState().root, original, 'cancellation cannot submit the previewed drop')
       assert.equal(split.getState().dragOver, null)
-      const strip = document.createElement('div')
-      strip.dataset.tabStrip = 'true'
-      hit = [strip]
+      const appHeader = document.createElement('header')
+      appHeader.dataset.appHeader = ''
+      hit = [appHeader]
       await act(async () => {
         down()
         pointer('pointermove', 100, 20)
