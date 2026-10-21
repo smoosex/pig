@@ -326,6 +326,7 @@ export const zh = {
     label: '标注'
   },
   terminal: {
+    copyId: '复制终端 ID',
     releaseAgent: '释放 Agent 控制',
     agentControlled: '此终端由 Agent 控制，点击释放；仍可手动输入',
     releaseAgentWarning: 'Agent 正在运行。直接释放可能中断终端操作，且 Agent 仍可能重新接管。建议先停止 Agent；已发出的命令不会撤回或自动停止。',

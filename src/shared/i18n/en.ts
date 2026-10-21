@@ -329,6 +329,7 @@ export const en: Messages = {
     label: 'Label'
   },
   terminal: {
+    copyId: 'Copy terminal ID',
     releaseAgent: 'Release agent control',
     agentControlled: 'An agent controls this terminal. Click to release; manual input remains available.',
     releaseAgentWarning: 'The agent is running. Releasing control may interrupt terminal actions, and the agent may take control again. Stop the agent first if possible. Commands already sent will not be undone or stopped.',

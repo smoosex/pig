@@ -660,6 +660,55 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(computeSplitPosition(rect, 700, 300), 'right')
       assert.equal(computeSplitPosition(rect, 900, 300), null)
       assert.equal(computeSplitPosition(new DOMRect(), 0, 0), null)
+    } else if (scenario === 'menus') {
+      const copied: string[] = []
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (text: string) => { copied.push(text) } }
+      })
+      const terminal: OpenTab = { id: 'terminal:t', cwd: '/p', kind: 'terminal', title: 'Terminal', loadState: 'ready' }
+      sessions.setState({ openTabs: [...tabs, terminal] })
+      const { TabBar } = await import('../src/renderer/src/components/TabBar')
+      const a = split.getState().initLayout('A')
+      split.getState().splitPane(a, terminal.id, 'right')
+      await act(async () => {
+        root.render(h(Fragment, null,
+          h(TabBar, { sidebarTab: 'projects' }),
+          h(SplitPaneContainer, { renderPane: (node) => h('div', null, node.tabId) })))
+      })
+      const merged = host.querySelector<HTMLElement>('[data-tab-active]')!
+      assert.ok(merged.querySelector('.lucide-layout-panel-left'), 'a merged tab shows one split icon')
+      assert.equal(merged.querySelectorAll('svg.lucide-square-dashed-text, svg.lucide-square-terminal').length, 0, 'member icons are not stacked')
+      assert.notEqual(merged.getAttribute('data-slot'), 'context-menu-trigger', 'the merged tab has no context menu')
+      const openMenu = async (target: Element) => {
+        await act(async () => {
+          target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+        })
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+        return [...document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')].map((item) => item)
+      }
+      const header = (id: string) =>
+        [...host.querySelectorAll<HTMLElement>('[data-pane-header]')].find((item) => item.textContent?.includes(id === 'A' ? 'A' : 'Terminal'))!
+      assert.ok(header('A').querySelector('.lucide-square-dashed-text'), 'session panes keep their tab icon')
+      assert.ok(header(terminal.id).querySelector('.lucide-square-terminal'), 'terminal panes keep their tab icon')
+      const terminalItems = await openMenu(header(terminal.id))
+      assert.deepEqual(terminalItems.map((item) => item.textContent), ['Copy terminal ID'])
+      await act(async () => { terminalItems[0].click() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+      assert.deepEqual(copied, [terminal.id], 'each pane header copies its own tab')
+      const sessionItems = await openMenu(header('A'))
+      assert.deepEqual(sessionItems.map((item) => item.textContent), ['Rename', 'Copy session ID', 'Export session'])
+      await act(async () => { sessionItems[1].click() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+      assert.deepEqual(copied, [terminal.id, 'A'])
+      await act(async () => {
+        sessions.setState({ openTabs: sessions.getState().openTabs.map((tab) => tab.id === 'A' ? { ...tab, title: '' } : tab) })
+      })
+      const renameItem = (await openMenu(header('A'))).find((item) => item.textContent === 'Rename')!
+      await act(async () => { renameItem.click() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+      const field = header('A')?.querySelector('input') ?? host.querySelector<HTMLInputElement>('[data-pane-header] input')!
+      assert.equal(field.value, '', 'an untitled session never starts renaming from its id')
     } else if (scenario === 'timers') {
       const { TurnView } = await import('../src/renderer/src/components/TurnView')
       const { formatElapsed } = await import('../src/renderer/src/chat/turns')
@@ -745,6 +794,7 @@ else
     'close-file',
     'close-diff',
     'tab-dnd',
+    'menus',
     'timers'
   ]) {
     test(`split pane regressions: ${scenario}`, async () => {

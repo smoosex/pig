@@ -170,10 +170,30 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.deepEqual(copied, [session.id, session.id], 'both menus copy the clicked session, even when inactive')
     assert.deepEqual(selected, [], 'copying does not activate the session')
 
+    const terminal: OpenTab = { id: 'terminal:copy', cwd: kind === 'project' ? session.cwd : '', title: '终端', kind: 'terminal', loadState: 'ready' }
+    await act(async () => { store.setState({ openTabs: [tab, terminal] }) })
+    const terminalTrigger = [...container.querySelectorAll<HTMLElement>('[data-tabs] [data-slot="context-menu-trigger"]')]
+      .find((item) => item.textContent?.includes('终端'))
+    assert.ok(terminalTrigger, 'terminal tabs open a context menu')
+    await act(async () => {
+      terminalTrigger.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    const beforeTerminal = copied.length
+    const copyTerminal = [...document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')]
+      .find((item) => item.textContent === '复制终端 ID')
+    assert.ok(copyTerminal)
+    await act(async () => { copyTerminal.click() })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    assert.deepEqual(copied.slice(beforeTerminal), [terminal.id])
+    assert.deepEqual(selected, [], 'copying does not activate the terminal')
+    await act(async () => { store.setState({ openTabs: [tab] }) })
+
     copyError = new Error('Clipboard permission denied')
+    const beforeFailure = copied.length
     await copyFromMenu(unselected)
     assert.ok(container.querySelector('[role="alert"]')?.textContent?.includes(copyError.message))
-    assert.deepEqual(copied, [session.id, session.id], 'clipboard failures are shown rather than reported as success')
+    assert.equal(copied.length, beforeFailure, 'clipboard failures are shown rather than reported as success')
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

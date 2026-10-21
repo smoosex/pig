@@ -1,26 +1,20 @@
 import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
-import { ArrowUpToLine, CircleAlert, Copy, Dog, Download, FileDiff, Globe, LoaderCircle, PenLine, Plus, SquareTerminal } from 'lucide-react'
+import { ArrowUpToLine, CircleAlert, Globe, LoaderCircle, Plus, LayoutPanelLeft, SquareDashedText, SquareTerminal } from 'lucide-react'
 import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useSessionsStore } from '../stores/sessions'
-import { api } from '../ipc/api'
 import { useProjectAction } from './sidebar/project-action'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from './ui/dropdown-menu'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger
-} from './ui/context-menu'
+import { TabContextMenu } from './TabContextMenu'
 import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
 import { CloseButton } from './CloseButton'
-import { FileTypeIcon } from './files/FileTypeIcon'
+import { TabKindIcon } from './TabKindIcon'
 import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
@@ -79,7 +73,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const combinedTitle = uniqueSplitTabs.length > 0
     ? uniqueSplitTabs.map((t) => t.title).join(' / ')
     : ''
-  const splitKinds = isSplit ? uniqueSplitTabs.map((tab) => tab.kind) : undefined
+  const merged = isSplit && uniqueSplitTabs.length > 1
 
   let displayTabs: OpenTab[] = visibleTabs
   if (isSplit && representativeTab) {
@@ -176,7 +170,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                       ? uniqueSplitTabs.find((t) => t.loadState === 'error')?.loadError
                       : (tab.loadState === 'error' ? tab.loadError : undefined)
                   }
-                  splitKinds={isCombined ? splitKinds : undefined}
+                  split={isCombined && merged}
                   splitTabIds={isCombined ? splitTabIds : undefined}
                   onSelect={() => selectTab(tab.id)}
                   onClose={() => {
@@ -212,7 +206,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
               label={isSplit && activeTab.id === representativeTab?.id ? combinedTitle : activeTab.title}
               kind={activeTab.kind}
               path={activeTab.path}
-              splitKinds={isSplit && activeTab.id === representativeTab?.id ? splitKinds : undefined}
+              split={merged && activeTab.id === representativeTab?.id}
               dragging
             />
           ) : null}
@@ -286,7 +280,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
         <DropdownMenuContent align="end">
           <DropdownMenuGroup>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('session')}>
-              <Dog />{t('tabBar.newSession')}
+              <SquareDashedText />{t('tabBar.newSession')}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('browser')}>
               <Globe />{t('tabBar.newBrowser')}
@@ -313,7 +307,7 @@ interface TabFaceProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onSelect'> 
   dragging?: boolean
   editing?: boolean
   error?: string
-  splitKinds?: OpenTab['kind'][]
+  split?: boolean
   onSelect?: () => void
   onClose?: () => void
   onRenameCommit?: (name: string) => void
@@ -336,7 +330,7 @@ function TabFace({
   dragging = false,
   editing = false,
   error,
-  splitKinds,
+  split,
   className,
   onSelect,
   onClose,
@@ -383,23 +377,10 @@ function TabFace({
         </span>
       ) : null}
       <span className={cn('flex min-w-0 items-center justify-center overflow-hidden', dragging ? 'gap-1.5' : 'w-full gap-0 transition-[padding,gap] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:gap-1.5 @min-[7rem]/session-tab:px-8')}>
-        {splitKinds && splitKinds.length > 1 ? (
-          <span className="flex shrink-0 items-center">
-            {splitKinds.map((splitKind, index) => {
-              const Icon = splitKind === 'browser' ? Globe : splitKind === 'terminal' ? SquareTerminal : splitKind === 'file' || splitKind === 'diff' ? FileDiff : Dog
-              return <Icon key={index} className={cn('size-3.5', index > 0 && '-ml-1.5', index > 0 && !dragging && 'hidden @min-[7rem]/session-tab:block')} aria-hidden />
-            })}
-          </span>
-        ) : kind === 'browser' ? (
-          <Globe className="size-3.5 shrink-0" aria-hidden />
-        ) : kind === 'terminal' ? (
-          <SquareTerminal className="size-3.5 shrink-0" aria-hidden />
-        ) : kind === 'diff' ? (
-          <FileDiff className="size-3.5 shrink-0" aria-hidden />
-        ) : kind === 'file' ? (
-          <FileTypeIcon path={path ?? ''} className="size-3.5 shrink-0" />
+        {split ? (
+          <LayoutPanelLeft className="size-3.5 shrink-0" aria-hidden />
         ) : (
-          <Dog className="size-3.5 shrink-0" aria-hidden />
+          <TabKindIcon kind={kind} path={path} />
         )}
         <span data-tab-label className={cn('min-w-0 truncate', dragging ? 'max-w-60' : ['max-w-0 transition-[max-width] duration-75 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full', editing && 'max-w-full flex-1'])}>
           {editing && onRenameCommit && onRenameCancel ? (
@@ -441,7 +422,7 @@ function Tab({
   active,
   loading,
   error,
-  splitKinds,
+  split,
   splitTabIds,
   onSelect,
   onClose
@@ -455,7 +436,7 @@ function Tab({
   active: boolean
   loading: boolean
   error?: string
-  splitKinds?: OpenTab['kind'][]
+  split?: boolean
   splitTabIds?: string[]
   onSelect: () => void
   onClose: () => void
@@ -466,16 +447,13 @@ function Tab({
     }
     return state.runtime[tabId]?.isStreaming ?? false
   })
-  const t = useT()
   const dirty = useFilesStore((state) => {
     const document = path ? state.documents[fileKey(cwd, path)] : undefined
     return document ? isDirty(document) : false
   })
   const rename = useSessionRename(tabId, sessionPath)
-  const { pending, error: exportError, runAction } = useProjectAction()
-  // A changes or file tab holds no session, so there is no name to write for it.
-  const renamable = kind === 'project' || kind === 'chat'
-  const failure = error ?? exportError ?? rename.error ?? undefined
+  const action = useProjectAction()
+  const failure = error ?? action.error ?? rename.error ?? undefined
   // Only the pointer listeners are handed to the face, not dnd-kit's `attributes`: those make a tab
   // focusable and role="button", and a drag that answers to no key would then be reachable by keyboard
   // and dead. The 6px activation distance is what keeps a click selecting and a right click opening its
@@ -495,7 +473,7 @@ function Tab({
       loading={loading}
       dirty={dirty}
       streaming={streaming}
-      splitKinds={splitKinds}
+      split={split}
       editing={rename.editing}
       error={failure}
       title={failure ?? title}
@@ -506,32 +484,17 @@ function Tab({
     />
   )
 
-  if (!renamable) return body
+  // A merged split tab stands for several panes; each pane header carries its own menu.
+  if (splitTabIds?.length) return body
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild disabled={rename.editing}>
-        {body}
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={() => { onSelect(); rename.start() }}>
-          <PenLine data-icon="inline-start" />
-          {t('common.rename')}
-        </ContextMenuItem>
-        <ContextMenuItem
-          disabled={pending !== null}
-          onSelect={() => void runAction('copy-id', () => navigator.clipboard.writeText(tabId))}
-        >
-          <Copy data-icon="inline-start" />
-          {t('sessions.copyId')}
-        </ContextMenuItem>
-        <ContextMenuItem
-          disabled={pending !== null}
-          onSelect={() => void runAction('export', () => api.exportSession(tabId))}
-        >
-          <Download data-icon="inline-start" />
-          {t('sessions.export')}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <TabContextMenu
+      tabId={tabId}
+      kind={kind}
+      action={action}
+      editing={rename.editing}
+      onRename={() => { onSelect(); rename.start() }}
+    >
+      {body}
+    </TabContextMenu>
   )
 }

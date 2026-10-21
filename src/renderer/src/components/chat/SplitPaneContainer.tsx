@@ -5,7 +5,7 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent
 } from 'react'
-import { X } from 'lucide-react'
+import { CircleAlert, X } from 'lucide-react'
 import { Group, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import {
   useSplitLayoutStore,
@@ -14,12 +14,16 @@ import {
   type LayoutNode,
   type PaneNode
 } from '../../stores/split-layout'
-import { useSessionsStore } from '../../stores/sessions'
+import { useSessionsStore, type OpenTab } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { computeSplitPosition } from '../use-tab-strip-dnd'
 import { SplitPaneOverlay } from './SplitPaneOverlay'
+import { TabContextMenu } from '../TabContextMenu'
+import { TabKindIcon } from '../TabKindIcon'
+import { SessionRenameField, useSessionRename } from '../SessionRenameField'
+import { useProjectAction } from '../sidebar/project-action'
 
 export interface SplitPaneContainerProps {
   root?: LayoutNode | null
@@ -32,7 +36,6 @@ export function SplitPaneContainer({
   className,
   renderPane
 }: SplitPaneContainerProps) {
-  const t = useT()
   const storeRoot = useSplitLayoutStore((state) => state.root)
   const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
   const setActivePane = useSplitLayoutStore((state) => state.setActivePane)
@@ -194,29 +197,18 @@ export function SplitPaneContainer({
           isActive ? 'border-primary/80' : 'border-border/60'
         )}
       >
-        <div
-          data-pane-header="true"
+        <PaneHeader
+          tab={paneTab}
+          tabId={node.tabId}
+          title={tabTitle}
+          renameValue={paneTab?.title ?? ''}
           onPointerDown={(event) => handleHeaderPointerDown(event, node)}
-          className="flex h-7 shrink-0 cursor-grab items-center justify-between border-b border-border/40 bg-muted/20 px-2 select-none active:cursor-grabbing"
-        >
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
-            {tabTitle}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              closeTab(node.tabId)
-            }}
-            aria-label={t('sessions.close', { title: tabTitle })}
-          >
-            <X />
-          </Button>
-        </div>
+          onSelect={() => {
+            setActivePane(node.id)
+            useSessionsStore.getState().setActive(node.tabId)
+          }}
+          onClose={() => closeTab(node.tabId)}
+        />
         {renderPane(node, isActive)}
         <SplitPaneOverlay position={isDraggingOver ? dragOver.position : null} />
       </div>
@@ -229,6 +221,72 @@ export function SplitPaneContainer({
     >
       {renderLayoutNode(root)}
     </div>
+  )
+}
+
+/** Each pane's header owns the right-click actions of the tab it shows. */
+function PaneHeader({
+  tab,
+  tabId,
+  title,
+  renameValue,
+  onPointerDown,
+  onSelect,
+  onClose
+}: {
+  tab: OpenTab | undefined
+  tabId: string
+  title: string
+  /** Untitled sessions start renaming from an empty name, never from the id shown as their title. */
+  renameValue: string
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onSelect: () => void
+  onClose: () => void
+}) {
+  const t = useT()
+  const rename = useSessionRename(tabId, tab?.meta?.path)
+  const action = useProjectAction()
+  const failure = action.error ?? rename.error ?? undefined
+  const header = (
+    <div
+      data-pane-header="true"
+      onPointerDown={rename.editing ? undefined : onPointerDown}
+      className="flex h-7 shrink-0 cursor-grab items-center justify-between gap-1.5 border-b border-border/40 bg-muted/20 px-2 select-none active:cursor-grabbing"
+    >
+      {tab ? <TabKindIcon kind={tab.kind} path={tab.path} className="text-muted-foreground" /> : null}
+      {rename.editing ? (
+        <SessionRenameField className="h-5 flex-1 select-text" value={renameValue} onCommit={rename.commit} onCancel={rename.cancel} />
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">{title}</span>
+      )}
+      {failure ? <CircleAlert role="img" aria-label={failure} className="size-3.5 shrink-0 text-destructive" /> : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}
+        aria-label={t('sessions.close', { title })}
+      >
+        <X />
+      </Button>
+    </div>
+  )
+  if (!tab) return header
+  return (
+    <TabContextMenu
+      tabId={tabId}
+      kind={tab.kind}
+      action={action}
+      editing={rename.editing}
+      onRename={() => { onSelect(); rename.start() }}
+    >
+      {header}
+    </TabContextMenu>
   )
 }
 
