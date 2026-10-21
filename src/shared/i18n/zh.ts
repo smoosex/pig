@@ -336,7 +336,6 @@ export const zh = {
     agentControlChanged: '终端控制归属已变化，请关闭弹窗后重试。',
     cancel: '取消',
     directoryMissing: '目录不存在：{path}',
-    exited: '进程已退出（代码 {code}）',
     failed: '终端已中断：{message}',
     writeFailed: '终端输入失败：{message}',
     fontFailed: '终端字体加载失败，已使用备用字体：{message}',

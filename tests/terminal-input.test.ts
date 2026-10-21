@@ -14,6 +14,7 @@ if (process.argv.includes('--terminal-input-fixture')) {
   let terminal!: FakeTerminal
   let keyHandler!: (event: KeyboardEvent) => boolean
   const clears: string[] = []
+  const closedTabs: string[] = []
   const creates: number[][] = []
   let rejectCreate = false
   let receiveEvent!: (event: import('../src/shared/terminal').TerminalEvent) => void
@@ -69,7 +70,7 @@ if (process.argv.includes('--terminal-input-fixture')) {
   mock.module('@xterm/addon-webgl', () => ({ WebglAddon: class { onContextLoss() {} } }))
   mock.module('../src/renderer/src/stores/sessions', () => ({ useSessionsStore: Object.assign(
     (selector: (state: { runtime: Record<string, { isStreaming: boolean }> }) => unknown) => selector({ runtime: { owner: { isStreaming: streaming } } }),
-    { subscribe() {} }
+    { subscribe() {}, getState: () => ({ closeTab: (id: string) => { closedTabs.push(id) } }) }
   ) }))
   mock.module('../src/renderer/src/ipc/api', () => ({ api: {
     abort: async (id: string) => { aborted.push(id); if (abortFailure) throw new Error('abort failed') },
@@ -223,9 +224,18 @@ if (process.argv.includes('--terminal-input-fixture')) {
   assert.equal(creates.length, beforeBackground + 1, 'later attachment never starts a second shell')
   assert.equal(background.focuses, 0, 'attachment alone does not request focus')
   detachBackground()
+  receiveEvent({ terminalId: 'terminal:background', kind: 'output', data: 'exit\r\n' })
+  assert.equal(closedTabs.length, 0, 'printing exit does not close a running shell')
+  receiveEvent({ terminalId: 'terminal:input', kind: 'exit', exitCode: 0, signal: null })
+  receiveEvent({ terminalId: 'terminal:background', kind: 'exit', exitCode: 130, signal: null })
+  assert.deepEqual(closedTabs, ['terminal:input', 'terminal:background'], 'actual shell exits close tabs regardless of the exit code')
+  receiveEvent({ terminalId: 'terminal:retry', kind: 'failed', message: 'host crashed' })
+  assert.equal(closedTabs.length, 2, 'worker failures keep the pane open for diagnosis')
+  assert.ok(output.some((line) => line.includes('host crashed')))
   rejectCreate = true
   await assert.rejects(ensureTerminal('terminal:failure', null), /shell create failed/)
   await assert.rejects(ensureTerminal('terminal:failure', null), /shell create failed/, 'readiness failures remain observable')
+  assert.equal(closedTabs.length, 2, 'startup failures keep the pane open for diagnosis')
   GlobalRegistrator.unregister()
 } else {
   test('terminal clamps measured sizes, forwards binary mouse events and chunks oversized pastes', async () => {

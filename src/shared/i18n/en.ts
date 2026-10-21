@@ -339,7 +339,6 @@ export const en: Messages = {
     agentControlChanged: 'Terminal control has changed. Close this dialog and try again.',
     cancel: 'Cancel',
     directoryMissing: 'Directory does not exist: {path}',
-    exited: 'Process exited (code {code})',
     failed: 'Terminal stopped: {message}',
     writeFailed: 'Terminal input failed: {message}',
     fontFailed: 'Terminal font failed to load; using a fallback font: {message}',

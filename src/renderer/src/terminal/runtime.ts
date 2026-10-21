@@ -79,9 +79,11 @@ function receive(event: TerminalEvent): void {
     return
   }
   entry.status = 'ended'
-  notice(entry.term, event.kind === 'exit'
-    ? t('terminal.exited', { code: event.exitCode })
-    : t('terminal.failed', { message: event.message }))
+  if (event.kind === 'exit') {
+    useSessionsStore.getState().closeTab(event.terminalId)
+    return
+  }
+  notice(entry.term, t('terminal.failed', { message: event.message }))
 }
 
 let installed = false
