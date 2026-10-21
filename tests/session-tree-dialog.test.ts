@@ -153,7 +153,7 @@ async function runFixture(name: string): Promise<void> {
     return found
   }
   const labelInput = () => document.querySelector<HTMLInputElement>('input[aria-label="标注"]')
-  const openMenuOnRow = async (rowText: string) => {
+  const openMenuOnRow = async (rowText: string, itemText = '标注') => {
     const rowButton = [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) =>
       item.textContent?.includes(rowText)
     )
@@ -164,8 +164,8 @@ async function runFixture(name: string): Promise<void> {
       )
     })
     await flush()
-    const item = document.querySelector<HTMLElement>('[data-slot="context-menu-item"]')
-    assert.ok(item, 'the context menu opened')
+    const item = [...document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')].find((entry) => entry.textContent === itemText)
+    assert.ok(item, `the context menu offers ${itemText}`)
     await act(async () => {
       item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     })
@@ -188,75 +188,69 @@ async function runFixture(name: string): Promise<void> {
   if (name.startsWith('branch-')) {
     await act(async () => { button('会话树').click() })
     await flush()
-    const selectNode = async () => {
-      const node = [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.includes('user: 问题'))!
-      await act(async () => { node.click() })
+    const summarizing = name === 'branch-summary' || name === 'branch-pending' || name === 'branch-custom'
+    const node = () => [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent?.includes('user: 问题'))!
+    const navigate = async () => {
+      if (name === 'branch-custom') {
+        await openMenuOnRow('user: 问题', '自定义提示词总结')
+        assert.equal(branchCalls.length, 0, 'custom summary first asks for a prompt')
+        assert.equal(button('总结并跳转').disabled, true, 'the custom prompt must not be empty')
+        await act(async () => { button('返回').click() })
+        await flush()
+        assert.equal(document.querySelector('textarea'), null, 'back closes the prompt without switching')
+        await openMenuOnRow('user: 问题', '自定义提示词总结')
+        const input = document.querySelector<HTMLTextAreaElement>('textarea')!
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '  仅总结关键决定  ')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+        await act(async () => { button('总结并跳转').click() })
+        await flush()
+      } else if (summarizing) {
+        await openMenuOnRow('user: 问题', '总结并跳转')
+      } else {
+        await act(async () => { node().click() })
+      }
     }
-    await selectNode()
-    assert.equal(branchCalls.length, 0, 'selecting a node only opens confirmation')
-    assert.ok(button('不总结'))
-    assert.ok(button('总结'))
-    assert.ok(button('自定义提示总结'))
-
-    if (name === 'branch-summary' || name === 'branch-pending') {
-      await act(async () => { button('总结').click() })
-    }
-    if (name === 'branch-custom') {
-      await act(async () => { button('自定义提示总结').click() })
-      assert.equal(button('确认切换').disabled, true, 'custom instructions must not be empty')
-      const input = document.querySelector<HTMLTextAreaElement>('textarea')!
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '  仅总结关键决定  ')
-        input.dispatchEvent(new Event('input', { bubbles: true }))
-      })
-    }
-    await act(async () => { button('确认切换').click() })
+    await navigate()
     assert.deepEqual(branchCalls, [['s1', 'u1', {
       restoreUserInput: true,
-      summarize: name === 'branch-summary' || name === 'branch-pending' || name === 'branch-custom',
+      summarize: summarizing,
       ...(name === 'branch-custom' ? { customInstructions: '仅总结关键决定' } : {})
-    }]])
+    }]], 'left click jumps directly; the context menu chooses a summary')
     const content = document.querySelector('[data-slot="dialog-content"]')!
     assert.equal(content.getAttribute('aria-busy'), 'true')
     const status = document.querySelector('[role="status"]')!
-    const summarizing = name === 'branch-summary' || name === 'branch-pending' || name === 'branch-custom'
     assert.equal(status.textContent, summarizing ? '正在总结分支…停止总结' : '正在切换分支…', 'only summaries can be stopped')
     assert.ok(status.querySelector('svg.animate-spin'), 'status includes a spinning loader')
-    assert.equal(button('返回树').disabled, true)
-    assert.equal(button('取消').disabled, true)
     assert.equal(document.querySelector<HTMLInputElement>('input[placeholder="搜索节点"]')!.disabled, true)
     await act(async () => {
-      button('确认切换').click()
-      button('取消').click()
-      button('返回树').click()
+      node().click()
       document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
       document.querySelector('[data-slot="dialog-overlay"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0 }))
     })
     await flush()
-    assert.equal(branchCalls.length, 1, 'pending confirmation cannot run twice')
+    assert.equal(branchCalls.length, 1, 'a pending switch cannot run twice')
     assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'pending dialog cannot close')
     assert.equal(document.querySelector('button[data-slot="dialog-close"]'), null)
 
     if (name === 'branch-failure') {
       await act(async () => { rejectBranch(new Error('总结失败')) })
       assert.ok(document.querySelector('[role="alert"]')?.textContent?.includes('总结失败'))
-      assert.equal(button('确认切换').disabled, false)
-      await act(async () => { button('确认切换').click() })
+      assert.equal(document.querySelector('[role="status"]'), null)
+      await act(async () => { node().click() })
       assert.equal(branchCalls.length, 2, 'failure can retry')
+      assert.equal(document.querySelector('[role="alert"]'), null, 'a retry clears the old error')
       await act(async () => { finishBranch(false) })
-      assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'SDK cancel keeps confirmation open')
-      assert.equal(button('返回树').disabled, false)
-      await act(async () => { button('返回树').click() })
-      assert.equal(document.querySelector('[role="alert"]'), null)
-      await selectNode()
-      await act(async () => { button('取消').click() })
+      assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'SDK cancel keeps the tree open')
+      await act(async () => { document.querySelector<HTMLButtonElement>('button[data-slot="dialog-close"]')!.click() })
       assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
       return
     }
     if (name === 'branch-session-switch') {
       await act(async () => { useSessionsStore.setState({ activeTabId: 's2' }) })
       await flush()
-      assert.equal(document.querySelector('[data-slot="toggle-group"]'), null, 'switching tabs clears confirmation')
+      assert.equal(document.querySelector('[role="status"]'), null, 'switching tabs clears the old switch status')
       await act(async () => { finishBranch(true) })
       assert.ok(document.querySelector('[data-slot="dialog-content"]'), 'old request must not close the new session tree')
       assert.ok(document.body.textContent?.includes('user: 别的'))
@@ -265,7 +259,8 @@ async function runFixture(name: string): Promise<void> {
     if (name === 'branch-cancelled') {
       await act(async () => { finishBranch(false) })
       assert.ok(document.querySelector('[data-slot="dialog-content"]'))
-      assert.equal(button('确认切换').disabled, false, 'cancel/stale unlocks the confirmation')
+      assert.equal(document.querySelector('[role="status"]'), null, 'cancel/stale unlocks the tree')
+      assert.equal(document.querySelector<HTMLInputElement>('input[placeholder="搜索节点"]')!.disabled, false)
       return
     }
     if (name === 'branch-pending') {
@@ -456,13 +451,13 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
   await runFixture(process.argv[process.argv.indexOf('--session-tree-dialog-fixture') + 1]!)
 } else {
   for (const [flag, title] of [
-    ['branch-none', 'tree: no-summary confirmation passes explicit navigation options'],
-    ['branch-summary', 'tree: summary confirmation passes summarize true'],
-    ['branch-custom', 'tree: custom summary requires and trims instructions'],
+    ['branch-none', 'tree: left click jumps directly without a summary'],
+    ['branch-summary', 'tree: context menu summarizes before jumping'],
+    ['branch-custom', 'tree: custom summary prompt requires and trims instructions'],
     ['branch-pending', 'tree: pending summary locks dismissal and duplicate requests with busy status'],
-    ['branch-failure', 'tree: failed navigation can retry, return, and cancel'],
-    ['branch-cancelled', 'tree: cancelled or stale navigation leaves confirmation interactive'],
-    ['branch-session-switch', 'tree: session switches invalidate pending confirmation'],
+    ['branch-failure', 'tree: failed navigation shows the error and can retry or close'],
+    ['branch-cancelled', 'tree: cancelled or stale navigation unlocks the tree'],
+    ['branch-session-switch', 'tree: session switches invalidate the pending switch'],
     ['tree-view-tabs', 'tree: tabs switch the session view pi cycles with Ctrl+O'],
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
     ['tree-filter-scroll', 'tree: switching to user-only from a long tree tail shows the filtered rows'],

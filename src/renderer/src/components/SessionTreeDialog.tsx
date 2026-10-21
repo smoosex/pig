@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ListTree, LoaderCircle, PenLine } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CornerDownRight, ListCollapse, ListTree, LoaderCircle, MessageSquareText, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
 import { api, type SessionTreeRow, type SessionTreeView } from '../ipc/api'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
@@ -11,6 +11,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger
 } from './ui/context-menu'
 import { SessionRenameField } from './SessionRenameField'
@@ -25,9 +26,15 @@ import {
   DialogTrigger
 } from './ui/dialog'
 import { Alert, AlertDescription } from './ui/alert'
-import { Field, FieldGroup, FieldLabel } from './ui/field'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from './ui/alert-dialog'
 import { Textarea } from './ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Input } from './ui/input'
 import { InputGroupButton } from './ui/input-group'
 
@@ -41,6 +48,9 @@ const treeViews: { value: SessionTreeView; labelKey: MessageKey }[] = [
 
 // The tree list mounts only the rows its window can show. The height is fixed so the scroll math
 // can be plain arithmetic: every row carries `h-6.5` (26px) below and these two must stay in step.
+type BranchTarget = { sessionId: string; tipId: string }
+type BranchMode = 'none' | 'summary' | 'custom'
+
 const ROW_H = 26
 const OVERSCAN = 8
 
@@ -105,8 +115,11 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   const viewBranch = useSessionsStore((s) => s.viewBranch)
   const navigating = useSessionsStore((s) => !!(activeSessionId && s.runtime[activeSessionId]?.isNavigatingBranch))
   const [open, setOpen] = useState(false)
-  const [selection, setSelection] = useState<{ sessionId: string; tipId: string; text: string } | null>(null)
-  const [summaryMode, setSummaryMode] = useState('none')
+  // `selection` is the node being switched to (kept after a failure so the error stays attributable);
+  // `customTarget` holds a node while the user writes custom summary instructions.
+  const [selection, setSelection] = useState<BranchTarget | null>(null)
+  const [customTarget, setCustomTarget] = useState<BranchTarget | null>(null)
+  const [summaryMode, setSummaryMode] = useState<BranchMode>('none')
   const [instructions, setInstructions] = useState('')
   const [branchError, setBranchError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -120,23 +133,26 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
 
   useEffect(() => {
     setSelection(null)
+    setCustomTarget(null)
     setBranchError(null)
     setInstructions('')
     setSummaryMode('none')
   }, [activeSessionId])
 
-  const confirmBranch = async () => {
-    const target = selection
-    if (!target || busy || pendingRef.current || sessionRef.current !== target.sessionId) return
+  const confirmBranch = async (target: BranchTarget, mode: BranchMode, customInstructions?: string) => {
+    if (busy || pendingRef.current || sessionRef.current !== target.sessionId) return
     pendingRef.current = true
+    selectionRef.current = target
+    setSelection(target)
     setPending(true)
+    setSummaryMode(mode)
     setStopping(false)
     setBranchError(null)
     try {
       const changed = await viewBranch(target.sessionId, target.tipId, {
         restoreUserInput: true,
-        summarize: summaryMode !== 'none',
-        ...(summaryMode === 'custom' ? { customInstructions: instructions.trim() } : {})
+        summarize: mode !== 'none',
+        ...(mode === 'custom' ? { customInstructions } : {})
       })
       if (changed && sessionRef.current === target.sessionId && selectionRef.current === target) {
         setOpen(false)
@@ -260,7 +276,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     // Clamping the virtual window alone does not move the real viewport after filtering/folding.
     list.scrollTop = top
     if (scrollTop !== top) setScrollTop(top)
-  }, [open, top, scrollTop, selection])
+  }, [open, top, scrollTop])
 
   const startLabel = (id: string) => {
     // A menu holds its focus trap until a tick after it closes. The field has to mount behind that,
@@ -345,70 +361,16 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
         }}
       >
         <DialogHeader>
-          <DialogTitle>{t('tree.buttonAria')}</DialogTitle>
-          <DialogDescription>{t('tree.description')}</DialogDescription>
+          <DialogTitle className="text-sm">{t('tree.buttonAria')}</DialogTitle>
+          <DialogDescription className="text-xs">{t('tree.description')}</DialogDescription>
         </DialogHeader>
-        {selection && (
-          <div className="flex flex-col gap-4">
-            <p className="truncate text-sm" title={selection.text}>{selection.text}</p>
-            <FieldGroup>
-              <Field data-disabled={busy}>
-                <FieldLabel id="branch-summary-label">{t('tree.summaryChoice')}</FieldLabel>
-                <ToggleGroup
-                  type="single"
-                  value={summaryMode}
-                  onValueChange={(value) => { if (value && !busy) setSummaryMode(value) }}
-                  disabled={busy}
-                  variant="outline"
-                  aria-labelledby="branch-summary-label"
-                  className="flex-wrap"
-                >
-                  <ToggleGroupItem value="none">{t('tree.noSummary')}</ToggleGroupItem>
-                  <ToggleGroupItem value="summary">{t('tree.summarize')}</ToggleGroupItem>
-                  <ToggleGroupItem value="custom">{t('tree.customSummary')}</ToggleGroupItem>
-                </ToggleGroup>
-              </Field>
-              {summaryMode === 'custom' && (
-                <Field data-disabled={busy}>
-                  <FieldLabel htmlFor="branch-summary-instructions">{t('tree.customInstructions')}</FieldLabel>
-                  <Textarea
-                    id="branch-summary-instructions"
-                    value={instructions}
-                    onChange={(event) => setInstructions(event.target.value)}
-                    disabled={busy}
-                  />
-                </Field>
-              )}
-            </FieldGroup>
-            {branchError && <Alert variant="destructive"><AlertDescription>{branchError}</AlertDescription></Alert>}
-            {busy && (
-              <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm">
-                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                <span className="flex-1">{t(summaryMode === 'none' ? 'tree.switching' : 'tree.summarizing')}</span>
-                {summaryMode !== 'none' ? (
-                  <Button variant="outline" size="sm" disabled={stopping} onClick={() => {
-                    setStopping(true)
-                    void api.abortBranchSummary(selection.sessionId).catch((reason: unknown) => {
-                      setBranchError(reason instanceof Error ? reason.message : String(reason))
-                    })
-                  }}>{t('tree.stopSummary')}</Button>
-                ) : null}
-              </div>
-            )}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="ghost" disabled={busy} onClick={() => { setSelection(null); setBranchError(null) }}>{t('tree.backToTree')}</Button>
-              <Button variant="outline" disabled={busy} onClick={() => { setOpen(false); setSelection(null); setBranchError(null); setQuery('') }}>{t('tree.cancel')}</Button>
-              <Button disabled={busy || (summaryMode === 'custom' && !instructions.trim())} onClick={() => void confirmBranch()}>{t('tree.confirm')}</Button>
-            </div>
-          </div>
-        )}
-        <div hidden={!!selection} inert={busy || !!selection} className="grid gap-4">
+        <div inert={busy} className="grid gap-4">
         <GooeyNav
           size="xs"
           items={treeViews.map((item) => t(item.labelKey))}
           value={treeViews.findIndex((item) => item.value === view)}
           onChange={(index) => {
-            if (busy || selection) return
+            if (busy) return
             // pi clears its folds on every filter change; the rows below are already here.
             const mode = treeViews[index].value
             setView(mode)
@@ -488,11 +450,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                               !row.current && kindClass(row.kind)
                             )}
                             onClick={() => {
-                              if (!activeSessionId || busy || pendingRef.current || selection) return
-                              setSelection({ sessionId: activeSessionId, tipId: row.id, text: row.text })
-                              setSummaryMode('none')
-                              setInstructions('')
-                              setBranchError(null)
+                              if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'none')
                             }}
                           >
                             <span className="min-w-0 flex-1 truncate">
@@ -509,6 +467,27 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                       </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
+                      <ContextMenuItem disabled={busy} onSelect={() => {
+                        if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'none')
+                      }}>
+                        <CornerDownRight data-icon="inline-start" />
+                        {t('tree.jump')}
+                      </ContextMenuItem>
+                      <ContextMenuItem disabled={busy} onSelect={() => {
+                        if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'summary')
+                      }}>
+                        <ListCollapse data-icon="inline-start" />
+                        {t('tree.summarizeJump')}
+                      </ContextMenuItem>
+                      <ContextMenuItem disabled={busy} onSelect={() => {
+                        if (!activeSessionId) return
+                        setInstructions('')
+                        setCustomTarget({ sessionId: activeSessionId, tipId: row.id })
+                      }}>
+                        <MessageSquareText data-icon="inline-start" />
+                        {t('tree.customSummary')}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
                       <ContextMenuItem onSelect={() => startLabel(row.id)}>
                         <PenLine data-icon="inline-start" />
                         {t('tree.label')}
@@ -521,11 +500,55 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
             </SmoothHoverHighlight>
           )}
         </div>
-        <div className="text-xs text-muted-foreground">
-          {visible.length}/{rows.length}
-        </div>
+        {branchError && <Alert variant="destructive"><AlertDescription className="text-xs">{branchError}</AlertDescription></Alert>}
+        {busy && selection ? (
+          <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs">
+            <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+            <span className="flex-1">{t(summaryMode === 'none' ? 'tree.switching' : 'tree.summarizing')}</span>
+            {summaryMode !== 'none' ? (
+              <Button variant="outline" size="sm" disabled={stopping} onClick={() => {
+                setStopping(true)
+                void api.abortBranchSummary(selection.sessionId).catch((reason: unknown) => {
+                  setBranchError(reason instanceof Error ? reason.message : String(reason))
+                })
+              }}>{t('tree.stopSummary')}</Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            {visible.length}/{rows.length}
+          </div>
+        )}
         </div>
       </DialogContent>
+      <AlertDialog open={!!customTarget} onOpenChange={(next) => { if (!next) setCustomTarget(null) }}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-sm">{t('tree.customSummary')}</AlertDialogTitle>
+            <AlertDialogDescription className="sr-only">{t('tree.customInstructions')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            aria-label={t('tree.customInstructions')}
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            placeholder={t('tree.customPlaceholder')}
+            className="min-h-20 text-xs md:text-xs"
+            autoFocus
+          />
+          <AlertDialogFooter className="sm:justify-between">
+            <Button variant="ghost" size="sm" onClick={() => setCustomTarget(null)}>
+              <ChevronLeft data-icon="inline-start" />
+              {t('tree.back')}
+            </Button>
+            <Button size="sm" disabled={busy || !instructions.trim()} onClick={() => {
+              const target = customTarget
+              if (!target) return
+              setCustomTarget(null)
+              void confirmBranch(target, 'custom', instructions.trim())
+            }}>{t('tree.summarizeJump')}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }
