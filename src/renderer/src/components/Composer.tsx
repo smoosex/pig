@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
 import { EditorContent } from '@tiptap/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { Folder, GitBranch } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { cn } from '../lib/utils'
@@ -29,8 +30,10 @@ export function Composer({
   draftSessionId,
   explicitSessionId,
   isActive = true,
+  centered = false,
   workspace
 }: {
+  centered?: boolean
   draftCwd?: string
   draftSessionId?: string | null
   explicitSessionId?: string | null
@@ -43,9 +46,24 @@ export function Composer({
   const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
+  const reducedMotion = useReducedMotion()
+  // A home draft keeps its id when it becomes a tab, so an unchanged id means the same conversation got its first
+  // message. A changed id is a tab switch: the transcript appears at once, and the box must not trail behind it.
+  const renderedSessionId = useRef(sessionId)
+  const switchedSession = renderedSessionId.current !== sessionId
+  useEffect(() => {
+    renderedSessionId.current = sessionId
+  }, [sessionId])
 
   return (
-    <div className={cn(chatColumn, '@container/composer-column relative isolate shrink-0 pb-3.5')}>
+    // Home screens and empty sessions centre the box; only the same session leaving that state glides it to the
+    // bottom. Tab switches, queue growth, resizes and pane changes stay instant.
+    <motion.div
+      layout="position"
+      layoutDependency={centered}
+      transition={{ duration: reducedMotion || switchedSession ? 0 : 0.5, ease: [0.22, 1, 0.36, 1] }}
+      className={cn(chatColumn, '@container/composer-column relative isolate shrink-0 pb-3.5')}
+    >
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
       <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />
@@ -121,6 +139,6 @@ export function Composer({
         </div>
       ) : null}
       <ImagePreview src={attachments.preview} onClose={() => attachments.setPreview(null)} />
-    </div>
+    </motion.div>
   )
 }

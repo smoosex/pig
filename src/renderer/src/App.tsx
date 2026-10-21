@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
+import { isSessionEmpty } from './chat/session-empty'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
 import { useEventBridge } from './hooks/useEventBridge'
@@ -131,6 +132,7 @@ export function PaneViewContent({
   const t = useT()
   const paneTab = useSessionsStore((s) => s.openTabs.find((item) => item.id === node.tabId))
   const runtime = useSessionsStore((s) => s.runtime[node.tabId])
+  const empty = useSessionsStore((s) => paneTab?.loadState === 'ready' && isSessionEmpty(s.runtime[node.tabId]))
   const isDiff = paneTab?.kind === 'diff'
   const isFile = paneTab?.kind === 'file'
 
@@ -181,7 +183,8 @@ export function PaneViewContent({
               <ChatView explicitSessionId={node.tabId} />
             )}
           </div>
-          <Composer explicitSessionId={node.tabId} isActive={isActive} workspace={composerWorkspace} />
+          <Composer explicitSessionId={node.tabId} isActive={isActive} centered={empty} workspace={composerWorkspace} />
+          {empty ? <div className="min-h-0 flex-1" /> : null}
         </>
       )}
     </div>
@@ -333,6 +336,7 @@ export default function App() {
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
   const setReviewOpen = useDiffStore((s) => s.setReviewOpen)
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
+  const sessionEmpty = useSessionsStore((s) => sessionReady && isSessionEmpty(s.runtime[activeSessionId!]))
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
   /**
    * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
@@ -521,7 +525,8 @@ export default function App() {
                       </Suspense>
                     ) : sessionReady || projectHome || chatHome ? (
                       <>
-                        {sessionReady ? <ChatView /> : <SessionGreeting />}
+                        {/* Basis 0 like the greeting, so an empty session shares the height with the spacer below. */}
+                        {sessionReady ? <div className="flex min-h-0 flex-1 flex-col"><ChatView /></div> : <SessionGreeting />}
                         {chatHome && (chatDraftError || workspaceError) ? (
                           <div
                             role="alert"
@@ -545,9 +550,14 @@ export default function App() {
                           draftSessionId={
                             projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
                           }
+                          centered={projectHome || chatHome || sessionEmpty}
                           workspace={composerWorkspace}
                         />
-                        {projectHome ? <ProjectSessionHome cwd={currentProjectCwd!} /> : null}
+                        {projectHome ? (
+                          <ProjectSessionHome cwd={currentProjectCwd!} />
+                        ) : chatHome || sessionEmpty ? (
+                          <div className="min-h-0 flex-1" />
+                        ) : null}
                       </>
                     ) : (
                       <Empty className="gap-4">
