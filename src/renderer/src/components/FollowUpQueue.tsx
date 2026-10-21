@@ -14,11 +14,11 @@ const EMPTY_MESSAGES: string[] = []
 const EASE = [0.22, 1, 0.36, 1] as const
 const MAX_LIST_HEIGHT = 3 * 32 + 2 * 4
 const ROW_BACKGROUNDS = [
-  'bg-chart-1/8 hover:bg-chart-1/16 focus-within:bg-chart-1/16',
-  'bg-chart-2/8 hover:bg-chart-2/16 focus-within:bg-chart-2/16',
-  'bg-chart-3/8 hover:bg-chart-3/16 focus-within:bg-chart-3/16',
-  'bg-chart-4/8 hover:bg-chart-4/16 focus-within:bg-chart-4/16',
-  'bg-chart-5/8 hover:bg-chart-5/16 focus-within:bg-chart-5/16'
+  'solid:bg-chart-1/8 solid:hover:bg-chart-1/16 solid:focus-within:bg-chart-1/16',
+  'solid:bg-chart-2/8 solid:hover:bg-chart-2/16 solid:focus-within:bg-chart-2/16',
+  'solid:bg-chart-3/8 solid:hover:bg-chart-3/16 solid:focus-within:bg-chart-3/16',
+  'solid:bg-chart-4/8 solid:hover:bg-chart-4/16 solid:focus-within:bg-chart-4/16',
+  'solid:bg-chart-5/8 solid:hover:bg-chart-5/16 solid:focus-within:bg-chart-5/16'
 ] as const
 
 function QueueRow({
@@ -65,7 +65,7 @@ function QueueRow({
       data-queue-id={row.id}
       data-queue-mode={row.mode}
       className={cn(
-        'group flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors duration-150 motion-reduce:transition-none',
+        'group flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg bg-glass-prompt-foreground/5 px-2 text-xs transition-colors duration-150 hover:bg-glass-prompt-foreground/10 focus-within:bg-glass-prompt-foreground/10 motion-reduce:transition-none',
         ROW_BACKGROUNDS[colorIndex % ROW_BACKGROUNDS.length]
       )}
     >
@@ -206,7 +206,7 @@ export function FollowUpQueue({ sessionId }: { sessionId: string | null }) {
       data-slot="follow-up-queue"
     >
       <motion.div
-        className="absolute inset-x-0 top-0 bottom-2 overflow-hidden rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-sm"
+        className="absolute inset-x-0 top-0 bottom-2 overflow-hidden rounded-xl border border-glass-card-border bg-glass-popover-background bg-[image:var(--glass-popover-sheen)] p-1.5 text-glass-prompt-foreground shadow-glass-popover solid:border-border solid:bg-popover solid:bg-none solid:text-popover-foreground solid:shadow-sm"
         initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }}
         animate={{ opacity: visible ? 1 : 0, y: visible || reducedMotion ? 0 : 12 }}
         transition={{ duration: reducedMotion ? 0 : 0.22, ease: EASE }}
