@@ -27,6 +27,9 @@ async function fixture() {
   const appliedBounds = new Map<string, BrowserBounds | null>()
   const navigations: { browserId: string; url: string }[] = []
   const pageActions: [string, string][] = []
+  const controlActions: unknown[][] = []
+  let finishAbort!: () => void
+  let failAbort = false
   const api: BrowserApi = {
     create: async (browserId) => { created++; return state(browserId) },
     getState: async (browserId) => { reads++; return browserId === 'a' ? new Promise((resolve) => { initial = resolve }) : state(browserId) },
@@ -53,7 +56,7 @@ async function fixture() {
     previewCookies: async () => ({ site: null, count: 0, domains: [], skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
     importCookies: async () => ({ imported: 0, failed: 0, skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
     clearSiteCookies: async () => ({ removed: 0, failed: 0 }),
-    releaseAgent: async () => {},
+    releaseAgent: async (id, expected) => { controlActions.push(['release', id, expected]) },
     onAgentOpenRequest: () => () => {},
     answerAgentOpen: async () => {},
     onShortcutRequested: () => () => {},
@@ -61,13 +64,18 @@ async function fixture() {
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }
   }
-  Object.defineProperty(window, 'api', { value: { browser: api }, configurable: true })
+  Object.defineProperty(window, 'api', { value: { browser: api, abort: async (id: string) => {
+    controlActions.push(['abort', id])
+    if (failAbort) throw new Error('stop failed')
+    await new Promise<void>((resolve) => { finishAbort = resolve })
+  } }, configurable: true })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { BrowserPanel } = await import('../src/renderer/src/components/browser/BrowserPanel')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
   const { useSessionsStore: sessions } = await import('../src/renderer/src/stores/sessions')
+  const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
   const closedTabs: string[] = []
   sessions.setState({ closeTab: (id) => { closedTabs.push(id) } })
   const { serializeComposerDocument, textToComposerDocument } = await import('../src/renderer/src/components/composer/document')
@@ -113,6 +121,44 @@ async function fixture() {
   assert.ok(address.compareDocumentPosition(toolbar.querySelector('[aria-label="browser.copyUrl"]')!) & Node.DOCUMENT_POSITION_FOLLOWING, 'page actions follow the address bar')
   for (const action of ['copyUrl', 'openExternal', 'inspect']) await click(action)
   assert.deepEqual(pageActions, [['copyUrl', 'a'], ['openExternal', 'a'], ['inspect', 'a']])
+  const dialogButton = (key: string) => {
+    const button = [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((button) => button.textContent === `browser.${key}`)
+    assert.ok(button)
+    return button
+  }
+  await act(async () => {
+    sessions.setState({ runtime: { controller: { ...emptyRuntime(), isStreaming: true } } })
+    pushState({ ...state('a', 'fresh'), agentSessionId: 'controller' })
+  })
+  await click('releaseAgent')
+  assert.equal(controlActions.length, 0, 'opening confirmation does not release control')
+  assert.ok(document.querySelector('[role="alertdialog"]')?.textContent?.includes('browser.releaseAgentWarning'))
+  await act(async () => { dialogButton('releaseDirectly').click() })
+  assert.deepEqual(controlActions, [['release', 'a', 'controller']])
+  await click('releaseAgent')
+  failAbort = true
+  await act(async () => { dialogButton('stopAndRelease').click() })
+  assert.ok(document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent?.includes('stop failed'))
+  assert.equal(controlActions.filter(([action]) => action === 'release').length, 1, 'stop failure does not silently release')
+  failAbort = false
+  await act(async () => { dialogButton('stopAndRelease').click() })
+  assert.equal(dialogButton('releaseDirectly').disabled, true)
+  assert.equal(controlActions.filter(([action]) => action === 'release').length, 1, 'release waits for abort completion')
+  await act(async () => { finishAbort() })
+  assert.deepEqual(controlActions.at(-1), ['release', 'a', 'controller'])
+  assert.equal(document.querySelector('[role="alertdialog"]'), null)
+  await click('releaseAgent')
+  await act(async () => { sessions.setState({ runtime: { controller: emptyRuntime() } }) })
+  assert.ok(document.querySelector('[role="alertdialog"]')?.textContent?.includes('browser.releaseAgentIdle'))
+  assert.ok(!document.querySelector('[role="alertdialog"]')?.textContent?.includes('browser.stopAndRelease'))
+  const beforeCancel = controlActions.length
+  await act(async () => { dialogButton('cancel').click() })
+  assert.equal(controlActions.length, beforeCancel)
+  await click('releaseAgent')
+  await act(async () => { dialogButton('releaseControl').click() })
+  assert.equal(controlActions.length, beforeCancel + 1, 'idle release does not call abort')
+  assert.deepEqual(controlActions.at(-1), ['release', 'a', 'controller'])
+  await act(async () => { pushState(state('a', 'fresh')) })
   await act(async () => {
     address.dispatchEvent(new Event('compositionstart', { bubbles: true }))
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true })

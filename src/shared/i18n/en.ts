@@ -327,7 +327,14 @@ export const en: Messages = {
   },
   browser: {
     releaseAgent: 'Release agent control',
-    agentControlled: 'An agent is using this tab. Click to release control.',
+    releaseAgentWarning: 'The agent is running. Releasing control may interrupt page actions, and the agent may take control again. Stop the agent first if possible. Actions already sent cannot be undone.',
+    releaseAgentIdle: 'The agent is not running. Releasing control keeps the page open. The agent can take control again later.',
+    releaseControl: 'Release control',
+    releaseDirectly: 'Release directly',
+    stopAndRelease: 'Stop agent and release',
+    agentControlChanged: 'Browser control has changed. Close this dialog and try again.',
+
+    agentControlled: 'An agent controls this tab. Click to release control.',
     cookieImport: 'Cookie import',
     cookieKeychainError: 'Could not access Chrome Safe Storage; check Keychain permissions.',
     cookieUnsafePath: 'Unsafe Chrome cookie database or profile path.',

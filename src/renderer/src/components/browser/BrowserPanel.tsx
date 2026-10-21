@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal
 import { useSessionsStore } from '../../stores/sessions'
 import { addBrowserAnnotationsToDraft, browserPickerOptions } from './browser-annotations'
 import { Alert, AlertDescription } from '../ui/alert'
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from '../ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { appendBrowserScreenshotDraft } from './browser-draft'
 import { useBrowserBounds } from './useBrowserBounds'
@@ -37,6 +38,14 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   const [state, setState] = useState<BrowserState | null>(null)
   const [address, setAddress] = useState('')
   const [cookieOpen, setCookieOpen] = useState(false)
+  const [releaseTarget, setReleaseTarget] = useState<string | null>(null)
+  const [releasePending, setReleasePending] = useState(false)
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const releaseLock = useRef(false)
+  const agentRunning = useSessionsStore((store) => {
+    const id = releaseTarget ?? state?.agentSessionId
+    return id ? store.runtime[id]?.isStreaming ?? false : false
+  })
   const reloadCookies = useCallback(async () => {
     if (latest.current?.url) await api.browser.reload(browserId)
   }, [browserId])
@@ -134,6 +143,25 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
     setBusy(true)
     void operation().catch(report).finally(() => { if (alive.current) setBusy(false) })
   }
+  const releaseControl = async (stop: boolean) => {
+    if (!releaseTarget || releaseLock.current) return
+    releaseLock.current = true
+    setReleasePending(true)
+    setReleaseError(null)
+    try {
+      if (latest.current?.agentSessionId !== releaseTarget) throw new Error(t('browser.agentControlChanged'))
+      if (stop) await api.abort(releaseTarget)
+      if (latest.current?.agentSessionId !== releaseTarget) throw new Error(t('browser.agentControlChanged'))
+      await api.browser.releaseAgent(browserId, releaseTarget)
+      if (alive.current) setReleaseTarget(null)
+    } catch (reason) {
+      if (alive.current) setReleaseError(failureMessage(reason))
+      else console.error('Browser release:', reason)
+    } finally {
+      releaseLock.current = false
+      if (alive.current) setReleasePending(false)
+    }
+  }
   const navigate = (operation: () => Promise<void>) => {
     invalidateCapture()
     run(operation)
@@ -230,7 +258,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           }}
           className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs border-glass-card-border bg-glass-prompt-foreground/4! solid:border-input solid:bg-background! solid:dark:bg-input/30!" />
         <div className="flex shrink-0 items-center gap-1">
-          {state?.agentSessionId ? iconButton(t('browser.releaseAgent'), <Bot />, () => run(() => api.browser.releaseAgent(browserId)), false, true, t('browser.agentControlled')) : null}
+          {state?.agentSessionId ? iconButton(t('browser.releaseAgent'), <Bot />, () => { setReleaseError(null); setReleaseTarget(state.agentSessionId) }, false, true, t('browser.agentControlled')) : null}
           {iconButton(t('browser.cookieImport'), <Cookie />, () => setCookieOpen(true))}
           {iconButton(t('browser.copyUrl'), <Copy />, () => run(() => api.browser.copyUrl(browserId)), !state?.url)}
           {iconButton(t('browser.openExternal'), <ExternalLink />, () => run(() => api.browser.openExternal(browserId)), !state?.url)}
@@ -238,6 +266,21 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
         </div>
         <span className="sr-only" role="status">{busy || state?.loading || (!state && !error) ? t('browser.loading') : state?.title}</span>
       </form>
+      <AlertDialog open={releaseTarget !== null} onOpenChange={(open) => { if (!open && !releaseLock.current) setReleaseTarget(null) }}>
+        <AlertDialogContent onEscapeKeyDown={(event) => { if (releaseLock.current) event.preventDefault() }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('browser.releaseAgent')}</AlertDialogTitle>
+            <AlertDialogDescription>{t(agentRunning ? 'browser.releaseAgentWarning' : 'browser.releaseAgentIdle')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {releaseError ? <Alert variant="destructive"><AlertDescription>{releaseError}</AlertDescription></Alert> : null}
+          <AlertDialogFooter>
+            {agentRunning
+              ? <Button size="sm" variant="outline" disabled={releasePending} onClick={() => void releaseControl(false)}>{t('browser.releaseDirectly')}</Button>
+              : <AlertDialogCancel size="sm" disabled={releasePending}>{t('browser.cancel')}</AlertDialogCancel>}
+            <Button size="sm" disabled={releasePending} onClick={() => void releaseControl(agentRunning)}>{releasePending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t(agentRunning ? 'browser.stopAndRelease' : 'browser.releaseControl')}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
       {error || state?.error ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
       <div ref={viewport} data-browser-viewport className="min-h-0 flex-1 overflow-hidden">

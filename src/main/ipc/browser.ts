@@ -1,5 +1,6 @@
 /** Independent browser panes belong to the creating UI window, never to a Pi session or page guest. */
 import { randomUUID } from 'node:crypto'
+import { t } from '../i18n'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clipboard, shell, ipcMain, session, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
@@ -151,7 +152,11 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   }
   ipcMain.handle('browser:copy-url', (event, id: string) => clipboard.writeText(currentUrl(event, id)))
   ipcMain.handle('browser:open-external', (event, id: string) => shell.openExternal(currentUrl(event, id)))
-  ipcMain.handle('browser:release-agent', (event, id: string) => host.setAgent(owner(event, id), id, null))
+  ipcMain.handle('browser:release-agent', (event, id: string, expectedSessionId?: string) => {
+    const win = owner(event, id)
+    if (expectedSessionId !== undefined && host.agentOf(win, id) !== expectedSessionId) throw new Error(t('browser.agentControlChanged'))
+    host.setAgent(win, id, null)
+  })
   ipcMain.handle('browser:agent-open-answer', (event, requestId: string, result: { browserId: string } | { error: string }) => {
     const win = windowForEvent(event)
     assertBrowserSender(event, win)

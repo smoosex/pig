@@ -88,7 +88,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.previewCookies('browser:one', 'chrome:profile', 'site')
   await api.browser.importCookies('browser:one', 'chrome:profile', 'all', null)
   await api.browser.clearSiteCookies('browser:one', 'example.com')
-  await api.browser.releaseAgent('browser:one')
+  await api.browser.releaseAgent('browser:one', 'session:one')
   await api.browser.answerAgentOpen('request-1', { browserId: 'browser:one' })
   api.browser.onAgentOpenRequest(() => {})()
   await api.browser.close('session-1')
@@ -149,7 +149,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:preview-cookies', args: ['browser:one', 'chrome:profile', 'site'] },
     { channel: 'browser:import-cookies', args: ['browser:one', 'chrome:profile', 'all', null] },
     { channel: 'browser:clear-site-cookies', args: ['browser:one', 'example.com'] },
-    { channel: 'browser:release-agent', args: ['browser:one'] },
+    { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
     { channel: 'browser:close', args: ['session-1'] }
   ])

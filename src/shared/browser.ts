@@ -141,7 +141,7 @@ export interface BrowserApi {
   onCloseRequested(listener: (browserId: string) => void): () => void
   onShortcutRequested(listener: (action: BrowserHostShortcut) => void): () => void
   /** Ends agent control of the page; the agent must call browser_open again to resume. */
-  releaseAgent(browserId: string): Promise<void>
+  releaseAgent(browserId: string, expectedSessionId?: string): Promise<void>
   onAgentOpenRequest(listener: (request: BrowserAgentOpenRequest) => void): () => void
   /** Answers an agent open request with the created tab, or the reason it could not be created. */
   answerAgentOpen(requestId: string, result: { browserId: string } | { error: string }): Promise<void>

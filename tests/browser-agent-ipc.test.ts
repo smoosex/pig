@@ -60,7 +60,9 @@ async function fixture(): Promise<void> {
   assert.match((await second).text, /Tab: browser:agent/)
   assert.equal(agents.get('browser:agent'), 's1')
   assert.throws(() => handlers.get('browser:release-agent')!(foreign, 'browser:agent'), /does not belong/)
-  handlers.get('browser:release-agent')!(event, 'browser:agent')
+  assert.throws(() => handlers.get('browser:release-agent')!(event, 'browser:agent', 'other-session'))
+  assert.equal(agents.get('browser:agent'), 's1', 'a stale confirmation must not release a new controller')
+  handlers.get('browser:release-agent')!(event, 'browser:agent', 's1')
   assert.equal(agents.get('browser:agent'), null)
 
   handlers.get('browser:create')!(event, 'browser:second')

@@ -34,7 +34,7 @@ const api: SessionApi = {
       ipcRenderer.on('browser:host-shortcut-requested', handler)
       return () => ipcRenderer.off('browser:host-shortcut-requested', handler)
     },
-    releaseAgent: (browserId) => ipcRenderer.invoke('browser:release-agent', browserId),
+    releaseAgent: (browserId, expectedSessionId) => ipcRenderer.invoke('browser:release-agent', browserId, expectedSessionId),
     onAgentOpenRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/browser').BrowserAgentOpenRequest) => listener(request)
       ipcRenderer.on('browser:agent-open-request', handler)

@@ -324,7 +324,14 @@ export const zh = {
   },
   browser: {
     releaseAgent: '释放 Agent 控制',
-    agentControlled: 'Agent 正在使用此标签，点击释放控制',
+    releaseAgentWarning: 'Agent 正在运行。直接释放可能中断网页操作，且 Agent 仍可能重新接管。建议先停止 Agent；已发出的操作无法撤回。',
+    releaseAgentIdle: 'Agent 当前未运行。释放控制不会关闭网页，之后 Agent 仍可重新接管。',
+    releaseControl: '释放控制',
+    releaseDirectly: '直接释放',
+    stopAndRelease: '停止 Agent 并释放',
+    agentControlChanged: '浏览器控制归属已变化，请关闭弹窗后重试。',
+
+    agentControlled: '此标签由 Agent 控制，点击释放控制',
     cookieImport: 'Cookie 导入',
     cookieKeychainError: '无法读取 Chrome Safe Storage，请检查钥匙串访问权限。',
     cookieUnsafePath: 'Chrome Cookie 数据库或配置目录路径不安全。',
