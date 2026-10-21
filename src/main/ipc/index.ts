@@ -25,6 +25,7 @@ export function registerIpc(): void {
   registerModelIpc()
   registerSkillsIpc()
   registerSubagentIpc()
-  registerTerminalIpc()
-  registerBrowserIpc({ sessionWindow: (id) => getLive(id)?.win, isSessionLive: (id) => getLive(id) !== undefined })
+  const sessions = { sessionWindow: (id: string) => getLive(id)?.win, isSessionLive: (id: string) => getLive(id) !== undefined }
+  registerTerminalIpc(sessions)
+  registerBrowserIpc(sessions)
 }

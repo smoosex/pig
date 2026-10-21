@@ -34,6 +34,12 @@ extraResources:
     to: system-plugins/pig-browser
     filter:
       - '**/*.ts'
+  - from: src/main/plugins/pig-terminal-host.ts
+    to: system-plugins/pig-terminal-host.ts
+  - from: src/main/plugins/pig-terminal
+    to: system-plugins/pig-terminal
+    filter:
+      - '**/*.ts'
   - from: src/main/plugins/observational-memory
     to: system-plugins/observational-memory
     filter:

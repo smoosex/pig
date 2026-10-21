@@ -1,8 +1,8 @@
 /**
  * xterm instances for terminal tabs. Each one lives as long as its tab, not its React view: switching
  * tabs or moving a pane parks the element off-screen and reattaches it, so scrollback and running
- * programs never need replaying. The shell starts on the first mount, once the font is loaded and the
- * grid has a real size; closing the tab disposes the instance and asks main to end the shell.
+ * programs never need replaying. Agent requests can start a parked terminal before its first mount;
+ * both paths share font loading and shell readiness. Closing the tab ends the shell.
  */
 import '@xterm/xterm/css/xterm.css'
 import './terminal.css'
@@ -27,6 +27,7 @@ interface Entry {
   status: 'starting' | 'running' | 'ended'
   /** Focus asked for before the font loaded and xterm opened. */
   focusOnOpen: boolean
+  ready: Promise<void>
 }
 
 const entries = new Map<string, Entry>()
@@ -71,6 +72,10 @@ function receive(event: TerminalEvent): void {
     entry.term.write(event.data, () => {
       if (entry.status !== 'ended') api.terminal.ack(event.terminalId, event.data.length).catch((error) => reportError(event.terminalId, error))
     })
+    return
+  }
+  if (event.kind === 'clear') {
+    entry.term.write('', () => entry.term.clear())
     return
   }
   entry.status = 'ended'
@@ -140,7 +145,10 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     if (!event.metaKey || event.ctrlKey || event.altKey) return true
     // Shift variants belong to the app (Cmd+Shift+A adds a project).
     if (event.type === 'keydown' && !event.shiftKey && event.key.toLowerCase() === 'k') {
-      term.clear()
+      if (entry.status === 'running') api.terminal.clear(id).catch((error: unknown) => {
+        if (entries.get(id) === entry) notice(term, t('terminal.failed', { message: error instanceof Error ? error.message : String(error) }))
+      })
+      else term.clear()
       return false
     }
     if (event.type === 'keydown' && !event.shiftKey && event.key.toLowerCase() === 'a') {
@@ -150,7 +158,8 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     // Copy and paste stay with xterm; every other Command shortcut belongs to the app.
     return event.key.toLowerCase() === 'c' || event.key.toLowerCase() === 'v'
   })
-  const entry: Entry = { term, fit, element, status: 'starting', focusOnOpen: false }
+  term.resize(120, 30)
+  const entry: Entry = { term, fit, element, status: 'starting', focusOnOpen: false, ready: Promise.resolve() }
   entries.set(id, entry)
   const sendInput = (data: string, binary = false): void => {
     if (entry.status !== 'running') return
@@ -175,12 +184,12 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
 
   fontsReady ??= Promise.all(['400', '700'].map((weight) => document.fonts.load(`${weight} ${FONT_SIZE}px 'Lilex Nerd Font Mono'`)))
   const fonts = fontsReady
-  void fonts.then(() => null, (error: unknown) => {
+  entry.ready = fonts.then(() => null, (error: unknown) => {
     // Let the next terminal retry instead of every later pane inheriting this rejection.
     if (fontsReady === fonts) fontsReady = null
     return error
   }).then(async (fontError) => {
-    if (entries.get(id) !== entry) return
+    if (entries.get(id) !== entry) throw new Error('Terminal closed during startup')
     // The grid is measured from the font, so the shell must not start before it settled.
     term.open(element)
     // xterm falls back to the next monospace family; the failure is shown rather than leaving a blank pane.
@@ -198,22 +207,28 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     try {
       await api.terminal.create(id, cwd, term.cols, term.rows)
     } catch (error) {
-      if (entries.get(id) !== entry) return
-      entry.status = 'ended'
-      notice(term, t('terminal.startFailed', { message: error instanceof Error ? error.message : String(error) }))
-      return
+      if (entries.get(id) === entry) {
+        entry.status = 'ended'
+        notice(term, t('terminal.startFailed', { message: error instanceof Error ? error.message : String(error) }))
+      }
+      throw error
     }
-    if (entries.get(id) !== entry || entry.status !== 'starting') return
+    if (entries.get(id) !== entry || entry.status !== 'starting') throw new Error('Terminal ended during startup')
     entry.status = 'running'
     // The pane may have been resized while the shell was starting.
     if (fitVisible(entry)) api.terminal.resize(id, term.cols, term.rows).catch((error) => reportError(id, error))
-  }).catch((error: unknown) => reportError(id, error))
+  }).catch((error: unknown) => {
+    reportError(id, error)
+    throw error
+  })
+  // Mount-only callers display startup failures in xterm; agent callers also await the rejection.
+  void entry.ready.catch(() => {})
   return entry
 }
 
 /** Fits the grid to its element; a parked or collapsed element has no size to fit. */
 function fitVisible(entry: Entry): boolean {
-  if (!entry.element.isConnected || !entry.term.element || !entry.element.clientWidth || !entry.element.clientHeight) return false
+  if (entry.element.parentElement === parking || !entry.element.isConnected || !entry.term.element || !entry.element.clientWidth || !entry.element.clientHeight) return false
   const dimensions = entry.fit.proposeDimensions()
   if (!dimensions) return false
   if (!Number.isFinite(dimensions.cols) || !Number.isFinite(dimensions.rows)) throw new Error('Invalid terminal dimensions')
@@ -224,11 +239,18 @@ function fitVisible(entry: Entry): boolean {
   return true
 }
 
+/** Starts a background tab without selecting it or requesting focus; output is parsed and ACKed normally. */
+export function ensureTerminal(id: string, cwd: string | null): Promise<void> {
+  install()
+  return (entries.get(id) ?? create(id, cwd, parking!)).ready
+}
+
 /** Shows the tab's terminal inside `host`, creating it on first use; returns the detach function. */
 export function attachTerminal(id: string, cwd: string | null, host: HTMLElement): () => void {
   install()
   const entry = entries.get(id) ?? create(id, cwd, host)
   host.append(entry.element)
+  fitVisible(entry)
   let frame = 0
   const observer = new ResizeObserver(() => {
     cancelAnimationFrame(frame)

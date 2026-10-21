@@ -46,7 +46,7 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getPluginSettings('pi-review'), { thinking: 'high' })
     await module.setPluginSettings('pi-review', { thinking: null })
     assert.deepEqual(await module.getPluginSettings('pi-review'), {})
-    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project']]
+    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project'], ['project']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
     assert.equal(await module.isMemoryPluginEnabled('project'), false)
     assert.equal(await module.isMemoryPluginEnabled('chat'), false)
@@ -58,17 +58,37 @@ async function fixture(): Promise<void> {
     assert.ok(subagentPath, 'subagents default to projects only')
     const browserPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-browser', 'index.ts')))
     assert.ok(browserPath, 'browser tools default to projects only')
-    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => path !== subagentPath && path !== browserPath), 'children cannot spawn or drive the parent window browser')
+    const terminalPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-terminal', 'index.ts')))
+    assert.ok(terminalPath, 'terminal tools default to projects only')
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-terminal'), {
+      id: 'pig-terminal', name: 'Terminal', source: 'Pig built-in', kind: 'system', scopes: ['project'], available: true
+    })
+    assert.deepEqual((await module.toolProvidersByPath('project')).get(terminalPath), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' })
+    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => path !== subagentPath && path !== browserPath && path !== terminalPath), 'children cannot spawn or control the parent window browser or terminal')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))), existsSync(webAccessBundle))
     const registryFile = join(root, 'pig', 'plugins.json')
     await mkdir(join(root, 'pig'), { recursive: true })
     await writeFile(registryFile, JSON.stringify({ version: 1, installed: [] }))
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes, 'unset preferences use current defaults')
+    await module.setPluginScopes('pig-terminal', [])
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-terminal')?.scopes, [], 'saved empty scopes override defaults')
+    assert.equal((await module.enabledPluginPaths('any')).includes(terminalPath), false)
+    await module.setPluginScopes('pig-terminal', ['chat', 'project', 'chat'])
+    assert.deepEqual(JSON.parse(await readFile(registryFile, 'utf8')).terminalScopes, ['project', 'chat'])
+    assert.equal((await module.enabledPluginPaths('chat')).includes(terminalPath), true)
+    await module.setPluginScopes('pig-terminal', ['chat'])
+    assert.equal((await module.enabledPluginPaths('project')).includes(terminalPath), false)
+    assert.equal((await module.enabledPluginPaths('chat')).includes(terminalPath), true)
+    await assert.rejects(module.setPluginScopes('pig-terminal', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
+    for (const terminalScopes of [true, ['unknown']]) {
+      await writeFile(registryFile, JSON.stringify({ installed: [], terminalScopes }))
+      await assert.rejects(module.listPlugins(), /Invalid plugin scopes/)
+    }
     await writeFile(registryFile, JSON.stringify({
       version: 1, memoryEnabled: true, reviewEnabled: false, webAccessEnabled: true,
       installed: [{ id: 'legacy', source: plugin, kind: 'local', enabled: true }]
     }))
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project']])
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project']])
     assert.deepEqual(await module.enabledPluginPaths('chat'), [], 'legacy switches never enable chats')
     await module.setPluginScopes('legacy', ['chat', 'project', 'chat'])
     const migrated = JSON.parse(await readFile(registryFile, 'utf8'))
@@ -76,12 +96,13 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.memoryScopes, ['project'])
     assert.deepEqual(migrated.reviewScopes, [])
     assert.deepEqual(migrated.webAccessScopes, ['project'])
+    assert.deepEqual(migrated.terminalScopes, ['project'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project', 'chat']], 'saved scopes override defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project', 'chat']], 'saved scopes override defaults')
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser']) await module.setPluginScopes(id, [])
+    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser', 'pig-terminal']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     await module.setPluginScopes('pi-review', ['chat'])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
@@ -260,7 +281,10 @@ async function fixture(): Promise<void> {
     for (const name of ['observational-memory', 'pi-review', 'pig-ui.ts']) {
       await cp(join(process.cwd(), 'src', 'main', 'plugins', name), join(packagedPlugins, name), { recursive: true })
     }
-    assert.match(await readFile(join(process.cwd(), 'electron-builder.yml'), 'utf8'), /to: system-plugins\/pig-ui\.ts/)
+    const builderConfig = await readFile(join(process.cwd(), 'electron-builder.yml'), 'utf8')
+    assert.match(builderConfig, /to: system-plugins\/pig-ui\.ts/)
+    assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal-host\.ts\s+to: system-plugins\/pig-terminal-host\.ts/)
+    assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal\s+to: system-plugins\/pig-terminal\s+filter:\s+- '\*\*\/\*\.ts'/)
     const memoryLoader = await createNoExtensionsResourceLoader(root, [join(packagedPlugins, 'observational-memory', 'index.ts'), join(packagedPlugins, 'pi-review', 'index.ts')])
     assert.deepEqual(memoryLoader.getExtensions().errors, [])
     const { session } = await sdk.createAgentSession({

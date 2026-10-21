@@ -51,7 +51,7 @@ async function fixture(scenario: string): Promise<void> {
     if (scenario === 'canvas' || scenario === 'tab-layout' || scenario === 'tab-sizing') {
       const closedTabs: string[] = []
       sessions.setState({ openTabs: [...tabs, { id: 'chat-two', kind: 'chat', cwd: '/chats/b', title: 'Another chat with a much longer title', loadState: 'ready' }] })
-      for (const name of ['useEventBridge', 'useSessionNames', 'useSessionWindows', 'useWorktreeDeletions', 'useBrowserAgentRequests', 'useModelCatalog']) {
+      for (const name of ['useEventBridge', 'useSessionNames', 'useSessionWindows', 'useWorktreeDeletions', 'useBrowserAgentRequests', 'useTerminalAgentRequests', 'useModelCatalog']) {
         mock.module(`../src/renderer/src/hooks/${name}`, () => ({ [name]: noop }))
       }
       mock.module('../src/renderer/src/components/sidebar/use-sidebar-preferences', () => ({

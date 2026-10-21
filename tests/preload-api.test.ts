@@ -101,9 +101,15 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.terminal.write('terminal:one', 'ls\r')
   await api.terminal.write('terminal:one', '\x00\x80\xff', true)
   await api.terminal.write('terminal:one', '中文', false)
+  await api.terminal.clear('terminal:one')
   await api.terminal.resize('terminal:one', 120, 40)
   await api.terminal.ack('terminal:one', 512)
   await api.terminal.close('terminal:one')
+  await api.terminal.getAgentState('terminal:one')
+  await api.terminal.releaseAgent('terminal:one', 'session-1')
+  await api.terminal.answerAgentOpen('request-1', { terminalId: 'terminal:two' })
+  api.terminal.onAgentOpenRequest(() => {})()
+  api.terminal.onAgentState(() => {})()
   api.terminal.onEvent(() => {})()
 
   assert.deepEqual(invokes, [
@@ -166,9 +172,13 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'terminal:write', args: ['terminal:one', 'ls\r'] },
     { channel: 'terminal:write', args: ['terminal:one', '\x00\x80\xff', true] },
     { channel: 'terminal:write', args: ['terminal:one', '中文', false] },
+    { channel: 'terminal:clear', args: ['terminal:one'] },
     { channel: 'terminal:resize', args: ['terminal:one', 120, 40] },
     { channel: 'terminal:ack', args: ['terminal:one', 512] },
-    { channel: 'terminal:close', args: ['terminal:one'] }
+    { channel: 'terminal:close', args: ['terminal:one'] },
+    { channel: 'terminal:get-agent-state', args: ['terminal:one'] },
+    { channel: 'terminal:release-agent', args: ['terminal:one', 'session-1'] },
+    { channel: 'terminal:agent-open-answer', args: ['request-1', { terminalId: 'terminal:two' }] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
@@ -179,6 +189,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('browser:selection'))
   assert.ok(listeners.includes('terminal:event'))
+  assert.ok(listeners.includes('terminal:agent-open-request'))
+  assert.ok(listeners.includes('terminal:agent-state'))
   assert.equal('replyPluginUI' in api, false)
   assert.equal('onPluginUI' in api, false)
 }

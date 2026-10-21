@@ -226,7 +226,7 @@ export interface SessionsStore {
   /** Resolves the new tab's id. `background` keeps the current selection (agent-opened tabs). */
   openBrowserTab: (cwd?: string | null, options?: { background?: boolean; targetSessionId?: string }) => Promise<string>
   /** Opens a terminal in the worktree, or the home directory when `cwd` is null; returns its tab id. */
-  openTerminalTab: (cwd: string | null) => string
+  openTerminalTab: (cwd: string | null, options?: { background?: boolean }) => string
   setBrowserTarget: (browserId: string, sessionId: string) => void
   /** Follows a file the tree renamed: the tab keeps its place and takes the row's new name. */
   moveFileTab: (cwd: string, from: string, to: string) => void

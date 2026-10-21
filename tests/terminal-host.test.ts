@@ -63,6 +63,11 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   assert.deepEqual(workers[0].sent.at(-1), { type: 'write', id: 'terminal:a', data: '\x00\x80\xff', binary: true })
   host.write(owner.win, 'terminal:a', '中文', false)
   assert.deepEqual(workers[0].sent.at(-1), { type: 'write', id: 'terminal:a', data: '中文', binary: false })
+  assert.throws(() => host.clear(other.win, 'terminal:a'), /another window/)
+  host.clear(owner.win, 'terminal:a')
+  assert.deepEqual(workers[0].sent.at(-1), { type: 'clear', id: 'terminal:a' })
+  workers[0].reply({ type: 'clear', id: 'terminal:a' })
+  assert.deepEqual(owner.events.at(-1), { terminalId: 'terminal:a', kind: 'clear' })
   host.ack(owner.win, 'terminal:a', 0)
 
   workers[0].reply({ type: 'exit', id: 'terminal:a', exitCode: 3, signal: null })
@@ -91,6 +96,76 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   assert.deepEqual(owner.events.at(-1), { terminalId: 'terminal:d', kind: 'failed', message: 'Terminal host exited with code 1' })
   void host.create(owner.win, 'terminal:f', '/project', 80, 24)
   assert.equal(workers.length, 2, 'the next terminal forks a fresh host')
+})
+
+test('terminal snapshots correlate replies, scope lists and cancel pending reads across lifecycle changes', async () => {
+  const worker = new FakeWorker()
+  const host = new TerminalHost(() => worker, '1')
+  const { win } = fakeWindow()
+  const other = fakeWindow().win
+  const create = async (id: string) => {
+    const pending = host.create(win, id, '/project', 80, 24)
+    worker.reply({ type: 'spawned', id, pid: 42 })
+    await pending
+  }
+  const request = () => {
+    const message = worker.sent.at(-1)!
+    assert.equal(message.type, 'snapshot')
+    if (message.type !== 'snapshot') throw new Error('Expected snapshot request')
+    return message
+  }
+  const snapshot = { text: 'plain', cols: 80, rows: 24, cursorX: 5, cursorY: 0, alternateScreen: false, bracketedPaste: false, applicationCursor: false, version: 1, truncated: false }
+  await create('terminal:a')
+  assert.deepEqual(host.list(other), [])
+  assert.deepEqual(host.list(win), [{ terminalId: 'terminal:a', info: { pid: 42, shell: host.list(win)[0].info.shell, cwd: '/project' }, exited: false }])
+  await assert.rejects(host.snapshot(other, 'terminal:a', 10), /another window/)
+  const first = host.snapshot(win, 'terminal:a', 10)
+  const a = request()
+  const second = host.snapshot(win, 'terminal:a', 20)
+  const b = request()
+  assert.notEqual(a.requestId, b.requestId)
+  worker.reply({ type: 'snapshot-result', id: b.id, requestId: b.requestId, snapshot })
+  assert.deepEqual(await second, snapshot)
+  worker.reply({ type: 'snapshot-failed', id: a.id, requestId: a.requestId, message: 'read failed' })
+  await assert.rejects(first, /read failed/)
+
+  const controller = new AbortController()
+  const aborted = host.snapshot(win, 'terminal:a', 10, controller.signal)
+  const late = request()
+  controller.abort(new Error('cancelled'))
+  await assert.rejects(aborted, /cancelled/)
+  worker.reply({ type: 'snapshot-result', id: late.id, requestId: late.requestId, snapshot })
+  const sent = worker.sent.length
+  await assert.rejects(host.snapshot(win, 'terminal:a', 10, controller.signal), /cancelled/)
+  assert.equal(worker.sent.length, sent)
+
+  const closed = host.snapshot(win, 'terminal:a', 10)
+  host.close(win, 'terminal:a')
+  await assert.rejects(closed, /closed/)
+  await create('terminal:b')
+  const exited = host.snapshot(win, 'terminal:b', 10)
+  worker.reply({ type: 'exit', id: 'terminal:b', exitCode: 0, signal: null })
+  await assert.rejects(exited, /exited/)
+  assert.equal(host.list(win)[0].exited, true)
+  await assert.rejects(host.snapshot(win, 'terminal:b', 10), /exited/)
+  await create('terminal:c')
+  const crashed = host.snapshot(win, 'terminal:c', 10)
+  worker.exit(1)
+  await assert.rejects(crashed, /host exited/)
+})
+
+test('terminal shutdown rejects pending snapshots before waiting for worker cleanup', async () => {
+  const worker = new FakeWorker()
+  const host = new TerminalHost(() => worker, '1')
+  const { win } = fakeWindow()
+  const created = host.create(win, 'terminal:a', '/', 80, 24)
+  worker.reply({ type: 'spawned', id: 'terminal:a', pid: 42 })
+  await created
+  const read = host.snapshot(win, 'terminal:a', 10)
+  const shutdown = host.shutdown()
+  await assert.rejects(read, /closed/)
+  worker.reply({ type: 'shutdown-complete' })
+  await shutdown
 })
 
 test('terminal IPC rejects malformed binary input before forwarding to the host', async () => {

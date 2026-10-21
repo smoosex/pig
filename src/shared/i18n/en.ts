@@ -329,6 +329,15 @@ export const en: Messages = {
     label: 'Label'
   },
   terminal: {
+    releaseAgent: 'Release agent control',
+    agentControlled: 'An agent controls this terminal. Click to release; manual input remains available.',
+    releaseAgentWarning: 'The agent is running. Releasing control may interrupt terminal actions, and the agent may take control again. Stop the agent first if possible. Commands already sent will not be undone or stopped.',
+    releaseAgentIdle: 'The agent is not running. Releasing control keeps the terminal and its commands running. The agent can take control again later.',
+    releaseControl: 'Release control',
+    releaseDirectly: 'Release directly',
+    stopAndRelease: 'Stop agent and release',
+    agentControlChanged: 'Terminal control has changed. Close this dialog and try again.',
+    cancel: 'Cancel',
     directoryMissing: 'Directory does not exist: {path}',
     exited: 'Process exited (code {code})',
     failed: 'Terminal stopped: {message}',

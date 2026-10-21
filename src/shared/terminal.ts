@@ -1,4 +1,19 @@
 /** Host-owned terminal panes: one PTY per `terminal:<uuid>` tab, owned by the creating UI window. */
+import type { TerminalAgentApi } from './terminal-agent'
+
+export interface TerminalSnapshot {
+  text: string
+  cols: number
+  rows: number
+  cursorX: number
+  cursorY: number
+  alternateScreen: boolean
+  bracketedPaste: boolean
+  applicationCursor: boolean
+  version: number
+  truncated: boolean
+}
+
 export interface TerminalInfo {
   pid: number
   shell: string
@@ -11,15 +26,17 @@ export interface TerminalInfo {
  */
 export type TerminalEvent =
   | { terminalId: string; kind: 'output'; data: string }
+  | { terminalId: string; kind: 'clear' }
   | { terminalId: string; kind: 'exit'; exitCode: number; signal: number | null }
   /** The PTY host itself died; the shell is gone with it. */
   | { terminalId: string; kind: 'failed'; message: string }
 
-export interface TerminalApi {
+export interface TerminalApi extends TerminalAgentApi {
   /** Starts the shell; `cwd` null means the home directory (terminals opened outside a project). */
   create: (terminalId: string, cwd: string | null, cols: number, rows: number) => Promise<TerminalInfo>
   /** Binary input encodes one byte (0–255) per UTF-16 code unit, without UTF-8 conversion. */
   write: (terminalId: string, data: string, binary?: boolean) => Promise<void>
+  clear: (terminalId: string) => Promise<void>
   resize: (terminalId: string, cols: number, rows: number) => Promise<void>
   ack: (terminalId: string, length: number) => Promise<void>
   close: (terminalId: string) => Promise<void>
@@ -37,12 +54,17 @@ export type PtyHostRequest =
   | { type: 'spawn'; id: string; file: string; args: string[]; cwd: string; env: Record<string, string>; cols: number; rows: number }
   | { type: 'write'; id: string; data: string; binary?: boolean }
   | { type: 'resize'; id: string; cols: number; rows: number }
+  | { type: 'clear'; id: string }
   | { type: 'ack'; id: string; length: number }
   | { type: 'kill'; id: string }
+  | { type: 'snapshot'; id: string; requestId: string; lines: number }
 
 export type PtyHostMessage =
   | { type: 'shutdown-complete' }
+  | { type: 'snapshot-result'; id: string; requestId: string; snapshot: TerminalSnapshot }
+  | { type: 'snapshot-failed'; id: string; requestId: string; message: string }
   | { type: 'spawned'; id: string; pid: number }
   | { type: 'spawn-failed'; id: string; message: string }
   | { type: 'output'; id: string; data: string }
+  | { type: 'clear'; id: string }
   | { type: 'exit'; id: string; exitCode: number; signal: number | null }

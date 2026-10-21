@@ -57,9 +57,23 @@ const api: SessionApi = {
     write: (terminalId, data, binary) => binary === undefined
       ? ipcRenderer.invoke('terminal:write', terminalId, data)
       : ipcRenderer.invoke('terminal:write', terminalId, data, binary),
+    clear: (terminalId) => ipcRenderer.invoke('terminal:clear', terminalId),
     resize: (terminalId, cols, rows) => ipcRenderer.invoke('terminal:resize', terminalId, cols, rows),
     ack: (terminalId, length) => ipcRenderer.invoke('terminal:ack', terminalId, length),
     close: (terminalId) => ipcRenderer.invoke('terminal:close', terminalId),
+    getAgentState: (terminalId) => ipcRenderer.invoke('terminal:get-agent-state', terminalId),
+    releaseAgent: (terminalId, expectedSessionId) => ipcRenderer.invoke('terminal:release-agent', terminalId, expectedSessionId),
+    answerAgentOpen: (requestId, result) => ipcRenderer.invoke('terminal:agent-open-answer', requestId, result),
+    onAgentOpenRequest: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/terminal-agent').TerminalAgentOpenRequest) => listener(request)
+      ipcRenderer.on('terminal:agent-open-request', handler)
+      return () => ipcRenderer.off('terminal:agent-open-request', handler)
+    },
+    onAgentState: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import('../shared/terminal-agent').TerminalAgentState) => listener(state)
+      ipcRenderer.on('terminal:agent-state', handler)
+      return () => ipcRenderer.off('terminal:agent-state', handler)
+    },
     onEvent: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, event: import('../shared/terminal').TerminalEvent) => listener(event)
       ipcRenderer.on('terminal:event', handler)

@@ -708,15 +708,17 @@ export const createTabsSlice: SessionSlice<
       return id
     },
 
-    openTerminalTab: (cwd) => {
-      ++selectionVersion
+    openTerminalTab: (cwd, options) => {
+      if (!options?.background) ++selectionVersion
       const scopeCwd = cwd ?? ''
       const id = `terminal:${crypto.randomUUID()}`
-      // The pane starts its shell once mounted and sized; the tab itself owns nothing in main yet.
+      // Shell startup is shared by the mounted panel and background agent requests.
       set((current) => ({
         openTabs: [...current.openTabs, { id, cwd: scopeCwd, title: t('tabBar.newTerminal'), kind: 'terminal', loadState: 'ready' }],
-        ...activeTabPatch(current, id, scopeCwd || null),
-        currentProjectCwd: scopeCwd || null
+        ...(!options?.background ? {
+          ...activeTabPatch(current, id, scopeCwd || null),
+          currentProjectCwd: scopeCwd || null
+        } : {})
       }))
       return id
     },

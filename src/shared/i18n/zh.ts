@@ -326,6 +326,15 @@ export const zh = {
     label: '标注'
   },
   terminal: {
+    releaseAgent: '释放 Agent 控制',
+    agentControlled: '此终端由 Agent 控制，点击释放；仍可手动输入',
+    releaseAgentWarning: 'Agent 正在运行。直接释放可能中断终端操作，且 Agent 仍可能重新接管。建议先停止 Agent；已发出的命令不会撤回或自动停止。',
+    releaseAgentIdle: 'Agent 当前未运行。释放控制不会关闭终端或停止命令，之后 Agent 仍可重新接管。',
+    releaseControl: '释放控制',
+    releaseDirectly: '直接释放',
+    stopAndRelease: '停止 Agent 并释放',
+    agentControlChanged: '终端控制归属已变化，请关闭弹窗后重试。',
+    cancel: '取消',
     directoryMissing: '目录不存在：{path}',
     exited: '进程已退出（代码 {code}）',
     failed: '终端已中断：{message}',

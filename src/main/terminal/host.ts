@@ -3,7 +3,8 @@
  * ownership map and talks to one lazily forked PTY utility process; that process holds every shell.
  * If it dies, each live pane is told so and the next terminal forks a fresh host.
  */
-import type { PtyHostMessage, PtyHostRequest, TerminalEvent, TerminalInfo } from '../../shared/terminal'
+import { randomUUID } from 'node:crypto'
+import type { PtyHostMessage, PtyHostRequest, TerminalEvent, TerminalInfo, TerminalSnapshot } from '../../shared/terminal'
 import { terminalEnvironment, terminalShell } from './environment'
 
 export interface PtyHostProcess {
@@ -28,6 +29,7 @@ interface Terminal {
 export class TerminalHost {
   private worker: PtyHostProcess | null = null
   private readonly terminals = new Map<string, Terminal>()
+  private readonly snapshots = new Map<string, { id: string; resolve(value: TerminalSnapshot): void; reject(error: Error): void; cleanup(): void }>()
   private shutdownPromise?: Promise<void>
   private shutdownResult?: { resolve(): void; reject(error: Error): void }
 
@@ -52,6 +54,10 @@ export class TerminalHost {
     if (!this.owned(win, id).exited) this.worker!.postMessage({ type: 'write', id, data, ...(binary === undefined ? {} : { binary }) })
   }
 
+  clear(win: TerminalWindow, id: string): void {
+    if (!this.owned(win, id).exited) this.worker!.postMessage({ type: 'clear', id })
+  }
+
   resize(win: TerminalWindow, id: string, cols: number, rows: number): void {
     if (!this.owned(win, id).exited) this.worker!.postMessage({ type: 'resize', id, cols, rows })
   }
@@ -60,12 +66,50 @@ export class TerminalHost {
     if (!this.owned(win, id).exited) this.worker!.postMessage({ type: 'ack', id, length })
   }
 
+  list(win: TerminalWindow): Array<{ terminalId: string; info: TerminalInfo; exited: boolean }> {
+    return [...this.terminals].filter(([, terminal]) => terminal.win === win)
+      .map(([terminalId, terminal]) => ({ terminalId, info: { ...terminal.info }, exited: terminal.exited }))
+  }
+
+  async snapshot(win: TerminalWindow, id: string, lines: number, signal?: AbortSignal): Promise<TerminalSnapshot> {
+    if (this.shutdownPromise) throw new Error('Terminal host is shutting down')
+    if (this.owned(win, id).exited) throw new Error('Terminal has exited')
+    signal?.throwIfAborted()
+    const requestId = randomUUID()
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        this.snapshots.delete(requestId)
+        signal?.removeEventListener('abort', abort)
+        reject(signal?.reason ?? new Error('Terminal snapshot aborted'))
+      }
+      this.snapshots.set(requestId, { id, resolve, reject, cleanup: () => signal?.removeEventListener('abort', abort) })
+      signal?.addEventListener('abort', abort, { once: true })
+      try {
+        this.worker!.postMessage({ type: 'snapshot', id, requestId, lines })
+      } catch (error) {
+        this.snapshots.delete(requestId)
+        signal?.removeEventListener('abort', abort)
+        reject(error)
+      }
+    })
+  }
+
+  private rejectSnapshots(id: string, error: Error): void {
+    for (const [requestId, pending] of this.snapshots) {
+      if (pending.id !== id) continue
+      this.snapshots.delete(requestId)
+      pending.cleanup()
+      pending.reject(error)
+    }
+  }
+
   /** Idempotent: a tab may close before, during or after its shell starts or exits. */
   close(win: TerminalWindow, id: string): void {
     const terminal = this.terminals.get(id)
     if (!terminal) return
     if (terminal.win !== win) throw new Error('Terminal belongs to another window')
     this.terminals.delete(id)
+    this.rejectSnapshots(id, new Error('Terminal closed'))
     terminal.spawn?.reject(new Error('Terminal closed'))
     // Ordered after the spawn request on the same port, so a still-starting shell is killed too.
     if (!terminal.exited && this.worker) this.worker.postMessage({ type: 'kill', id })
@@ -109,6 +153,7 @@ export class TerminalHost {
       this.worker = null
       this.shutdownResult?.reject(new Error(`Terminal host exited before shutdown completed with code ${code}`))
       for (const [id, terminal] of this.terminals) {
+        this.rejectSnapshots(id, new Error(`Terminal host exited with code ${code}`))
         if (terminal.exited) continue
         terminal.exited = true
         const message = `Terminal host exited with code ${code}`
@@ -132,6 +177,16 @@ export class TerminalHost {
     // Late messages for closed panes are expected: close does not wait for the shell to die.
     if (!terminal) return
     switch (message.type) {
+      case 'snapshot-result':
+      case 'snapshot-failed': {
+        const pending = this.snapshots.get(message.requestId)
+        if (!pending || pending.id !== message.id) return
+        this.snapshots.delete(message.requestId)
+        pending.cleanup()
+        if (message.type === 'snapshot-result') pending.resolve(message.snapshot)
+        else pending.reject(new Error(message.message))
+        break
+      }
       case 'spawned': {
         terminal.info = { ...terminal.info, pid: message.pid }
         const spawn = terminal.spawn
@@ -141,12 +196,17 @@ export class TerminalHost {
       }
       case 'spawn-failed':
         this.terminals.delete(message.id)
+        this.rejectSnapshots(message.id, new Error(message.message))
         terminal.spawn?.reject(new Error(message.message))
         break
       case 'output':
         this.emit(terminal, { terminalId: message.id, kind: 'output', data: message.data })
         break
+      case 'clear':
+        this.emit(terminal, { terminalId: message.id, kind: 'clear' })
+        break
       case 'exit':
+        this.rejectSnapshots(message.id, new Error('Terminal has exited'))
         terminal.exited = true
         this.emit(terminal, { terminalId: message.id, kind: 'exit', exitCode: message.exitCode, signal: message.signal })
         break

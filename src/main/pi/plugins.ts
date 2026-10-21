@@ -28,6 +28,7 @@ interface Registry {
   webAccessScopes: PluginScope[]
   subagentScopes: PluginScope[]
   browserScopes: PluginScope[]
+  terminalScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
 
@@ -47,6 +48,9 @@ const subagentPath = () => app.isPackaged
 const browserPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-browser', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-browser', 'index.ts')
+const terminalPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pig-terminal', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pig-terminal', 'index.ts')
 const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-web-access', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
@@ -66,7 +70,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], installed: [] }
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -100,6 +104,7 @@ async function readRegistry(): Promise<Registry> {
       : 'webAccessEnabled' in value ? (value.webAccessEnabled === true ? ['project'] : []) : defaults.webAccessScopes,
     subagentScopes: 'subagentScopes' in value ? parseScopes(value.subagentScopes) : defaults.subagentScopes,
     browserScopes: 'browserScopes' in value ? parseScopes(value.browserScopes) : defaults.browserScopes,
+    terminalScopes: 'terminalScopes' in value ? parseScopes(value.terminalScopes) : defaults.terminalScopes,
     installed
   }
 }
@@ -174,7 +179,8 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.reviewScopes, path: reviewPath(), name: 'code review' },
     { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' },
     { scopes: registry.subagentScopes, path: subagentPath(), name: 'subagent' },
-    { scopes: registry.browserScopes, path: browserPath(), name: 'browser' }
+    { scopes: registry.browserScopes, path: browserPath(), name: 'browser' },
+    { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
@@ -192,9 +198,9 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
 }
 
 /** Subagents inherit the parent's plugins, minus memory (not a user conversation), spawn itself (no recursion)
- * and the browser (its tabs belong to the parent's window and session). */
+ * and browser/terminal controls (their tabs belong to the parent's window and session). */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([memoryPath(), subagentPath(), browserPath()].map((path) => resolve(path)))
+  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -246,7 +252,8 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(reviewPath()), { kind: 'pig', id: 'pi-review', name: 'Review' }],
     [resolve(webAccessPath()), { kind: 'pig', id: 'pi-web-access', name: 'Web Access' }],
     [resolve(subagentPath()), { kind: 'pig', id: 'pig-subagent', name: 'Subagents' }],
-    [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }]
+    [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }],
+    [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
   for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
@@ -308,6 +315,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pig-browser', name: 'Browser', source: 'Pig built-in',
     kind: 'system', scopes: registry.browserScopes, available: existsSync(browserPath()),
     ...(!existsSync(browserPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pig-terminal', name: 'Terminal', source: 'Pig built-in',
+    kind: 'system', scopes: registry.terminalScopes, available: existsSync(terminalPath()),
+    ...(!existsSync(terminalPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -366,6 +377,9 @@ export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void
     } else if (id === 'pig-browser') {
       if (addsScope(registry.browserScopes) && !existsSync(browserPath())) throw new Error('Bundled extension is missing')
       registry.browserScopes = next
+    } else if (id === 'pig-terminal') {
+      if (addsScope(registry.terminalScopes) && !existsSync(terminalPath())) throw new Error('Bundled extension is missing')
+      registry.terminalScopes = next
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')

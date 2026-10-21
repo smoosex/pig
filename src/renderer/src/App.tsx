@@ -8,6 +8,7 @@ import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
 import { useWorktreeDeletions } from './hooks/useWorktreeDeletions'
 import { useBrowserAgentRequests } from './hooks/useBrowserAgentRequests'
+import { useTerminalAgentRequests } from './hooks/useTerminalAgentRequests'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
 import { SystemPluginUI } from './components/SystemPluginUI'
@@ -272,6 +273,7 @@ export default function App() {
   useSessionNames()
   useWorktreeDeletions()
   useBrowserAgentRequests()
+  useTerminalAgentRequests()
   useModelCatalog()
   const modelCatalogError = useModelCatalogStore((s) => s.error)
   const modelCatalogLoading = useModelCatalogStore((s) => s.loading)
