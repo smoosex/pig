@@ -131,6 +131,18 @@ async function fixture(scenario: string) {
       assert.equal(still, image)
       assert.equal(native, null)
       wrapper.remove()
+    } else if (scenario === 'split-preview') {
+      // The pane drop preview is DOM; a native page above it would hide where the tab lands.
+      const preview = document.createElement('div')
+      preview.setAttribute('data-split-drop-preview', '')
+      preview.getBoundingClientRect = () => new DOMRect(300, 100, 200, 300)
+      document.body.append(preview)
+      await settle()
+      assert.equal(hideCount(), 1)
+      assert.equal(still, image)
+      preview.remove()
+      await settle()
+      assert.equal((native as BrowserBounds | null)?.width, 400)
     } else if (scenario === 'invisible') {
       const content = overlay()
       content.style.opacity = '0'
@@ -305,6 +317,7 @@ async function fixture(scenario: string) {
 const scenarios = {
   corners: 'native bounds and frozen frame inherit only the outer panel bottom corners',
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',
+  'split-preview': 'the split drop preview over a page swaps it for its still until the drag leaves',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',
   'freeze-barrier': 'hide awaits the asynchronous still-frame paint barrier',
   'stale-snapshot': 'an obsolete snapshot cannot hide the viewport',

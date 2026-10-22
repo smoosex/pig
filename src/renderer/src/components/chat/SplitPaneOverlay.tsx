@@ -23,6 +23,7 @@ export const SplitPaneOverlay: FC<SplitPaneOverlayProps> = ({ position, classNam
   return (
     <div
       aria-hidden="true"
+      data-split-drop-preview
       className={cn(
         'pointer-events-none absolute z-50 rounded-lg border-2 border-primary/40 bg-primary/15 transition-all duration-150 ease-out',
         positionClasses[position],

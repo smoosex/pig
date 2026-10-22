@@ -163,6 +163,17 @@ export class BrowserHost {
       owner.win.contentView.addChildView(clip)
       page.clip = clip
     }
+    if (radius === 0 && page.clip) {
+      // A zero-radius clip keeps its compositor layer but paints none of its children, which blanked
+      // split panes that no longer touch the panel's rounded corners. Square panes go back unclipped.
+      const clip = page.clip
+      page.clip = undefined
+      clip.removeChildView(page.view)
+      if (page.devtools) clip.removeChildView(page.devtools)
+      owner.win.contentView.removeChildView(clip)
+      owner.win.contentView.addChildView(page.view)
+      if (page.devtools) owner.win.contentView.addChildView(page.devtools)
+    }
     // Move the upper corners above the page; extend square split-pane edges past the clip.
     // Only the outer panel's lower corners intersect rendered web content.
     const offsetX = page.clip && !left ? radius : 0

@@ -7,7 +7,7 @@ import { waitForBrowserPaint } from './browser-frame'
 let writes: Promise<void> = Promise.resolve()
 const owners = new Map<string, object>()
 
-const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"]'
+const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview]'
 const REVEAL = '[data-surface-reveal]'
 // Positioning wrappers trigger remeasurement, but their boxes are not visible occluders.
 const RELEVANT = `${OVERLAY}, ${REVEAL}, [data-radix-popper-content-wrapper]`

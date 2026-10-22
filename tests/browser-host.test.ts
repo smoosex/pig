@@ -93,7 +93,11 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
     webContents: new FakeContents(), dead: false,
     isDestroyed() { return this.dead },
     getContentSize: () => [600, 400],
-    contentView: { addChildView: () => {}, removeChildView: (view: unknown) => { removed.push(view) } }
+    contentView: {
+      children: [] as unknown[],
+      addChildView(view: unknown) { this.children.push(view) },
+      removeChildView(view: unknown) { removed.push(view); this.children = this.children.filter((child) => child !== view) }
+    }
   })
   const host = new BrowserHost(() => {
     const view = new FakeView()
@@ -126,12 +130,18 @@ describe('browser host', () => {
     host.setBounds(owner, 'rounded', null)
     expect(clip.visible).toBe(false)
     expect(views.every((view) => !view.visible)).toBe(true)
+    // Electron paints nothing inside a zero-radius clip, so a square split pane leaves it.
     host.setBounds(owner, 'rounded', bounds)
-    expect(clip.radius).toBe(0)
-    expect(clips).toHaveLength(1)
-    host.closeWindow(owner)
     expect(clip.children).toEqual([])
-    expect(removed).toContain(clip)
+    expect(win.contentView.children).toEqual([views[0], views[1]])
+    expect(views[0].bounds).toEqual({ x: 15, y: 30, width: 450, height: 140 })
+    expect(views[0].visible).toBe(true)
+    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 12, bottomRightRadius: 12 })
+    expect(clips).toHaveLength(2)
+    expect(clips[1].children).toEqual([views[0], views[1]])
+    host.closeWindow(owner)
+    expect(clips[1].children).toEqual([])
+    expect(removed).toContain(clips[1])
     expect(views.every((view) => view.webContents.dead)).toBe(true)
   })
 
