@@ -161,7 +161,7 @@ function NavLabel({
       'flex cursor-pointer items-center whitespace-nowrap font-medium disabled:cursor-default disabled:opacity-50 [&_svg]:shrink-0',
       isActive ? FADE_IN : FADE_OUT,
       SIZES[size].label,
-      !isActive && 'text-glass-prompt-foreground/70 solid:text-muted-foreground'
+      !isActive && 'text-glass-prompt-foreground/70 hover:text-glass-prompt-foreground solid:text-muted-foreground solid:hover:text-foreground'
     ),
     style: isActive ? { color: activeLabelColor } : undefined,
     onClick: onSelect
@@ -214,7 +214,7 @@ export function GooeyNav({
           return (
             <Segment
               key={`${i}-${navItem.label}`}
-              gap={i === 0 ? 0 : open(i) ? span : -1}
+              gap={i === 0 || !open(i) ? 0 : span}
               span={span}
               hasSeam={i > 0}
               leftFill={fill(i - 1)}
@@ -226,7 +226,7 @@ export function GooeyNav({
                 borderTopRightRadius: open(i + 1) ? corner : 0,
                 borderBottomRightRadius: open(i + 1) ? corner : 0
               }}
-              className={cn(BAR, isActive ? FADE_IN : FADE_OUT, isActive && 'shadow-glass-inline-code solid:shadow-none')}
+              className={cn(BAR, isActive ? FADE_IN : FADE_OUT, isActive && 'bg-(image:--glass-badge-sheen) shadow-glass-badge solid:bg-none solid:shadow-none')}
               style={{ backgroundColor: isActive ? activeColor : undefined }}
             >
               <NavLabel
