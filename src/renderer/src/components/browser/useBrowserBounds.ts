@@ -65,14 +65,24 @@ export function useBrowserBounds(
       frame = 0
       const element = viewport.current
       const rect = element?.getBoundingClientRect()
-      const surface = element?.closest<HTMLElement>('[data-content-surface]')
+      const surface = element?.closest<HTMLElement>('[data-split-pane], [data-content-surface]')
       const surfaceRect = surface?.getBoundingClientRect()
       let bottomLeftRadius = 0
       let bottomRightRadius = 0
-      if (rect && surface && surfaceRect && Math.abs(rect.bottom - surfaceRect.bottom) < 1) {
+      if (rect && surface && surfaceRect) {
         const style = getComputedStyle(surface)
-        if (Math.abs(rect.left - surfaceRect.left) < 1) bottomLeftRadius = parseFloat(style.borderBottomLeftRadius) || 0
-        if (Math.abs(rect.right - surfaceRect.right) < 1) bottomRightRadius = parseFloat(style.borderBottomRightRadius) || 0
+        const bottomBorder = parseFloat(style.borderBottomWidth) || 0
+        const leftBorder = parseFloat(style.borderLeftWidth) || 0
+        const rightBorder = parseFloat(style.borderRightWidth) || 0
+        // The native viewport meets the pane's inner border box, not the outer workspace card.
+        if (Math.abs(rect.bottom - (surfaceRect.bottom - bottomBorder)) < 1) {
+          if (Math.abs(rect.left - (surfaceRect.left + leftBorder)) < 1) {
+            bottomLeftRadius = Math.max(0, (parseFloat(style.borderBottomLeftRadius) || 0) - Math.max(bottomBorder, leftBorder))
+          }
+          if (Math.abs(rect.right - (surfaceRect.right - rightBorder)) < 1) {
+            bottomRightRadius = Math.max(0, (parseFloat(style.borderBottomRightRadius) || 0) - Math.max(bottomBorder, rightBorder))
+          }
+        }
       }
       if (element) {
         element.style.borderBottomLeftRadius = `${bottomLeftRadius}px`
@@ -91,6 +101,9 @@ export function useBrowserBounds(
       const bounds = visible && !blocked && rect && rect.width > 0 && rect.height > 0
         ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
           ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}) } : null
+      // Enter/exit transforms can move a menu across the viewport without DOM or resize mutations.
+      if ([...document.querySelectorAll<HTMLElement>(RELEVANT)].some(element =>
+        element.getAnimations().some(animation => animation.playState === 'running'))) schedule()
       const key = JSON.stringify(bounds)
       if (last === key) return
       last = key
@@ -99,6 +112,11 @@ export function useBrowserBounds(
       enqueue(bounds, visible && blocked && !!rect && rect.width > 0 && rect.height > 0, key, pending.signal)
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
+    const overlayMotion = (event: Event) => {
+      if (event.target instanceof Element && event.target.matches(RELEVANT)) schedule()
+    }
+    const motionEvents = ['animationstart', 'animationend', 'animationcancel', 'transitionrun', 'transitionend', 'transitioncancel']
+    for (const event of motionEvents) document.addEventListener(event, overlayMotion, true)
     const observer = new ResizeObserver(schedule)
     if (viewport.current) observer.observe(viewport.current)
     // Ignore streaming text and unrelated row mutations; inspect only overlay roots and their state.
@@ -120,6 +138,7 @@ export function useBrowserBounds(
       cancelAnimationFrame(frame)
       observer.disconnect()
       mutations.disconnect()
+      for (const event of motionEvents) document.removeEventListener(event, overlayMotion, true)
       window.removeEventListener('resize', schedule)
       window.removeEventListener('scroll', schedule, true)
       writes = writes.then(async () => {

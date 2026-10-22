@@ -56,14 +56,21 @@ async function fixture(scenario: string) {
   function Probe() {
     const viewport = useRef<HTMLDivElement>(null)
     useBrowserBounds('bounds-probe', true, viewport, report, onFreeze)
-    return createElement('div', { ref: (node: HTMLDivElement | null) => {
+    const content = createElement('div', { ref: (node: HTMLDivElement | null) => {
       viewport.current = node
       if (node) node.getBoundingClientRect = () => new DOMRect(100, 100, 400, 300)
     } })
+    return scenario === 'split-corners' ? createElement('div', {
+      'data-split-pane': 'true',
+      style: { border: '1px solid', borderRadius: '8px' },
+      ref: (node: HTMLDivElement | null) => {
+        if (node) node.getBoundingClientRect = () => new DOMRect(99, 70, 402, 331)
+      }
+    }, content) : content
   }
   const container = document.createElement('div')
   let surfaceLeft = 100
-  if (scenario === 'corners') {
+  if (scenario === 'corners' || scenario === 'split-corners') {
     container.setAttribute('data-content-surface', '')
     container.style.borderRadius = '12px'
     container.getBoundingClientRect = () => new DOMRect(surfaceLeft, 50, 500 - surfaceLeft, 350)
@@ -99,7 +106,13 @@ async function fixture(scenario: string) {
     calls.length = 0
     freezes.length = 0
 
-    if (scenario === 'corners') {
+    if (scenario === 'split-corners') {
+      assert.equal((native as BrowserBounds | null)?.bottomLeftRadius, 7, 'the pane border reduces the inner corner radius')
+      assert.equal((native as BrowserBounds | null)?.bottomRightRadius, 7)
+      const viewport = container.querySelector('[data-split-pane]')!.firstElementChild as HTMLElement
+      assert.equal(viewport.style.borderBottomLeftRadius, '7px', 'the frozen frame uses the same pane corners')
+      assert.equal(viewport.style.borderBottomRightRadius, '7px')
+    } else if (scenario === 'corners') {
       assert.equal((native as BrowserBounds | null)?.bottomLeftRadius, 12)
       assert.equal((native as BrowserBounds | null)?.bottomRightRadius, 12)
       assert.equal(container.firstElementChild?.getAttribute('style')?.includes('12px'), true)
@@ -131,6 +144,26 @@ async function fixture(scenario: string) {
       assert.equal(still, image)
       assert.equal(native, null)
       wrapper.remove()
+    } else if (scenario === 'animated-menu') {
+      const content = overlay()
+      content.setAttribute('role', 'menu')
+      let overlaps = false
+      let running = true
+      content.getBoundingClientRect = () => new DOMRect(150, overlaps ? 30 : 15, 100, 80)
+      content.getAnimations = () => running ? [{ playState: 'running' } as Animation] : []
+      await settle()
+      assert.equal(hideCount(), 0, 'the entering menu initially ends above the split page')
+      overlaps = true
+      await settle()
+      assert.equal(hideCount(), 1, 'animation movement alone must trigger a fresh intersection check')
+      assert.equal(still, image)
+      assert.equal(native, null)
+      running = false
+      await settle()
+      assert.equal(frames.size, 0, 'no polling remains once the overlay animation stops')
+      content.remove()
+      await settle()
+      assert.ok(native)
     } else if (scenario === 'split-preview') {
       // The pane drop preview is DOM; a native page above it would hide where the tab lands.
       const preview = document.createElement('div')
@@ -316,7 +349,9 @@ async function fixture(scenario: string) {
 
 const scenarios = {
   corners: 'native bounds and frozen frame inherit only the outer panel bottom corners',
+  'split-corners': 'native bounds and frozen frame use the split pane inner bottom corners',
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',
+  'animated-menu': 'an entering menu crossing into a split page is remeasured without DOM mutations',
   'split-preview': 'the split drop preview over a page swaps it for its still until the drag leaves',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',
   'freeze-barrier': 'hide awaits the asynchronous still-frame paint barrier',
