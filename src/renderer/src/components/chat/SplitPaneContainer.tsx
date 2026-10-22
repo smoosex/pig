@@ -151,6 +151,7 @@ export function SplitPaneContainer({
               node.children.map((child) => requested[child.id])
             )
           }}
+          style={{ overflow: 'visible' }}
           className="h-full w-full"
         >
           {node.children.map((child, index) => (
@@ -158,17 +159,26 @@ export function SplitPaneContainer({
               {index > 0 && (
                 <PanelResizeHandle
                   className={cn(
-                    'transition-colors',
+                    'group relative flex shrink-0 items-center justify-center bg-transparent',
                     isVertical
-                      ? 'h-1 w-full cursor-row-resize bg-transparent hover:bg-primary'
-                      : 'h-full w-1 cursor-col-resize bg-transparent hover:bg-primary'
+                      ? 'h-2 w-full cursor-row-resize'
+                      : 'h-full w-2 cursor-col-resize'
                   )}
-                />
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'pointer-events-none absolute rounded-full bg-glass-prompt-foreground/10 transition-colors duration-150 group-hover:bg-glass-prompt-foreground/25 group-data-[separator=active]:bg-glass-prompt-foreground/35 group-data-[separator=focus]:bg-glass-prompt-foreground/35 solid:bg-border solid:group-hover:bg-primary/50 solid:group-data-[separator=active]:bg-primary solid:group-data-[separator=focus]:bg-primary motion-reduce:transition-none',
+                      isVertical ? 'inset-x-2 h-px' : 'inset-y-2 w-px'
+                    )}
+                  />
+                </PanelResizeHandle>
               )}
               <Panel
                 id={child.id}
                 defaultSize={`${node.sizes[index]}%`}
                 minSize="10%"
+                style={{ overflow: 'visible' }}
                 className="h-full w-full min-h-0 min-w-0"
               >
                 {renderLayoutNode(child)}
@@ -193,12 +203,12 @@ export function SplitPaneContainer({
           useSessionsStore.getState().setActive(node.tabId)
         }}
         className={cn(
-          'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border shadow-xs transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none',
-          'bg-transparent solid:bg-card',
-          isActive ? 'border-primary/80' : 'border-border/60'
+          'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border shadow-glass-pane transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none',
+          'border-border/60 bg-glass-pane-background bg-(image:--glass-pane-sheen) solid:bg-card solid:bg-none solid:shadow-md'
         )}
       >
         <PaneHeader
+          isActive={isActive}
           tab={paneTab}
           tabId={node.tabId}
           title={tabTitle}
@@ -218,7 +228,7 @@ export function SplitPaneContainer({
 
   return (
     <div
-      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden p-1', className)}
+      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden p-2', className)}
     >
       {renderLayoutNode(root)}
     </div>
@@ -227,6 +237,7 @@ export function SplitPaneContainer({
 
 /** Each pane's header owns the right-click actions of the tab it shows. */
 function PaneHeader({
+  isActive,
   tab,
   tabId,
   title,
@@ -235,6 +246,7 @@ function PaneHeader({
   onSelect,
   onClose
 }: {
+  isActive: boolean
   tab: OpenTab | undefined
   tabId: string
   title: string
@@ -252,7 +264,10 @@ function PaneHeader({
     <div
       data-pane-header="true"
       onPointerDown={rename.editing ? undefined : onPointerDown}
-      className="flex h-7 shrink-0 cursor-grab items-center justify-between gap-1.5 border-b border-border/40 bg-muted/20 px-2 select-none active:cursor-grabbing"
+      className={cn(
+        'flex h-7 shrink-0 cursor-grab items-center justify-between gap-1.5 border-b border-border/40 px-4 select-none transition-colors duration-200 motion-reduce:transition-none active:cursor-grabbing',
+        isActive ? 'bg-glass-prompt-foreground/10 solid:bg-primary/10' : 'bg-muted/20'
+      )}
     >
       {tab ? <TabKindIcon kind={tab.kind} path={tab.path} className="text-muted-foreground" /> : null}
       {rename.editing ? (

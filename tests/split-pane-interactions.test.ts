@@ -388,7 +388,7 @@ async function fixture(scenario: string): Promise<void> {
         renderContainer()
       })
       const frame = host.firstElementChild as HTMLElement
-      assert.ok(frame.classList.contains('p-1'), 'split panes retain equal padding on all four sides')
+      assert.ok(frame.classList.contains('p-2'), 'split panes retain equal padding on all four sides')
       host.dataset.paneId = 'A'
       const source = host.querySelector<HTMLElement>(`[data-split-pane][data-pane-id="${a}"]`)!
       const target = host.querySelector<HTMLElement>(`[data-split-pane][data-pane-id="${b}"]`)!

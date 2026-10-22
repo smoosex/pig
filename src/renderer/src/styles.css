@@ -59,6 +59,8 @@
   --color-glass-card-border: var(--glass-card-border);
   --shadow-glass-card: var(--glass-card-shadow);
   --shadow-glass-card-edge: var(--glass-card-edge-shadow);
+  --color-glass-pane-background: var(--glass-pane-background);
+  --shadow-glass-pane: var(--glass-pane-shadow);
   --shadow-glass-inline-code: var(--glass-inline-code-shadow);
   --color-glass-popover-background: var(--glass-popover-background);
   --shadow-glass-popover: var(--glass-popover-shadow);

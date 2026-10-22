@@ -308,7 +308,7 @@ async function fixture(scenario: string): Promise<void> {
       const panes = [...host.querySelectorAll<HTMLElement>('[data-split-pane]')]
       assert.equal(panes.length, 4)
       for (const pane of panes) {
-        assert.ok(pane.classList.contains('bg-transparent') && pane.classList.contains('solid:bg-card'), 'reading panes paint nothing over the glass')
+        assert.ok(pane.classList.contains('bg-glass-pane-background') && pane.classList.contains('solid:bg-card'), 'reading panes share the split glass material while solid keeps its card fill')
         assert.ok(!pane.classList.contains('bg-card'))
       }
       for (const pane of panes) {
@@ -440,7 +440,7 @@ else {
         contracts.push([...values.keys()].sort())
         const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-')).sort(([a], [b]) => a.localeCompare(b))
         for (const role of [
-          'background', 'content-background', 'content-sheen', 'content-border', 'content-shadow', 'window-background', 'tab-bar-background', 'tab-active-background', 'tab-active-sheen',
+          'background', 'pane-background', 'pane-sheen', 'pane-shadow', 'content-background', 'content-sheen', 'content-border', 'content-shadow', 'window-background', 'tab-bar-background', 'tab-active-background', 'tab-active-sheen',
           'tab-active-border', 'tab-active-shadow', 'composer-background', 'prompt-background', 'prompt-foreground',
           'border', 'highlight', 'shadow', 'code-gutter-background', 'card-border', 'card-shadow', 'card-edge-shadow',
           'button-background', 'button-hover-background', 'button-border', 'button-sheen', 'button-shadow',
@@ -497,7 +497,7 @@ else {
       container.nodes?.filter((node) => node.type === 'decl').map((node) => [node.prop, node.value.trim()])
     )
     const tokens = declarations(theme)
-    for (const role of ['glass-background', 'glass-content-background', 'glass-content-border', 'glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'glass-border', 'glass-tab-bar-background', 'glass-tab-active-background', 'glass-tab-active-border', 'tab-bar-background', 'tab-active-background', 'tab-hover-background']) {
+    for (const role of ['glass-background', 'glass-pane-background', 'glass-content-background', 'glass-content-border', 'glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'glass-border', 'glass-tab-bar-background', 'glass-tab-active-background', 'glass-tab-active-border', 'tab-bar-background', 'tab-active-background', 'tab-hover-background']) {
       assert.equal(tokens.get(`--color-${role}`), `var(--${role})`)
     }
     assert.match(tokens.get('--shadow-glass-panel')!, /var\(--glass-shadow\)/)

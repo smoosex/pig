@@ -32,6 +32,9 @@ html[data-palette='pig'] {
   --tab-active-background: #f8f8fa;
   --tab-hover-background: #c7d2e0;
   --glass-background: color-mix(in srgb, #f8f8f8 50%, transparent);
+  --glass-pane-background: transparent;
+  --glass-pane-sheen: var(--glass-popover-sheen);
+  --glass-pane-shadow: var(--glass-card-shadow), var(--glass-card-edge-shadow);
   --glass-content-background: var(--glass-background);
   --glass-content-sheen: none;
   --glass-content-border: var(--glass-border);
@@ -156,8 +159,11 @@ html.dark[data-palette='pig'] {
   --tab-active-background: #1e1f21;
   --tab-hover-background: #424950;
   --glass-background: color-mix(in srgb, #202020 50%, transparent);
-  --glass-content-background: rgb(32 32 32 / 0.22);
-  --glass-content-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045) 0%, rgb(255 255 255 / 0.015) 40%, rgb(0 0 0 / 0.025) 100%);
+  --glass-pane-background: rgb(255 255 255 / 0.008);
+  --glass-pane-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, rgb(255 255 255 / 0.025) 3%, rgb(255 255 255 / 0.008) 20%, transparent 55%);
+  --glass-pane-shadow: 0 2px 8px rgb(0 0 0 / 0.16), 0 12px 28px -16px rgb(0 0 0 / 0.36), inset 0 1px 0 rgb(255 255 255 / 0.2), inset 1px 0 0 rgb(255 255 255 / 0.07), inset -1px 0 0 rgb(255 255 255 / 0.04), inset 0 -1px 0 rgb(255 255 255 / 0.08), inset 0 -2px 0 rgb(0 0 0 / 0.18);
+  --glass-content-background: rgb(255 255 255 / 0.018);
+  --glass-content-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045) 0%, rgb(255 255 255 / 0.012) 14%, transparent 45%);
   --glass-content-border: rgb(236 236 236 / 0.08);
   --glass-content-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.38), 0 2px 6px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -1px 0 rgb(255 255 255 / 0.09), inset 0 -2px 0 rgb(0 0 0 / 0.12);
   --glass-window-background: #2f2f2f;
