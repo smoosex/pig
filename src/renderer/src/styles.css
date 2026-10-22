@@ -45,6 +45,8 @@
   --color-tab-active-background: var(--tab-active-background);
   --color-tab-hover-background: var(--tab-hover-background);
   --color-glass-background: var(--glass-background);
+  --color-glass-content-background: var(--glass-content-background);
+  --color-glass-content-border: var(--glass-content-border);
   --color-glass-window-background: var(--glass-window-background);
   --color-glass-tab-bar-background: var(--glass-tab-bar-background);
   --color-glass-tab-active-background: var(--glass-tab-active-background);
@@ -74,6 +76,7 @@
   --shadow-glass-primary-button: var(--glass-primary-button-shadow);
   --shadow-glass-button-hover: var(--glass-button-hover-shadow);
   --shadow-glass-panel: 0 8px 28px -8px var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  --shadow-glass-content: var(--glass-content-shadow);
   --color-user-message-background: var(--user-message-background);
   --color-user-message-foreground: var(--user-message-foreground);
   --color-link: var(--link);

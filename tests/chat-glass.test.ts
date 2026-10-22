@@ -223,12 +223,12 @@ async function fixture(scenario: string): Promise<void> {
       const windowSurface = host.querySelector<HTMLElement>('[data-app-surface]')!
       assert.ok(windowSurface.classList.contains('solid:bg-background'))
       assert.ok(![...windowSurface.classList].some((name) => name.startsWith('bg-')), 'glass leaves the window to its native material')
-      assert.ok(surface.classList.contains('bg-glass-background'))
+      assert.ok(surface.classList.contains('bg-glass-content-background'))
       for (const bare of [windowSurface, surface]) {
         assert.ok(!bare.className.includes('backdrop-'), 'nothing web-painted lies under the window surfaces, so a backdrop-filter only reads back its own last frame')
       }
-      assert.ok(surface.classList.contains('shadow-glass-panel'))
-      assert.ok(surface.classList.contains('ring-glass-border'))
+      assert.ok(surface.classList.contains('shadow-glass-content'))
+      assert.ok(surface.classList.contains('ring-glass-content-border'))
       assert.ok(surface.classList.contains('solid:bg-chat-background'))
       assert.ok(surface.classList.contains('solid:shadow-md'))
       assert.ok(surface.classList.contains('solid:ring-0'))
@@ -291,7 +291,7 @@ async function fixture(scenario: string): Promise<void> {
       }
       for (const id of ['file', 'diff']) {
         await act(async () => { sessions.setState({ activeTabId: id, currentProjectCwd: '/p' }) })
-        assert.ok(surface.classList.contains('bg-glass-background'), `${id} shows the shared glass backplate`)
+        assert.ok(surface.classList.contains('bg-glass-content-background'), `${id} shows the shared glass backplate`)
         assert.ok(surface.classList.contains('solid:bg-chat-background'), `${id} stays opaque in solid`)
         assert.ok(!surface.classList.contains('bg-chat-background'))
         assert.ok(host.querySelector(`[data-view="${id === 'file' ? 'FileView' : 'ChangesView'}"]`))
@@ -303,8 +303,8 @@ async function fixture(scenario: string): Promise<void> {
         split.getState().splitPane(pane, 'file', 'bottom')
         split.getState().splitPane(pane, 'diff', 'left')
       })
-      assert.ok(surface.classList.contains('bg-glass-background'), 'a selected reading tab cannot replace the shared material in a mixed split')
-      assert.equal(host.querySelectorAll('.bg-glass-background').length, 1, 'mixed panes share one material layer')
+      assert.ok(surface.classList.contains('bg-glass-content-background'), 'a selected reading tab cannot replace the shared material in a mixed split')
+      assert.equal(host.querySelectorAll('.bg-glass-content-background').length, 1, 'mixed panes share one material layer')
       const panes = [...host.querySelectorAll<HTMLElement>('[data-split-pane]')]
       assert.equal(panes.length, 4)
       for (const pane of panes) {
@@ -440,7 +440,7 @@ else {
         contracts.push([...values.keys()].sort())
         const glass = [...values.entries()].filter(([role]) => role.startsWith('glass-')).sort(([a], [b]) => a.localeCompare(b))
         for (const role of [
-          'background', 'window-background', 'tab-bar-background', 'tab-active-background', 'tab-active-sheen',
+          'background', 'content-background', 'content-sheen', 'content-border', 'content-shadow', 'window-background', 'tab-bar-background', 'tab-active-background', 'tab-active-sheen',
           'tab-active-border', 'tab-active-shadow', 'composer-background', 'prompt-background', 'prompt-foreground',
           'border', 'highlight', 'shadow', 'code-gutter-background', 'card-border', 'card-shadow', 'card-edge-shadow',
           'button-background', 'button-hover-background', 'button-border', 'button-sheen', 'button-shadow',
@@ -497,10 +497,11 @@ else {
       container.nodes?.filter((node) => node.type === 'decl').map((node) => [node.prop, node.value.trim()])
     )
     const tokens = declarations(theme)
-    for (const role of ['glass-background', 'glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'glass-border', 'glass-tab-bar-background', 'glass-tab-active-background', 'glass-tab-active-border', 'tab-bar-background', 'tab-active-background', 'tab-hover-background']) {
+    for (const role of ['glass-background', 'glass-content-background', 'glass-content-border', 'glass-window-background', 'glass-composer-background', 'glass-prompt-background', 'glass-prompt-foreground', 'glass-border', 'glass-tab-bar-background', 'glass-tab-active-background', 'glass-tab-active-border', 'tab-bar-background', 'tab-active-background', 'tab-hover-background']) {
       assert.equal(tokens.get(`--color-${role}`), `var(--${role})`)
     }
     assert.match(tokens.get('--shadow-glass-panel')!, /var\(--glass-shadow\)/)
+    assert.equal(tokens.get('--shadow-glass-content'), 'var(--glass-content-shadow)')
     assert.equal(tokens.get('--shadow-glass-tab-active'), 'var(--glass-tab-active-shadow)')
     const surface = css.nodes.find((node) => node.type === 'atrule' && node.name === 'utility' && node.params === 'glass-code-surface')
     assert.ok(surface?.type === 'atrule')

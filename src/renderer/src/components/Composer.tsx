@@ -67,12 +67,12 @@ export function Composer({
       <RetryNotice sessionId={sessionId} />
       <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
-          <div ref={boxRef} className="relative rounded-2xl shadow-md">
+          <div ref={boxRef} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
             <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
               <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
                 <InputGroup
-                  className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-glass-border solid:border-border bg-glass-composer-background/60! solid:bg-composer-background! text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-glass-border solid:has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none"
+                  className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl border-[0.5px] border-glass-border solid:border-border bg-glass-composer-background/60! bg-(image:--glass-popover-sheen) shadow-glass-card-edge solid:bg-composer-background! solid:bg-none solid:shadow-none text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-glass-border solid:has-[[data-slot=input-group-control]:focus-visible]:border-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none"
                   onFocus={() => setFocused(true)}
                   onBlur={(event) => {
                     const next = event.relatedTarget
