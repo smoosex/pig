@@ -137,7 +137,9 @@ export function ContextUsageButton({
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <InputGroupButton
-              className="size-8 rounded-full p-0 text-muted-foreground"
+              size="icon-xs"
+              variant="outline"
+              className="rounded-full"
               aria-label={t('context.window')}
               disabled={disabled}
             >
@@ -286,24 +288,20 @@ export function ContextUsageButton({
 
 function ContextMeter({ percent }: { percent: number | null }) {
   const value = Math.max(0, Math.min(100, percent ?? 0))
-  const r = 13
-  const c = 2 * Math.PI * r
+  const filled = Math.round(value / 5)
   return (
-    <span className="relative inline-flex size-8 items-center justify-center">
-      <svg viewBox="0 0 32 32" className="size-8 -rotate-90">
-        <circle cx="16" cy="16" r={r} fill="none" className="stroke-border" strokeWidth="2.25" />
-        <circle
-          cx="16"
-          cy="16"
-          r={r}
-          fill="none"
-          className="stroke-primary"
-          strokeWidth="2.25"
-          strokeDasharray={`${(value / 100) * c} ${c}`}
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="absolute whitespace-nowrap text-[8px] leading-none tabular-nums tracking-tight text-muted-foreground">
+    <span className="relative inline-flex size-6 shrink-0 items-center justify-center">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0.5">
+        {Array.from({ length: 20 }, (_, index) => (
+          <span key={index} className="absolute inset-0" style={{ transform: `rotate(${index * 18}deg)` }}>
+            <span className={cn(
+              'absolute left-1/2 top-0 h-0.75 w-px -translate-x-1/2 rounded-full transition-colors',
+              index < filled ? 'bg-primary' : 'bg-glass-prompt-foreground/20 solid:bg-foreground/20'
+            )} />
+          </span>
+        ))}
+      </span>
+      <span className="flex size-4 items-center justify-center rounded-full bg-glass-button-background bg-(image:--glass-badge-sheen) text-[7px] leading-none tabular-nums tracking-tight text-glass-prompt-foreground shadow-glass-card-edge solid:bg-background solid:bg-none solid:text-foreground solid:shadow-none">
         {percent == null ? '–' : `${Math.round(value)}%`}
       </span>
     </span>

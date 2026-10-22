@@ -144,9 +144,9 @@ export function ComposerToolbar({
         {!bashMode ? <SessionContextUsage sessionId={sessionId} /> : null}
         {bashRunning || (isStreaming && (!hasDraft || bashMode)) ? (
           <InputGroupButton
-            size="icon-sm"
+            size="icon-xs"
             variant="secondary"
-            className="size-7 rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
+            className="rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
             aria-label={t(bashRunning ? 'composer.stopBash' : 'composer.pause')}
             onClick={() => void onAbort()}
           >
@@ -154,9 +154,9 @@ export function ComposerToolbar({
           </InputGroupButton>
         ) : (
           <InputGroupButton
-            size="icon-sm"
+            size="icon-xs"
             variant="default"
-            className="size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5"
+            className="rounded-full [&_svg:not([class*='size-'])]:size-3"
             aria-label={bashMode ? t('composer.runBash') : isStreaming ? t('composer.queue') : t('composer.send')}
             disabled={!sessionId || inputDisabled || bashRunning || (bashMode ? !canRunBash || isStreaming : !hasDraft)}
             onClick={() => void onSend()}
