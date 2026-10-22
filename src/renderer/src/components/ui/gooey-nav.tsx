@@ -40,7 +40,7 @@ const SIZES = {
 
 export type GooeyNavSize = keyof typeof SIZES
 
-type NavItem = { label: string; href?: string; icon?: ReactNode }
+type NavItem = { label: string; href?: string; icon?: ReactNode; disabled?: boolean }
 
 export type GooeyNavItem = string | NavItem
 
@@ -147,6 +147,7 @@ function NavLabel({
   label,
   href,
   icon,
+  disabled,
   isActive,
   size,
   activeLabelColor,
@@ -157,7 +158,7 @@ function NavLabel({
     'data-active': isActive,
     'aria-current': isActive ? (href ? 'page' : true) : undefined,
     className: cn(
-      'flex cursor-pointer items-center whitespace-nowrap font-medium [&_svg]:shrink-0',
+      'flex cursor-pointer items-center whitespace-nowrap font-medium disabled:cursor-default disabled:opacity-50 [&_svg]:shrink-0',
       isActive ? FADE_IN : FADE_OUT,
       SIZES[size].label,
       !isActive && 'text-glass-prompt-foreground/70 solid:text-muted-foreground'
@@ -172,7 +173,7 @@ function NavLabel({
       {label}
     </a>
   ) : (
-    <button type="button" {...props}>
+    <button type="button" disabled={disabled} {...props}>
       {icon}
       {label}
     </button>

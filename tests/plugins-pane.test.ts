@@ -91,20 +91,17 @@ async function fixture(): Promise<void> {
     assert.ok(group)
     assert.equal(group.parentElement?.lastElementChild, group, 'scope selection is the rightmost control')
     assert.equal(group.previousElementSibling, open, 'configuration sits immediately to the left')
-    assert.equal(group.dataset.size, 'xs')
-    assert.equal(group.dataset.spacing, '0.5')
-    assert.ok(group.classList.contains('border') && group.classList.contains('p-px'))
-    const [project, chat] = [...group.querySelectorAll<HTMLButtonElement>('button')]
-    assert.equal(project.textContent, '项目')
-    assert.equal(chat.textContent, 'Chat')
-    const selected = () => [project, chat].map((item) => item.getAttribute('aria-pressed'))
-    assert.deepEqual(selected(), ['true', 'false'])
+    assert.equal(group.dataset.slot, 'gooey-nav')
+    const [all, project, chat] = [...group.querySelectorAll<HTMLButtonElement>('button')]
+    assert.deepEqual([all, project, chat].map((item) => item.textContent), ['全部', '仅项目', '仅对话'])
+    const selected = () => [all, project, chat].map((item) => item.getAttribute('aria-current') === 'true')
+    assert.deepEqual(selected(), [false, true, false])
+    await act(async () => { all.click() })
+    assert.deepEqual(selected(), [true, false, false])
     await act(async () => { chat.click() })
-    assert.deepEqual(selected(), ['true', 'true'])
-    await act(async () => { project.click() })
-    assert.deepEqual(selected(), ['false', 'true'])
+    assert.deepEqual(selected(), [false, false, true])
     await act(async () => { chat.click() })
-    assert.deepEqual(selected(), ['false', 'false'])
+    assert.deepEqual(selected(), [false, false, false], 'clicking the lit choice again disables the plugin')
     await act(async () => { project.click() })
     assert.deepEqual(scopeChanges.map((change) => change.scopes), [['project', 'chat'], ['chat'], [], ['project']])
 
@@ -123,7 +120,7 @@ async function fixture(): Promise<void> {
       assert.equal(sourceInput.disabled, false)
     }
     const otherGroup = document.querySelector('[aria-label="Pi Review 启用范围"]')!
-    const [otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
+    const [, otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
     const first = deferred()
     const second = deferred()
     scopeWaits.set('observational-memory', first.promise)
@@ -141,7 +138,7 @@ async function fixture(): Promise<void> {
     assertInstallerIdle()
     await act(async () => { first.resolve() })
     assert.equal(project.disabled, false)
-    assert.equal(otherChat.getAttribute('aria-pressed'), 'true', 'a delayed older reply cannot revert another plugin')
+    assert.equal(otherChat.getAttribute('aria-current'), 'true', 'a delayed older reply cannot revert another plugin')
     assertInstallerIdle()
     scopeWaits.clear()
 
@@ -150,7 +147,7 @@ async function fixture(): Promise<void> {
     await act(async () => { chat.click() })
     assertInstallerIdle()
     await act(async () => { turningOff.resolve() })
-    assert.deepEqual(selected(), ['true', 'false'])
+    assert.deepEqual(selected(), [false, false, false])
     assertInstallerIdle()
     scopeWaits.clear()
 
@@ -170,21 +167,20 @@ async function fixture(): Promise<void> {
     assert.equal(install.textContent, '安装')
     assert.equal(install.disabled, true, 'a successful install clears the source')
     assert.equal(sourceInput.disabled, false)
-    assert.deepEqual(selected(), ['true', 'true'], 'the installation’s older reply cannot revert a newer scope save')
+    assert.deepEqual(selected(), [false, false, true], 'the installation’s older reply cannot revert a newer scope save')
     await act(async () => { chat.click() })
 
     rejectScopeChange = true
     await act(async () => { chat.click() })
-    assert.deepEqual(selected(), ['true', 'false'], 'failed saves keep the previous selection')
+    assert.deepEqual(selected(), [false, false, false], 'failed saves keep the previous selection')
     assert.match(document.querySelector('[role="alert"]')?.textContent ?? '', /Scope save failed/)
     rejectScopeChange = false
     const missing = document.querySelector('[aria-label="Missing plugin 启用范围"]')!
-    const [missingProject, missingChat] = [...missing.querySelectorAll<HTMLButtonElement>('button')]
-    await act(async () => { missingProject.click() })
-    assert.equal(missingProject.disabled, true, 'unavailable plugins cannot gain a scope')
-    assert.equal(missingChat.disabled, false, 'an unavailable plugin can still shed its remaining scope')
-    await act(async () => { missingChat.click() })
-    assert.equal(missingChat.disabled, true)
+    const [missingAll, missingProject] = [...missing.querySelectorAll<HTMLButtonElement>('button')]
+    assert.equal(missingProject.disabled, true, 'unavailable plugins cannot change to another scope')
+    assert.equal(missingAll.disabled, false, 'an unavailable plugin can still be disabled')
+    await act(async () => { missingAll.click() })
+    assert.equal(missingAll.disabled, true)
     assert.deepEqual(scopeChanges.at(-1), { id: 'missing', scopes: [] })
     await act(async () => { open.click() })
     await flush()

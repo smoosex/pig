@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, FolderOpen, Plus, Settings, X } from 'lucide-react'
+import type { MessageKey } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
 import { thinkingLevelKeys } from '../../lib/thinking-levels'
 import { useModelCatalogStore } from '../../stores/model-catalog'
@@ -8,7 +9,7 @@ import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
+import { GooeyNav } from '../ui/gooey-nav'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
@@ -29,6 +30,17 @@ const numericKeys = [
 const nonNegativeKeys = ['compactionCatchUpMaxChunks'] as const
 const numberSettingKeys = [...numericKeys, ...nonNegativeKeys] as const
 const booleanKeys = ['consolidateWhenIdle', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
+
+const SCOPE_CHOICES: { label: MessageKey; scopes: PluginScope[] }[] = [
+  { label: 'plugins.scopeAll', scopes: ['project', 'chat'] },
+  { label: 'plugins.scopeProject', scopes: ['project'] },
+  { label: 'plugins.scopeChat', scopes: ['chat'] }
+]
+
+/** -1 means disabled: no choice is lit, and clicking the lit choice again disables the plugin. */
+function scopeIndex(scopes: PluginScope[]): number {
+  return SCOPE_CHOICES.findIndex((choice) => choice.scopes.length === scopes.length && choice.scopes.every((scope) => scopes.includes(scope)))
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -238,19 +250,20 @@ export function PluginsPane() {
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
-        <ToggleGroup
-          type="multiple"
-          spacing={0.5}
+        <GooeyNav
           size="xs"
-          className="shrink-0 border p-px"
-          value={plugin.scopes}
-          disabled={pendingPluginIds.has(plugin.id)}
-          onValueChange={(scopes) => void actOnPlugin(plugin.id, () => api.setPluginScopes(plugin.id, scopes as PluginScope[]))}
+          className="shrink-0"
           aria-label={`${plugin.name} ${t('plugins.enabledIn')}`}
-        >
-          <ToggleGroupItem value="project" disabled={!plugin.available && !plugin.scopes.includes('project')}>{t('plugins.project')}</ToggleGroupItem>
-          <ToggleGroupItem value="chat" disabled={!plugin.available && !plugin.scopes.includes('chat')}>{t('plugins.chat')}</ToggleGroupItem>
-        </ToggleGroup>
+          value={scopeIndex(plugin.scopes)}
+          items={SCOPE_CHOICES.map((choice, index) => ({
+            label: t(choice.label),
+            disabled: pendingPluginIds.has(plugin.id) || (!plugin.available && index !== scopeIndex(plugin.scopes))
+          }))}
+          onChange={(index) => {
+            const scopes = index === scopeIndex(plugin.scopes) ? [] : SCOPE_CHOICES[index].scopes
+            void actOnPlugin(plugin.id, () => api.setPluginScopes(plugin.id, scopes))
+          }}
+        />
       </div>
     </SettingsRow>
   )
