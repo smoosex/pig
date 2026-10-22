@@ -47,6 +47,7 @@ async function fixture(failure: Failure): Promise<void> {
     'tab-close-menu': { installTabCloseMenu: () => { menuInstalls++ } },
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: asyncNoop },
+    'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },
     'session-names': { forwardSessionNames: noop },
@@ -60,6 +61,7 @@ async function fixture(failure: Failure): Promise<void> {
     'worktree-file-protocol': { handleWorktreeFiles: noop, registerWorktreeFileScheme: noop },
     'open-project-sessions': {
       flushOpenProjectSessions: asyncNoop,
+      loadOpenProjectSessions: async () => ({ tools: [] }),
       removeOpenProjectWorkspaces: async () => { workspacePrunes++ }
     },
     'chats': { pruneEmptyChatDirs: async () => { chatPrunes++ } },

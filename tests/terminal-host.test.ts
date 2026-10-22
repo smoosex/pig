@@ -18,6 +18,8 @@ class FakeWorker implements PtyHostProcess {
   exit(code: number) { for (const listener of this.listeners.exit) listener(code) }
 }
 
+const history = (id: string) => ({ path: `/history/${id}`, failed: 'failed: {message}' })
+
 function fakeWindow() {
   const events: TerminalEvent[] = []
   const win: TerminalWindow = { isDestroyed: () => false, webContents: { send: (_channel, event) => { events.push(event) } } }
@@ -38,7 +40,7 @@ test('terminal environment drops the launching terminal and Pig internals, and d
 
 test('terminal host scopes shells to their window and survives a crashed PTY host', async () => {
   const workers: FakeWorker[] = []
-  const host = new TerminalHost(() => { const worker = new FakeWorker(); workers.push(worker); return worker }, '1.0.0')
+  const host = new TerminalHost(() => { const worker = new FakeWorker(); workers.push(worker); return worker }, '1.0.0', history)
   const owner = fakeWindow()
   const other = fakeWindow()
 
@@ -46,7 +48,7 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   const spawn = workers[0].sent[0]
   assert.equal(spawn.type, 'spawn')
   assert.deepEqual(spawn.type === 'spawn' && { cwd: spawn.cwd, cols: spawn.cols, rows: spawn.rows, term: spawn.env.TERM }, { cwd: '/project', cols: 80, rows: 24, term: 'xterm-256color' })
-  workers[0].reply({ type: 'spawned', id: 'terminal:a', pid: 42 })
+  workers[0].reply({ type: 'spawned', id: 'terminal:a', pid: 42, cwd: '/project' })
   assert.equal((await created).pid, 42)
   assert.throws(() => host.create(owner.win, 'terminal:a', '/project', 80, 24), /already exists/)
 
@@ -54,7 +56,7 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   assert.deepEqual(owner.events, [{ terminalId: 'terminal:a', kind: 'output', data: 'hi' }])
   assert.equal(other.events.length, 0)
   assert.throws(() => host.write(other.win, 'terminal:a', 'x'), /another window/)
-  assert.throws(() => host.close(other.win, 'terminal:a'), /another window/)
+  assert.throws(() => host.close(other.win, 'terminal:a', 'discard'), /another window/)
   host.write(owner.win, 'terminal:a', 'ls\r')
   host.ack(owner.win, 'terminal:a', 2)
   assert.deepEqual(workers[0].sent.slice(1), [{ type: 'write', id: 'terminal:a', data: 'ls\r' }, { type: 'ack', id: 'terminal:a', length: 2 }])
@@ -74,9 +76,10 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   assert.deepEqual(owner.events.at(-1), { terminalId: 'terminal:a', kind: 'exit', exitCode: 3, signal: null })
   host.write(owner.win, 'terminal:a', 'late')
   assert.equal(workers[0].sent.at(-1)?.type, 'ack', 'input after exit never reaches the host')
-  host.close(owner.win, 'terminal:a')
-  host.close(owner.win, 'terminal:a')
-  assert.equal(workers[0].sent.some((message) => message.type === 'kill'), false, 'an exited shell needs no kill')
+  host.close(owner.win, 'terminal:a', 'discard')
+  host.close(owner.win, 'terminal:a', 'discard')
+  assert.deepEqual(workers[0].sent.filter((message) => message.type === 'close'), [{ type: 'close', id: 'terminal:a', history: 'discard' }],
+    'an exited shell is closed once, so its record is still discarded')
 
   const failed = host.create(owner.win, 'terminal:b', '/missing', 80, 24)
   workers[0].reply({ type: 'spawn-failed', id: 'terminal:b', message: 'posix_spawnp failed' })
@@ -85,10 +88,10 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   const closing = host.create(owner.win, 'terminal:c', '/project', 80, 24)
   host.closeWindow(owner.win)
   await assert.rejects(closing, /Terminal closed/)
-  assert.deepEqual(workers[0].sent.at(-1), { type: 'kill', id: 'terminal:c' }, 'a shell still starting is killed after it spawns')
+  assert.deepEqual(workers[0].sent.at(-1), { type: 'close', id: 'terminal:c', history: 'keep' }, 'a shell still starting is killed after it spawns, keeping its record when the window closes')
 
   const live = host.create(owner.win, 'terminal:d', '/project', 80, 24)
-  workers[0].reply({ type: 'spawned', id: 'terminal:d', pid: 7 })
+  workers[0].reply({ type: 'spawned', id: 'terminal:d', pid: 7, cwd: '/project' })
   await live
   const starting = host.create(owner.win, 'terminal:e', '/project', 80, 24)
   workers[0].exit(1)
@@ -100,12 +103,12 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
 
 test('terminal snapshots correlate replies, scope lists and cancel pending reads across lifecycle changes', async () => {
   const worker = new FakeWorker()
-  const host = new TerminalHost(() => worker, '1')
+  const host = new TerminalHost(() => worker, '1', history)
   const { win } = fakeWindow()
   const other = fakeWindow().win
   const create = async (id: string) => {
     const pending = host.create(win, id, '/project', 80, 24)
-    worker.reply({ type: 'spawned', id, pid: 42 })
+    worker.reply({ type: 'spawned', id, pid: 42, cwd: '/project' })
     await pending
   }
   const request = () => {
@@ -140,7 +143,7 @@ test('terminal snapshots correlate replies, scope lists and cancel pending reads
   assert.equal(worker.sent.length, sent)
 
   const closed = host.snapshot(win, 'terminal:a', 10)
-  host.close(win, 'terminal:a')
+  host.close(win, 'terminal:a', 'discard')
   await assert.rejects(closed, /closed/)
   await create('terminal:b')
   const exited = host.snapshot(win, 'terminal:b', 10)
@@ -156,10 +159,10 @@ test('terminal snapshots correlate replies, scope lists and cancel pending reads
 
 test('terminal shutdown rejects pending snapshots before waiting for worker cleanup', async () => {
   const worker = new FakeWorker()
-  const host = new TerminalHost(() => worker, '1')
+  const host = new TerminalHost(() => worker, '1', history)
   const { win } = fakeWindow()
   const created = host.create(win, 'terminal:a', '/', 80, 24)
-  worker.reply({ type: 'spawned', id: 'terminal:a', pid: 42 })
+  worker.reply({ type: 'spawned', id: 'terminal:a', pid: 42, cwd: '/project' })
   await created
   const read = host.snapshot(win, 'terminal:a', 10)
   const shutdown = host.shutdown()

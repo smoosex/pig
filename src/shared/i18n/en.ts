@@ -343,7 +343,8 @@ export const en: Messages = {
     failed: 'Terminal stopped: {message}',
     writeFailed: 'Terminal input failed: {message}',
     fontFailed: 'Terminal font failed to load; using a fallback font: {message}',
-    startFailed: 'Could not start the terminal: {message}'
+    startFailed: 'Could not start the terminal: {message}',
+    historyRestoreFailed: 'Could not restore the previous output: {message}'
   },
   browser: {
     releaseAgent: 'Release agent control',

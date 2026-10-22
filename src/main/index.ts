@@ -19,7 +19,8 @@ import { worktrees } from './project-worktrees'
 import { handleSessionImages, registerSessionImageScheme } from './session-image-protocol'
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
 import { handleWorktreeFiles, registerWorktreeFileScheme } from './worktree-file-protocol'
-import { flushOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
+import { flushOpenProjectSessions, loadOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
+import { pruneTerminalHistories } from './terminal/history'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
 import { importShellEnvironment } from './shell-env'
@@ -85,6 +86,8 @@ app.whenReady().then(async () => {
   await removeOpenProjectWorkspaces((await worktrees.listDeletions()).map((job) => job.cwd))
   // Before the window can make one: a chat the last run left behind is nobody's.
   await pruneEmptyChatDirs().catch(() => {})
+  const { tools } = await loadOpenProjectSessions()
+  await pruneTerminalHistories(tools.filter((tool) => tool.kind === 'terminal').map((tool) => tool.id))
   forwardSessionNames()
   installTabCloseMenu()
   createMainWindow()

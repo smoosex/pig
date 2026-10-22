@@ -340,7 +340,8 @@ export const zh = {
     failed: '终端已中断：{message}',
     writeFailed: '终端输入失败：{message}',
     fontFailed: '终端字体加载失败，已使用备用字体：{message}',
-    startFailed: '无法启动终端：{message}'
+    startFailed: '无法启动终端：{message}',
+    historyRestoreFailed: '无法恢复上次的输出：{message}'
   },
   browser: {
     releaseAgent: '释放 Agent 控制',

@@ -2,9 +2,12 @@
  * Terminal panes belong to the UI window that created them, never to a Pi session. Main keeps the
  * ownership map and talks to one lazily forked PTY utility process; that process holds every shell.
  * If it dies, each live pane is told so and the next terminal forks a fresh host.
+ * A tab the user closes discards its restart record; a window or app that closes keeps it.
  */
 import { randomUUID } from 'node:crypto'
-import type { PtyHostMessage, PtyHostRequest, TerminalEvent, TerminalInfo, TerminalSnapshot } from '../../shared/terminal'
+import type {
+  PtyHostMessage, PtyHostRequest, TerminalEvent, TerminalHistoryOnClose, TerminalHistoryTarget, TerminalInfo, TerminalSnapshot
+} from '../../shared/terminal'
 import { terminalEnvironment, terminalShell } from './environment'
 
 export interface PtyHostProcess {
@@ -35,7 +38,8 @@ export class TerminalHost {
 
   constructor(
     private readonly fork: () => PtyHostProcess,
-    private readonly appVersion: string
+    private readonly appVersion: string,
+    private readonly history: (id: string) => TerminalHistoryTarget
   ) {}
 
   create(win: TerminalWindow, id: string, cwd: string, cols: number, rows: number): Promise<TerminalInfo> {
@@ -46,7 +50,7 @@ export class TerminalHost {
     const worker = this.ensureWorker()
     return new Promise((resolve, reject) => {
       this.terminals.set(id, { win, info: { pid: 0, shell: shell.file, cwd }, exited: false, spawn: { resolve, reject } })
-      worker.postMessage({ type: 'spawn', id, file: shell.file, args: shell.args, cwd, env, cols, rows })
+      worker.postMessage({ type: 'spawn', id, file: shell.file, args: shell.args, cwd, env, cols, rows, history: this.history(id) })
     })
   }
 
@@ -104,19 +108,20 @@ export class TerminalHost {
   }
 
   /** Idempotent: a tab may close before, during or after its shell starts or exits. */
-  close(win: TerminalWindow, id: string): void {
+  close(win: TerminalWindow, id: string, history: TerminalHistoryOnClose): void {
     const terminal = this.terminals.get(id)
     if (!terminal) return
     if (terminal.win !== win) throw new Error('Terminal belongs to another window')
     this.terminals.delete(id)
     this.rejectSnapshots(id, new Error('Terminal closed'))
     terminal.spawn?.reject(new Error('Terminal closed'))
-    // Ordered after the spawn request on the same port, so a still-starting shell is killed too.
-    if (!terminal.exited && this.worker) this.worker.postMessage({ type: 'kill', id })
+    // Ordered after the spawn request on the same port, so a still-starting shell is killed too. An exited
+    // shell still has a record to keep or discard.
+    if (this.worker) this.worker.postMessage({ type: 'close', id, history })
   }
 
   closeWindow(win: TerminalWindow): void {
-    for (const [id, terminal] of [...this.terminals]) if (terminal.win === win) this.close(win, id)
+    for (const [id, terminal] of [...this.terminals]) if (terminal.win === win) this.close(win, id, 'keep')
   }
 
   shutdown(): Promise<void> {
@@ -127,7 +132,7 @@ export class TerminalHost {
     if (!this.worker) this.shutdownResult!.resolve()
     else {
       try {
-        for (const [id, terminal] of this.terminals) this.close(terminal.win, id)
+        for (const [id, terminal] of this.terminals) this.close(terminal.win, id, 'keep')
         this.worker.postMessage({ type: 'shutdown' })
       } catch (error) {
         this.shutdownResult!.reject(error as Error)
@@ -188,7 +193,7 @@ export class TerminalHost {
         break
       }
       case 'spawned': {
-        terminal.info = { ...terminal.info, pid: message.pid }
+        terminal.info = { ...terminal.info, pid: message.pid, cwd: message.cwd }
         const spawn = terminal.spawn
         terminal.spawn = undefined
         spawn?.resolve(terminal.info)

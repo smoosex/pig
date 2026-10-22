@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { app, ipcMain, utilityProcess, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { t } from '../i18n'
 import { TerminalHost, type PtyHostProcess } from '../terminal/host'
+import { terminalHistoryPath } from '../terminal/history'
 import { TerminalAgentController, type TerminalAgentDeps } from '../terminal/agent'
 import { registerTerminalAgentHost } from '../plugins/pig-terminal-host'
 import type { TerminalAgentOpenAnswer, TerminalAgentOpenRequest } from '../../shared/terminal-agent'
@@ -47,7 +48,9 @@ export function shutdownTerminals(): Promise<void> {
 }
 
 export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionWindow' | 'isSessionLive'>): void {
-  const host = terminalHost = new TerminalHost(forkPtyHost, app.getVersion())
+  const host = terminalHost = new TerminalHost(forkPtyHost, app.getVersion(), (id) => ({
+    path: terminalHistoryPath(id), failed: t('terminal.historyRestoreFailed')
+  }))
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
   const pendingOpens = new Map<string, {
@@ -84,7 +87,7 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
     closeTab: async (win, sessionId, terminalId, signal) => {
       signal?.throwIfAborted()
       // Remove the PTY before the UI round-trip, preventing another session from taking it over.
-      host.close(win, terminalId)
+      host.close(win, terminalId, 'discard')
       // Once killing starts, finish UI cleanup even if the tool is cancelled in the meantime.
       await requestTab(win, sessionId, undefined, { action: 'close', terminalId })
     },
@@ -175,7 +178,7 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
   })
   ipcMain.handle('terminal:close', (event, id: string) => {
     const win = ui(event, id)
-    host.close(win, id)
+    host.close(win, id, 'discard')
     controller?.terminalClosed(win, id)
   })
 }

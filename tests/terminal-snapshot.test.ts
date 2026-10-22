@@ -6,6 +6,9 @@ const workerUrl = new URL('../src/main/terminal/pty-host-worker.ts', import.meta
 const fixture = `
 import { mock } from 'bun:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 const port = new EventEmitter()
 const messages = []
@@ -25,7 +28,7 @@ mock.module('node-pty', () => ({ spawn: () => ({
 }) }))
 await import(${JSON.stringify(workerUrl)})
 const send = data => port.emit('message', { data })
-send({ type: 'spawn', id: 'test', file: 'mock', args: [], cwd: '/', env: { TERM: 'xterm' }, cols: 10, rows: 3 })
+send({ type: 'spawn', id: 'test', file: 'mock', args: [], cwd: '/', env: { TERM: 'xterm' }, cols: 10, rows: 3, history: { path: join(mkdtempSync(join(tmpdir(), 'pig-history-')), 'test.json'), failed: '{message}' } })
 let next = 0
 const snapshot = (lines = 3) => new Promise((resolve, reject) => {
   const requestId = String(++next)

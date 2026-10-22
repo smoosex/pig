@@ -48,22 +48,39 @@ export const TERMINAL_MAX_WRITE = 65_536
 export const TERMINAL_COLS = { min: 2, max: 1000 } as const
 export const TERMINAL_ROWS = { min: 1, max: 500 } as const
 
+/**
+ * Where a terminal's output survives restarts. `failed` is the notice shown for a record that could not
+ * be read, with a `{message}` placeholder.
+ */
+export interface TerminalHistoryTarget {
+  path: string
+  failed: string
+}
+
+/** A closed tab's history is gone; a window or app that closes keeps it for the next launch. */
+export type TerminalHistoryOnClose = 'keep' | 'discard'
+
 /** Messages between main and the PTY utility process. Main validates everything before it crosses. */
 export type PtyHostRequest =
   | { type: 'shutdown' }
-  | { type: 'spawn'; id: string; file: string; args: string[]; cwd: string; env: Record<string, string>; cols: number; rows: number }
+  | {
+    type: 'spawn'; id: string; file: string; args: string[]; cwd: string; env: Record<string, string>; cols: number; rows: number
+    history: TerminalHistoryTarget
+  }
   | { type: 'write'; id: string; data: string; binary?: boolean }
   | { type: 'resize'; id: string; cols: number; rows: number }
   | { type: 'clear'; id: string }
   | { type: 'ack'; id: string; length: number }
-  | { type: 'kill'; id: string }
+  /** Also sent for a shell that already exited, so a discarded history is removed. */
+  | { type: 'close'; id: string; history: TerminalHistoryOnClose }
   | { type: 'snapshot'; id: string; requestId: string; lines: number }
 
 export type PtyHostMessage =
   | { type: 'shutdown-complete' }
   | { type: 'snapshot-result'; id: string; requestId: string; snapshot: TerminalSnapshot }
   | { type: 'snapshot-failed'; id: string; requestId: string; message: string }
-  | { type: 'spawned'; id: string; pid: number }
+  /** `cwd` is where the shell started: the directory saved with its history when that still exists. */
+  | { type: 'spawned'; id: string; pid: number; cwd: string }
   | { type: 'spawn-failed'; id: string; message: string }
   | { type: 'output'; id: string; data: string }
   | { type: 'clear'; id: string }
