@@ -3,6 +3,7 @@ import { createAgentSession, getAgentDir, type AgentSession, type ResourceLoader
 import { isChatCwd } from '../chats'
 import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
 import { startModelRuntime } from './model-settings'
+import { pigDocsExtension } from './pig-docs'
 import { sessionToolFactory } from './tool-resources'
 
 export class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
@@ -24,7 +25,7 @@ export async function createSessionRuntime(
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
   const sessionId = sessionManager.getSessionId()
   const resources = { onSkillBase: options.onSkillBase, settingsManager, sessionId,
-    extensionFactories: [sessionToolFactory(cwd, sessionId, options.toolPreferences)], appendSystemPrompt }
+    extensionFactories: [pigDocsExtension, sessionToolFactory(cwd, sessionId, options.toolPreferences)], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)
     ? await createChatResourceLoader(cwd, pluginPaths, resources)
     : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
