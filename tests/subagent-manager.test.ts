@@ -226,7 +226,7 @@ describe('subagent model choice', () => {
   const lookup = (available: boolean, exists: boolean) => ({ available: () => available, exists: () => exists })
 
   test('follows the parent when nothing is configured', () => {
-    expect(chooseModel({ thinkingLevel: 'low' }, parent, lookup(true, true))).toEqual({ model: parent.model, thinkingLevel: 'low' })
+    expect(chooseModel({ thinkingLevel: 'low' }, parent, lookup(true, true))).toEqual({ model: parent.model, thinkingLevel: 'high' })
   })
 
   test('uses a configured model that has credentials', () => {

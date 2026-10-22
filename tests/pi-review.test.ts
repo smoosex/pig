@@ -124,11 +124,11 @@ test('pi-review: configured models borrow only the review turn and fall back onc
       }
       await runReview(session, 'uncommitted')
       assert.equal(session.sent.length, 1)
-      if (['inherit', 'missing', 'no-auth', 'switch-failed'].includes(scenario)) {
+      if (['inherit', 'thinking-only', 'missing', 'no-auth', 'switch-failed'].includes(scenario)) {
         assert.equal(ctx.model, original)
         assert.equal(thinking, 'medium')
         assert.equal(selected.length, scenario === 'switch-failed' ? 1 : 0)
-        assert.equal(session.notifications.some((item) => item.message.includes('using session model')), scenario !== 'inherit')
+        assert.equal(session.notifications.some((item) => item.message.includes('using session model')), !['inherit', 'thinking-only'].includes(scenario))
         continue
       }
       assert.equal(ctx.model, scenario === 'thinking-only' ? original : review)
@@ -210,7 +210,7 @@ test('pi-review: real agent follow-up queue uses restored session settings befor
       await runReview(session, 'uncommitted')
       await agent.prompt(session.sent[0])
       assert.deepEqual(requests, [
-        { model: thinkingOnly ? original.id : review.id, thinking: 'high', ended: false },
+        { model: thinkingOnly ? original.id : review.id, thinking: thinkingOnly ? 'medium' : 'high', ended: false },
         { model: original.id, thinking: 'medium', ended: false }
       ])
       assert.equal(ended, true)

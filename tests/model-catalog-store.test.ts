@@ -21,7 +21,7 @@ function deferred<T>() {
 }
 
 function model(id: string) {
-  return { id, name: id, provider: 'test', providerName: 'Test', contextWindow: 100, reasoning: false }
+  return { id, name: id, provider: 'test', providerName: 'Test', contextWindow: 100, reasoning: false, thinkingLevels: [] }
 }
 
 async function fixture(): Promise<void> {

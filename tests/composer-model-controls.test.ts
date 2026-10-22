@@ -9,6 +9,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import type { ThinkingLevel } from '../src/shared/api'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -18,7 +19,7 @@ function deferred<T>() {
 }
 
 function model(id: string) {
-  return { provider: id, id: `${id}-model`, name: id, providerName: id, contextWindow: 1000, reasoning: true }
+  return { provider: id, id: `${id}-model`, name: id, providerName: id, contextWindow: 1000, reasoning: true, thinkingLevels: ['low', 'medium', 'high'] as ThinkingLevel[] }
 }
 
 async function fixture(scenario: string): Promise<void> {

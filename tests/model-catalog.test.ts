@@ -44,6 +44,12 @@ async function fixture(): Promise<void> {
   }))
 
   const catalog = await import('../src/main/pi/model-catalog')
+  const { toModelInfo } = await import('../src/main/pi/model-settings')
+  const reasoner = { id: 'reasoner', name: 'Reasoner', provider: 'test', contextWindow: 100, reasoning: true }
+  assert.deepEqual(toModelInfo(reasoner).thinkingLevels, ['off', 'minimal', 'low', 'medium', 'high'])
+  assert.deepEqual(toModelInfo({ ...reasoner, thinkingLevelMap: { minimal: null, xhigh: 'xhigh' } }).thinkingLevels,
+    ['off', 'low', 'medium', 'high', 'xhigh'], 'plugin levels keep off/minimal when supported, but exclude explicitly unsupported levels')
+  assert.deepEqual(toModelInfo({ ...reasoner, reasoning: false }).thinkingLevels, [])
 
   windows = 2
   const first = await catalog.currentModelCatalog()

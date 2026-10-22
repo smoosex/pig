@@ -188,6 +188,8 @@ export interface SessionModelInfo {
   providerName: string
   contextWindow: number
   reasoning: boolean
+  /** Supported thinking levels, including off/minimal for plugin settings; empty when it cannot think. */
+  thinkingLevels: ThinkingLevel[]
 }
 
 export interface SessionContextUsage {

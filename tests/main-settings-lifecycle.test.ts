@@ -413,7 +413,7 @@ async function fixture(name: string): Promise<void> {
     const pushed: import('../src/shared/api').ModelCatalog[] = []
     const runtime = {
       login: async () => {
-        models = [{ id: 'new', name: 'New', provider: 'test', providerName: 'Test', contextWindow: 100, reasoning: false }]
+        models = [{ id: 'new', name: 'New', provider: 'test', providerName: 'Test', contextWindow: 100, reasoning: false, thinkingLevels: [] }]
       },
       logout: async () => { models = [] },
       refresh: async (options?: { providers: string[]; signal: AbortSignal }) => {

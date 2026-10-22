@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
 import { useT } from '../../hooks/useT'
-import { api, type SubagentSettings as Settings, type ThinkingLevel } from '../../ipc/api'
+import { api, type SubagentSettings as Settings } from '../../ipc/api'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { DefaultModelPicker } from './DefaultModelPicker'
+import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
-const LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 const LIMITS = [
   { key: 'maxConcurrent', min: 1 },
   { key: 'timeoutMinutes', min: 0 },
@@ -58,7 +55,7 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
     try {
       await api.setSubagentSettings({
         model: draft.model ?? null,
-        thinkingLevel: draft.thinkingLevel ?? null,
+        thinkingLevel: draft.model ? draft.thinkingLevel ?? null : null,
         ...limits
       })
       onClose()
@@ -74,26 +71,20 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       <SettingsCard>
         <SettingsRow title={t('plugins.subagentModel')} description={t('plugins.subagentModelHint')}>
-          <div className="flex flex-wrap items-center gap-2">
-            {draft.model && !model ? <span className="text-xs text-muted-foreground">{draft.model.provider}/{draft.model.id}</span> : null}
-            <DefaultModelPicker model={model} models={models} onSelect={(item) => setDraft({ ...draft, model: { provider: item.provider, id: item.id } })} />
-            {draft.model ? (
-              <Button size="icon-sm" variant="ghost" aria-label={t('plugins.clearSubagentModel')}
-                onClick={() => setDraft({ ...draft, model: undefined })}><X /></Button>
-            ) : null}
-          </div>
-        </SettingsRow>
-        <SettingsRow title={t('plugins.subagentThinking')} description={t('plugins.subagentThinkingHint')}>
-          <Select
-            value={draft.thinkingLevel ?? 'follow'}
-            onValueChange={(value) => setDraft({ ...draft, thinkingLevel: value === 'follow' ? undefined : value as ThinkingLevel })}
-          >
-            <SelectTrigger size="sm" aria-label={t('plugins.subagentThinking')}><SelectValue /></SelectTrigger>
-            <SelectContent><SelectGroup>
-              <SelectItem value="follow">{t('plugins.followSession')}</SelectItem>
-              {LEVELS.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
-            </SelectGroup></SelectContent>
-          </Select>
+          <ModelThinkingPicker model={model} models={models}
+            label={draft.model ? `${draft.model.provider}/${draft.model.id}` : undefined}
+            thinking={draft.model ? draft.thinkingLevel ?? null : null}
+            defaultOption={{
+              active: !draft.model,
+              description: t('plugins.subagentModelDefault'),
+              onSelect: () => setDraft({ ...draft, model: undefined, thinkingLevel: undefined })
+            }}
+            onModelChange={(item) => setDraft({
+              ...draft,
+              model: { provider: item.provider, id: item.id },
+              thinkingLevel: supportedThinking(item, draft.thinkingLevel ?? null) ?? undefined
+            })}
+            onThinkingChange={(thinkingLevel) => setDraft({ ...draft, thinkingLevel })} />
         </SettingsRow>
         {LIMITS.map(({ key, min }) => (
           <SettingsRow key={key} title={t(`plugins.${key}`)} description={t(`plugins.${key}Hint`)}>

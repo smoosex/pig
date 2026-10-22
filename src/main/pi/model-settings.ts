@@ -45,12 +45,26 @@ export function startModelRuntime(): Promise<ModelRuntime> {
   return modelRuntimePromise
 }
 
-export function toModelInfo(model: {
+type ThinkingModel = {
+  reasoning: boolean
+  thinkingLevelMap?: Partial<Record<SessionThinkingLevel, string | null>>
+}
+
+function supportedThinkingLevels(model: ThinkingModel | undefined): SessionThinkingLevel[] {
+  if (!model?.reasoning) return ['off']
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level]
+    if (mapped === null) return false
+    if (level === 'xhigh' || level === 'max') return mapped !== undefined
+    return true
+  })
+}
+
+export function toModelInfo(model: ThinkingModel & {
   id: string
   name: string
   provider: string
   contextWindow: number
-  reasoning: boolean
 }): SessionModelInfo {
   return {
     id: model.id,
@@ -58,7 +72,8 @@ export function toModelInfo(model: {
     provider: model.provider,
     providerName: modelRuntime?.getProvider(model.provider)?.name ?? model.provider,
     contextWindow: model.contextWindow,
-    reasoning: model.reasoning
+    reasoning: model.reasoning,
+    thinkingLevels: model.reasoning ? supportedThinkingLevels(model) : []
   }
 }
 
@@ -68,14 +83,7 @@ export function availableModels(): SessionModelInfo[] {
 
 export function thinkingLevelsFor(model: { provider: string; id: string } | null): SessionThinkingLevel[] {
   if (!model) return ['off']
-  const full = modelRuntime?.getModel(model.provider, model.id)
-  if (!full?.reasoning) return ['off']
-  return THINKING_LEVELS.filter((level) => {
-    const mapped = full.thinkingLevelMap?.[level]
-    if (mapped === null) return false
-    if (level === 'xhigh' || level === 'max') return mapped !== undefined
-    return true
-  })
+  return supportedThinkingLevels(modelRuntime?.getModel(model.provider, model.id))
 }
 
 export function clampThinking(

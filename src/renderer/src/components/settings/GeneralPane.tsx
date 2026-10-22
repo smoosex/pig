@@ -1,7 +1,6 @@
 import { LOCALES, type Locale, type MessageKey } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
-import type { LocaleSetting, SendShortcut, ThinkingLevel } from '../../ipc/api'
-import { thinkingLevelKeys } from '../../lib/thinking-levels'
+import type { LocaleSetting, SendShortcut } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import {
@@ -14,7 +13,7 @@ import {
 } from '../ui/select'
 import { Switch } from '../ui/switch'
 import { ScopedModelsSetting } from './ScopedModelsSetting'
-import { DefaultModelPicker } from './DefaultModelPicker'
+import { ModelThinkingPicker } from './ModelThinkingPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
 /** Language names are endonyms, so each locale maps to its own key rather than to a translation. */
@@ -147,37 +146,13 @@ export function GeneralPane() {
             title={t('settings.defaultModel')}
             description={t('settings.defaultModelDescription')}
           >
-            <DefaultModelPicker
-              model={defaultModel}
+            <ModelThinkingPicker
+              model={defaultModel ? { ...defaultModel, thinkingLevels } : null}
               models={models}
-              onSelect={(item) => void setDefaultModel(item.provider, item.id)}
+              thinking={defaultThinkingLevel ?? thinkingLevels[0] ?? null}
+              onModelChange={(item) => void setDefaultModel(item.provider, item.id)}
+              onThinkingChange={(level) => void setDefaultThinking(level)}
             />
-          </SettingsRow>
-          <SettingsRow
-            title={t('settings.defaultThinking')}
-            description={t('settings.defaultThinkingDescription')}
-          >
-            {thinkingLevels.length === 0 ? (
-              <span className="text-xs text-muted-foreground">{t('settings.thinkingUnsupported')}</span>
-            ) : (
-              <Select
-                value={defaultThinkingLevel ?? thinkingLevels[0]}
-                onValueChange={(value) => void setDefaultThinking(value as ThinkingLevel)}
-              >
-                <SelectTrigger size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" align="end">
-                  <SelectGroup>
-                    {thinkingLevels.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {t(thinkingLevelKeys[level])}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            )}
           </SettingsRow>
           <ScopedModelsSetting />
         </SettingsCard>

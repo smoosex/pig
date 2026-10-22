@@ -7,7 +7,7 @@ async function fixture() {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const models = ['alpha', 'beta', 'gamma'].map((id) => ({
-    provider: 'test', providerName: 'Test', id, name: id, contextWindow: 100, reasoning: false
+    provider: 'test', providerName: 'Test', id, name: id, contextWindow: 100, reasoning: false, thinkingLevels: []
   }))
   let patterns = ['test/beta', 'gone/old', 'test/unavailable']
   const writes: string[][] = []

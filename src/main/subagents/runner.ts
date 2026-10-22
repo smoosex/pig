@@ -54,7 +54,7 @@ export function chooseModel(
   lookup: ModelLookup
 ): ModelChoice {
   const target = configured.model
-  if (!target) return { model: parent.model, thinkingLevel: configured.thinkingLevel ?? parent.thinkingLevel }
+  if (!target) return { model: parent.model, thinkingLevel: parent.thinkingLevel }
   if (lookup.available(target.provider, target.id)) {
     return { model: target, thinkingLevel: configured.thinkingLevel ?? parent.thinkingLevel }
   }

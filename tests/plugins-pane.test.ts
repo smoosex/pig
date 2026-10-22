@@ -73,7 +73,7 @@ async function fixture(): Promise<void> {
   const { useModelCatalogStore } = await import('../src/renderer/src/stores/model-catalog')
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   useModelCatalogStore.setState({ revision: 1, refreshing: false, models: [
-    { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: false }
+    { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['low', 'medium', 'high'] }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
@@ -211,17 +211,26 @@ async function fixture(): Promise<void> {
       idleSwitch.click()
     })
     assert.equal(idleSwitch.getAttribute('aria-checked'), 'true')
-    const picker = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('选择模型'))
-    assert.ok(picker)
+    const buttons = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].filter((button) => button.textContent === label)
+    const picker = buttons('默认')[0]
+    assert.ok(picker, 'an unset memory model shows the default choice')
     await act(async () => { picker.click() })
     await flush()
-    assert.ok(document.querySelector('[data-slot="popover-content"]'))
-    const option = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('M1'))
-    assert.ok(option)
+    const popover = () => document.querySelector<HTMLElement>('[data-slot="popover-content"]')!
+    const lockedOption = [...popover().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('M1'))!
+    assert.equal(lockedOption.disabled, true, 'the default choice locks the model list')
+    const defaultToggle = popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!
+    assert.equal(defaultToggle.getAttribute('aria-checked'), 'true')
+    await act(async () => { defaultToggle.click() })
+    const option = [...popover().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('M1'))!
+    assert.equal(option.disabled, false, 'turning the default off unlocks the list')
     await act(async () => { option.click() })
     await flush()
     assert.ok(picker.textContent?.includes('M1'))
-    assert.ok(document.querySelector('[aria-label="清除记忆模型"]'))
+    assert.ok(popover(), 'choosing a model keeps the menu open for the thinking level')
+    const slider = popover().querySelector<HTMLElement>('[role="slider"]')!
+    assert.equal(slider.getAttribute('aria-valuemax'), '2', 'levels follow the model')
+    assert.equal(slider.getAttribute('aria-valuetext'), '未指定')
     const save = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')
     assert.ok(save)
     await act(async () => { save.click() })
@@ -246,35 +255,40 @@ async function fixture(): Promise<void> {
     await flush()
     assert.equal(document.querySelector('[aria-label="Provider"]'), null, 'provider must not be a text input')
     assert.equal(document.querySelector('[aria-label="Model ID"]'), null, 'model ID must not be a text input')
-    const reviewPicker = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '继承当前会话')!
+    const reviewPicker = buttons('默认')[0]
     assert.ok(reviewPicker)
     await act(async () => { reviewPicker.click() })
     await flush()
-    const reviewOption = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('Test · test/m1'))!
+    await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
+    const reviewOption = [...popover().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('Test · test/m1'))!
     assert.ok(reviewOption, 'one picker lists both provider and model')
     await act(async () => { reviewOption.click() })
     await flush()
-    const thinking = document.querySelector<HTMLButtonElement>('[aria-label="思考强度"]')!
-    assert.ok(thinking.textContent?.includes('继承当前会话'))
-    await act(async () => { thinking.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    const raise = popover().querySelector<HTMLButtonElement>('[aria-label="提高思考强度"]')!
+    for (let step = 0; step < 3; step++) await act(async () => { raise.click() })
     await flush()
-    const high = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) => item.textContent === '高')!
-    assert.ok(high)
-    await act(async () => { high.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    await flush()
-    const saveReview = () => [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')!
+    assert.equal(raise.disabled, true, 'the highest level ends the slider')
+    assert.equal(popover().querySelector('[role="slider"]')?.getAttribute('aria-valuetext'), '高')
+    assert.equal(reviewPicker.textContent, 'M1高')
+    const saveReview = () => buttons('保存设置')[0]
     await act(async () => { saveReview().click() })
     await flush()
     assert.deepEqual(reviewPatches[0], { provider: 'test', modelId: 'm1', thinking: 'high' })
     await act(async () => { openReview.click() })
     await flush()
-    assert.ok(document.querySelector('[aria-label="思考强度"]')?.textContent?.includes('高'))
-    assert.ok([...document.querySelectorAll('button')].some((button) => button.textContent === 'M1'))
-    const clear = document.querySelector<HTMLButtonElement>('[aria-label="继承当前会话"]')!
-    await act(async () => { clear.click() })
+    const savedReview = buttons('M1高')[0]
+    assert.ok(savedReview, 'the trigger shows the saved model and level')
+    await act(async () => { useModelCatalogStore.setState({ models: [] }) })
+    await act(async () => { savedReview.click() })
+    await flush()
+    assert.ok(savedReview.textContent?.includes('test/m1'), 'an unavailable configured model keeps its identity')
+    assert.ok(popover().textContent?.includes('该模型不可用'))
+    assert.ok(!popover().textContent?.includes('请先选择模型'))
+    await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
+    assert.equal(savedReview.textContent, '默认')
     await act(async () => { saveReview().click() })
     await flush()
-    assert.deepEqual(reviewPatches[1], { provider: null, modelId: null }, 'model inheritance does not clear explicit thinking effort')
+    assert.deepEqual(reviewPatches[1], { provider: null, modelId: null, thinking: null }, 'the default choice clears both model and thinking')
 
     await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="配置 Persona"]')!.click() })
     await flush()

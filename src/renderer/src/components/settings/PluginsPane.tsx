@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, FolderOpen, Plus, Settings, X } from 'lucide-react'
+import { ChevronDown, FolderOpen, Plus, Settings } from 'lucide-react'
 import type { MessageKey } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
-import { thinkingLevelKeys } from '../../lib/thinking-levels'
 import { useModelCatalogStore } from '../../stores/model-catalog'
-import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo, type PluginScope } from '../../ipc/api'
+import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo, type PluginScope, type ThinkingLevel } from '../../ipc/api'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
@@ -15,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { SettingsCard, SettingsRow } from './SettingsFields'
-import { DefaultModelPicker } from './DefaultModelPicker'
+import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { WebSearchSettings } from './WebSearchSettings'
 import { SubagentSettings } from './SubagentSettings'
 import { PersonaSettings } from './PersonaSettings'
@@ -40,6 +39,11 @@ const SCOPE_CHOICES: { label: MessageKey; scopes: PluginScope[] }[] = [
 /** -1 means disabled: no choice is lit, and clicking the lit choice again disables the plugin. */
 function scopeIndex(scopes: PluginScope[]): number {
   return SCOPE_CHOICES.findIndex((choice) => choice.scopes.length === scopes.length && choice.scopes.every((scope) => scopes.includes(scope)))
+}
+
+/** Drafts keep the unset level as a sentinel string; the picker takes null. */
+function thinkingOf(value: string | undefined): ThinkingLevel | null {
+  return value && value !== 'default' && value !== '__pig_default__' ? value as ThinkingLevel : null
 }
 
 function errorText(error: unknown): string {
@@ -80,6 +84,7 @@ export function PluginsPane() {
   const reviewProvider = pluginDraft.provider ?? '__pig_default__'
   const reviewId = pluginDraft.modelId ?? '__pig_default__'
   const hasReviewModel = reviewProvider !== '__pig_default__' && reviewId !== '__pig_default__'
+  const reviewThinking = thinkingOf(pluginDraft.thinking)
   const reviewModel = hasReviewModel ? models.find((item) => item.provider === reviewProvider && item.id === reviewId) ?? null : null
   const memoryModel = modelProvider.trim() && modelId.trim()
     ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null
@@ -308,24 +313,18 @@ export function PluginsPane() {
           {pluginConfigError ? <p role="alert" className="text-sm text-destructive">{pluginConfigError}</p> : null}
           {selectedPluginId === 'pi-review' ? <SettingsCard>
             <SettingsRow title={t('plugins.reviewModel')} description={t('plugins.reviewModelHint')}>
-              <div className="flex items-center gap-2">
-                <DefaultModelPicker model={reviewModel} models={models}
-                  placeholder={hasReviewModel ? `${reviewProvider}/${reviewId}` : t('plugins.inheritSession')}
-                  onSelect={(model) => setPluginDraft((current) => ({ ...current, provider: model.provider, modelId: model.id }))} />
-                {hasReviewModel ? <Button size="icon-sm" variant="ghost" aria-label={t('plugins.inheritSession')}
-                  onClick={() => setPluginDraft((current) => ({ ...current, provider: '__pig_default__', modelId: '__pig_default__' }))}><X /></Button> : null}
-              </div>
-            </SettingsRow>
-            <SettingsRow title={t('plugins.thinking')} description={t('plugins.reviewThinkingHint')}>
-              <Select value={pluginDraft.thinking ?? '__pig_default__'} onValueChange={(thinking) => setPluginDraft((current) => ({ ...current, thinking }))}>
-                <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger>
-                <SelectContent><SelectGroup>
-                  <SelectItem value="__pig_default__">{t('plugins.inheritSession')}</SelectItem>
-                  {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => (
-                    <SelectItem key={level} value={level}>{t(thinkingLevelKeys[level])}</SelectItem>
-                  ))}
-                </SelectGroup></SelectContent>
-              </Select>
+              <ModelThinkingPicker model={reviewModel} models={models}
+                label={hasReviewModel ? `${reviewProvider}/${reviewId}` : undefined}
+                thinking={hasReviewModel ? reviewThinking : null}
+                defaultOption={{
+                  active: !hasReviewModel,
+                  description: t('plugins.reviewDefault'),
+                  onSelect: () => setPluginDraft((current) => ({ ...current, provider: '__pig_default__', modelId: '__pig_default__', thinking: '__pig_default__' }))
+                }}
+                onModelChange={(model) => setPluginDraft((current) => ({
+                  ...current, provider: model.provider, modelId: model.id, thinking: supportedThinking(model, reviewThinking) ?? '__pig_default__'
+                }))}
+                onThinkingChange={(thinking) => setPluginDraft((current) => ({ ...current, thinking }))} />
             </SettingsRow>
           </SettingsCard> : <SettingsCard>{selectedPlugin.settings.fields.map((field) => (
             <SettingsRow key={field.key} title={field.label} description={field.description ?? field.key}>
@@ -381,34 +380,36 @@ export function PluginsPane() {
             </SettingsRow>
           ))}
           <SettingsRow title={t('plugins.memoryModel')} description={t('plugins.memoryModelHint')}>
-            <div className="flex flex-wrap items-center gap-2">
-              <DefaultModelPicker model={memoryModel} models={models} onSelect={(item) => { setModelProvider(item.provider); setModelId(item.id) }} />
-              {modelProvider.trim() && modelId.trim() ? (
-                <Button size="icon-sm" variant="ghost" aria-label={t('plugins.clearModel')}
-                  onClick={() => { setModelProvider(''); setModelId(''); setModelThinking('default') }}><X /></Button>
-              ) : null}
-              <Select value={modelThinking} onValueChange={setModelThinking}>
-                <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
-                  <SelectItem value="default">{t('plugins.thinking')}</SelectItem>
-                  {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
-                </SelectGroup></SelectContent>
-              </Select>
-            </div>
+            <ModelThinkingPicker model={memoryModel} models={models}
+              label={modelProvider.trim() && modelId.trim() ? `${modelProvider.trim()}/${modelId.trim()}` : undefined}
+              thinking={thinkingOf(modelThinking)}
+              defaultOption={{
+                active: !(modelProvider.trim() && modelId.trim()),
+                description: t('plugins.memoryModelDefault'),
+                onSelect: () => { setModelProvider(''); setModelId(''); setModelThinking('default') }
+              }}
+              onModelChange={(item) => {
+                setModelProvider(item.provider)
+                setModelId(item.id)
+                setModelThinking(supportedThinking(item, thinkingOf(modelThinking)) ?? 'default')
+              }}
+              onThinkingChange={setModelThinking} />
           </SettingsRow>
           <SettingsRow title={t('plugins.fallbackModel')} description={t('plugins.fallbackModelHint')}>
-            <div className="flex flex-wrap items-center gap-2">
-              <DefaultModelPicker model={memoryFallbackModel} models={models} onSelect={(item) => { setFallbackProvider(item.provider); setFallbackId(item.id) }} />
-              {fallbackProvider.trim() && fallbackId.trim() ? (
-                <Button size="icon-sm" variant="ghost" aria-label={t('plugins.clearModel')}
-                  onClick={() => { setFallbackProvider(''); setFallbackId(''); setFallbackThinking('default') }}><X /></Button>
-              ) : null}
-              <Select value={fallbackThinking} onValueChange={setFallbackThinking}>
-                <SelectTrigger size="sm" aria-label={t('plugins.thinking')}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
-                  <SelectItem value="default">{t('plugins.thinking')}</SelectItem>
-                  {(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
-                </SelectGroup></SelectContent>
-              </Select>
-            </div>
+            <ModelThinkingPicker model={memoryFallbackModel} models={models}
+              label={fallbackProvider.trim() && fallbackId.trim() ? `${fallbackProvider.trim()}/${fallbackId.trim()}` : undefined}
+              thinking={thinkingOf(fallbackThinking)}
+              defaultOption={{
+                active: !(fallbackProvider.trim() && fallbackId.trim()),
+                description: t('plugins.fallbackModelDefault'),
+                onSelect: () => { setFallbackProvider(''); setFallbackId(''); setFallbackThinking('default') }
+              }}
+              onModelChange={(item) => {
+                setFallbackProvider(item.provider)
+                setFallbackId(item.id)
+                setFallbackThinking(supportedThinking(item, thinkingOf(fallbackThinking)) ?? 'default')
+              }}
+              onThinkingChange={setFallbackThinking} />
           </SettingsRow>
         </SettingsCard>
         <Button size="sm" className="self-end" disabled={saving} onClick={() => void saveMemory()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>

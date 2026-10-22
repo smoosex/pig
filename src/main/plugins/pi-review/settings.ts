@@ -34,7 +34,8 @@ export async function readReviewSettings(): Promise<{ model?: { provider: string
   if (thinking !== undefined && (typeof thinking !== 'string' || !reviewSettingsSchema.fields.find((field) => field.key === 'thinking')!.options!.includes(thinking))) {
     throw new Error('Invalid review thinking effort')
   }
-  if (provider === undefined && id === undefined) return { thinking: thinking as ThinkingLevel | undefined }
+  // Legacy thinking-only preferences now mean the same as the UI's default: inherit both.
+  if (provider === undefined && id === undefined) return {}
   if (typeof provider !== 'string' || !provider.trim() || typeof id !== 'string' || !id.trim()) {
     throw new Error('Review model requires both provider and model ID')
   }
