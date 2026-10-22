@@ -32,12 +32,12 @@ function runtime(session = SessionManager.inMemory()) {
     sendMessage: (message: NonNullable<BeforeAgentStartEventResult['message']>, options: unknown) => { sent.push({ message, options }) },
   } as unknown as ExtensionAPI)
   return Object.assign(async (name: string, event: unknown = {}) => {
-    const result = await hooks.get(name)!(event, { sessionManager: session, hasPendingMessages: () => queued.pending })
-    if (name === 'before_agent_start') {
-      const message = (result as BeforeAgentStartEventResult | undefined)?.message
-      if (message) session.appendCustomMessageEntry(message.customType, message.content, message.display, message.details)
-    }
-    return result
+    if (name !== 'before_agent_start') return await hooks.get(name)!(event, { sessionManager: session, hasPendingMessages: () => queued.pending })
+    const sections: Record<string, string> = {}
+    const result = await hooks.get(name)!({ ...event as object, systemPromptOptions: { sections } }, { sessionManager: session, hasPendingMessages: () => queued.pending }) as BeforeAgentStartEventResult | undefined
+    const message = result?.message
+    if (message) session.appendCustomMessageEntry(message.customType, message.content, message.display, message.details)
+    return result && { ...result, persona: sections.persona }
   }, { session, sent, queued })
 }
 
@@ -135,12 +135,13 @@ test('mood snapshots append without changing the system prompt or rewriting cach
   const run = runtime()
   run.session.appendMessage({ role: 'user', content: 'Existing conversation', timestamp: 1 })
   const start = async () => await run('before_agent_start', {
-    messageType: 'custom', message: {}, systemPrompt: 'Stable system',
-  }) as BeforeAgentStartEventResult
+    messageType: 'custom', message: {},
+  }) as BeforeAgentStartEventResult & { persona?: string }
   const first = await start()
-  expect(first.systemPrompt).toContain('A helpful familiar.')
-  expect(first.systemPrompt).toContain('Prefers concise answers.')
-  expect(first.systemPrompt).not.toContain('## Your Current Emotion')
+  expect(first.systemPrompt).toBeUndefined()
+  expect(first.persona).toContain('A helpful familiar.')
+  expect(first.persona).toContain('Prefers concise answers.')
+  expect(first.persona).not.toContain('## Your Current Emotion')
   expect(first.message?.customType).toBe('persona-mood')
   expect(first.message?.display).toBe(false)
   expect(first.message?.content).not.toContain('%')
@@ -150,21 +151,21 @@ test('mood snapshots append without changing the system prompt or rewriting cach
 
   await setPersonaEmotion('joy', 0.2)
   const unchanged = await start()
-  expect(unchanged.systemPrompt).toBe(first.systemPrompt)
+  expect(unchanged.persona).toBe(first.persona)
   expect(unchanged.message).toBeUndefined()
   expect(run.session.buildSessionProjection().messages).toEqual(prefix)
 
   await setPersonaEmotion('joy', 0.9)
   const stronger = await start()
   expect(stronger.message?.content).not.toBe(first.message?.content)
-  expect(stronger.systemPrompt).toBe(first.systemPrompt)
+  expect(stronger.persona).toBe(first.persona)
   await setPersonaEmotion('anger', 0.9)
   const different = await start()
   expect(different.message?.content).not.toBe(stronger.message?.content)
-  expect(different.systemPrompt).toBe(first.systemPrompt)
+  expect(different.persona).toBe(first.persona)
   const otherSession = await runtime()('before_agent_start', {
-    messageType: 'custom', message: {}, systemPrompt: 'Stable system',
-  }) as BeforeAgentStartEventResult
+    messageType: 'custom', message: {},
+  }) as BeforeAgentStartEventResult & { persona?: string }
   expect(otherSession.message?.content).toBe(different.message?.content)
   expect(run.session.buildSessionProjection().messages.slice(0, prefix.length)).toEqual(prefix)
   expect((await start()).message).toBeUndefined()
@@ -175,8 +176,8 @@ test('snapshot deduplication follows restored branches, compaction and context e
   await setPersonaAutomatic(false)
   const run = runtime()
   const start = async (target = run) => await target('before_agent_start', {
-    messageType: 'custom', message: {}, systemPrompt: 'System',
-  }) as BeforeAgentStartEventResult
+    messageType: 'custom', message: {},
+  }) as BeforeAgentStartEventResult & { persona?: string }
   const base = run.session.appendMessage({ role: 'user', content: 'Hello', timestamp: 1 })
   const first = await start()
   const moodId = run.session.getLeafId()!
@@ -209,7 +210,7 @@ test('compaction recovery queues a missing snapshot without waiting for a new us
   await activate()
   await setPersonaAutomatic(false)
   const run = runtime()
-  await run('before_agent_start', { messageType: 'custom', message: {}, systemPrompt: 'System' })
+  await run('before_agent_start', { messageType: 'custom', message: {} })
   const kept = run.session.appendMessage({ role: 'user', content: 'Recover this request', timestamp: 1 })
   run.session.appendCompaction('Summary', kept, 1000)
 
@@ -242,10 +243,10 @@ test('session runtimes share one mood, custom runs inject but never consume pend
   await first('agent_start')
   await first('agent_end', { messages: [{ role: 'user', content: 'Add a feature' }] })
   const before = (await getPersona()).mood.history.filter(entry => entry.trigger === 'implicit_acceptance').length
-  const injected = await first('before_agent_start', { messageType: 'custom', message: {}, systemPrompt: 'System' }) as { systemPrompt: string }
-  expect(injected.systemPrompt).toContain('A helpful familiar.')
+  const injected = await first('before_agent_start', { messageType: 'custom', message: {} }) as { persona: string }
+  expect(injected.persona).toContain('A helpful familiar.')
   expect((await getPersona()).mood.history.filter(entry => entry.trigger === 'implicit_acceptance')).toHaveLength(before)
-  await first('before_agent_start', { messageType: 'user', prompt: 'Add another feature', systemPrompt: 'System' })
+  await first('before_agent_start', { messageType: 'user', prompt: 'Add another feature' })
   expect((await getPersona()).mood.history.filter(entry => entry.trigger === 'implicit_acceptance')).toHaveLength(before + 1)
   await second('tool_result', { toolName: 'bash', input: { command: 'bun test' }, details: {}, structuredContent: { exit_code: 1 }, isError: true })
   expect((await getPersona()).mood.history.at(-1)!.trigger).toBe('test_fail')
@@ -266,7 +267,7 @@ test('reads and an inactive persona never take the lock or write mood state', as
   await getPersona()
   const run = runtime()
   await run('session_start')
-  await run('before_agent_start', { messageType: 'user', prompt: 'hi', systemPrompt: 'System' })
+  await run('before_agent_start', { messageType: 'user', prompt: 'hi' })
   await run('tool_result', { toolName: 'bash', input: { command: 'bun test' }, structuredContent: { exit_code: 1 }, isError: true, details: {} })
   await run('agent_end', { messages: [{ role: 'user', content: 'thanks', timestamp: 1 }] })
   await expect(stat(join(dir, 'mood-state.json'))).rejects.toThrow()

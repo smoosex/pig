@@ -19,6 +19,8 @@ function userText(content: Extract<AgentEndEvent['messages'][number], { role: 'u
   return typeof content === 'string' ? content : content.filter(part => part.type === 'text').map(part => part.text).join('\n')
 }
 
+const PERSONA_SECTION = 'persona'
+
 function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
   // Inspect resolved context: navigation, compaction and edits can remove a snapshot.
   const previous = ctx.sessionManager.buildSessionProjection().messages.findLast(
@@ -46,10 +48,10 @@ export default function personaExtension(pi: ExtensionAPI): void {
   pi.on('before_agent_start', async (event, ctx) => {
     const inject = ({ active, engine }: PersonaView) => {
       if (!active) { reset(); return }
-      return {
-        systemPrompt: `${event.systemPrompt}\n\n---\n\n${engine.getPersonaPrompt()}\n\n---`,
-        message: moodMessage(engine, ctx),
-      }
+      // A section, not a returned systemPrompt: a forced prompt is never recorded, so exports
+      // would miss it, and it collapses every section patch into one uncached head.
+      event.systemPromptOptions.sections[PERSONA_SECTION] = engine.getPersonaPrompt()
+      return { message: moodMessage(engine, ctx) }
     }
     if (event.messageType !== 'user' || !pendingImplicitAcceptance) return readPersona(inject)
     pendingImplicitAcceptance = false
