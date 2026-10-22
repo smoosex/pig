@@ -27,6 +27,7 @@ async function fixture(): Promise<void> {
     BrowserWindow: { fromWebContents: (sender: unknown) => sender === other.webContents ? other : win },
     WebContentsView: class {}
   }))
+  mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {} }))
   mock.module('../src/main/browser/host', () => ({
     BrowserHost: class {
       getState(_win: unknown, id: string) { return { browserId: id, url: '', title: '', agentSessionId: agents.get(id) ?? null } }

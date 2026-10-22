@@ -1,12 +1,16 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { OpenProjectSessionsState, OpenProjectWorkspace } from '../shared/api'
+import type { OpenProjectSessionsState, OpenProjectWorkspace, OpenToolTab, OpenToolTabMembership } from '../shared/api'
 import { pigDir, pigPath } from './pig-dir'
 import { changesTabId } from '../shared/tab-ids'
+import { TERMINAL_ID_PATTERN } from '../shared/terminal'
+import { isBrowserUrl } from './browser/validation'
 
 interface OpenProjectSessionsFile extends OpenProjectSessionsState {
-  version: 4
+  version: 5
 }
+
+const BROWSER_ID_PATTERN = /^browser:[a-z\d-]{1,128}$/i
 
 /**
  * The strip's order, kept a permutation of the tabs that can actually come back: an id in the order is
@@ -25,14 +29,51 @@ const emptyState = (): OpenProjectSessionsState => ({
   currentCwd: null,
   workspaces: [],
   chatOrder: [],
-  activeChatTabId: null
+  activeChatTabId: null,
+  tools: []
 })
+
+function isToolTabId(id: string): boolean {
+  return BROWSER_ID_PATTERN.test(id) || TERMINAL_ID_PATTERN.test(id)
+}
+
+function normalizeTool(value: unknown): OpenToolTab | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Partial<OpenToolTab>
+  if (item.kind !== 'browser' && item.kind !== 'terminal') return null
+  if (typeof item.id !== 'string' || !(item.kind === 'browser' ? BROWSER_ID_PATTERN : TERMINAL_ID_PATTERN).test(item.id)) return null
+  if (typeof item.cwd !== 'string') return null
+  const tool: OpenToolTab = { id: item.id, kind: item.kind, cwd: item.cwd ? resolve(item.cwd) : '' }
+  if (item.kind === 'browser') {
+    // The page is navigated to again on restore, so only what navigation itself accepts may come back.
+    if (typeof item.url === 'string' && isBrowserUrl(item.url)) tool.url = item.url
+    tool.targetSessionId = typeof item.targetSessionId === 'string' && item.targetSessionId ? item.targetSessionId : null
+  }
+  return tool
+}
+
+function normalizeTools(value: unknown): OpenToolTab[] {
+  const byId = new Map<string, OpenToolTab>()
+  for (const tool of Array.isArray(value) ? value.map(normalizeTool) : []) {
+    if (tool && !byId.has(tool.id)) byId.set(tool.id, tool)
+  }
+  return [...byId.values()]
+}
+
+/** What a worktree's order arranges: its sessions, its open changes tab, then its browsers and terminals. */
+function workspaceMembers(workspace: Pick<OpenProjectWorkspace, 'cwd' | 'sessionIds' | 'changesOpen'>, tools: OpenToolTab[]): string[] {
+  return [
+    ...workspace.sessionIds,
+    ...(workspace.changesOpen ? [changesTabId(workspace.cwd)] : []),
+    ...tools.filter((tool) => tool.cwd === workspace.cwd).map((tool) => tool.id)
+  ]
+}
 
 function filePath(): string {
   return pigPath('open-project-sessions.json')
 }
 
-function normalizeWorkspace(value: unknown): OpenProjectWorkspace | null {
+function normalizeWorkspace(value: unknown, tools: OpenToolTab[]): OpenProjectWorkspace | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Partial<OpenProjectWorkspace> & { diffTabs?: unknown; activeSessionId?: string | null }
   if (typeof item.cwd !== 'string' || !item.cwd) return null
@@ -52,7 +93,7 @@ function normalizeWorkspace(value: unknown): OpenProjectWorkspace | null {
     : activeSessionId
   const cwd = resolve(item.cwd)
   // The changes tab takes part in the order only while it is open, which is what `changesOpen` records.
-  const members = changesOpen ? [...sessionIds, changesTabId(cwd)] : sessionIds
+  const members = workspaceMembers({ cwd, sessionIds, changesOpen }, tools)
   return {
     cwd,
     sessionIds,
@@ -104,8 +145,10 @@ async function readState(): Promise<OpenProjectSessionsState> {
     throw new Error(`Invalid open-project-sessions JSON: ${filePath()}`, { cause: error })
   }
   const raw = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<OpenProjectSessionsFile>
+  // Files before version 5 had no tool tabs, which reads as none open.
+  const tools = normalizeTools(raw.tools)
   const workspaces = Array.isArray(raw.workspaces)
-    ? raw.workspaces.map(normalizeWorkspace).filter((item): item is OpenProjectWorkspace => item !== null)
+    ? raw.workspaces.map((item) => normalizeWorkspace(item, tools)).filter((item): item is OpenProjectWorkspace => item !== null)
     : []
   const byCwd = new Map<string, OpenProjectWorkspace>()
   for (const workspace of workspaces) byCwd.set(workspace.cwd, workspace)
@@ -115,7 +158,21 @@ async function readState(): Promise<OpenProjectSessionsState> {
   return {
     currentCwd: current,
     workspaces: [...byCwd.values()],
-    ...normalizeChatState(raw)
+    ...chatStateFor(normalizeChatState(raw), tools),
+    tools
+  }
+}
+
+/** The chats half's order names a tool tab only while that tab is open there. */
+function chatStateFor(
+  chats: Pick<OpenProjectSessionsState, 'chatOrder' | 'activeChatTabId'>,
+  tools: OpenToolTab[]
+): Pick<OpenProjectSessionsState, 'chatOrder' | 'activeChatTabId'> {
+  const chatTools = new Set(tools.filter((tool) => tool.cwd === '').map((tool) => tool.id))
+  const chatOrder = chats.chatOrder.filter((id) => !isToolTabId(id) || chatTools.has(id))
+  return {
+    chatOrder,
+    activeChatTabId: chats.activeChatTabId && chatOrder.includes(chats.activeChatTabId) ? chats.activeChatTabId : null
   }
 }
 
@@ -123,9 +180,10 @@ async function writeState(state: OpenProjectSessionsState): Promise<void> {
   await mkdir(pigDir(), { recursive: true })
   const path = filePath()
   const temporary = `${path}.${process.pid}.tmp`
-  const body: OpenProjectSessionsFile = { version: 4, ...state }
+  const body: OpenProjectSessionsFile = { version: 5, ...state }
   try {
-    await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`)
+    // Saved browser URLs keep their query and hash so pages reopen where they were, and those can carry tokens.
+    await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 })
     await rename(temporary, path)
   } finally {
     await rm(temporary, { force: true }).catch(() => {})
@@ -163,9 +221,7 @@ export function rememberOpenProjectSession(cwd: string, sessionId: string): Prom
     workspace.activeTabId ??= sessionId
     // A session main just learned about belongs at the end of the strip, which is where the renderer
     // appends it too; keeping the two in step is what makes an un-dragged order invisible on restore.
-    workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspace.changesOpen
-      ? [...workspace.sessionIds, changesTabId(target)]
-      : workspace.sessionIds)
+    workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspaceMembers(workspace, state.tools))
   })
 }
 
@@ -181,7 +237,8 @@ export function forgetOpenProjectSession(sessionId: string): Promise<void> {
       if (workspace.activeTabId === sessionId) workspace.activeTabId = workspace.activeSessionId
     }
     state.workspaces = state.workspaces.filter(
-      (workspace) => workspace.sessionIds.length > 0 || workspace.changesOpen
+      (workspace) => workspace.sessionIds.length > 0 || workspace.changesOpen ||
+        state.tools.some((tool) => tool.cwd === workspace.cwd)
     )
   })
 }
@@ -236,9 +293,7 @@ export function saveOpenProjectChangesTab(
     }
     workspace.changesOpen = open
     workspace.activeTabId = activeTabId
-    workspace.tabOrder = normalizeOrder(workspace.tabOrder, open
-      ? [...workspace.sessionIds, changesTabId(target)]
-      : workspace.sessionIds)
+    workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspaceMembers(workspace, state.tools))
   })
 }
 
@@ -251,9 +306,7 @@ export function saveOpenProjectTabOrder(cwd: string, tabIds: string[]): Promise<
   return mutate((state) => {
     const workspace = state.workspaces.find((item) => item.cwd === target)
     if (!workspace) return
-    workspace.tabOrder = normalizeOrder(tabIds, workspace.changesOpen
-      ? [...workspace.sessionIds, changesTabId(target)]
-      : workspace.sessionIds)
+    workspace.tabOrder = normalizeOrder(tabIds, workspaceMembers(workspace, state.tools))
   })
 }
 
@@ -267,8 +320,8 @@ export function saveOpenProjectTabOrder(cwd: string, tabIds: string[]): Promise<
  * while it stays open. Only a list that no longer holds it falls back to the home.
  */
 export function saveOpenChatTabs(tabIds: string[], activeTabId: string | null): Promise<void> {
-  const next = normalizeChatState({ chatOrder: tabIds }).chatOrder
   return mutate((state) => {
+    const next = chatStateFor(normalizeChatState({ chatOrder: tabIds }), state.tools).chatOrder
     const chosen = typeof activeTabId === 'string' && next.includes(activeTabId) ? activeTabId : null
     state.chatOrder = next
     state.activeChatTabId = chosen
@@ -280,8 +333,69 @@ export function removeOpenProjectWorkspaces(cwds: Iterable<string>): Promise<voi
   const targets = new Set([...cwds].map((cwd) => resolve(cwd)))
   return mutate((state) => {
     state.workspaces = state.workspaces.filter((workspace) => !targets.has(workspace.cwd))
+    state.tools = state.tools.filter((tool) => !targets.has(tool.cwd))
     if (state.currentCwd && targets.has(state.currentCwd)) state.currentCwd = null
   })
+}
+
+/**
+ * Which browser and terminal tabs are open, written whole by the renderer. A tab seen for the first
+ * time joins the end of its strip, which is where the renderer appends it; a browser keeps the page
+ * main last recorded for it, since the renderer never knows where a page has navigated.
+ */
+export function saveOpenToolTabs(tabs: OpenToolTabMembership[]): Promise<void> {
+  const next = normalizeTools(tabs)
+  if (!Array.isArray(tabs) || next.length !== tabs.length) throw new Error('Invalid open tool tabs')
+  return mutate((state) => {
+    const previous = new Map(state.tools.map((tool) => [tool.id, tool]))
+    state.tools = next.map((tool) => {
+      const url = previous.get(tool.id)?.url
+      return url ? { ...tool, url } : tool
+    })
+    for (const tool of state.tools) {
+      if (previous.has(tool.id)) continue
+      if (!tool.cwd) {
+        if (!state.chatOrder.includes(tool.id)) state.chatOrder.push(tool.id)
+        continue
+      }
+      let workspace = state.workspaces.find((item) => item.cwd === tool.cwd)
+      if (!workspace) {
+        workspace = { cwd: tool.cwd, sessionIds: [], activeSessionId: null, changesOpen: false, activeTabId: null, tabOrder: [] }
+        state.workspaces.push(workspace)
+      }
+      workspace.tabOrder.push(tool.id)
+    }
+    for (const workspace of state.workspaces) {
+      workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspaceMembers(workspace, state.tools))
+    }
+    Object.assign(state, chatStateFor(state, state.tools))
+  })
+}
+
+// Pages can commit faster than the file is rewritten (in-page routes, hash updates): the latest URL per
+// browser waits here and every pending one lands in the next single write.
+const pendingBrowserUrls = new Map<string, string>()
+let browserUrlWrite: Promise<void> | null = null
+
+/** Records a browser's committed page; a browser the renderer has not recorded as open is ignored. */
+export function saveBrowserTabUrl(browserId: string, url: string): Promise<void> {
+  pendingBrowserUrls.set(browserId, url)
+  if (browserUrlWrite) return browserUrlWrite
+  const write = mutate((state) => {
+    // From here a new commit needs a later write; this one has already taken what is pending.
+    browserUrlWrite = null
+    for (const tool of state.tools) {
+      const pending = pendingBrowserUrls.get(tool.id)
+      if (tool.kind === 'browser' && pending && isBrowserUrl(pending)) tool.url = pending
+    }
+    pendingBrowserUrls.clear()
+  })
+  browserUrlWrite = write
+  // The failure still reaches every caller through `write`. A read that failed before the update ran
+  // must not leave this write looking scheduled, or no later commit would ever be saved; the pending
+  // URLs stay for the next one.
+  write.then(undefined, () => { if (browserUrlWrite === write) browserUrlWrite = null })
+  return write
 }
 
 export async function flushOpenProjectSessions(): Promise<void> {

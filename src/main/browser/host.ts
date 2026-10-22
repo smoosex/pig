@@ -71,11 +71,15 @@ export class BrowserHost {
   private watched = new WeakSet<BrowserWindow>()
   private clock = 0
 
-  /** `isAgentLive` lets a closed session's control lapse: its page is no longer pinned against eviction. */
+  /**
+   * `isAgentLive` lets a closed session's control lapse: its page is no longer pinned against eviction.
+   * `onCommit` hears every main-frame URL a page commits, which is what a restart reopens.
+   */
   constructor(
     private createView: (kind: 'page' | 'devtools') => WebContentsView,
     private isAgentLive: (sessionId: string) => boolean,
-    private createClip: () => View
+    private createClip: () => View,
+    private onCommit: (browserId: string, url: string) => void
   ) {}
 
   private owner(win: BrowserWindow): WindowPages {
@@ -318,12 +322,14 @@ export class BrowserHost {
     wc.on('did-navigate', (_event, url) => {
       page.state.url = url
       owner.urls.set(page.state.browserId, url)
+      this.onCommit(page.state.browserId, url)
       this.push(owner, page)
     })
     wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (isMainFrame) {
         page.state.url = url
         owner.urls.set(page.state.browserId, url)
+        this.onCommit(page.state.browserId, url)
         this.push(owner, page)
       }
     })
@@ -399,6 +405,12 @@ export class BrowserHost {
       this.picker(owner, page, false)
       this.push(owner, page)
     }
+  }
+
+  /** A restored tab starts from its saved page without a native view; showing it loads the page. */
+  retainUrl(win: BrowserWindow, id: string, url: string): void {
+    const owner = this.owner(win)
+    if (!owner.pages.has(id) && !owner.urls.has(id)) owner.urls.set(id, url)
   }
 
   getState(win: BrowserWindow, id: string): BrowserState {

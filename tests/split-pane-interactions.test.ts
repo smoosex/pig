@@ -26,6 +26,7 @@ async function fixture(scenario: string): Promise<void> {
       selectOpenProjectWorkspace: async () => {},
       saveOpenProjectChangesTab: async () => {},
       saveOpenChatTabs: async () => {},
+      saveOpenToolTabs: async () => {},
       suggestFiles: async (cwd: string) => {
         queries.push(cwd)
         return []

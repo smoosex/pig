@@ -124,24 +124,45 @@ export interface OpenProjectWorkspace {
   /** The tab the workbench shows for this workspace: a session id or the changes tab id. */
   activeTabId: string | null
   /**
-   * The strip's own order: every session of this worktree plus its changes tab, file tabs excluded.
+   * The strip's own order: every session of this worktree plus its changes tab and its browser and
+   * terminal tabs, file tabs excluded.
    * `sessionIds` stays the membership — this only arranges it, so a reorder cannot open or close
    * anything. A permutation of the members, which main re-derives on every read and write.
    */
   tabOrder: string[]
 }
 
+/**
+ * A browser or terminal tab that comes back after a restart. Neither holds a Pi session: a browser
+ * returns to its last committed page, a terminal starts a new shell in its scope's directory.
+ */
+export interface OpenToolTab {
+  id: string
+  kind: 'browser' | 'terminal'
+  /** The worktree whose strip it sits in, or '' for the chats half. */
+  cwd: string
+  /** Browser only, written by main as pages commit; absent until the first navigation. */
+  url?: string
+  /** Browser only: the session its annotations go to. */
+  targetSessionId?: string | null
+}
+
+/** What the renderer states about a tool tab: main alone records where a browser has navigated. */
+export type OpenToolTabMembership = Omit<OpenToolTab, 'url'>
+
 export interface OpenProjectSessionsState {
   currentCwd: string | null
   workspaces: OpenProjectWorkspace[]
   /**
-   * The chats half's open chat tabs, in strip order. Unlike a worktree's, this list is also its
-   * membership: nothing else persists which chats were open, and an id whose directory is gone is
-   * dropped at restore rather than reported.
+   * The chats half's open tabs, in strip order: its chats and its browser and terminal tabs. For chats
+   * this list is also membership: nothing else persists which chats were open, and an id whose
+   * directory is gone is dropped at restore rather than reported.
    */
   chatOrder: string[]
-  /** The chat the strip was left on, or null when the chats half was showing its home. */
+  /** The tab the chats half was left on, or null when it was showing its home. */
   activeChatTabId: string | null
+  /** Every open browser and terminal tab, in both halves. */
+  tools: OpenToolTab[]
 }
 
 export interface SessionRef {
@@ -982,8 +1003,10 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   saveOpenProjectChangesTab: (cwd: string, open: boolean, activeTabId: string | null) => Promise<void>
   /** Records a worktree's strip order: its sessions and changes tab, never its file tabs. */
   saveOpenProjectTabOrder: (cwd: string, tabIds: string[]) => Promise<void>
-  /** Records the chats half's open chat tabs and which of them was showing. */
+  /** Records the chats half's open tabs and which of them was showing. */
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) => Promise<void>
+  /** Records which browser and terminal tabs are open; a new one joins the end of its strip. */
+  saveOpenToolTabs: (tabs: OpenToolTabMembership[]) => Promise<void>
   /** Native material support is available synchronously, before the document's first paint. */
   readonly supportsGlass: boolean
   getSettings: () => Promise<AppSettings>

@@ -89,6 +89,7 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
   const views: FakeView[] = []
   const clips: FakeClip[] = []
   const removed: unknown[] = []
+  const commits: [string, string][] = []
   const win = Object.assign(new EventEmitter(), {
     webContents: new FakeContents(), dead: false,
     isDestroyed() { return this.dead },
@@ -103,8 +104,8 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
     const view = new FakeView()
     views.push(view)
     return view as unknown as WebContentsView
-  }, live, () => { const clip = new FakeClip(); clips.push(clip); return clip as unknown as View })
-  return { host, win, owner: win as unknown as BrowserWindow, views, clips, removed }
+  }, live, () => { const clip = new FakeClip(); clips.push(clip); return clip as unknown as View }, (id, url) => { commits.push([id, url]) })
+  return { host, win, owner: win as unknown as BrowserWindow, views, clips, removed, commits }
 }
 const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
@@ -367,6 +368,20 @@ describe('browser host', () => {
     expect(pending[0].comment).toBe('Preserve this note')
     host.removeAnnotations(owner, 'a', [pending[0].id])
     expect(host.getState(owner, 'a').annotations).toHaveLength(0)
+  })
+
+  test('a restored tab waits for its first showing to load the page it was saved on', async () => {
+    const { host, owner, views, commits } = fixture()
+    host.retainUrl(owner, 'r', 'https://example.com/saved')
+    expect(views, 'restoring builds no native view').toHaveLength(0)
+    expect(host.getState(owner, 'r').url).toBe('https://example.com/saved')
+    host.setBounds(owner, 'r', bounds)
+    expect(views[0].webContents.getURL()).toBe('https://example.com/saved')
+    views[0].webContents.emit('did-navigate', {}, 'https://example.com/next')
+    views[0].webContents.emit('did-navigate-in-page', {}, 'https://example.com/next#a', false)
+    expect(commits, 'only main-frame commits are what a restart reopens').toEqual([['r', 'https://example.com/saved'], ['r', 'https://example.com/next']])
+    host.retainUrl(owner, 'r', 'https://example.com/other')
+    expect(host.getState(owner, 'r').url, 'a live page is never overwritten by a restore').toBe('https://example.com/next')
   })
 
   test('evicted tabs retain their URL and reload only when visible again', async () => {

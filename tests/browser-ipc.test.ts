@@ -31,9 +31,11 @@ async function fixture(): Promise<void> {
     BrowserWindow: { fromWebContents: (sender: unknown) => sender === other.webContents ? other : win },
     WebContentsView: class { constructor(options: unknown) { viewOptions = options } }
   }))
+  mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {} }))
   mock.module('../src/main/browser/host', () => ({
     BrowserHost: class {
       constructor(factory: () => unknown) { createView = factory }
+      retainUrl(_win: unknown, id: string, url: string) { calls.push(['retain', id, url]) }
       getState(_win: unknown, id: string) { calls.push(['state', id]); return { browserId: id, ...(pageUrl !== undefined ? { url: pageUrl } : {}) } }
       inspect(_win: unknown, id: string) { calls.push(['inspect', id]) }
       setBounds(_win: unknown, id: string, bounds: unknown) { calls.push(['bounds', id, bounds]) }
@@ -76,6 +78,10 @@ async function fixture(): Promise<void> {
     ['state', 'browser:owned'], ['state', 'browser:owned'], ['bounds', 'browser:owned', null],
     ['close', 'browser:owned'], ['bounds', 'browser:owned', null]
   ])
+  // A restored tab hands its saved page back through create, under the same rule as navigation.
+  create(event, 'browser:restored', 'example.test/saved')
+  assert.deepEqual(calls.at(-2), ['retain', 'browser:restored', 'https://example.test/saved'])
+  assert.throws(() => create(event, 'browser:restored-bad', 'file:///etc/passwd'), /Only HTTP/)
   pageUrl = 'https://example.test/current-page'
   create(event, 'browser:owned')
   handlers.get('browser:copy-url')!(event, 'browser:owned')

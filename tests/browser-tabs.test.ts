@@ -8,7 +8,7 @@ const tab = (id: string, kind: OpenTab['kind'], cwd = '/project'): OpenTab => ({
   id, kind, cwd, title: id, loadState: 'ready'
 })
 
-if (!process.argv.includes('--browser-tabs-fixture')) test('browser tabs share their strip scope without becoming persisted sessions', () => {
+if (!process.argv.includes('--browser-tabs-fixture')) test('browser and terminal tabs share their strip scope and its saved order', () => {
   const project = tab('project', 'project')
   const browser = tab('browser:project', 'browser')
   const chat = tab('chat', 'chat', '/chats/chat')
@@ -16,10 +16,10 @@ if (!process.argv.includes('--browser-tabs-fixture')) test('browser tabs share t
   const other = tab('browser:other', 'browser', '/other')
   const terminal = tab('terminal:project', 'terminal')
   const chatTerminal = tab('terminal:chat', 'terminal', '')
-  assert.deepEqual(persistableIds([project, terminal, chatTerminal]), ['project'])
+  assert.deepEqual(persistableIds([project, terminal, chatTerminal, tab('file', 'file')]), ['project', terminal.id, chatTerminal.id])
   assert.deepEqual(sameScopeTabs([project, terminal, chat, chatTerminal], chatTerminal), [chat, chatTerminal])
   const tabs = [project, browser, chat, chatBrowser, other]
-  assert.deepEqual(persistableIds(tabs), ['project', 'chat'])
+  assert.deepEqual(persistableIds(tabs), tabs.map((item) => item.id))
   assert.deepEqual(sameScopeTabs(tabs, browser), [project, browser])
   assert.deepEqual(sameScopeTabs(tabs, chatBrowser), [chat, chatBrowser])
   assert.deepEqual(visibleTabsFor(tabs, 'chats', '/project'), [chat, chatBrowser])
@@ -35,6 +35,7 @@ async function fixture() {
   const browserCreates: string[] = []
   const browserCloses: string[] = []
   const writes: unknown[] = []
+  const toolWrites: unknown[] = []
   const piCalls: string[] = []
   const answers: unknown[][] = []
   let create: (id: string) => Promise<unknown> = async () => ({})
@@ -48,6 +49,7 @@ async function fixture() {
     saveOpenProjectChangesTab: async (...args: unknown[]) => { writes.push(args) },
     selectOpenProjectWorkspace: async (...args: unknown[]) => { writes.push(args) },
     saveOpenChatTabs: async (...args: unknown[]) => { writes.push(args) },
+    saveOpenToolTabs: async (...args: unknown[]) => { toolWrites.push(args) },
     listWorktreeSessions: async () => []
   }, {
     get(target, key) {
@@ -79,7 +81,13 @@ async function fixture() {
   await state().selectProjectCwd('/project')
   assert.equal(state().activeTabId, first.id)
   assert.equal(state().openTabs.length, 2)
-  assert.ok(!JSON.stringify(writes).includes('browser:'))
+  // They come back after a restart: membership goes to main, and order and selection with their strip.
+  assert.deepEqual(toolWrites.at(-1), [[
+    { id: second.id, kind: 'browser', cwd: '/project', targetSessionId: null },
+    { id: first.id, kind: 'browser', cwd: '/project', targetSessionId: null }
+  ]])
+  assert.ok(writes.some((item) => JSON.stringify(item) === JSON.stringify(['/project', [second.id, first.id]])))
+  assert.deepEqual(writes.at(-1), ['/project', null, first.id])
 
   const paneId = split.getState().initLayout(first.id)
   split.getState().splitPane(paneId, second.id, 'right')
@@ -144,13 +152,15 @@ async function fixture() {
   assert.equal(state().currentProjectCwd, null)
   assert.deepEqual(piCalls, [])
   assert.deepEqual(state().runtime, {})
-  assert.ok(!JSON.stringify(writes).includes('browser:'))
+  assert.ok(JSON.stringify(toolWrites).includes(chatBrowser.id), 'a chat browser is saved while open')
+  assert.ok(!JSON.stringify(toolWrites.at(-1)).includes(chatBrowser.id), 'and dropped once closed')
   assert.equal(new Set(browserCreates).size, browserCreates.length)
 
   const terminal = state().openTerminalTab('/project')
   assert.match(terminal, /^terminal:/)
   assert.equal(state().activeTabId, terminal)
   assert.equal(state().currentProjectCwd, '/project')
+  assert.deepEqual(writes.at(-1), ['/project', state().activeSessionByCwd['/project'] ?? null, terminal], 'opening a terminal saves it as the selection')
   assert.equal(selectActiveSessionId(state()), null, 'a terminal owns no Pi session')
   state().closeTab(terminal)
   assert.equal(state().openTabs.some((item) => item.id === terminal), false)
@@ -159,7 +169,6 @@ async function fixture() {
   assert.equal(state().currentProjectCwd, null)
   state().closeTab(homeTerminal)
   assert.deepEqual(piCalls, [])
-  assert.ok(!JSON.stringify(writes).includes('terminal:'), 'terminal tabs are never persisted')
 }
 
 if (process.argv.includes('--browser-tabs-fixture')) {

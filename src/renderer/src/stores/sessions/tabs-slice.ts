@@ -1,5 +1,5 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
-import { api, type DiffScope, type OpenSessionRef, type SessionMeta } from '../../ipc/api'
+import { api, type DiffScope, type OpenSessionRef, type OpenToolTab, type SessionMeta } from '../../ipc/api'
 import { scopeLabel, useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
 import { renamedPath } from '../../lib/worktree-paths'
@@ -174,7 +174,7 @@ export const createTabsSlice: SessionSlice<
 
   /** What a worktree was left on: its active session, and the tab the strip was showing. */
   function persistSelection(cwd: string, sessionId: string | null, activeTabId: string | null): void {
-    persist(api.selectOpenProjectWorkspace(cwd, sessionId, persistentTabId(activeTabId)))
+    persist(api.selectOpenProjectWorkspace(cwd, sessionId, activeTabId))
   }
 
   /**
@@ -186,14 +186,14 @@ export const createTabsSlice: SessionSlice<
   function persistChatTabs(closedIds: string[] = []): void {
     const state = get()
     const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
-    if (active?.kind === 'chat') lastActiveChatTabId = active.id
+    if (active && isChatScope(active)) lastActiveChatTabId = active.id
     // Until a successful scan merges saved membership, record intent without replacing the saved list.
     // These tombstones survive failed scans so a retry cannot reopen a tab the reader already closed.
     if (!state.workspaceRestoreReady) {
       for (const id of closedIds) closedChatIdsBeforeRestore.add(id)
       return
     }
-    const ids = state.openTabs.filter((tab) => tab.kind === 'chat').map((tab) => tab.id)
+    const ids = state.openTabs.filter(isChatScope).map((tab) => tab.id)
     persist(api.saveOpenChatTabs(ids, ids.includes(lastActiveChatTabId ?? '') ? lastActiveChatTabId : null))
   }
 
@@ -214,14 +214,16 @@ export const createTabsSlice: SessionSlice<
     }
   }
 
-  function persistentTabId(id: string | null): string | null {
-    return id?.startsWith('browser:') || id?.startsWith('terminal:') ? null : id
+  /** A browser or terminal comes back after a restart, so the strip selecting one is saved too. */
+  function persistToolSelection(tab: OpenTab): void {
+    if (isChatScope(tab)) persistChatTabs()
+    else persistSelection(tab.cwd, get().activeSessionByCwd[tab.cwd] ?? null, tab.id)
   }
 
   /** The renderer owns the changes tab, so whether one worktree keeps it open is mirrored here. */
   function persistChangesTab(cwd: string): void {
     const open = get().openTabs.some((tab) => tab.kind === 'diff' && tab.cwd === cwd)
-    persist(api.saveOpenProjectChangesTab(cwd, open, persistentTabId(get().activeTabId)))
+    persist(api.saveOpenProjectChangesTab(cwd, open, get().activeTabId))
   }
 
   function addReadyTab(tab: OpenTab, selection: number): boolean {
@@ -347,10 +349,22 @@ export const createTabsSlice: SessionSlice<
         }
         const chatMetas = new Map(get().chats.flatMap((chat) => chat.sessions.map((meta) => [meta.id, meta] as const)))
 
+        const restorableSessionIds = new Set([...metas.keys(), ...chatMetas.keys()])
+        // A tool tab returns only with the strip it sat in; its annotation target only with that session.
+        const toolTab = (tool: OpenToolTab): OpenTab => tool.kind === 'browser'
+          ? {
+            id: tool.id, cwd: tool.cwd, title: t('tabBar.newBrowser'), kind: 'browser', loadState: 'ready',
+            browserTargetSessionId: tool.targetSessionId && restorableSessionIds.has(tool.targetSessionId)
+              ? tool.targetSessionId
+              : undefined
+          }
+          : { id: tool.id, cwd: tool.cwd, title: t('tabBar.newTerminal'), kind: 'terminal', loadState: 'ready' }
+        const restoredTools = persisted.tools.filter((tool) => tool.cwd === '' || worktreeCwds.has(tool.cwd))
         const workspaces = persisted.workspaces.flatMap((workspace) => {
           if (!worktreeCwds.has(workspace.cwd)) return []
           const sessionIds = workspace.sessionIds.filter((id) => metas.get(id)?.cwd === workspace.cwd)
-          if (sessionIds.length === 0 && !workspace.changesOpen) return []
+          const tools = restoredTools.filter((tool) => tool.cwd === workspace.cwd)
+          if (sessionIds.length === 0 && !workspace.changesOpen && tools.length === 0) return []
           return [{
             cwd: workspace.cwd,
             sessionIds,
@@ -359,7 +373,8 @@ export const createTabsSlice: SessionSlice<
               ? workspace.activeSessionId
               : sessionIds.at(-1) ?? null,
             activeTabId: workspace.activeTabId,
-            tabOrder: workspace.tabOrder ?? []
+            tabOrder: workspace.tabOrder ?? [],
+            tools
           }]
         })
         const currentProjectCwd = persisted.currentCwd && worktreeCwds.has(persisted.currentCwd)
@@ -390,6 +405,7 @@ export const createTabsSlice: SessionSlice<
               diffScope: DEFAULT_SCOPE
             })
           }
+          for (const tool of workspace.tools) byId.set(tool.id, toolTab(tool))
           // The dragged order leads, and whatever it never mentions follows in its own arrival order —
           // which for a worktree nobody has ever dragged is sessions then changes, as it always was.
           const ordered = [...new Set(workspace.tabOrder.filter((id) => byId.has(id)))]
@@ -398,7 +414,11 @@ export const createTabsSlice: SessionSlice<
         })
         // A chat whose directory is gone has no listing to give it a title or a file to open, so the
         // sweep at startup and a deleted chat leave this list shorter and nobody the wiser.
-        const restoredChatTabs: OpenTab[] = persisted.chatOrder.flatMap((id) => {
+        const chatTools = new Map(restoredTools.filter((tool) => tool.cwd === '').map((tool) => [tool.id, tool]))
+        const chatOrder = [...persisted.chatOrder, ...[...chatTools.keys()].filter((id) => !persisted.chatOrder.includes(id))]
+        const restoredChatTabs: OpenTab[] = chatOrder.flatMap((id) => {
+          const tool = chatTools.get(id)
+          if (tool) return [toolTab(tool)]
           if (closedChatIdsBeforeRestore.has(id)) return []
           const meta = chatMetas.get(id)
           return meta ? [{
@@ -439,6 +459,12 @@ export const createTabsSlice: SessionSlice<
         const restoreChats = restoreInChatHome || currentProjectCwd === null
         const restoredTabId = restoreChats ? restoredActiveChatTabId : activeProjectTabId
 
+        // A browser pane needs main's ownership before it mounts; its saved page loads once it is shown.
+        const savedUrls = new Map(restoredTools.map((tool) => [tool.id, tool.url]))
+        await Promise.all([...restoredTabs, ...restoredChatTabs]
+          .filter((tab) => tab.kind === 'browser')
+          .map((tab) => api.browser.create(tab.id, savedUrls.get(tab.id))))
+
         const selectionUnchanged = restoreSelection === selectionVersion
         const restoreSelectedProject = selectionUnchanged || (
           !restoreInChatHome && restoreProjectAfterSwitch && !get().currentProjectCwd && !get().activeTabId
@@ -451,7 +477,7 @@ export const createTabsSlice: SessionSlice<
             ...state.openTabs.filter(
               (tab) =>
                 (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') &&
-                !restoredIds.has(tab.id)
+                !restoredIds.has(tab.id) && !restoredChatIds.has(tab.id)
             )
           ]
           return {
@@ -478,11 +504,11 @@ export const createTabsSlice: SessionSlice<
 
         closedChatIdsBeforeRestore.clear()
         lastActiveChatTabId ??= restoredActiveChatTabId
-        const activeChat = get().openTabs.find((tab) => tab.id === get().activeTabId && tab.kind === 'chat')
+        const activeChat = get().openTabs.find((tab) => tab.id === get().activeTabId && isChatScope(tab))
         if (activeChat) lastActiveChatTabId = activeChat.id
         // Membership, order and selection can all change while writes are gated by the scan.
         // Write the merged state before hydration, which is not a prerequisite for remembering a tab.
-        const mergedChats = get().openTabs.filter((tab) => tab.kind === 'chat').map((tab) => tab.id)
+        const mergedChats = get().openTabs.filter(isChatScope).map((tab) => tab.id)
         const mergedActiveChatId = mergedChats.includes(lastActiveChatTabId ?? '') ? lastActiveChatTabId : null
         const changedWhileScanning = mergedChats.length !== persisted.chatOrder.length ||
           mergedChats.some((id, index) => persisted.chatOrder[index] !== id) ||
@@ -545,14 +571,15 @@ export const createTabsSlice: SessionSlice<
         return
       }
       if (tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') {
-        // These views load their own data, never Pi controls or history. Their strip selection is
-        // remembered only within this process, not as a persisted session.
+        // These views load their own data, never Pi controls or history. A file tab's selection lasts
+        // only this run; a browser or terminal comes back after a restart, so its selection is saved.
         ++selectionVersion
         set((state) => ({
           ...activeTabPatch(state, tab.id, tab.cwd || null),
           currentProjectCwd: tab.cwd || null,
           openTabs: state.openTabs
         }))
+        if (tab.kind !== 'file') persistToolSelection(tab)
         return
       }
       if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === tab.id) {
@@ -695,16 +722,19 @@ export const createTabsSlice: SessionSlice<
       const id = `browser:${crypto.randomUUID()}`
       await api.browser.create(id)
       // Selection may have moved during creation; the completed view remains available in the strip.
+      const selected = !options?.background && selection === selectionVersion
+      const tab: OpenTab = {
+        id, cwd: scopeCwd, title: t('tabBar.newBrowser'), kind: 'browser', loadState: 'ready',
+        browserTargetSessionId: target
+      }
       set((current) => ({
-        openTabs: [...current.openTabs, {
-          id, cwd: scopeCwd, title: t('tabBar.newBrowser'), kind: 'browser', loadState: 'ready',
-          browserTargetSessionId: target
-        }],
-        ...(!options?.background && selection === selectionVersion ? {
+        openTabs: [...current.openTabs, tab],
+        ...(selected ? {
           ...activeTabPatch(current, id, scopeCwd || null),
           currentProjectCwd: scopeCwd || null
         } : {})
       }))
+      if (selected) persistToolSelection(tab)
       return id
     },
 
@@ -713,13 +743,15 @@ export const createTabsSlice: SessionSlice<
       const scopeCwd = cwd ?? ''
       const id = `terminal:${crypto.randomUUID()}`
       // Shell startup is shared by the mounted panel and background agent requests.
+      const tab: OpenTab = { id, cwd: scopeCwd, title: t('tabBar.newTerminal'), kind: 'terminal', loadState: 'ready' }
       set((current) => ({
-        openTabs: [...current.openTabs, { id, cwd: scopeCwd, title: t('tabBar.newTerminal'), kind: 'terminal', loadState: 'ready' }],
+        openTabs: [...current.openTabs, tab],
         ...(!options?.background ? {
           ...activeTabPatch(current, id, scopeCwd || null),
           currentProjectCwd: scopeCwd || null
         } : {})
       }))
+      if (!options?.background) persistToolSelection(tab)
       return id
     },
 

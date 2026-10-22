@@ -8,7 +8,8 @@ import { BrowserHost } from '../browser/host'
 import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { BrowserAgentController } from '../browser/agent'
 import { registerBrowserAgentHost } from '../plugins/pig-browser-host'
-import { assertBrowserSender, isBrowserUrl } from '../browser/validation'
+import { assertBrowserSender, isBrowserUrl, normalizeBrowserUrl } from '../browser/validation'
+import { saveBrowserTabUrl } from '../open-project-sessions'
 import { windowForEvent } from './window'
 import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest } from '../../shared/browser'
 
@@ -38,7 +39,10 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
     partition: 'persist:pig-browser', sandbox: true, contextIsolation: true,
     nodeIntegration: false, webSecurity: true, webviewTag: false
-  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View())
+  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View(), (browserId, url) => {
+    // Page events have no caller to hand a failed write to; navigation goes on and main logs it.
+    void saveBrowserTabUrl(browserId, url).catch((error) => console.error('Browser URL persistence failed:', error))
+  })
   function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; browserId: string }): Promise<string> {
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')
     signal?.throwIfAborted()
@@ -91,10 +95,12 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (owners.get(id) !== win) throw new Error('Browser pane does not belong to this window')
     return win
   }
-  ipcMain.handle('browser:create', (event, id: string) => {
+  ipcMain.handle('browser:create', (event, id: string, url?: unknown) => {
     const win = ui(event, id)
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
+    const restored = url === undefined ? undefined : normalizeBrowserUrl(url)
     owners.set(id, win)
+    if (restored) host.retainUrl(win, id, restored)
     if (!watched.has(win)) {
       watched.add(win)
       const clear = () => {

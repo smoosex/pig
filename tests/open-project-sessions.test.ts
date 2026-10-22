@@ -48,7 +48,7 @@ describe('open project sessions', () => {
         tabOrder: ['one', 'two']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -70,7 +70,7 @@ describe('open project sessions', () => {
         tabOrder: ['one']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -93,7 +93,7 @@ describe('open project sessions', () => {
         tabOrder: ['two']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -115,7 +115,7 @@ describe('open project sessions', () => {
         tabOrder: ['one']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -140,7 +140,7 @@ describe('open project sessions', () => {
         tabOrder: ['one']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -163,7 +163,7 @@ describe('open project sessions', () => {
         tabOrder: ['one']
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -203,7 +203,7 @@ describe('open project sessions', () => {
         activeTabId: 'diff:unstaged:src/a.ts'
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     }))
 
     expect(await state.loadOpenProjectSessions()).toEqual({
@@ -217,7 +217,7 @@ describe('open project sessions', () => {
         tabOrder: [`diff:${resolve(cwd)}`]
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -279,7 +279,7 @@ describe('open project sessions', () => {
         tabOrder: ['one', 'two', `diff:${resolve(cwd)}`]
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
   })
 
@@ -297,7 +297,7 @@ describe('open project sessions', () => {
     await state.saveOpenChatTabs(['b', 'a', 'b'], 'a')
     expect(await state.loadOpenProjectSessions()).toMatchObject({
       chatOrder: ['b', 'a'],
-      activeChatTabId: 'a'
+      activeChatTabId: 'a', tools: []
     })
 
     // An active tab that is not among the open ones is no active tab: the half falls to its home instead
@@ -305,7 +305,7 @@ describe('open project sessions', () => {
     await state.saveOpenChatTabs(['b'], 'gone')
     expect(await state.loadOpenProjectSessions()).toMatchObject({
       chatOrder: ['b'],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
 
     // An empty list is a strip with nothing open, which is what lets the last chat be closed for good.
@@ -329,5 +329,77 @@ describe('open project sessions', () => {
       activeTabId: 'one',
       tabOrder: ['one']
     }])
+  })
+
+  test('browser and terminal tabs join the end of their strip and keep the page main last saw', async () => {
+    const cwd = resolve(join(root, 'project'))
+    await state.rememberOpenProjectSession(cwd, 'one')
+    await state.saveOpenChatTabs(['chat'], 'chat')
+    await state.saveOpenToolTabs([
+      { id: 'browser:b', kind: 'browser', cwd, targetSessionId: 'one' },
+      { id: 'terminal:t', kind: 'terminal', cwd: '' }
+    ])
+    // Pages commit in bursts; the latest one wins and a browser nobody recorded gets nothing written.
+    await Promise.all([
+      state.saveBrowserTabUrl('browser:b', 'https://a.test/1'),
+      state.saveBrowserTabUrl('browser:b', 'https://a.test/2'),
+      state.saveBrowserTabUrl('browser:unknown', 'https://a.test/x')
+    ])
+    await state.rememberOpenProjectSession(cwd, 'two')
+    await state.selectOpenProjectWorkspace(cwd, 'one', 'browser:b')
+
+    let loaded = await state.loadOpenProjectSessions()
+    expect(loaded.tools).toEqual([
+      { id: 'browser:b', kind: 'browser', cwd, url: 'https://a.test/2', targetSessionId: 'one' },
+      { id: 'terminal:t', kind: 'terminal', cwd: '' }
+    ])
+    expect(loaded.workspaces[0]).toMatchObject({ tabOrder: ['one', 'browser:b', 'two'], activeTabId: 'browser:b' })
+    expect(loaded.chatOrder).toEqual(['chat', 'terminal:t'])
+
+    // The renderer never states a URL, so restating membership keeps it; closing drops the tab everywhere.
+    await state.saveOpenToolTabs([{ id: 'browser:b', kind: 'browser', cwd, targetSessionId: null }])
+    loaded = await state.loadOpenProjectSessions()
+    expect(loaded.tools).toEqual([{ id: 'browser:b', kind: 'browser', cwd, url: 'https://a.test/2', targetSessionId: null }])
+    expect(loaded.chatOrder).toEqual(['chat'])
+
+    await state.forgetOpenProjectSession('one')
+    await state.forgetOpenProjectSession('two')
+    expect((await state.loadOpenProjectSessions()).workspaces.map((item) => item.tabOrder)).toEqual([['browser:b']])
+    await state.removeOpenProjectWorkspaces([cwd])
+    expect(await state.loadOpenProjectSessions()).toMatchObject({ workspaces: [], tools: [] })
+  })
+
+  test('a failed read does not stop later browser pages from being saved', async () => {
+    const path = join(root, 'open-project-sessions.json')
+    await state.saveOpenToolTabs([{ id: 'browser:b', kind: 'browser', cwd: '' }])
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    const saved = await readFile(path, 'utf8')
+    await rm(path)
+    await mkdir(path)
+    await expect(state.saveBrowserTabUrl('browser:b', 'https://a.test/lost')).rejects.toThrow()
+    await rm(path, { recursive: true })
+    await writeFile(path, saved)
+    await state.saveBrowserTabUrl('browser:b', 'https://a.test/kept')
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([
+      { id: 'browser:b', kind: 'browser', cwd: '', url: 'https://a.test/kept', targetSessionId: null }
+    ])
+  })
+
+  test('a saved tool tab that navigation would refuse does not come back as one', async () => {
+    await writeFile(join(root, 'open-project-sessions.json'), JSON.stringify({
+      version: 5, currentCwd: null, workspaces: [], activeChatTabId: null,
+      chatOrder: ['browser:gone', 'browser:ok'],
+      tools: [
+        { id: 'browser:ok', kind: 'browser', cwd: '', url: 'file:///etc/passwd' },
+        { id: 'browser:gone', kind: 'terminal', cwd: '' },
+        { id: 'not-a-tab', kind: 'browser', cwd: '' }
+      ]
+    }))
+    expect(await state.loadOpenProjectSessions()).toMatchObject({
+      chatOrder: ['browser:ok'],
+      tools: [{ id: 'browser:ok', kind: 'browser', cwd: '', targetSessionId: null }]
+    })
+    expect((await state.loadOpenProjectSessions()).tools[0]).not.toHaveProperty('url')
+    expect(() => state.saveOpenToolTabs([{ id: 'terminal:x', kind: 'browser', cwd: '' }])).toThrow('Invalid open tool tabs')
   })
 })

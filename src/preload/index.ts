@@ -5,7 +5,9 @@ import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, Wo
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
   browser: {
-    create: (browserId) => ipcRenderer.invoke('browser:create', browserId),
+    create: (browserId, url) => url === undefined
+      ? ipcRenderer.invoke('browser:create', browserId)
+      : ipcRenderer.invoke('browser:create', browserId, url),
     getState: (browserId) => ipcRenderer.invoke('browser:get-state', browserId),
     navigate: (browserId, url) => ipcRenderer.invoke('browser:navigate', browserId, url),
     back: (browserId) => ipcRenderer.invoke('browser:back', browserId),
@@ -242,6 +244,7 @@ const api: SessionApi = {
     ipcRenderer.invoke('system:save-open-project-tab-order', cwd, tabIds),
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) =>
     ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
+  saveOpenToolTabs: (tabs) => ipcRenderer.invoke('system:save-open-tool-tabs', tabs),
   getMcpSettings: () => ipcRenderer.invoke('mcp:get'),
   saveMcpServer: (name, config, replace, icon) => ipcRenderer.invoke('mcp:save', name, config, replace, icon),
   removeMcpServer: (name) => ipcRenderer.invoke('mcp:remove', name),

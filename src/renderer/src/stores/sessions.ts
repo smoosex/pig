@@ -5,6 +5,7 @@ import { createTabsSlice } from './sessions/tabs-slice'
 import { useSettingsStore } from './settings'
 import { api } from '../ipc/api'
 import type { SessionsStore } from './sessions/types'
+import { toolTabMemberships } from './sessions/tab-order'
 
 export type { ProjectGroup, SessionMeta, WorktreeGroup } from '../ipc/api'
 export type { RuntimeState, OpenTab, SessionsStore } from './sessions/types'
@@ -39,6 +40,21 @@ useSessionsStore.subscribe((state, previous) => {
       useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
     })
   }
+})
+
+// Main records which browser and terminal tabs are open. Nothing is written until the restore has merged
+// the saved list, so an early tab cannot replace it; the first write after that also drops what did not
+// come back, such as a terminal of a worktree since deleted.
+let savedToolTabs: string | null = null
+useSessionsStore.subscribe((state, previous) => {
+  if (!state.workspaceRestoreReady || (state.openTabs === previous.openTabs && savedToolTabs !== null)) return
+  const tabs = toolTabMemberships(state.openTabs)
+  const signature = JSON.stringify(tabs)
+  if (signature === savedToolTabs) return
+  savedToolTabs = signature
+  void api.saveOpenToolTabs(tabs).catch((error: unknown) => {
+    useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+  })
 })
 
 /**

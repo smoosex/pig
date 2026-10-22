@@ -3,6 +3,7 @@ import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from '../sideba
 import {
   loadOpenProjectSessions,
   saveOpenChatTabs,
+  saveOpenToolTabs,
   saveOpenProjectChangesTab,
   saveOpenProjectTabOrder,
   selectOpenProjectWorkspace
@@ -33,6 +34,9 @@ export function registerSystemIpc(): void {
     'system:save-open-chat-tabs',
     async (_event, tabIds: string[], activeTabId: string | null) =>
       saveOpenChatTabs(tabIds, activeTabId)
+  )
+  ipcMain.handle('system:save-open-tool-tabs', async (_event, tabs: unknown) =>
+    saveOpenToolTabs(tabs as Parameters<typeof saveOpenToolTabs>[0])
   )
   ipcMain.handle('system:pick-directory', async (event) => {
     const win = windowForEvent(event)

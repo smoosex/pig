@@ -57,7 +57,7 @@ async function runFixture(name: string): Promise<void> {
     currentCwd: null,
     workspaces: [],
     chatOrder: [],
-    activeChatTabId: null
+    activeChatTabId: null, tools: []
   }
   const api: SessionApi = {
     // Main answers with the session it made. This mock keeps one fixed id for every fixture and only
@@ -106,6 +106,7 @@ async function runFixture(name: string): Promise<void> {
     saveOpenChatTabs: async (tabIds: string[], activeTabId: string | null) => {
       chatTabWrites.push({ tabIds, activeTabId })
     },
+    saveOpenToolTabs: async () => {},
     listChats: async (): Promise<ProjectGroup[]> => [],
     createChat: async (): Promise<SessionRef> => ({ sessionId: 'chat', cwd: '/chats/0' }),
     listProjects: async (): Promise<ProjectGroup[]> => [],
@@ -147,7 +148,7 @@ async function runFixture(name: string): Promise<void> {
       cwd: item.cwd, name: item.id, sessions: [item]
     }))
     const saved: OpenProjectSessionsState = {
-      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c1'
+      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c1', tools: []
     }
     api.getOpenProjectSessions = async () => saved
     api.listChats = async () => catalog
@@ -250,7 +251,7 @@ async function runFixture(name: string): Promise<void> {
         { cwd: '/temporarily-unavailable', sessionIds: ['unavailable'], activeSessionId: 'unavailable', changesOpen: false, activeTabId: 'unavailable', tabOrder: [] }
       ],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     }
     api.openSession = async (path: string) => {
       openCalls++
@@ -311,7 +312,7 @@ async function runFixture(name: string): Promise<void> {
       currentCwd: '/project',
       workspaces: [{ cwd: '/project', sessionIds: ['first'], activeSessionId: 'first', changesOpen: false, activeTabId: 'first', tabOrder: [] }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
     api.openSession = async () => ({ sessionId: 'first', cwd: '/project', display: history('first') })
 
@@ -352,7 +353,7 @@ async function runFixture(name: string): Promise<void> {
         cwd: meta.cwd, sessionIds: [meta.id], activeSessionId: meta.id,
         changesOpen: false, activeTabId: meta.id, tabOrder: []
       }],
-      chatOrder: [], activeChatTabId: null
+      chatOrder: [], activeChatTabId: null, tools: []
     }
     if (name !== 'chat-home-restore') {
       const persisted = deferred<OpenProjectSessionsState>()
@@ -583,7 +584,7 @@ async function runFixture(name: string): Promise<void> {
         { cwd: '/other', sessionIds: [], activeSessionId: null, changesOpen: true, activeTabId: 'diff:/other', tabOrder: [] }
       ],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     }
 
     await state().initializeProjectWorkspaces()
@@ -596,6 +597,45 @@ async function runFixture(name: string): Promise<void> {
 
     await state().selectProjectCwd('/other')
     assert.equal(state().activeTabId, 'diff:/other', 'switching to a worktree never visited lands on its tab')
+    return
+  }
+
+  if (name === 'tool-tabs-restored') {
+    const session = { ...meta, id: 'one', path: '/project/one.jsonl' }
+    const chat = { ...meta, id: 'chat', path: '/chats/chat/chat.jsonl', cwd: '/chats/chat' }
+    api.listProjects = async () => [{
+      cwd: '/project', name: 'project', sessions: [session],
+      worktrees: [{ cwd: '/project', branch: 'main', isPrimary: true, locked: false, missing: false, managed: false, sessions: [session] }]
+    }]
+    api.listChats = async () => [{ cwd: '/chats', name: 'chats', sessions: [chat] }]
+    const creates: unknown[][] = []
+    const toolWrites: unknown[] = []
+    Object.assign(api, {
+      browser: { create: async (...args: unknown[]) => { creates.push(args); return {} } },
+      saveOpenToolTabs: async (tabs: unknown) => { toolWrites.push(tabs) }
+    })
+    persistedOpenProjectSessions = {
+      currentCwd: '/project',
+      workspaces: [{ cwd: '/project', sessionIds: ['one'], activeSessionId: 'one', changesOpen: false, activeTabId: 'terminal:t', tabOrder: ['browser:b', 'one', 'terminal:t'] }],
+      chatOrder: ['browser:c', 'chat'],
+      activeChatTabId: 'browser:c',
+      tools: [
+        { id: 'browser:b', kind: 'browser', cwd: '/project', url: 'https://a.test/', targetSessionId: 'one' },
+        { id: 'terminal:t', kind: 'terminal', cwd: '/project' },
+        { id: 'browser:c', kind: 'browser', cwd: '', targetSessionId: 'deleted' },
+        { id: 'terminal:gone', kind: 'terminal', cwd: '/deleted-worktree' }
+      ]
+    }
+
+    await state().initializeProjectWorkspaces()
+    assert.deepEqual(state().openTabs.map((tab) => tab.id), ['browser:c', 'chat', 'browser:b', 'one', 'terminal:t'])
+    assert.equal(state().activeTabId, 'terminal:t', 'the worktree returns to the terminal it was left on')
+    assert.equal(openCalls, 0, 'showing a terminal opens no session')
+    assert.deepEqual(creates, [['browser:b', 'https://a.test/'], ['browser:c', undefined]], 'browsers are owned before they mount and reopen their page')
+    const browser = (id: string) => state().openTabs.find((tab) => tab.id === id)
+    assert.equal(browser('browser:b')?.browserTargetSessionId, 'one')
+    assert.equal(browser('browser:c')?.browserTargetSessionId, undefined, 'a target that did not come back is dropped')
+    assert.equal(JSON.stringify(toolWrites.at(-1)).includes('terminal:gone'), false, 'a tab of a deleted worktree is forgotten')
     return
   }
 
@@ -615,7 +655,7 @@ async function runFixture(name: string): Promise<void> {
         tabOrder: []
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     }
     store.setState({
       projects: [],
@@ -755,7 +795,7 @@ async function runFixture(name: string): Promise<void> {
         tabOrder: []
       }],
       chatOrder: [],
-      activeChatTabId: null
+      activeChatTabId: null, tools: []
     })
     scan.resolve([{
       cwd: meta.cwd,
@@ -1851,7 +1891,7 @@ async function runFixture(name: string): Promise<void> {
     })
     api.listChats = async () => [group(first), group(second)]
     api.getOpenProjectSessions = async () => ({
-      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c2'
+      currentCwd: null, workspaces: [], chatOrder: ['c1', 'c2'], activeChatTabId: 'c2', tools: []
     })
     api.createChat = async () => ({ sessionId: 'c3', cwd: '/chats/c3' })
     api.openSession = async () => ({ sessionId: 'c2', cwd: '/chats/c2', display: history('c2') })
@@ -2030,7 +2070,7 @@ async function runFixture(name: string): Promise<void> {
       // 'gone' is a chat whose directory the startup sweep took back; the order is also the chats half's
       // membership, so a chat left out of it was never open and gets no tab.
       chatOrder: ['chat-old', 'gone', 'chat-new'],
-      activeChatTabId: 'chat-new'
+      activeChatTabId: 'chat-new', tools: []
     })
     api.listProjects = async () => []
     api.openSession = async (path: string) => {
@@ -2057,7 +2097,7 @@ async function runFixture(name: string): Promise<void> {
     // Nothing restored to the chats half, and its home is still what comes up.
     store.setState({ openTabs: [], activeTabId: null, workspaceRestoreReady: false, restoredProjectCwd: null })
     api.getOpenProjectSessions = async () => ({
-      currentCwd: null, workspaces: [], chatOrder: ['gone'], activeChatTabId: 'gone'
+      currentCwd: null, workspaces: [], chatOrder: ['gone'], activeChatTabId: 'gone', tools: []
     })
     await state().initializeProjectWorkspaces(true)
     assert.equal(state().openTabs.length, 0)
@@ -2102,6 +2142,7 @@ if (process.argv[2] === '--session-store-fixture') {
     'late-session-names': 'a name found after the listing patches the tab, the project rows and the chats',
     'worktree-tab-remembered': 'a worktree returns to the changes tab it was left on',
     'worktree-restore-tabs': 'a restored worktree opens the tab it was left on',
+    'tool-tabs-restored': 'browser and terminal tabs come back in their strips without opening sessions',
     'project-draft-lifecycle': 'a leased project draft stays hidden and promotion reuses its runtime',
     'chat-draft-lifecycle': 'the chat home holds a chat out of the strip until the first send',
     'chat-draft-create-failure': 'a failed chat home create stays retryable in place',

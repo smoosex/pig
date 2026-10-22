@@ -7,6 +7,7 @@
  * half's elements exactly where they were.
  */
 import type { OpenTab } from './types'
+import type { OpenToolTabMembership } from '../../../../shared/api'
 
 /**
  * The tabs an order may be written for. A file tab is never part of what a worktree remembers across
@@ -14,7 +15,16 @@ import type { OpenTab } from './types'
  * back at the tail later, where the restore appends it.
  */
 export function persistableIds(tabs: OpenTab[]): string[] {
-  return tabs.filter((tab) => tab.kind !== 'file' && tab.kind !== 'browser' && tab.kind !== 'terminal').map((tab) => tab.id)
+  return tabs.filter((tab) => tab.kind !== 'file').map((tab) => tab.id)
+}
+
+/** Browser and terminal tabs come back after a restart; main records which are open and where. */
+export function toolTabMemberships(tabs: OpenTab[]): OpenToolTabMembership[] {
+  return tabs.flatMap((tab): OpenToolTabMembership[] => {
+    if (tab.kind === 'browser') return [{ id: tab.id, kind: 'browser', cwd: tab.cwd, targetSessionId: tab.browserTargetSessionId ?? null }]
+    if (tab.kind === 'terminal') return [{ id: tab.id, kind: 'terminal', cwd: tab.cwd }]
+    return []
+  })
 }
 
 /** Chat browsers and terminals have no worktree; real chat sessions keep their own storage cwd. */

@@ -120,7 +120,8 @@ export interface BrowserCookieClearResult {
 
 /** Only the Pig UI can create/control these panes; page guests never receive this API. */
 export interface BrowserApi {
-  create(browserId: string): Promise<BrowserState>
+  /** `url` is a restored tab's saved page, loaded once the pane is first shown. */
+  create(browserId: string, url?: string): Promise<BrowserState>
   getState(browserId: string): Promise<BrowserState>
   navigate(browserId: string, url: string): Promise<void>
   back(browserId: string): Promise<void>
