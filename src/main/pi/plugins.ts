@@ -29,6 +29,7 @@ interface Registry {
   subagentScopes: PluginScope[]
   browserScopes: PluginScope[]
   terminalScopes: PluginScope[]
+  personaScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
 
@@ -51,6 +52,9 @@ const browserPath = () => app.isPackaged
 const terminalPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-terminal', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-terminal', 'index.ts')
+const personaPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
+  : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
 const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-web-access', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
@@ -70,7 +74,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], installed: [] }
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], personaScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -105,6 +109,7 @@ async function readRegistry(): Promise<Registry> {
     subagentScopes: 'subagentScopes' in value ? parseScopes(value.subagentScopes) : defaults.subagentScopes,
     browserScopes: 'browserScopes' in value ? parseScopes(value.browserScopes) : defaults.browserScopes,
     terminalScopes: 'terminalScopes' in value ? parseScopes(value.terminalScopes) : defaults.terminalScopes,
+    personaScopes: 'personaScopes' in value ? parseScopes(value.personaScopes) : defaults.personaScopes,
     installed
   }
 }
@@ -180,7 +185,8 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' },
     { scopes: registry.subagentScopes, path: subagentPath(), name: 'subagent' },
     { scopes: registry.browserScopes, path: browserPath(), name: 'browser' },
-    { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' }
+    { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' },
+    { scopes: registry.personaScopes, path: personaPath(), name: 'persona' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
@@ -198,9 +204,9 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
 }
 
 /** Subagents inherit the parent's plugins, minus memory (not a user conversation), spawn itself (no recursion)
- * and browser/terminal controls (their tabs belong to the parent's window and session). */
+ * persona (user context and global mood are for human conversations), and browser/terminal controls. */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath()].map((path) => resolve(path)))
+  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), personaPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -253,7 +259,8 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(webAccessPath()), { kind: 'pig', id: 'pi-web-access', name: 'Web Access' }],
     [resolve(subagentPath()), { kind: 'pig', id: 'pig-subagent', name: 'Subagents' }],
     [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }],
-    [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }]
+    [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
+    [resolve(personaPath()), { kind: 'pig', id: 'pi-persona', name: 'Persona' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
   for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
@@ -319,6 +326,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pig-terminal', name: 'Terminal', source: 'Pig built-in',
     kind: 'system', scopes: registry.terminalScopes, available: existsSync(terminalPath()),
     ...(!existsSync(terminalPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pi-persona', name: 'Persona', source: 'Pig built-in',
+    kind: 'system', scopes: registry.personaScopes, available: existsSync(personaPath()),
+    ...(!existsSync(personaPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -380,6 +391,9 @@ export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void
     } else if (id === 'pig-terminal') {
       if (addsScope(registry.terminalScopes) && !existsSync(terminalPath())) throw new Error('Bundled extension is missing')
       registry.terminalScopes = next
+    } else if (id === 'pi-persona') {
+      if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
+      registry.personaScopes = next
     } else {
       const plugin = registry.installed.find((item) => item.id === id)
       if (!plugin) throw new Error('Plugin not found')

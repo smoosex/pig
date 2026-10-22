@@ -96,6 +96,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onShortcutRequested(() => {})()
   api.browser.onState(() => {})()
   api.browser.onSelection(() => {})()
+  await api.persona.get()
+  await api.persona.saveFile({ name: 'SOUL.md', content: 'persona', revision: null })
+  await api.persona.setEmotion('trust', 0.6)
+  await api.persona.setAutomatic(false)
   await api.terminal.create('terminal:one', '/repo', 80, 24)
   await api.terminal.create('terminal:two', null, 100, 30)
   await api.terminal.write('terminal:one', 'ls\r')
@@ -167,6 +171,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
     { channel: 'browser:close', args: ['session-1'] },
+    { channel: 'persona:get', args: [] },
+    { channel: 'persona:save-file', args: [{ name: 'SOUL.md', content: 'persona', revision: null }] },
+    { channel: 'persona:set-emotion', args: ['trust', 0.6] },
+    { channel: 'persona:set-automatic', args: [false] },
     { channel: 'terminal:create', args: ['terminal:one', '/repo', 80, 24] },
     { channel: 'terminal:create', args: ['terminal:two', null, 100, 30] },
     { channel: 'terminal:write', args: ['terminal:one', 'ls\r'] },

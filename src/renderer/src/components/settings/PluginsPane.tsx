@@ -11,11 +11,13 @@ import { Switch } from '../ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { DefaultModelPicker } from './DefaultModelPicker'
 import { WebSearchSettings } from './WebSearchSettings'
 import { SubagentSettings } from './SubagentSettings'
+import { PersonaSettings } from './PersonaSettings'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
@@ -42,6 +44,9 @@ export function PluginsPane() {
   const [error, setError] = useState<string | null>(null)
   const [toRemove, setToRemove] = useState<PluginInfo | null>(null)
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
+  const [personaBusy, setPersonaBusy] = useState(false)
+  const [personaDirty, setPersonaDirty] = useState(false)
+  const [discardPersona, setDiscardPersona] = useState(false)
   const [pluginConfig, setPluginConfig] = useState<Record<string, string | number | boolean>>({})
   const [pluginDraft, setPluginDraft] = useState<Record<string, string>>({})
   const [pluginConfigError, setPluginConfigError] = useState<string | null>(null)
@@ -229,7 +234,7 @@ export function PluginsPane() {
             </DropdownMenuGroup></DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.id === 'pig-subagent' || plugin.settings ? (
+        {plugin.id === 'observational-memory' || plugin.id === 'pi-web-access' || plugin.id === 'pig-subagent' || plugin.id === 'pi-persona' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
@@ -271,8 +276,17 @@ export function PluginsPane() {
           <Button size="sm" disabled={installing || !source.trim()} onClick={() => void installPlugin()}><Plus data-icon="inline-start" />{installing ? t('plugins.working') : t('plugins.install')}</Button>
         </div>
       </div>
-      <Dialog open={!!selectedPluginId} onOpenChange={(open) => { if (!open) setSelectedPluginId(null) }}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl" onOpenAutoFocus={(event) => event.preventDefault()}>
+      <Dialog open={!!selectedPluginId} onOpenChange={(open) => {
+        if (open || (selectedPluginId === 'pi-persona' && personaBusy)) return
+        if (selectedPluginId === 'pi-persona' && personaDirty) {
+          setDiscardPersona(true)
+          return
+        }
+        setSelectedPluginId(null)
+        setPersonaBusy(false)
+        setPersonaDirty(false)
+      }}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl" showCloseButton={!(selectedPluginId === 'pi-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
           </DialogHeader>
@@ -388,8 +402,25 @@ export function PluginsPane() {
       </div> : null}
       {selectedPluginId === 'pi-web-access' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
       {selectedPluginId === 'pig-subagent' ? <SubagentSettings onClose={() => setSelectedPluginId(null)} /> : null}
+      {selectedPluginId === 'pi-persona' ? <PersonaSettings onBusyChange={setPersonaBusy} onDirtyChange={setPersonaDirty} /> : null}
         </DialogContent>
       </Dialog>
+      <AlertDialog open={discardPersona} onOpenChange={setDiscardPersona}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('persona.discardTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('persona.discardHint')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('persona.keepEditing')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setSelectedPluginId(null)
+              setPersonaDirty(false)
+              setPersonaBusy(false)
+            }}>{t('persona.discard')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={!!toRemove} onOpenChange={(open) => { if (!open) setToRemove(null) }}>
         <DialogContent><DialogHeader><DialogTitle>{t('plugins.remove')} {toRemove?.name}</DialogTitle><DialogDescription>{toRemove?.source}</DialogDescription></DialogHeader>
           <DialogFooter>

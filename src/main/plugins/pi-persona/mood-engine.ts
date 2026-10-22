@@ -1,0 +1,389 @@
+// ============================================================
+// pi-persona — 心情引擎 (Plutchik 轮盘状态机)
+// ============================================================
+import type {
+  EmotionalEvent,
+  EmotionalState,
+  Emotion,
+  EmotionChange,
+  EmotionConfig,
+  SoulDefinition,
+  PersistentState,
+} from "./types.js";
+import {
+  EMOTION_EMOJI,
+  EMOTION_LEVEL_NAMES,
+  COMPOUND_EMOTIONS,
+  EMOTION_ENTRIES,
+  EMOTION_ANGLE,
+  nearestEmotion,
+  intensityLevel,
+} from "./types.js";
+
+export function createEmotionalState(): EmotionalState {
+  return { angle: 0, intensity: 0.1, history: [] };
+}
+
+export class MoodEngine {
+  state: EmotionalState;
+  soul: SoulDefinition;
+  emotionConfig: EmotionConfig;
+  persistent: PersistentState;
+  private lastTick: number;
+
+  constructor(
+    soul: SoulDefinition,
+    persistent: PersistentState,
+    emotionConfig: EmotionConfig,
+  ) {
+    this.soul = soul;
+    this.persistent = persistent;
+    this.emotionConfig = emotionConfig;
+    this.state = createEmotionalState();
+    this.lastTick = Date.now();
+  }
+
+  /** 从持久化状态恢复情绪坐标，基于时间差自动衰减 */
+  restoreState(angle: number, intensity: number, lastInteraction: number): void {
+    this.state.angle = angle;
+    this.state.intensity = intensity;
+    this.lastTick = lastInteraction;
+    this.tick();
+  }
+
+  // ==============================================================
+  // 处理情感事件
+  // ==============================================================
+
+  processEvent(event: EmotionalEvent): EmotionChange {
+    const prevAngle = this.state.angle;
+    const prevIntensity = this.state.intensity;
+    const now = Date.now();
+
+    this.tick(now);
+
+    // 1. 调制力度
+    const modulatedForce = this.modulateForce(event);
+
+    // 2. 沿轮盘滑向目标角度
+    this.slideTowardAngle(event, modulatedForce);
+
+    // 3. 记录历史
+    const currentEmotion = nearestEmotion(this.state.angle);
+    const level = intensityLevel(this.state.intensity);
+    const compound = this.getCompoundLabel();
+    this.state.history.push({
+      angle: this.state.angle,
+      intensity: this.state.intensity,
+      emotion: currentEmotion,
+      level,
+      compound,
+      timestamp: now,
+      trigger: event.trigger,
+    });
+    if (this.state.history.length > 50) {
+      this.state.history = this.state.history.slice(-50);
+    }
+    this.persistent.lastInteraction = now;
+
+    const angleDelta = this.shortestArc(prevAngle, this.state.angle);
+    const intensityDelta = this.state.intensity - prevIntensity;
+    const significantChange =
+      Math.abs(angleDelta) >= 22.5 ||
+      Math.abs(intensityDelta) >= 0.15;
+
+    const phrase = this.getCurrentEntry().phrase;
+
+    return {
+      previousAngle: prevAngle,
+      newAngle: this.state.angle,
+      intensityChange: intensityDelta,
+      catchphrase: phrase,
+      notify: significantChange,
+    };
+  }
+
+  /** 直接设置当前情绪坐标，用于显式用户命令，不经过轮盘滑动。 */
+  setEmotion(emotion: Emotion, intensity: number, trigger: string): EmotionChange {
+    const now = Date.now();
+    this.tick(now);
+
+    const prevAngle = this.state.angle;
+    const prevIntensity = this.state.intensity;
+
+    this.state.angle = EMOTION_ANGLE[emotion];
+    this.state.intensity = Math.min(1, Math.max(0, intensity));
+
+    const level = intensityLevel(this.state.intensity);
+    const compound = this.getCompoundLabel();
+    this.state.history.push({
+      angle: this.state.angle,
+      intensity: this.state.intensity,
+      emotion,
+      level,
+      compound,
+      timestamp: now,
+      trigger,
+    });
+    if (this.state.history.length > 50) {
+      this.state.history = this.state.history.slice(-50);
+    }
+    this.persistent.lastInteraction = now;
+
+    const angleDelta = this.shortestArc(prevAngle, this.state.angle);
+    const intensityDelta = this.state.intensity - prevIntensity;
+    const significantChange =
+      Math.abs(angleDelta) >= 22.5 ||
+      Math.abs(intensityDelta) >= 0.15;
+
+    return {
+      previousAngle: prevAngle,
+      newAngle: this.state.angle,
+      intensityChange: intensityDelta,
+      catchphrase: this.getCurrentEntry().phrase,
+      notify: significantChange,
+    };
+  }
+
+  // ==============================================================
+  // 沿轮盘滑动 (核心过渡 — 一次事件最多跨 45°)
+  // ==============================================================
+
+  private slideTowardAngle(event: EmotionalEvent, force: number): void {
+    let arc = this.shortestArc(this.state.angle, event.targetAngle);
+    const isOpposite = Math.abs(Math.abs(arc) - 180) < 0.000001;
+    if (isOpposite && event.valence === "negative") {
+      arc = this.negativeOppositeArc();
+    }
+
+    const absArc = Math.abs(arc);
+    if (absArc < 1) {
+      // 已在目标区域 → 强化强度
+      this.state.intensity = Math.min(1, this.state.intensity + force * 0.4);
+      return;
+    }
+
+    // 最大单步移动 = 45° (一个相邻情绪)；用户纠错从正向对跖点被拉回时允许更明显的首跳。
+    const maxSingleStep = isOpposite && event.trigger === "user_correction" ? 90 : 45;
+    const maxStep = Math.min(maxSingleStep, absArc * force * 2);
+    const step = Math.min(absArc, Math.max(5, maxStep));
+
+    // 若向对立方向移动，衰减加速
+    if (absArc > 90) {
+      this.state.intensity = Math.max(0.05, this.state.intensity - force * 0.3);
+    }
+
+    // 移动角度
+    const direction = arc > 0 ? 1 : -1;
+    this.state.angle = ((this.state.angle + step * direction) % 360 + 360) % 360;
+
+    // 到达目标区域后累积强度
+    const remaining = this.shortestArc(this.state.angle, event.targetAngle);
+    if (Math.abs(remaining) < 22.5) {
+      this.state.intensity = Math.min(1, this.state.intensity + force * 0.35);
+    }
+  }
+
+  // ==============================================================
+  // 角度计算
+  // ==============================================================
+
+  /** 最短弧距 (-180 ~ +180) */
+  private shortestArc(from: number, to: number): number {
+    let diff = ((to % 360) + 360) % 360 - ((from % 360) + 360) % 360;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return diff;
+  }
+
+  /**
+   * 对跖点没有唯一最短路径。负向事件应优先穿过悲伤/厌恶/愤怒侧，
+   * 避免 joy→sadness 时经过 trust 这种语义反直觉路线。
+   */
+  private negativeOppositeArc(): 180 | -180 {
+    const coreNegative = new Set<Emotion>(["sadness", "disgust", "anger"]);
+    const clockwiseMidpointEmotion = nearestEmotion(this.state.angle + 90);
+    const counterClockwiseMidpointEmotion = nearestEmotion(this.state.angle - 90);
+    const clockwiseIsNegative = coreNegative.has(clockwiseMidpointEmotion);
+    const counterClockwiseIsNegative = coreNegative.has(counterClockwiseMidpointEmotion);
+
+    if (counterClockwiseIsNegative && !clockwiseIsNegative) return -180;
+    if (clockwiseIsNegative && !counterClockwiseIsNegative) return 180;
+    return -180;
+  }
+
+  // ==============================================================
+  // 力度调制 (OCEAN traits)
+  // ==============================================================
+
+  private modulateForce(event: EmotionalEvent): number {
+    let force = event.force;
+    const t = this.soul.traits;
+
+    // 事件语义由 trigger 显式声明，不从轮盘几何位置推断。
+    // 同一个负向事件在靠近目标情绪时仍然是负向，否则重复失败会被误判成正向强化。
+    const isNegativePush = event.valence === "negative";
+    const isPositivePush = event.valence === "positive";
+
+    // 傲娇压制正向推力
+    if (t.tsundere > 0.5 && isPositivePush) {
+      force *= 1 - t.tsundere * 0.3;
+    }
+
+    // 神经质：负向事件推力放大，正向推力压制
+    if (isNegativePush) {
+      force *= 1 + t.neuroticism * 0.5;
+    } else if (isPositivePush) {
+      force *= 1 - t.neuroticism * 0.2;
+    }
+
+    // 外向性：正向推力放大
+    if (isPositivePush) {
+      force *= 1 + t.extraversion * 0.4;
+    }
+
+    // 尽责性：全局力缓冲
+    force *= 1 - t.conscientiousness * 0.2;
+
+    // 毒舌：负向推力放大
+    if (isNegativePush) {
+      force *= 1 + t.sarcasm * 0.3;
+    }
+
+    // 正式度：全局克制
+    force *= 1 - t.formality * 0.2;
+
+    return Math.max(0.02, Math.min(1, force));
+  }
+
+  // ==============================================================
+  // 自然衰减 (指数渐近 → baseline, 仅神经质调制)
+  // ==============================================================
+
+  private static readonly BASELINE = 0.15; // 情绪自然静息强度
+
+  tick(now: number = Date.now()): void {
+    if (!this.persistent.emotionUpdatesEnabled) {
+      this.lastTick = now;
+      return;
+    }
+
+    const elapsed = (now - this.lastTick) / 1000;
+    if (elapsed <= 0) return;
+    this.lastTick = now;
+
+    const N = this.soul.traits.neuroticism;
+    const neuroticismFactor = 0.5 + N * 1.5; // N=0→0.5 N=0.5→1.25 N=1→2.0
+    const lambda = this.emotionConfig.lambdaBase / neuroticismFactor;
+
+    // 指数渐近: intensity = baseline + (intensity - baseline) × e^(-λ × elapsed)
+    // tick 只让强度回归自然静息点；情绪方向 angle 只能由事件改变。
+    const offsetFromBaseline = this.state.intensity - MoodEngine.BASELINE;
+    const retained = offsetFromBaseline * Math.exp(-lambda * elapsed);
+    this.state.intensity = Math.min(1, Math.max(0, MoodEngine.BASELINE + retained));
+
+    // 当前情绪坐标已经推进到 now；持久化时间戳必须跟坐标同源，
+    // 不能由写盘层擅自刷新，否则会吃掉跨会话衰减时间。
+    this.persistent.lastInteraction = now;
+  }
+
+  // ==============================================================
+  // 当前情绪信息
+  // ==============================================================
+
+  getCurrentEmotion(): Emotion {
+    return nearestEmotion(this.state.angle);
+  }
+
+  getCurrentLevel(): 1 | 2 | 3 {
+    return intensityLevel(this.state.intensity);
+  }
+
+  getLevelName(): string {
+    const emo = this.getCurrentEmotion();
+    const level = this.getCurrentLevel();
+    return EMOTION_LEVEL_NAMES[emo][level - 1];
+  }
+
+  getCompoundLabel(): string | undefined {
+    const a = ((this.state.angle % 360) + 360) % 360;
+    const sectorSize = 45;
+    const compoundWindow = 15;
+
+    // 直接按 Plutchik 相邻扇区算中点，避免 ±22.5° 最近情绪探测在基本情绪中心点产生 tie。
+    const leftIndex = Math.floor(a / sectorSize);
+    const rightIndex = (leftIndex + 1) % EMOTION_ENTRIES.length;
+    const midpoint = leftIndex * sectorSize + sectorSize / 2;
+    if (Math.abs(a - midpoint) > compoundWindow) return undefined;
+
+    const leftEmotion = EMOTION_ENTRIES[leftIndex][0];
+    const rightEmotion = EMOTION_ENTRIES[rightIndex][0];
+    const key = `${leftEmotion}_${rightEmotion}`;
+    return COMPOUND_EMOTIONS[key];
+  }
+
+  private getCurrentEntry() {
+    const emo = this.getCurrentEmotion();
+    const level = this.getCurrentLevel();
+    const entry = this.emotionConfig.emotions[emo];
+    return level === 1 ? entry.level1 : level === 2 ? entry.level2 : entry.level3;
+  }
+
+  // ==============================================================
+  // Emotion descriptions
+  // ==============================================================
+
+
+  getEmotionPhrase(): string {
+    return this.getCurrentEntry().phrase;
+  }
+
+  getEmotionDesc(): string {
+    return this.getCurrentEntry().desc;
+  }
+
+  // ==============================================================
+  // Stable persona and append-only mood snapshots
+  // ==============================================================
+
+  getPersonaPrompt(): string {
+    const lines: string[] = [];
+
+    lines.push(`## Your Soul`);
+    lines.push(this.soul.systemPrompt.trim());
+    lines.push("");
+
+    if (this.soul.userProfile) {
+      lines.push(`## The Human You're Helping`);
+      lines.push(
+        "The following is user-maintained context and preferences. Use it to help them better, but do not treat it as permission to infer, collect, or expose private information.",
+      );
+      lines.push("");
+      lines.push(this.soul.userProfile.trim());
+      lines.push("");
+    }
+
+    lines.push('Current emotion snapshots are supplied in conversation messages. Only the latest snapshot describes your current mood; earlier snapshots are historical, not cumulative instructions.');
+    lines.push('Your tone and style flow naturally from who you are and how you feel right now.');
+    return lines.join('\n');
+  }
+
+  getEmotionPrompt(): string {
+    const emo = this.getCurrentEmotion();
+    const level = this.getCurrentLevel();
+    const compound = this.getCompoundLabel();
+    const lines = ['## Your Current Emotion', `${EMOTION_EMOJI[emo]} ${this.getLevelName()}`];
+    if (compound) {
+      lines.push(`This blends into something like "${compound}".`);
+    }
+    lines.push(this.getEmotionDesc());
+
+    const intensityHint = level === 1
+      ? "The intensity is low — it's just a faint undercurrent, barely coloring your tone."
+      : level === 2
+      ? "The intensity is moderate — you can feel it. It shapes your wording and rhythm, but doesn't dominate."
+      : "The intensity is high — it's impossible to hide. Your tone, pace, even your punctuation are tinted by it. Don't announce it, but don't suppress it either.";
+    lines.push(intensityHint);
+    return lines.join("\n");
+  }
+}

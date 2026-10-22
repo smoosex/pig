@@ -4,6 +4,20 @@
  * Placeholders are `{name}` and are filled by `translate`.
  */
 export const zh = {
+  persona: {
+    title: '人格',
+    dirtyHint: '有未保存的文件草稿，请先逐个保存。关闭前会询问是否放弃草稿。',
+    error: '操作失败', errorHint: '草稿已保留。若文件版本冲突，请先复制草稿到别处，再重新打开面板读取最新文件并合并。',
+    loading: '正在读取人格…', mood: '当前心情', moodDetails: '点击查看心情详情', moodDescription: '心情描述', moodPhrase: '口头禅', automatic: '自动情绪', automaticHint: '允许 Agent 自动调整所有会话共用的心情。',
+    history: '最近心情记录', noHistory: '暂无心情记录', setMood: '调整心情', intensity: '强度',
+    fileInfo: '{file} 说明',
+    soulHint: '人格正文：性格、语气和行为方式，作为系统提示词注入所有会话。正文为空时停用人格。',
+    identifyHint: '在开头的 --- 之间填写 YAML：name、emoji、description；性格参数 openness、conscientiousness、extraversion、agreeableness、neuroticism、formality、tsundere、sarcasm 均为 0–1。',
+    userHint: '关于你的信息，例如称呼、偏好和习惯，作为用户上下文注入。可留空。',
+    unsaved: '有未保存的更改', saved: '当前文件无更改', working: '处理中…', save: '保存 {file}',
+    discardTitle: '放弃未保存的人格更改？', discardHint: '三个文件中尚未保存的草稿将丢失。', keepEditing: '继续编辑', discard: '放弃更改',
+    emotions: { joy: '喜悦', trust: '信任', fear: '恐惧', surprise: '惊讶', sadness: '悲伤', disgust: '厌恶', anger: '愤怒', anticipation: '期待' }
+  },
   skills: {
     title: 'Skills', description: '管理 Skills',
     installed: '已安装', discover: '发现', add: '添加 Skill', refresh: '重新扫描',

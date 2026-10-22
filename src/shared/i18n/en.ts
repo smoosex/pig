@@ -2,6 +2,20 @@ import type { Messages } from './zh'
 
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
+  persona: {
+    title: 'Persona',
+    dirtyHint: 'Unsaved file drafts: save each file first. Closing asks before discarding drafts.',
+    error: 'Operation failed', errorHint: 'Your drafts are preserved. For a revision conflict, copy your draft elsewhere, then reopen this panel to load the latest files and merge.',
+    loading: 'Loading persona…', mood: 'Current mood', moodDetails: 'Click to view mood details', moodDescription: 'Mood description', moodPhrase: 'Catchphrase', automatic: 'Automatic emotions', automaticHint: 'Allow the agent to adjust the mood shared by all conversations.',
+    history: 'Recent mood history', noHistory: 'No mood history yet', setMood: 'Adjust mood', intensity: 'Intensity',
+    fileInfo: 'About {file}',
+    soulHint: 'The persona body: personality, tone and behaviour, injected into every conversation as the system prompt. An empty body disables the persona.',
+    identifyHint: 'Use YAML between the opening --- lines: name, emoji, description; openness, conscientiousness, extraversion, agreeableness, neuroticism, formality, tsundere and sarcasm range from 0 to 1.',
+    userHint: 'Information about you, such as how to address you, preferences and habits, injected as user context. Optional.',
+    unsaved: 'Unsaved changes', saved: 'No changes in this file', working: 'Working…', save: 'Save {file}',
+    discardTitle: 'Discard unsaved persona changes?', discardHint: 'Unsaved drafts in all three files will be lost.', keepEditing: 'Keep editing', discard: 'Discard changes',
+    emotions: { joy: 'Joy', trust: 'Trust', fear: 'Fear', surprise: 'Surprise', sadness: 'Sadness', disgust: 'Disgust', anger: 'Anger', anticipation: 'Anticipation' }
+  },
   skills: {
     title: 'Skills', description: 'Manage skills',
     installed: 'Installed', discover: 'Discover', add: 'Add skill', refresh: 'Rescan',

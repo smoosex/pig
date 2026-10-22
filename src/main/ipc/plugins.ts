@@ -21,6 +21,7 @@ import { testWebSearchProvider } from '../pi/web-search-test'
 import { memoryStatus, memoryView } from '../plugins/observational-memory/details'
 import type { Entry } from '../plugins/observational-memory/session-ledger'
 import { replyReviewUI } from '../pi/system-plugin-ui'
+import { registerPersonaIpc } from './persona'
 
 function changed(): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -29,6 +30,7 @@ function changed(): void {
 }
 
 export function registerPluginIpc(): void {
+  registerPersonaIpc()
   ipcMain.handle('plugins:list', () => listPlugins())
   ipcMain.handle('plugins:pick-path', async (event) => {
     const result = await dialog.showOpenDialog(windowForEvent(event), {

@@ -879,6 +879,7 @@ export type * from './terminal'
 
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
   browser: import('./browser').BrowserApi
+  persona: import('./persona').PersonaApi
   terminal: import('./terminal').TerminalApi
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>

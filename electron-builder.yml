@@ -55,6 +55,11 @@ extraResources:
     filter:
       - index.js
       - LICENSE
+  - from: out/system-plugins/pi-persona
+    to: system-plugins/pi-persona
+    filter:
+      - index.js
+      - LICENSE
 asarUnpack:
   - resources/**
   # The PTY host loads node-pty's native module and execs its spawn-helper from disk.

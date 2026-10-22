@@ -2,6 +2,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
 import { reviewSettingsSchema } from '../src/main/plugins/pi-review/settings'
+import { PERSONA_FILES, type PersonaSnapshot } from '../src/shared/persona'
 
 function deferred() {
   let resolve!: () => void
@@ -24,10 +25,17 @@ async function fixture(): Promise<void> {
   let plugins: PluginInfo[] = [
     { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
     { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
+    { id: 'pi-persona', kind: 'system', name: 'Persona', source: 'Pig built-in', scopes: ['project', 'chat'], available: true },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
   let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
+  const persona: PersonaSnapshot = {
+    active: false,
+    files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
+    mood: { emotion: 'joy', intensity: 0.15, angle: 0, level: 1, description: '', phrase: '', automatic: true, history: [] }
+  }
   Object.assign(window, { api: {
+    persona: { get: async () => persona },
     listPlugins: async () => plugins,
     setPluginScopes: async (id: string, scopes: PluginScope[]) => {
       if (rejectScopeChange) throw new Error('Scope save failed')
@@ -68,12 +76,13 @@ async function fixture(): Promise<void> {
     { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: false }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
+  const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
   const flush = async () => { await act(async () => { await new Promise((done) => setTimeout(done, 15)) }) }
   try {
-    await act(async () => { root.render(h(PluginsPane)) })
+    await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
     await flush()
     assert.equal(document.querySelector('[aria-label="观察阈值（token）"]'), null, 'settings are hidden until configured')
     const open = document.querySelector<HTMLButtonElement>('[aria-label="配置 Observational Memory"]')
@@ -270,6 +279,27 @@ async function fixture(): Promise<void> {
     await act(async () => { saveReview().click() })
     await flush()
     assert.deepEqual(reviewPatches[1], { provider: null, modelId: null }, 'model inheritance does not clear explicit thinking effort')
+
+    await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="配置 Persona"]')!.click() })
+    await flush()
+    const textarea = document.querySelector('textarea')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Keep this persona draft')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const closePersona = () => document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!
+    await act(async () => { closePersona().click() })
+    await flush()
+    assert.ok(document.querySelector('[role="alertdialog"]'), 'closing dirty persona files requires confirmation')
+    const action = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === label)!
+    await act(async () => { action('继续编辑').click() })
+    await flush()
+    assert.equal(document.querySelector('textarea')?.value, 'Keep this persona draft')
+    await act(async () => { closePersona().click() })
+    await flush()
+    await act(async () => { action('放弃更改').click() })
+    await flush()
+    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null, 'explicit discard closes the editor')
   } finally {
     await act(async () => { root.unmount() })
     host.remove()

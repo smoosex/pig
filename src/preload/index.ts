@@ -54,6 +54,12 @@ const api: SessionApi = {
       return () => ipcRenderer.off('browser:selection', handler)
     }
   },
+  persona: {
+    get: () => ipcRenderer.invoke('persona:get'),
+    saveFile: (document) => ipcRenderer.invoke('persona:save-file', document),
+    setEmotion: (emotion, intensity) => ipcRenderer.invoke('persona:set-emotion', emotion, intensity),
+    setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled)
+  },
   terminal: {
     create: (terminalId, cwd, cols, rows) => ipcRenderer.invoke('terminal:create', terminalId, cwd, cols, rows),
     write: (terminalId, data, binary) => binary === undefined
