@@ -294,6 +294,7 @@ async function fixture(): Promise<void> {
     const builderConfig = await readFile(join(process.cwd(), 'electron-builder.yml'), 'utf8')
     assert.match(builderConfig, /to: system-plugins\/pig-ui\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal-host\.ts\s+to: system-plugins\/pig-terminal-host\.ts/)
+    assert.match(builderConfig, /from: src\/main\/plugins\/pig-servers\.ts\s+to: system-plugins\/pig-servers\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal\s+to: system-plugins\/pig-terminal\s+filter:\s+- '\*\*\/\*\.ts'/)
     const packagedPaths = [join(packagedPlugins, 'observational-memory', 'index.ts'), join(packagedPlugins, 'pi-review', 'index.ts')]
     if (existsSync(personaBundle)) {

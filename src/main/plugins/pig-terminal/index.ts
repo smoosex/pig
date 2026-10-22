@@ -2,6 +2,7 @@
 import { Type } from '@earendil-works/pi-ai'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { terminalAgentHost, type TerminalToolResult } from '../pig-terminal-host.js'
+import { listPigServer } from '../pig-servers.js'
 
 function host() {
   const found = terminalAgentHost()
@@ -35,6 +36,7 @@ const shared = {
 
 export default function terminalExtension(pi: ExtensionAPI) {
   const sessionId = (ctx: { sessionManager: { getSessionId(): string } }) => ctx.sessionManager.getSessionId()
+  listPigServer(pi, shared.namespace)
 
   pi.registerTool(defineTool({
     ...shared, name: 'terminal_tabs', label: 'Terminal tabs',

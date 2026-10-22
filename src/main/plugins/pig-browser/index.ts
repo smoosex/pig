@@ -7,6 +7,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { browserAgentHost, type BrowserToolResult } from "../pig-browser-host.js";
+import { listPigServer } from "../pig-servers.js";
 
 function host() {
 	const found = browserAgentHost();
@@ -47,13 +48,13 @@ const shared = { exposure: "deferred" as const, namespace: BROWSER };
 
 export default function browserExtension(pi: ExtensionAPI) {
 	const sessionId = (ctx: { sessionManager: { getSessionId(): string } }) => ctx.sessionManager.getSessionId();
+	listPigServer(pi, BROWSER);
 
 	pi.registerTool(defineTool({
 		...shared,
 		name: "browser_tabs",
 		label: "Browser tabs",
 		description: "List the built-in browser tabs of this Pig window with their URL, title and which session controls them. " + UNTRUSTED,
-		promptSnippet: "List built-in browser tabs",
 		parameters: Type.Object({}),
 		async execute(_id, _params, _signal, _onUpdate, ctx) {
 			return toolResult(await host().tabs(sessionId(ctx)));
@@ -65,7 +66,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_open",
 		label: "Open browser tab",
 		description: "Take control of a built-in browser tab for this session, optionally loading a URL; call it before the other browser tools. Without browserId a new background tab is opened. A session controls one tab at a time; opening another releases the previous one.",
-		promptSnippet: "Open or take over a built-in browser tab",
 		parameters: Type.Object({
 			browserId: Type.Optional(Type.String({ description: "Existing tab id from browser_tabs to take over" })),
 			url: Type.Optional(Type.String({ description: "HTTP(S) URL to load, e.g. http://localhost:3000" })),
@@ -80,7 +80,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_navigate",
 		label: "Navigate browser",
 		description: "Load an HTTP(S) URL in the browser tab this session controls and wait for it to finish loading (up to 30 s).",
-		promptSnippet: "Load a URL in the controlled browser tab",
 		parameters: Type.Object({ url: Type.String({ description: "HTTP(S) URL" }) }),
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			return toolResult(await host().navigate(sessionId(ctx), params.url, signal));
@@ -92,7 +91,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_history",
 		label: "Browser history",
 		description: "Go back, go forward or reload in the browser tab this session controls.",
-		promptSnippet: "Back, forward or reload the controlled browser tab",
 		parameters: Type.Object({
 			action: Type.Union([Type.Literal("back"), Type.Literal("forward"), Type.Literal("reload")]),
 		}),
@@ -106,7 +104,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_snapshot",
 		label: "Browser snapshot",
 		description: "Read the controlled tab as an accessibility-style outline: headings, text, links, form fields and buttons with refs. Password values are hidden. Prefer it over browser_screenshot. " + UNTRUSTED,
-		promptSnippet: "Read the controlled browser tab as a text outline",
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal, _onUpdate, ctx) {
 			return toolResult(await host().snapshot(sessionId(ctx), signal));
@@ -118,7 +115,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_screenshot",
 		label: "Browser screenshot",
 		description: "Capture the visible viewport of the controlled browser tab as an image.",
-		promptSnippet: "Screenshot the controlled browser tab",
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal, _onUpdate, ctx) {
 			return toolResult(await host().screenshot(sessionId(ctx), signal));
@@ -130,7 +126,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_console",
 		label: "Browser console",
 		description: "Read the latest console messages (up to 50) of the page in the controlled tab since it loaded. " + UNTRUSTED,
-		promptSnippet: "Read console messages of the controlled browser tab",
 		parameters: Type.Object({
 			errorsOnly: Type.Optional(Type.Boolean({ description: "Only warnings and errors (default false)" })),
 		}),
@@ -144,7 +139,6 @@ export default function browserExtension(pi: ExtensionAPI) {
 		name: "browser_annotations",
 		label: "Browser annotations",
 		description: "Read the element annotations the user placed on the controlled browser tab: selector, element details and the user's comment. " + UNTRUSTED,
-		promptSnippet: "Read the user's annotations on the controlled browser tab",
 		parameters: Type.Object({}),
 		async execute(_id, _params, _signal, _onUpdate, ctx) {
 			return toolResult(await host().annotations(sessionId(ctx)));

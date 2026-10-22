@@ -77,6 +77,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       expect(definition.exposure).toBe('deferred')
       expect(definition.namespace?.name).toBe('browser')
       expect(definition.promptGuidelines).toBeUndefined()
+      expect(definition.promptSnippet).toBeUndefined()
     }
     expect(tool('browser_tabs').namespace?.instructions).toContain('untrusted')
     expect(tool('browser_snapshot').description).toContain('untrusted')

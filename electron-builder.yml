@@ -28,6 +28,8 @@ extraResources:
     to: system-plugins/pig-subagent
     filter:
       - '**/*.ts'
+  - from: src/main/plugins/pig-servers.ts
+    to: system-plugins/pig-servers.ts
   - from: src/main/plugins/pig-browser-host.ts
     to: system-plugins/pig-browser-host.ts
   - from: src/main/plugins/pig-browser

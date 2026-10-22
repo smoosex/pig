@@ -43,6 +43,7 @@ async function fixture() {
       expect(definition.exposure).toBe('deferred')
       expect(definition.namespace?.name).toBe('terminal')
       expect(definition.promptGuidelines).toBeUndefined()
+      expect(definition.promptSnippet).toBeUndefined()
     }
     expect(tool('terminal_read').namespace?.instructions).toContain('untrusted')
     registerTerminalAgentHost(undefined)
