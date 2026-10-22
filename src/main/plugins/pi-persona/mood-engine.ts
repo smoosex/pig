@@ -346,6 +346,12 @@ export class MoodEngine {
   // Stable persona and append-only mood snapshots
   // ==============================================================
 
+  /** Replaces Pi's default identity line; without a name Pi's own identity stays. */
+  getIdentityPrompt(): string | undefined {
+    if (!this.soul.name) return undefined;
+    return this.soul.description ? `You are ${this.soul.name}. ${this.soul.description}` : `You are ${this.soul.name}.`;
+  }
+
   getPersonaPrompt(): string {
     const lines: string[] = [];
 

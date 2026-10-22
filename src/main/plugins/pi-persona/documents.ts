@@ -20,7 +20,7 @@ export async function readDocuments(dir: string): Promise<PersonaDocument[]> {
 }
 
 export const DEFAULT_SOUL: SoulDefinition = {
-  name: 'Soul', emoji: '󰊠', description: 'User-defined persona',
+  emoji: '󰊠',
   traits: { ...DEFAULT_TRAITS }, systemPrompt: '',
 }
 
@@ -66,9 +66,9 @@ export function parseDocuments(files: PersonaDocument[]): SoulDefinition | null 
   if (!systemPrompt) return null
   const userProfile = parsed.get('USER.md')!.content.trim()
   return {
-    name: metadata.name as string ?? DEFAULT_SOUL.name,
+    ...(metadata.name !== undefined ? { name: (metadata.name as string).trim() } : {}),
     emoji: metadata.emoji as string ?? DEFAULT_SOUL.emoji,
-    description: metadata.description as string ?? DEFAULT_SOUL.description,
+    ...(metadata.description !== undefined ? { description: (metadata.description as string).trim() } : {}),
     traits, systemPrompt, ...(userProfile ? { userProfile } : {}),
   }
 }

@@ -50,7 +50,11 @@ export default function personaExtension(pi: ExtensionAPI): void {
       if (!active) { reset(); return }
       // A section, not a returned systemPrompt: a forced prompt is never recorded, so exports
       // would miss it, and it collapses every section patch into one uncached head.
-      event.systemPromptOptions.sections[PERSONA_SECTION] = engine.getPersonaPrompt()
+      const { sections } = event.systemPromptOptions
+      sections[PERSONA_SECTION] = engine.getPersonaPrompt()
+      // `preamble` replaces Pi's identity line through Pig's SDK patch; tools, rules and docs stay.
+      const identity = engine.getIdentityPrompt()
+      if (identity) sections.preamble = identity
       return { message: moodMessage(engine, ctx) }
     }
     if (event.messageType !== 'user' || !pendingImplicitAcceptance) return readPersona(inject)

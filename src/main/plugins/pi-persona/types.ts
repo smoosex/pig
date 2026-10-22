@@ -276,9 +276,9 @@ export const DEFAULT_TRAITS: SoulTraits = {
 };
 
 export interface SoulDefinition {
-  name: string;
+  name?: string;
   emoji: string;
-  description: string;
+  description?: string;
   traits: SoulTraits;
   systemPrompt: string;
   userProfile?: string;

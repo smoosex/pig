@@ -37,7 +37,7 @@ function runtime(session = SessionManager.inMemory()) {
     const result = await hooks.get(name)!({ ...event as object, systemPromptOptions: { sections } }, { sessionManager: session, hasPendingMessages: () => queued.pending }) as BeforeAgentStartEventResult | undefined
     const message = result?.message
     if (message) session.appendCustomMessageEntry(message.customType, message.content, message.display, message.details)
-    return result && { ...result, persona: sections.persona }
+    return result && { ...result, persona: sections.persona, preamble: sections.preamble }
   }, { session, sent, queued })
 }
 
@@ -169,6 +169,18 @@ test('mood snapshots append without changing the system prompt or rewriting cach
   expect(otherSession.message?.content).toBe(different.message?.content)
   expect(run.session.buildSessionProjection().messages.slice(0, prefix.length)).toEqual(prefix)
   expect((await start()).message).toBeUndefined()
+})
+
+test('IDENTIFY name and description replace the default identity line', async () => {
+  await activate()
+  const start = async () => await runtime()('before_agent_start', { messageType: 'custom', message: {} }) as { preamble?: string }
+  expect((await start()).preamble).toBeUndefined()
+  const identify = (await getPersona()).files.find(file => file.name === 'IDENTIFY.md')!
+  await savePersonaFile({ ...identify, content: '---\nname: Susan\n---\n' })
+  expect((await start()).preamble).toBe('You are Susan.')
+  const named = (await getPersona()).files.find(file => file.name === 'IDENTIFY.md')!
+  await savePersonaFile({ ...named, content: '---\nname: Susan\ndescription: A loyal familiar.\n---\n' })
+  expect((await start()).preamble).toBe('You are Susan. A loyal familiar.')
 })
 
 test('snapshot deduplication follows restored branches, compaction and context edits', async () => {

@@ -1,5 +1,37 @@
+diff --git a/dist/core/system-prompt.d.ts b/dist/core/system-prompt.d.ts
+index 4af86187b69e25f58d4f1959df02629da2c53621..8156c93edf7e9ee3fe310ca92ff1542f67cf7ade 100644
+--- a/dist/core/system-prompt.d.ts
++++ b/dist/core/system-prompt.d.ts
+@@ -22,7 +22,10 @@ export interface BuildSystemPromptOptions {
+     promptGuidelines?: string[];
+     /** Text appended from user configuration before project context, skills, and cwd. */
+     appendSystemPrompt?: string;
+-    /** Additional XML-wrapped prompt sections keyed by tag name. */
++    /**
++     * Additional XML-wrapped prompt sections keyed by tag name. Pig patch: `preamble` replaces the
++     * untagged identity text while keeping the default tools, rules and docs sections.
++     */
+     sections?: Record<string, string>;
+     /** Working directory. */
+     cwd: string;
+diff --git a/dist/core/system-prompt.js b/dist/core/system-prompt.js
+index 83bf10846ff4ea275e73b29c54739af89d8c6028..c8c6f349bd74fff1818bc9059db145946fc84b4e 100644
+--- a/dist/core/system-prompt.js
++++ b/dist/core/system-prompt.js
+@@ -68,8 +68,10 @@ function buildRules(selectedTools, toolGuidelines, promptGuidelines) {
+ export function buildSystemPromptSections(input) {
+     const options = normalizeBuildSystemPromptOptions(input);
+     const { customPrompt, selectedTools, hiddenTools, toolSnippets, toolGuidelines, promptGuidelines, appendSystemPrompt, sections: customSections, cwd, contextFiles, skills, } = options;
++    // Pig patch: a custom `preamble` section replaces the default identity while the default
++    // tools, rules and docs sections are still generated (unlike `customPrompt`).
+     for (const name of Object.keys(customSections)) {
+-        if (!SYSTEM_PROMPT_SECTION_NAME.test(name) || name === "preamble") {
++        if (!SYSTEM_PROMPT_SECTION_NAME.test(name)) {
+             throw new Error(`Invalid system prompt section name: ${name}`);
+         }
+     }
 diff --git a/dist/extensions/mcp/index.d.ts b/dist/extensions/mcp/index.d.ts
-index 2ee96fa..a1230f9 100644
+index 2ee96fad28b6b73c84a3a9410e56cc78c16ab807..a1230f90ddd3ed88dc9d1956fdb2fd92a2ac588c 100644
 --- a/dist/extensions/mcp/index.d.ts
 +++ b/dist/extensions/mcp/index.d.ts
 @@ -25,6 +25,7 @@
@@ -26,7 +58,7 @@ index 2ee96fa..a1230f9 100644
       * Saves `/mcp` changes to the server's config file: its project `override` when set, else its
       * `source`. Defaults to editing that `mcp.json`.
 diff --git a/dist/extensions/mcp/index.js b/dist/extensions/mcp/index.js
-index 8ebc6df..2ed79a0 100644
+index 8ebc6df8ab912f6af3ebb1a4446dcb1e285af77f..2ed79a0f7555bc07a56a1b4c259c5b4e6bff07fa 100644
 --- a/dist/extensions/mcp/index.js
 +++ b/dist/extensions/mcp/index.js
 @@ -460,8 +460,9 @@ export function createMcpExtension(options = {}) {
@@ -67,7 +99,7 @@ index 8ebc6df..2ed79a0 100644
                      promptForRedirectUrl: (signal) => ctx.ui.input(`Waiting for sign-in to "${name}". If the browser cannot reach this machine, paste the URL it was redirected to.`, "http://127.0.0.1:.../callback?code=...", { signal }),
                  });
 diff --git a/dist/extensions/mcp/oauth.d.ts b/dist/extensions/mcp/oauth.d.ts
-index 6e9ee3e..f8fa6a3 100644
+index 6e9ee3ef8d4c1c7df168ee1e2c2ca475c2cebe58..f8fa6a3516d856c76d64468ed79d1b483039c1aa 100644
 --- a/dist/extensions/mcp/oauth.d.ts
 +++ b/dist/extensions/mcp/oauth.d.ts
 @@ -9,7 +9,7 @@
@@ -102,7 +134,7 @@ index 6e9ee3e..f8fa6a3 100644
  //# sourceMappingURL=oauth.d.ts.map
 \ No newline at end of file
 diff --git a/dist/extensions/mcp/oauth.js b/dist/extensions/mcp/oauth.js
-index 24852eb..c1c807b 100644
+index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c9134e051 100644
 --- a/dist/extensions/mcp/oauth.js
 +++ b/dist/extensions/mcp/oauth.js
 @@ -226,7 +226,7 @@ export function createMcpAuthProvider(options) {
@@ -133,7 +165,7 @@ index 24852eb..c1c807b 100644
          await authorizeMcp(provider, { ...flow, authorizationCode: code, iss });
      }
 diff --git a/dist/extensions/mcp/runtime.d.ts b/dist/extensions/mcp/runtime.d.ts
-index 07ef63a..a542817 100644
+index 07ef63aa1e32b69a2ea4b2c812ff54aaa5f361a6..a54281701f24d72e89525ff71781afc0041fb7aa 100644
 --- a/dist/extensions/mcp/runtime.d.ts
 +++ b/dist/extensions/mcp/runtime.d.ts
 @@ -3,7 +3,7 @@
@@ -163,7 +195,7 @@ index 07ef63a..a542817 100644
          providerToken?: (provider: string) => Promise<string | undefined>;
          onTools: (connection: McpServerConnection) => void;
 diff --git a/dist/extensions/mcp/runtime.js b/dist/extensions/mcp/runtime.js
-index 833ea47..a2b44ce 100644
+index 833ea47b21071c2abcda79b70549f58a62affa39..a2b44cecdc394cbaa846786698298f253205f5ad 100644
 --- a/dist/extensions/mcp/runtime.js
 +++ b/dist/extensions/mcp/runtime.js
 @@ -48,13 +48,14 @@ function expandHome(value) {
@@ -191,7 +223,7 @@ index 833ea47..a2b44ce 100644
                      this.challenge = challenge;
                  },
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 4a4e958..f0e2087 100644
+index 4a4e958c645bdf8b292c6e8076ac51e85dc1e0e2..f0e2087e4cfc8b80ce90debb0c652db414771f82 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -11,7 +11,7 @@ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts"
@@ -204,7 +236,7 @@ index 4a4e958..f0e2087 100644
  export type { PackageManager, PathMetadata, ProgressCallback, ProgressEvent, ResolvedPaths, ResolvedResource, } from "./core/package-manager.ts";
  export { DefaultPackageManager } from "./core/package-manager.ts";
 diff --git a/dist/index.js b/dist/index.js
-index c48934f..3ef6266 100644
+index c48934f78d61fd5f5f8008bc9e09d8c4558d330a..3ef6266a567fe840df951b8c25692adf5978fb4f 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -10,7 +10,7 @@ export { createEventBus } from "./core/event-bus.js";
