@@ -127,7 +127,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" collisionPadding={8} className="max-h-[min(20rem,var(--radix-popover-content-available-height))] w-48 gap-0 p-1">
-                <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="min-h-0 flex-1 overflow-y-auto p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <ToggleGroup type="single" orientation="vertical" className="w-full flex-col items-stretch" value={snapshot.mood.emotion} disabled={busy}
                   onValueChange={(value) => { if (value) applyMood(value as PersonaEmotion, intensity) }}>
                   {PERSONA_EMOTIONS.map((value) => <ToggleGroupItem key={value} value={value} size="sm" className="justify-start">{t(`persona.emotions.${value}`)}</ToggleGroupItem>)}
