@@ -29,6 +29,7 @@ async function fixture() {
     createChat: () => { creations++; return new Promise<SessionRef>((done, fail) => { resolve = done; reject = fail }) },
     saveOpenChatTabs: async () => {},
     saveOpenToolTabs: async () => {},
+    saveOpenSplitLayout: async () => {},
     browser: {
       getState: async () => browserState,
       onState: () => () => {},

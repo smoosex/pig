@@ -6,6 +6,7 @@ import { useSettingsStore } from './settings'
 import { api } from '../ipc/api'
 import type { SessionsStore } from './sessions/types'
 import { toolTabMemberships } from './sessions/tab-order'
+import { collectPaneNodes, useSplitLayoutStore } from './split-layout'
 
 export type { ProjectGroup, SessionMeta, WorktreeGroup } from '../ipc/api'
 export type { RuntimeState, OpenTab, SessionsStore } from './sessions/types'
@@ -55,6 +56,27 @@ useSessionsStore.subscribe((state, previous) => {
   void api.saveOpenToolTabs(tabs).catch((error: unknown) => {
     useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
   })
+})
+
+// The split panes come back too. Only a layout with two or more panes is a split worth keeping; the same
+// restore gate applies, and the write after it carries whatever the restore put on screen.
+let savedSplit: string | null = null
+function saveSplitLayout(): void {
+  if (!useSessionsStore.getState().workspaceRestoreReady) return
+  const { root, activePaneId } = useSplitLayoutStore.getState()
+  const layout = root && collectPaneNodes(root).length > 1 ? { root, activePaneId } : null
+  const signature = JSON.stringify(layout)
+  if (signature === savedSplit) return
+  savedSplit = signature
+  void api.saveOpenSplitLayout(layout).catch((error: unknown) => {
+    useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+  })
+}
+useSplitLayoutStore.subscribe((state, previous) => {
+  if (state.root !== previous.root || state.activePaneId !== previous.activePaneId) saveSplitLayout()
+})
+useSessionsStore.subscribe((state, previous) => {
+  if (state.workspaceRestoreReady && !previous.workspaceRestoreReady) saveSplitLayout()
 })
 
 /**

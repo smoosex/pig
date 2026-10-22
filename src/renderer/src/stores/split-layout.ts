@@ -1,26 +1,13 @@
 import { create } from 'zustand'
+import type { LayoutNode, PaneNode, SavedSplitLayout, SplitDirection, SplitNode } from '../../../shared/split-layout'
 
-export type SplitDirection = 'horizontal' | 'vertical'
+export type { LayoutNode, PaneNode, SplitDirection, SplitNode } from '../../../shared/split-layout'
 export type SplitDropPosition = 'left' | 'right' | 'top' | 'bottom'
-
-export interface PaneNode {
-  id: string
-  tabId: string
-}
 
 export interface ReintegratingTab {
   paneId: string
   tabId: string
 }
-
-export interface SplitNode {
-  id: string
-  direction: SplitDirection
-  children: (PaneNode | SplitNode)[]
-  sizes: number[]
-}
-
-export type LayoutNode = PaneNode | SplitNode
 
 export function isPaneNode(node: LayoutNode): node is PaneNode {
   return 'tabId' in node && !('children' in node)
@@ -220,6 +207,11 @@ export interface SplitLayoutState {
   setActivePane: (paneId: string) => void
   setDragOver: (dragOver: { paneId: string; position: SplitDropPosition } | null) => void
   setReintegratingTab: (tab: ReintegratingTab | null) => void
+  /**
+   * Brings back the layout saved at the last quit. A pane whose tab did not come back is removed the way
+   * closing it would; fewer than two panes left is no split at all.
+   */
+  restore: (layout: SavedSplitLayout, openTabIds: ReadonlySet<string>, activeTabId: string | null) => void
   reset: () => void
 }
 
@@ -325,6 +317,18 @@ export const useSplitLayoutStore = create<SplitLayoutState>((set, get) => ({
 
   setReintegratingTab: (reintegratingTab) => {
     set({ reintegratingTab })
+  },
+
+  restore: (layout, openTabIds, activeTabId) => {
+    let root: LayoutNode | null = layout.root
+    for (const pane of collectPaneNodes(layout.root)) {
+      if (root && !openTabIds.has(pane.tabId)) root = removePaneFromTree(root, pane.id).newTree
+    }
+    const panes = collectPaneNodes(root)
+    if (panes.length < 2) return
+    const activePaneId = panes.find((pane) => pane.tabId === activeTabId)?.id ??
+      panes.find((pane) => pane.id === layout.activePaneId)?.id ?? panes[0].id
+    set({ root, activePaneId, dragOver: null, reintegratingTab: null })
   },
 
   reset: () => {

@@ -4,6 +4,7 @@ import {
   loadOpenProjectSessions,
   saveOpenChatTabs,
   saveOpenToolTabs,
+  saveOpenSplitLayout,
   saveOpenProjectChangesTab,
   saveOpenProjectTabOrder,
   selectOpenProjectWorkspace
@@ -37,6 +38,9 @@ export function registerSystemIpc(): void {
   )
   ipcMain.handle('system:save-open-tool-tabs', async (_event, tabs: unknown) =>
     saveOpenToolTabs(tabs as Parameters<typeof saveOpenToolTabs>[0])
+  )
+  ipcMain.handle('system:save-open-split-layout', async (_event, layout: unknown) =>
+    saveOpenSplitLayout(layout)
   )
   ipcMain.handle('system:pick-directory', async (event) => {
     const win = windowForEvent(event)

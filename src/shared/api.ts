@@ -7,6 +7,7 @@ import type { ToolSettingsApi } from './tool-settings'
 import type { SkillsApi } from './skills'
 import type { SessionCapabilitiesApi } from './session-capabilities'
 import type { SubagentAppearance } from './subagent-appearance'
+import type { SavedSplitLayout } from './split-layout'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -163,6 +164,8 @@ export interface OpenProjectSessionsState {
   activeChatTabId: string | null
   /** Every open browser and terminal tab, in both halves. */
   tools: OpenToolTab[]
+  /** The split panes on screen at the last write; absent when none were. */
+  split?: SavedSplitLayout
 }
 
 export interface SessionRef {
@@ -1007,6 +1010,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) => Promise<void>
   /** Records which browser and terminal tabs are open; a new one joins the end of its strip. */
   saveOpenToolTabs: (tabs: OpenToolTabMembership[]) => Promise<void>
+  /** Null when the strip is no longer split. */
+  saveOpenSplitLayout: (layout: SavedSplitLayout | null) => Promise<void>
   /** Native material support is available synchronously, before the document's first paint. */
   readonly supportsGlass: boolean
   getSettings: () => Promise<AppSettings>

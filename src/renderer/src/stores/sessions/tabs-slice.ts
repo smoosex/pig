@@ -469,6 +469,12 @@ export const createTabsSlice: SessionSlice<
         const restoreSelectedProject = selectionUnchanged || (
           !restoreInChatHome && restoreProjectAfterSwitch && !get().currentProjectCwd && !get().activeTabId
         )
+        // Before restore is marked ready, so the first split write after it is this layout, not an empty one.
+        // A split the reader made while the scan ran wins over the saved one.
+        if (persisted.split && !useSplitLayoutStore.getState().root) {
+          const openIds = new Set([...restoredTabs, ...restoredChatTabs, ...get().openTabs].map((tab) => tab.id))
+          useSplitLayoutStore.getState().restore(persisted.split, openIds, restoreSelectedProject ? restoredTabId : get().activeTabId)
+        }
         set((state) => {
           const liveTabs = new Map(state.openTabs.map((tab) => [tab.id, tab]))
           const restoredIds = new Set(restoredTabs.map((tab) => tab.id))

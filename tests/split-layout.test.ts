@@ -268,4 +268,25 @@ describe('renameTabId', () => {
     useSplitLayoutStore.getState().renameTabId('file:/p\0nowhere.ts', 'file:/p\0b.ts')
     assert.equal(useSplitLayoutStore.getState().root, before)
   })
+
+  test('restore drops panes whose tabs did not come back and keeps the active tab in view', () => {
+    const saved = {
+      root: {
+        id: 'outer', direction: 'horizontal' as const, sizes: [30, 70],
+        children: [
+          { id: 'p1', tabId: 'a' },
+          { id: 'inner', direction: 'vertical' as const, sizes: [40, 60], children: [{ id: 'p2', tabId: 'gone' }, { id: 'p3', tabId: 'c' }] }
+        ]
+      },
+      activePaneId: 'p2'
+    }
+    useSplitLayoutStore.getState().restore(saved, new Set(['a', 'c']), 'c')
+    const { root, activePaneId } = useSplitLayoutStore.getState()
+    assert.deepEqual(root, { id: 'outer', direction: 'horizontal', sizes: [30, 70], children: [{ id: 'p1', tabId: 'a' }, { id: 'p3', tabId: 'c' }] })
+    assert.equal(activePaneId, 'p3')
+
+    useSplitLayoutStore.getState().reset()
+    useSplitLayoutStore.getState().restore(saved, new Set(['a']), 'a')
+    assert.equal(useSplitLayoutStore.getState().root, null, 'one surviving pane is no split')
+  })
 })

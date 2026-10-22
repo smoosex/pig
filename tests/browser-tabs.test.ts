@@ -50,6 +50,7 @@ async function fixture() {
     selectOpenProjectWorkspace: async (...args: unknown[]) => { writes.push(args) },
     saveOpenChatTabs: async (...args: unknown[]) => { writes.push(args) },
     saveOpenToolTabs: async (...args: unknown[]) => { toolWrites.push(args) },
+    saveOpenSplitLayout: async () => {},
     listWorktreeSessions: async () => []
   }, {
     get(target, key) {

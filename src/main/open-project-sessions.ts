@@ -5,6 +5,7 @@ import { pigDir, pigPath } from './pig-dir'
 import { changesTabId } from '../shared/tab-ids'
 import { TERMINAL_ID_PATTERN } from '../shared/terminal'
 import { isBrowserUrl } from './browser/validation'
+import type { LayoutNode, SavedSplitLayout } from '../shared/split-layout'
 
 interface OpenProjectSessionsFile extends OpenProjectSessionsState {
   version: 5
@@ -23,6 +24,35 @@ function normalizeOrder(order: unknown, members: string[]): string[] {
     ? [...new Set(order.filter((id): id is string => typeof id === 'string' && members.includes(id)))]
     : []
   return [...known, ...members.filter((id) => !known.includes(id))]
+}
+
+/** A rebuilt copy of a split tree, or null when any part of it is not one the layout store could hold. */
+function normalizeLayoutNode(value: unknown, paneIds: Set<string>): LayoutNode | null {
+  if (!value || typeof value !== 'object') return null
+  const node = value as Record<string, unknown>
+  if (typeof node.id !== 'string' || !node.id) return null
+  if ('tabId' in node) {
+    if (typeof node.tabId !== 'string' || !node.tabId || paneIds.has(node.id)) return null
+    paneIds.add(node.id)
+    return { id: node.id, tabId: node.tabId }
+  }
+  const { children, sizes, direction } = node
+  if (direction !== 'horizontal' && direction !== 'vertical') return null
+  if (!Array.isArray(children) || children.length < 2 || !Array.isArray(sizes) || sizes.length !== children.length) return null
+  if (sizes.some((size) => typeof size !== 'number' || !Number.isFinite(size) || size < 0) ||
+    (sizes as number[]).reduce((sum, size) => sum + size, 0) <= 0) return null
+  const nodes = children.map((child) => normalizeLayoutNode(child, paneIds))
+  if (nodes.some((child) => child === null)) return null
+  return { id: node.id, direction, children: nodes as LayoutNode[], sizes: [...sizes as number[]] }
+}
+
+function normalizeSplitLayout(value: unknown): SavedSplitLayout | null {
+  if (!value || typeof value !== 'object') return null
+  const { root, activePaneId } = value as Record<string, unknown>
+  const paneIds = new Set<string>()
+  const node = normalizeLayoutNode(root, paneIds)
+  if (!node || paneIds.size < 2 || (activePaneId !== null && (typeof activePaneId !== 'string' || !paneIds.has(activePaneId)))) return null
+  return { root: node, activePaneId }
 }
 
 const emptyState = (): OpenProjectSessionsState => ({
@@ -147,6 +177,8 @@ async function readState(): Promise<OpenProjectSessionsState> {
   const raw = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<OpenProjectSessionsFile>
   // Files before version 5 had no tool tabs, which reads as none open.
   const tools = normalizeTools(raw.tools)
+  // Panes name tabs that may not come back; the renderer drops those when it restores the layout.
+  const split = normalizeSplitLayout(raw.split)
   const workspaces = Array.isArray(raw.workspaces)
     ? raw.workspaces.map((item) => normalizeWorkspace(item, tools)).filter((item): item is OpenProjectWorkspace => item !== null)
     : []
@@ -159,7 +191,8 @@ async function readState(): Promise<OpenProjectSessionsState> {
     currentCwd: current,
     workspaces: [...byCwd.values()],
     ...chatStateFor(normalizeChatState(raw), tools),
-    tools
+    tools,
+    ...(split ? { split } : {})
   }
 }
 
@@ -396,6 +429,16 @@ export function saveBrowserTabUrl(browserId: string, url: string): Promise<void>
   // URLs stay for the next one.
   write.then(undefined, () => { if (browserUrlWrite === write) browserUrlWrite = null })
   return write
+}
+
+/** The renderer's whole split tree, written as it changes; null once the strip is unsplit. */
+export function saveOpenSplitLayout(layout: unknown): Promise<void> {
+  const split = layout === null ? null : normalizeSplitLayout(layout)
+  if (layout !== null && !split) throw new Error('Invalid split layout')
+  return mutate((state) => {
+    if (split) state.split = split
+    else delete state.split
+  })
 }
 
 export async function flushOpenProjectSessions(): Promise<void> {
