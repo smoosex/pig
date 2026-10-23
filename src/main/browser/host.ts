@@ -199,9 +199,16 @@ export class BrowserHost {
     }
   }
 
+  private restoreHostFocus(owner: WindowPages, contents: Electron.WebContents | null): void {
+    if (!owner.win.isDestroyed() && !owner.win.webContents.isDestroyed() && contents?.isFocused()) {
+      owner.win.webContents.focus()
+    }
+  }
+
   private detachDevTools(owner: WindowPages, page: Page): void {
     const devtools = page.devtools
     if (!devtools) return
+    this.restoreHostFocus(owner, liveContents(devtools))
     page.devtools = undefined
     page.state.devtools = false
     if (!owner.win.isDestroyed()) (page.clip ?? owner.win.contentView).removeChildView(devtools)
@@ -211,6 +218,8 @@ export class BrowserHost {
   private dispose(owner: WindowPages, page: Page): void {
     if (page.disposed) return
     page.disposed = true
+    // Removing a focused native view does not return keyboard input to the host renderer.
+    this.restoreHostFocus(owner, liveContents(page.view))
     page.network.dispose()
     this.detachDevTools(owner, page)
     if (!owner.win.isDestroyed()) {

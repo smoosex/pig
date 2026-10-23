@@ -26,6 +26,10 @@ class FakeContents extends EventEmitter {
   })
   navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} }
   isDestroyed() { return this.dead }
+  focused = false
+  focusCalls = 0
+  isFocused() { return this.focused }
+  focus() { this.focused = true; this.focusCalls++; this.emit('focus') }
   getZoomFactor() { return 1.5 }
   getURL() { return this.url }
   isLoading() { return this.loading }
@@ -418,6 +422,33 @@ describe('browser host', () => {
     expect(views[0].webContents.dead).toBe(true)
     expect(views[1].webContents.dead).toBe(false)
     expect(host.getState(owner, 'a').url).toBe('')
+  })
+
+  test('closing a focused page or DevTools returns keyboard focus to the host before disposal', async () => {
+    for (const target of ['page', 'devtools'] as const) {
+      const { host, owner, win, views } = fixture()
+      await host.navigate(owner, 'a', 'https://example.com')
+      if (target === 'devtools') host.inspect(owner, 'a')
+      const contents = views[target === 'page' ? 0 : 1].webContents
+      contents.focus()
+      contents.once('destroyed', () => {
+        expect(win.webContents.focusCalls).toBe(1)
+      })
+      host.close(owner, 'a')
+      expect(win.webContents.focusCalls).toBe(1)
+      expect(contents.dead).toBe(true)
+    }
+  })
+
+  test('closing an unfocused browser does not steal keyboard focus from another pane', async () => {
+    const { host, owner, win, views } = fixture()
+    await host.navigate(owner, 'a', 'https://example.com')
+    host.inspect(owner, 'a')
+    host.setBounds(owner, 'b', bounds)
+    views[2].webContents.focus()
+    host.close(owner, 'a')
+    expect(win.webContents.focusCalls).toBe(0)
+    expect(views[2].webContents.dead).toBe(false)
   })
 
   test('inspect docks the page DevTools below it in the same pane and toggles them off', async () => {
