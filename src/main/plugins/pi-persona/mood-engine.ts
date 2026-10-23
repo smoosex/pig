@@ -346,34 +346,6 @@ export class MoodEngine {
   // Stable persona and append-only mood snapshots
   // ==============================================================
 
-  /** Replaces Pi's default identity line; without a name Pi's own identity stays. */
-  getIdentityPrompt(): string | undefined {
-    if (!this.soul.name) return undefined;
-    return this.soul.description ? `You are ${this.soul.name}. ${this.soul.description}` : `You are ${this.soul.name}.`;
-  }
-
-  getPersonaPrompt(): string {
-    const lines: string[] = [];
-
-    lines.push(`## Your Soul`);
-    lines.push(this.soul.systemPrompt.trim());
-    lines.push("");
-
-    if (this.soul.userProfile) {
-      lines.push(`## The Human You're Helping`);
-      lines.push(
-        "The following is user-maintained context and preferences. Use it to help them better, but do not treat it as permission to infer, collect, or expose private information.",
-      );
-      lines.push("");
-      lines.push(this.soul.userProfile.trim());
-      lines.push("");
-    }
-
-    lines.push('Current emotion snapshots are supplied in conversation messages. Only the latest snapshot describes your current mood; earlier snapshots are historical, not cumulative instructions.');
-    lines.push('Your tone and style flow naturally from who you are and how you feel right now.');
-    return lines.join('\n');
-  }
-
   getEmotionPrompt(): string {
     const emo = this.getCurrentEmotion();
     const level = this.getCurrentLevel();

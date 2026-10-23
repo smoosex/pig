@@ -3,7 +3,7 @@
  * user-facing string comes from src/shared/i18n, and a literal here means someone bypassed it.
  * Both processes are scanned: main sends its errors and dialog titles to the renderer verbatim.
  *
- * Comments and the deliberate pi-parity parsers below are the only allowed exceptions.
+ * Comments, the deliberate pi-parity parsers and verbatim model prompts below are the only allowed exceptions.
  */
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -12,9 +12,10 @@ import { join, relative } from 'node:path'
 const ROOT = new URL('..', import.meta.url).pathname
 const CJK = /[\u4e00-\u9fff]/
 
-/** Lines allowed to carry CJK: a parser that must also recognise the copy it strips, not a string. */
+/** Lines allowed to carry CJK: a parser that must also recognise the copy it strips, or prompt text the model reads, not UI copy. */
 const allowed = new Map<string, string[]>([
-  ['src/renderer/src/components/turn/ProcessText.tsx', ["return text.replace(/^(Thought for \\d+s|已?思考了?\\s*\\d+\\s*(秒|s)?)\\s*\\n+/i, '').trim()"]]
+  ['src/renderer/src/components/turn/ProcessText.tsx', ["return text.replace(/^(Thought for \\d+s|已?思考了?\\s*\\d+\\s*(秒|s)?)\\s*\\n+/i, '').trim()"]],
+  ['src/main/plugins/pi-persona/preamble.ts', ['When user says "today/昨天/明天/this year/今年"']]
 ])
 
 function sourceFiles(dir: string): string[] {

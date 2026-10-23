@@ -34,10 +34,11 @@ function runtime(session = SessionManager.inMemory()) {
   return Object.assign(async (name: string, event: unknown = {}) => {
     if (name !== 'before_agent_start') return await hooks.get(name)!(event, { sessionManager: session, hasPendingMessages: () => queued.pending })
     const sections: Record<string, string> = {}
-    const result = await hooks.get(name)!({ ...event as object, systemPromptOptions: { sections } }, { sessionManager: session, hasPendingMessages: () => queued.pending }) as BeforeAgentStartEventResult | undefined
+    const { customPrompt } = event as { customPrompt?: string }
+    const result = await hooks.get(name)!({ ...event as object, systemPromptOptions: { sections, customPrompt } }, { sessionManager: session, hasPendingMessages: () => queued.pending }) as BeforeAgentStartEventResult | undefined
     const message = result?.message
     if (message) session.appendCustomMessageEntry(message.customType, message.content, message.display, message.details)
-    return result && { ...result, persona: sections.persona, preamble: sections.preamble }
+    return result && { ...result, persona: sections.preamble, sections }
   }, { session, sent, queued })
 }
 
@@ -171,16 +172,26 @@ test('mood snapshots append without changing the system prompt or rewriting cach
   expect((await start()).message).toBeUndefined()
 })
 
-test('IDENTIFY name and description replace the default identity line', async () => {
+test('the persona preamble carries the core rules, SOUL with its path, evolution and USER without an XML section', async () => {
   await activate()
-  const start = async () => await runtime()('before_agent_start', { messageType: 'custom', message: {} }) as { preamble?: string }
-  expect((await start()).preamble).toBeUndefined()
   const identify = (await getPersona()).files.find(file => file.name === 'IDENTIFY.md')!
-  await savePersonaFile({ ...identify, content: '---\nname: Susan\n---\n' })
-  expect((await start()).preamble).toBe('You are Susan.')
-  const named = (await getPersona()).files.find(file => file.name === 'IDENTIFY.md')!
-  await savePersonaFile({ ...named, content: '---\nname: Susan\ndescription: A loyal familiar.\n---\n' })
-  expect((await start()).preamble).toBe('You are Susan. A loyal familiar.')
+  await savePersonaFile({ ...identify, content: '---\nname: Susan\ndescription: A loyal familiar.\n---\n' })
+  const start = async () => await runtime()('before_agent_start', { messageType: 'custom', message: {} }) as { persona: string; sections: Record<string, string> }
+  const soulPath = join(process.env.PIG_DIR!, 'persona', 'SOUL.md')
+  const withoutUser = await start()
+  expect(withoutUser.persona.startsWith('LANGUAGE RULE (CRITICAL)')).toBe(true)
+  const today = new Date()
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  expect(withoutUser.persona).toContain(`DATE AWARENESS (CRITICAL):\n- Authoritative local date: ${date}\n- Weekday: `)
+  expect(withoutUser.persona).toMatch(/- Timezone: UTC[+-]\d+(:\d{2})?\n/)
+  expect(withoutUser.persona).toContain(`you can update this file at ${soulPath} to refine who you are):\nA helpful familiar.`)
+  expect(withoutUser.persona).toContain(`"## Evolved Traits" section in your SOUL.md at ${soulPath}.`)
+  expect(withoutUser.persona).not.toContain('USER PROFILE')
+  expect(withoutUser.persona).not.toContain('Susan')
+  expect(Object.keys(withoutUser.sections)).toEqual(['preamble'])
+  await savePersonaFile({ name: 'USER.md', content: 'Call me boss.', revision: null })
+  expect((await runtime()('before_agent_start', { messageType: 'custom', message: {}, customPrompt: 'SYSTEM.md' }) as { sections: Record<string, string> }).sections).toEqual({})
+  expect((await start()).persona).toContain("USER PROFILE (your owner/primary user — read this to understand who you're helping):\nCall me boss.")
 })
 
 test('snapshot deduplication follows restored branches, compaction and context edits', async () => {

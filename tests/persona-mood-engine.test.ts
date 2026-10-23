@@ -18,9 +18,7 @@ function createPersistentState(): PersistentState {
 
 function createSoul(): SoulDefinition {
   return {
-    name: "Test Soul",
     emoji: "✨",
-    description: "Test soul",
     traits: {
       openness: 0.5,
       conscientiousness: 0.5,

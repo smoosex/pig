@@ -4,6 +4,7 @@ import { isChatCwd } from '../chats'
 import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
 import { startModelRuntime } from './model-settings'
 import { pigDocsExtension } from './pig-docs'
+import { pigIdentityExtension } from './pig-identity'
 import { sessionToolFactory } from './tool-resources'
 
 export class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
@@ -20,12 +21,18 @@ export async function createSessionRuntime(
   appendSystemPrompt?: string[],
   options: Pick<NonNullable<Parameters<typeof createChatResourceLoader>[2]>, 'onSkillBase'> & {
     toolPreferences?: Parameters<typeof sessionToolFactory>[2]
+    /** Subagents keep Pi's plain identity, like they skip the persona plugin. */
+    identity?: boolean
   } = {}
 ): Promise<AgentSession> {
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
   const sessionId = sessionManager.getSessionId()
   const resources = { onSkillBase: options.onSkillBase, settingsManager, sessionId,
-    extensionFactories: [pigDocsExtension, sessionToolFactory(cwd, sessionId, options.toolPreferences)], appendSystemPrompt }
+    extensionFactories: [
+      pigDocsExtension,
+      ...(options.identity === false ? [] : [pigIdentityExtension]),
+      sessionToolFactory(cwd, sessionId, options.toolPreferences)
+    ], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)
     ? await createChatResourceLoader(cwd, pluginPaths, resources)
     : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)

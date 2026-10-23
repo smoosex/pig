@@ -19,12 +19,10 @@ export async function readDocuments(dir: string): Promise<PersonaDocument[]> {
   }))
 }
 
-export const DEFAULT_SOUL: SoulDefinition = {
-  emoji: '󰊠',
-  traits: { ...DEFAULT_TRAITS }, systemPrompt: '',
-}
+const DEFAULT_EMOJI = '󰊠'
 
-export function parseDocuments(files: PersonaDocument[]): SoulDefinition | null {
+/** An empty `systemPrompt` means no SOUL; IDENTIFY and USER still apply to the default identity. */
+export function parseDocuments(files: PersonaDocument[]): SoulDefinition {
   const parsed = new Map(files.map(file => {
     if (typeof file.content !== 'string' || Buffer.byteLength(file.content, 'utf8') > MAX_DOCUMENT_BYTES) {
       throw new Error(`Persona document ${file.name} exceeds the 256 KiB limit`)
@@ -63,12 +61,10 @@ export function parseDocuments(files: PersonaDocument[]): SoulDefinition | null 
     }
   }
   const systemPrompt = parsed.get('SOUL.md')!.content.trim()
-  if (!systemPrompt) return null
   const userProfile = parsed.get('USER.md')!.content.trim()
   return {
     ...(metadata.name !== undefined ? { name: (metadata.name as string).trim() } : {}),
-    emoji: metadata.emoji as string ?? DEFAULT_SOUL.emoji,
-    ...(metadata.description !== undefined ? { description: (metadata.description as string).trim() } : {}),
+    emoji: metadata.emoji as string ?? DEFAULT_EMOJI,
     traits, systemPrompt, ...(userProfile ? { userProfile } : {}),
   }
 }

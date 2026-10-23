@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PERSONA_EMOTIONS, type PersonaDocument, type PersonaSnapshot } from '../../../shared/persona'
 import { MoodEngine } from './mood-engine'
 import { DEFAULT_EMOTION_CONFIG, type PersistentState, type PersistentEmotionSnapshot } from './types'
-import { DEFAULT_SOUL, parseDocuments, readDocuments } from './documents'
+import { parseDocuments, readDocuments } from './documents'
 import { atomicWrite, personaDir, readOptional, withPersonaLock } from './storage'
 
 function finite(value: unknown, min: number, max = Infinity): value is number {
@@ -59,13 +59,18 @@ export interface PersonaTransaction extends PersonaView {
 async function load(dir: string, files: PersonaDocument[]) {
   const soul = parseDocuments(files)
   const persistent = parseState(await readOptional(join(dir, 'mood-state.json')))
-  const engine = new MoodEngine(soul ?? DEFAULT_SOUL, persistent, DEFAULT_EMOTION_CONFIG)
+  const engine = new MoodEngine(soul, persistent, DEFAULT_EMOTION_CONFIG)
   engine.restoreState(persistent.lastAngle, persistent.lastIntensity, persistent.lastInteraction)
   engine.state.history = persistent.history.map(({ id: _id, sessionId: _session, sequence: _sequence, ...snapshot }) => snapshot)
-  return { persistent, engine, active: soul !== null }
+  return { persistent, engine, active: soul.systemPrompt !== '' }
 }
 
-/** Lock-free read: every file is replaced atomically, and nothing derived here is written back. */
+/**
+ * Lock-free read: every file is replaced atomically, and nothing derived here is written back.
+ * Exception: personality evolution has the agent edit SOUL.md with its ordinary edit tool, unlocked
+ * and not atomic. A concurrent read may see a partial SOUL for one turn; the next read recovers, and
+ * the settings page's revision check keeps it from overwriting the agent's edit.
+ */
 export async function readPersona<T>(action: (view: PersonaView) => T): Promise<T> {
   const dir = personaDir()
   const files = await readDocuments(dir)

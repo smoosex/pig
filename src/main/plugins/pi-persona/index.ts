@@ -1,7 +1,10 @@
 /* Persona event adapter. Only feedback bookkeeping is session-local; the engine is always rebuilt under the global lock. */
 import type { AgentEndEvent, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type { MoodEngine } from './mood-engine'
+import { join } from 'node:path'
 import { personaTransaction, readPersona, type PersonaTransaction, type PersonaView } from './kernel'
+import { soulPreamble } from './preamble'
+import { personaDir } from './storage'
 import { DEFAULT_EMOTION_CONFIG, type EmotionalEvent } from './types'
 import {
   createRepeatedErrorState, detectExplicitUserFeedback, detectFromBashResult,
@@ -18,8 +21,6 @@ function apply(transaction: PersonaTransaction, event: EmotionalEvent): void {
 function userText(content: Extract<AgentEndEvent['messages'][number], { role: 'user' }>['content']): string {
   return typeof content === 'string' ? content : content.filter(part => part.type === 'text').map(part => part.text).join('\n')
 }
-
-const PERSONA_SECTION = 'persona'
 
 function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
   // Inspect resolved context: navigation, compaction and edits can remove a snapshot.
@@ -48,13 +49,12 @@ export default function personaExtension(pi: ExtensionAPI): void {
   pi.on('before_agent_start', async (event, ctx) => {
     const inject = ({ active, engine }: PersonaView) => {
       if (!active) { reset(); return }
-      // A section, not a returned systemPrompt: a forced prompt is never recorded, so exports
-      // would miss it, and it collapses every section patch into one uncached head.
-      const { sections } = event.systemPromptOptions
-      sections[PERSONA_SECTION] = engine.getPersonaPrompt()
-      // `preamble` replaces Pi's identity line through Pig's SDK patch; tools, rules and docs stay.
-      const identity = engine.getIdentityPrompt()
-      if (identity) sections.preamble = identity
+      // `preamble` (allowed by Pig's SDK patch) is the only section rendered without an XML tag; it
+      // replaces Pi's identity while tools, rules and docs stay, and makes Pig's default identity
+      // step aside. Not a returned systemPrompt: a forced prompt is never recorded, so exports would
+      // miss it, and it defeats section patches.
+      // A custom prompt (SYSTEM.md) owns the preamble, as it does for Pig's default identity.
+      if (!event.systemPromptOptions.customPrompt) event.systemPromptOptions.sections.preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), new Date())
       return { message: moodMessage(engine, ctx) }
     }
     if (event.messageType !== 'user' || !pendingImplicitAcceptance) return readPersona(inject)

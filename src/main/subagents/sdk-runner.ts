@@ -55,7 +55,7 @@ export function createSdkRunner(): SubagentRunner {
       // Snapshot at launch: later parent edits must not mutate a running child's capabilities.
       const parentPreferences = readSessionCapabilities(spec.parentSessionId)
       const toolPreferences = { tools: { ...parentPreferences.tools, spawn: false }, mcp: { ...parentPreferences.mcp } }
-      const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences })
+      const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences, identity: false })
       try {
         await session.bindExtensions({
           mode: 'print',
