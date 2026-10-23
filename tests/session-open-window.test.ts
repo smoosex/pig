@@ -100,6 +100,7 @@ async function runFixture(): Promise<void> {
       app: { isPackaged: false },
       ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => { handlers.set(channel, handler) } },
       dialog: {},
+      nativeTheme: { shouldUseDarkColors: false },
       BrowserWindow: { fromWebContents: () => ({}), getAllWindows: () => [] },
       // The branch namer forks a worker process; no handler under test reaches it.
       utilityProcess: {}

@@ -15,6 +15,7 @@ async function fixture(scenario: string): Promise<void> {
     supportsGlass: true,
     onMcpChanged: () => noop,
     onNotificationClick: () => noop,
+    setVisibleNotificationSessions: async () => {},
     getCommands: async () => [],
     isMemoryPluginEnabled: async () => false,
     listSubagents: async () => [],
