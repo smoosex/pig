@@ -365,6 +365,8 @@ const api: SessionApi = {
       ipcRenderer.off('pi:event', handler)
     }
   },
+  setVisibleNotificationSessions: (sessionIds: string[]): Promise<void> =>
+    ipcRenderer.invoke('notification:set-visible-sessions', sessionIds),
   onNotificationClick: (listener: (sessionId: string) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, sessionId: string): void => listener(sessionId)
     ipcRenderer.on('notification:click', handler)

@@ -2,6 +2,7 @@
 import { Notification, type BrowserWindow } from 'electron'
 import { t } from './i18n'
 import { loadPigSettings } from './pig-settings'
+import { isNotificationSessionVisible } from './completion-visibility'
 
 // Keep native notifications alive until dismissed; macOS removes them when the object is collected.
 const activeNotifications = new Set<Notification>()
@@ -12,9 +13,9 @@ export async function sendCompletionNotification(
   signal: AbortSignal,
   content: { title: string; reply: string }
 ): Promise<void> {
-  if (signal.aborted || win.isDestroyed() || win.isFocused() || !Notification.isSupported()) return
+  if (signal.aborted || win.isDestroyed() || isNotificationSessionVisible(win, sessionId) || !Notification.isSupported()) return
   if (!(await loadPigSettings()).completionNotifications) return
-  if (signal.aborted || win.isDestroyed() || win.webContents.isDestroyed() || win.isFocused()) return
+  if (signal.aborted || win.isDestroyed() || win.webContents.isDestroyed() || isNotificationSessionVisible(win, sessionId)) return
 
   const body = content.reply.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 2).join('\n')
   const notification = new Notification({ title: content.title, body: body || t('notification.replyReady') })

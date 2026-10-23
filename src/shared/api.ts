@@ -1062,6 +1062,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   replyAuthPrompt: (id: string, value: string | null) => Promise<void>
   cancelLogin: () => Promise<void>
   onEvent: (listener: (event: unknown) => void) => () => void
+  setVisibleNotificationSessions: (sessionIds: string[]) => Promise<void>
   onNotificationClick: (listener: (sessionId: string) => void) => () => void
   onSessionWindow: (listener: (update: SessionWindowMessage) => void) => () => void
   /** Pushed when an extension moves the session leaf; null means the root before any entry. */

@@ -1,5 +1,6 @@
 import { dialog, ipcMain, nativeTheme } from 'electron'
 import { t } from '../i18n'
+import { setVisibleNotificationSessions } from '../completion-visibility'
 import {
   activateSession,
   closeSession,
@@ -39,6 +40,16 @@ import { windowForEvent } from './window'
 const MAX_WINDOW_TURNS = 200
 
 export function registerSessionIpc(): void {
+  ipcMain.handle('notification:set-visible-sessions', (event, sessionIds: string[]) => {
+    const win = windowForEvent(event)
+    if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+      throw new Error('Only the host UI main frame can report visible sessions')
+    }
+    if (!Array.isArray(sessionIds) || sessionIds.some((id) => typeof id !== 'string')) {
+      throw new Error('Visible session IDs must be strings')
+    }
+    setVisibleNotificationSessions(win, sessionIds)
+  })
   ipcMain.handle('session:capabilities', (_event, sessionId: string) => getSessionCapabilities(sessionId))
   ipcMain.handle('session:set-capability', (_event, sessionId, group, id, enabled) => setSessionCapability(sessionId, group, id, enabled))
   ipcMain.handle('session:create', async (event, cwd: string, sessionId?: string) => {

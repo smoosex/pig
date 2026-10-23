@@ -11,6 +11,7 @@ import { useBrowserAgentRequests } from './hooks/useBrowserAgentRequests'
 import { useTerminalAgentRequests } from './hooks/useTerminalAgentRequests'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
+import { visibleNotificationSessions } from './chat/notification-visibility'
 import { SystemPluginUI } from './components/SystemPluginUI'
 import { SubagentTranscriptDialog } from './components/subagents/SubagentTranscriptDialog'
 import { SubagentCloseConfirm } from './components/subagents/SubagentCloseConfirm'
@@ -282,6 +283,15 @@ export default function App() {
     const store = useToolSettingsStore.getState()
     if (store.loaded) void store.load()
   }), [])
+
+  const notificationVisibilityKey = JSON.stringify(visibleNotificationSessions(
+    openTabs, activeTabId, splitPaneNodes.map((pane) => pane.tabId), settingsOpen
+  ))
+  useEffect(() => {
+    void api.setVisibleNotificationSessions(JSON.parse(notificationVisibilityKey) as string[]).catch((error: unknown) => {
+      console.error('Could not report visible notification sessions:', error)
+    })
+  }, [notificationVisibilityKey])
 
   useEffect(() => api.onNotificationClick((sessionId) => {
     openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))

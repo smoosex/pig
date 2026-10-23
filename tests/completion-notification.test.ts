@@ -27,6 +27,7 @@ async function runFixture(): Promise<void> {
       Notification: FakeNotification
     }))
     const { sendCompletionNotification } = await import('../src/main/completion-notification')
+    const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
     const { savePigSettings } = await import('../src/main/pig-settings')
     const { t } = await import('../src/main/i18n')
     const events: Array<{ channel: string; sessionId: string }> = []
@@ -40,10 +41,10 @@ async function runFixture(): Promise<void> {
       restore: () => windowActions.push('restore'),
       show: () => windowActions.push('show'),
       focus: () => windowActions.push('focus'),
-      webContents: {
+      webContents: Object.assign(new EventEmitter(), {
         isDestroyed: () => destroyed,
         send: (channel: string, sessionId: string) => events.push({ channel, sessionId })
-      }
+      })
     } as unknown as BrowserWindow
 
     await sendCompletionNotification('chat-1', win, new AbortController().signal, {
@@ -69,8 +70,23 @@ async function runFixture(): Promise<void> {
     assert.deepEqual(FakeNotification.instances[1].options, { title: '空回复', body: t('notification.replyReady') })
 
     focused = true
-    await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
+    setVisibleNotificationSessions(win, ['chat-2', 'chat-3'])
+    for (const id of ['chat-2', 'chat-3']) {
+      await sendCompletionNotification(id, win, new AbortController().signal, { title: '标题', reply: '回复' })
+    }
+    assert.equal(FakeNotification.instances.length, 2, 'all visible split sessions are suppressed')
+    await sendCompletionNotification('project-1', win, new AbortController().signal, { title: '项目完成', reply: '回复' })
+    assert.equal(FakeNotification.instances.length, 3, 'a hidden project notifies while viewing Chat')
+    FakeNotification.instances[2].emit('click')
+    assert.deepEqual(events.at(-1), { channel: 'notification:click', sessionId: 'project-1' })
+    setVisibleNotificationSessions(win, ['project-1'])
+    await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: 'Chat 完成', reply: '回复' })
+    assert.equal(FakeNotification.instances.length, 4, 'a hidden Chat notifies while viewing a project')
+    FakeNotification.instances[3].emit('click')
+    assert.deepEqual(events.at(-1), { channel: 'notification:click', sessionId: 'chat-2' })
     focused = false
+    await sendCompletionNotification('project-1', win, new AbortController().signal, { title: '标题', reply: '回复' })
+    assert.equal(FakeNotification.instances.length, 5, 'a visible session still notifies when the window is unfocused')
     await savePigSettings({ completionNotifications: false })
     await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
     await savePigSettings({ completionNotifications: true })
@@ -79,11 +95,11 @@ async function runFixture(): Promise<void> {
     await sendCompletionNotification('chat-2', win, cancelled.signal, { title: '标题', reply: '回复' })
     FakeNotification.supported = false
     await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
-    assert.equal(FakeNotification.instances.length, 2)
+    assert.equal(FakeNotification.instances.length, 5)
 
     destroyed = true
     FakeNotification.instances[0].emit('click')
-    assert.equal(events.length, 1)
+    assert.equal(events.length, 3)
   } finally {
     if (previous === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previous
