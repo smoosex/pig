@@ -1,13 +1,12 @@
 import { resolve } from 'node:path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
           'branch-namer-worker': resolve(__dirname, 'src/main/pi/branch-namer-worker.ts'),
@@ -22,7 +21,7 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin(), {
+    plugins: [{
       name: 'sandboxed-preload-single-files',
       generateBundle(_options, bundle) {
         // Sandboxed preload require() cannot load local chunks shared by multiple entries.
@@ -34,7 +33,9 @@ export default defineConfig({
       }
     }],
     build: {
-      rollupOptions: {
+      isolatedEntries: true,
+      externalizeDeps: false,
+      rolldownOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
           'browser-guest': resolve(__dirname, 'src/preload/browser-guest.ts')
@@ -46,7 +47,7 @@ export default defineConfig({
   renderer: {
     root: 'src/renderer',
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') }
       }
     },

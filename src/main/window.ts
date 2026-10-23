@@ -8,13 +8,13 @@ import { supportsGlass } from './surface-support'
 import { windowSurfaceOptions } from './window-surface'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const mainDirectory = dirname(fileURLToPath(import.meta.url))
 
 /** External links belong in the user's browser; anything else would run outside the app's UI. */
 const EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:']
 
 function resolvePreload(): string {
-  const preloadDir = join(__dirname, '../preload')
+  const preloadDir = join(mainDirectory, '../preload')
   for (const ext of ['.js', '.mjs', '.cjs']) {
     const candidate = join(preloadDir, 'index' + ext)
     if (existsSync(candidate)) return candidate
@@ -23,7 +23,7 @@ function resolvePreload(): string {
 }
 
 export function createMainWindow(): BrowserWindow {
-  const rendererHtml = join(__dirname, '../renderer/index.html')
+  const rendererHtml = join(mainDirectory, '../renderer/index.html')
   const devServer = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
   const isAppUrl = createAppUrlCheck({ devServer, rendererHtml })
   const mainWindow = new BrowserWindow({
@@ -35,7 +35,7 @@ export function createMainWindow(): BrowserWindow {
     autoHideMenuBar: true,
     title: 'Pig',
     icon: process.platform === 'linux'
-      ? is.dev ? join(__dirname, '../../build/icon.png') : join(process.resourcesPath, 'icon.png')
+      ? is.dev ? join(mainDirectory, '../../build/icon.png') : join(process.resourcesPath, 'icon.png')
       : undefined,
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 14 },
