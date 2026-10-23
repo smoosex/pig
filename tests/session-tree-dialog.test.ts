@@ -74,7 +74,8 @@ async function runFixture(name: string): Promise<void> {
                 }
         if (name === 'tree-filter-scroll') {
           const all = manyRows(2388).map<SessionTreeRow>((item, index) => ({
-            ...item, current: index === 2387, kind: index < 289 ? 'user' : 'assistant',
+            ...item, current: index === 2387, onPath: index <= 150 || index >= 289,
+            kind: index < 289 ? 'user' : 'assistant',
             text: `${index < 289 ? 'user' : 'assistant'}: 行${index}`
           }))
           full = { ...record(all), 'user-only': all.slice(0, 289) }
@@ -340,13 +341,22 @@ async function runFixture(name: string): Promise<void> {
     await act(async () => { button('用户').click() })
     await flush()
     assert.ok(document.body.textContent?.includes('289/289'))
-    assert.equal(list.scrollTop, 0, 'when the current node is filtered out, reset the actual viewport')
+    const height = list.clientHeight || 26 * 12
+    assert.equal(list.scrollTop, 150 * 26 - (height - 26) / 2,
+      'a filtered assistant leaf anchors to its nearest user ancestor, not a later user on another branch')
     assert.equal(list.scrollLeft, 0, 'filtered rows cannot remain off-screen horizontally')
-    assert.ok(list.textContent?.includes('user: 行0'))
+    assert.ok(list.textContent?.includes('user: 行150'))
+    const selected = list.querySelectorAll<HTMLButtonElement>('button[aria-current="true"]')
+    assert.equal(selected.length, 1, 'the filtered view highlights exactly one current user node')
+    assert.ok(selected[0].textContent?.includes('user: 行150'))
+    assert.ok(selected[0].closest('[data-hover-highlight-row]')?.classList.contains('solid:bg-accent'),
+      'the scroll anchor also receives the current-row highlight')
 
     await act(async () => { button('默认').click() })
     await flush()
     assert.ok(list.scrollTop > 289 * 26, 'returning to the full tree locates its current node')
+    assert.ok(list.querySelector('button[aria-current="true"]')?.textContent?.includes('assistant: 行2387'),
+      'the full view restores the actual current leaf highlight')
     const search = document.querySelector<HTMLInputElement>('input[placeholder="搜索节点"]')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'user: 行0')
@@ -502,7 +512,7 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
     ['tree-view-tabs', 'tree: tabs switch the session view pi cycles with Ctrl+O'],
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
     ['tree-deep-indent', 'tree: deep forks cap drawn indent so node text stays visible'],
-    ['tree-filter-scroll', 'tree: switching to user-only from a long tree tail shows the filtered rows'],
+    ['tree-filter-scroll', 'tree: user-only view anchors a filtered leaf to its preceding user on the current branch'],
     ['tree-label-menu', 'tree: the context menu labels a row in place'],
     ['tree-label-close-cancels', 'tree: closing mid-edit strands no label field'],
     ['tree-label-session-switch', 'tree: switching sessions strands no label field'],

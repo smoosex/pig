@@ -276,6 +276,10 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   }
 
   const rows = trees?.[view] ?? []
+  // Filtered views keep the closest visible ancestor as their current node.
+  const currentRow = rows.find((row) => row.current)
+    ?? (view === 'user-only' ? rows.findLast((row) => row.onPath) : undefined)
+  const currentRowId = currentRow?.id
 
   const parentById = useMemo(() => new Map(rows.map((row) => [row.id, row.parentId])), [rows])
   const needle = query.trim().toLowerCase()
@@ -340,7 +344,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     const list = listRef.current
     if (!open || !list || !trees?.[view] || centeredView.current === view) return
     centeredView.current = view
-    const index = visible.findIndex((row) => row.current)
+    const index = visible.findIndex((row) => row.id === currentRowId)
     const height = list.clientHeight || viewportH || ROW_H * 12
     const target = index < 0 ? 0 : Math.min(
       Math.max(0, index * ROW_H - (height - ROW_H) / 2),
@@ -349,7 +353,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     list.scrollTop = target
     list.scrollLeft = 0
     setScrollTop(target)
-  }, [open, trees, view, visible, viewportH])
+  }, [open, trees, view, visible, viewportH, currentRowId])
 
   return (
     <Dialog
@@ -433,7 +437,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                         data-hover-highlight-row
                         className={cn(
                           'relative flex h-6.5 min-w-0 items-center',
-                          row.current && 'bg-glass-prompt-foreground/12 text-glass-prompt-foreground solid:bg-accent solid:text-accent-foreground'
+                          row.id === currentRowId && 'bg-glass-prompt-foreground/12 text-glass-prompt-foreground solid:bg-accent solid:text-accent-foreground'
                         )}
                       >
                         {/* Overflowing flex-end content clips on the left, keeping the levels nearest the node. */}
@@ -486,8 +490,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
                                 variant="ghost"
                                 className={cn(
                                   'h-auto min-w-0 flex-1 justify-start truncate rounded-none px-1 py-0.5 text-left text-xs font-normal hover:bg-transparent!',
-                                  !row.current && kindClass(row.kind)
+                                  row.id !== currentRowId && kindClass(row.kind)
                                 )}
+                                aria-current={row.id === currentRowId ? 'true' : undefined}
                                 onClick={() => {
                                   if (activeSessionId) void confirmBranch({ sessionId: activeSessionId, tipId: row.id }, 'none')
                                 }}
