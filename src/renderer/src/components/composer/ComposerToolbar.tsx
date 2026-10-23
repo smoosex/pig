@@ -11,6 +11,7 @@ import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
 import { SessionCapabilitiesButton } from './SessionCapabilitiesButton'
 import { ContextUsageButton } from './ContextUsageButton'
+import { ProcessStatus } from './ProcessStatus'
 import { ReviewStatus } from './ReviewStatus'
 import { SubagentStatus } from './SubagentStatus'
 import { ModelPicker, ThinkingPicker } from './ModelControls'
@@ -139,6 +140,7 @@ export function ComposerToolbar({
       </div>
       <div className="flex items-center gap-1.5">
         {/* Transient session states sit beside the context meter instead of reserving a row around the box. */}
+        <ProcessStatus sessionId={sessionId} />
         <SubagentStatus sessionId={sessionId} />
         <ReviewStatus key={sessionId ?? 'none'} sessionId={sessionId} />
         {!bashMode ? <SessionContextUsage sessionId={sessionId} /> : null}

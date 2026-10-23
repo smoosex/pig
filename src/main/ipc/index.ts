@@ -12,6 +12,7 @@ import { registerSubagentIpc } from './subagents'
 import { registerBrowserIpc } from './browser'
 import { registerTerminalIpc } from './terminal'
 import { getLive } from '../pi/session-registry'
+import { registerProcessIpc } from './processes'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -28,4 +29,5 @@ export function registerIpc(): void {
   const sessions = { sessionWindow: (id: string) => getLive(id)?.win, isSessionLive: (id: string) => getLive(id) !== undefined }
   registerTerminalIpc(sessions)
   registerBrowserIpc(sessions)
+  registerProcessIpc()
 }

@@ -1,5 +1,5 @@
-/** Terminal group-kill acknowledgements are mandatory, unlike the bounded session teardown. */
-export async function exitAfterCleanup(terminals: Promise<void>, teardown: Promise<unknown>, exit: (code: number) => void): Promise<void> {
+/** Terminal and background process group kills are mandatory, unlike the bounded session teardown. */
+export async function exitAfterCleanup(terminals: Promise<unknown>, teardown: Promise<unknown>, exit: (code: number) => void): Promise<void> {
   try {
     await Promise.all([terminals, teardown])
   } catch (error) {

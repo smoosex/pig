@@ -47,6 +47,7 @@ async function fixture(failure: Failure): Promise<void> {
     'tab-close-menu': { installTabCloseMenu: () => { menuInstalls++ } },
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: asyncNoop },
+    'processes/index': { shutdownProcesses: asyncNoop },
     'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },

@@ -37,6 +37,7 @@ async function fixture(scenario: Scenario): Promise<void> {
     replyReviewUI: async (id: string, value: string | null) => { replies.push([id, value]) },
     listSubagents: async () => [],
     onSubagentsChanged: () => () => {},
+    processes: { list: async () => [], onChanged: () => () => {} },
     prompt: async (sessionId: string, text: string) => { submittedPrompts.push([sessionId, text]) }
   } as unknown as typeof window.api
   const React = await import('react')

@@ -19,6 +19,7 @@ async function fixture(scenario: string): Promise<void> {
     isMemoryPluginEnabled: async () => false,
     listSubagents: async () => [],
     onSubagentsChanged: () => noop,
+    processes: { list: async () => [], onChanged: () => () => {} },
     onPluginsChanged: () => noop,
     setSidebarPrefs: async ({ reviewOpen }: { reviewOpen?: boolean }) => ({ sidebarTab: 'projects', split: 0.5, reviewOpen: reviewOpen ?? false })
   } })

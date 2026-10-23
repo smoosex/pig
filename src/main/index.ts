@@ -7,6 +7,7 @@ import { installTabCloseMenu } from './tab-close-menu'
 import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
 import { shutdownTerminals } from './ipc/terminal'
+import { shutdownProcesses } from './processes'
 import { exitAfterCleanup } from './shutdown'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
@@ -133,7 +134,7 @@ app.on('before-quit', (event) => {
   ])
     .then(() => disposeAll())
     .catch(() => {})
-  void exitAfterCleanup(shutdownTerminals(), Promise.race([
+  void exitAfterCleanup(Promise.all([shutdownTerminals(), shutdownProcesses()]), Promise.race([
     teardown,
     new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))
   ]), (code) => app.exit(code))

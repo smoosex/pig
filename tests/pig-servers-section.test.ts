@@ -21,7 +21,7 @@ async function fixture(): Promise<void> {
     const { applySessionTools } = await import('../src/main/pi/session-capabilities')
     const plugin = (name: string) => join(process.cwd(), 'src/main/plugins', name, 'index.ts')
     const settingsManager = sessionResourceSettings(root, getAgentDir())
-    const loader = await createNoExtensionsResourceLoader(root, [plugin('pig-browser'), plugin('pig-terminal')], { settingsManager })
+    const loader = await createNoExtensionsResourceLoader(root, [plugin('pig-browser'), plugin('pig-terminal'), plugin('pig-process')], { settingsManager })
     assert.deepEqual(loader.getExtensions().errors, [])
     const { session } = await createAgentSession({
       cwd: root, resourceLoader: loader, settingsManager,
@@ -40,14 +40,14 @@ async function fixture(): Promise<void> {
 
     const both = await section()
     assert.match(both!, /^Pig's built-in tool servers whose tools are not declared to you\. Load their tools with `tool_search`\./)
-    assert.deepEqual(names(both), ['browser', 'terminal'])
+    assert.deepEqual(names(both), ['browser', 'process', 'terminal'])
     assert.match(both!, /- browser \(tool_search\): Pig's built-in browser/)
     assert.equal(await section(), both, 'an unchanged run rebuilds identical text, so Pi sends no patch')
 
     const off = (prefix: string) => Object.fromEntries(session.getAllTools().filter((tool) => tool.name.startsWith(prefix)).map((tool) => [tool.name, false]))
     await applySessionTools(session, off('browser_'))
-    assert.deepEqual(names(await section()), ['terminal'], 'switching the browser off drops only its line')
-    await applySessionTools(session, { ...off('browser_'), ...off('terminal_') })
+    assert.deepEqual(names(await section()), ['process', 'terminal'], 'switching the browser off drops only its line')
+    await applySessionTools(session, { ...off('browser_'), ...off('terminal_'), ...off('process_') })
     assert.equal(await section(), undefined, 'with no server left the section is removed')
     await applySessionTools(session, {})
     assert.equal(await section(), both, 'switching back restores the same text')

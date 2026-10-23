@@ -861,6 +861,18 @@ export const en: Messages = {
     closeDescription: '{n} background subagents are still running and will be stopped.',
     closeConfirm: 'Close and stop'
   },
+  processes: {
+    summary: 'Background processes: {statuses}',
+    title: 'Background processes',
+    status: { running: 'Running', exited: 'Exited', failed: 'Failed', stopped: 'Stopped' },
+    exitCode: 'Exit code {code}',
+    signal: 'Signal {signal}',
+    noOutput: 'No output yet',
+    stop: 'Stop',
+    remove: 'Remove',
+    showOutput: 'Show output',
+    actionFailed: 'Background process action failed'
+  },
   reviewUI: {
     preset: 'Review code', branch: 'Select a base branch', commit: 'Select a commit',
     instructions: 'Custom review instructions', folders: 'Review files or folders', pr: 'Review a pull request',

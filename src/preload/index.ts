@@ -60,6 +60,16 @@ const api: SessionApi = {
     setEmotion: (emotion, intensity) => ipcRenderer.invoke('persona:set-emotion', emotion, intensity),
     setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled)
   },
+  processes: {
+    list: (sessionId) => ipcRenderer.invoke('processes:list', sessionId),
+    stop: (sessionId, processId) => ipcRenderer.invoke('processes:stop', sessionId, processId),
+    remove: (sessionId, processId) => ipcRenderer.invoke('processes:remove', sessionId, processId),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, update: import('../shared/processes').BackgroundProcessUpdate) => listener(update)
+      ipcRenderer.on('processes:changed', handler)
+      return () => ipcRenderer.off('processes:changed', handler)
+    }
+  },
   terminal: {
     create: (terminalId, cwd, cols, rows) => ipcRenderer.invoke('terminal:create', terminalId, cwd, cols, rows),
     write: (terminalId, data, binary) => binary === undefined

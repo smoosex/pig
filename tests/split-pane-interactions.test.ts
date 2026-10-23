@@ -20,6 +20,7 @@ async function fixture(scenario: string): Promise<void> {
       onPluginsChanged: () => () => {},
       listSubagents: async () => [],
       onSubagentsChanged: () => () => {},
+      processes: { list: async () => [], onChanged: () => () => {} },
       closeSession: async (id: string) => {
         closed.push(id)
       },

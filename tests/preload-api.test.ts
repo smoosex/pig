@@ -100,6 +100,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.persona.saveFile({ name: 'SOUL.md', content: 'persona', revision: null })
   await api.persona.setEmotion('trust', 0.6)
   await api.persona.setAutomatic(false)
+  await api.processes.list('session-1')
+  await api.processes.stop('session-1', 'proc-1')
+  await api.processes.remove('session-1', 'proc-1')
+  api.processes.onChanged(() => {})()
   await api.terminal.create('terminal:one', '/repo', 80, 24)
   await api.terminal.create('terminal:two', null, 100, 30)
   await api.terminal.write('terminal:one', 'ls\r')
@@ -175,6 +179,9 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'persona:save-file', args: [{ name: 'SOUL.md', content: 'persona', revision: null }] },
     { channel: 'persona:set-emotion', args: ['trust', 0.6] },
     { channel: 'persona:set-automatic', args: [false] },
+    { channel: 'processes:list', args: ['session-1'] },
+    { channel: 'processes:stop', args: ['session-1', 'proc-1'] },
+    { channel: 'processes:remove', args: ['session-1', 'proc-1'] },
     { channel: 'terminal:create', args: ['terminal:one', '/repo', 80, 24] },
     { channel: 'terminal:create', args: ['terminal:two', null, 100, 30] },
     { channel: 'terminal:write', args: ['terminal:one', 'ls\r'] },
@@ -197,6 +204,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('browser:selection'))
   assert.ok(listeners.includes('terminal:event'))
+  assert.ok(listeners.includes('processes:changed'))
   assert.ok(listeners.includes('terminal:agent-open-request'))
   assert.ok(listeners.includes('terminal:agent-state'))
   assert.equal('replyPluginUI' in api, false)

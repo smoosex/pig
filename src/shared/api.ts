@@ -878,10 +878,12 @@ export interface ProjectDirectorySearch {
 
 export type * from './browser'
 export type * from './terminal'
+export type * from './processes'
 
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
+  processes: import('./processes').ProcessApi
   terminal: import('./terminal').TerminalApi
   listProjects: () => Promise<ProjectGroup[]>
   discoverOpenedWorktrees: () => Promise<ProjectWorktreeDiscovery[]>

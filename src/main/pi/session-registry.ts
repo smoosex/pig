@@ -34,6 +34,7 @@ import { configuredServers } from '../mcp/settings'
 import { featuredRecipe } from '../mcp/featured'
 import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../shared/session-capabilities'
 import { assertExtensionResources, createSessionRuntime, SessionResourceError } from './session-runtime'
+import { closeSessionProcesses } from '../processes'
 import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
@@ -908,6 +909,12 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
     await closeSubagents(session.sessionId)
   } catch (error) {
     // A failed index write must be reported, but must not strand the already-unregistered parent.
+    shutdownErrors.push(error)
+  }
+  try {
+    // Owned by the session, not the plugin: a disabled pig-process plugin must not leak them.
+    await closeSessionProcesses(session.sessionId)
+  } catch (error) {
     shutdownErrors.push(error)
   }
   cancelExtensionUI(session.sessionId)

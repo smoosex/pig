@@ -858,6 +858,18 @@ export const zh = {
     closeDescription: '{n} 个后台子 agent 仍在运行，关闭后会被中止。',
     closeConfirm: '关闭并中止'
   },
+  processes: {
+    summary: '后台进程: {statuses}',
+    title: '后台进程',
+    status: { running: '运行中', exited: '已退出', failed: '异常退出', stopped: '已停止' },
+    exitCode: '退出码 {code}',
+    signal: '信号 {signal}',
+    noOutput: '还没有输出',
+    stop: '停止',
+    remove: '移除记录',
+    showOutput: '查看输出',
+    actionFailed: '操作后台进程失败'
+  },
   reviewUI: {
     preset: '审查代码', branch: '选择基准分支', commit: '选择提交',
     instructions: '自定义审查指令', folders: '审查文件或目录', pr: '审查 Pull Request',
