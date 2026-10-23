@@ -285,6 +285,7 @@ const api: SessionApi = {
     return () => ipcRenderer.off('mcp:changed', handler)
   },
   supportsGlass: process.argv.includes(GLASS_SURFACE_ARGUMENT),
+  notifyStartupReady: () => ipcRenderer.send('window:startup-ready'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   listSkills: () => ipcRenderer.invoke('skills:list'),
   setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:enable', id, enabled),

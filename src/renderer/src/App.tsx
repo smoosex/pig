@@ -409,6 +409,11 @@ export default function App() {
     return () => releaseChatDraft()
   }, [acquireChatDraft, chatHome, releaseChatDraft])
 
+  // A failed restore is shown by the app itself, so it lifts the startup screen too.
+  useEffect(() => {
+    if (workspaceRestoreReady || workspaceRestoreError) api.notifyStartupReady()
+  }, [workspaceRestoreReady, workspaceRestoreError])
+
   useEffect(() => {
     if (!activeTab) {
       if (currentProjectCwd) projectFocusCwd.current = currentProjectCwd

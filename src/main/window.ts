@@ -22,7 +22,16 @@ function resolvePreload(): string {
   throw new Error(`preload entry not found under ${preloadDir}`)
 }
 
+/** A window opened on its own shows once the app paints; at startup it shows beforehand, with the startup screen. */
 export function createMainWindow(): BrowserWindow {
+  const { window, loadApp } = createStartupMainWindow()
+  window.once('ready-to-show', () => window.show())
+  loadApp()
+  return window
+}
+
+/** The app is loaded separately: its IPC only exists once main has initialized. */
+export function createStartupMainWindow(): { window: BrowserWindow; loadApp: () => void } {
   const rendererHtml = join(mainDirectory, '../renderer/index.html')
   const devServer = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
   const isAppUrl = createAppUrlCheck({ devServer, rendererHtml })
@@ -50,7 +59,6 @@ export function createMainWindow(): BrowserWindow {
   })
 
   mainWindow.on('page-title-updated', (event) => event.preventDefault())
-  mainWindow.on('ready-to-show', () => mainWindow.show())
 
   // The preload bridge is attached to whatever document this window shows, so navigation is limited
   // to the app itself.
@@ -61,11 +69,13 @@ export function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (devServer) {
-    void mainWindow.loadURL(devServer)
-  } else {
-    void mainWindow.loadFile(rendererHtml)
+  const loadApp = () => {
+    if (devServer) {
+      void mainWindow.loadURL(devServer)
+    } else {
+      void mainWindow.loadFile(rendererHtml)
+    }
   }
 
-  return mainWindow
+  return { window: mainWindow, loadApp }
 }

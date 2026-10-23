@@ -1019,6 +1019,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   saveOpenSplitLayout: (layout: SavedSplitLayout | null) => Promise<void>
   /** Native material support is available synchronously, before the document's first paint. */
   readonly supportsGlass: boolean
+  /** Lifts the startup screen covering the window; later calls and reloads are ignored. */
+  notifyStartupReady: () => void
   getSettings: () => Promise<AppSettings>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>

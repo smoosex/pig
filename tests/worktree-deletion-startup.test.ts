@@ -20,6 +20,7 @@ async function fixture(failure: Failure): Promise<void> {
   let exit!: (code: number) => void
   const exited = new Promise<number>((resolve) => { exit = resolve })
   let windows = 0
+  let startupShows = 0
   let menuInstalls = 0
   let workspacePrunes = 0
   let chatPrunes = 0
@@ -43,14 +44,24 @@ async function fixture(failure: Failure): Promise<void> {
     electronApp: { setAppUserModelId: noop }, optimizer: { watchWindowShortcuts: noop }
   }))
   const modules: Record<string, Record<string, unknown>> = {
-    'window': { createMainWindow: () => { windows++ } },
+    'window': {
+      createMainWindow: () => { windows++ },
+      createStartupMainWindow: () => ({
+        window: { show: () => { startupShows++ }, isDestroyed: () => false },
+        loadApp: () => { windows++ }
+      })
+    },
+    'startup-window': { attachStartupScreen: () => ({ ready: Promise.resolve(), dismiss: () => {} }) },
     'tab-close-menu': { installTabCloseMenu: () => { menuInstalls++ } },
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: asyncNoop },
     'processes/index': { shutdownProcesses: asyncNoop },
     'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
-    'pig-settings': { loadPigSettings: async () => ({ locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }) },
+    'pig-settings': { loadPigSettings: async () => {
+      assert.equal(startupShows, 1, 'the loading screen is visible before reading application settings')
+      return { locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }
+    } },
     'session-names': { forwardSessionNames: noop },
     'pi/session-registry': { closeSessionsForCwd: asyncNoop, disposeAll: asyncNoop },
     'pi/session-removal': { removeProjectSessions: asyncNoop },

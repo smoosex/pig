@@ -2,7 +2,8 @@ import { app, BrowserWindow, nativeTheme } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { createMainWindow } from './window'
+import { createMainWindow, createStartupMainWindow } from './window'
+import { attachStartupScreen } from './startup-window'
 import { installTabCloseMenu } from './tab-close-menu'
 import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
@@ -57,13 +58,31 @@ if (!app.requestSingleInstanceLock()) {
   app.exit(0)
 }
 
-app.whenReady().then(async () => {
-  await shellEnvironment
-  electronApp.setAppUserModelId('dev.pig.desktop')
+let isDisposing = false
+const startupCancelled = new Error('Startup cancelled by quit')
 
+// A quit during the loading screen must not let a late initialization step reopen the app.
+async function duringStartup<T>(operation: Promise<T>): Promise<T> {
+  const result = await operation
+  if (isDisposing) throw startupCancelled
+  return result
+}
+
+function openMainWindow(): void {
+  if (isDisposing) return
+  createMainWindow()
+}
+
+app.whenReady().then(async () => {
+  if (isDisposing) return
+  electronApp.setAppUserModelId('dev.pig.desktop')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+  const startup = createStartupMainWindow()
+  await duringStartup(attachStartupScreen(startup.window).ready)
+  startup.window.show()
+  await duringStartup(shellEnvironment)
 
   handleSessionImages()
   handleMcpIcons()
@@ -73,38 +92,43 @@ app.whenReady().then(async () => {
   void startModelRuntime()
     .then(() => startModelCatalog())
     .catch((error) => console.error('Model runtime initialization failed:', error))
-  await initializeMcpDefaults()
+  await duringStartup(initializeMcpDefaults())
   registerIpc()
-  const settings = await loadPigSettings()
+  const settings = await duringStartup(loadPigSettings())
   nativeTheme.themeSource = settings.appearance
   applyWindowSurfaceStyle(settings.surfaceStyle)
-  await initLocale(settings.locale)
-  await worktrees.startDeletionWorker(async (cwd) => {
+  await duringStartup(initLocale(settings.locale))
+  await duringStartup(worktrees.startDeletionWorker(async (cwd) => {
     await closeSessionsForCwd(cwd)
     await removeProjectSessions(cwd)
     await removeOpenProjectWorkspaces([cwd])
-  })
-  await removeOpenProjectWorkspaces((await worktrees.listDeletions()).map((job) => job.cwd))
+  }))
+  const deletions = await duringStartup(worktrees.listDeletions())
+  await duringStartup(removeOpenProjectWorkspaces(deletions.map((job) => job.cwd)))
   // Before the window can make one: a chat the last run left behind is nobody's.
-  await pruneEmptyChatDirs().catch(() => {})
-  const { tools } = await loadOpenProjectSessions()
-  await pruneTerminalHistories(tools.filter((tool) => tool.kind === 'terminal').map((tool) => tool.id))
+  await duringStartup(pruneEmptyChatDirs().catch(() => {}))
+  const { tools } = await duringStartup(loadOpenProjectSessions())
+  await duringStartup(pruneTerminalHistories(tools.filter((tool) => tool.kind === 'terminal').map((tool) => tool.id)))
   forwardSessionNames()
   installTabCloseMenu()
-  createMainWindow()
+  // The window may have been closed while it showed only the startup screen.
+  if (startup.window.isDestroyed()) openMainWindow()
+  else startup.loadApp()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    if (BrowserWindow.getAllWindows().length === 0) openMainWindow()
   })
   // Only an initialized process may create another window or reopen its sessions.
   app.on('second-instance', () => {
+    if (isDisposing) return
     const [window] = BrowserWindow.getAllWindows()
-    if (!window) return void createMainWindow()
+    if (!window) return void openMainWindow()
     if (window.isMinimized()) window.restore()
     window.show()
     window.focus()
   })
 }).catch((error: unknown) => {
+  if (isDisposing) return
   // Persistent-state initialization can fail on corrupt JSON or unreadable storage. This process
   // boundary reports a fatal startup failure and exits; it must not expose a partially restored UI.
   console.error('Pig startup failed:', error)
@@ -115,8 +139,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-let isDisposing = false
-
 // Teardown waits on sessions and naming jobs, and any of them can stay pending: a turn that never
 // settles, a build still starting, a hook nobody answers. The quit must not inherit that, so the
 // chain is raced against a deadline and the process exits on its own terms.
@@ -126,6 +148,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   if (isDisposing) return
   isDisposing = true
+  for (const window of BrowserWindow.getAllWindows()) window.hide()
   const teardown = Promise.allSettled([
     worktrees.shutdown(),
     flushOpenProjectSessions(),
