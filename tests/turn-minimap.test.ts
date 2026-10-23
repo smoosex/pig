@@ -29,6 +29,15 @@ async function fixture(): Promise<void> {
     configurable: true,
     get() { return 120 }
   })
+  // Virtualizer measures the scroll viewport via client dimensions, not its border box.
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get() { return navigationHeight(this) }
+  })
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get() { return 120 }
+  })
   HTMLElement.prototype.getBoundingClientRect = function () {
     const height = Number.parseFloat(this.style.height) || navigationHeight(this)
     const top = this.parentElement?.getAttribute('role') === 'navigation' ? 8 : 0
