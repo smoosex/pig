@@ -55,15 +55,6 @@ type BranchMode = 'none' | 'summary' | 'custom'
 const ROW_H = 26
 const OVERSCAN = 8
 
-function scheduleIdle(callback: () => void): () => void {
-  if (typeof window.requestIdleCallback === 'function') {
-    const id = window.requestIdleCallback(() => callback())
-    return () => window.cancelIdleCallback(id)
-  }
-  const id = window.setTimeout(callback, 150)
-  return () => window.clearTimeout(id)
-}
-
 function kindClass(kind: SessionTreeRow['kind']): string {
   if (kind === 'user') return 'text-primary'
   if (kind === 'assistant') return 'text-foreground'
@@ -105,19 +96,6 @@ function treePrefix(row: SessionTreeRow, multipleRoots: boolean): { hidden: numb
   }
   const text = chars.slice(hidden * 3).join('')
   return { hidden, text: hidden ? `…+${hidden} ${text}` : text }
-}
-
-function isFoldedAway(
-  row: SessionTreeRow,
-  parentById: Map<string, string | null>,
-  folded: Set<string>
-): boolean {
-  let id = row.parentId
-  while (id) {
-    if (folded.has(id)) return true
-    id = parentById.get(id) ?? null
-  }
-  return false
 }
 
 export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
@@ -187,7 +165,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   const [view, setView] = useState<SessionTreeView>('default')
   const [labelingId, setLabelingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  // Views arrive default-first: the first paint ships one view over IPC, the rest follow when idle.
+  // Load only the selected views; opening a long tree must not build five projections.
   const [trees, setTrees] = useState<Partial<Record<SessionTreeView, SessionTreeRow[]>> | null>(null)
   const treesRef = useRef(trees)
   treesRef.current = trees
@@ -197,7 +175,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(0)
   // The view last centred on its current node; null after each (re)load so the first rows centre once.
-  // Later row refreshes (the idle fill, a relabel) must not yank a list the user is scrolling.
+  // Later row refreshes (a loaded view, a relabel) must not yank a list the user is scrolling.
   const centeredView = useRef<SessionTreeView | null>(null)
   // The dialog body mounts through a portal a render after `open` flips, so measuring has to follow
   // the element itself rather than an effect keyed on `open`.
@@ -220,7 +198,6 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     if (!open || !activeSessionId) return
     const gen = ++readGen.current
     let cancelled = false
-    let unfill: (() => void) | undefined
     setTrees(null)
     centeredView.current = null
     setFolded(new Set())
@@ -231,22 +208,6 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       .then((first) => {
         if (cancelled || readGen.current !== gen || !first) return
         setTrees((prev) => ({ ...prev, ...first }))
-        // The dialog is already usable: fill the other tabs off the critical path.
-        unfill = scheduleIdle(() => {
-          if (cancelled || readGen.current !== gen) return
-          void api
-            .getSessionTrees(activeSessionId)
-            .then((rest) => {
-              if (!cancelled && readGen.current === gen && rest) {
-                setTrees((prev) => ({ ...prev, ...rest }))
-              }
-            })
-            .catch((reason: unknown) => {
-              if (!cancelled && readGen.current === gen) {
-                setError(reason instanceof Error ? reason.message : String(reason))
-              }
-            })
-        })
       })
       .catch((reason: unknown) => {
         if (!cancelled && readGen.current === gen) {
@@ -255,11 +216,10 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       })
     return () => {
       cancelled = true
-      unfill?.()
     }
   }, [open, activeSessionId])
 
-  // A tab clicked before the idle fill asks for its own view instead of waiting.
+  // Each view is fetched on first selection and reused until the tree changes.
   const ensureView = (next: SessionTreeView) => {
     if (!activeSessionId || treesRef.current?.[next]) return
     const gen = readGen.current
@@ -281,10 +241,16 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     ?? (view === 'user-only' ? rows.findLast((row) => row.onPath) : undefined)
   const currentRowId = currentRow?.id
 
-  const parentById = useMemo(() => new Map(rows.map((row) => [row.id, row.parentId])), [rows])
   const needle = query.trim().toLowerCase()
   const visible = useMemo(() => {
+    if (!needle && folded.size === 0) return rows
+    const hidden = new Set<string>()
     return rows.filter((row) => {
+      // Rows are preorder: each parent's visibility is known before its children are visited.
+      if (!needle && row.parentId && (folded.has(row.parentId) || hidden.has(row.parentId))) {
+        hidden.add(row.id)
+        return false
+      }
       if (
         needle &&
         !row.text.toLowerCase().includes(needle) &&
@@ -292,10 +258,9 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       ) {
         return false
       }
-      if (!needle && isFoldedAway(row, parentById, folded)) return false
       return true
     })
-  }, [rows, needle, parentById, folded])
+  }, [rows, needle, folded])
 
   const multipleRoots = rows.some((row) => row.isVirtualRootChild)
 
@@ -325,9 +290,10 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
     setLabelingId(null)
     if (!activeSessionId) return
     const gen = ++readGen.current
+    const loadedViews = Object.keys(treesRef.current ?? {}) as SessionTreeView[]
     void api
       .setSessionLabel(activeSessionId, targetId, label, activePath)
-      .then(() => api.getSessionTrees(activeSessionId))
+      .then(() => api.getSessionTrees(activeSessionId, loadedViews))
       .then((all) => {
         if (readGen.current === gen && all) setTrees(all)
       })

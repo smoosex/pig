@@ -41,6 +41,7 @@ async function runFixture(name: string): Promise<void> {
   })
   const manyRows = (count: number): SessionTreeRow[] =>
     Array.from({ length: count }, (_, index) => row(`r${index}`, `user: 行${index}`))
+  let parentReads = 0
   const calls: [string, SessionTreeView[] | undefined][] = []
   const aborts: string[] = []
   const labels: { sessionId: string; targetId: string; label: string; path?: string }[] = []
@@ -79,6 +80,14 @@ async function runFixture(name: string): Promise<void> {
             text: `${index < 289 ? 'user' : 'assistant'}: 行${index}`
           }))
           full = { ...record(all), 'user-only': all.slice(0, 289) }
+        }
+        if (name === 'tree-fold-linear') {
+          full = record(manyRows(3000).map((item, index) => ({
+            ...item,
+            current: index === 0,
+            foldable: index <= 1,
+            get parentId() { parentReads++; return index === 0 ? null : `r${index - 1}` }
+          })))
         }
         if (!views?.length) return Promise.resolve(full)
         return Promise.resolve(Object.fromEntries(views.map((view) => [view, full[view]])))
@@ -323,6 +332,24 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'tree-fold-linear') {
+    await act(async () => { button('会话树').click() })
+    await flush()
+    const list = document.querySelector<HTMLDivElement>('div.font-mono')!
+    assert.equal(parentReads, 0, 'an unfolded tree never scans parent chains')
+    await act(async () => { button('折叠').click() })
+    await flush()
+    assert.ok(list.textContent?.includes('user: 行0'))
+    assert.equal(list.textContent?.includes('user: 行1'), false, 'folding hides all descendants')
+    assert.ok(parentReads <= 3000 * 3, 'folding visits each parent a constant number of times')
+    const readsAfterFold = parentReads
+    await act(async () => { button('展开').click() })
+    await flush()
+    assert.ok(list.textContent?.includes('user: 行1'))
+    assert.equal(parentReads, readsAfterFold, 'unfolding the last fold skips parent lookup again')
+    return
+  }
+
   if (name === 'tree-filter-scroll') {
     await act(async () => { button('会话树').click() })
     await flush()
@@ -330,13 +357,14 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(list.scrollTop > 289 * 26, 'the default tree starts near its current final assistant row')
     assert.ok(list.textContent?.includes('assistant: 行2387'))
     assert.ok(observed.includes(list), 'the portal-mounted list is measured once it exists')
-    // The other views fill in after an idle delay; that refresh must not drag a list the user moved.
+    // Leaving the dialog idle must not fetch unused views or move the user's viewport.
     await act(async () => {
       list.scrollTop = 260
       list.dispatchEvent(new Event('scroll'))
     })
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)) })
-    assert.equal(list.scrollTop, 260, 'the idle fill keeps the user scroll position')
+    assert.equal(list.scrollTop, 260, 'idling keeps the user scroll position')
+    assert.deepEqual(calls, [['s1', ['default']]], 'unused views are never prefetched')
     list.scrollLeft = 600
     await act(async () => { button('用户').click() })
     await flush()
@@ -374,13 +402,13 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(document.body.textContent?.includes('user: 问题'))
     assert.equal(document.body.textContent?.includes('user: 起点'), false)
 
-    // The idle fill has not run yet (its timer outlives the flush), so this tab asks on demand.
+    // Selecting a view fetches only that projection.
     await act(async () => { button('标注').click() })
     await flush()
     assert.deepEqual(
       calls,
       [['s1', ['default']], ['s1', ['labeled-only']]],
-      'a tab clicked early reads its own view'
+      'a selected tab reads only its own view'
     )
     assert.ok(document.body.textContent?.includes('user: 起点'))
     assert.equal(document.body.textContent?.includes('user: 问题'), false)
@@ -389,10 +417,14 @@ async function runFixture(name: string): Promise<void> {
     await flush()
     assert.deepEqual(
       calls,
-      [['s1', ['default']], ['s1', ['labeled-only']], ['s1', undefined]],
-      'the idle fill still brings the rest'
+      [['s1', ['default']], ['s1', ['labeled-only']]],
+      'idling never loads unselected views'
     )
     assert.ok(document.body.textContent?.includes('user: 起点'))
+    await act(async () => { button('默认').click() })
+    await act(async () => { button('标注').click() })
+    await flush()
+    assert.equal(calls.length, 2, 'revisiting loaded views reuses their rows')
     return
   }
 
@@ -411,7 +443,7 @@ async function runFixture(name: string): Promise<void> {
       [{ sessionId: 's1', targetId: 'u1', label: '新标', path: '/project/s1.jsonl' }],
       'Enter writes the typed label with the tab path'
     )
-    assert.deepEqual(calls, [['s1', ['default']], ['s1', undefined]], 'the tree rereads after labeling')
+    assert.deepEqual(calls, [['s1', ['default']], ['s1', ['default']]], 'labeling refreshes only loaded views')
     assert.equal(labelInput(), null, 'the field closes once it commits')
     return
   }
@@ -513,6 +545,7 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
     ['tree-window-limits', 'tree: a long session mounts only the window it can show'],
     ['tree-deep-indent', 'tree: deep forks cap drawn indent so node text stays visible'],
     ['tree-filter-scroll', 'tree: user-only view anchors a filtered leaf to its preceding user on the current branch'],
+    ['tree-fold-linear', 'tree: folding a long chain uses linear parent lookups and skips them when unfolded'],
     ['tree-label-menu', 'tree: the context menu labels a row in place'],
     ['tree-label-close-cancels', 'tree: closing mid-edit strands no label field'],
     ['tree-label-session-switch', 'tree: switching sessions strands no label field'],
