@@ -77,6 +77,19 @@ async function fixture() {
     ], 'per-rule selections use the same snapshot while preserving original rules')
     assert.deepEqual(multiple.warnings, ['No models match pattern "missing-model"'])
 
+    models.push({ ...models[0], provider: 'other' })
+    await setScopedModels(['alpha'])
+    const ambiguous = await getScopedModels()
+    assert.deepEqual(ambiguous.models.map((model) => `${model.provider}/${model.id}`), ['test/alpha', 'other/alpha'])
+    assert.deepEqual(ambiguous.selections[0].models.map((model) => model.provider), ['test', 'other'])
+    assert.equal(ambiguous.warnings.length, 1, 'ambiguous bare IDs keep every matching provider and report a warning')
+    assert.deepEqual(ambiguous.missingProviderPatterns, [])
+    await setScopedModels(['other/alpha'])
+    const qualified = await getScopedModels()
+    assert.deepEqual(qualified.models.map((model) => `${model.provider}/${model.id}`), ['other/alpha'])
+    assert.deepEqual(qualified.warnings, [])
+    models.pop()
+
     availabilityError = new Error('Authentication scan failed')
     const beforeFailure = availabilityReads
     await assert.rejects(getScopedModels(), (error) => error === availabilityError)
