@@ -26,7 +26,8 @@ async function fixture(): Promise<void> {
   }
   mock.module('electron', () => ({
     ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler) },
-    dialog: {}
+    dialog: {},
+    nativeTheme: { shouldUseDarkColors: false }
   }))
   mock.module('../src/main/i18n', () => ({ t: (key: string) => key }))
   mock.module('../src/main/pi/session-registry', () => ({

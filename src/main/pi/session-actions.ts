@@ -57,6 +57,8 @@ export async function listSessionCommands(session: AgentSession): Promise<Sessio
   return [...extensionCommands, ...templates, ...skills]
 }
 
-export async function exportSession(session: AgentSession, outputPath: string): Promise<string> {
-  return outputPath.endsWith('.jsonl') ? session.exportToJsonl(outputPath) : session.exportToHtml(outputPath)
+export async function exportSession(session: AgentSession, outputPath: string, themeName: 'light' | 'dark'): Promise<string> {
+  return outputPath.endsWith('.jsonl')
+    ? session.exportToJsonl(outputPath)
+    : session.exportToHtml(outputPath, { themeName })
 }

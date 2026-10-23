@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron'
+import { dialog, ipcMain, nativeTheme } from 'electron'
 import { t } from '../i18n'
 import {
   activateSession,
@@ -229,7 +229,7 @@ export function registerSessionIpc(): void {
       ]
     })
     if (result.canceled || !result.filePath) return null
-    return { path: await exportSession(sessionId, result.filePath) }
+    return { path: await exportSession(sessionId, result.filePath, nativeTheme.shouldUseDarkColors ? 'dark' : 'light') }
   })
 
   ipcMain.handle(

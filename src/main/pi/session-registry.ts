@@ -1031,8 +1031,8 @@ export async function listSessionCommands(sessionId: string) {
   return commandsFor((await prepareSession(sessionId)).agentSession)
 }
 
-export async function exportSession(sessionId: string, outputPath: string): Promise<string> {
-  return exportAgentSession((await prepareSession(sessionId)).agentSession, outputPath)
+export async function exportSession(sessionId: string, outputPath: string, themeName: 'light' | 'dark'): Promise<string> {
+  return exportAgentSession((await prepareSession(sessionId)).agentSession, outputPath, themeName)
 }
 
 export async function getSessionTrees(

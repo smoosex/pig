@@ -14,6 +14,7 @@ async function fixture(): Promise<void> {
 
   mock.module('electron', () => ({
     dialog: {},
+    nativeTheme: { shouldUseDarkColors: false },
     ipcMain: {
       handle: (channel: string, handler: (...args: any[]) => unknown) => handlers.set(channel, handler)
     }
