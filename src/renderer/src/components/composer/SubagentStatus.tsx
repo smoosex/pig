@@ -59,7 +59,7 @@ export function SubagentStatus({ sessionId }: { sessionId: string | null }) {
                 data-subagent-ring
                 data-running={running}
                 className={cn(
-                  'pointer-events-none absolute -inset-0.5 rounded-full border',
+                  'pointer-events-none absolute -inset-px rounded-full border',
                   running ? 'animate-spin border-primary border-t-transparent motion-reduce:animate-none' : 'border-border'
                 )}
               />

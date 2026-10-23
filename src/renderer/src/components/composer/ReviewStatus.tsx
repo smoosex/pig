@@ -57,7 +57,7 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
           <span
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute -inset-0.5 rounded-full border border-primary',
+              'pointer-events-none absolute -inset-px rounded-full border border-primary',
               phase !== 'done' && 'animate-spin border-t-transparent motion-reduce:animate-none',
               phase === 'returning' && '[animation-direction:reverse]'
             )}
