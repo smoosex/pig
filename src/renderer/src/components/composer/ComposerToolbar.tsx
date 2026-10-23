@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowUp, Square, SquareTerminal } from 'lucide-react'
+import { ArrowUp, SquareTerminal } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '../../ipc/api'
 import type { ThinkingLevel } from '../../ipc/api'
@@ -148,11 +148,11 @@ export function ComposerToolbar({
           <InputGroupButton
             size="icon-xs"
             variant="secondary"
-            className="rounded-full [&_svg]:fill-current [&_svg:not([class*='size-'])]:size-2.5"
+            className="rounded-full"
             aria-label={t(bashRunning ? 'composer.stopBash' : 'composer.pause')}
             onClick={() => void onAbort()}
           >
-            <Square />
+            <span aria-hidden className="size-2.5 rounded-xs bg-destructive bg-(image:--glass-badge-sheen) shadow-glass-badge" />
           </InputGroupButton>
         ) : (
           <InputGroupButton
