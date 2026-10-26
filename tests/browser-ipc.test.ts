@@ -38,6 +38,7 @@ async function fixture(): Promise<void> {
       retainUrl(_win: unknown, id: string, url: string) { calls.push(['retain', id, url]) }
       getState(_win: unknown, id: string) { calls.push(['state', id]); return { browserId: id, ...(pageUrl !== undefined ? { url: pageUrl } : {}) } }
       inspect(_win: unknown, id: string) { calls.push(['inspect', id]) }
+      allowCertificate(_win: unknown, id: string, fingerprint: unknown) { calls.push(['allowCertificate', id, fingerprint]) }
       setBounds(_win: unknown, id: string, bounds: unknown) { calls.push(['bounds', id, bounds]) }
       close(_win: unknown, id: string) { calls.push(['close', id]) }
       closeWindow(win: unknown) { calls.push(['closeWindow', win]) }
@@ -90,6 +91,9 @@ async function fixture(): Promise<void> {
   assert.deepEqual(clipboard, [pageUrl])
   assert.deepEqual(external, [pageUrl], 'only the committed HTTP(S) URL can leave Pig')
   assert.deepEqual(calls.at(-1), ['inspect', 'browser:owned'])
+  handlers.get('browser:allow-certificate')!(event, 'browser:owned', 'sha256/A')
+  assert.deepEqual(calls.at(-1), ['allowCertificate', 'browser:owned', 'sha256/A'])
+  assert.throws(() => handlers.get('browser:allow-certificate')!(foreign, 'browser:owned', 'sha256/A'), /does not belong/)
   assert.throws(() => handlers.get('browser:open-external')!(foreign, 'browser:owned'), /does not belong/)
   for (const invalid of ['', 'file:///tmp/a', 'javascript:alert(1)', 'https://a:b@example.test']) {
     pageUrl = invalid

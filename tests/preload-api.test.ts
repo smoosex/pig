@@ -84,6 +84,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.copyUrl('browser:one')
   await api.browser.openExternal('browser:one')
   await api.browser.inspect('browser:one')
+  await api.browser.allowCertificate('browser:one', 'sha256/A')
   await api.browser.listCookieSources('browser:one')
   await api.browser.previewCookies('browser:one', 'chrome:profile', 'site')
   await api.browser.importCookies('browser:one', 'chrome:profile', 'all', null)
@@ -169,6 +170,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:copy-url', args: ['browser:one'] },
     { channel: 'browser:open-external', args: ['browser:one'] },
     { channel: 'browser:inspect', args: ['browser:one'] },
+    { channel: 'browser:allow-certificate', args: ['browser:one', 'sha256/A'] },
     { channel: 'browser:list-cookie-sources', args: ['browser:one'] },
     { channel: 'browser:preview-cookies', args: ['browser:one', 'chrome:profile', 'site'] },
     { channel: 'browser:import-cookies', args: ['browser:one', 'chrome:profile', 'all', null] },

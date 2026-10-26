@@ -68,13 +68,17 @@ function liveContents(view: WebContentsView): Electron.WebContents | null {
   return contents && !contents.isDestroyed() ? contents : null
 }
 
+const certificateKey = (host: string, fingerprint: string) => `${host}\n${fingerprint}`
+
 export function emptyBrowserState(browserId: string): BrowserState {
-  return { browserId, documentId: '', url: '', title: '', loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, agentSessionId: null }
+  return { browserId, documentId: '', url: '', title: '', loading: false, canGoBack: false, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, certificate: null, agentSessionId: null }
 }
 
 export class BrowserHost {
   private windows = new Map<BrowserWindow, WindowPages>()
   private watched = new WeakSet<BrowserWindow>()
+  /** host + fingerprint pairs the user allowed; shared by every tab in the one partition, never persisted. */
+  private trustedCertificates = new Set<string>()
   private clock = 0
 
   /**
@@ -379,6 +383,24 @@ export class BrowserHost {
       page.state.documentId = randomUUID()
       page.annotationLimitReached = false
       page.state.error = null
+      page.state.certificate = null
+      this.push(owner, page)
+    })
+    // Chromium shows no interstitial here: without a handler every bad certificate is rejected.
+    // Only an exact host + certificate the user allowed passes; subresources are never prompted.
+    wc.on('certificate-error', (event, url, error, certificate, callback, isMainFrame) => {
+      event.preventDefault()
+      const host = new URL(url).host
+      if (this.trustedCertificates.has(certificateKey(host, certificate.fingerprint))) {
+        callback(true)
+        return
+      }
+      callback(false)
+      if (!isMainFrame || !this.alive(owner, page)) return
+      page.state.certificate = {
+        url, host, error, issuer: certificate.issuerName, subject: certificate.subjectName,
+        validExpiry: certificate.validExpiry, fingerprint: certificate.fingerprint
+      }
       this.push(owner, page)
     })
     wc.on('did-start-loading', () => { page.state.loading = true; this.push(owner, page) })
@@ -575,6 +597,17 @@ export class BrowserHost {
     const image = await page.view.webContents.capturePage()
     if (!this.alive(owner, page) || image.isEmpty()) return null
     return `data:image/jpeg;base64,${image.toJPEG(85).toString('base64')}`
+  }
+
+  /** Trusts the certificate the page just rejected, for its host only, and loads the page again. */
+  async allowCertificate(win: BrowserWindow, id: string, fingerprint: unknown): Promise<void> {
+    const { page } = this.page(win, id, false)
+    const certificate = page?.state.certificate
+    if (!certificate || typeof fingerprint !== 'string' || fingerprint !== certificate.fingerprint) {
+      throw new Error('The certificate to allow is no longer the one this page rejected')
+    }
+    this.trustedCertificates.add(certificateKey(certificate.host, certificate.fingerprint))
+    await this.navigate(win, id, certificate.url)
   }
 
   /** Toggles DevTools docked inside the pane instead of a separate window. */

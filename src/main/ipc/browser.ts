@@ -186,6 +186,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     }
   })
   ipcMain.handle('browser:inspect', (event, id: string) => host.inspect(owner(event, id), id))
+  ipcMain.handle('browser:allow-certificate', (event, id: string, fingerprint: unknown) => host.allowCertificate(owner(event, id), id, fingerprint))
   ipcMain.handle('browser:close', (event, id: string) => {
     const win = ui(event, id)
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')

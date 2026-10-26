@@ -1,7 +1,7 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
@@ -141,7 +141,8 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
     flushSync(() => setFrozen(frame))
     if (frame !== null) await waitForBrowserPaint(signal)
   }, [])
-  useBrowserBounds(browserId, active && !!state?.url, viewport, report, freeze)
+  const certificate = state?.certificate ?? null
+  useBrowserBounds(browserId, active && !!state?.url && !certificate, viewport, report, freeze)
 
   const pickerOptions = useCallback(() => browserPickerOptions({
     comment: t('browser.commentPlaceholder'), add: t('browser.addMark'),
@@ -303,11 +304,33 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
         </AlertDialogContent>
       </AlertDialog>
       <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
-      {error || state?.error ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
+      {(error || state?.error) && !certificate ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
       <div ref={viewport} data-browser-viewport className="relative min-h-0 flex-1 overflow-hidden">
-        {frozen && state?.url ? <img src={frozen} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
+        {frozen && state?.url && !certificate ? <img src={frozen} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
           style={{ '--devtools-ratio': ratio, height: state.devtools ? `calc(100% - ${DOCK_BOTTOM})` : '100%' } as CSSProperties} /> : null}
-        {!state?.url ? <p className="p-4 text-xs text-muted-foreground">{t('browser.empty')}</p> : null}
+        {!state?.url && !certificate ? <p className="p-4 text-xs text-muted-foreground">{t('browser.empty')}</p> : null}
+        {/* Like Chrome's interstitial; the native page is hidden while it shows, so this replaces it. */}
+        {certificate ? <div className="flex size-full items-center justify-center overflow-auto p-6">
+          <div className="flex w-full max-w-md flex-col gap-3 text-sm">
+            <ShieldAlert className="size-8 text-destructive" />
+            <h2 className="text-base font-medium">{t('browser.certificateTitle')}</h2>
+            <p className="text-muted-foreground">{t('browser.certificateWarning', { host: certificate.host })}</p>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-default select-none">{t('browser.certificateDetails')}</summary>
+              <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+                <dt>{t('browser.certificateError')}</dt><dd className="break-all">{certificate.error}</dd>
+                <dt>{t('browser.certificateIssuer')}</dt><dd className="break-all">{certificate.issuer}</dd>
+                <dt>{t('browser.certificateExpiry')}</dt><dd>{new Date(certificate.validExpiry * 1000).toLocaleDateString()}</dd>
+                <dt>{t('browser.certificateFingerprint')}</dt><dd className="font-mono break-all">{certificate.fingerprint}</dd>
+              </dl>
+            </details>
+            <div className="flex gap-2">
+              {state?.canGoBack ? <Button type="button" size="sm" disabled={busy} onClick={() => run(() => api.browser.back(browserId))}>{t('browser.certificateBack')}</Button> : null}
+              <Button type="button" size="sm" variant="ghost" className="text-destructive solid:hover:text-destructive" disabled={busy}
+                onClick={() => run(() => api.browser.allowCertificate(browserId, certificate.fingerprint))}>{t('browser.certificateProceed')}</Button>
+            </div>
+          </div>
+        </div> : null}
         {/* Marks where the native DevTools begin; their own top edge is the resize handle. */}
         {state?.url && state.devtools ? <div data-devtools-divider aria-hidden
           style={{ '--devtools-ratio': ratio, bottom: DOCK_BOTTOM } as CSSProperties} className="pointer-events-none absolute inset-x-0 h-0" /> : null}

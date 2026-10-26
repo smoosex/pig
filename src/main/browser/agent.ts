@@ -59,7 +59,8 @@ export class BrowserAgentController implements BrowserAgentHost {
       `URL: ${state.url || '(blank)'}`,
       `Title: ${JSON.stringify(state.title)}`,
       ...(state.loading ? ['Status: still loading'] : []),
-      ...(state.error ? [`Error: ${state.error}`] : [])
+      ...(state.error ? [`Error: ${state.error}`] : []),
+      ...(state.certificate ? [`Certificate: ${state.certificate.host} is not trusted (${state.certificate.error}). Only the user can allow it from the browser panel; do not retry.`] : [])
     ].join('\n')
   }
 
@@ -72,6 +73,10 @@ export class BrowserAgentController implements BrowserAgentHost {
       outcome = await abortable(Promise.race([loading.then(() => 'done' as const), timeout]), signal)
     } catch (error) {
       if (signal?.aborted) loading.catch((late) => console.error('Browser navigation failed after the tool stopped waiting:', late))
+      const certificate = !signal?.aborted && this.deps.host.getState(win, id).certificate
+      if (certificate) {
+        throw new Error(`The certificate of ${certificate.host} is not trusted (${certificate.error}); only the user can allow it from the browser panel`, { cause: error })
+      }
       throw error
     } finally { clearTimeout(timer) }
     // The page keeps loading after a timeout; navigate reports late failures in the browser state.

@@ -467,6 +467,35 @@ describe('browser host', () => {
     expect(views[2].webContents.dead).toBe(false)
   })
 
+  test('untrusted certificates are rejected until the user allows that exact host and certificate', async () => {
+    const { host, owner, views } = fixture()
+    await host.navigate(owner, 'a', 'https://example.test')
+    const contents = views[0]!.webContents
+    const verify = (url: string, fingerprint: string, isMainFrame = true) => {
+      let trusted: boolean | undefined
+      let prevented = false
+      contents.emit('certificate-error', { preventDefault: () => { prevented = true } }, url, 'net::ERR_CERT_AUTHORITY_INVALID',
+        { fingerprint, issuerName: 'Intranet CA', subjectName: 'intranet.test', validExpiry: 1_900_000_000 }, (value: boolean) => { trusted = value }, isMainFrame)
+      expect(prevented).toBe(true)
+      return trusted
+    }
+    await expect(host.allowCertificate(owner, 'a', 'sha256/A')).rejects.toThrow('no longer the one')
+    expect(verify('https://intranet.test:8443/sso/login', 'sha256/A')).toBe(false)
+    expect(host.getState(owner, 'a').certificate).toEqual({
+      url: 'https://intranet.test:8443/sso/login', host: 'intranet.test:8443', error: 'net::ERR_CERT_AUTHORITY_INVALID',
+      issuer: 'Intranet CA', subject: 'intranet.test', validExpiry: 1_900_000_000, fingerprint: 'sha256/A'
+    })
+    expect(verify('https://cdn.test/a.js', 'sha256/B', false), 'subresources are rejected without a prompt').toBe(false)
+    expect(host.getState(owner, 'a').certificate?.fingerprint).toBe('sha256/A')
+    await expect(host.allowCertificate(owner, 'a', 'sha256/B'), 'a stale dialog cannot allow another certificate').rejects.toThrow('no longer the one')
+    await host.allowCertificate(owner, 'a', 'sha256/A')
+    expect(contents.url, 'allowing reloads the rejected page').toBe('https://intranet.test:8443/sso/login')
+    expect(host.getState(owner, 'a').certificate).toBe(null)
+    expect(verify('https://intranet.test:8443/other', 'sha256/A')).toBe(true)
+    expect(verify('https://intranet.test:8443/other', 'sha256/C'), 'a changed certificate asks again').toBe(false)
+    expect(verify('https://other.test:8443/', 'sha256/A'), 'the exception is per host').toBe(false)
+  })
+
   test('inspect docks the page DevTools below it in the same pane and toggles them off', async () => {
     const { host, owner, views, win } = fixture()
     expect(() => host.inspect(owner, 'a')).toThrow()

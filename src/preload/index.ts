@@ -21,6 +21,7 @@ const api: SessionApi = {
     copyUrl: (browserId) => ipcRenderer.invoke('browser:copy-url', browserId),
     openExternal: (browserId) => ipcRenderer.invoke('browser:open-external', browserId),
     inspect: (browserId) => ipcRenderer.invoke('browser:inspect', browserId),
+    allowCertificate: (browserId, fingerprint) => ipcRenderer.invoke('browser:allow-certificate', browserId, fingerprint),
     close: (browserId) => ipcRenderer.invoke('browser:close', browserId),
     listCookieSources: (browserId) => ipcRenderer.invoke('browser:list-cookie-sources', browserId),
     previewCookies: (browserId, sourceId, scope) => ipcRenderer.invoke('browser:preview-cookies', browserId, sourceId, scope),

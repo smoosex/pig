@@ -12,7 +12,7 @@ async function fixture() {
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class {
     observe() {} unobserve() {} disconnect() {}
   } })
-  const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, agentSessionId: null })
+  const state = (browserId = 'a', documentId = 'd'): BrowserState => ({ browserId, documentId, url: 'http://localhost', title: documentId, loading: false, canGoBack: true, canGoForward: false, selecting: false, devtools: false, annotations: [], error: null, certificate: null, agentSessionId: null })
   let pushState: (next: BrowserState) => void = () => {}
   let pushSelection: (next: BrowserSelection) => void = () => {}
   let requestClose: (browserId: string) => void = () => {}
@@ -53,6 +53,7 @@ async function fixture() {
     copyUrl: async (id) => { pageActions.push(['copyUrl', id]) },
     openExternal: async (id) => { pageActions.push(['openExternal', id]) },
     inspect: async (id) => { pageActions.push(['inspect', id]) },
+    allowCertificate: async (id, fingerprint) => { pageActions.push(['allowCertificate', `${id} ${fingerprint}`]) },
     listCookieSources: async () => ({ supported: false, site: null, sources: [] }),
     previewCookies: async () => ({ site: null, count: 0, domains: [], skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
     importCookies: async () => ({ imported: 0, failed: 0, skipped: { expired: 0, partitioned: 0, unsupported: 0 } }),
@@ -136,6 +137,27 @@ async function fixture() {
   assert.equal(ratio(), '0.83', 'dragging the native DevTools edge follows the pointer')
   await act(async () => { pushState(state('a', 'fresh')) })
   assert.equal(container.querySelector('[data-devtools-divider]'), null)
+  const certificate = { url: 'https://intranet.test/sso', host: 'intranet.test', error: 'net::ERR_CERT_AUTHORITY_INVALID', issuer: 'Intranet CA', subject: 'intranet.test', validExpiry: 1_900_000_000, fingerprint: 'sha256/A' }
+  const certificateOverlay = document.createElement('div')
+  certificateOverlay.setAttribute('role', 'dialog')
+  document.body.append(certificateOverlay)
+  await flush()
+  assert.ok(container.querySelector('[data-browser-viewport] img'), 'a dialog freezes the previous page before Agent navigation')
+  await act(async () => { pushState({ ...state('a', 'fresh'), error: 'ERR_CERT_AUTHORITY_INVALID', certificate }) })
+  certificateOverlay.remove()
+  await flush()
+  assert.equal(container.querySelector('[data-browser-viewport] img'), null, 'the old frozen page cannot cover the certificate warning after the dialog closes')
+  assert.ok(container.textContent!.includes('browser.certificateTitle'))
+  assert.equal(container.querySelector('[role="alert"]'), null, 'the interstitial replaces the error banner')
+  assert.ok(container.textContent!.includes('sha256/A'), 'the interstitial shows the certificate it would trust')
+  assert.equal(bounds.findLast((entry) => entry.browserId === 'a')?.bounds, null, 'the native page is hidden behind the interstitial')
+  const proceed = [...container.querySelectorAll('button')].find((button) => button.textContent === 'browser.certificateProceed')!
+  await act(async () => { proceed.click() })
+  await flush()
+  assert.deepEqual(pageActions.at(-1), ['allowCertificate', 'a sha256/A'])
+  await act(async () => { pushState({ ...state('a', 'fresh'), error: 'other failure' }) })
+  assert.equal([...container.querySelectorAll('button')].find((button) => button.textContent === 'browser.certificateProceed'), undefined, 'other errors cannot be bypassed')
+  await act(async () => { pushState(state('a', 'fresh')) })
   const dialogButton = (key: string) => {
     const button = [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((button) => button.textContent === `browser.${key}`)
     assert.ok(button)

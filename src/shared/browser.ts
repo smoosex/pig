@@ -10,6 +10,21 @@ export interface BrowserBounds {
   devtools?: { height: number }
 }
 
+export interface BrowserCertificateError {
+  /** The URL that failed to load; allowing the certificate reloads it. */
+  url: string
+  /** host[:port] the exception applies to. */
+  host: string
+  /** Chromium error, e.g. net::ERR_CERT_AUTHORITY_INVALID. */
+  error: string
+  issuer: string
+  subject: string
+  /** Seconds since the epoch. */
+  validExpiry: number
+  /** SHA-256 fingerprint as reported by Chromium ("sha256/..."). */
+  fingerprint: string
+}
+
 export interface BrowserState {
   browserId: string
   documentId: string
@@ -25,6 +40,8 @@ export interface BrowserState {
   focused?: boolean
   annotations: BrowserAnnotation[]
   error: string | null
+  /** The main document failed certificate verification; only the user can allow it from the pane. */
+  certificate: BrowserCertificateError | null
   /** The Pi session whose agent controls this page through the browser tools, if any. */
   agentSessionId: string | null
 }
@@ -138,6 +155,8 @@ export interface BrowserApi {
   copyUrl(browserId: string): Promise<void>
   openExternal(browserId: string): Promise<void>
   inspect(browserId: string): Promise<void>
+  /** Trusts the page's untrusted certificate for its host until Pig quits, then reloads it. */
+  allowCertificate(browserId: string, fingerprint: string): Promise<void>
   close(browserId: string): Promise<void>
   listCookieSources(browserId: string): Promise<BrowserCookieSources>
   previewCookies(browserId: string, sourceId: string, scope: BrowserCookieScope): Promise<BrowserCookiePreview>
