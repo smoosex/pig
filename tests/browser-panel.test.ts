@@ -29,6 +29,7 @@ async function fixture() {
   const pageActions: [string, string][] = []
   const controlActions: unknown[][] = []
   let finishAbort!: () => void
+  let resizeDevtools: (browserId: string, clientY: number) => void = () => {}
   let failAbort = false
   const api: BrowserApi = {
     create: async (browserId) => { created++; return state(browserId) },
@@ -60,6 +61,7 @@ async function fixture() {
     onAgentOpenRequest: () => () => {},
     answerAgentOpen: async () => {},
     onShortcutRequested: () => () => {},
+    onDevtoolsResize: (listener) => { resizeDevtools = listener; return () => { resizeDevtools = () => {} } },
     onCloseRequested: (listener) => { requestClose = listener; return () => { requestClose = () => {} } },
     onState: (listener) => { pushState = listener; return () => { pushState = () => {} } },
     onSelection: (listener) => { pushSelection = listener; return () => { pushSelection = () => {} } }
@@ -121,6 +123,19 @@ async function fixture() {
   assert.ok(address.compareDocumentPosition(toolbar.querySelector('[aria-label="browser.copyUrl"]')!) & Node.DOCUMENT_POSITION_FOLLOWING, 'page actions follow the address bar')
   for (const action of ['copyUrl', 'openExternal', 'inspect']) await click(action)
   assert.deepEqual(pageActions, [['copyUrl', 'a'], ['openExternal', 'a'], ['inspect', 'a']])
+  assert.equal(container.querySelector('[data-devtools-divider]'), null)
+  await act(async () => { pushState({ ...state('a', 'fresh'), devtools: true }) })
+  const divider = container.querySelector<HTMLElement>('[data-devtools-divider]')!
+  assert.ok(divider, 'open DevTools get a marker where they begin')
+  assert.equal(divider.querySelector('button'), null, 'the toolbar inspect toggle closes DevTools')
+  const ratio = () => Number(divider.style.getPropertyValue('--devtools-ratio')).toFixed(2)
+  assert.equal(ratio(), '0.45')
+  await act(async () => { resizeDevtools('other', 200) })
+  assert.equal(ratio(), '0.45', 'another pane\'s drag is ignored')
+  await act(async () => { resizeDevtools('a', 200) })
+  assert.equal(ratio(), '0.83', 'dragging the native DevTools edge follows the pointer')
+  await act(async () => { pushState(state('a', 'fresh')) })
+  assert.equal(container.querySelector('[data-devtools-divider]'), null)
   const dialogButton = (key: string) => {
     const button = [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((button) => button.textContent === `browser.${key}`)
     assert.ok(button)

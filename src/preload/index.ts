@@ -31,6 +31,11 @@ const api: SessionApi = {
       ipcRenderer.on('browser:close-tab-requested', handler)
       return () => ipcRenderer.off('browser:close-tab-requested', handler)
     },
+    onDevtoolsResize: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, browserId: string, clientY: number) => listener(browserId, clientY)
+      ipcRenderer.on('browser:devtools-resize', handler)
+      return () => ipcRenderer.off('browser:devtools-resize', handler)
+    },
     onShortcutRequested: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, action: import('../shared/browser').BrowserHostShortcut) => listener(action)
       ipcRenderer.on('browser:host-shortcut-requested', handler)

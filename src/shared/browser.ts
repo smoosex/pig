@@ -6,6 +6,8 @@ export interface BrowserBounds {
   height: number
   bottomLeftRadius?: number
   bottomRightRadius?: number
+  /** Open DevTools take this much of the bottom of these bounds. */
+  devtools?: { height: number }
 }
 
 export interface BrowserState {
@@ -142,6 +144,8 @@ export interface BrowserApi {
   importCookies(browserId: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null): Promise<BrowserCookieImportResult>
   clearSiteCookies(browserId: string, expectedSite: string): Promise<BrowserCookieClearResult>
   onCloseRequested(listener: (browserId: string) => void): () => void
+  /** Pointer position (renderer CSS px) while the user drags the top edge of docked DevTools. */
+  onDevtoolsResize(listener: (browserId: string, clientY: number) => void): () => void
   onShortcutRequested(listener: (action: BrowserHostShortcut) => void): () => void
   /** Ends agent control of the page; the agent must call browser_open again to resume. */
   releaseAgent(browserId: string, expectedSessionId?: string): Promise<void>
@@ -155,6 +159,7 @@ export interface BrowserApi {
 export type BrowserHostShortcut = 'close-active-tab' | 'toggle-sidebar' | 'toggle-workspace' | 'toggle-settings' | 'open-project'
 export const BROWSER_SHORTCUT_CHANNEL = 'browser:host-shortcut-requested'
 export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
+export const BROWSER_DEVTOOLS_RESIZE_CHANNEL = 'browser:devtools-resize'
 export const BROWSER_PICKER_CHANNEL = 'browser:picker'
 export const BROWSER_SELECTION_CHANNEL = 'browser:element-selected'
 export const BROWSER_PICKER_CANCEL_CHANNEL = 'browser:picker-cancelled'

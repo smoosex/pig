@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import type { View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
-  BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
+  BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
@@ -17,6 +17,10 @@ interface Page {
   view: WebContentsView
   devtools?: WebContentsView
   clip?: View
+  /** The one view inside `clip`: whichever of the page and DevTools sits at the bottom. */
+  clipped?: WebContentsView
+  /** Window y (DIP) of the DevTools top edge, for translating resize drags. */
+  devtoolsTop?: number
   state: BrowserState
   bounds: BrowserBounds | null
   used: number
@@ -33,6 +37,8 @@ export interface BrowserConsoleEntry {
   source: string
 }
 const CONSOLE_LIMIT = 200
+/** Height (DIP) of the draggable top edge of docked DevTools. */
+const DEVTOOLS_EDGE = 4
 // A hidden page that was never laid out has no size; agent snapshots and captures need a viewport.
 const AGENT_VIEWPORT = { x: 0, y: 0, width: 1280, height: 800 }
 interface WindowPages {
@@ -146,24 +152,22 @@ export class BrowserHost {
       return
     }
     const [width, height] = owner.win.getContentSize()
-    const bounds = browserDipBounds(page.bounds, owner.win.webContents.getZoomFactor(), width, height)
-    // Docked DevTools take the lower part of the pane, leaving the page at least 120 DIP.
-    const tools = page.devtools ? Math.max(0, Math.min(Math.max(Math.round(bounds.height * 0.45), 160), bounds.height - 120)) : 0
     const zoom = owner.win.webContents.getZoomFactor()
-    const left = Math.min(Math.round((page.bounds.bottomLeftRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bounds.height / 2))
-    const right = Math.min(Math.round((page.bounds.bottomRightRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bounds.height / 2))
+    const bounds = browserDipBounds(page.bounds, zoom, width, height)
+    // The renderer decides the docked DevTools height; the page keeps the rest.
+    const dock = page.devtools && page.bounds.devtools
+    const tools = dock ? Math.min(Math.round(dock.height * zoom), bounds.height) : 0
+    const pageHeight = bounds.height - tools
+    const bottom = dock ? page.devtools! : page.view
+    const bottomHeight = dock ? tools : bounds.height
+    const left = Math.min(Math.round((page.bounds.bottomLeftRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bottomHeight / 2))
+    const right = Math.min(Math.round((page.bounds.bottomRightRadius ?? 0) * zoom), Math.floor(bounds.width / 2), Math.floor(bottomHeight / 2))
     const radius = Math.max(left, right)
     if (radius > 0 && !page.clip) {
       const clip = this.createClip()
       // Electron's zero-blur setter creates a transparent compositor layer. Without a layer,
       // View.setBorderRadius only clips ordinary paint, not child WebContentsView layers.
       clip.setBackgroundBlur(0)
-      owner.win.contentView.removeChildView(page.view)
-      clip.addChildView(page.view)
-      if (page.devtools) {
-        owner.win.contentView.removeChildView(page.devtools)
-        clip.addChildView(page.devtools)
-      }
       owner.win.contentView.addChildView(clip)
       page.clip = clip
     }
@@ -172,30 +176,57 @@ export class BrowserHost {
       // split panes that no longer touch the panel's rounded corners. Square panes go back unclipped.
       const clip = page.clip
       page.clip = undefined
-      clip.removeChildView(page.view)
-      if (page.devtools) clip.removeChildView(page.devtools)
+      this.unclip(owner, page, clip)
       owner.win.contentView.removeChildView(clip)
-      owner.win.contentView.addChildView(page.view)
-      if (page.devtools) owner.win.contentView.addChildView(page.devtools)
     }
-    // Move the upper corners above the page; extend square split-pane edges past the clip.
-    // Only the outer panel's lower corners intersect rendered web content.
+    // Only the bottom view meets the rounded corners. The clip reaches one radius above it, and that
+    // transparent strip still paints and takes clicks, so the page is raised above the clip.
+    if (page.clip && page.clipped !== bottom) {
+      this.unclip(owner, page, page.clip)
+      owner.win.contentView.removeChildView(bottom)
+      page.clip.addChildView(bottom)
+      page.clipped = bottom
+      if (bottom !== page.view) owner.win.contentView.addChildView(page.view)
+    }
+    // Move the upper corners above the clipped view; extend square split-pane edges past the clip.
+    const bottomY = bounds.y + bounds.height - bottomHeight
+    page.devtoolsTop = dock ? bottomY : undefined
     const offsetX = page.clip && !left ? radius : 0
     const offsetY = page.clip ? radius : 0
     if (page.clip) {
       page.clip.setBounds({
-        x: bounds.x - offsetX, y: bounds.y - offsetY,
-        width: bounds.width + offsetX + (!right ? radius : 0), height: bounds.height + offsetY
+        x: bounds.x - offsetX, y: bottomY - offsetY,
+        width: bounds.width + offsetX + (!right ? radius : 0), height: bottomHeight + offsetY
       })
       page.clip.setBorderRadius(radius)
-      page.clip.setVisible(bounds.width > 0 && bounds.height > 0)
+      page.clip.setVisible(bounds.width > 0 && bottomHeight > 0)
     }
-    const child = page.clip ? { ...bounds, x: offsetX, y: offsetY } : bounds
-    page.view.setBounds({ ...child, height: bounds.height - tools })
-    page.view.setVisible(bounds.width > 0 && bounds.height - tools > 0)
+    const at = (y: number, h: number, clipped: boolean) => clipped
+      ? { x: offsetX, y: offsetY, width: bounds.width, height: h }
+      : { x: bounds.x, y, width: bounds.width, height: h }
+    page.view.setBounds(at(bounds.y, pageHeight, page.clipped === page.view))
+    page.view.setVisible(bounds.width > 0 && pageHeight > 0)
     if (page.devtools) {
-      page.devtools.setBounds({ x: child.x, y: child.y + bounds.height - tools, width: bounds.width, height: tools })
+      page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
       page.devtools.setVisible(bounds.width > 0 && tools > 0)
+    }
+  }
+
+  /** Returns the clipped view, if any, to the window. */
+  private unclip(owner: WindowPages, page: Page, clip: View): void {
+    if (!page.clipped) return
+    clip.removeChildView(page.clipped)
+    owner.win.contentView.addChildView(page.clipped)
+    page.clipped = undefined
+  }
+
+  /** Removes a page's own view from whichever parent holds it. */
+  private removeView(owner: WindowPages, page: Page, view: WebContentsView): void {
+    if (page.clip && page.clipped === view) {
+      page.clip.removeChildView(view)
+      page.clipped = undefined
+    } else {
+      owner.win.contentView.removeChildView(view)
     }
   }
 
@@ -211,7 +242,7 @@ export class BrowserHost {
     this.restoreHostFocus(owner, liveContents(devtools))
     page.devtools = undefined
     page.state.devtools = false
-    if (!owner.win.isDestroyed()) (page.clip ?? owner.win.contentView).removeChildView(devtools)
+    if (!owner.win.isDestroyed()) this.removeView(owner, page, devtools)
     liveContents(devtools)?.close({ waitForBeforeUnload: false })
   }
 
@@ -223,7 +254,7 @@ export class BrowserHost {
     page.network.dispose()
     this.detachDevTools(owner, page)
     if (!owner.win.isDestroyed()) {
-      (page.clip ?? owner.win.contentView).removeChildView(page.view)
+      this.removeView(owner, page, page.view)
       if (page.clip) owner.win.contentView.removeChildView(page.clip)
     }
     liveContents(page.view)?.close({ waitForBeforeUnload: false })
@@ -284,6 +315,30 @@ export class BrowserHost {
       if (!action) return
       event.preventDefault()
       if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_SHORTCUT_CHANNEL, action)
+    })
+  }
+
+  /**
+   * The page and DevTools touch with no gap, and native views hide any DOM between them, so the
+   * resize edge is the top few pixels of DevTools itself: main swallows the mouse there and sends the
+   * pointer to the renderer, which owns the height. Moves keep arriving outside DevTools while the
+   * button is held. Electron's mouse events carry no button-state modifiers, so only mouseUp ends it.
+   */
+  private bindDevtoolsResize(owner: WindowPages, page: Page, contents: Electron.WebContents): void {
+    let dragging = false
+    contents.on('dom-ready', () => {
+      contents.insertCSS(`html::after { content: ''; position: fixed; inset: 0 0 auto; height: ${DEVTOOLS_EDGE}px; cursor: row-resize; z-index: 2147483647 }`)
+        .catch((error: unknown) => console.error('DevTools resize edge failed:', error))
+    })
+    contents.on('before-mouse-event', (event, mouse) => {
+      if (!this.alive(owner, page) || page.devtoolsTop === undefined) return
+      if (mouse.type === 'mouseDown' && mouse.button === 'left' && mouse.y < DEVTOOLS_EDGE) dragging = true
+      else if (!dragging) return
+      event.preventDefault()
+      if (mouse.type === 'mouseUp') dragging = false
+      if (mouse.type !== 'mouseMove') return
+      const zoom = owner.win.webContents.getZoomFactor()
+      owner.win.webContents.send(BROWSER_DEVTOOLS_RESIZE_CHANNEL, page.state.browserId, (page.devtoolsTop + mouse.y) / zoom)
     })
   }
 
@@ -533,12 +588,12 @@ export class BrowserHost {
     } else {
       const devtools = this.createView('devtools')
       devtools.setVisible(false)
-      const parent = page.clip ?? owner.win.contentView
-      parent.addChildView(devtools)
+      owner.win.contentView.addChildView(devtools)
       page.devtools = devtools
       page.state.devtools = true
       this.bindHostShortcuts(owner, page, devtools.webContents)
-      // The DevTools × destroys this WebContents; the page then emits devtools-closed.
+      this.bindDevtoolsResize(owner, page, devtools.webContents)
+      // DevTools can still end on their own (a crash or reload); the page then emits devtools-closed.
       devtools.webContents.once('destroyed', () => {
         if (page.devtools !== devtools) return
         this.detachDevTools(owner, page)
@@ -546,10 +601,10 @@ export class BrowserHost {
         this.push(owner, page)
       })
       // The target must be set before opening and must be a fresh, never-navigated WebContents.
-      // With an external target Electron does not move views; a docked mode only makes the
-      // frontend show its docked toolbar, including the close button that 'detach' hides.
+      // With an external target Electron does not move views. A docked mode would make the frontend
+      // reserve its own blank area for the page, so it opens detached; the toolbar toggle closes it.
       wc.setDevToolsWebContents(devtools.webContents)
-      wc.openDevTools({ mode: 'bottom', activate: false })
+      wc.openDevTools({ mode: 'detach', activate: false })
     }
     this.layout(owner, page)
     this.push(owner, page)

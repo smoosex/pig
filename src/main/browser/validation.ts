@@ -37,6 +37,12 @@ export function validateBounds(value: unknown): asserts value is BrowserBounds {
   for (const radius of [b.bottomLeftRadius, b.bottomRightRadius]) {
     if (radius !== undefined && (!Number.isFinite(radius) || radius < 0)) throw new Error('Invalid browser corner radius')
   }
+  if (b.devtools !== undefined) {
+    const height = b.devtools?.height
+    if (height === undefined || !Number.isFinite(height) || height < 0 || height > b.height + 1) {
+      throw new Error('Invalid browser DevTools bounds')
+    }
+  }
 }
 
 export function browserDipBounds(bounds: BrowserBounds, zoom: number, width: number, height: number): BrowserBounds {

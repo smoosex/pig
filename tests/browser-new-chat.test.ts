@@ -34,6 +34,7 @@ async function fixture() {
       getState: async () => browserState,
       onState: () => () => {},
       onCloseRequested: () => () => {},
+      onDevtoolsResize: () => () => {},
       releaseAgent: async () => {},
       onAgentOpenRequest: () => () => {},
       answerAgentOpen: async () => {},

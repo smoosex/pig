@@ -9,8 +9,10 @@ const owners = new Map<string, object>()
 
 const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview]'
 const REVEAL = '[data-surface-reveal]'
+/** Zero-height marker at the top of docked DevTools; everything below it is DevTools. */
+const DIVIDER = '[data-devtools-divider]'
 // Positioning wrappers trigger remeasurement, but their boxes are not visible occluders.
-const RELEVANT = `${OVERLAY}, ${REVEAL}, [data-radix-popper-content-wrapper]`
+const RELEVANT = `${OVERLAY}, ${REVEAL}, ${DIVIDER}, [data-radix-popper-content-wrapper]`
 
 export function useBrowserBounds(
   browserId: string,
@@ -98,9 +100,12 @@ export function useBrowserBounds(
           return rect && overlay.width > 0 && overlay.height > 0 && overlay.left < rect.right &&
             overlay.right > rect.left && overlay.top < rect.bottom && overlay.bottom > rect.top
         })
+      const divider = element?.querySelector(DIVIDER)?.getBoundingClientRect()
+      const devtools = rect && divider ? { height: Math.max(0, rect.bottom - Math.max(divider.top, rect.top)) } : undefined
       const bounds = visible && !blocked && rect && rect.width > 0 && rect.height > 0
         ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
-          ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}) } : null
+          ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}),
+          ...(devtools ? { devtools } : {}) } : null
       // Enter/exit transforms can move a menu across the viewport without DOM or resize mutations.
       if ([...document.querySelectorAll<HTMLElement>(RELEVANT)].some(element =>
         element.getAnimations().some(animation => animation.playState === 'running'))) schedule()

@@ -1,5 +1,5 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, Trash2 } from 'lucide-react'
 import type { BrowserState } from '../../../../shared/browser'
@@ -21,6 +21,20 @@ import { appendBrowserScreenshotDraft } from './browser-draft'
 import { useBrowserBounds } from './useBrowserBounds'
 import { decodeBrowserFrame, waitForBrowserPaint } from './browser-frame'
 import { CookieImportDialog } from './CookieImportDialog'
+
+/** Share of the viewport docked DevTools take; the last size the user dragged to applies to every pane. */
+let devtoolsRatio = 0.45
+const ratioListeners = new Set<() => void>()
+const subscribeRatio = (listener: () => void) => {
+  ratioListeners.add(listener)
+  return () => { ratioListeners.delete(listener) }
+}
+const setDevtoolsRatio = (ratio: number) => {
+  devtoolsRatio = Math.min(0.95, Math.max(0.05, ratio))
+  for (const listener of ratioListeners) listener()
+}
+// Keep 120px of page and of DevTools. The ratio rides on the marker's own style so a change remeasures bounds.
+const DOCK_BOTTOM = 'clamp(120px, calc(var(--devtools-ratio) * 100%), calc(100% - 120px))'
 
 interface BrowserPanelProps {
   browserId: string
@@ -58,6 +72,13 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
+  const ratio = useSyncExternalStore(subscribeRatio, () => devtoolsRatio)
+  // Main reports the pointer while the user drags the top edge of the native DevTools.
+  useEffect(() => api.browser.onDevtoolsResize((id, clientY) => {
+    const box = viewport.current?.getBoundingClientRect()
+    if (id !== browserId || !box?.height) return
+    setDevtoolsRatio((box.bottom - clientY) / box.height)
+  }), [browserId])
   const latest = useRef<BrowserState | null>(null)
   const alive = useRef(true)
   const enabled = useRef(active)
@@ -283,9 +304,13 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
       </AlertDialog>
       <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
       {error || state?.error ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
-      <div ref={viewport} data-browser-viewport className="min-h-0 flex-1 overflow-hidden">
-        {frozen && state?.url ? <img src={frozen} alt="" draggable={false} className="pointer-events-none size-full object-contain object-top select-none" /> : null}
+      <div ref={viewport} data-browser-viewport className="relative min-h-0 flex-1 overflow-hidden">
+        {frozen && state?.url ? <img src={frozen} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
+          style={{ '--devtools-ratio': ratio, height: state.devtools ? `calc(100% - ${DOCK_BOTTOM})` : '100%' } as CSSProperties} /> : null}
         {!state?.url ? <p className="p-4 text-xs text-muted-foreground">{t('browser.empty')}</p> : null}
+        {/* Marks where the native DevTools begin; their own top edge is the resize handle. */}
+        {state?.url && state.devtools ? <div data-devtools-divider aria-hidden
+          style={{ '--devtools-ratio': ratio, bottom: DOCK_BOTTOM } as CSSProperties} className="pointer-events-none absolute inset-x-0 h-0" /> : null}
       </div>
     </section>
   )

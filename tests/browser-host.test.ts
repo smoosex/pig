@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import type { View, BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../src/main/browser/host'
-import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl } from '../src/main/browser/validation'
+import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl, validateBounds } from '../src/main/browser/validation'
 import { BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL, BROWSER_SELECTION_CHANNEL } from '../src/shared/browser'
 
 let nextContentsId = 0
@@ -13,7 +13,7 @@ class FakeContents extends EventEmitter {
   url = ''
   loading = false
   mainFrame = {}
-  sent: Array<[string, unknown]> = []
+  sent: unknown[][] = []
   devTools: unknown[] = []
   session = Object.assign(new EventEmitter(), {
     setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, setDevicePermissionHandler: () => {},
@@ -40,7 +40,7 @@ class FakeContents extends EventEmitter {
   setDevToolsWebContents(contents: unknown) { this.devToolsHost = contents }
   isDevToolsOpened() { return this.devToolsOpen }
   closeDevTools() { this.devToolsOpen = false; this.emit('devtools-closed') }
-  send(channel: string, payload: unknown) { this.sent.push([channel, payload]) }
+  send(channel: string, ...payload: unknown[]) { this.sent.push([channel, ...payload]) }
   close() { this.dead = true; this.emit('destroyed') }
   async loadURL(url: string) {
     this.emit('did-start-navigation', {}, url, false, true)
@@ -115,10 +115,12 @@ const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
 
 describe('browser host', () => {
-  test('native clipping follows only outer bottom corners, including docked DevTools and zoom', async () => {
+  test('native clipping wraps only the bottom view, and the page covers the clip above docked DevTools', async () => {
     const { host, owner, win, views, clips, removed } = fixture()
     win.webContents.getZoomFactor = () => 1.5
-    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 12, bottomRightRadius: 12 })
+    const rounded = { ...bounds, bottomLeftRadius: 12, bottomRightRadius: 12 }
+    const docked = { ...rounded, devtools: { height: 100 } }
+    host.setBounds(owner, 'rounded', rounded)
     const clip = clips[0]!
     expect(clip.layered).toBe(true)
     expect(clip.radius).toBe(18)
@@ -127,23 +129,34 @@ describe('browser host', () => {
     expect(clip.children).toEqual([views[0]])
     await host.navigate(owner, 'rounded', 'https://example.test')
     host.inspect(owner, 'rounded')
-    expect(clip.children).toEqual([views[0], views[1]])
-    expect(views[1].bounds).toEqual({ x: 0, y: 158, width: 450, height: 160 })
-    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 0, bottomRightRadius: 12 })
-    expect(clip.bounds).toEqual({ x: -3, y: 12, width: 468, height: 318 })
-    expect(views[0].bounds).toEqual({ x: 18, y: 18, width: 450, height: 140 })
+    expect(views[1].visible, 'DevTools wait for the pane to give them a height').toBe(false)
+    expect(clip.children).toEqual([views[0]])
+    host.setBounds(owner, 'rounded', docked)
+    expect(clip.children, 'DevTools take the rounded corners; the page leaves the clip').toEqual([views[1]])
+    expect(win.contentView.children.at(-1), 'the clip reaches one radius above DevTools, so the page goes over it').toBe(views[0])
+    expect(views[0].bounds).toEqual({ x: 15, y: 30, width: 450, height: 150 })
+    expect(views[1].bounds).toEqual({ x: 0, y: 18, width: 450, height: 150 })
+    expect(clip.bounds).toEqual({ x: 15, y: 162, width: 450, height: 168 })
+    host.setBounds(owner, 'rounded', { ...docked, bottomLeftRadius: 0 })
+    expect(clip.bounds).toEqual({ x: -3, y: 162, width: 468, height: 168 })
+    expect(views[1].bounds).toEqual({ x: 18, y: 18, width: 450, height: 150 })
     host.setBounds(owner, 'rounded', null)
     expect(clip.visible).toBe(false)
     expect(views.every((view) => !view.visible)).toBe(true)
     // Electron paints nothing inside a zero-radius clip, so a square split pane leaves it.
-    host.setBounds(owner, 'rounded', bounds)
+    host.setBounds(owner, 'rounded', { ...bounds, devtools: docked.devtools })
     expect(clip.children).toEqual([])
-    expect(win.contentView.children).toEqual([views[0], views[1]])
-    expect(views[0].bounds).toEqual({ x: 15, y: 30, width: 450, height: 140 })
-    expect(views[0].visible).toBe(true)
-    host.setBounds(owner, 'rounded', { ...bounds, bottomLeftRadius: 12, bottomRightRadius: 12 })
+    expect(removed).toContain(clip)
+    expect(win.contentView.children).toEqual(expect.arrayContaining([views[0], views[1]]))
+    expect(views[0].bounds).toEqual({ x: 15, y: 30, width: 450, height: 150 })
+    expect(views[1].bounds).toEqual({ x: 15, y: 180, width: 450, height: 150 })
+    expect(views[0].visible && views[1].visible).toBe(true)
+    host.setBounds(owner, 'rounded', docked)
     expect(clips).toHaveLength(2)
-    expect(clips[1].children).toEqual([views[0], views[1]])
+    expect(clips[1].children).toEqual([views[1]])
+    host.inspect(owner, 'rounded')
+    expect(clips[1].children, 'closing DevTools hands the corners back to the page').toEqual([views[0]])
+    expect(views[0].bounds).toEqual({ x: 0, y: 18, width: 450, height: 300 })
     host.closeWindow(owner)
     expect(clips[1].children).toEqual([])
     expect(removed).toContain(clips[1])
@@ -239,6 +252,9 @@ describe('browser host', () => {
     expect(browserDipBounds({ x: -10, y: 10, width: 1000, height: 20 }, 2, 600, 400)).toEqual({ x: 0, y: 20, width: 600, height: 40 })
     expect(isBrowserElement(element)).toBe(true)
     expect(isBrowserElement({ ...element, bounds: { ...bounds, x: NaN } })).toBe(false)
+    for (const devtools of [{ height: 300 }, { height: -1 }, { height: NaN }, {}, null]) {
+      expect(() => validateBounds({ ...bounds, devtools } as never)).toThrow('Invalid browser DevTools bounds')
+    }
   })
 
   test('null bounds never create; hidden LRU eviction and window cleanup', () => {
@@ -452,22 +468,42 @@ describe('browser host', () => {
   })
 
   test('inspect docks the page DevTools below it in the same pane and toggles them off', async () => {
-    const { host, owner, views } = fixture()
+    const { host, owner, views, win } = fixture()
     expect(() => host.inspect(owner, 'a')).toThrow()
     await host.navigate(owner, 'a', 'localhost:3000')
     host.setBounds(owner, 'a', bounds)
     host.inspect(owner, 'a')
     const [page, tools] = views
     expect(page.webContents.devToolsHost).toBe(tools.webContents)
-    expect(page.webContents.devTools, 'docked mode keeps the DevTools close button').toEqual([{ mode: 'bottom', activate: false }])
+    expect(page.webContents.devTools, 'a docked frontend would reserve its own blank page area').toEqual([{ mode: 'detach', activate: false }])
     expect(host.getState(owner, 'a').devtools).toBe(true)
+    const docked = { ...bounds, devtools: { height: 80 } }
+    host.setBounds(owner, 'a', docked)
     const pageBox = page.bounds as { y: number; height: number }
     const toolsBox = tools.bounds as { y: number; height: number }
-    expect(pageBox.y + pageBox.height).toBe(toolsBox.y)
+    expect(pageBox.y + pageBox.height, 'no gap between page and DevTools').toBe(toolsBox.y)
+    expect(toolsBox.height).toBe(120)
     expect(tools.visible).toBe(true)
+    // The top edge of DevTools is the resize handle; main forwards the pointer in renderer CSS px.
+    const sent = win.webContents.sent
+    const mouse = (type: string, y: number, extra: object = {}) => {
+      let prevented = false
+      tools.webContents.emit('before-mouse-event', { preventDefault: () => { prevented = true } }, { type, x: 5, y, ...extra })
+      return prevented
+    }
+    expect(mouse('mouseDown', 10, { button: 'left' }), 'below the edge DevTools get the click').toBe(false)
+    expect(mouse('mouseMove', 10, { button: 'left' })).toBe(false)
+    expect(sent.filter(([channel]) => channel === 'browser:devtools-resize')).toEqual([])
+    expect(mouse('mouseDown', 2, { button: 'left' })).toBe(true)
+    // Electron mouse events carry no button-state modifiers; a held drag must not end on the first move.
+    expect(mouse('mouseMove', -20, { button: 'left' })).toBe(true)
+    expect(mouse('mouseMove', -30, { button: 'left' }), 'the drag continues above DevTools').toBe(true)
+    expect(sent.at(-1)).toEqual(['browser:devtools-resize', 'a', (210 - 30) / 1.5])
+    expect(mouse('mouseUp', -30, { button: 'left' })).toBe(true)
+    expect(mouse('mouseMove', -40, { button: 'left' }), 'after mouseUp hovering no longer resizes').toBe(false)
     host.setBounds(owner, 'a', null)
     expect(tools.visible).toBe(false)
-    host.setBounds(owner, 'a', bounds)
+    host.setBounds(owner, 'a', docked)
     tools.webContents.close()
     expect(() => { (tools as { webContents?: unknown }).webContents = undefined; page.webContents.emit('devtools-closed') }, 'Electron drops webContents after destruction').not.toThrow()
     expect(host.getState(owner, 'a').devtools, 'the DevTools close button destroys their WebContents').toBe(false)

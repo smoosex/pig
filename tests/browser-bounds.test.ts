@@ -176,6 +176,23 @@ async function fixture(scenario: string) {
       preview.remove()
       await settle()
       assert.equal((native as BrowserBounds | null)?.width, 400)
+    } else if (scenario === 'devtools') {
+      // A zero-height marker inside the viewport: the native DevTools take what lies below it.
+      const viewport = container.firstElementChild as HTMLElement
+      const divider = document.createElement('div')
+      divider.setAttribute('data-devtools-divider', '')
+      let top = 250
+      divider.getBoundingClientRect = () => new DOMRect(100, top, 400, 0)
+      viewport.append(divider)
+      await settle()
+      assert.deepEqual((native as BrowserBounds | null)?.devtools, { height: 150 })
+      top = 200
+      divider.style.setProperty('--devtools-ratio', '0.66')
+      await settle()
+      assert.deepEqual((native as BrowserBounds | null)?.devtools, { height: 200 }, 'a new ratio on the marker remeasures')
+      divider.remove()
+      await settle()
+      assert.equal((native as BrowserBounds | null)?.devtools, undefined)
     } else if (scenario === 'invisible') {
       const content = overlay()
       content.style.opacity = '0'
@@ -353,6 +370,7 @@ const scenarios = {
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',
   'animated-menu': 'an entering menu crossing into a split page is remeasured without DOM mutations',
   'split-preview': 'the split drop preview over a page swaps it for its still until the drag leaves',
+  devtools: 'docked DevTools take the viewport below their marker and follow it when it moves',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',
   'freeze-barrier': 'hide awaits the asynchronous still-frame paint barrier',
   'stale-snapshot': 'an obsolete snapshot cannot hide the viewport',
