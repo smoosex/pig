@@ -305,10 +305,14 @@ export async function renameSession(sessionId: string, name: string, path?: stri
   if (session) {
     if ('agentSession' in session) {
       session.agentSession.setSessionName(clean)
+      const file = session.agentSession.sessionFile
+      if (file) forgetSessionName(file)
       return
     }
     if (session.kind === 'memory') {
       session.sessionManager.appendSessionInfo(clean)
+      const file = session.sessionManager.getSessionFile()
+      if (file) forgetSessionName(file)
       return
     }
     appendSessionInfo(session.path, clean)

@@ -29,6 +29,8 @@ async function fixture(scenario: string): Promise<void> {
   let subscribeCalls = 0
   let disposeCalls = 0
   let setSessionFileCalls = 0
+  const renamedNames: string[] = []
+  const forgottenNames: string[] = []
   let registry: typeof import('../src/main/pi/session-registry') | undefined
   const manager = {
     getCwd: () => cwd,
@@ -36,7 +38,8 @@ async function fixture(scenario: string): Promise<void> {
     getSessionFile: () => sessionFile,
     getHeader: () => header,
     setSessionFile: () => { setSessionFileCalls++ },
-    getEntries: () => entries
+    getEntries: () => entries,
+    appendSessionInfo: (name: string) => { renamedNames.push(name) }
   }
   const session = {
     sessionId,
@@ -50,6 +53,7 @@ async function fixture(scenario: string): Promise<void> {
       await configured.promise
       if (scenario === 'retry' && modelCalls === 1) throw new Error('Model configuration failed')
     },
+    setSessionName: (name: string) => { renamedNames.push(name) },
     setThinkingLevel: () => {},
     subscribe: () => { subscribeCalls++; return () => {} },
     abort: async () => {
@@ -84,6 +88,12 @@ async function fixture(scenario: string): Promise<void> {
     const { applyLocaleSetting } = await import('../src/main/i18n')
     // Pig's own errors come from the dictionary: pin the wording these tests spell out.
     applyLocaleSetting('zh-CN')
+    const loader = await import('../src/main/pi/session-loader')
+    const forgetSessionName = loader.forgetSessionName
+    mock.module('../src/main/pi/session-loader', () => ({
+      ...loader,
+      forgetSessionName: (file: string) => { forgottenNames.push(file); forgetSessionName(file) }
+    }))
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
     const win = {} as Parameters<typeof sessions.createPendingSession>[1]
@@ -91,6 +101,15 @@ async function fixture(scenario: string): Promise<void> {
       draft: scenario !== 'persistent'
     })
     assert.equal(await stat(sessionFile).catch(() => null), null)
+
+    if (scenario === 'rename-live' || scenario === 'rename-pending') {
+      configured.resolve()
+      if (scenario === 'rename-live') await sessions.prepareSession(sessionId)
+      await sessions.renameSession(sessionId, '  新名字  ')
+      assert.deepEqual(renamedNames, ['新名字'])
+      assert.deepEqual(forgottenNames, [sessionFile], 'a rename invalidates the name reused by post-turn catalog refreshes')
+      return
+    }
 
     if (scenario === 'discard-pending') {
       await sessions.discardDraftSession(sessionId)
@@ -255,6 +274,8 @@ if (process.argv[2] === '--lifecycle-fixture') {
 } else {
   const scenarios = {
     publish: 'concurrent preparation waits for pending model configuration before publishing',
+    'rename-live': 'renaming a live session invalidates its cached catalog name',
+    'rename-pending': 'renaming an in-memory pending session invalidates its cached catalog name',
     retry: 'failed pending controls dispose the SDK session and allow a clean retry',
     close: 'concurrent close and directory cleanup await the same teardown',
     delete: 'directory deletion waits for pending controls and prevents publication',
