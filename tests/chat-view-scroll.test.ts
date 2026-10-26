@@ -50,9 +50,21 @@ async function runFixture(name: string): Promise<void> {
     for (let node: HTMLElement | null = element; node; node = node.parentElement) if (hidden(node)) return true
     return false
   }
+  const spacingPattern = /^(h|gap|pt|pb|py)-([\d.]+)$/
+  const spacingCache = new WeakMap<HTMLElement, { className: string; values: Map<string, number> }>()
   const spacing = (element: HTMLElement, prefix: string) => {
-    const token = [...element.classList].findLast((value) => new RegExp(`^${prefix}-[\\d.]+$`).test(value))
-    return token ? Number.parseFloat(token.slice(prefix.length + 1)) * 4 : 0
+    const className = element.className
+    let cached = spacingCache.get(element)
+    if (!cached || cached.className !== className) {
+      const values = new Map<string, number>()
+      for (const token of className.split(/\s+/)) {
+        const match = spacingPattern.exec(token)
+        if (match) values.set(match[1]!, Number.parseFloat(match[2]!) * 4)
+      }
+      cached = { className, values }
+      spacingCache.set(element, cached)
+    }
+    return cached.values.get(prefix) ?? 0
   }
   const paddingTop = (element: HTMLElement) =>
     Number.parseFloat(element.style.paddingTop) || spacing(element, 'pt') || spacing(element, 'py')

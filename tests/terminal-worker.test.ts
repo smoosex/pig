@@ -195,6 +195,14 @@ const spawn = (id, name) => port.emit('message', { data: { type: 'spawn', id, fi
 const output = (id) => messages.filter((message) => message.type === 'output' && message.id === id).map((message) => message.data).join('')
 const record = (name) => JSON.parse(readFileSync(join(root, name + '.json'), 'utf8'))
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const realSetTimeout = globalThis.setTimeout
+let periodicSave
+// Advance only the history-save timer; output batching and actual IO stay real.
+globalThis.setTimeout = (callback, delay, ...args) => {
+  const timer = realSetTimeout(callback, delay, ...args)
+  if (delay === 5000) periodicSave = () => { clearTimeout(timer); callback(...args) }
+  return timer
+}
 
 writeFileSync(target('a').path, JSON.stringify({ version: 1, cwd: saved, history: 'old line\\r\\n' }))
 spawn('a', 'a')
@@ -204,7 +212,15 @@ assert.equal(messages.find((message) => message.type === 'spawned' && message.id
 await settle(30)
 assert.equal(output('a'), 'old line\\r\\n\\x1b[0m\\r\\n', 'the old output comes back alone, without a marker')
 ptyA.data('new output\\r\\n')
-await settle(5300)
+await settle(30)
+assert.equal(typeof periodicSave, 'function', 'history is scheduled on the five-second timer')
+assert.doesNotMatch(record('a').history, /new output/, 'new output is not saved before the timer fires')
+globalThis.setTimeout = realSetTimeout
+periodicSave()
+for (let attempt = 0; !record('a').history.includes('new output'); attempt++) {
+  assert(attempt < 100, 'the periodic save must finish writing its record')
+  await settle(10)
+}
 const periodic = record('a')
 assert.match(periodic.history, /old line[\\s\\S]*new output/)
 assert.equal(periodic.cwd, saved)

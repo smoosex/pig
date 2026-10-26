@@ -148,9 +148,12 @@ tsconfig 开了 `allowImportingTsExtensions`，因为 vendored 插件保留上�
 
 ```bash
 bun run typecheck   # node、web、tests 三个 tsconfig 项目
-bun test
+bun run test       # 4 个 worker 按文件隔离并行；不要直接给用例加 concurrent
+bun run test:serial # 串行排查跨文件干扰
 bun run build
 ```
+
+全量测试默认用 `bun run test`（需要支持 `bun test --parallel` 的 Bun），按文件启用独立 worker/global 隔离，最多 4 路，避免 CPU 与子进程争抢。针对改动可用 `bun test tests/<file>.test.ts`；排查时用 `bun run test:serial`。不要使用 `--no-isolate` 或全局 `--concurrent`，测试里的模块 mock 与环境变量不能共享并发修改。
 
 单元测试覆盖纯投影、并发时序及模拟 DOM 下的组件行为；不需要调用真实模型。
 tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型推导），改跨进程

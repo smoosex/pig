@@ -190,6 +190,16 @@ async function endpointSelectionFixture() {
 }
 
 async function endpointResultsFixture() {
+  const { default: timers } = await import('node:timers/promises')
+  const { syncBuiltinESMExports } = await import('node:module')
+  const sleep = timers.setTimeout
+  let polls = 0
+  // These cases validate task payloads over real HTTP, not the polling interval.
+  timers.setTimeout = ((delay, value, options) => {
+    if (delay === 1000) { polls++; return sleep(0, value, options) }
+    return sleep(delay, value, options)
+  }) as typeof sleep
+  syncBuiltinESMExports()
   let taskResult: unknown
   const server = createServer((req, res) => {
     req.resume()
@@ -214,7 +224,10 @@ async function endpointResultsFixture() {
       taskResult = JSON.stringify({ markdown })
       await assert.rejects(extract(), /returned no markdown/)
     }
+    assert.equal(polls, 8, 'every result still goes through the task polling request')
   } finally {
+    timers.setTimeout = sleep
+    syncBuiltinESMExports()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 }
