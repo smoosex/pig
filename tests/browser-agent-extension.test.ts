@@ -19,7 +19,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
     expect(loader.getExtensions().errors).toEqual([])
     const extension = loader.getExtensions().extensions.find((item) => item.path === path)!
     expect([...extension.tools.keys()].sort()).toEqual([
-      'browser_annotations', 'browser_click', 'browser_close', 'browser_console', 'browser_history', 'browser_navigate', 'browser_network', 'browser_open', 'browser_press', 'browser_release', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload', 'browser_wait'
+      'browser_annotations', 'browser_click', 'browser_close', 'browser_console', 'browser_history', 'browser_navigate', 'browser_network', 'browser_network_capture', 'browser_network_detail', 'browser_network_requests', 'browser_open', 'browser_press', 'browser_release', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload', 'browser_wait'
     ])
     const tool = (name: string) => extension.tools.get(name)!.definition
     const ctx = { cwd: root, sessionManager: { getSessionId: () => 'session-1' } }
@@ -32,6 +32,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       tabs: text('tabs'), open: text('open'), navigate: text('navigate'), history: text('history'),
       snapshot: text('snapshot'), console: text('console'), annotations: text('annotations'), interact: text('interact'), wait: text('wait'),
       switchTab: text('switchTab'), release: text('release'), close: text('close'), network: text('network'), upload: text('upload'),
+      networkCapture: text('networkCapture'), networkRequests: text('networkRequests'), networkDetail: text('networkDetail'),
       screenshot: async (...args) => { calls.push(['screenshot', ...args]); return { text: 'shot', image: { data: 'PNG', mimeType: 'image/png' } } }
     } satisfies BrowserAgentHost)
     await tool('browser_open').execute('c1', { url: 'http://localhost:3000' }, controller.signal, undefined, ctx as never)
@@ -72,6 +73,15 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       ['close', 'session-1', controller.signal],
       ['network', 'session-1', false],
       ['upload', 'session-1', 'e4', ['/tmp/user-requested.txt'], controller.signal]
+    ])
+    calls.length = 0
+    await tool('browser_network_capture').execute('n1', { action: 'start', urlIncludes: '/api', resourceTypes: ['Fetch'] }, controller.signal, undefined, ctx as never)
+    await tool('browser_network_requests').execute('n2', {}, controller.signal, undefined, ctx as never)
+    await tool('browser_network_detail').execute('n3', { requestId: 'capture:1' }, controller.signal, undefined, ctx as never)
+    expect(calls).toEqual([
+      ['networkCapture', 'session-1', 'start', { urlIncludes: '/api', resourceTypes: ['Fetch'] }, controller.signal],
+      ['networkRequests', 'session-1', false],
+      ['networkDetail', 'session-1', 'capture:1']
     ])
     for (const { definition } of extension.tools.values()) {
       expect(definition.exposure).toBe('deferred')

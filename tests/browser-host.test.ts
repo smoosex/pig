@@ -50,7 +50,7 @@ class FakeContents extends EventEmitter {
   async capturePage() { return { isEmpty: () => false, toPNG: () => Buffer.from('png'), toJPEG: () => Buffer.from('jpg') } }
   debuggerAttached = false
   debuggerCommands: unknown[] = []
-  debugger = {
+  debugger = Object.assign(new EventEmitter(), {
     isAttached: () => this.debuggerAttached,
     attach: () => { this.debuggerAttached = true },
     detach: () => { this.debuggerAttached = false },
@@ -58,7 +58,7 @@ class FakeContents extends EventEmitter {
       this.debuggerCommands.push([method, params])
       return { data: Buffer.from('png').toString('base64') }
     }
-  }
+  })
   throttling = true
   setBackgroundThrottling(value: boolean) { this.throttling = value }
   evaluated: Array<[number, string]> = []
@@ -161,6 +161,28 @@ describe('browser host', () => {
     expect(clips[1].children).toEqual([])
     expect(removed).toContain(clips[1])
     expect(views.every((view) => view.webContents.dead)).toBe(true)
+  })
+
+  test('opt-in capture survives reload and same-owner control but is discarded on transfer/release', async () => {
+    const { host, win, views } = fixture()
+    const owner = win as unknown as BrowserWindow
+    host.setAgent(owner, 'browser:a', 's1')
+    await host.networkCaptureAction(owner, 'browser:a', 's1', 'start', { resourceTypes: ['Fetch'] })
+    const contents = views[0]!.webContents
+    contents.debugger.emit('message', {}, 'Network.requestWillBeSent', {
+      requestId: 'r1', timestamp: 1, type: 'Fetch', request: { url: 'https://example.test/api', method: 'GET' }
+    })
+    await host.navigate(owner, 'browser:a', 'https://example.test/')
+    host.setAgent(owner, 'browser:a', 's1')
+    expect(host.networkCaptureEntries(owner, 'browser:a')).toMatchObject({ active: true, entries: [{ url: 'https://example.test/api' }] })
+    await host.networkCaptureAction(owner, 'browser:a', 's1', 'stop', {})
+    expect(host.networkCaptureEntries(owner, 'browser:a').entries).toHaveLength(1)
+    host.setAgent(owner, 'browser:a', 's2')
+    expect(host.networkCaptureEntries(owner, 'browser:a')).toEqual({ active: false, error: undefined, entries: [] })
+    await expect(host.networkCaptureAction(owner, 'browser:a', 's1', 'start', {})).rejects.toThrow('control')
+    await host.networkCaptureAction(owner, 'browser:a', 's2', 'start', {})
+    host.setAgent(owner, 'browser:a', null)
+    expect(host.networkCaptureEntries(owner, 'browser:a')).toEqual({ active: false, error: undefined, entries: [] })
   })
 
   test('network metadata follows page navigation and disposal without leaking raw URLs', async () => {

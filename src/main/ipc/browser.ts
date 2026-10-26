@@ -7,7 +7,7 @@ import { clipboard, shell, ipcMain, session, View, WebContentsView, type Browser
 import { BrowserHost } from '../browser/host'
 import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { BrowserAgentController } from '../browser/agent'
-import { registerBrowserAgentHost } from '../plugins/pig-browser-host'
+import { registerBrowserAgentHost, registerBrowserSessionCleanup } from '../plugins/pig-browser-host'
 import { assertBrowserSender, isBrowserUrl, normalizeBrowserUrl } from '../browser/validation'
 import { saveBrowserTabUrl } from '../open-project-sessions'
 import { windowForEvent } from './window'
@@ -42,6 +42,11 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View(), (browserId, url) => {
     // Page events have no caller to hand a failed write to; navigation goes on and main logs it.
     void saveBrowserTabUrl(browserId, url).catch((error) => console.error('Browser URL persistence failed:', error))
+  })
+  registerBrowserSessionCleanup((sessionId) => {
+    for (const [id, win] of owners) {
+      if (!win.isDestroyed() && host.agentOf(win, id) === sessionId) host.setAgent(win, id, null)
+    }
   })
   function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; browserId: string }): Promise<string> {
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')

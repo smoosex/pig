@@ -9,7 +9,7 @@
 import type { BrowserWindow } from 'electron'
 import type { BrowserState } from '../../shared/browser'
 import { buildBrowserAnnotationsPrompt, fenced } from '../../shared/browser-annotations'
-import type { BrowserAgentHost, BrowserHistoryAction, BrowserToolResult, BrowserWaitOptions } from '../plugins/pig-browser-host'
+import type { BrowserAgentHost, BrowserHistoryAction, BrowserToolResult, BrowserWaitOptions, BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
 import type { BrowserInteraction } from './agent-interaction'
 import { pageElementMatches } from './agent-wait'
 import { waitForBrowserOperation as abortable } from './browser-debugger'
@@ -17,7 +17,7 @@ import { AGENT_WORLD_ID, snapshotPage, type PageSnapshot } from './agent-snapsho
 import type { BrowserHost } from './host'
 import { isBrowserUrl } from './validation'
 
-type Host = Pick<BrowserHost, 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact' | 'networkEntries' | 'upload'>
+type Host = Pick<BrowserHost, 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact' | 'networkEntries' | 'upload' | 'networkCaptureAction' | 'networkCaptureEntries' | 'networkCaptureDetail'>
 
 export interface BrowserAgentDeps {
   host: Host
@@ -155,6 +155,36 @@ export class BrowserAgentController implements BrowserAgentHost {
       'Recent network metadata since the main-document navigation (up to 50 entries). URL credentials, query and fragment are removed; headers and bodies are not collected.',
       UNTRUSTED,
       fenced('json', JSON.stringify(entries, null, 2))
+    ].join('\n') }
+  }
+
+  async networkCapture(sessionId: string, action: BrowserNetworkCaptureAction, options: BrowserNetworkCaptureOptions, signal?: AbortSignal): Promise<BrowserToolResult> {
+    signal?.throwIfAborted()
+    const { win, id } = this.controlled(sessionId)
+    await abortable(this.deps.host.networkCaptureAction(win, id, sessionId, action, options), signal)
+    return { text: action === 'start'
+      ? 'Network capture started with a fresh buffer. Now reload using browser_history or trigger the request. Capture survives navigation; release/switch/close discards it. Common credentials are redacted, not all personal or sensitive data.'
+      : action === 'stop' ? 'Network capture stopped. Existing records remain readable until cleared or control is released.'
+      : 'Network capture records cleared. The capture running state is unchanged.' }
+  }
+
+  async networkRequests(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult> {
+    const { win, id } = this.controlled(sessionId)
+    const result = this.deps.host.networkCaptureEntries(win, id)
+    const entries = result.entries.filter(entry => !errorsOnly || entry.bodyState === 'failed' || (entry.status !== undefined && entry.status >= 400)).slice(-50)
+    return { text: [
+      `Network capture: ${result.active ? 'running' : 'stopped'}. Latest 50 matching records; use browser_network_detail with an id.`,
+      ...(result.error ? [`Capture error: ${result.error}`] : []),
+      UNTRUSTED, fenced('json', JSON.stringify(entries, null, 2))
+    ].join('\n') }
+  }
+
+  async networkDetail(sessionId: string, requestId: string): Promise<BrowserToolResult> {
+    const { win, id } = this.controlled(sessionId)
+    const detail = this.deps.host.networkCaptureDetail(win, id, requestId)
+    return { text: [
+      'Captured request/response. Common credentials are redacted; other sensitive content may remain. Body availability/size limits are explicit in the record.',
+      UNTRUSTED, fenced('json', JSON.stringify(detail, null, 2))
     ].join('\n') }
   }
 

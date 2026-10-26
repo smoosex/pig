@@ -19,6 +19,12 @@ export interface BrowserWaitOptions {
   timeout?: number
 }
 
+export interface BrowserNetworkCaptureOptions {
+  urlIncludes?: string
+  resourceTypes?: string[]
+}
+export type BrowserNetworkCaptureAction = 'start' | 'stop' | 'clear'
+
 export interface BrowserAgentHost {
   tabs(sessionId: string): Promise<BrowserToolResult>
   open(sessionId: string, options: { browserId?: string; url?: string }, signal?: AbortSignal): Promise<BrowserToolResult>
@@ -34,7 +40,19 @@ export interface BrowserAgentHost {
   release(sessionId: string): Promise<BrowserToolResult>
   close(sessionId: string, signal?: AbortSignal): Promise<BrowserToolResult>
   network(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult>
+  networkCapture(sessionId: string, action: BrowserNetworkCaptureAction, options: BrowserNetworkCaptureOptions, signal?: AbortSignal): Promise<BrowserToolResult>
+  networkRequests(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult>
+  networkDetail(sessionId: string, requestId: string): Promise<BrowserToolResult>
   upload(sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<BrowserToolResult>
+}
+
+// Session teardown must end opt-in capture even if the plugin is disabled or the tab stays open.
+let releaseSessionControl: ((sessionId: string) => void) | undefined
+export function registerBrowserSessionCleanup(cleanup: (sessionId: string) => void): void {
+  releaseSessionControl = cleanup
+}
+export function closeSessionBrowserControl(sessionId: string): void {
+  releaseSessionControl?.(sessionId)
 }
 
 const key = Symbol.for('pig:browser-agent-host')

@@ -12,6 +12,8 @@ import { findShortcut, HOST_SHORTCUT_ACTIONS, strokeToAccelerator } from '../../
 import { executeBrowserScript } from './browser-script'
 import { attachBrowserNetwork, type BrowserNetworkLog, type BrowserNetworkEntry } from './network-log'
 import { uploadBrowserFiles } from './agent-upload'
+import { attachBrowserNetworkCapture, type BrowserNetworkCapture } from './network-capture'
+import type { BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
 import { interactWithPage, type BrowserInteraction } from './agent-interaction'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
@@ -32,6 +34,7 @@ interface Page {
   /** Latest console messages of the current document, for the agent's browser_console tool. */
   console: BrowserConsoleEntry[]
   network: BrowserNetworkLog
+  networkCapture?: BrowserNetworkCapture
 }
 export interface BrowserConsoleEntry {
   level: 'debug' | 'info' | 'warning' | 'error'
@@ -258,6 +261,7 @@ export class BrowserHost {
     // Removing a focused native view does not return keyboard input to the host renderer.
     this.restoreHostFocus(owner, liveContents(page.view))
     page.network.dispose()
+    page.networkCapture?.dispose()
     this.detachDevTools(owner, page)
     if (!owner.win.isDestroyed()) {
       this.removeView(owner, page, page.view)
@@ -652,6 +656,10 @@ export class BrowserHost {
     const retained = this.page(win, id, false)
     const restoreUrl = !retained.page && sessionId !== null ? retained.owner.urls.get(id) : undefined
     const { owner, page } = sessionId === null ? retained : this.page(win, id)
+    if (page && owner.agents.get(id) !== (sessionId ?? undefined)) {
+      page.networkCapture?.dispose()
+      page.networkCapture = undefined
+    }
     if (sessionId) owner.agents.set(id, sessionId)
     else owner.agents.delete(id)
     if (!page) return
@@ -687,6 +695,28 @@ export class BrowserHost {
 
   networkEntries(win: BrowserWindow, id: string): BrowserNetworkEntry[] {
     return this.page(win, id, false).page?.network.entries() ?? []
+  }
+
+  async networkCaptureAction(win: BrowserWindow, id: string, sessionId: string, action: BrowserNetworkCaptureAction, options: BrowserNetworkCaptureOptions): Promise<void> {
+    const { owner, page } = this.page(win, id, false)
+    if (!page || owner.agents.get(id) !== sessionId) throw new Error('Browser control was released or transferred')
+    const capture = page.networkCapture ??= attachBrowserNetworkCapture(page.view.webContents)
+    if (action === 'start') await capture.start(options)
+    else if (action === 'stop') await capture.stop()
+    else if (action === 'clear') capture.clear()
+    else throw new Error('Invalid network capture action')
+    if (!this.alive(owner, page) || owner.agents.get(id) !== sessionId) throw new Error('Browser control was released or transferred')
+  }
+
+  networkCaptureEntries(win: BrowserWindow, id: string) {
+    const capture = this.page(win, id, false).page?.networkCapture
+    return { active: capture?.active ?? false, error: capture?.error, entries: capture?.entries() ?? [] }
+  }
+
+  networkCaptureDetail(win: BrowserWindow, id: string, requestId: string) {
+    const capture = this.page(win, id, false).page?.networkCapture
+    if (!capture) throw new Error('No network capture records. Start capture before reproducing the request.')
+    return capture.detail(requestId)
   }
 
   /** Resolves true once the main frame stopped loading, false when `timeout` elapsed first. */

@@ -38,7 +38,7 @@ async function fixture(): Promise<void> {
     }
   }))
   const { registerBrowserIpc } = await import('../src/main/ipc/browser')
-  const { browserAgentHost } = await import('../src/main/plugins/pig-browser-host')
+  const { browserAgentHost, closeSessionBrowserControl } = await import('../src/main/plugins/pig-browser-host')
   registerBrowserIpc({ sessionWindow: (id) => id === 's1' ? win as never : undefined, isSessionLive: (id) => id === 's1' })
   const agent = browserAgentHost()!
   const event = { sender: win.webContents, senderFrame: win.webContents.mainFrame }
@@ -87,6 +87,12 @@ async function fixture(): Promise<void> {
   answer(event, closingRequest.requestId, { browserId: 'browser:second' })
   await closing
   await assert.rejects(agent.close('s1'), /no browser tab/)
+
+  await agent.open('s1', { browserId: 'browser:agent' })
+  agents.set('browser:foreign', 'foreign-session')
+  closeSessionBrowserControl('s1')
+  assert.equal(agents.get('browser:agent'), null, 'session teardown releases control without closing the tab')
+  assert.equal(agents.get('browser:foreign'), 'foreign-session', 'other sessions retain control')
 
   const refused = agent.open('s1', {})
   answer(event, lastRequest().requestId, { error: 'The session is not open in this window' })

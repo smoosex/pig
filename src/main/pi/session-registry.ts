@@ -35,6 +35,7 @@ import { featuredRecipe } from '../mcp/featured'
 import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../shared/session-capabilities'
 import { assertExtensionResources, createSessionRuntime, SessionResourceError } from './session-runtime'
 import { closeSessionProcesses } from '../processes'
+import { closeSessionBrowserControl } from '../plugins/pig-browser-host'
 import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
@@ -918,6 +919,11 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
   try {
     // Owned by the session, not the plugin: a disabled pig-process plugin must not leak them.
     await closeSessionProcesses(session.sessionId)
+  } catch (error) {
+    shutdownErrors.push(error)
+  }
+  try {
+    closeSessionBrowserControl(session.sessionId)
   } catch (error) {
     shutdownErrors.push(error)
   }
