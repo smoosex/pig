@@ -91,10 +91,10 @@ async function fixture(): Promise<void> {
     assert.ok(group)
     assert.equal(group.parentElement?.lastElementChild, group, 'scope selection is the rightmost control')
     assert.equal(group.previousElementSibling, open, 'configuration sits immediately to the left')
-    assert.equal(group.dataset.slot, 'gooey-nav')
+    assert.equal(group.dataset.slot, 'toggle-group')
     const [all, project, chat] = [...group.querySelectorAll<HTMLButtonElement>('button')]
     assert.deepEqual([all, project, chat].map((item) => item.textContent), ['全部', '仅项目', '仅对话'])
-    const selected = () => [all, project, chat].map((item) => item.getAttribute('aria-current') === 'true')
+    const selected = () => [all, project, chat].map((item) => item.dataset.state === 'on')
     assert.deepEqual(selected(), [false, true, false])
     await act(async () => { all.click() })
     assert.deepEqual(selected(), [true, false, false])
@@ -138,7 +138,7 @@ async function fixture(): Promise<void> {
     assertInstallerIdle()
     await act(async () => { first.resolve() })
     assert.equal(project.disabled, false)
-    assert.equal(otherChat.getAttribute('aria-current'), 'true', 'a delayed older reply cannot revert another plugin')
+    assert.equal(otherChat.dataset.state, 'on', 'a delayed older reply cannot revert another plugin')
     assertInstallerIdle()
     scopeWaits.clear()
 

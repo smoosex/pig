@@ -215,9 +215,10 @@ export function AddMcpDialog({
             </DialogTitle>
             <ToggleGroup
               type="single"
+              variant="outline"
               spacing={0.5}
               size="xs"
-              className="ml-auto shrink-0 border p-px"
+              className="ml-auto shrink-0"
               value={mode}
               disabled={busy}
               onValueChange={(next) => {

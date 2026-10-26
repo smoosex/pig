@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select'
-import { GooeyNav } from '../ui/gooey-nav'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
 const APPEARANCES = ['system', 'light', 'dark'] as const
@@ -39,17 +39,17 @@ export function ThemePane() {
             title={t('settings.appearance')}
             description={t('settings.appearanceDescription')}
           >
-            <GooeyNav
-              size="sm"
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={0.5}
+              size="xs"
               aria-label={t('settings.appearance')}
-              items={APPEARANCES.map((item) => t(APPEARANCE_KEYS[item]))}
-              value={APPEARANCES.indexOf(appearance)}
-              onChange={(index) => {
-                const next = APPEARANCES[index]
-                if (!next) return
-                void setTheme({ appearance: next })
-              }}
-            />
+              value={appearance}
+              onValueChange={(next) => { if (next) void setTheme({ appearance: next as (typeof APPEARANCES)[number] }) }}
+            >
+              {APPEARANCES.map((item) => <ToggleGroupItem key={item} value={item}>{t(APPEARANCE_KEYS[item])}</ToggleGroupItem>)}
+            </ToggleGroup>
           </SettingsRow>
         </SettingsCard>
       </div>

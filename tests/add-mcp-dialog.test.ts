@@ -126,15 +126,13 @@ async function fixture(): Promise<void> {
     const transport = button('Command').closest('[data-slot="toggle-group"]')!
     assert.equal(transport.getAttribute('data-size'), 'xs')
     assert.equal(transport.getAttribute('data-spacing'), '0.5')
-    assert.ok(transport.classList.contains('border'))
-    assert.ok(transport.classList.contains('p-px'))
-    assert.equal(button('Command').getAttribute('data-variant'), 'default')
+    assert.equal(transport.getAttribute('data-variant'), 'outline')
+    assert.equal(button('Command').getAttribute('data-variant'), 'outline')
     const modes = document.querySelector('[data-slot="dialog-header"] [data-slot="toggle-group"]')!
     assert.equal(modes.getAttribute('aria-label'), 'Editor mode')
     assert.equal(modes.getAttribute('data-size'), 'xs')
     assert.equal(modes.getAttribute('data-spacing'), '0.5')
-    assert.ok(modes.classList.contains('border'))
-    assert.ok(modes.classList.contains('p-px'))
+    assert.equal(modes.getAttribute('data-variant'), 'outline')
     assert.deepEqual(
       [...modes.querySelectorAll('[data-slot="toggle-group-item"]')].map(
         (node) => node.textContent

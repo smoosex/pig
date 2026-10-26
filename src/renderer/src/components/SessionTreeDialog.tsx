@@ -15,7 +15,7 @@ import {
   ContextMenuTrigger
 } from './ui/context-menu'
 import { SessionRenameField } from './SessionRenameField'
-import { GooeyNav } from './ui/gooey-nav'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { SmoothHoverHighlight } from './ui/smooth-hover-highlight'
 import {
   Dialog,
@@ -359,20 +359,25 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
           <DialogDescription className="text-xs">{t('tree.description')}</DialogDescription>
         </DialogHeader>
         <div inert={busy} className="grid gap-4">
-        <GooeyNav
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0.5}
           size="xs"
-          items={treeViews.map((item) => t(item.labelKey))}
-          value={treeViews.findIndex((item) => item.value === view)}
-          onChange={(index) => {
-            if (busy) return
+          className="justify-self-start"
+          value={view}
+          onValueChange={(next) => {
+            const mode = treeViews.find((item) => item.value === next)?.value
+            if (busy || !mode) return
             // pi clears its folds on every filter change; the rows below are already here.
-            const mode = treeViews[index].value
             setView(mode)
             setFolded(new Set())
             ensureView(mode)
           }}
           aria-label={t('tree.viewAria')}
-        />
+        >
+          {treeViews.map((item) => <ToggleGroupItem key={item.value} value={item.value}>{t(item.labelKey)}</ToggleGroupItem>)}
+        </ToggleGroup>
         <Input
           value={query}
           disabled={busy}

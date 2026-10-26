@@ -8,7 +8,7 @@ import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
 import { Switch } from '../ui/switch'
-import { GooeyNav } from '../ui/gooey-nav'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
@@ -255,20 +255,30 @@ export function PluginsPane() {
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
-        <GooeyNav
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0.5}
           size="xs"
           className="shrink-0"
           aria-label={`${plugin.name} ${t('plugins.enabledIn')}`}
-          value={scopeIndex(plugin.scopes)}
-          items={SCOPE_CHOICES.map((choice, index) => ({
-            label: t(choice.label),
-            disabled: pendingPluginIds.has(plugin.id) || (!plugin.available && index !== scopeIndex(plugin.scopes))
-          }))}
-          onChange={(index) => {
-            const scopes = index === scopeIndex(plugin.scopes) ? [] : SCOPE_CHOICES[index].scopes
+          value={scopeIndex(plugin.scopes) < 0 ? '' : String(scopeIndex(plugin.scopes))}
+          onValueChange={(next) => {
+            // Pressing the lit choice again empties the value, which disables the plugin.
+            const scopes = next ? SCOPE_CHOICES[Number(next)].scopes : []
             void actOnPlugin(plugin.id, () => api.setPluginScopes(plugin.id, scopes))
           }}
-        />
+        >
+          {SCOPE_CHOICES.map((choice, index) => (
+            <ToggleGroupItem
+              key={choice.label}
+              value={String(index)}
+              disabled={pendingPluginIds.has(plugin.id) || (!plugin.available && index !== scopeIndex(plugin.scopes))}
+            >
+              {t(choice.label)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
     </SettingsRow>
   )

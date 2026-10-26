@@ -10,7 +10,7 @@ import { sidebarRowSurface, sidebarSurfaceHover } from '../sidebar/sidebar-surfa
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { GeneralPane } from './GeneralPane'
 import { ThemePane } from './ThemePane'
-import { ShortcutsPane } from './ShortcutsPane'
+import { ShortcutsPane, ShortcutsResetAll } from './ShortcutsPane'
 import { ProvidersPane } from './ProvidersPane'
 import { PluginsPane } from './PluginsPane'
 import { McpPane } from './McpPane'
@@ -29,7 +29,8 @@ const sections = [
     title: 'shortcuts.title',
     description: 'shortcuts.description',
     icon: Keyboard,
-    component: ShortcutsPane
+    component: ShortcutsPane,
+    action: ShortcutsResetAll
   },
   {
     id: 'theme',
@@ -155,9 +156,12 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       >
         <ScrollArea className="h-full [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <div className="mx-auto flex max-w-3xl flex-col gap-8 px-8 py-8">
-            <div>
-              <h1 className="text-base font-medium">{t(currentSection.title)}</h1>
-              <p className="text-xs text-muted-foreground">{t(currentSection.description)}</p>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h1 className="text-base font-medium">{t(currentSection.title)}</h1>
+                <p className="text-xs text-muted-foreground">{t(currentSection.description)}</p>
+              </div>
+              {'action' in currentSection ? <currentSection.action /> : null}
             </div>
             {error ? (
               <p role="alert" className="text-sm text-destructive">

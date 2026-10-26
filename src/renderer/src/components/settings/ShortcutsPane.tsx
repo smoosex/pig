@@ -12,15 +12,18 @@ import {
 } from '../../../../shared/shortcuts'
 import type { SendShortcut } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
-import { eventAccelerator, IS_MAC, setShortcutRecording, shortcutLabel, useShortcutBindings } from '../../lib/shortcuts'
+import { eventAccelerator, IS_MAC, setShortcutRecording, shortcutLabel, shortcutText, useShortcutBindings } from '../../lib/shortcuts'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settings'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { Button } from '../ui/button'
 import { Kbd, KbdGroup } from '../ui/kbd'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { SettingsCard, SettingsRow } from './SettingsFields'
+
+// Shared by the key buttons and the send toggle so their left edges line up.
+const KEY_WIDTH = 'w-40'
 
 const GROUPS: ShortcutGroup[] = ['global', 'tabs', 'composer', 'file', 'terminal', 'projectPicker']
 
@@ -30,7 +33,11 @@ type Attempt = { accelerator: string; problem: ShortcutProblem }
 function Keys({ accelerator }: { accelerator: string }) {
   return (
     <KbdGroup>
-      {shortcutLabel(accelerator).map((part, index) => <Kbd key={index}>{part}</Kbd>)}
+      {shortcutLabel(accelerator).map((part, index) => (
+        <Kbd key={index} className="bg-glass-prompt-foreground/8 text-glass-prompt-foreground solid:bg-muted solid:text-muted-foreground">
+          {part}
+        </Kbd>
+      ))}
     </KbdGroup>
   )
 }
@@ -122,7 +129,7 @@ function ShortcutRow({ id }: { id: ShortcutActionId }) {
           size="sm"
           aria-label={t('shortcuts.edit', { action: name })}
           aria-pressed={recording}
-          className={cn('min-w-28 justify-center', recording && 'ring-2 ring-ring', problem && 'text-destructive')}
+          className={cn(KEY_WIDTH, 'justify-center', recording && 'ring-2 ring-ring', problem && 'text-destructive')}
           onClick={() => {
             setAttempt(null)
             setRecording((value) => !value)
@@ -169,55 +176,40 @@ function SendShortcutRow() {
       title={t('settings.sendShortcut')}
       description={t('settings.sendShortcutDescription', { key: sendShortcut === 'enter' ? 'Shift+Enter' : 'Enter' })}
     >
-      <Select value={sendShortcut} onValueChange={(value) => void setSendShortcut(value as SendShortcut)}>
-        <SelectTrigger size="sm">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" align="end">
-          <SelectGroup>
-            <SelectItem value="enter">Enter</SelectItem>
-            <SelectItem value="shift-enter">Shift+Enter</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-1">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="xs"
+          spacing={0.5}
+          className={KEY_WIDTH}
+          aria-label={t('settings.sendShortcut')}
+          value={sendShortcut}
+          onValueChange={(value) => { if (value) void setSendShortcut(value as SendShortcut) }}
+        >
+          <ToggleGroupItem value="enter" className="flex-1 text-[0.8rem]">{shortcutText('Enter')}</ToggleGroupItem>
+          <ToggleGroupItem value="shift-enter" className="flex-1 text-[0.8rem]">{shortcutText('Shift+Enter')}</ToggleGroupItem>
+        </ToggleGroup>
+        {/* Holds the reset button's place so the toggle lines up with the key buttons. */}
+        <div className="size-7" />
+      </div>
     </SettingsRow>
   )
 }
 
-export function ShortcutsPane() {
+/** Lives in the settings page header, beside the title. */
+export function ShortcutsResetAll() {
   const t = useT()
   const overrides = useSettingsStore((s) => s.shortcuts)
   const setShortcuts = useSettingsStore((s) => s.setShortcuts)
   const [confirmReset, setConfirmReset] = useState(false)
 
   return (
-    <div className="flex flex-col gap-8">
-      {GROUPS.map((group) => (
-        <div key={group}>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              {t(`shortcuts.groups.${group}`)}
-            </p>
-            {group === 'global' ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={Object.keys(overrides).length === 0}
-                onClick={() => setConfirmReset(true)}
-              >
-                <RotateCcw data-icon="inline-start" />
-                {t('shortcuts.resetAll')}
-              </Button>
-            ) : null}
-          </div>
-          <SettingsCard>
-            {group === 'composer' ? <SendShortcutRow /> : null}
-            {SHORTCUT_ACTIONS.filter((id) => SHORTCUT_DEFINITIONS[id].group === group).map((id) => (
-              <ShortcutRow key={id} id={id} />
-            ))}
-          </SettingsCard>
-        </div>
-      ))}
+    <>
+      <Button variant="ghost" size="sm" disabled={Object.keys(overrides).length === 0} onClick={() => setConfirmReset(true)}>
+        <RotateCcw data-icon="inline-start" />
+        {t('shortcuts.resetAll')}
+      </Button>
       <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -234,6 +226,28 @@ export function ShortcutsPane() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  )
+}
+
+export function ShortcutsPane() {
+  const t = useT()
+
+  return (
+    <div className="flex flex-col gap-8">
+      {GROUPS.map((group) => (
+        <div key={group}>
+          <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {t(`shortcuts.groups.${group}`)}
+          </p>
+          <SettingsCard>
+            {group === 'composer' ? <SendShortcutRow /> : null}
+            {SHORTCUT_ACTIONS.filter((id) => SHORTCUT_DEFINITIONS[id].group === group).map((id) => (
+              <ShortcutRow key={id} id={id} />
+            ))}
+          </SettingsCard>
+        </div>
+      ))}
     </div>
   )
 }

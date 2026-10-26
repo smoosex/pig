@@ -20,7 +20,8 @@ async function fixture(): Promise<void> {
   ] as const
   for (const [name] of panes) {
     mock.module(`../src/renderer/src/components/settings/${name}`, () => ({
-      [name]: () => h('span', { 'data-settings-pane': name }, name)
+      [name]: () => h('span', { 'data-settings-pane': name }, name),
+      ...(name === 'ShortcutsPane' ? { ShortcutsResetAll: () => null } : {})
     }))
   }
   mock.module('../src/renderer/src/stores/sessions', () => ({

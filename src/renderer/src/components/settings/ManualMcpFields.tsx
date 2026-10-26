@@ -140,9 +140,10 @@ export function ManualMcpFields({
             <FieldContent className="min-w-0">
               <ToggleGroup
                 type="single"
+                variant="outline"
                 spacing={0.5}
                 size="xs"
-                className="mt-0.5 self-start border p-px"
+                className="mt-0.5 self-start"
                 aria-labelledby="mcp-transport-label"
                 value={form.transport}
                 disabled={disabled}

@@ -9,7 +9,8 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        outline: "border border-glass-border bg-transparent solid:border-input",
+        // Segmented: the group is a recessed track and the pressed item a raised glass button.
+        outline: "border border-transparent bg-transparent hover:bg-glass-prompt-foreground/6 data-[state=on]:border-glass-button-border data-[state=on]:bg-glass-button-background data-[state=on]:bg-[image:var(--glass-button-sheen)] data-[state=on]:text-glass-prompt-foreground data-[state=on]:shadow-glass-button data-[state=on]:hover:bg-glass-button-hover-background solid:hover:bg-foreground/6 solid:data-[state=on]:border-border solid:data-[state=on]:bg-background solid:data-[state=on]:bg-none solid:data-[state=on]:text-foreground solid:data-[state=on]:shadow-sm solid:data-[state=on]:hover:bg-background",
       },
       size: {
         default:

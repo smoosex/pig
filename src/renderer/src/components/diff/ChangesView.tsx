@@ -346,9 +346,9 @@ export function ChangesView({ cwd }: { cwd: string }) {
         </Button>
         <ToggleGroup
           type="single"
+          variant="outline"
           spacing={0.5}
           size="xs"
-          className="border p-px"
           value={diffStyle}
           onValueChange={(value) => value && setDiffStyle(value as 'unified' | 'split')}
           aria-label={t('diff.layout')}
