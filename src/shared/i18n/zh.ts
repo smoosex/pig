@@ -815,7 +815,7 @@ export const zh = {
     send: '发送',
     pause: '暂停',
     queue: '跟进',
-    steerHint: 'Tab 转为引导',
+    steerHint: '按 Tab 插话',
     restoreDraft: '恢复未发送内容',
     previewImage: '预览图片',
     removeImage: '移除图片',
