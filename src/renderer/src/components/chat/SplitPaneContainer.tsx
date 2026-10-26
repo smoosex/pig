@@ -11,6 +11,8 @@ import {
   useSplitLayoutStore,
   isSplitNode,
   findPaneNode,
+  groupOfPane,
+  groupOfTab,
   type LayoutNode,
   type PaneNode
 } from '../../stores/split-layout'
@@ -26,18 +28,18 @@ import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useProjectAction } from '../sidebar/project-action'
 
 export interface SplitPaneContainerProps {
-  root?: LayoutNode | null
+  /** Any tab in the group to show; the container follows that group as panes move in and out of it. */
+  tabId: string
   className?: string
   renderPane: (node: PaneNode, isActive: boolean) => ReactNode
 }
 
 export function SplitPaneContainer({
-  root: propRoot,
+  tabId,
   className,
   renderPane
 }: SplitPaneContainerProps) {
-  const storeRoot = useSplitLayoutStore((state) => state.root)
-  const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
+  const group = useSplitLayoutStore((state) => groupOfTab(state.groups, tabId))
   const setActivePane = useSplitLayoutStore((state) => state.setActivePane)
   const closeTab = useSessionsStore((state) => state.closeTab)
   const dragOver = useSplitLayoutStore((state) => state.dragOver)
@@ -50,8 +52,8 @@ export function SplitPaneContainer({
     []
   )
 
-  const root = propRoot !== undefined ? propRoot : storeRoot
-  if (!root) return null
+  if (!group) return null
+  const { root, activePaneId } = group
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>, pane: PaneNode) => {
     if (event.button !== 0) return
@@ -91,7 +93,7 @@ export function SplitPaneContainer({
           (element) =>
             element &&
             element.getAttribute('data-pane-id') !== pane.id &&
-            findPaneNode(layout.root, element.getAttribute('data-pane-id')!)
+            findPaneNode(groupOfTab(layout.groups, pane.tabId)?.root ?? null, element.getAttribute('data-pane-id')!)
         )
       const position = target
         ? computeSplitPosition(target.getBoundingClientRect(), event.clientX, event.clientY)
@@ -111,8 +113,9 @@ export function SplitPaneContainer({
       const { dragOver, reintegratingTab } = layout
       cleanup()
       // The source may have closed while the pointer was held.
+      const current = groupOfPane(layout.groups, pane.id)
       if (
-        !findPaneNode(layout.root, pane.id) ||
+        !current ||
         !useSessionsStore.getState().openTabs.some((tab) => tab.id === pane.tabId)
       )
         return
@@ -122,9 +125,8 @@ export function SplitPaneContainer({
       } else if (
         dragOver &&
         dragOver.paneId !== pane.id &&
-        findPaneNode(layout.root, dragOver.paneId)
+        findPaneNode(current.root, dragOver.paneId)
       ) {
-        layout.closePane(pane.id)
         layout.splitPane(dragOver.paneId, pane.tabId, dragOver.position)
         useSessionsStore.getState().setActive(pane.tabId)
       }

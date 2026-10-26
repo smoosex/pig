@@ -46,13 +46,29 @@ function normalizeLayoutNode(value: unknown, paneIds: Set<string>): LayoutNode |
   return { id: node.id, direction, children: nodes as LayoutNode[], sizes: [...sizes as number[]] }
 }
 
-function normalizeSplitLayout(value: unknown): SavedSplitLayout | null {
+function normalizeSplitLayout(value: unknown, paneIds: Set<string>): SavedSplitLayout | null {
   if (!value || typeof value !== 'object') return null
   const { root, activePaneId } = value as Record<string, unknown>
-  const paneIds = new Set<string>()
-  const node = normalizeLayoutNode(root, paneIds)
-  if (!node || paneIds.size < 2 || (activePaneId !== null && (typeof activePaneId !== 'string' || !paneIds.has(activePaneId)))) return null
+  const own = new Set<string>()
+  const node = normalizeLayoutNode(root, own)
+  if (!node || own.size < 2 || (activePaneId !== null && (typeof activePaneId !== 'string' || !own.has(activePaneId)))) return null
+  if ([...own].some((id) => paneIds.has(id))) return null
+  for (const id of own) paneIds.add(id)
   return { root: node, activePaneId }
+}
+
+/** Every group, or null when any is malformed or two groups share a pane or a tab. */
+function normalizeSplitLayouts(value: unknown): SavedSplitLayout[] | null {
+  if (!Array.isArray(value)) return null
+  const paneIds = new Set<string>()
+  const layouts = value.map((item) => normalizeSplitLayout(item, paneIds))
+  if (layouts.some((layout) => layout === null)) return null
+  const tabIds = (layouts as SavedSplitLayout[]).flatMap((layout) => paneTabIds(layout.root))
+  return new Set(tabIds).size === tabIds.length ? layouts as SavedSplitLayout[] : null
+}
+
+function paneTabIds(node: LayoutNode): string[] {
+  return 'tabId' in node ? [node.tabId] : node.children.flatMap(paneTabIds)
 }
 
 const emptyState = (): OpenProjectSessionsState => ({
@@ -178,7 +194,9 @@ async function readState(): Promise<OpenProjectSessionsState> {
   // Files before version 5 had no tool tabs, which reads as none open.
   const tools = normalizeTools(raw.tools)
   // Panes name tabs that may not come back; the renderer drops those when it restores the layout.
-  const split = normalizeSplitLayout(raw.split)
+  // Before several groups, the file held one `split`; it reads as the only group.
+  const legacy = (raw as { split?: unknown }).split
+  const splits = normalizeSplitLayouts(raw.splits ?? (legacy === undefined ? [] : [legacy])) ?? []
   const workspaces = Array.isArray(raw.workspaces)
     ? raw.workspaces.map((item) => normalizeWorkspace(item, tools)).filter((item): item is OpenProjectWorkspace => item !== null)
     : []
@@ -192,7 +210,7 @@ async function readState(): Promise<OpenProjectSessionsState> {
     workspaces: [...byCwd.values()],
     ...chatStateFor(normalizeChatState(raw), tools),
     tools,
-    ...(split ? { split } : {})
+    ...(splits.length ? { splits } : {})
   }
 }
 
@@ -431,13 +449,13 @@ export function saveBrowserTabUrl(browserId: string, url: string): Promise<void>
   return write
 }
 
-/** The renderer's whole split tree, written as it changes; null once the strip is unsplit. */
-export function saveOpenSplitLayout(layout: unknown): Promise<void> {
-  const split = layout === null ? null : normalizeSplitLayout(layout)
-  if (layout !== null && !split) throw new Error('Invalid split layout')
+/** The renderer's split groups, written as they change; an empty list once nothing is split. */
+export function saveOpenSplitLayouts(layouts: unknown): Promise<void> {
+  const splits = normalizeSplitLayouts(layouts)
+  if (!splits) throw new Error('Invalid split layout')
   return mutate((state) => {
-    if (split) state.split = split
-    else delete state.split
+    if (splits.length) state.splits = splits
+    else delete state.splits
   })
 }
 

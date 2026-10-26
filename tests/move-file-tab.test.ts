@@ -19,7 +19,7 @@ async function runFixture(name: string): Promise<void> {
 
   const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
   const { fileTabId } = await import('../src/renderer/src/stores/sessions/tabs-slice')
-  const { useSplitLayoutStore } = await import('../src/renderer/src/stores/split-layout')
+  const { useSplitLayoutStore, paneOfTab } = await import('../src/renderer/src/stores/split-layout')
   const cwd = '/project'
 
   const fileTab = (path: string, title = path.slice(path.lastIndexOf('/') + 1)) => ({
@@ -71,11 +71,11 @@ async function runFixture(name: string): Promise<void> {
 
   if (name === 'pane') {
     // A pane holds a tab id, and a pane pointing at one that is no longer there shows nothing at all.
-    const paneId = useSplitLayoutStore.getState().initLayout(fileTabId(cwd, 'src/main.ts'))
+    useSplitLayoutStore.getState().splitTab(fileTabId(cwd, 'src/main.ts'), fileTabId(cwd, 'README.md'), 'right')
+    const before = paneOfTab(useSplitLayoutStore.getState().groups, fileTabId(cwd, 'src/main.ts'))!.id
     useSessionsStore.getState().moveFileTab(cwd, 'src', 'source')
-    const root = useSplitLayoutStore.getState().root
-    assert.equal(root && 'tabId' in root ? root.tabId : null, fileTabId(cwd, 'source/main.ts'))
-    assert.equal(useSplitLayoutStore.getState().activePaneId, paneId, 'the pane itself did not change')
+    const pane = paneOfTab(useSplitLayoutStore.getState().groups, fileTabId(cwd, 'source/main.ts'))
+    assert.equal(pane?.id, before, 'the pane itself did not change')
     return
   }
 

@@ -164,8 +164,8 @@ export interface OpenProjectSessionsState {
   activeChatTabId: string | null
   /** Every open browser and terminal tab, in both halves. */
   tools: OpenToolTab[]
-  /** The split panes on screen at the last write; absent when none were. */
-  split?: SavedSplitLayout
+  /** Every split group at the last write, each a merged tab; absent when there were none. */
+  splits?: SavedSplitLayout[]
 }
 
 export interface SessionRef {
@@ -1015,8 +1015,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) => Promise<void>
   /** Records which browser and terminal tabs are open; a new one joins the end of its strip. */
   saveOpenToolTabs: (tabs: OpenToolTabMembership[]) => Promise<void>
-  /** Null when the strip is no longer split. */
-  saveOpenSplitLayout: (layout: SavedSplitLayout | null) => Promise<void>
+  /** Every split group; an empty list once nothing is split. */
+  saveOpenSplitLayouts: (layouts: SavedSplitLayout[]) => Promise<void>
   /** Native material support is available synchronously, before the document's first paint. */
   readonly supportsGlass: boolean
   /** Lifts the startup screen covering the window; later calls and reloads are ignored. */

@@ -48,7 +48,7 @@ import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
 
-import { useSplitLayoutStore, collectPaneNodes, type PaneNode } from './stores/split-layout'
+import { useSplitLayoutStore, allPanes, collectPaneNodes, groupOfTab, paneOfTab, type PaneNode } from './stores/split-layout'
 import { SplitPaneContainer } from './components/chat/SplitPaneContainer'
 import { SplitPaneOverlay } from './components/chat/SplitPaneOverlay'
 
@@ -117,7 +117,7 @@ function BrowserTabContent({ tab }: { tab: OpenTab }) {
   // A mounted pane is visible even when another split pane owns keyboard focus.
   return <BrowserPanel browserId={tab.id} targetSessionId={targetSessionId} active onFocus={() => {
     const layout = useSplitLayoutStore.getState()
-    const pane = collectPaneNodes(layout.root).find((pane) => pane.tabId === tab.id)
+    const pane = paneOfTab(layout.groups, tab.id)
     if (pane) layout.setActivePane(pane.id)
     useSessionsStore.getState().setActive(tab.id)
   }} />
@@ -128,8 +128,8 @@ function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) 
     <Suspense fallback={null}>
       <TerminalPanel terminalId={tab.id} cwd={tab.cwd || null} active={active} onFocus={() => {
         const layout = useSplitLayoutStore.getState()
-        const pane = collectPaneNodes(layout.root).find((pane) => pane.tabId === tab.id)
-        if (pane && layout.activePaneId !== pane.id) layout.setActivePane(pane.id)
+        const pane = paneOfTab(layout.groups, tab.id)
+        if (pane) layout.setActivePane(pane.id)
         if (useSessionsStore.getState().activeTabId !== tab.id) useSessionsStore.getState().setActive(tab.id)
       }} />
     </Suspense>
@@ -244,20 +244,21 @@ export default function App() {
   )
   const loadSettings = useSettingsStore((s) => s.load)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
-  const splitRoot = useSplitLayoutStore((s) => s.root)
+  const splitGroups = useSplitLayoutStore((s) => s.groups)
   const splitDragOver = useSplitLayoutStore((s) => s.dragOver)
-  const splitPaneNodes = splitRoot ? collectPaneNodes(splitRoot) : []
-  const splitTabIdSet = new Set(splitPaneNodes.map((p) => p.tabId))
-  const isMultiPane = splitPaneNodes.length > 1 && Boolean(activeTabId && splitTabIdSet.has(activeTabId))
+  // Only the group holding the active tab is on screen; the others wait behind their merged tabs.
+  const activeSplit = groupOfTab(splitGroups, activeTabId)
+  const splitPaneNodes = activeSplit ? collectPaneNodes(activeSplit.root) : []
+  const isMultiPane = activeSplit !== null
 
   useEffect(() => {
     const openTabIds = new Set(openTabs.map((t) => t.id))
-    for (const pane of splitPaneNodes) {
+    for (const pane of allPanes(splitGroups)) {
       if (!openTabIds.has(pane.tabId)) {
         useSplitLayoutStore.getState().closePane(pane.id)
       }
     }
-  }, [openTabs, splitRoot])
+  }, [openTabs, splitGroups])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -540,8 +541,9 @@ export default function App() {
                     className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                     data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}
                   >
-                    {isMultiPane ? (
+                    {activeSplit ? (
                       <SplitPaneContainer
+                        tabId={activeTabId!}
                         className="flex-1 min-h-0 min-w-0"
                         renderPane={(node: PaneNode, isActive) => (
                           <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />

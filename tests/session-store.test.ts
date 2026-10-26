@@ -107,7 +107,7 @@ async function runFixture(name: string): Promise<void> {
       chatTabWrites.push({ tabIds, activeTabId })
     },
     saveOpenToolTabs: async () => {},
-    saveOpenSplitLayout: async () => {},
+    saveOpenSplitLayouts: async () => {},
     listChats: async (): Promise<ProjectGroup[]> => [],
     createChat: async (): Promise<SessionRef> => ({ sessionId: 'chat', cwd: '/chats/0' }),
     listProjects: async (): Promise<ProjectGroup[]> => [],
@@ -615,7 +615,7 @@ async function runFixture(name: string): Promise<void> {
     Object.assign(api, {
       browser: { create: async (...args: unknown[]) => { creates.push(args); return {} } },
       saveOpenToolTabs: async (tabs: unknown) => { toolWrites.push(tabs) },
-      saveOpenSplitLayout: async (layout: unknown) => { splitWrites.push(layout) }
+      saveOpenSplitLayouts: async (layouts: unknown) => { splitWrites.push(layouts) }
     })
     persistedOpenProjectSessions = {
       currentCwd: '/project',
@@ -628,10 +628,10 @@ async function runFixture(name: string): Promise<void> {
         { id: 'browser:c', kind: 'browser', cwd: '', targetSessionId: 'deleted' },
         { id: 'terminal:gone', kind: 'terminal', cwd: '/deleted-worktree' }
       ],
-      split: {
+      splits: [{
         root: { id: 's', direction: 'horizontal', sizes: [50, 50], children: [{ id: 'p1', tabId: 'one' }, { id: 'p2', tabId: 'terminal:t' }] },
         activePaneId: 'p1'
-      }
+      }]
     }
 
     await state().initializeProjectWorkspaces()
@@ -644,10 +644,10 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(browser('browser:c')?.browserTargetSessionId, undefined, 'a target that did not come back is dropped')
     assert.equal(JSON.stringify(toolWrites.at(-1)).includes('terminal:gone'), false, 'a tab of a deleted worktree is forgotten')
     const { useSplitLayoutStore } = await import('../src/renderer/src/stores/split-layout')
-    const split = useSplitLayoutStore.getState()
-    assert.deepEqual(split.root, persistedOpenProjectSessions.split!.root, 'the split comes back around the restored tabs')
+    const [split] = useSplitLayoutStore.getState().groups
+    assert.deepEqual(split.root, persistedOpenProjectSessions.splits![0].root, 'the split comes back around the restored tabs')
     assert.equal(split.activePaneId, 'p2', 'with the pane of the tab it was left on active')
-    assert.deepEqual(splitWrites, [{ root: split.root, activePaneId: 'p2' }], 'the first write after restore is that layout')
+    assert.deepEqual(splitWrites, [[{ root: split.root, activePaneId: 'p2' }]], 'the first write after restore is that layout')
     return
   }
 

@@ -385,25 +385,35 @@ describe('open project sessions', () => {
     ])
   })
 
-  test('the split layout is written whole, cleared when unsplit, and refused when malformed', async () => {
+  test('the split groups are written whole, cleared when unsplit, and refused when malformed', async () => {
     const layout = {
       root: { id: 's', direction: 'vertical' as const, sizes: [50, 50], children: [{ id: 'p1', tabId: 'browser:a' }, { id: 'p2', tabId: 'one' }] },
       activePaneId: 'p2'
     }
-    await state.saveOpenSplitLayout(layout)
-    expect((await state.loadOpenProjectSessions()).split).toEqual(layout)
+    const other = {
+      root: { id: 't', direction: 'horizontal' as const, sizes: [40, 60], children: [{ id: 'q1', tabId: 'two' }, { id: 'q2', tabId: 'three' }] },
+      activePaneId: 'q1'
+    }
+    await state.saveOpenSplitLayouts([layout, other])
+    expect((await state.loadOpenProjectSessions()).splits).toEqual([layout, other])
     for (const invalid of [
-      { ...layout, activePaneId: 'missing' },
-      { root: { id: 'p1', tabId: 'one' }, activePaneId: null },
-      { ...layout, root: { ...layout.root, sizes: [50] } },
-      { ...layout, root: { ...layout.root, children: [{ id: 'p1', tabId: 'a' }, { id: 'p1', tabId: 'b' }] } }
-    ]) expect(() => state.saveOpenSplitLayout(invalid)).toThrow('Invalid split layout')
-    await state.saveOpenSplitLayout(null)
-    expect(await state.loadOpenProjectSessions()).not.toHaveProperty('split')
+      null,
+      layout,
+      [{ ...layout, activePaneId: 'missing' }],
+      [{ root: { id: 'p1', tabId: 'one' }, activePaneId: null }],
+      [{ ...layout, root: { ...layout.root, sizes: [50] } }],
+      [{ ...layout, root: { ...layout.root, children: [{ id: 'p1', tabId: 'a' }, { id: 'p1', tabId: 'b' }] } }],
+      [layout, { ...other, root: { ...other.root, children: [{ id: 'p1', tabId: 'two' }, { id: 'q2', tabId: 'three' }] } }],
+      [layout, { ...other, root: { ...other.root, children: [{ id: 'q1', tabId: 'one' }, { id: 'q2', tabId: 'three' }] } }]
+    ]) expect(() => state.saveOpenSplitLayouts(invalid)).toThrow('Invalid split layout')
+    await state.saveOpenSplitLayouts([])
+    expect(await state.loadOpenProjectSessions()).not.toHaveProperty('splits')
 
     const path = join(root, 'open-project-sessions.json')
+    await writeFile(path, JSON.stringify({ version: 5, split: layout }))
+    expect((await state.loadOpenProjectSessions()).splits, 'the single split of an older file is its only group').toEqual([layout])
     await writeFile(path, JSON.stringify({ version: 5, split: { ...layout, root: { ...layout.root, direction: 'diagonal' } } }))
-    expect(await state.loadOpenProjectSessions(), 'a damaged saved layout reads as no split').not.toHaveProperty('split')
+    expect(await state.loadOpenProjectSessions(), 'a damaged saved layout reads as no split').not.toHaveProperty('splits')
   })
 
   test('a saved tool tab that navigation would refuse does not come back as one', async () => {

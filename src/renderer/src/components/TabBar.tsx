@@ -19,7 +19,7 @@ import type { SidebarTab } from '../../../shared/api'
 import { stripShowsChats, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
 import { collapseLeavingTab, interleave, useTabStripMotion, type LeavingTab } from './use-tab-strip-motion'
-import { useSplitLayoutStore, collectPaneNodes } from '../stores/split-layout'
+import { useSplitLayoutStore, allPanes, collectPaneNodes, findPaneNode, paneOfTab } from '../stores/split-layout'
 
 /** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
  * worktree's tabs, the chats half the chats, and outside a project it falls back to chats. */
@@ -39,72 +39,55 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
     })
   }, [])
 
-  const root = useSplitLayoutStore((state) => state.root)
-  const activePaneId = useSplitLayoutStore((state) => state.activePaneId)
+  const groups = useSplitLayoutStore((state) => state.groups)
   const reintegratingTab = useSplitLayoutStore((state) => state.reintegratingTab)
   const ghostTab = reintegratingTab
     ? openTabs.find((t) => t.id === reintegratingTab.tabId)
     : undefined
 
-  const paneNodes = root ? collectPaneNodes(root) : []
-  const isMultiPane = paneNodes.length > 1
-  const splitTabIds = paneNodes.map((p) => p.tabId)
-  const splitTabIdSet = new Set(splitTabIds)
-
   const visibleTabs = visibleTabsFor(openTabs, sidebarTab, currentProjectCwd)
 
-  const uniqueSplitTabs: OpenTab[] = []
-  if (isMultiPane) {
-    for (const p of paneNodes) {
-      const tab = openTabs.find((t) => t.id === p.tabId)
-      if (tab && !uniqueSplitTabs.some((u) => u.id === tab.id)) {
-        uniqueSplitTabs.push(tab)
-      }
-    }
+  // Each split group collapses into one merged tab, standing at its first visible member's slot and
+  // named after the pane that last had focus there.
+  const splitTabIdSet = new Set(allPanes(groups).map((pane) => pane.tabId))
+  const merges = new Map<string, MergedTab>()
+  for (const group of groups) {
+    const paneTabIds = collectPaneNodes(group.root).map((pane) => pane.tabId)
+    const members = visibleTabs.filter((tab) => paneTabIds.includes(tab.id))
+    if (!members.length) continue
+    const focusedTabId = findPaneNode(group.root, group.activePaneId)?.tabId
+    const representative = members.find((tab) => tab.id === focusedTabId) ?? members[0]
+    const tabs = paneTabIds.flatMap((id) => openTabs.find((tab) => tab.id === id) ?? [])
+    merges.set(representative.id, {
+      paneTabIds,
+      memberIds: members.map((tab) => tab.id),
+      tabs,
+      title: tabs.map((tab) => tab.title).join(' / '),
+      merged: tabs.length > 1
+    })
   }
-
-  const splitVisibleTabs = visibleTabs.filter((tab) => splitTabIdSet.has(tab.id))
-  const isSplit = isMultiPane && splitVisibleTabs.length > 0
-  const activePane = paneNodes.find((p) => p.id === activePaneId)
-  const focusedTabId = activePane?.tabId ?? activeTabId
-  const representativeTab = isSplit
-    ? (splitVisibleTabs.find((tab) => tab.id === focusedTabId) ?? splitVisibleTabs[0])
-    : undefined
-
-  const combinedTitle = uniqueSplitTabs.length > 0
-    ? uniqueSplitTabs.map((t) => t.title).join(' / ')
-    : ''
-  const merged = isSplit && uniqueSplitTabs.length > 1
-
-  let displayTabs: OpenTab[] = visibleTabs
-  if (isSplit && representativeTab) {
-    let representativePlaced = false
-    displayTabs = []
-    for (const tab of visibleTabs) {
-      if (splitTabIdSet.has(tab.id)) {
-        if (!representativePlaced) {
-          displayTabs.push(representativeTab)
-          representativePlaced = true
-        }
-      } else {
-        displayTabs.push(tab)
-      }
-    }
-  }
+  const placed = new Set<string>()
+  const displayTabs: OpenTab[] = visibleTabs.flatMap((tab) => {
+    if (!splitTabIdSet.has(tab.id)) return [tab]
+    const representative = [...merges.entries()].find(([, merge]) => merge.memberIds.includes(tab.id))?.[0]
+    if (!representative || placed.has(representative)) return []
+    placed.add(representative)
+    return [openTabs.find((item) => item.id === representative)!]
+  })
 
   // One face per strip slot, shared by the live tab and the copy that collapses when it closes.
   const entries = displayTabs.map((tab) => {
-    const isCombined = isSplit && tab.id === representativeTab?.id
+    const merge = merges.get(tab.id)
     return {
       key: tab.id,
       tab,
-      isCombined,
+      merge,
       snapshot: {
-        label: isCombined ? combinedTitle : tab.title,
+        label: merge ? merge.title : tab.title,
         kind: tab.kind,
         path: tab.path,
-        active: isCombined ? Boolean(activeTabId && splitTabIdSet.has(activeTabId)) : tab.id === activeTabId,
-        split: isCombined && merged
+        active: merge ? Boolean(activeTabId && merge.paneTabIds.includes(activeTabId)) : tab.id === activeTabId,
+        split: Boolean(merge?.merged)
       } satisfies LeavingSnapshot
     }
   })
@@ -121,25 +104,18 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   useLayoutEffect(() => {
     if (tabListRef.current?.querySelector('[data-tab-active]')?.getAnimations().length) return
     revealActiveTab()
-  }, [activeTabId, currentProjectCwd, sidebarTab, representativeTab?.id, displayTabs.length, revealActiveTab])
+  }, [activeTabId, currentProjectCwd, sidebarTab, displayTabs.map((tab) => tab.id).join('\n'), revealActiveTab])
 
   const { sensors, activeTab, clickGuard, handleDragStart, handleDragEnd, handleDragCancel } =
-    useTabStripDnd(displayTabs, representativeTab
-      ? { [representativeTab.id]: splitVisibleTabs.map((tab) => tab.id) }
-      : {})
+    useTabStripDnd(displayTabs, Object.fromEntries([...merges].map(([id, merge]) => [id, merge.memberIds])))
   // The pointer released at the end of a drag belongs to whatever tab the strip moved under it, so that
   // one click is not a selection; a click that never moved the tab still is.
   const selectTab = (tabId: string) => {
     if (clickGuard.current) return
     setActive(tabId)
-    const { root, setActivePane } = useSplitLayoutStore.getState()
-    if (root) {
-      const paneNodes = collectPaneNodes(root)
-      const existingPane = paneNodes.find((p) => p.tabId === tabId)
-      if (existingPane) {
-        setActivePane(existingPane.id)
-      }
-    }
+    const { groups, setActivePane } = useSplitLayoutStore.getState()
+    const pane = paneOfTab(groups, tabId)
+    if (pane) setActivePane(pane.id)
   }
 
   return (
@@ -179,7 +155,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                 const ghost = slot.leaving
                 return <LeavingTabFace key={`leaving:${ghost.key}`} ghost={ghost} onDone={() => finishLeaving(ghost.key)} />
               }
-              const { tab, isCombined, snapshot } = slot.item
+              const { tab, merge, snapshot } = slot.item
               return (
                 <Tab
                   key={tab.id}
@@ -191,27 +167,24 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                   sessionPath={tab.meta?.path}
                   active={snapshot.active}
                   loading={
-                    isCombined
-                      ? uniqueSplitTabs.some((t) => t.loadState === 'opening')
+                    merge
+                      ? merge.tabs.some((t) => t.loadState === 'opening')
                       : tab.loadState === 'opening'
                   }
                   error={
-                    isCombined
-                      ? uniqueSplitTabs.find((t) => t.loadState === 'error')?.loadError
+                    merge
+                      ? merge.tabs.find((t) => t.loadState === 'error')?.loadError
                       : (tab.loadState === 'error' ? tab.loadError : undefined)
                   }
                   split={snapshot.split}
-                  splitTabIds={isCombined ? splitTabIds : undefined}
+                  splitTabIds={merge?.paneTabIds}
                   onSelect={() => selectTab(tab.id)}
                   onClose={() => {
                     // The same released pointer can land on the neighbour's close slot, which the drag it
                     // just ended has revealed by hovering it: that click closes nothing.
                     if (clickGuard.current) return
-                    if (isCombined) {
-                      for (const splitTab of uniqueSplitTabs) {
-                        closeTab(splitTab.id)
-                      }
-                      useSplitLayoutStore.getState().reset()
+                    if (merge) {
+                      for (const splitTab of merge.tabs) closeTab(splitTab.id)
                     } else {
                       closeTab(tab.id)
                     }
@@ -233,10 +206,10 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
         <DragOverlay dropAnimation={null} className="pointer-events-none">
           {activeTab ? (
             <TabFace
-              label={isSplit && activeTab.id === representativeTab?.id ? combinedTitle : activeTab.title}
+              label={merges.get(activeTab.id)?.title ?? activeTab.title}
               kind={activeTab.kind}
               path={activeTab.path}
-              split={merged && activeTab.id === representativeTab?.id}
+              split={Boolean(merges.get(activeTab.id)?.merged)}
               dragging
             />
           ) : null}
@@ -446,6 +419,17 @@ function TabFace({
       ) : null}
     </div>
   )
+}
+
+/** A split group's slot in the strip. */
+interface MergedTab {
+  /** Every pane's tab, in layout order. */
+  paneTabIds: string[]
+  /** The members this strip half lists, which move together when the merged tab is dragged. */
+  memberIds: string[]
+  tabs: OpenTab[]
+  title: string
+  merged: boolean
 }
 
 interface LeavingSnapshot {

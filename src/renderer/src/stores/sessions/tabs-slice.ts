@@ -5,7 +5,7 @@ import { useFilesStore } from '../files'
 import { renamedPath } from '../../lib/worktree-paths'
 import { useComposerDraftsStore } from '../composer-drafts'
 import { isSubagentActive, useSubagentStore } from '../subagents'
-import { useSplitLayoutStore, collectPaneNodes, findPaneNode } from '../split-layout'
+import { useSplitLayoutStore, paneOfTab } from '../split-layout'
 import { newSessionId } from '../../lib/session-id'
 import { changesTabId } from '../../../../shared/tab-ids'
 import { t } from '../../lib/i18n'
@@ -471,9 +471,9 @@ export const createTabsSlice: SessionSlice<
         )
         // Before restore is marked ready, so the first split write after it is this layout, not an empty one.
         // A split the reader made while the scan ran wins over the saved one.
-        if (persisted.split && !useSplitLayoutStore.getState().root) {
+        if (persisted.splits && !useSplitLayoutStore.getState().groups.length) {
           const openIds = new Set([...restoredTabs, ...restoredChatTabs, ...get().openTabs].map((tab) => tab.id))
-          useSplitLayoutStore.getState().restore(persisted.split, openIds, restoreSelectedProject ? restoredTabId : get().activeTabId)
+          useSplitLayoutStore.getState().restore(persisted.splits, openIds, restoreSelectedProject ? restoredTabId : get().activeTabId)
         }
         set((state) => {
           const liveTabs = new Map(state.openTabs.map((tab) => [tab.id, tab]))
@@ -1032,15 +1032,11 @@ export const createTabsSlice: SessionSlice<
       useComposerDraftsStore.getState().discard(tabId)
       // All close entry points remove the pane and prefer the split's surviving selection.
       const layout = useSplitLayoutStore.getState()
-      const pane = collectPaneNodes(layout.root).find((item) => item.tabId === tabId)
+      const pane = paneOfTab(layout.groups, tabId)
       let splitFallback: OpenTab | undefined
       if (pane) {
-        layout.closePane(pane.id)
-        const remaining = useSplitLayoutStore.getState()
-        const activePane = remaining.activePaneId
-          ? findPaneNode(remaining.root, remaining.activePaneId)
-          : null
-        splitFallback = get().openTabs.find((item) => item.id === activePane?.tabId)
+        const survivor = layout.closePane(pane.id)
+        splitFallback = get().openTabs.find((item) => item.id === survivor)
       }
       const state = get()
       const wasActive = state.activeTabId === tabId

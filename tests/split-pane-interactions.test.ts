@@ -28,7 +28,7 @@ async function fixture(scenario: string): Promise<void> {
       saveOpenProjectChangesTab: async () => {},
       saveOpenChatTabs: async () => {},
       saveOpenToolTabs: async () => {},
-      saveOpenSplitLayout: async () => {},
+      saveOpenSplitLayouts: async () => {},
       suggestFiles: async (cwd: string) => {
         queries.push(cwd)
         return []
@@ -60,7 +60,8 @@ async function fixture(scenario: string): Promise<void> {
   const {
     useSplitLayoutStore: split,
     collectPaneNodes,
-    isSplitNode
+    isSplitNode,
+    paneOfTab
   } = await import('../src/renderer/src/stores/split-layout')
   const tabs: OpenTab[] = ['A', 'B', 'C', 'D'].map((id) => ({
     id,
@@ -85,8 +86,9 @@ async function fixture(scenario: string): Promise<void> {
   document.body.append(host)
   const root = createRoot(host)
   const renderContainer = () =>
-    root.render(h(SplitPaneContainer, { renderPane: (node) => h('div', null, node.tabId) }))
-  const tabIds = () => collectPaneNodes(split.getState().root).map((pane) => pane.tabId)
+    root.render(h(SplitPaneContainer, { tabId: 'A', renderPane: (node) => h('div', null, node.tabId) }))
+  const layoutRoot = () => split.getState().groups[0]?.root ?? null
+  const tabIds = () => collectPaneNodes(layoutRoot()).map((pane) => pane.tabId)
   try {
     if (scenario === 'loading') {
       mock.module('../src/renderer/src/components/ChatView', () => ({
@@ -204,10 +206,9 @@ async function fixture(scenario: string): Promise<void> {
         openTabs: [tabs[0], { ...tabs[1], loadState: 'cold', meta }],
         runtime: { A: emptyRuntime() }
       })
-      const a = split.getState().initLayout('A')
-      const b = split.getState().splitPane(a, 'B', 'right')
+      const b = split.getState().splitTab('A', 'B', 'right')
       await act(async () => {
-        root.render(h(TooltipProvider, null, h(SplitPaneContainer, {
+        root.render(h(TooltipProvider, null, h(SplitPaneContainer, { tabId: 'A',
           renderPane: (node, isActive) => h(PaneViewContent, { node, isActive, composerWorkspace: null })
         })))
       })
@@ -242,11 +243,11 @@ async function fixture(scenario: string): Promise<void> {
         drafts[node.tabId] = state
         return h('div', { 'data-editor': node.tabId }, h(EditorContent, { editor: state.editor }))
       }
-      const a = split.getState().initLayout('A')
-      split.getState().splitPane(a, 'B', 'right')
+      split.getState().splitTab('A', 'B', 'right')
+      const a = paneOfTab(split.getState().groups, 'A')!.id
       const render = () =>
         root.render(
-          h(SplitPaneContainer, {
+          h(SplitPaneContainer, { tabId: 'A',
             renderPane: (node, isActive) => h(DraftPane, { node, isActive })
           })
         )
@@ -276,7 +277,7 @@ async function fixture(scenario: string): Promise<void> {
       await act(async () => {
         split
           .getState()
-          .closePane(collectPaneNodes(split.getState().root).find((pane) => pane.tabId === 'C')!.id)
+          .closePane(collectPaneNodes(layoutRoot()).find((pane) => pane.tabId === 'C')!.id)
       })
       assert.equal(
         drafts.A.editor!.getText(),
@@ -297,7 +298,7 @@ async function fixture(scenario: string): Promise<void> {
         document.activeElement?.closest('[data-editor]')?.getAttribute('data-editor'),
         'A'
       )
-      const b = collectPaneNodes(split.getState().root).find((pane) => pane.tabId === 'B')!.id
+      const b = collectPaneNodes(layoutRoot()).find((pane) => pane.tabId === 'B')!.id
       await act(async () => {
         split.getState().setActivePane(b)
       })
@@ -383,8 +384,8 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(drafts.A.editor!.getText(), '')
       assert.equal(drafts.A.attachments.images.length, 0, 'cleared attachments must not reappear')
     } else if (scenario === 'headers') {
-      const a = split.getState().initLayout('A')
-      const b = split.getState().splitPane(a, 'B', 'right')
+      const b = split.getState().splitTab('A', 'B', 'right')
+      const a = paneOfTab(split.getState().groups, 'A')!.id
       await act(async () => {
         renderContainer()
       })
@@ -410,7 +411,7 @@ async function fixture(scenario: string): Promise<void> {
         )
       const pointer = (type: string, x = 110, y = 200) =>
         window.dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, clientY: y }))
-      const original = split.getState().root
+      const original = layoutRoot()
       await act(async () => {
         down()
         pointer('pointermove')
@@ -420,7 +421,7 @@ async function fixture(scenario: string): Promise<void> {
         pointer('pointerup')
       })
       assert.equal(
-        split.getState().root,
+        layoutRoot(),
         original,
         'self and outer wrapper drops cannot reshape the tree'
       )
@@ -434,7 +435,7 @@ async function fixture(scenario: string): Promise<void> {
         pointer('pointercancel', 0, 0)
         pointer('pointerup', 600, 380)
       })
-      assert.equal(split.getState().root, original, 'cancellation cannot submit the previewed drop')
+      assert.equal(layoutRoot(), original, 'cancellation cannot submit the previewed drop')
       assert.equal(split.getState().dragOver, null)
       const appHeader = document.createElement('header')
       appHeader.dataset.appHeader = ''
@@ -447,7 +448,7 @@ async function fixture(scenario: string): Promise<void> {
       await act(async () => {
         pointer('pointercancel', 0, 0)
       })
-      assert.equal(split.getState().root, original)
+      assert.equal(layoutRoot(), original)
       assert.equal(split.getState().reintegratingTab, null)
       hit = [target, host]
       await act(async () => {
@@ -456,10 +457,10 @@ async function fixture(scenario: string): Promise<void> {
         pointer('pointerup', 600, 380)
       })
       assert.deepEqual(tabIds(), ['B', 'A'])
-      assert.ok(isSplitNode(split.getState().root!))
-      assert.equal((split.getState().root! as { direction: string }).direction, 'vertical')
+      assert.ok(isSplitNode(layoutRoot()!))
+      assert.equal((layoutRoot()! as { direction: string }).direction, 'vertical')
       assert.equal(sessions.getState().activeTabId, 'A')
-      const nextA = collectPaneNodes(split.getState().root).find((pane) => pane.tabId === 'A')!
+      const nextA = collectPaneNodes(layoutRoot()).find((pane) => pane.tabId === 'A')!
       const c = split.getState().splitPane(nextA.id, 'C', 'right')
       sessions.setState({ activeTabId: 'C' })
       await act(async () => {
@@ -480,7 +481,7 @@ async function fixture(scenario: string): Promise<void> {
         false
       )
       assert.equal(sessions.getState().runtime.C, undefined)
-      const layout = split.getState().root!
+      const layout = layoutRoot()!
       assert.ok(isSplitNode(layout))
       await act(async () => {
         groups.get(layout.id)!.onLayoutChanged!(
@@ -511,21 +512,21 @@ async function fixture(scenario: string): Promise<void> {
           { isUserInteraction: false }
         )
       })
-      assert.deepEqual((split.getState().root! as { sizes: number[] }).sizes, [70, 30])
+      assert.deepEqual((layoutRoot()! as { sizes: number[] }).sizes, [70, 30])
     } else if (scenario.startsWith('close-')) {
-      const a = split.getState().initLayout('A')
-      const b = split.getState().splitPane(a, 'B', 'right')
+      const b = split.getState().splitTab('A', 'B', 'right')
+      const a = paneOfTab(split.getState().groups, 'A')!.id
       if (scenario === 'close-collapse') {
         sessions.setState({ activeTabId: 'B', activeSessionByCwd: { '/p': 'B' } })
         await act(async () => {
           sessions.getState().closeTab(sessions.getState().activeTabId!)
         })
-        assert.deepEqual(tabIds(), ['A'])
+        assert.deepEqual(split.getState().groups, [], 'a group left with one pane dissolves')
         assert.equal(sessions.getState().activeTabId, 'A')
         await act(async () => {
           sessions.getState().closeTab('A')
         })
-        assert.equal(split.getState().root, null)
+        assert.equal(layoutRoot(), null)
         assert.equal(sessions.getState().activeTabId, 'C')
         assert.deepEqual(closed, ['B', 'A'])
       } else if (scenario === 'close-cross-scope') {
@@ -540,7 +541,7 @@ async function fixture(scenario: string): Promise<void> {
         await act(async () => {
           sessions.getState().closeTab('A')
         })
-        assert.deepEqual(tabIds(), ['B'])
+        assert.deepEqual(split.getState().groups, [])
         assert.equal(sessions.getState().activeTabId, 'B')
         assert.equal(sessions.getState().currentProjectCwd, null)
         assert.equal(sessions.getState().activeSessionByCwd['/p'], 'C')
@@ -577,7 +578,7 @@ async function fixture(scenario: string): Promise<void> {
               Fragment,
               null,
               h('div', { 'data-test-sidebar': true }, h(SessionList, { sessions: openTabs })),
-              h(SplitPaneContainer, { renderPane: (node) => h('div', null, node.tabId) })
+              h(SplitPaneContainer, { tabId: 'A', renderPane: (node) => h('div', null, node.tabId) })
             )
           }
           await act(async () => {
@@ -602,7 +603,7 @@ async function fixture(scenario: string): Promise<void> {
           sessions.getState().openTabs.some((tab) => tab.id === 'C'),
           false
         )
-        if (selected !== 'D') assert.equal(split.getState().activePaneId, a)
+        if (selected !== 'D') assert.equal(split.getState().groups[0]?.activePaneId, a)
       }
       assert.equal(sessions.getState().workspaceError, null)
     } else if (scenario === 'tab-dnd') {
@@ -617,8 +618,8 @@ async function fixture(scenario: string): Promise<void> {
         }
       }))
       const { TabBar } = await import('../src/renderer/src/components/TabBar')
-      const a = split.getState().initLayout('A')
-      split.getState().splitPane(a, 'B', 'right')
+      split.getState().splitTab('A', 'B', 'right')
+      const hidden = split.getState().groups[0]
       sessions.setState({ activeTabId: 'C' })
       await act(async () => {
         root.render(h(TabBar, { sidebarTab: 'projects' }))
@@ -627,14 +628,23 @@ async function fixture(scenario: string): Promise<void> {
         split.getState().setDragOver({ paneId: 'C', position: 'right' })
         context.onDragEnd!({ active: { id: 'D' }, over: null } as DragEndEvent)
       })
+      assert.equal(split.getState().groups[0], hidden, 'a hidden A/B group is not the base of the visible C/D split')
       assert.deepEqual(
-        tabIds(),
+        collectPaneNodes(split.getState().groups[1].root).map((pane) => pane.tabId),
         ['C', 'D'],
-        'a hidden A/B group is not the base of the visible C/D split'
+        'the visible standalone tab starts a second group'
       )
       assert.equal(sessions.getState().activeTabId, 'D')
-      const newA = split.getState().initLayout('A')
-      split.getState().splitPane(newA, 'B', 'right')
+      const faces = [...host.querySelectorAll<HTMLElement>('[data-session-tab]')]
+      assert.deepEqual(faces.map((face) => face.textContent), ['A / B', 'C / D'], 'each group keeps its own merged tab')
+      assert.equal(host.querySelectorAll('[data-session-tab] .lucide-layout-panel-left').length, 2)
+      const groupsBefore = split.getState().groups
+      await act(async () => {
+        split.getState().setDragOver({ paneId: paneOfTab(split.getState().groups, 'C')!.id, position: 'left' })
+        context.onDragEnd!({ active: { id: 'B' }, over: null } as DragEndEvent)
+      })
+      assert.equal(split.getState().groups, groupsBefore, 'a merged group tab does not dock its representative alone')
+      assert.equal(sessions.getState().activeTabId, 'D')
       await act(async () => {
         sessions.setState({ openTabs: tabs.slice(0, 3), activeTabId: 'B' })
         root.render(h(TabBar, { sidebarTab: 'projects' }))
@@ -672,12 +682,11 @@ async function fixture(scenario: string): Promise<void> {
       const terminal: OpenTab = { id: 'terminal:t', cwd: '/p', kind: 'terminal', title: 'Terminal', loadState: 'ready' }
       sessions.setState({ openTabs: [...tabs, terminal] })
       const { TabBar } = await import('../src/renderer/src/components/TabBar')
-      const a = split.getState().initLayout('A')
-      split.getState().splitPane(a, terminal.id, 'right')
+      split.getState().splitTab('A', terminal.id, 'right')
       await act(async () => {
         root.render(h(Fragment, null,
           h(TabBar, { sidebarTab: 'projects' }),
-          h(SplitPaneContainer, { renderPane: (node) => h('div', null, node.tabId) })))
+          h(SplitPaneContainer, { tabId: 'A', renderPane: (node) => h('div', null, node.tabId) })))
       })
       const merged = host.querySelector<HTMLElement>('[data-tab-active]')!
       assert.ok(merged.querySelector('.lucide-layout-panel-left'), 'a merged tab shows one split icon')

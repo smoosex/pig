@@ -50,7 +50,7 @@ async function fixture() {
     selectOpenProjectWorkspace: async (...args: unknown[]) => { writes.push(args) },
     saveOpenChatTabs: async (...args: unknown[]) => { writes.push(args) },
     saveOpenToolTabs: async (...args: unknown[]) => { toolWrites.push(args) },
-    saveOpenSplitLayout: async () => {},
+    saveOpenSplitLayouts: async () => {},
     listWorktreeSessions: async () => []
   }, {
     get(target, key) {
@@ -90,8 +90,7 @@ async function fixture() {
   assert.ok(writes.some((item) => JSON.stringify(item) === JSON.stringify(['/project', [second.id, first.id]])))
   assert.deepEqual(writes.at(-1), ['/project', null, first.id])
 
-  const paneId = split.getState().initLayout(first.id)
-  split.getState().splitPane(paneId, second.id, 'right')
+  split.getState().splitTab(first.id, second.id, 'right')
   state().closeTab(first.id)
   assert.equal(state().activeTabId, second.id)
   assert.deepEqual(browserCloses, [first.id])

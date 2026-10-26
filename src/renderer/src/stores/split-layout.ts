@@ -191,16 +191,68 @@ function updateSplitSizes(node: LayoutNode, splitId: string, sizes: number[]): L
     : { ...node, children }
 }
 
+/** One merged tab: a tree of two or more panes and the pane that last had focus in it. */
+export interface SplitGroup {
+  root: LayoutNode
+  activePaneId: string
+}
+
+/** Every pane across all groups. A tab sits in at most one pane, so this is also the set of split tabs. */
+export function allPanes(groups: readonly SplitGroup[]): PaneNode[] {
+  return groups.flatMap((group) => collectPaneNodes(group.root))
+}
+
+export function groupOfPane(groups: readonly SplitGroup[], paneId: string | null | undefined): SplitGroup | null {
+  if (!paneId) return null
+  return groups.find((group) => findPaneNode(group.root, paneId)) ?? null
+}
+
+export function groupOfTab(groups: readonly SplitGroup[], tabId: string | null | undefined): SplitGroup | null {
+  if (!tabId) return null
+  return groups.find((group) => collectPaneNodes(group.root).some((pane) => pane.tabId === tabId)) ?? null
+}
+
+export function paneOfTab(groups: readonly SplitGroup[], tabId: string | null | undefined): PaneNode | null {
+  if (!tabId) return null
+  return allPanes(groups).find((pane) => pane.tabId === tabId) ?? null
+}
+
+/**
+ * Removes a pane from whichever group holds it. A group left with fewer than two panes is no split any
+ * more: it dissolves and its last tab goes back to the strip on its own.
+ */
+function withoutPane(groups: readonly SplitGroup[], paneId: string): SplitGroup[] {
+  return groups.flatMap((group) => {
+    const res = removePaneFromTree(group.root, paneId)
+    if (!res.removed) return [group]
+    const panes = collectPaneNodes(res.newTree)
+    if (!res.newTree || panes.length < 2) return []
+    const activePaneId = panes.some((pane) => pane.id === group.activePaneId) ? group.activePaneId : panes[0].id
+    return [{ root: res.newTree, activePaneId }]
+  })
+}
+
+function mapGroups(groups: SplitGroup[], update: (root: LayoutNode) => LayoutNode): SplitGroup[] {
+  const next = groups.map((group) => {
+    const root = update(group.root)
+    return root === group.root ? group : { ...group, root }
+  })
+  return next.every((group, index) => group === groups[index]) ? groups : next
+}
+
 export interface SplitLayoutState {
-  root: LayoutNode | null
-  activePaneId: string | null
+  /** Independent splits, each shown as one merged tab; a tab belongs to at most one of them. */
+  groups: SplitGroup[]
   dragOver: { paneId: string; position: SplitDropPosition } | null
   reintegratingTab: ReintegratingTab | null
 
-  initLayout: (tabId: string) => string
+  /** Splits a standalone tab into a new group with `tabId`, moving `tabId` out of any group it was in. */
+  splitTab: (baseTabId: string, tabId: string, position: SplitDropPosition) => string
+  /** Docks `tabId` beside a pane, moving it out of the pane it held before (in this or another group). */
   splitPane: (targetPaneId: string, tabId: string, position: SplitDropPosition) => string
   setSplitSizes: (splitId: string, sizes: number[]) => void
-  closePane: (paneId: string) => void
+  /** Returns the tab its group now focuses, or the survivor of a group that dissolved; null otherwise. */
+  closePane: (paneId: string) => string | null
   setPaneTab: (paneId: string, tabId: string) => void
   /** Points every pane that holds a tab at its new id, for a tab whose own identity moved. */
   renameTabId: (from: string, to: string) => void
@@ -208,108 +260,99 @@ export interface SplitLayoutState {
   setDragOver: (dragOver: { paneId: string; position: SplitDropPosition } | null) => void
   setReintegratingTab: (tab: ReintegratingTab | null) => void
   /**
-   * Brings back the layout saved at the last quit. A pane whose tab did not come back is removed the way
-   * closing it would; fewer than two panes left is no split at all.
+   * Brings back the layouts saved at the last quit. A pane whose tab did not come back is removed the way
+   * closing it would; a group with fewer than two panes left is no split at all.
    */
-  restore: (layout: SavedSplitLayout, openTabIds: ReadonlySet<string>, activeTabId: string | null) => void
+  restore: (layouts: readonly SavedSplitLayout[], openTabIds: ReadonlySet<string>, activeTabId: string | null) => void
   reset: () => void
 }
 
 export const useSplitLayoutStore = create<SplitLayoutState>((set, get) => ({
-  root: null,
-  activePaneId: null,
+  groups: [],
   dragOver: null,
   reintegratingTab: null,
 
-  initLayout: (tabId: string) => {
-    const paneId = crypto.randomUUID()
-    const rootPane: PaneNode = {
-      id: paneId,
-      tabId
+  splitTab: (baseTabId, tabId, position) => {
+    if (baseTabId === tabId || paneOfTab(get().groups, baseTabId)) {
+      throw Object.assign(new Error(`Split base is not a standalone tab: ${baseTabId}`), {
+        code: 'ERR_SPLIT_TARGET'
+      })
     }
-    set({
-      root: rootPane,
-      activePaneId: paneId,
-      dragOver: null
-    })
-    return paneId
+    const source = paneOfTab(get().groups, tabId)
+    const groups = source ? withoutPane(get().groups, source.id) : get().groups
+    const base: PaneNode = { id: crypto.randomUUID(), tabId: baseTabId }
+    const newPane: PaneNode = { id: crypto.randomUUID(), tabId }
+    const root = splitNodeInTree(base, base.id, newPane, position).updated
+    set({ groups: [...groups, { root, activePaneId: newPane.id }], dragOver: null })
+    return newPane.id
   },
 
-  splitPane: (targetPaneId: string, tabId: string, position: SplitDropPosition) => {
-    const currentRoot = get().root
-    if (!currentRoot || !findPaneNode(currentRoot, targetPaneId)) {
+  splitPane: (targetPaneId, tabId, position) => {
+    const state = get()
+    const target = groupOfPane(state.groups, targetPaneId)
+    const targetPane = target && findPaneNode(target.root, targetPaneId)
+    if (!target || !targetPane || targetPane.tabId === tabId) {
       throw Object.assign(new Error(`Split target no longer exists: ${targetPaneId}`), {
         code: 'ERR_SPLIT_TARGET'
       })
     }
-
-    const newPaneId = crypto.randomUUID()
-    const newPane: PaneNode = {
-      id: newPaneId,
-      tabId
+    // The source leaves first: inside the target's own group that may collapse it to the target alone,
+    // which the split below fills again, so the group is only dissolved when it truly ends up short.
+    const source = paneOfTab(state.groups, tabId)
+    let groups = state.groups
+    let targetRoot = target.root
+    if (source) {
+      const res = removePaneFromTree(target.root, source.id)
+      if (res.removed) targetRoot = res.newTree!
+      else groups = withoutPane(groups, source.id)
     }
-
-    const res = splitNodeInTree(currentRoot, targetPaneId, newPane, position)
-
+    const newPane: PaneNode = { id: crypto.randomUUID(), tabId }
+    const root = splitNodeInTree(targetRoot, targetPaneId, newPane, position).updated
     set({
-      root: res.updated,
-      activePaneId: newPaneId,
+      groups: groups.map((group) => (group === target ? { root, activePaneId: newPane.id } : group)),
       dragOver: null
     })
-    return newPaneId
+    return newPane.id
   },
 
   setSplitSizes: (splitId, sizes) =>
     set((state) => {
-      if (!state.root) return state
-      const root = updateSplitSizes(state.root, splitId, sizes)
-      return root === state.root ? state : { root }
+      const groups = mapGroups(state.groups, (root) => updateSplitSizes(root, splitId, sizes))
+      return groups === state.groups ? state : { groups }
     }),
 
   closePane: (paneId: string) => {
     const state = get()
-    if (!state.root) return
-
-    const res = removePaneFromTree(state.root, paneId)
-    if (!res.removed) return
-
-    const newRoot = res.newTree
-    const remainingPanes = collectPaneNodes(newRoot)
-    const nextActiveId =
-      state.activePaneId === paneId || !remainingPanes.some((p) => p.id === state.activePaneId)
-        ? (remainingPanes[0]?.id ?? null)
-        : state.activePaneId
-
-    const nextDragOver = state.dragOver?.paneId === paneId ? null : state.dragOver
-    const nextReintegratingTab =
-      state.reintegratingTab?.paneId === paneId ? null : state.reintegratingTab
-
+    const group = groupOfPane(state.groups, paneId)
+    if (!group) return null
+    const groups = withoutPane(state.groups, paneId)
+    const others = collectPaneNodes(group.root).filter((pane) => pane.id !== paneId)
+    const kept = groups.find((item) => others.some((pane) => findPaneNode(item.root, pane.id)))
+    const survivor = kept ? findPaneNode(kept.root, kept.activePaneId) : others[0]
     set({
-      root: newRoot,
-      activePaneId: nextActiveId,
-      dragOver: nextDragOver,
-      reintegratingTab: nextReintegratingTab
+      groups,
+      dragOver: state.dragOver?.paneId === paneId ? null : state.dragOver,
+      reintegratingTab: state.reintegratingTab?.paneId === paneId ? null : state.reintegratingTab
     })
+    return survivor?.tabId ?? null
   },
 
-  setPaneTab: (paneId: string, tabId: string) => {
-    const { root } = get()
-    if (!root) return
-    set({ root: updatePaneTabInTree(root, paneId, tabId) })
-  },
+  setPaneTab: (paneId: string, tabId: string) =>
+    set((state) => ({ groups: mapGroups(state.groups, (root) => updatePaneTabInTree(root, paneId, tabId)) })),
 
   renameTabId: (from: string, to: string) =>
     set((state) => {
-      if (!state.root) return state
-      const root = renameTabInTree(state.root, from, to)
-      // The panes are what hold a tab id, and `renameTabInTree` is what walks them; there is nothing else
-      // to update, and the active *pane* is named by a pane id this never touches.
-      return root === state.root ? state : { root }
+      // The panes are what hold a tab id; the active *pane* is named by a pane id this never touches.
+      const groups = mapGroups(state.groups, (root) => renameTabInTree(root, from, to))
+      return groups === state.groups ? state : { groups }
     }),
 
-  setActivePane: (paneId: string) => {
-    set({ activePaneId: paneId })
-  },
+  setActivePane: (paneId: string) =>
+    set((state) => {
+      const group = groupOfPane(state.groups, paneId)
+      if (!group || group.activePaneId === paneId) return state
+      return { groups: state.groups.map((item) => (item === group ? { ...item, activePaneId: paneId } : item)) }
+    }),
 
   setDragOver: (dragOver) => {
     set({ dragOver })
@@ -319,24 +362,25 @@ export const useSplitLayoutStore = create<SplitLayoutState>((set, get) => ({
     set({ reintegratingTab })
   },
 
-  restore: (layout, openTabIds, activeTabId) => {
-    let root: LayoutNode | null = layout.root
-    for (const pane of collectPaneNodes(layout.root)) {
-      if (root && !openTabIds.has(pane.tabId)) root = removePaneFromTree(root, pane.id).newTree
+  restore: (layouts, openTabIds, activeTabId) => {
+    const groups: SplitGroup[] = []
+    const seen = new Set<string>()
+    for (const layout of layouts) {
+      let root: LayoutNode | null = layout.root
+      for (const pane of collectPaneNodes(layout.root)) {
+        if (root && (!openTabIds.has(pane.tabId) || seen.has(pane.tabId))) root = removePaneFromTree(root, pane.id).newTree
+      }
+      const panes = collectPaneNodes(root)
+      if (!root || panes.length < 2) continue
+      for (const pane of panes) seen.add(pane.tabId)
+      const activePaneId = panes.find((pane) => pane.tabId === activeTabId)?.id ??
+        panes.find((pane) => pane.id === layout.activePaneId)?.id ?? panes[0].id
+      groups.push({ root, activePaneId })
     }
-    const panes = collectPaneNodes(root)
-    if (panes.length < 2) return
-    const activePaneId = panes.find((pane) => pane.tabId === activeTabId)?.id ??
-      panes.find((pane) => pane.id === layout.activePaneId)?.id ?? panes[0].id
-    set({ root, activePaneId, dragOver: null, reintegratingTab: null })
+    if (groups.length) set({ groups, dragOver: null, reintegratingTab: null })
   },
 
   reset: () => {
-    set({
-      root: null,
-      activePaneId: null,
-      dragOver: null,
-      reintegratingTab: null
-    })
+    set({ groups: [], dragOver: null, reintegratingTab: null })
   }
 }))

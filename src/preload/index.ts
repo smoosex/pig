@@ -261,7 +261,7 @@ const api: SessionApi = {
   saveOpenChatTabs: (tabIds: string[], activeTabId: string | null) =>
     ipcRenderer.invoke('system:save-open-chat-tabs', tabIds, activeTabId),
   saveOpenToolTabs: (tabs) => ipcRenderer.invoke('system:save-open-tool-tabs', tabs),
-  saveOpenSplitLayout: (layout) => ipcRenderer.invoke('system:save-open-split-layout', layout),
+  saveOpenSplitLayouts: (layouts) => ipcRenderer.invoke('system:save-open-split-layouts', layouts),
   getMcpSettings: () => ipcRenderer.invoke('mcp:get'),
   saveMcpServer: (name, config, replace, icon) => ipcRenderer.invoke('mcp:save', name, config, replace, icon),
   removeMcpServer: (name) => ipcRenderer.invoke('mcp:remove', name),

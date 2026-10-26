@@ -100,7 +100,7 @@ async function fixture(scenario: string): Promise<void> {
           }))
         }
       }
-      const { useSplitLayoutStore: split } = await import('../src/renderer/src/stores/split-layout')
+      const { useSplitLayoutStore: split, paneOfTab } = await import('../src/renderer/src/stores/split-layout')
       const { default: App } = await import('../src/renderer/src/App')
       await act(async () => { theme('glass', 'light', 'pig'); root.render(h(App)) })
       const surface = host.querySelector<HTMLElement>('[data-content-surface]')!
@@ -300,8 +300,8 @@ async function fixture(scenario: string): Promise<void> {
         assert.ok(host.querySelector('[data-header-trailing] [data-new-tab]'))
       }
       await act(async () => {
-        const pane = split.getState().initLayout('chat')
-        split.getState().splitPane(pane, 'project', 'right')
+        split.getState().splitTab('chat', 'project', 'right')
+        const pane = paneOfTab(split.getState().groups, 'chat')!.id
         split.getState().splitPane(pane, 'file', 'bottom')
         split.getState().splitPane(pane, 'diff', 'left')
       })

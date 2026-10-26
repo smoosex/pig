@@ -9,8 +9,10 @@ import {
 import { arrayMove } from '@dnd-kit/sortable'
 import { useSessionsStore } from '../stores/sessions'
 import {
-  collectPaneNodes,
   findPaneNode,
+  groupOfPane,
+  groupOfTab,
+  paneOfTab,
   useSplitLayoutStore,
   type SplitDropPosition
 } from '../stores/split-layout'
@@ -43,8 +45,7 @@ function getSourcePaneId(
     if (data.type === 'pane' || data.isPane || data.fromPane) {
       if (typeof data.id === 'string') return data.id
       if (typeof data.tabId === 'string') {
-        const root = useSplitLayoutStore.getState().root
-        const matched = collectPaneNodes(root).find((p) => p.tabId === data.tabId)
+        const matched = paneOfTab(useSplitLayoutStore.getState().groups, data.tabId)
         if (matched) return matched.id
       }
     }
@@ -55,13 +56,16 @@ function getSourcePaneId(
     return idStr.slice(5)
   }
 
-  const root = useSplitLayoutStore.getState().root
-  const pane = findPaneNode(root, idStr)
-  if (pane) {
-    return pane.id
+  if (groupOfPane(useSplitLayoutStore.getState().groups, idStr)) {
+    return idStr
   }
 
   return null
+}
+
+/** A merged tab dragged off the strip stands for its whole group, which cannot dock as a single pane. */
+function isGroupDrag(tabId: string, sourcePaneId: string | null): boolean {
+  return !sourcePaneId && paneOfTab(useSplitLayoutStore.getState().groups, tabId) !== null
 }
 
 function getTabBarElement(): Element | null {
@@ -117,12 +121,12 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
   const activeTab = activeId
     ? visibleTabs.find((tab) => tab.id === activeId) ??
       (() => {
-        const root = useSplitLayoutStore.getState().root
+        const groups = useSplitLayoutStore.getState().groups
         const sourcePaneId =
           sourcePaneIdRef.current ??
           getSourcePaneId({ id: activeId, data: { current: activeDataRef.current } })
         if (sourcePaneId) {
-          const pane = findPaneNode(root, sourcePaneId)
+          const pane = findPaneNode(groupOfPane(groups, sourcePaneId)?.root ?? null, sourcePaneId)
           if (pane) {
             return visibleTabs.find((tab) => tab.id === pane.tabId)
           }
@@ -174,6 +178,13 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
           dropTargetRef.current = null
           setDropTarget(null)
         }
+        useSplitLayoutStore.getState().setDragOver(null)
+        return
+      }
+
+      if (isGroupDrag(activeId, sourcePaneId)) {
+        dropTargetRef.current = null
+        setDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
         return
       }
@@ -245,8 +256,9 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     const currentDropTarget = dropTargetRef.current
     const dragOver = useSplitLayoutStore.getState().dragOver
-    const root = useSplitLayoutStore.getState().root
+    const groups = useSplitLayoutStore.getState().groups
     const sourcePaneId = sourcePaneIdRef.current ?? getSourcePaneId(active)
+    const sourceNode = sourcePaneId ? findPaneNode(groupOfPane(groups, sourcePaneId)?.root ?? null, sourcePaneId) : null
 
     const targetSplit =
       currentDropTarget && typeof currentDropTarget === 'object'
@@ -261,9 +273,9 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
 
     if (isInContentArea && targetSplit && active.id) {
       clearDrag()
+      if (isGroupDrag(String(active.id), sourcePaneId)) return
 
       const currentActiveTab = useSessionsStore.getState().activeTabId
-      const sourceNode = sourcePaneId ? findPaneNode(root, sourcePaneId) : null
       const tabId =
         sourceNode?.tabId ??
         (typeof (active.data?.current as Record<string, unknown> | undefined)?.tabId === 'string'
@@ -272,21 +284,18 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
 
       if (!useSessionsStore.getState().openTabs.some((tab) => tab.id === tabId)) return
       const layout = useSplitLayoutStore.getState()
-      const rootPanes = collectPaneNodes(root)
-      const layoutVisible = rootPanes.some((pane) => pane.tabId === currentActiveTab)
-      let target = layoutVisible ? findPaneNode(root, targetSplit.paneId) : null
-      if (!target) {
-        // A standalone tab is the visible base, not an old group's focused pane.
-        if (currentActiveTab !== targetSplit.paneId || currentActiveTab === tabId ||
-          !useSessionsStore.getState().openTabs.some((tab) => tab.id === currentActiveTab) ||
-          (layoutVisible && rootPanes.length > 1)) return
-        const baseId = layout.initLayout(currentActiveTab)
-        target = findPaneNode(useSplitLayoutStore.getState().root, baseId)!
+      const visibleGroup = groupOfTab(groups, currentActiveTab)
+      if (visibleGroup) {
+        // Docking into the group on screen; the tab leaves whichever group it held before.
+        const target = findPaneNode(visibleGroup.root, targetSplit.paneId)
+        if (!target || target.tabId === tabId) return
+        layout.splitPane(target.id, tabId, targetSplit.position)
+      } else {
+        // A standalone tab on screen starts a group of its own; other groups are left as they are.
+        if (!currentActiveTab || currentActiveTab !== targetSplit.paneId || currentActiveTab === tabId ||
+          !useSessionsStore.getState().openTabs.some((tab) => tab.id === currentActiveTab)) return
+        layout.splitTab(currentActiveTab, tabId, targetSplit.position)
       }
-      const source = collectPaneNodes(useSplitLayoutStore.getState().root).find((pane) => pane.tabId === tabId)
-      if (source?.id === target.id || target.tabId === tabId) return
-      if (source) layout.closePane(source.id)
-      layout.splitPane(target.id, tabId, targetSplit.position)
       useSessionsStore.getState().setActive(tabId)
       return
     }
@@ -298,7 +307,6 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
       Boolean(over && visibleTabs.some((tab) => tab.id === over.id))
 
     if (sourcePaneId && isOverTop) {
-      const sourceNode = findPaneNode(root, sourcePaneId)
       const tabId =
         sourceNode?.tabId ??
         (typeof (active.data?.current as Record<string, unknown> | undefined)?.tabId === 'string'
