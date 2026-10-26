@@ -96,6 +96,32 @@ test('an image-only first message is reported as a flag rather than as copy', as
   }
 })
 
+test('a first prompt behind a system prompt larger than the prefix still titles the session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-session-prompt-'))
+  const previous = process.env.PI_CODING_AGENT_DIR
+  process.env.PI_CODING_AGENT_DIR = join(root, 'agent')
+  try {
+    const cwd = join(root, 'project')
+    const dir = sessionDirForCwd(cwd)
+    await mkdir(dir, { recursive: true })
+    const line = (entry: unknown) => JSON.stringify(entry) + '\n'
+    const header = (id: string) => line({ type: 'session', version: 3, id, cwd, timestamp: new Date().toISOString() })
+    // Multibyte text past the 256 KiB read size puts characters across a chunk boundary.
+    const system = line({ type: 'message', message: { role: 'system', content: '提示'.repeat(150 * 1024) } })
+    const user = (text: string) => line({ type: 'message', message: { role: 'user', content: [{ type: 'text', text }] } })
+    await writeFile(join(dir, 'long.jsonl'), header('long') + system + user('背景色加透明度') + user('later'))
+    await writeFile(join(dir, 'none.jsonl'), header('none') + system)
+
+    const sessions = (await listProject(cwd))?.sessions ?? []
+    expect(sessions.find((session) => session.id === 'long')?.firstMessage).toBe('背景色加透明度')
+    expect(sessions.find((session) => session.id === 'none')?.firstMessage).toBe('')
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
+    else process.env.PI_CODING_AGENT_DIR = previous
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 /**
  * A fork names the file it was cloned, branched, or forked from in its own header, and the listing
  * is what the sidebar threads by: the header line sits in the prefix a scan reads, so it rides along.

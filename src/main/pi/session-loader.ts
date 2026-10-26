@@ -18,6 +18,8 @@ import { contentText, hasImage, previewText } from './session-preview'
 export type { ProjectGroup, SessionMeta } from '../../shared/api'
 
 const PREFIX_BYTES = 64 * 1024
+/** Walking past the prefix for the first prompt reads forward in chunks this large. */
+const PROMPT_READ_BYTES = 256 * 1024
 /** Names are appended, so finding the newest one means walking the file back in reads this large. */
 const NAME_READ_BYTES = 4 * 1024 * 1024
 const NAME_FLUSH_MS = 50
@@ -148,6 +150,36 @@ function parseEntry(line: string, truncated = false): ScanEntry | null {
     if (text) content.push({ type: 'text', text })
     if (/"type"\s*:\s*"image"/.test(line)) content.push({ type: 'image' })
     return { type, message: { role, content } }
+  }
+}
+
+/**
+ * The first user prompt when the prefix holds none: the system prompt a session records ahead of it can
+ * outgrow the prefix by itself. Reads walk forward from the start and stop at the first user message.
+ */
+async function findFirstPrompt(filePath: string): Promise<{ text: string; image: boolean } | null> {
+  const handle = await open(filePath, 'r')
+  try {
+    let position = 0
+    let carry = Buffer.alloc(0)
+    for (;;) {
+      const buf = Buffer.allocUnsafe(PROMPT_READ_BYTES)
+      const { bytesRead } = await handle.read(buf, 0, PROMPT_READ_BYTES, position)
+      if (bytesRead === 0) return null
+      position += bytesRead
+      // Complete lines only: a multibyte character or record cut by the chunk waits for the next read.
+      const chunk = Buffer.concat([carry, buf.subarray(0, bytesRead)])
+      const end = chunk.lastIndexOf(0x0a)
+      carry = chunk.subarray(end + 1)
+      if (end === -1) continue
+      for (const line of chunk.subarray(0, end).toString('utf8').split('\n')) {
+        if (!line.trim()) continue
+        const entry = parseEntry(line)
+        if (entry?.type === 'message' && entry.message?.role === 'user') return previewText(entry.message.content)
+      }
+    }
+  } finally {
+    await handle.close()
   }
 }
 
@@ -293,6 +325,13 @@ async function scanFile(filePath: string, deep: boolean): Promise<SessionMeta | 
     }
 
     if (!id) return null
+    if (!firstMessage && !firstMessageIsImage && st.size > PREFIX_BYTES) {
+      const prompt = await findFirstPrompt(filePath)
+      if (prompt) {
+        firstMessage = prompt.text
+        firstMessageIsImage = prompt.image
+      }
+    }
     // Past the prefix the name can still be there, appended long after the first message was written.
     const resolved = !name && deep && st.size > PREFIX_BYTES ? sessionNameOf(id, filePath, st.size) : name
     return {
