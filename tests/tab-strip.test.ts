@@ -3,7 +3,7 @@
  * must swap the strip's contents, and switching back must restore the project's tabs unchanged.
  */
 import { describe, expect, test } from 'bun:test'
-import { halfSwitch, visibleTabsFor } from '../src/renderer/src/components/tab-strip'
+import { halfSwitch, stripSlots, visibleTabsFor } from '../src/renderer/src/components/tab-strip'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
 
 const tab = (id: string, kind: OpenTab['kind'], cwd: string): OpenTab => ({
@@ -102,5 +102,19 @@ describe('what the switcher does to the content pane', () => {
       kind: 'project',
       cwd: '/p'
     })
+  })
+})
+
+describe('strip slots, which Cmd+1…9 count', () => {
+  test('a split group takes one slot at its first visible member, selecting its focused pane', () => {
+    const tabs = ['a', 'b', 'c', 'd'].map((id) => tab(id, 'chat', `/chats/${id}`))
+    const group = {
+      root: {
+        id: 's', direction: 'horizontal' as const, sizes: [50, 50],
+        children: [{ id: 'p-b', tabId: 'b' }, { id: 'p-d', tabId: 'd' }]
+      },
+      activePaneId: 'p-d'
+    }
+    expect(stripSlots(tabs, [group]).map((slot) => slot.tabId)).toEqual(['a', 'd', 'c'])
   })
 })

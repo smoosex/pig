@@ -12,6 +12,7 @@ import { shutdownProcesses } from './processes'
 import { exitAfterCleanup } from './shutdown'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
+import { applyShortcutOverrides } from './shortcuts'
 import { forwardSessionNames } from './session-names'
 import { closeSessionsForCwd, disposeAll } from './pi/session-registry'
 import { removeProjectSessions } from './pi/session-removal'
@@ -96,6 +97,7 @@ app.whenReady().then(async () => {
   registerIpc()
   const settings = await duringStartup(loadPigSettings())
   nativeTheme.themeSource = settings.appearance
+  applyShortcutOverrides(settings.shortcuts)
   applyWindowSurfaceStyle(settings.surfaceStyle)
   await duringStartup(initLocale(settings.locale))
   await duringStartup(worktrees.startDeletionWorker(async (cwd) => {

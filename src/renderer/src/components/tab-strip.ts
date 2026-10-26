@@ -1,6 +1,7 @@
 import type { OpenTab } from '../stores/sessions/types'
 import { isChatScope } from '../stores/sessions/tab-order'
 import type { SidebarTab } from '../../../shared/api'
+import { collectPaneNodes, findPaneNode, type SplitGroup } from '../stores/split-layout'
 
 /**
  * A project's tabs need a worktree to belong to, so with none open the strip falls back to chats:
@@ -20,6 +21,32 @@ export function visibleTabsFor(
   return stripShowsChats(tab, currentProjectCwd)
     ? tabs.filter(isChatScope)
     : tabs.filter((item) => !isChatScope(item) && item.cwd === currentProjectCwd)
+}
+
+export interface StripSlot {
+  /** The tab the slot selects: for a split group, the pane that last had focus there. */
+  tabId: string
+  group: { paneTabIds: string[]; memberIds: string[] } | null
+}
+
+/** The strip's slots in order: each split group collapses into one, at its first visible member's place. */
+export function stripSlots(visibleTabs: OpenTab[], groups: readonly SplitGroup[]): StripSlot[] {
+  const grouped = groups.flatMap((group) => {
+    const paneTabIds = collectPaneNodes(group.root).map((pane) => pane.tabId)
+    const members = visibleTabs.filter((tab) => paneTabIds.includes(tab.id))
+    if (!members.length) return []
+    const focusedTabId = findPaneNode(group.root, group.activePaneId)?.tabId
+    const representative = members.find((tab) => tab.id === focusedTabId) ?? members[0]
+    return [{ tabId: representative.id, group: { paneTabIds, memberIds: members.map((tab) => tab.id) } }]
+  })
+  const placed = new Set<string>()
+  return visibleTabs.flatMap((tab): StripSlot[] => {
+    const slot = grouped.find((item) => item.group.memberIds.includes(tab.id))
+    if (!slot) return [{ tabId: tab.id, group: null }]
+    if (placed.has(slot.tabId)) return []
+    placed.add(slot.tabId)
+    return [slot]
+  })
 }
 
 /**

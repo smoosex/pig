@@ -17,7 +17,7 @@ export function installTabCloseMenu(): void {
           click: () => {
             const win = BrowserWindow.getFocusedWindow()
             if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-              win.webContents.send(BROWSER_SHORTCUT_CHANNEL, 'close-active-tab')
+              win.webContents.send(BROWSER_SHORTCUT_CHANNEL, 'tab.close')
             }
           }
         })

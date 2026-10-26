@@ -1,6 +1,6 @@
 import { LOCALES, type Locale, type MessageKey } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
-import type { LocaleSetting, SendShortcut } from '../../ipc/api'
+import type { LocaleSetting } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import {
@@ -29,17 +29,14 @@ export function GeneralPane() {
   const setLocale = useSettingsStore((s) => s.setLocale)
   const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const setBeamBorderEnabled = useSettingsStore((s) => s.setBeamBorderEnabled)
-  const sendShortcut = useSettingsStore((s) => s.sendShortcut)
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
   const thinkingLevels = useSettingsStore((s) => s.thinkingLevels)
   const models = useModelCatalogStore((s) => s.models)
-  const setSendShortcut = useSettingsStore((s) => s.setSendShortcut)
   const completionNotifications = useSettingsStore((s) => s.completionNotifications)
   const setCompletionNotifications = useSettingsStore((s) => s.setCompletionNotifications)
   const setDefaultModel = useSettingsStore((s) => s.setDefaultModel)
   const setDefaultThinking = useSettingsStore((s) => s.setDefaultThinking)
-  const newline = sendShortcut === 'enter' ? 'Shift+Enter' : 'Enter'
 
   return (
     <div className="flex flex-col gap-8">
@@ -82,32 +79,6 @@ export function GeneralPane() {
               checked={beamBorderEnabled}
               onCheckedChange={(enabled) => void setBeamBorderEnabled(enabled)}
             />
-          </SettingsRow>
-        </SettingsCard>
-      </div>
-      <div>
-        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {t('settings.send')}
-        </p>
-        <SettingsCard>
-          <SettingsRow
-            title={t('settings.sendShortcut')}
-            description={t('settings.sendShortcutDescription', { key: newline })}
-          >
-            <Select
-              value={sendShortcut}
-              onValueChange={(value) => void setSendShortcut(value as SendShortcut)}
-            >
-              <SelectTrigger size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" align="end">
-                <SelectGroup>
-                  <SelectItem value="enter">Enter</SelectItem>
-                  <SelectItem value="shift-enter">Shift+Enter</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
           </SettingsRow>
         </SettingsCard>
       </div>

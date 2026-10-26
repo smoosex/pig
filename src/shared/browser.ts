@@ -175,7 +175,8 @@ export interface BrowserApi {
   onSelection(listener: (selection: BrowserSelection) => void): () => void
 }
 
-export type BrowserHostShortcut = 'close-active-tab' | 'toggle-sidebar' | 'toggle-workspace' | 'toggle-settings' | 'open-project'
+/** Window-wide shortcuts pressed where the renderer cannot see them: browser guests and the app menu. */
+export type BrowserHostShortcut = import('./shortcuts').HostShortcutAction
 export const BROWSER_SHORTCUT_CHANNEL = 'browser:host-shortcut-requested'
 export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
 export const BROWSER_DEVTOOLS_RESIZE_CHANNEL = 'browser:devtools-resize'

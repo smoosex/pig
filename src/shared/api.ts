@@ -8,6 +8,7 @@ import type { SkillsApi } from './skills'
 import type { SessionCapabilitiesApi } from './session-capabilities'
 import type { SubagentAppearance } from './subagent-appearance'
 import type { SavedSplitLayout } from './split-layout'
+import type { ShortcutOverrides, ShortcutPatch } from './shortcuts'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -610,6 +611,8 @@ export interface ThemePrefs {
 
 export interface AppSettings extends ThemePrefs {
   sendShortcut: SendShortcut
+  /** Only the user's changes; see `resolveShortcuts`. */
+  shortcuts: ShortcutOverrides
   completionNotifications: boolean
   beamBorderEnabled: boolean
   /** The stored choice: a locale, or `system` to follow the OS language. */
@@ -1050,6 +1053,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setSubagentSettings: (patch: SubagentSettingsPatch) => Promise<SubagentSettings>
   onSubagentsChanged: (listener: (update: SubagentListUpdate) => void) => () => void
   setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
+  setShortcuts: (patch: ShortcutPatch) => Promise<{ shortcuts: ShortcutOverrides }>
   setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
   setBeamBorderEnabled: (enabled: boolean) => Promise<{ beamBorderEnabled: boolean }>
   setLocaleSetting: (

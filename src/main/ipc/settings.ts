@@ -3,8 +3,11 @@ import { windowForEvent } from './window'
 import {
   loadPigSettings,
   savePigSettings,
+  updatePigSettings,
   type SendShortcut
 } from '../pig-settings'
+import { applyShortcutOverrides } from '../shortcuts'
+import { applyShortcutPatch } from '../../shared/shortcuts'
 import { applyLocaleSetting, systemLocale } from '../i18n'
 import type { LocaleSetting, ThemePrefs } from '../../shared/api'
 import { applyWindowSurfaceStyle } from '../window-surface'
@@ -32,6 +35,7 @@ export function registerSettingsIpc(): void {
     ])
     return {
       sendShortcut: pig.sendShortcut,
+      shortcuts: pig.shortcuts,
       completionNotifications: pig.completionNotifications,
       beamBorderEnabled: pig.beamBorderEnabled,
       localeSetting: pig.locale,
@@ -49,6 +53,14 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle('settings:set-send-shortcut', async (_event, shortcut: SendShortcut) => {
     return savePigSettings({ sendShortcut: shortcut })
+  })
+
+  ipcMain.handle('settings:set-shortcuts', async (_event, patch: unknown) => {
+    const next = await updatePigSettings((current) => ({
+      shortcuts: applyShortcutPatch(current.shortcuts, patch, process.platform === 'darwin')
+    }))
+    applyShortcutOverrides(next.shortcuts)
+    return { shortcuts: next.shortcuts }
   })
 
   ipcMain.handle('settings:set-completion-notifications', async (_event, enabled: boolean) => {

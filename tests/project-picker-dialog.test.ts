@@ -13,7 +13,7 @@ async function fixture(): Promise<void> {
   const calls: { path?: string; hidden?: boolean }[] = []
   const added: string[] = []
   let failAdd = false
-  let nativeClose: (action: 'close-active-tab') => void = () => {}
+  let nativeClose: (action: 'tab.close') => void = () => {}
   let pendingSave: Promise<void> | undefined
   let finishSave!: () => void
   let resolveSlow!: (value: ProjectDirectoryListing) => void
@@ -99,7 +99,7 @@ async function fixture(): Promise<void> {
     assert.equal(document.activeElement as Element | null, input(search))
     assert.equal(document.querySelectorAll('[role="option"]').length, 4)
     assert.ok(document.querySelector('[aria-label="Git repository"]'))
-    await act(async () => { nativeClose('close-active-tab') })
+    await act(async () => { nativeClose('tab.close') })
     assert.equal(useSessionsStore.getState().projectPickerOpen, false, 'native menu close dismisses the picker')
     for (let attempt = 0; attempt < 20 && document.activeElement !== trigger; attempt++) {
       await act(async () => { await Bun.sleep(10) })
@@ -162,9 +162,9 @@ async function fixture(): Promise<void> {
     assert.equal(button('Add current folder').disabled, false, 'a registration failure can be retried explicitly')
     failAdd = false
     pendingSave = new Promise<void>((resolve) => { finishSave = resolve })
-    await act(async () => { input(search).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })) })
+    await act(async () => { input(search).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', metaKey: true, bubbles: true })) })
     await flush()
-    await act(async () => { nativeClose('close-active-tab') })
+    await act(async () => { nativeClose('tab.close') })
     assert.equal(useSessionsStore.getState().projectPickerOpen, true, 'native close respects the picker save lock')
     await act(async () => { finishSave() })
     await flush()
@@ -179,10 +179,21 @@ async function fixture(): Promise<void> {
     assert.equal(document.activeElement, trigger)
     await act(async () => { await useSessionsStore.getState().openProject() })
     await flush()
-    await act(async () => { input(search).dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true })) })
+    await act(async () => { input(search).dispatchEvent(new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', metaKey: true, bubbles: true })) })
     await flush()
     assert.equal(document.querySelector('[role="dialog"]'), null)
     assert.deepEqual(added, ['/home', '/home'], 'cancelling does not register anything')
+    useSettingsStore.setState({ shortcuts: { 'projectPicker.addCurrent': 'Alt+Enter' } })
+    for (const label of [path, search]) {
+      await act(async () => { await useSessionsStore.getState().openProject() })
+      await flush()
+      const browsed = calls.length
+      await act(async () => { input(label).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', altKey: true, bubbles: true })) })
+      await flush()
+      assert.equal(calls.length, browsed, 'a bound Enter combination never navigates first')
+      assert.equal(document.querySelector('[role="dialog"]'), null)
+    }
+    assert.deepEqual(added, ['/home', '/home', '/home', '/home'], 'the dialog shortcut wins over the inputs, adding once')
   } finally {
     await act(async () => { root.unmount() })
     await GlobalRegistrator.unregister()

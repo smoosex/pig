@@ -100,6 +100,23 @@ async function fixture(): Promise<void> {
     await act(async () => { root.render(createElement(Probe, { sessionId: 'draft-bash' })) })
     assert.equal(state.bashMode, true, 'returning restores the session-owned Bash draft')
     assert.equal(state.editor?.getText(), '!pwd')
+    const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+    useSettingsStore.setState({ shortcuts: { 'composer.focus': 'Mod+Alt+Enter' } })
+    await act(async () => { replace('plain text') })
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    // Sending looks up the session's runtime before anything else; nothing else reads it during the key press.
+    let sent = 0
+    const runtime = useSessionsStore.getState().runtime
+    await act(async () => {
+      useSessionsStore.setState({ runtime: new Proxy(runtime, { get: (target, key) => { if (key === 'draft-bash') sent++; return Reflect.get(target, key) } }) })
+    })
+    sent = 0
+    const focusKey = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', metaKey: true, altKey: true, bubbles: true, cancelable: true })
+    state.editor?.view.dom.dispatchEvent(focusKey)
+    assert.equal(sent, 0, 'an Enter-based focus shortcut never sends the draft')
+    await act(async () => { useSessionsStore.setState({ runtime }) })
+    assert.ok(focusKey.defaultPrevented, 'the focus shortcut is consumed in the editor')
+    assert.equal(state.editor?.getText(), 'plain text')
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

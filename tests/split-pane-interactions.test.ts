@@ -287,7 +287,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(drafts.A.attachments.images.length, 1)
       const shortcut = () =>
         window.dispatchEvent(
-          new KeyboardEvent('keydown', { key: 'l', metaKey: true, cancelable: true })
+          new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', metaKey: true, cancelable: true })
         )
       await act(async () => {
         split.getState().setActivePane(a)

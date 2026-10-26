@@ -200,7 +200,7 @@ describe('browser host', () => {
     host.setBounds(owner, 'browser:owned', bounds)
     await host.navigate(owner, 'browser:owned', 'https://example.test')
     host.inspect(owner, 'browser:owned')
-    const input = { type: 'keyDown', key: 'w', meta: true, control: false, alt: false, shift: false, isAutoRepeat: false }
+    const input = { type: 'keyDown', key: 'w', code: 'KeyW', meta: true, control: false, alt: false, shift: false, isAutoRepeat: false }
     const requested = () => win.webContents.sent.filter(([channel]) => channel === BROWSER_CLOSE_TAB_CHANNEL)
     const press = (contents: FakeContents, overrides: Partial<typeof input> = {}) => {
       let prevented = false
@@ -214,21 +214,23 @@ describe('browser host', () => {
       expect(requested()).toHaveLength(count)
       for (const other of [
         { type: 'keyUp' }, { shift: true }, { alt: true }, { control: true },
-        { meta: false }, { key: 'r' }, { meta: false, control: true }
+        { meta: false }, { code: 'KeyR' }, { meta: false, control: true }
       ]) expect(press(view.webContents, other)).toBe(false)
       expect(requested()).toHaveLength(count)
-      for (const [key, shift, action] of [
-        ['e', false, 'toggle-sidebar'], ['e', true, 'toggle-workspace'],
-        [',', false, 'toggle-settings'], ['a', true, 'open-project']
+      for (const [code, shift, action] of [
+        ['KeyE', false, 'sidebar.toggleLeft'], ['KeyE', true, 'sidebar.toggleRight'],
+        ['Comma', false, 'settings.toggle'], ['KeyA', true, 'project.add'],
+        ['KeyT', false, 'tab.new'], ['Digit1', false, 'tab.select1'], ['Digit9', false, 'tab.selectLast']
       ] as const) {
-        expect(press(view.webContents, { key, shift })).toBe(true)
+        // `key` follows the layout; matching goes by the physical key.
+        expect(press(view.webContents, { key: 'ы', code, shift })).toBe(true)
         expect(win.webContents.sent.at(-1)).toEqual([BROWSER_SHORTCUT_CHANNEL, action])
         const sent = win.webContents.sent.length
-        expect(press(view.webContents, { key, shift, isAutoRepeat: true })).toBe(true)
+        expect(press(view.webContents, { code, shift, isAutoRepeat: true })).toBe(true)
         expect(win.webContents.sent).toHaveLength(sent)
       }
-      for (const key of ['a', 'c', 'v', 'x', 'z', 'l', 't']) {
-        expect(press(view.webContents, { key })).toBe(false)
+      for (const code of ['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ', 'KeyL']) {
+        expect(press(view.webContents, { code })).toBe(false)
       }
     }
     expect(requested()).toEqual([

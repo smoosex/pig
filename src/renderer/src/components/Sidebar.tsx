@@ -4,7 +4,7 @@ import { useDiffStore } from '../stores/diff'
 import { useSettingsStore } from '../stores/settings'
 import type { SidebarTab } from '../../../shared/api'
 import { Button } from './ui/button'
-import { Kbd } from './ui/kbd'
+import { ShortcutKbd } from './ShortcutKbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
@@ -96,7 +96,7 @@ export function Sidebar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t('sidebar.settings')} <Kbd className="bg-transparent!">⌘ ,</Kbd>
+              {t('sidebar.settings')} <ShortcutKbd action="settings.toggle" />
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -114,7 +114,7 @@ export function Sidebar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {t('sidebar.addProject')} <Kbd className="bg-transparent!">⌘ ⇧ A</Kbd>
+              {t('sidebar.addProject')} <ShortcutKbd action="project.add" />
             </TooltipContent>
           </Tooltip>
           <span className="flex-1" />

@@ -43,6 +43,7 @@ import { useFileLineReveal } from './useFileLineReveal'
 import { Code, Eye } from 'lucide-react'
 import { MarkdownText } from '../MarkdownText'
 import { cn } from '../../lib/utils'
+import { isComposingKey, isShortcutRecording, matchesShortcut } from '../../lib/shortcuts'
 import { useSessionsStore } from '../../stores/sessions'
 import { headingSlug, markdownImageSrc, markdownTarget } from './markdown-links'
 
@@ -157,7 +158,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
     <div
       className="glass-code-surface flex min-h-0 flex-1 flex-col"
       onKeyDownCapture={(event) => {
-        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return
+        if (isShortcutRecording() || isComposingKey(event.nativeEvent) || !matchesShortcut(event.nativeEvent, 'file.save')) return
         event.preventDefault()
         if (dirty && !saving) void saveDocument(cwd, path)
       }}

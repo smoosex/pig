@@ -12,6 +12,7 @@ import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
+import { isComposingKey, isShortcutRecording, matchesShortcut, shortcutText, useShortcut } from '../../lib/shortcuts'
 
 interface ComposerEditorOptions {
   sessionId: string | null
@@ -64,6 +65,10 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   const composing = useRef(false)
   const compositionFrame = useRef<number | null>(null)
   callbacks.current = options
+  const focusShortcut = useShortcut('composer.focus')
+  // Read at each decoration pass: the editor is built once, the key and the language can change.
+  const placeholder = useRef('')
+  placeholder.current = focusShortcut ? t('composer.focusPlaceholder', { key: shortcutText(focusShortcut) }) : ''
 
   const editor = useEditor({
     editable: Boolean(options.sessionId) && !options.disabled,
@@ -89,7 +94,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
         strike: false,
         underline: false
       }),
-      Placeholder.configure({ placeholder: '⌘L to focus chat' }),
+      Placeholder.configure({ placeholder: () => placeholder.current }),
       PastedTextNode
     ],
     content: textToComposerDocument(''),
@@ -222,11 +227,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (callbacks.current.isActive === false || callbacks.current.disabled || !editor?.isEditable) return
-      if (
-        !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
-        event.key.toLowerCase() !== 'l' || event.isComposing || event.keyCode === 229 ||
-        event.defaultPrevented
-      ) return
+      if (isShortcutRecording() || event.defaultPrevented || isComposingKey(event) || !matchesShortcut(event, 'composer.focus')) return
       event.preventDefault()
       if (!event.repeat) editor?.commands.focus()
     }

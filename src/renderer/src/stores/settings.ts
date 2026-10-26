@@ -10,7 +10,9 @@ import {
   type ThemePrefs,
   type ThinkingLevel
 } from '../ipc/api'
+import { applyShortcutPatch, type ShortcutPatch } from '../../../shared/shortcuts'
 import { applyDocumentLocale, storedLocale } from '../lib/locale'
+import { IS_MAC } from '../lib/platform'
 import { applyDocumentTheme, storedThemePrefs } from '../lib/theme'
 import { waitForSurfacePaint } from '../lib/surface-transition'
 
@@ -22,6 +24,7 @@ interface SettingsStore extends AppSettings {
   error: string | null
   load: () => Promise<void>
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
+  setShortcuts: (patch: ShortcutPatch) => Promise<void>
   setCompletionNotifications: (enabled: boolean) => Promise<void>
   setBeamBorderEnabled: (enabled: boolean) => Promise<void>
   setLocale: (locale: LocaleSetting) => Promise<void>
@@ -33,6 +36,7 @@ interface SettingsStore extends AppSettings {
 
 const empty: AppSettings = {
   sendShortcut: 'enter',
+  shortcuts: {},
   completionNotifications: true,
   beamBorderEnabled: true,
   localeSetting: 'system',
@@ -148,6 +152,17 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         const next = await api.setSendShortcut(shortcut)
         return { sendShortcut: next.sendShortcut }
       }),
+
+    setShortcuts: (patch) => {
+      let optimistic
+      try {
+        optimistic = { shortcuts: applyShortcutPatch(get().shortcuts, patch, IS_MAC) }
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : String(error) })
+        return Promise.resolve()
+      }
+      return save(optimistic, async () => api.setShortcuts(patch))
+    },
 
     setCompletionNotifications: (enabled) =>
       save({ completionNotifications: enabled }, async () => {

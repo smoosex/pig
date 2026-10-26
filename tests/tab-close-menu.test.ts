@@ -47,7 +47,7 @@ async function fixture() {
   assert.equal(result.items[2], services, 'native Services registration remains intact')
   assert.equal(result.items[3], windows, 'native Window menu registration remains intact')
   close.click!()
-  assert.deepEqual(sent, [['browser:host-shortcut-requested', 'close-active-tab']])
+  assert.deepEqual(sent, [['browser:host-shortcut-requested', 'tab.close']])
   assert.equal(result.items[0]!.submenu!.items[1], quit)
   assert.equal(result.items[1]!.submenu!.items[0], copy, 'editing roles are untouched')
   focused = null

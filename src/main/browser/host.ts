@@ -7,6 +7,8 @@ import {
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
+import { hostShortcutBindings } from '../shortcuts'
+import { findShortcut, HOST_SHORTCUT_ACTIONS, strokeToAccelerator } from '../../shared/shortcuts'
 import { executeBrowserScript } from './browser-script'
 import { attachBrowserNetwork, type BrowserNetworkLog, type BrowserNetworkEntry } from './network-log'
 import { uploadBrowserFiles } from './agent-upload'
@@ -302,23 +304,16 @@ export class BrowserHost {
     // editing and page shortcuts remain with the focused guest.
     contents.on('before-input-event', (event, input) => {
       if (!this.alive(owner, page) || contents.isDestroyed()) return
-      if (input.type !== 'keyDown' || !input.meta || input.control || input.alt || input.isComposing) return
-      const key = input.key.toLowerCase()
-      if (key === 'w' && !input.shift) {
-        event.preventDefault()
-        if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_CLOSE_TAB_CHANNEL, page.state.browserId)
-        return
-      }
-      const action = key === 'e'
-        ? (input.shift ? 'toggle-workspace' : 'toggle-sidebar')
-        : key === ',' && !input.shift
-          ? 'toggle-settings'
-          : key === 'a' && input.shift
-            ? 'open-project'
-            : null
+      if (input.type !== 'keyDown' || input.isComposing) return
+      const mac = process.platform === 'darwin'
+      const accelerator = strokeToAccelerator({ code: input.code, meta: input.meta, ctrl: input.control, alt: input.alt, shift: input.shift }, mac)
+      const action = findShortcut(hostShortcutBindings(), accelerator, HOST_SHORTCUT_ACTIONS)
       if (!action) return
       event.preventDefault()
-      if (!input.isAutoRepeat) owner.win.webContents.send(BROWSER_SHORTCUT_CHANNEL, action)
+      if (input.isAutoRepeat) return
+      // The page's own tab, not whichever one the window considers active.
+      if (action === 'tab.close') owner.win.webContents.send(BROWSER_CLOSE_TAB_CHANNEL, page.state.browserId)
+      else owner.win.webContents.send(BROWSER_SHORTCUT_CHANNEL, action)
     })
   }
 

@@ -11,6 +11,7 @@ async function fixture(): Promise<void> {
   const { act, createElement: h } = await import('react')
   const panes = [
     ['GeneralPane', 'settings.sectionGeneral', 'settings.sectionGeneralDescription'],
+    ['ShortcutsPane', 'shortcuts.title', 'shortcuts.description'],
     ['ThemePane', 'settings.sectionTheme', 'settings.sectionThemeDescription'],
     ['ProvidersPane', 'settings.sectionProviders', 'settings.sectionProvidersDescription'],
     ['McpPane', 'mcp.title', 'mcp.description'],

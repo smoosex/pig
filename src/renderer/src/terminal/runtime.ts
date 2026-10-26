@@ -13,8 +13,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { api } from '../ipc/api'
 import { t } from '../lib/i18n'
+import { eventAccelerator, IS_MAC, isShellChord, shortcutBindings } from '../lib/shortcuts'
+import { findShortcut, WINDOW_SHORTCUT_ACTIONS } from '../../../shared/shortcuts'
 import { useSessionsStore } from '../stores/sessions'
 import { TERMINAL_COLS, TERMINAL_ROWS, TERMINAL_MAX_WRITE, type TerminalEvent } from '../../../shared/terminal'
+
+const TERMINAL_ACTIONS = ['terminal.clear', 'terminal.selectAll'] as const
 
 export const TERMINAL_FONT_FAMILY = "'Lilex Nerd Font Mono', monospace"
 const FONT_SIZE = 13
@@ -143,22 +147,29 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     if (event.metaKey || event.ctrlKey) window.open(uri, '_blank')
   }))
   term.attachCustomKeyEventHandler((event) => {
-    // App shortcuts use Command, as in App.tsx; Control stays terminal input.
-    if (!event.metaKey || event.ctrlKey || event.altKey) return true
-    // Shift variants belong to the app (Cmd+Shift+A adds a project).
-    if (event.type === 'keydown' && !event.shiftKey && event.key.toLowerCase() === 'k') {
-      if (entry.status === 'running') api.terminal.clear(id).catch((error: unknown) => {
-        if (entries.get(id) === entry) notice(term, t('terminal.failed', { message: error instanceof Error ? error.message : String(error) }))
-      })
-      else term.clear()
+    const accelerator = eventAccelerator(event)
+    const bindings = shortcutBindings()
+    const action = findShortcut(bindings, accelerator, TERMINAL_ACTIONS)
+    if (action) {
+      if (event.type === 'keydown' && action === 'terminal.clear') {
+        if (entry.status === 'running') api.terminal.clear(id).catch((error: unknown) => {
+          if (entries.get(id) === entry) notice(term, t('terminal.failed', { message: error instanceof Error ? error.message : String(error) }))
+        })
+        else term.clear()
+      } else if (event.type === 'keydown') {
+        term.selectAll()
+      }
+      // Returning false only keeps the key from xterm; a bound Tab would still move focus.
+      event.preventDefault()
       return false
     }
-    if (event.type === 'keydown' && !event.shiftKey && event.key.toLowerCase() === 'a') {
-      term.selectAll()
-      return false
+    // Window shortcuts bubble to the app, except Control chords, which stay shell input.
+    if (!isShellChord(event) && findShortcut(bindings, accelerator, WINDOW_SHORTCUT_ACTIONS)) return false
+    // Command never types into the shell: copy and paste stay with xterm, the rest is ignored.
+    if (IS_MAC && event.metaKey && !event.ctrlKey && !event.altKey) {
+      return event.key.toLowerCase() === 'c' || event.key.toLowerCase() === 'v'
     }
-    // Copy and paste stay with xterm; every other Command shortcut belongs to the app.
-    return event.key.toLowerCase() === 'c' || event.key.toLowerCase() === 'v'
+    return true
   })
   term.resize(120, 30)
   const entry: Entry = { term, fit, element, status: 'starting', focusOnOpen: false, ready: Promise.resolve() }

@@ -193,7 +193,7 @@ export const zh = {
     home: '个人目录', parent: '上一级', refresh: '刷新目录', search: '搜索当前目录的文件夹…',
     hidden: '显示隐藏文件夹', loading: '正在读取目录…', empty: '没有子文件夹', noMatch: '没有匹配的文件夹',
     add: '添加当前文件夹', adding: '正在添加…', truncated: '仅显示前 500 个文件夹。可直接输入完整路径前往其他文件夹。',
-    hint: '↑↓ 选择 · Enter 进入 · ← 返回 · Tab 补全 · ⌘/Ctrl+Enter 添加当前文件夹',
+    hint: '↑↓ 选择 · Enter 进入 · ← 返回 · Tab 补全', hintAdd: '{key} 添加当前文件夹',
     folders: '文件夹', git: 'Git 仓库',
   },
   project: {
@@ -459,10 +459,50 @@ export const zh = {
     changes: '变更',
     newFileAria: '在工作区新建文件'
   },
+  shortcuts: {
+    title: '快捷键',
+    description: '查看和修改快捷键',
+    groups: { global: '全局', tabs: '标签页', composer: '输入框', file: '文件', terminal: '终端', projectPicker: '添加项目' },
+    actions: {
+      sidebar: { toggleLeft: '切换左侧栏', toggleRight: '切换右侧栏' },
+      settings: { toggle: '打开或关闭设置' },
+      project: { add: '添加项目' },
+      tab: {
+        new: '新建会话',
+        close: '关闭当前标签页',
+        select1: '切换到第 1 个标签页',
+        select2: '切换到第 2 个标签页',
+        select3: '切换到第 3 个标签页',
+        select4: '切换到第 4 个标签页',
+        select5: '切换到第 5 个标签页',
+        select6: '切换到第 6 个标签页',
+        select7: '切换到第 7 个标签页',
+        select8: '切换到第 8 个标签页',
+        selectLast: '切换到最后一个标签页'
+      },
+      composer: { focus: '聚焦输入框' },
+      file: { save: '保存文件' },
+      terminal: { clear: '清屏', selectAll: '全选' },
+      projectPicker: { addCurrent: '添加当前文件夹' }
+    },
+    edit: '修改「{action}」的快捷键',
+    record: '按下快捷键…',
+    recordHint: 'Esc 取消，Backspace 停用',
+    unset: '未设置',
+    reset: '恢复默认',
+    resetTo: '恢复默认（{key}）',
+    resetAll: '全部恢复默认',
+    resetAllTitle: '恢复全部快捷键？',
+    resetAllDescription: '所有自定义的快捷键都会恢复为默认值，停用的也会重新启用。',
+    replace: '替换',
+    conflict: '已被「{action}」使用，替换后它将被停用',
+    reserved: '系统或文本编辑保留的快捷键，不能使用',
+    needsModifier: '需要搭配 ⌘ / Ctrl 等修饰键'
+  },
   settings: {
     back: '返回',
     sectionGeneral: '通用设置',
-    sectionGeneralDescription: '核心行为和快捷键',
+    sectionGeneralDescription: '核心行为',
     sectionInterface: '界面',
     sectionTheme: '外观',
     sectionThemeDescription: '主题与字体',
@@ -745,6 +785,7 @@ export const zh = {
     conversation: '对话'
   },
   composer: {
+    focusPlaceholder: '{key} 聚焦输入框',
     capabilities: '会话能力',
     capabilitiesHint: '仅影响当前会话；未单独设置的项目跟随全局配置。',
     capabilitiesBusy: '会话运行中，暂时无法修改。',

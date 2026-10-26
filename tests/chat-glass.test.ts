@@ -132,18 +132,18 @@ async function fixture(scenario: string): Promise<void> {
         assert.deepEqual(closedTabs, ['chat-7'])
         assert.equal(sessions.getState().activeTabId, 'chat-7', 'closing never bubbles into a second selection')
         await act(async () => {
-          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true }))
-          for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true, repeat: true }))
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', metaKey: true, bubbles: true }))
+          for (let i = 0; i < 3; i++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', metaKey: true, bubbles: true, repeat: true }))
         })
         assert.equal(closedTabs.length, 2, 'holding Cmd+W closes only one tab per physical keypress')
         await act(async () => {
           sessions.setState({ projectPickerOpen: true })
-          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', metaKey: true, bubbles: true }))
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', metaKey: true, bubbles: true }))
         })
-        await act(async () => { browserShortcut('close-active-tab') })
+        await act(async () => { browserShortcut('tab.close') })
         assert.deepEqual(closedTabs, ['chat-7', 'chat-7'], 'Cmd+W in the project picker must not close a background tab')
         sessions.setState({ projectPickerOpen: false })
-        await act(async () => { browserShortcut('close-active-tab') })
+        await act(async () => { browserShortcut('tab.close') })
         assert.deepEqual(closedTabs, ['chat-7', 'chat-7', 'chat-7'], 'the native menu requests the active tab close through the store')
         return
       }
@@ -167,14 +167,14 @@ async function fixture(scenario: string): Promise<void> {
         for (const [shiftKey, leftHidden, rightHidden] of [
           [false, true, false], [true, true, true], [false, false, true], [true, false, false]
         ]) {
-          await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', metaKey: true, shiftKey })) })
+          await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', code: 'KeyE', metaKey: true, shiftKey })) })
           assert.equal(host.querySelector('[data-view="Sidebar"]')!.getAttribute('aria-hidden'), String(leftHidden))
           assert.equal(host.querySelector('[data-view="WorkspacePanel"]')!.getAttribute('aria-hidden'), String(rightHidden))
           checkBounds()
         }
         for (const [action, leftHidden, rightHidden] of [
-          ['toggle-sidebar', true, false], ['toggle-workspace', true, true],
-          ['toggle-sidebar', false, true], ['toggle-workspace', false, false]
+          ['sidebar.toggleLeft', true, false], ['sidebar.toggleRight', true, true],
+          ['sidebar.toggleLeft', false, true], ['sidebar.toggleRight', false, false]
         ] as const) {
           await act(async () => { browserShortcut(action) })
           assert.equal(host.querySelector('[data-view="Sidebar"]')!.getAttribute('aria-hidden'), String(leftHidden))
@@ -186,7 +186,7 @@ async function fixture(scenario: string): Promise<void> {
 
         const chooseSession = async (label = 'Session') => {
           await act(async () => { newButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' })) })
-          const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)
+          const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.startsWith(label))
           assert.ok(item, 'the add menu offers a session')
           assert.ok([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === 'Browser'), 'the add menu also offers an independent browser')
           await act(async () => { item.click() })
@@ -319,10 +319,10 @@ async function fixture(scenario: string): Promise<void> {
       }
       await act(async () => { theme('solid', 'dark', 'everforest') })
       assert.deepEqual([...host.querySelectorAll('[data-split-pane]')], panes, 'changing materials never remounts panes')
-      await act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: ',', metaKey: true })) })
+      await act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: ',', code: 'Comma', metaKey: true })) })
       assert.ok(!host.querySelector('[data-tab-strip]'), 'settings have no session strip')
       assert.ok(!host.querySelector('[data-new-tab]'), 'settings hide the session creation action')
-      await act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: ',', metaKey: true })) })
+      await act(async () => { window.dispatchEvent(new window.KeyboardEvent('keydown', { key: ',', code: 'Comma', metaKey: true })) })
       assert.ok(host.querySelector('[data-header-tabs]')!.classList.contains('inset-x-64'))
       assert.ok(host.querySelector('[data-new-tab]'))
     } else if (scenario === 'composer') {

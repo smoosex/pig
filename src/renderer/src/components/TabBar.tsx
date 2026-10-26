@@ -8,18 +8,19 @@ import { useProjectAction } from './sidebar/project-action'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
 import { Button } from './ui/button'
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from './ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuShortcut } from './ui/dropdown-menu'
 import { TabContextMenu } from './TabContextMenu'
 import { SessionRenameField, useSessionRename } from './SessionRenameField'
 import { cn } from '../lib/utils'
+import { shortcutText, useShortcut } from '../lib/shortcuts'
 import { useT } from '../hooks/useT'
 import { CloseButton } from './CloseButton'
 import { TabKindIcon } from './TabKindIcon'
 import type { SidebarTab } from '../../../shared/api'
-import { stripShowsChats, visibleTabsFor } from './tab-strip'
+import { stripShowsChats, stripSlots, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
 import { collapseLeavingTab, interleave, useTabStripMotion, type LeavingTab } from './use-tab-strip-motion'
-import { useSplitLayoutStore, allPanes, collectPaneNodes, findPaneNode, paneOfTab } from '../stores/split-layout'
+import { useSplitLayoutStore, allPanes, paneOfTab } from '../stores/split-layout'
 
 /** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
  * worktree's tabs, the chats half the chats, and outside a project it falls back to chats. */
@@ -47,33 +48,21 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
 
   const visibleTabs = visibleTabsFor(openTabs, sidebarTab, currentProjectCwd)
 
-  // Each split group collapses into one merged tab, standing at its first visible member's slot and
-  // named after the pane that last had focus there.
   const splitTabIdSet = new Set(allPanes(groups).map((pane) => pane.tabId))
+  const slots = stripSlots(visibleTabs, groups)
   const merges = new Map<string, MergedTab>()
-  for (const group of groups) {
-    const paneTabIds = collectPaneNodes(group.root).map((pane) => pane.tabId)
-    const members = visibleTabs.filter((tab) => paneTabIds.includes(tab.id))
-    if (!members.length) continue
-    const focusedTabId = findPaneNode(group.root, group.activePaneId)?.tabId
-    const representative = members.find((tab) => tab.id === focusedTabId) ?? members[0]
-    const tabs = paneTabIds.flatMap((id) => openTabs.find((tab) => tab.id === id) ?? [])
-    merges.set(representative.id, {
-      paneTabIds,
-      memberIds: members.map((tab) => tab.id),
+  for (const { tabId, group } of slots) {
+    if (!group) continue
+    const tabs = group.paneTabIds.flatMap((id) => openTabs.find((tab) => tab.id === id) ?? [])
+    merges.set(tabId, {
+      paneTabIds: group.paneTabIds,
+      memberIds: group.memberIds,
       tabs,
       title: tabs.map((tab) => tab.title).join(' / '),
       merged: tabs.length > 1
     })
   }
-  const placed = new Set<string>()
-  const displayTabs: OpenTab[] = visibleTabs.flatMap((tab) => {
-    if (!splitTabIdSet.has(tab.id)) return [tab]
-    const representative = [...merges.entries()].find(([, merge]) => merge.memberIds.includes(tab.id))?.[0]
-    if (!representative || placed.has(representative)) return []
-    placed.add(representative)
-    return [openTabs.find((item) => item.id === representative)!]
-  })
+  const displayTabs: OpenTab[] = slots.map((slot) => openTabs.find((item) => item.id === slot.tabId)!)
 
   // One face per strip slot, shared by the live tab and the copy that collapses when it closes.
   const entries = displayTabs.map((tab) => {
@@ -219,14 +208,20 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   )
 }
 
+/** A session of whatever the strip is listing: the projects half needs a worktree for it to belong to. */
+export async function newStripSession(sidebarTab: SidebarTab): Promise<void> {
+  const { currentProjectCwd, newChat, newSession } = useSessionsStore.getState()
+  if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
+  else if (currentProjectCwd) await newSession(currentProjectCwd)
+}
+
 export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const t = useT()
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
   const workspaceError = useSessionsStore((state) => state.workspaceError)
-  const newSession = useSessionsStore((state) => state.newSession)
-  const newChat = useSessionsStore((state) => state.newChat)
   const openBrowserTab = useSessionsStore((state) => state.openBrowserTab)
   const openTerminalTab = useSessionsStore((state) => state.openTerminalTab)
+  const newTabShortcut = useShortcut('tab.new')
   const creatingRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -241,8 +236,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
       // once there is a worktree for it to belong to.
       if (kind === 'browser') await openBrowserTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
       else if (kind === 'terminal') openTerminalTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
-      else if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
-      else if (currentProjectCwd) await newSession(currentProjectCwd)
+      else await newStripSession(sidebarTab)
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -284,6 +278,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
           <DropdownMenuGroup>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('session')}>
               <SquareDashedText />{t('tabBar.newSession')}
+              {newTabShortcut ? <DropdownMenuShortcut>{shortcutText(newTabShortcut)}</DropdownMenuShortcut> : null}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('browser')}>
               <Globe />{t('tabBar.newBrowser')}

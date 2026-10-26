@@ -191,7 +191,7 @@ export const en: Messages = {
     home: 'Home', parent: 'Parent folder', refresh: 'Refresh folders', search: 'Search folders in this directory…',
     hidden: 'Show hidden folders', loading: 'Reading folders…', empty: 'No subfolders', noMatch: 'No matching folders',
     add: 'Add current folder', adding: 'Adding…', truncated: 'Only the first 500 folders are shown. Enter a full path to reach other folders.',
-    hint: '↑↓ Select · Enter Open · ← Back · Tab Complete · ⌘/Ctrl+Enter Add current folder',
+    hint: '↑↓ Select · Enter Open · ← Back · Tab Complete', hintAdd: '{key} Add current folder',
     folders: 'Folders', git: 'Git repository',
   },
   project: {
@@ -462,10 +462,50 @@ export const en: Messages = {
     changes: 'Changes',
     newFileAria: 'New file in the worktree'
   },
+  shortcuts: {
+    title: 'Shortcuts',
+    description: 'Manage keyboard shortcuts',
+    groups: { global: 'Global', tabs: 'Tabs', composer: 'Composer', file: 'Files', terminal: 'Terminal', projectPicker: 'Add project' },
+    actions: {
+      sidebar: { toggleLeft: 'Toggle left sidebar', toggleRight: 'Toggle right sidebar' },
+      settings: { toggle: 'Open or close settings' },
+      project: { add: 'Add project' },
+      tab: {
+        new: 'New session',
+        close: 'Close current tab',
+        select1: 'Go to tab 1',
+        select2: 'Go to tab 2',
+        select3: 'Go to tab 3',
+        select4: 'Go to tab 4',
+        select5: 'Go to tab 5',
+        select6: 'Go to tab 6',
+        select7: 'Go to tab 7',
+        select8: 'Go to tab 8',
+        selectLast: 'Go to last tab'
+      },
+      composer: { focus: 'Focus composer' },
+      file: { save: 'Save file' },
+      terminal: { clear: 'Clear', selectAll: 'Select all' },
+      projectPicker: { addCurrent: 'Add current folder' }
+    },
+    edit: 'Change the shortcut for {action}',
+    record: 'Press keys…',
+    recordHint: 'Esc to cancel, Backspace to disable',
+    unset: 'Not set',
+    reset: 'Reset to default',
+    resetTo: 'Reset to default ({key})',
+    resetAll: 'Reset all',
+    resetAllTitle: 'Reset all shortcuts?',
+    resetAllDescription: 'Every customized shortcut returns to its default, including disabled ones.',
+    replace: 'Replace',
+    conflict: 'Used by "{action}", which will be disabled if you replace it',
+    reserved: 'Reserved by the system or text editing',
+    needsModifier: 'Needs a modifier such as ⌘ or Ctrl'
+  },
   settings: {
     back: 'Back',
     sectionGeneral: 'General',
-    sectionGeneralDescription: 'Core behaviour and shortcuts',
+    sectionGeneralDescription: 'Core behaviour',
     sectionInterface: 'Interface',
     sectionTheme: 'Appearance',
     sectionThemeDescription: 'Theme and font',
@@ -748,6 +788,7 @@ export const en: Messages = {
     conversation: 'Conversation'
   },
   composer: {
+    focusPlaceholder: '{key} to focus chat',
     capabilities: 'Session capabilities',
     capabilitiesHint: 'Only affects this session. Items without overrides follow global settings.',
     capabilitiesBusy: 'Changes are unavailable while the session is running.',

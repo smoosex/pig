@@ -32,6 +32,7 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings {
     lightTheme: 'pig',
     darkTheme: 'pig',
     sendShortcut: 'enter',
+    shortcuts: {},
     completionNotifications: true,
     beamBorderEnabled: true,
     localeSetting: 'zh-CN',

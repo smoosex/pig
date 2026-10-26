@@ -348,6 +348,7 @@ const api: SessionApi = {
   },
   setSendShortcut: (shortcut: string) =>
     ipcRenderer.invoke('settings:set-send-shortcut', shortcut),
+  setShortcuts: (patch: unknown) => ipcRenderer.invoke('settings:set-shortcuts', patch),
   setCompletionNotifications: (enabled: boolean) =>
     ipcRenderer.invoke('settings:set-completion-notifications', enabled),
   setBeamBorderEnabled: (enabled: boolean) => ipcRenderer.invoke('settings:set-beam-border', enabled),

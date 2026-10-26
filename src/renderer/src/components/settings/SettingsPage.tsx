@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, ChevronLeft, Component, GamepadDirectional, Rainbow, Snowflake, Webhook } from 'lucide-react'
+import { BookOpen, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
+import { isShortcutRecording } from '../../lib/shortcuts'
 import { Button } from '../ui/button'
 import { ScrollArea } from '../ui/scroll-area'
 import { sidebarRowSurface, sidebarSurfaceHover } from '../sidebar/sidebar-surface'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { GeneralPane } from './GeneralPane'
 import { ThemePane } from './ThemePane'
+import { ShortcutsPane } from './ShortcutsPane'
 import { ProvidersPane } from './ProvidersPane'
 import { PluginsPane } from './PluginsPane'
 import { McpPane } from './McpPane'
@@ -21,6 +23,13 @@ const sections = [
     description: 'settings.sectionGeneralDescription',
     icon: Snowflake,
     component: GeneralPane
+  },
+  {
+    id: 'shortcuts',
+    title: 'shortcuts.title',
+    description: 'shortcuts.description',
+    icon: Keyboard,
+    component: ShortcutsPane
   },
   {
     id: 'theme',
@@ -74,7 +83,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || isShortcutRecording()) return
       if (
         document.querySelector(
           '[data-slot=dialog-content], [data-slot=alert-dialog-content], [data-slot=popover-content][data-state=open], [data-slot=select-content][data-state=open], [data-slot=dropdown-menu-content][data-state=open]'

@@ -22,7 +22,7 @@ import { useModelCatalog } from './hooks/useModelCatalog'
 import { useModelCatalogStore } from './stores/model-catalog'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert'
 import { Button } from './components/ui/button'
-import { Kbd } from './components/ui/kbd'
+import { ShortcutKbd } from './components/ShortcutKbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
@@ -30,8 +30,8 @@ import { GooglyEyesButton } from './components/ui/googly-eyes-button'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
 import type { SidebarTab } from '../../shared/api'
-import { NewTabButton, TabBar } from './components/TabBar'
-import { halfSwitch } from './components/tab-strip'
+import { NewTabButton, TabBar, newStripSession } from './components/TabBar'
+import { halfSwitch, stripSlots, visibleTabsFor } from './components/tab-strip'
 import { isChatScope } from './stores/sessions/tab-order'
 import type { OpenTab } from './stores/sessions'
 import { BrowserPanel } from './components/browser/BrowserPanel'
@@ -47,6 +47,8 @@ import { useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
+import { eventAccelerator, isComposingKey, isShortcutRecording, isTerminalShellChord, shortcutBindings } from './lib/shortcuts'
+import { findShortcut, HOST_SHORTCUT_ACTIONS, TAB_SELECT_ACTIONS, type HostShortcutAction } from '../../shared/shortcuts'
 
 import { useSplitLayoutStore, allPanes, collectPaneNodes, groupOfTab, paneOfTab, type PaneNode } from './stores/split-layout'
 import { SplitPaneContainer } from './components/chat/SplitPaneContainer'
@@ -99,7 +101,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {t('app.sidebarLeft')} <Kbd className="bg-transparent!">⌘ E</Kbd>
+        {t('app.sidebarLeft')} <ShortcutKbd action="sidebar.toggleLeft" />
       </TooltipContent>
     </Tooltip>
   )
@@ -299,55 +301,56 @@ export default function App() {
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
 
   useEffect(() => {
-    const runShortcut = (action: import('../../shared/browser').BrowserHostShortcut) => {
+    const selectStripTab = (action: (typeof TAB_SELECT_ACTIONS)[number]) => {
+      const { openTabs, currentProjectCwd } = useSessionsStore.getState()
+      const layout = useSplitLayoutStore.getState()
+      const slots = stripSlots(visibleTabsFor(openTabs, sidebarTab, currentProjectCwd), layout.groups)
+      const slot = action === 'tab.selectLast' ? slots.at(-1) : slots[TAB_SELECT_ACTIONS.indexOf(action)]
+      if (!slot) return
+      setSettingsOpen(false)
+      useSessionsStore.getState().setActive(slot.tabId)
+      const pane = paneOfTab(layout.groups, slot.tabId)
+      if (pane) layout.setActivePane(pane.id)
+    }
+    const runShortcut = (action: HostShortcutAction) => {
       // The picker handles close requests itself, including its in-flight save lock.
       if (useSessionsStore.getState().projectPickerOpen) return
       switch (action) {
-        case 'close-active-tab': if (activeTabId) closeTab(activeTabId); break
-        case 'open-project': void openProject(); break
-        case 'toggle-sidebar': setSidebarOpen((open) => !open); break
-        case 'toggle-settings': setSettingsOpen((open) => !open); break
-        case 'toggle-workspace': {
+        case 'tab.close': if (activeTabId) closeTab(activeTabId); break
+        case 'tab.new':
+          setSettingsOpen(false)
+          newStripSession(sidebarTab).catch((error: unknown) => {
+            useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+          })
+          break
+        case 'project.add': void openProject(); break
+        case 'sidebar.toggleLeft': setSidebarOpen((open) => !open); break
+        case 'settings.toggle': setSettingsOpen((open) => !open); break
+        case 'sidebar.toggleRight': {
           if (!currentProjectCwd) break
           const diff = useDiffStore.getState()
           diff.setReviewOpen(!diff.reviewOpen)
           break
         }
+        default: selectStripTab(action)
       }
     }
     const offBrowserShortcut = api.browser.onShortcutRequested(runShortcut)
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.isComposing || event.keyCode === 229) return
+      if (isShortcutRecording() || isComposingKey(event) || isTerminalShellChord(event)) return
       // The directory dialog owns its shortcuts, including Cmd+W; never close a background tab.
       if (useSessionsStore.getState().projectPickerOpen) return
-      if (event.shiftKey) {
-        if (event.key.toLowerCase() === 'a') {
-          event.preventDefault()
-          if (!event.repeat) runShortcut('open-project')
-        } else if (event.key.toLowerCase() === 'e') {
-          event.preventDefault()
-          if (!event.repeat) runShortcut('toggle-workspace')
-        }
-        return
-      }
-      if (event.key.toLowerCase() === 'e') {
-        event.preventDefault()
-        if (!event.repeat) runShortcut('toggle-sidebar')
-      } else if (event.key.toLowerCase() === 'w') {
-        event.preventDefault()
-        if (!event.repeat && activeTabId) closeTab(activeTabId)
-      } else if (event.key === ',') {
-        event.preventDefault()
-        if (!event.repeat) runShortcut('toggle-settings')
-      }
+      const action = findShortcut(shortcutBindings(), eventAccelerator(event), HOST_SHORTCUT_ACTIONS)
+      if (!action) return
+      event.preventDefault()
+      if (!event.repeat) runShortcut(action)
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
       offBrowserShortcut()
     }
-  }, [activeTabId, closeTab, currentProjectCwd, openProject])
+  }, [activeTabId, closeTab, currentProjectCwd, openProject, sidebarTab])
 
   useEffect(() => {
     if (!sidebarReady || requestedWorkspaceRestore.current) return
@@ -497,7 +500,7 @@ export default function App() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {t('app.sidebarRight')} <Kbd className="bg-transparent!">⌘ ⇧ E</Kbd>
+                    {t('app.sidebarRight')} <ShortcutKbd action="sidebar.toggleRight" />
                   </TooltipContent>
                 </Tooltip>
               ) : null}

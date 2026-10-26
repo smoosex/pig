@@ -11,6 +11,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
+import { matchesShortcut, shortcutText, useShortcut } from '../../lib/shortcuts'
 
 export function ProjectPickerDialog() {
   const open = useSessionsStore((s) => s.projectPickerOpen)
@@ -20,6 +21,7 @@ export function ProjectPickerDialog() {
 
 function ProjectBrowser({ onClose }: { onClose: () => void }) {
   const t = useT()
+  const addShortcut = useShortcut('projectPicker.addCurrent')
   const openProject = useSessionsStore((s) => s.openProject)
   const id = useId()
   const searchRef = useRef<HTMLInputElement>(null)
@@ -44,7 +46,7 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
   const deepActive = deep && !!needle && !!listing && !browseError
 
   useEffect(() => api.browser.onShortcutRequested((action) => {
-    if (action === 'close-active-tab' && !savingRef.current) onClose()
+    if (action === 'tab.close' && !savingRef.current) onClose()
   }), [onClose])
 
   useEffect(() => {
@@ -161,19 +163,20 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
         onEscapeKeyDown={(event) => { if (savingRef.current) event.preventDefault() }}
         onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus() }}
         onCloseAutoFocus={(event) => { event.preventDefault(); triggerRef.current?.focus({ preventScroll: true }) }}
-        onKeyDown={(event) => {
+        // Capture: the path, search and list handlers would otherwise take a bound Enter combination first.
+        onKeyDownCapture={(event) => {
           if (event.nativeEvent.isComposing) return
-          if (event.metaKey || event.ctrlKey) event.stopPropagation()
-          if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'w') {
+          if (matchesShortcut(event.nativeEvent, 'tab.close')) {
             event.preventDefault()
             event.stopPropagation()
             if (!savingRef.current) onClose()
-          } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          } else if (matchesShortcut(event.nativeEvent, 'projectPicker.addCurrent')) {
             event.preventDefault()
             event.stopPropagation()
             void add()
           }
         }}
+        onKeyDown={(event) => { if (event.metaKey || event.ctrlKey) event.stopPropagation() }}
       >
         <DialogHeader>
           <DialogTitle>{t('projectPicker.title')}</DialogTitle>
@@ -263,7 +266,9 @@ function ProjectBrowser({ onClose }: { onClose: () => void }) {
           </SmoothHoverHighlight>}
         </div>
         {deepActive ? search?.truncated ? <p className="text-xs text-warning">{t('projectPicker.searchTruncated')}</p> : null : listing?.truncated ? <p className="text-xs text-warning">{t('projectPicker.truncated')}</p> : null}
-        <p className="text-xs text-muted-foreground">{t('projectPicker.hint')}</p>
+        <p className="text-xs text-muted-foreground">
+          {[t('projectPicker.hint'), addShortcut ? t('projectPicker.hintAdd', { key: shortcutText(addShortcut) }) : null].filter(Boolean).join(' · ')}
+        </p>
         <DialogFooter className="items-center">
           <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={listing?.path}>{listing?.path}</p>
           <Button variant="outline" disabled={adding} onClick={onClose}>{t('common.cancel')}</Button>

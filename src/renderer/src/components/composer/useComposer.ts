@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { useSessionsStore, selectActiveSessionCwd, selectActiveSessionId } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
+import { matchesShortcut } from '../../lib/shortcuts'
 import { useComposerEditor } from './useComposerEditor'
 import { useComposerImages } from './useComposerImages'
 import { useFileMentions } from './useFileMentions'
@@ -91,6 +92,11 @@ export function useComposer(
 
   function handleKeyDown(event: KeyboardEvent): boolean {
     if (inputDisabled) return false
+    // The editor is already focused; consuming it keeps a bound Enter combination from sending.
+    if (matchesShortcut(event, 'composer.focus')) {
+      event.preventDefault()
+      return true
+    }
     if (bashMode && event.key === 'Escape') {
       event.preventDefault()
       setDismissedBashKey(draftKey)

@@ -60,7 +60,7 @@ async function fixture(failure: Failure): Promise<void> {
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => {
       assert.equal(startupShows, 1, 'the loading screen is visible before reading application settings')
-      return { locale: 'en', appearance: 'dark', surfaceStyle: 'solid' }
+      return { locale: 'en', appearance: 'dark', surfaceStyle: 'solid', shortcuts: {} }
     } },
     'session-names': { forwardSessionNames: noop },
     'pi/session-registry': { closeSessionsForCwd: asyncNoop, disposeAll: asyncNoop },

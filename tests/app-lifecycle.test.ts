@@ -120,7 +120,7 @@ async function fixture(mode: string): Promise<void> {
     'processes/index': { shutdownProcesses: asyncNoop },
     'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
-    'pig-settings': { loadPigSettings: async () => { events.push('settings'); return {} } },
+    'pig-settings': { loadPigSettings: async () => { events.push('settings'); return { shortcuts: {} } } },
     'session-names': { forwardSessionNames: noop },
     'pi/session-registry': { closeSessionsForCwd: asyncNoop, disposeAll: asyncNoop },
     'pi/session-removal': { removeProjectSessions: asyncNoop },
