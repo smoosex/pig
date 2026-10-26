@@ -14,14 +14,14 @@ const buttonVariants = cva(
         default: "bg-primary bg-clip-border text-primary-foreground shadow-glass-primary-button hover:bg-primary solid:bg-clip-padding solid:shadow-none solid:hover:bg-primary/80",
         outline: [
           glassButtonSurface,
-          "border-glass-button-border bg-glass-button-background text-glass-prompt-foreground hover:bg-glass-button-hover-background aria-expanded:bg-glass-button-hover-background solid:border-border solid:bg-background solid:text-foreground solid:hover:bg-muted solid:aria-expanded:bg-muted solid:dark:border-input solid:dark:bg-input/30 solid:dark:hover:bg-input/50"
+          "border-glass-button-border bg-glass-button-background text-glass-prompt-foreground hover:bg-glass-button-hover-background aria-expanded:bg-glass-button-hover-background solid:border-border solid:bg-background solid:text-foreground solid:hover:bg-[color-mix(in_oklch,var(--background),var(--foreground)_8%)] solid:aria-expanded:bg-[color-mix(in_oklch,var(--background),var(--foreground)_8%)] solid:dark:border-input solid:dark:bg-input/30 solid:dark:hover:bg-foreground/10 solid:dark:aria-expanded:bg-foreground/10"
         ],
         secondary: [
           glassButtonSurface,
           "border-glass-button-border bg-glass-button-background text-glass-prompt-foreground hover:bg-glass-button-hover-background aria-expanded:bg-glass-button-hover-background solid:border-transparent solid:bg-secondary solid:text-secondary-foreground solid:hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] solid:aria-expanded:bg-secondary solid:aria-expanded:text-secondary-foreground"
         ],
         ghost:
-          "hover:bg-glass-button-hover-background hover:text-glass-prompt-foreground aria-[haspopup]:aria-expanded:bg-glass-button-hover-background aria-[haspopup]:aria-expanded:text-glass-prompt-foreground solid:hover:bg-muted solid:hover:text-foreground solid:aria-expanded:bg-muted solid:aria-expanded:text-foreground solid:dark:hover:bg-muted/50",
+          "hover:bg-glass-button-hover-background hover:text-glass-prompt-foreground aria-[haspopup]:aria-expanded:bg-glass-button-hover-background aria-[haspopup]:aria-expanded:text-glass-prompt-foreground solid:hover:bg-foreground/8 solid:hover:text-foreground solid:aria-expanded:bg-foreground/8 solid:aria-expanded:text-foreground solid:dark:hover:bg-foreground/10 solid:dark:aria-expanded:bg-foreground/10",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
