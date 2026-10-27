@@ -15,6 +15,7 @@ import { applyDocumentLocale, storedLocale } from '../lib/locale'
 import { IS_MAC } from '../lib/platform'
 import { applyDocumentTheme, storedThemePrefs } from '../lib/theme'
 import { waitForSurfacePaint } from '../lib/surface-transition'
+import type { SettingsChanged, SettingsSurfaceRequest } from '../../../shared/settings'
 
 interface SettingsStore extends AppSettings {
   /** The setting resolved against the system language: what the UI actually speaks. */
@@ -53,16 +54,28 @@ function applyDefaults(next: {
   model: SessionModelInfo | null
   thinkingLevel: ThinkingLevel | null
   thinkingLevels: ThinkingLevel[]
-}): Pick<AppSettings, 'defaultModel' | 'defaultThinkingLevel' | 'thinkingLevels'> {
+  settingsRevision?: number
+}): Pick<AppSettings, 'defaultModel' | 'defaultThinkingLevel' | 'thinkingLevels'> & { settingsRevision?: number } {
   return {
     defaultModel: next.model,
     defaultThinkingLevel: next.thinkingLevel,
-    thinkingLevels: next.thinkingLevels
+    thinkingLevels: next.thinkingLevels,
+    settingsRevision: next.settingsRevision
   }
 }
 
+type Revisioned = Partial<AppSettings> & { settingsRevision?: number }
+
+let receiveChange: (event: SettingsChanged) => void = () => {}
+let receiveSurface: (request: SettingsSurfaceRequest) => void = () => {}
+
 export const useSettingsStore = create<SettingsStore>((set, get) => {
   let confirmed = { ...empty }
+  // Main numbers every settings change; each field keeps the newest one it has seen, so a late
+  // reply or broadcast cannot undo a newer change made by another window or the Agent.
+  const fieldRevisions: Partial<Record<keyof AppSettings, number>> = {}
+  // Main asks every window to paint solid before it removes the native material.
+  const solidHolds = new Set<string>()
   let revision = 0
   let writes = Promise.resolve()
   let loading: Promise<void> | null = null
@@ -72,6 +85,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
 
   const publish = () => {
     const merged = Object.assign({}, confirmed, ...pending) as AppSettings
+    if (solidHolds.size) merged.surfaceStyle = 'solid'
     const locale = resolveLocale(merged.localeSetting, merged.systemLocale)
     const next = { ...merged, locale }
     const current = get()
@@ -93,9 +107,47 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
    * Commit changes in order and keep pending UI patches above confirmed values,
    * including when an earlier save fails.
    */
+  const confirm = ({ settingsRevision, ...values }: Revisioned) => {
+    const next = { ...confirmed }
+    for (const [key, value] of Object.entries(values) as [keyof AppSettings, never][]) {
+      if (value === undefined) continue
+      if (settingsRevision !== undefined) {
+        if (settingsRevision < (fieldRevisions[key] ?? -1)) continue
+        fieldRevisions[key] = settingsRevision
+      }
+      next[key] = value
+    }
+    confirmed = next
+  }
+
+  receiveChange = (event) => {
+    confirm({ ...event.values, settingsRevision: event.revision })
+    publish()
+  }
+
+  receiveSurface = (request) => {
+    if (request.type === 'finish') {
+      if (solidHolds.delete(request.requestId)) publish()
+      return
+    }
+    solidHolds.add(request.requestId)
+    publish()
+    void (async () => {
+      try {
+        // Stay below main's timeout; a stuck transition must not cancel the whole change.
+        await waitForSurfacePaint(AbortSignal.timeout(4_000))
+        await api.replySettingsSurface(request.requestId)
+      } catch (error) {
+        solidHolds.delete(request.requestId)
+        publish()
+        await api.replySettingsSurface(request.requestId, error instanceof Error ? error.message : String(error)).catch(() => {})
+      }
+    })()
+  }
+
   const save = (
     optimistic: Partial<AppSettings>,
-    write: () => Promise<Partial<AppSettings>>
+    write: () => Promise<Revisioned>
   ): Promise<void> => {
     revision += 1
     pending.push(optimistic)
@@ -103,7 +155,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     publish()
     writes = writes.then(async () => {
       try {
-        confirmed = { ...confirmed, ...(await write()) }
+        confirm(await write())
       } catch (error) {
         set({ error: error instanceof Error ? error.message : String(error) })
       } finally {
@@ -125,7 +177,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
           const requestedRevision = revision
           const settings = await api.getSettings()
           if (requestedRevision !== revision) continue
-          confirmed = settings
+          confirm(settings)
           publish()
           set({ loaded: true, error: null })
           return
@@ -150,7 +202,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     setSendShortcut: (shortcut) =>
       save({ sendShortcut: shortcut }, async () => {
         const next = await api.setSendShortcut(shortcut)
-        return { sendShortcut: next.sendShortcut }
+        return { sendShortcut: next.sendShortcut, settingsRevision: next.settingsRevision }
       }),
 
     setShortcuts: (patch) => {
@@ -167,19 +219,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     setCompletionNotifications: (enabled) =>
       save({ completionNotifications: enabled }, async () => {
         const next = await api.setCompletionNotifications(enabled)
-        return { completionNotifications: next.completionNotifications }
+        return { completionNotifications: next.completionNotifications, settingsRevision: next.settingsRevision }
       }),
 
     setBeamBorderEnabled: (enabled) =>
       save({ beamBorderEnabled: enabled }, async () => {
         const next = await api.setBeamBorderEnabled(enabled)
-        return { beamBorderEnabled: next.beamBorderEnabled }
+        return { beamBorderEnabled: next.beamBorderEnabled, settingsRevision: next.settingsRevision }
       }),
 
     setLocale: (locale) =>
       save({ localeSetting: locale }, async () => {
         const next = await api.setLocaleSetting(locale)
-        return { localeSetting: next.localeSetting, systemLocale: next.systemLocale }
+        return { localeSetting: next.localeSetting, systemLocale: next.systemLocale, settingsRevision: next.settingsRevision }
       }),
 
     setTheme: (patch) => {
@@ -208,7 +260,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
           appearance: next.appearance,
           lightTheme: next.lightTheme,
           darkTheme: next.darkTheme,
-          surfaceStyle: next.surfaceStyle
+          surfaceStyle: next.surfaceStyle,
+          settingsRevision: next.settingsRevision
         }
       })
     },
@@ -229,4 +282,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
 
 export function modelKey(model: Pick<SessionModelInfo, 'provider' | 'id'>): string {
   return `${model.provider}/${model.id}`
+}
+
+/** Follow settings changed by other windows or the Agent; App mounts this once per window. */
+export function subscribeSettingsChanges(): () => void {
+  const offChanged = api.onSettingsChanged((event) => receiveChange(event))
+  const offSurface = api.onSettingsSurface((request) => receiveSurface(request))
+  return () => {
+    offChanged()
+    offSurface()
+  }
 }

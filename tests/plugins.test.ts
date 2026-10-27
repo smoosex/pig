@@ -18,6 +18,7 @@ async function fixture(): Promise<void> {
   mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
   const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
   const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-persona', 'index.js')
+  const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   try {
     const module = await import('../src/main/pi/plugins')
     const ui = await import('../src/main/pi/system-plugin-ui')
@@ -47,13 +48,13 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getPluginSettings('pi-review'), { thinking: 'high' })
     await module.setPluginSettings('pi-review', { thinking: null })
     assert.deepEqual(await module.getPluginSettings('pi-review'), {})
-    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat']]
+    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
     assert.equal(await module.isMemoryPluginEnabled('project'), false)
     assert.equal(await module.isMemoryPluginEnabled('chat'), false)
     const bundledPaths = await module.enabledPluginPaths('project')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('plugins', 'observational-memory', 'index.ts'))), false)
-    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, personaBundle].filter(existsSync))
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, settingsPath, personaBundle].filter(existsSync))
     assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
     const subagentPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-subagent', 'index.ts')))
     assert.ok(subagentPath, 'subagents default to projects only')
@@ -71,7 +72,15 @@ async function fixture(): Promise<void> {
       id: 'pig-process', name: 'Background Processes', source: 'Pig built-in', kind: 'system', scopes: ['project'], available: true
     })
     assert.deepEqual((await module.toolProvidersByPath('project')).get(processPath), { kind: 'pig', id: 'pig-process', name: 'Background Processes' })
-    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, personaBundle].includes(path)), 'children cannot alter global mood, spawn, control window tools or own processes')
+    assert.ok(bundledPaths.includes(settingsPath), 'settings tools default to both project and Chat')
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-settings'), {
+      id: 'pig-settings', name: 'Settings', source: 'Pig built-in', kind: 'system', scopes: ['project', 'chat'], available: true
+    })
+    for (const scope of ['project', 'chat'] as const) {
+      assert.deepEqual((await module.toolProvidersByPath(scope)).get(settingsPath), { kind: 'pig', id: 'pig-settings', name: 'Settings' })
+    }
+    await assert.rejects(module.getPluginSettings('pig-settings'), /Plugin not found/, 'the settings tools do not declare a plugin configuration pane')
+    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))), existsSync(webAccessBundle))
     assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, ['project', 'chat'])
     assert.equal(bundledPaths.includes(personaBundle), existsSync(personaBundle))
@@ -93,12 +102,27 @@ async function fixture(): Promise<void> {
       await writeFile(registryFile, JSON.stringify({ installed: [], terminalScopes }))
       await assert.rejects(module.listPlugins(), /Invalid plugin scopes/)
     }
+    await writeFile(registryFile, JSON.stringify({ version: 1, installed: [] }))
+    await module.setPluginScopes('pig-settings', [])
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-settings')?.scopes, [], 'saved empty settings scopes override both defaults')
+    assert.equal((await module.enabledPluginPaths('any')).includes(settingsPath), false)
+    assert.deepEqual(JSON.parse(await readFile(registryFile, 'utf8')).settingsScopes, [])
+    await module.setPluginScopes('pig-settings', ['chat', 'project', 'chat'])
+    assert.deepEqual(JSON.parse(await readFile(registryFile, 'utf8')).settingsScopes, ['project', 'chat'])
+    await module.setPluginScopes('pig-settings', ['chat'])
+    assert.equal((await module.enabledPluginPaths('project')).includes(settingsPath), false)
+    assert.equal((await module.enabledPluginPaths('chat')).includes(settingsPath), true)
+    await assert.rejects(module.setPluginScopes('pig-settings', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
+    for (const settingsScopes of [true, ['unknown']]) {
+      await writeFile(registryFile, JSON.stringify({ installed: [], settingsScopes }))
+      await assert.rejects(module.listPlugins(), /Invalid plugin scopes/)
+    }
     await writeFile(registryFile, JSON.stringify({
       version: 1, memoryEnabled: true, reviewEnabled: false, webAccessEnabled: true,
       installed: [{ id: 'legacy', source: plugin, kind: 'local', enabled: true }]
     }))
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project']])
-    assert.deepEqual(await module.enabledPluginPaths('chat'), existsSync(personaBundle) ? [personaBundle] : [], 'legacy switches do not change new built-in defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project']])
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [settingsPath, personaBundle].filter(existsSync), 'legacy switches do not change new built-in defaults')
     await module.setPluginScopes('legacy', ['chat', 'project', 'chat'])
     const migrated = JSON.parse(await readFile(registryFile, 'utf8'))
     assert.equal(migrated.version, 2)
@@ -106,12 +130,13 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.reviewScopes, [])
     assert.deepEqual(migrated.webAccessScopes, ['project'])
     assert.deepEqual(migrated.terminalScopes, ['project'])
+    assert.deepEqual(migrated.settingsScopes, ['project', 'chat'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pi-persona']) await module.setPluginScopes(id, [])
+    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pi-persona']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, [])
     if (existsSync(personaBundle)) {
@@ -301,6 +326,8 @@ async function fixture(): Promise<void> {
     assert.match(builderConfig, /to: system-plugins\/pig-ui\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal-host\.ts\s+to: system-plugins\/pig-terminal-host\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-process-host\.ts\s+to: system-plugins\/pig-process-host\.ts/)
+    assert.match(builderConfig, /from: src\/main\/plugins\/pig-settings-host\.ts\s+to: system-plugins\/pig-settings-host\.ts/)
+    assert.match(builderConfig, /from: src\/main\/plugins\/pig-settings\s+to: system-plugins\/pig-settings\s+filter:\s+- '\*\*\/\*\.ts'/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-process\s+to: system-plugins\/pig-process\s+filter:\s+- '\*\*\/\*\.ts'/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-servers\.ts\s+to: system-plugins\/pig-servers\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal\s+to: system-plugins\/pig-terminal\s+filter:\s+- '\*\*\/\*\.ts'/)

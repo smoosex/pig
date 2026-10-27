@@ -104,8 +104,6 @@ export type {
 export type { MemorySession, PendingSession, SessionFileSession } from './session-state'
 export {
   getDefaultSessionSettings,
-  setDefaultModel,
-  setDefaultThinking,
   startModelRuntime
 } from './model-settings'
 

@@ -9,6 +9,7 @@ import type { SessionCapabilitiesApi } from './session-capabilities'
 import type { SubagentAppearance } from './subagent-appearance'
 import type { SavedSplitLayout } from './split-layout'
 import type { ShortcutOverrides, ShortcutPatch } from './shortcuts'
+import type { SettingsEventsApi, SettingsReply } from './settings'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -634,6 +635,8 @@ export interface AppSettings extends ThemePrefs {
   defaultModel: SessionModelInfo | null
   defaultThinkingLevel: ThinkingLevel | null
   thinkingLevels: ThinkingLevel[]
+  /** Pi's shared settings could not be read; Pig's own preferences still load. Null once they read or save again. */
+  defaultSettingsError?: string | null
   providers: SettingsProvider[]
 }
 
@@ -895,7 +898,7 @@ export type * from './browser'
 export type * from './terminal'
 export type * from './processes'
 
-export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi {
+export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi {
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
   processes: import('./processes').ProcessApi
@@ -1036,7 +1039,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   readonly supportsGlass: boolean
   /** Lifts the startup screen covering the window; later calls and reloads are ignored. */
   notifyStartupReady: () => void
-  getSettings: () => Promise<AppSettings>
+  getSettings: () => Promise<SettingsReply<AppSettings>>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>
   pickPluginPath: () => Promise<string | null>
@@ -1064,16 +1067,16 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   getSubagentSettings: () => Promise<SubagentSettings>
   setSubagentSettings: (patch: SubagentSettingsPatch) => Promise<SubagentSettings>
   onSubagentsChanged: (listener: (update: SubagentListUpdate) => void) => () => void
-  setSendShortcut: (shortcut: SendShortcut) => Promise<{ sendShortcut: SendShortcut }>
-  setShortcuts: (patch: ShortcutPatch) => Promise<{ shortcuts: ShortcutOverrides }>
-  setCompletionNotifications: (enabled: boolean) => Promise<{ completionNotifications: boolean }>
-  setBeamBorderEnabled: (enabled: boolean) => Promise<{ beamBorderEnabled: boolean }>
+  setSendShortcut: (shortcut: SendShortcut) => Promise<SettingsReply<{ sendShortcut: SendShortcut }>>
+  setShortcuts: (patch: ShortcutPatch) => Promise<SettingsReply<{ shortcuts: ShortcutOverrides }>>
+  setCompletionNotifications: (enabled: boolean) => Promise<SettingsReply<{ completionNotifications: boolean }>>
+  setBeamBorderEnabled: (enabled: boolean) => Promise<SettingsReply<{ beamBorderEnabled: boolean }>>
   setLocaleSetting: (
     locale: LocaleSetting
-  ) => Promise<{ localeSetting: LocaleSetting; systemLocale: Locale }>
-  setTheme: (patch: Partial<ThemePrefs>) => Promise<ThemePrefs>
-  setDefaultModelSetting: (provider: string, id: string) => Promise<DefaultSessionSettings>
-  setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<DefaultSessionSettings>
+  ) => Promise<SettingsReply<{ localeSetting: LocaleSetting; systemLocale: Locale }>>
+  setTheme: (patch: Partial<ThemePrefs>) => Promise<SettingsReply<ThemePrefs>>
+  setDefaultModelSetting: (provider: string, id: string) => Promise<SettingsReply<DefaultSessionSettings>>
+  setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<SettingsReply<DefaultSessionSettings>>
   listProviders: () => Promise<SettingsProvider[]>
   loginProvider: (providerId: string, authType: ProviderAuthType) => Promise<SettingsProvider[]>
   logoutProvider: (providerId: string) => Promise<SettingsProvider[]>

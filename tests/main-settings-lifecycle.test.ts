@@ -54,8 +54,7 @@ async function fixture(name: string): Promise<void> {
       SessionManager: { create: () => manager }
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
-      startModelRuntime: async () => ({}), getDefaultSessionSettings() {},
-      setDefaultModel() {}, setDefaultThinking() {}
+      startModelRuntime: async () => ({}), getDefaultSessionSettings() {}
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-catalog.ts', import.meta.url)), () => ({ synchronizeModelCatalog() {} }))
     mock.module(fileURLToPath(new URL('../src/main/pi/session-controls.ts', import.meta.url)), () => ({
@@ -497,8 +496,12 @@ async function fixture(name: string): Promise<void> {
       logoutProvider: noop, resolveAuthPrompt: noop
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
-      getDefaultSessionSettings: async () => ({ model: null, thinkingLevel: null, thinkingLevels: [] }),
-      setDefaultModel: noop, setDefaultThinking: noop
+      readDefaultSettings: async () => ({
+        stored: { model: null, thinkingLevel: null }, modelThinkingLevel: null, revision: '0'.repeat(64),
+        effective: { model: null, thinkingLevel: null, thinkingLevels: [] }
+      }),
+      updateDefaultSettings: noop, availableModels: () => [], pickerThinkingLevels: (levels: unknown[]) => levels,
+      startModelRuntime: async () => {}
     }))
     try {
       process.env.PIG_DIR = join(root, 'settings')

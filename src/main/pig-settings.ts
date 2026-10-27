@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { pigPath } from './pig-dir'
 import { supportsGlass } from './surface-support'
@@ -59,20 +60,22 @@ function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
   }
 }
 
-async function readSettings(path: string): Promise<PigSettings> {
+async function readSettings(path: string, strict = false): Promise<PigSettings> {
   try {
-    const data = JSON.parse(await readFile(path, 'utf8')) as Partial<PigSettings>
+    const data: unknown = JSON.parse(await readFile(path, 'utf8'))
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid Pig settings object')
     return normalize(data)
-  } catch {
+  } catch (error) {
+    if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     return { ...defaults }
   }
 }
 
 let mutationQueue: Promise<void> = Promise.resolve()
 
-export async function loadPigSettings(): Promise<PigSettings> {
+export async function loadPigSettings(strict = false): Promise<PigSettings> {
   await mutationQueue
-  return readSettings(filePath())
+  return readSettings(filePath(), strict)
 }
 
 export function savePigSettings(patch: Partial<PigSettings>): Promise<PigSettings> {
@@ -84,10 +87,16 @@ export function updatePigSettings(update: (current: PigSettings) => Partial<PigS
   const path = filePath()
   // Independent controls share this file, so serialize the entire read/merge/write.
   const result = mutationQueue.then(async () => {
-    const current = await readSettings(path)
+    const current = await readSettings(path, true)
     const next = normalize({ ...current, ...update(current) })
     await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
+    const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temp, `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`, { mode: 0o600 })
+      await rename(temp, path)
+    } finally {
+      await rm(temp, { force: true })
+    }
     return next
   })
   mutationQueue = result.then(() => undefined, () => undefined)

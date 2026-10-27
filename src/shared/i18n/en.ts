@@ -537,6 +537,7 @@ export const en: Messages = {
     model: 'Model',
     defaultModel: 'Default model',
     defaultModelDescription: 'Model and thinking effort used by new conversations; the model also names worktree branches',
+    defaultModelReadFailed: 'Could not read Pi\'s default model settings: {message}',
     appearance: 'Appearance',
     appearanceDescription: 'Follow the system, or pin light / dark',
     appearanceSystem: 'System',

@@ -1,16 +1,8 @@
-import { ipcMain, nativeTheme } from 'electron'
+import { ipcMain } from 'electron'
 import { windowForEvent } from './window'
-import {
-  loadPigSettings,
-  savePigSettings,
-  updatePigSettings,
-  type SendShortcut
-} from '../pig-settings'
-import { applyShortcutOverrides } from '../shortcuts'
-import { applyShortcutPatch } from '../../shared/shortcuts'
-import { applyLocaleSetting, systemLocale } from '../i18n'
-import type { LocaleSetting, ThemePrefs } from '../../shared/api'
-import { applyWindowSurfaceStyle } from '../window-surface'
+import { assertBrowserSender } from '../browser/validation'
+import { createSettingsRuntime, type SettingsSessions } from '../settings'
+import type { LocaleSetting, SendShortcut, ThemePrefs } from '../../shared/api'
 import {
   cancelProviderLogin,
   listProviders,
@@ -19,88 +11,43 @@ import {
   resolveAuthPrompt,
   type ProviderAuthType
 } from '../pi/providers'
-import {
-  getDefaultSessionSettings,
-  setDefaultModel,
-  setDefaultThinking,
-  type SessionThinkingLevel
-} from '../pi/model-settings'
+import type { SessionThinkingLevel } from '../pi/model-settings'
 
-export function registerSettingsIpc(): void {
-  ipcMain.handle('settings:get', async () => {
-    const pig = await loadPigSettings()
-    const [defaults, providers] = await Promise.all([
-      getDefaultSessionSettings(),
-      listProviders()
-    ])
-    return {
-      sendShortcut: pig.sendShortcut,
-      shortcuts: pig.shortcuts,
-      completionNotifications: pig.completionNotifications,
-      beamBorderEnabled: pig.beamBorderEnabled,
-      localeSetting: pig.locale,
-      systemLocale: systemLocale(),
-      appearance: pig.appearance,
-      surfaceStyle: pig.surfaceStyle,
-      lightTheme: pig.lightTheme,
-      darkTheme: pig.darkTheme,
-      defaultModel: defaults.model,
-      defaultThinkingLevel: defaults.thinkingLevel,
-      thinkingLevels: defaults.thinkingLevels,
-      providers
+export function registerSettingsIpc(sessions?: SettingsSessions): void {
+  const { service, surface } = createSettingsRuntime(sessions)
+  ipcMain.handle('settings:get', async (event) => {
+    if (event.sender) {
+      const win = windowForEvent(event)
+      assertBrowserSender(event, win)
+      surface.watch(win)
     }
+    const [settings, providers] = await Promise.all([service.getUi(), listProviders()])
+    return { ...settings, providers }
   })
 
-  ipcMain.handle('settings:set-send-shortcut', async (_event, shortcut: SendShortcut) => {
-    return savePigSettings({ sendShortcut: shortcut })
+  ipcMain.handle('settings:surface-reply', (event, requestId: string, error?: string) => {
+    const win = windowForEvent(event)
+    assertBrowserSender(event, win)
+    if (typeof requestId !== 'string' || (error !== undefined && typeof error !== 'string')) throw new Error('Invalid settings surface reply')
+    surface.reply(win, requestId, error?.slice(0, 500))
   })
 
-  ipcMain.handle('settings:set-shortcuts', async (_event, patch: unknown) => {
-    const next = await updatePigSettings((current) => ({
-      shortcuts: applyShortcutPatch(current.shortcuts, patch, process.platform === 'darwin')
-    }))
-    applyShortcutOverrides(next.shortcuts)
-    return { shortcuts: next.shortcuts }
-  })
+  ipcMain.handle('settings:set-send-shortcut', (_event, shortcut: SendShortcut) =>
+    service.updateUi('shortcuts', { sendShortcut: shortcut }))
+  ipcMain.handle('settings:set-shortcuts', (_event, patch: unknown) =>
+    service.updateUi('shortcuts', { bindings: patch }))
+  ipcMain.handle('settings:set-completion-notifications', (_event, enabled: boolean) =>
+    service.updateUi('notifications', { completionNotifications: enabled }))
+  ipcMain.handle('settings:set-beam-border', (_event, enabled: boolean) => service.setBeamBorder(enabled))
+  ipcMain.handle('settings:set-locale', (_event, locale: LocaleSetting) => service.updateUi('general', { locale }))
+  ipcMain.handle('settings:set-theme', (_event, patch: Partial<ThemePrefs>) => service.updateUi('theme', patch))
 
-  ipcMain.handle('settings:set-completion-notifications', async (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean notification setting')
-    return savePigSettings({ completionNotifications: enabled })
-  })
-
-  ipcMain.handle('settings:set-beam-border', async (_event, enabled: boolean) => {
-    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean beam border setting')
-    return savePigSettings({ beamBorderEnabled: enabled })
-  })
-
-  ipcMain.handle('settings:set-locale', async (_event, locale: LocaleSetting) => {
-    const next = await savePigSettings({ locale })
-    applyLocaleSetting(next.locale)
-    return { localeSetting: next.locale, systemLocale: systemLocale() }
-  })
-
-  ipcMain.handle(
-    'settings:set-theme',
-    async (
-      _event,
-      patch: Partial<ThemePrefs>
-    ) => {
-      const next = await savePigSettings(patch ?? {})
-      nativeTheme.themeSource = next.appearance
-      applyWindowSurfaceStyle(next.surfaceStyle)
-      return next
-    }
-  )
-
-  ipcMain.handle('settings:set-default-model', async (_event, provider: string, id: string) => {
-    if (!provider || !id) throw new Error('Provider and model id are required')
-    return setDefaultModel(provider, id)
-  })
-
-  ipcMain.handle('settings:set-default-thinking', async (_event, level: SessionThinkingLevel) => {
-    if (!level) throw new Error('Thinking level is required')
-    return setDefaultThinking(level)
-  })
+  const defaultsReply = async (patch: { model?: { provider: string; id: string }; thinkingLevel?: SessionThinkingLevel }) => {
+    const next = await service.updateUi('defaults', patch)
+    return { model: next.defaultModel, thinkingLevel: next.defaultThinkingLevel, thinkingLevels: next.thinkingLevels, settingsRevision: next.settingsRevision }
+  }
+  ipcMain.handle('settings:set-default-model', (_event, provider: string, id: string) => defaultsReply({ model: { provider, id } }))
+  ipcMain.handle('settings:set-default-thinking', (_event, level: SessionThinkingLevel) => defaultsReply({ thinkingLevel: level }))
 
   ipcMain.handle('settings:list-providers', async () => listProviders())
 

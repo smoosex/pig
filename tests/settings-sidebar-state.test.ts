@@ -25,8 +25,9 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function settings(patch: Partial<AppSettings> = {}): AppSettings {
+function settings(patch: Partial<AppSettings> = {}): AppSettings & { settingsRevision: number } {
   return {
+    settingsRevision: 0,
     appearance: 'light',
     surfaceStyle: 'glass',
     lightTheme: 'pig',
@@ -112,13 +113,13 @@ async function runFixture(name: string): Promise<void> {
     const themes: ReturnType<typeof deferred<ThemePrefs>>[] = []
     const shortcuts: string[] = []
     api.setTheme = () => {
-      const request = deferred<ThemePrefs>()
+      const request = deferred<ThemePrefs & { settingsRevision?: number }>()
       themes.push(request)
-      return request.promise
+      return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
     }
     api.setSendShortcut = async (shortcut) => {
       shortcuts.push(shortcut)
-      return { sendShortcut: shortcut }
+      return { sendShortcut: shortcut, settingsRevision: 0 }
     }
     const first = useSettingsStore.getState().setTheme({ appearance: 'dark' })
     const second = useSettingsStore.getState().setTheme({ lightTheme: 'everforest' })
@@ -182,9 +183,9 @@ async function runFixture(name: string): Promise<void> {
     api.getSettings = async () => settings({ lightTheme: 'everforest' })
     api.setTheme = (patch) => {
       patches.push(patch)
-      const request = deferred<ThemePrefs>()
+      const request = deferred<ThemePrefs & { settingsRevision?: number }>()
       requests.push(request)
-      return request.promise
+      return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
     }
     await useSettingsStore.getState().load()
     const solid = useSettingsStore.getState().setTheme({ surfaceStyle: 'solid' })
@@ -311,7 +312,7 @@ async function runFixture(name: string): Promise<void> {
   }
 
   if (name === 'load-race') {
-    const stale = deferred<AppSettings>()
+    const stale = deferred<ReturnType<typeof settings>>()
     let persisted = settings()
     let reads = 0
     api.getSettings = () => (++reads === 1 ? stale.promise : Promise.resolve(persisted))
@@ -346,7 +347,7 @@ async function runFixture(name: string): Promise<void> {
     let persisted = true
     api.setCompletionNotifications = async (enabled) => {
       persisted = enabled
-      return { completionNotifications: enabled }
+      return { completionNotifications: enabled, settingsRevision: 0 }
     }
     await useSettingsStore.getState().setCompletionNotifications(false)
     assert.equal(persisted, false)
@@ -354,6 +355,41 @@ async function runFixture(name: string): Promise<void> {
     await useSettingsStore.getState().setCompletionNotifications(true)
     assert.equal(persisted, true)
     assert.equal(useSettingsStore.getState().completionNotifications, true)
+    await GlobalRegistrator.unregister()
+    return
+  }
+
+  if (name === 'settings-changed') {
+    const { subscribeSettingsChanges } = await import('../src/renderer/src/stores/settings')
+    let changed!: (event: import('../src/shared/settings').SettingsChanged) => void
+    let surface!: (request: import('../src/shared/settings').SettingsSurfaceRequest) => void
+    const replies: unknown[][] = []
+    api.onSettingsChanged = (listener) => { changed = listener; return () => {} }
+    api.onSettingsSurface = (listener) => { surface = listener; return () => {} }
+    api.replySettingsSurface = async (...args) => { replies.push(args) }
+    api.getSettings = async () => ({ ...settings(), settingsRevision: 3 })
+    const unsubscribe = subscribeSettingsChanges()
+    await useSettingsStore.getState().load()
+    changed({ revision: 5, values: { completionNotifications: false, appearance: 'dark' } })
+    assert.equal(useSettingsStore.getState().completionNotifications, false, 'changes from the Agent or another window reach the UI')
+    assert.equal(document.documentElement.classList.contains('dark'), true)
+    const reply = deferred<{ completionNotifications: boolean; settingsRevision: number }>()
+    api.setCompletionNotifications = () => reply.promise
+    const saving = useSettingsStore.getState().setCompletionNotifications(true)
+    changed({ revision: 7, values: { completionNotifications: false } })
+    reply.resolve({ completionNotifications: true, settingsRevision: 6 })
+    await saving
+    assert.equal(useSettingsStore.getState().completionNotifications, false, 'a late reply cannot undo a newer change')
+    changed({ revision: 4, values: { appearance: 'light' } })
+    assert.equal(useSettingsStore.getState().appearance, 'dark', 'a stale broadcast is ignored')
+
+    surface({ type: 'prepare-solid', requestId: 'r1' })
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'solid', 'the page turns opaque before main removes the material')
+    for (let i = 0; i < 20 && !replies.length; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+    assert.deepEqual(replies, [['r1']])
+    surface({ type: 'finish', requestId: 'r1', surfaceStyle: 'glass' })
+    assert.equal(document.documentElement.dataset.surfaceStyle, 'glass', 'a cancelled handoff shows the confirmed surface again')
+    unsubscribe()
     await GlobalRegistrator.unregister()
     return
   }
@@ -394,7 +430,7 @@ async function runFixture(name: string): Promise<void> {
     api.getSettings = async () => settings({ localeSetting: 'system', systemLocale: 'zh-CN' })
     api.setLocaleSetting = async (locale) => {
       writes.push(locale)
-      return { localeSetting: locale, systemLocale: 'zh-CN' }
+      return { localeSetting: locale, systemLocale: 'zh-CN' as const, settingsRevision: 0 }
     }
     const { t } = await import('../src/renderer/src/lib/i18n')
     const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
@@ -438,7 +474,7 @@ async function runFixture(name: string): Promise<void> {
       let persisted = true
       api.setBeamBorderEnabled = async (enabled) => {
         persisted = enabled
-        return { beamBorderEnabled: enabled }
+        return { beamBorderEnabled: enabled, settingsRevision: 0 }
       }
       await useSettingsStore.getState().load()
       const { GeneralPane } = await import('../src/renderer/src/components/settings/GeneralPane')
@@ -466,7 +502,7 @@ async function runFixture(name: string): Promise<void> {
       api.loginProvider = () => {
         const request = deferred<SettingsProvider[]>()
         requests.push(request)
-        return request.promise
+        return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
       }
       api.cancelLogin = async () => {
         cancellations += 1
@@ -655,7 +691,7 @@ async function runFixture(name: string): Promise<void> {
       api.worktreeCreateInfo = () => {
         const request = deferred<WorktreeCreateInfo>()
         checks.push(request)
-        return request.promise
+        return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
       }
       function Probe() {
         action = useProjectAction()
@@ -715,7 +751,7 @@ async function runFixture(name: string): Promise<void> {
       api.worktreeDeletionInfo = () => {
         const request = deferred<WorktreeDeletionInfo>()
         checks.push(request)
-        return request.promise
+        return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
       }
       function Probe() {
         action = useProjectAction()
@@ -1101,6 +1137,7 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
     locale: 'the language setting follows the system, persists and re-titles placeholders',
     'notification-setting': 'the completion notification setting persists through the settings store',
     'beam-border-setting': 'the Beam border switch updates and persists its preference',
+    'settings-changed': 'pushed changes and paint handoffs follow main revisions without undoing newer values',
     'notification-navigation': 'notification clicks select only open session tabs across sidebar halves',
     auth: 'auth cancellation owns its prompts until completion and cleans up on unmount',
     sidebar: 'late preferences preserve user changes and writes remain ordered',

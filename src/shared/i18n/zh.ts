@@ -534,6 +534,7 @@ export const zh = {
     model: '模型',
     defaultModel: '默认模型',
     defaultModelDescription: '新建对话时使用的模型和思考强度，模型也用来给 Worktree 分支命名',
+    defaultModelReadFailed: '读取 Pi 的默认模型设置失败：{message}',
     appearance: '外观',
     appearanceDescription: '跟随系统，或固定浅色 / 暗色',
     appearanceSystem: '系统',

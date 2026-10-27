@@ -294,6 +294,19 @@ const api: SessionApi = {
   supportsGlass: process.argv.includes(GLASS_SURFACE_ARGUMENT),
   notifyStartupReady: () => ipcRenderer.send('window:startup-ready'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  onSettingsChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, update: import('../shared/settings').SettingsChanged) => listener(update)
+    ipcRenderer.on('settings:changed', handler)
+    return () => ipcRenderer.off('settings:changed', handler)
+  },
+  onSettingsSurface: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/settings').SettingsSurfaceRequest) => listener(request)
+    ipcRenderer.on('settings:surface', handler)
+    return () => ipcRenderer.off('settings:surface', handler)
+  },
+  replySettingsSurface: (requestId, error) => error === undefined
+    ? ipcRenderer.invoke('settings:surface-reply', requestId)
+    : ipcRenderer.invoke('settings:surface-reply', requestId, error),
   listSkills: () => ipcRenderer.invoke('skills:list'),
   setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:enable', id, enabled),
   removeSkill: (id) => ipcRenderer.invoke('skills:remove', id),

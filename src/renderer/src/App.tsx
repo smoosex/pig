@@ -43,7 +43,7 @@ import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
 import { ProjectPickerDialog } from './components/projects/ProjectPickerDialog'
 import { SessionGreeting } from './components/SessionGreeting'
-import { useSettingsStore } from './stores/settings'
+import { subscribeSettingsChanges, useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
@@ -281,6 +281,8 @@ export default function App() {
   useModelCatalog()
   const modelCatalogError = useModelCatalogStore((s) => s.error)
   const modelCatalogLoading = useModelCatalogStore((s) => s.loading)
+
+  useEffect(subscribeSettingsChanges, [])
 
   useEffect(() => api.onMcpChanged(() => {
     const store = useToolSettingsStore.getState()

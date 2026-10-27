@@ -17,7 +17,6 @@ import { registerProcessIpc } from './processes'
 export function registerIpc(): void {
   registerProjectIpc()
   registerSessionIpc()
-  registerSettingsIpc()
   registerSystemIpc()
   registerDiffIpc()
   registerFilesIpc()
@@ -27,6 +26,7 @@ export function registerIpc(): void {
   registerSkillsIpc()
   registerSubagentIpc()
   const sessions = { sessionWindow: (id: string) => getLive(id)?.win, isSessionLive: (id: string) => getLive(id) !== undefined }
+  registerSettingsIpc(sessions)
   registerTerminalIpc(sessions)
   registerBrowserIpc(sessions)
   registerProcessIpc()

@@ -30,6 +30,7 @@ interface Registry {
   browserScopes: PluginScope[]
   terminalScopes: PluginScope[]
   processScopes: PluginScope[]
+  settingsScopes: PluginScope[]
   personaScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
@@ -56,6 +57,9 @@ const terminalPath = () => app.isPackaged
 const processPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-process', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-process', 'index.ts')
+const settingsPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pig-settings', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
 const personaPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
@@ -78,7 +82,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], personaScopes: ['project', 'chat'], installed: [] }
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], personaScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -114,6 +118,7 @@ async function readRegistry(): Promise<Registry> {
     browserScopes: 'browserScopes' in value ? parseScopes(value.browserScopes) : defaults.browserScopes,
     terminalScopes: 'terminalScopes' in value ? parseScopes(value.terminalScopes) : defaults.terminalScopes,
     processScopes: 'processScopes' in value ? parseScopes(value.processScopes) : defaults.processScopes,
+    settingsScopes: 'settingsScopes' in value ? parseScopes(value.settingsScopes) : defaults.settingsScopes,
     personaScopes: 'personaScopes' in value ? parseScopes(value.personaScopes) : defaults.personaScopes,
     installed
   }
@@ -192,6 +197,7 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.browserScopes, path: browserPath(), name: 'browser' },
     { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' },
     { scopes: registry.processScopes, path: processPath(), name: 'background process' },
+    { scopes: registry.settingsScopes, path: settingsPath(), name: 'settings' },
     { scopes: registry.personaScopes, path: personaPath(), name: 'persona' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
@@ -211,9 +217,10 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
 
 /** Subagents inherit the parent's plugins, minus memory (not a user conversation), spawn itself (no recursion)
  * persona (user context and global mood are for human conversations), browser/terminal controls and
- * background processes (owned by the parent's session, which a subagent cannot manage). */
+ * background processes (owned by the parent's session, which a subagent cannot manage), and
+ * application settings (only the parent handles the user's global preferences). */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), processPath(), personaPath()].map((path) => resolve(path)))
+  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), processPath(), settingsPath(), personaPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -268,6 +275,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }],
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
+    [resolve(settingsPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
     [resolve(personaPath()), { kind: 'pig', id: 'pi-persona', name: 'Persona' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
@@ -339,6 +347,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.processScopes, available: existsSync(processPath()),
     ...(!existsSync(processPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
+    id: 'pig-settings', name: 'Settings', source: 'Pig built-in',
+    kind: 'system', scopes: registry.settingsScopes, available: existsSync(settingsPath()),
+    ...(!existsSync(settingsPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
     id: 'pi-persona', name: 'Persona', source: 'Pig built-in',
     kind: 'system', scopes: registry.personaScopes, available: existsSync(personaPath()),
     ...(!existsSync(personaPath()) ? { error: 'Bundled extension is missing' } : {})
@@ -406,6 +418,9 @@ export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void
     } else if (id === 'pig-process') {
       if (addsScope(registry.processScopes) && !existsSync(processPath())) throw new Error('Bundled extension is missing')
       registry.processScopes = next
+    } else if (id === 'pig-settings') {
+      if (addsScope(registry.settingsScopes) && !existsSync(settingsPath())) throw new Error('Bundled extension is missing')
+      registry.settingsScopes = next
     } else if (id === 'pi-persona') {
       if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
       registry.personaScopes = next

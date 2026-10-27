@@ -32,6 +32,7 @@ export function GeneralPane() {
   const defaultModel = useSettingsStore((s) => s.defaultModel)
   const defaultThinkingLevel = useSettingsStore((s) => s.defaultThinkingLevel)
   const thinkingLevels = useSettingsStore((s) => s.thinkingLevels)
+  const defaultSettingsError = useSettingsStore((s) => s.defaultSettingsError)
   const models = useModelCatalogStore((s) => s.models)
   const completionNotifications = useSettingsStore((s) => s.completionNotifications)
   const setCompletionNotifications = useSettingsStore((s) => s.setCompletionNotifications)
@@ -112,6 +113,11 @@ export function GeneralPane() {
         <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {t('settings.model')}
         </p>
+        {defaultSettingsError ? (
+          <p role="alert" className="mb-2 text-xs text-destructive">
+            {t('settings.defaultModelReadFailed', { message: defaultSettingsError })}
+          </p>
+        ) : null}
         <SettingsCard>
           <SettingsRow
             title={t('settings.defaultModel')}
