@@ -1,5 +1,5 @@
 /** One menu for a configured model and its thinking level: searchable models above, the level bar pinned below. */
-import { useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Slider as SliderPrimitive } from 'radix-ui'
 import type { SessionModelInfo, ThinkingLevel } from '../../ipc/api'
@@ -10,6 +10,7 @@ import { useModelNavigation } from '../../hooks/useModelNavigation'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
+import { Label } from '../ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Separator } from '../ui/separator'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
@@ -47,6 +48,7 @@ export function ModelThinkingPicker({
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
+  const defaultSwitchId = useId()
   const locked = !!defaultOption?.active && !unlocked
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -100,9 +102,10 @@ export function ModelThinkingPicker({
           {defaultOption ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 px-1 text-xs text-muted-foreground">
-                  {t('model.default')}
+                <div className="flex shrink-0 items-center gap-1.5 px-1 text-xs text-muted-foreground">
+                  <Label htmlFor={defaultSwitchId} className="cursor-pointer text-xs font-normal">{t('model.default')}</Label>
                   <Switch
+                    id={defaultSwitchId}
                     size="sm"
                     aria-label={t('model.default')}
                     checked={locked}
@@ -111,7 +114,7 @@ export function ModelThinkingPicker({
                       if (checked) defaultOption.onSelect()
                     }}
                   />
-                </label>
+                </div>
               </TooltipTrigger>
               <TooltipContent>{defaultOption.description}</TooltipContent>
             </Tooltip>

@@ -100,7 +100,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onSelection(() => {})()
   await api.persona.get()
   await api.persona.saveFile({ name: 'SOUL.md', content: 'persona', revision: null })
-  await api.persona.setEmotion('trust', 0.6)
+  await api.persona.setMood({ pleasantness: 0.6, activation: 0.4, energy: 0.8 })
+  await api.persona.setObserver({ enabled: true, provider: 'test', modelId: 'observer' })
   await api.persona.setAutomatic(false)
   await api.processes.list('session-1')
   await api.processes.stop('session-1', 'proc-1')
@@ -180,7 +181,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:close', args: ['session-1'] },
     { channel: 'persona:get', args: [] },
     { channel: 'persona:save-file', args: [{ name: 'SOUL.md', content: 'persona', revision: null }] },
-    { channel: 'persona:set-emotion', args: ['trust', 0.6] },
+    { channel: 'persona:set-mood', args: [{ pleasantness: 0.6, activation: 0.4, energy: 0.8 }] },
+    { channel: 'persona:set-observer', args: [{ enabled: true, provider: 'test', modelId: 'observer' }] },
     { channel: 'persona:set-automatic', args: [false] },
     { channel: 'processes:list', args: ['session-1'] },
     { channel: 'processes:stop', args: ['session-1', 'proc-1'] },

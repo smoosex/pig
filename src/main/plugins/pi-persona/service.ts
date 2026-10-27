@@ -1,10 +1,17 @@
 /* Settings API for Pig's single global persona; no active Pi session is required. */
 import {
-  PERSONA_FILES, PERSONA_EMOTIONS, type PersonaDocument, type PersonaEmotion,
-  type PersonaSnapshot,
+  PERSONA_FILES, type PersonaDocument, type PersonaMoodValues,
+  type PersonaObserverSettings, type PersonaSnapshot,
 } from '../../../shared/persona'
 import { revision } from './documents'
+import { notifyPersonaControlsChanged } from './controls'
+import { validateMood, validateObserver } from './mood-engine'
 import { personaTransaction, readPersona, snapshot } from './kernel'
+
+function controlsChanged(result: PersonaSnapshot): PersonaSnapshot {
+  notifyPersonaControlsChanged()
+  return result
+}
 
 function checkRevision(actual: string | null, expected: unknown, name: string): void {
   if (expected !== null && (typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected))) {
@@ -25,26 +32,39 @@ export async function savePersonaFile(document: PersonaDocument): Promise<Person
     if (file.name !== document.name) return file
     checkRevision(file.revision, document.revision, file.name)
     return { name: file.name, content: document.content, revision: revision(document.content) }
-  }))
+  })).then(controlsChanged)
 }
 
-export async function setPersonaEmotion(emotion: PersonaEmotion, intensity: number): Promise<PersonaSnapshot> {
-  if (!PERSONA_EMOTIONS.includes(emotion) || typeof intensity !== 'number' || !Number.isFinite(intensity) || intensity < 0 || intensity > 1) {
-    throw new Error('Persona emotion must be valid and intensity must be between 0 and 1')
-  }
+export async function setPersonaMood(values: PersonaMoodValues): Promise<PersonaSnapshot> {
+  validateMood(values)
   return personaTransaction(transaction => {
-    transaction.engine.setEmotion(emotion, intensity, 'manual_set')
+    transaction.engine.persistent.controlsRevision++
+    transaction.engine.setMood({ pleasantness: values.pleasantness, activation: values.activation, energy: values.energy }, 'manual_set')
     transaction.appendHistory()
     return snapshot(transaction)
-  })
+  }).then(controlsChanged)
+}
+
+export async function setPersonaObserver(settings: PersonaObserverSettings): Promise<PersonaSnapshot> {
+  validateObserver(settings)
+  return personaTransaction(transaction => {
+    transaction.engine.persistent.controlsRevision++
+    transaction.engine.persistent.observer = settings.provider === undefined
+      ? { enabled: settings.enabled }
+      : { enabled: settings.enabled, provider: settings.provider, modelId: settings.modelId,
+        ...(settings.thinking !== undefined ? { thinking: settings.thinking } : {}) }
+    transaction.markChanged()
+    return snapshot(transaction)
+  }).then(controlsChanged)
 }
 
 export async function setPersonaAutomatic(enabled: boolean): Promise<PersonaSnapshot> {
   if (typeof enabled !== 'boolean') throw new Error('Persona automatic setting must be a boolean')
   return personaTransaction(transaction => {
+    transaction.engine.persistent.controlsRevision++
     transaction.engine.persistent.emotionUpdatesEnabled = enabled
     transaction.engine.persistent.lastInteraction = Date.now()
     transaction.markChanged()
     return snapshot(transaction)
-  })
+  }).then(controlsChanged)
 }

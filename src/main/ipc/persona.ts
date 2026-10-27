@@ -4,9 +4,9 @@ import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
 import { refreshPluginSessions } from '../pi/session-registry'
 import {
-  getPersona, savePersonaFile, setPersonaAutomatic, setPersonaEmotion
+  getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
 } from '../plugins/pi-persona/service'
-import type { PersonaDocument, PersonaEmotion } from '../../shared/persona'
+import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings } from '../../shared/persona'
 
 function assertUi(event: IpcMainInvokeEvent): void {
   assertBrowserSender(event, windowForEvent(event))
@@ -23,9 +23,13 @@ export function registerPersonaIpc(): void {
     await refreshPluginSessions(true)
     return result
   })
-  ipcMain.handle('persona:set-emotion', (event, emotion: PersonaEmotion, intensity: number) => {
+  ipcMain.handle('persona:set-mood', (event, values: PersonaMoodValues) => {
     assertUi(event)
-    return setPersonaEmotion(emotion, intensity)
+    return setPersonaMood(values)
+  })
+  ipcMain.handle('persona:set-observer', (event, settings: PersonaObserverSettings) => {
+    assertUi(event)
+    return setPersonaObserver(settings)
   })
   ipcMain.handle('persona:set-automatic', (event, enabled: boolean) => {
     assertUi(event)

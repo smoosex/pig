@@ -24,7 +24,8 @@ async function fixture(): Promise<void> {
       if (failSave) throw new Error('revision conflict')
       calls.push(['save', ...args]); return { active: true }
     },
-    setPersonaEmotion: async (...args: unknown[]) => { calls.push(['emotion', ...args]); return { active: true } },
+    setPersonaMood: async (...args: unknown[]) => { calls.push(['mood', ...args]); return { active: true } },
+    setPersonaObserver: async (...args: unknown[]) => { calls.push(['observer', ...args]); return { active: true } },
     setPersonaAutomatic: async (...args: unknown[]) => { calls.push(['automatic', ...args]); return { active: true } }
   }))
   const { registerPersonaIpc } = await import('../src/main/ipc/persona')
@@ -38,9 +39,14 @@ async function fixture(): Promise<void> {
   await invoke('persona:get')
   const document = { name: 'SOUL.md', content: 'A persona', revision: null }
   await invoke('persona:save-file', event, document)
-  await invoke('persona:set-emotion', event, 'joy', 0.5)
+  assert.equal(handlers.has('persona:set-emotion'), false)
+  const values = { pleasantness: -1, activation: 0, energy: 1 }
+  const observer = { enabled: true, provider: 'provider', modelId: 'model' }
+  await invoke('persona:set-mood', event, values)
+  await invoke('persona:set-observer', event, observer)
+  await invoke('persona:set-observer', event, { enabled: false })
   await invoke('persona:set-automatic', event, false)
-  assert.deepEqual(calls, [['get'], ['save', document], ['emotion', 'joy', 0.5], ['automatic', false]])
+  assert.deepEqual(calls, [['get'], ['save', document], ['mood', values], ['observer', observer], ['observer', { enabled: false }], ['automatic', false]])
   assert.equal(reloads, 1, 'only persona file changes require resource reloads')
   failSave = true
   await assert.rejects(invoke('persona:save-file', event, document), /revision conflict/)

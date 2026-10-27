@@ -63,7 +63,8 @@ const api: SessionApi = {
   persona: {
     get: () => ipcRenderer.invoke('persona:get'),
     saveFile: (document) => ipcRenderer.invoke('persona:save-file', document),
-    setEmotion: (emotion, intensity) => ipcRenderer.invoke('persona:set-emotion', emotion, intensity),
+    setMood: (values) => ipcRenderer.invoke('persona:set-mood', values),
+    setObserver: (settings) => ipcRenderer.invoke('persona:set-observer', settings),
     setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled)
   },
   processes: {

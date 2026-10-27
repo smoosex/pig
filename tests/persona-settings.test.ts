@@ -13,13 +13,14 @@ async function fixture() {
   let snapshot: PersonaSnapshot = {
     active: false,
     files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
-    mood: { emotion: 'joy', intensity: 0.5, angle: 0, level: 1, description: '', phrase: '', automatic: false, history: [] }
+    mood: { pleasantness: 0, activation: 0.5, energy: 0.5, feeling: 'Calm and rested', description: 'A steady mood', automatic: false, observer: { enabled: false }, history: [{ pleasantness: 0, activation: 0.5, energy: 0.5, feeling: 'Rested', trigger: 'Task completed', timestamp: 1700000000000 }] }
   }
   let getCount = 0
   let saved: PersonaDocument | undefined
   let settle: ((value: PersonaSnapshot) => void) | undefined
   let rejectSave = false
-  let applied: [string, number] | undefined
+  let applied: Parameters<PersonaApi['setMood']>[0] | undefined
+  let observed: Parameters<PersonaApi['setObserver']>[0] | undefined
   const persona: PersonaApi = {
     get: async () => { getCount++; return snapshot },
     saveFile: async (document) => {
@@ -27,14 +28,22 @@ async function fixture() {
       if (rejectSave) throw new Error('revision conflict')
       return new Promise<PersonaSnapshot>((resolve) => { settle = resolve })
     },
-    setEmotion: async (emotion, intensity) => {
-      applied = [emotion, intensity]
-      return { ...snapshot, mood: { ...snapshot.mood, emotion, intensity } }
+    setMood: async (values) => {
+      applied = values
+      snapshot = { ...snapshot, mood: { ...snapshot.mood, ...values } }
+      return snapshot
+    },
+    setObserver: async (settings) => {
+      observed = settings
+      snapshot = { ...snapshot, mood: { ...snapshot.mood, observer: settings } }
+      return snapshot
     },
     setAutomatic: async (automatic) => ({ ...snapshot, mood: { ...snapshot.mood, automatic } })
   }
   Object.assign(window, { api: { persona } })
   mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate('en', key, params) }))
+  const { useModelCatalogStore } = await import('../src/renderer/src/stores/model-catalog')
+  useModelCatalogStore.setState({ models: [{ id: 'observer-test', name: 'Observer test', provider: 'test', providerName: 'Test provider', contextWindow: 10000, reasoning: true, thinkingLevels: ['off', 'low', 'high'] }] })
   const { PersonaSettings } = await import('../src/renderer/src/components/settings/PersonaSettings')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const host = document.createElement('div')
@@ -66,9 +75,49 @@ async function fixture() {
     await edit('user draft')
     await tab('SOUL.md')
     assert.equal(host.querySelector('textarea')!.value, 'soul draft')
-    await act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Adjust mood"]')!.click() })
-    await click('Trust')
-    assert.deepEqual(applied, ['trust', 0.5], 'percentage controls send normalized emotion strength')
+    assert.match(host.textContent!, /Calm and rested/)
+    assert.match(host.textContent!, /additional model calls/)
+    assert.match(host.textContent!, /not work capability/)
+    const sliders = [...host.querySelectorAll<HTMLElement>('[role="slider"]')]
+    assert.equal(sliders.length, 3)
+    assert.equal(sliders[0].getAttribute('aria-valuemin'), '-1')
+    assert.equal(sliders[1].getAttribute('aria-valuemin'), '0')
+    assert.equal(sliders[2].getAttribute('aria-valuemax'), '1')
+    await act(async () => {
+      sliders[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    assert.deepEqual(applied, { pleasantness: 0.01, activation: 0.5, energy: 0.5 }, 'slider sends all three normalized dimensions')
+    await act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Mood observer"]')!.click() })
+    assert.deepEqual(observed, { enabled: true })
+    await click('Default')
+    const defaultSwitch = document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Default"]')!
+    const modelSearch = () => document.querySelector<HTMLInputElement>('[aria-label="Search models"]')!
+    assert.equal(defaultSwitch.closest('label'), null, 'a label must not wrap the switch and reactivate it after a click')
+    assert.equal(defaultSwitch.getAttribute('aria-checked'), 'true')
+    assert.equal(modelSearch().disabled, true)
+    await act(async () => { defaultSwitch.click() })
+    assert.equal(defaultSwitch.getAttribute('aria-checked'), 'false', 'default turns off instead of bouncing back on')
+    assert.equal(modelSearch().disabled, false, 'turning default off unlocks search')
+    const defaultLabel = document.querySelector<HTMLLabelElement>(`label[for="${defaultSwitch.id}"]`)!
+    await act(async () => { defaultLabel.click() })
+    assert.equal(defaultSwitch.getAttribute('aria-checked'), 'true', 'the adjacent label still operates the switch')
+    await act(async () => { defaultLabel.click() })
+    assert.equal(defaultSwitch.getAttribute('aria-checked'), 'false')
+    await act(async () => {
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find((node) => node.textContent?.startsWith('Observer test'))!.click()
+    })
+    assert.deepEqual(observed, { enabled: true, provider: 'test', modelId: 'observer-test' })
+    const raiseThinking = () => document.querySelector<HTMLButtonElement>('[aria-label="Raise thinking effort"]')!
+    assert.ok(raiseThinking(), 'observer exposes the shared thinking-level controls')
+    await act(async () => { raiseThinking().click() })
+    assert.deepEqual(observed, { enabled: true, provider: 'test', modelId: 'observer-test', thinking: 'off' })
+    await act(async () => { raiseThinking().click() })
+    assert.deepEqual(observed, { enabled: true, provider: 'test', modelId: 'observer-test', thinking: 'low' })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Default"]')!.click() })
+    assert.deepEqual(observed, { enabled: true }, 'inherit clears both configured model fields')
+    await act(async () => { host.querySelector<HTMLButtonElement>('fieldset button')!.click() })
+    await act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Automatic changes"]')!.click() })
+    assert.equal(host.querySelector('[aria-label="Automatic changes"]')!.getAttribute('aria-checked'), 'true')
     assert.equal(host.querySelector('textarea')!.value, 'soul draft', 'mood reply preserves file drafts')
     await click('Save SOUL.md')
     assert.deepEqual(saved, { name: 'SOUL.md', content: 'soul draft', revision: null })

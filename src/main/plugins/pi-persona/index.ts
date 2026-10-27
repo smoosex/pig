@@ -1,29 +1,16 @@
-/* Persona event adapter. Only feedback bookkeeping is session-local; the engine is always rebuilt under the global lock. */
-import type { AgentEndEvent, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import type { MoodEngine } from './mood-engine'
+/* Persona identity and bounded expressive state. Observation is background-only and never continues the main agent. */
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { personaTransaction, readPersona, type PersonaTransaction, type PersonaView } from './kernel'
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
+import type { MoodEngine } from './mood-engine'
+import { personaTransaction, readPersona, setActivity, type PersonaView } from './kernel'
 import { soulPreamble } from './preamble'
 import { personaDir } from './storage'
-import { DEFAULT_EMOTION_CONFIG, type EmotionalEvent } from './types'
-import {
-  createRepeatedErrorState, detectExplicitUserFeedback, detectFromBashResult,
-  detectFromUserMessage, detectImplicitAcceptance, detectLateNight,
-  detectRepeatedErrors, resetErrorStreak,
-} from './triggers'
-
-function apply(transaction: PersonaTransaction, event: EmotionalEvent): void {
-  if (!transaction.engine.persistent.emotionUpdatesEnabled) return
-  transaction.engine.processEvent(event)
-  transaction.appendHistory()
-}
-
-function userText(content: Extract<AgentEndEvent['messages'][number], { role: 'user' }>['content']): string {
-  return typeof content === 'string' ? content : content.filter(part => part.type === 'text').map(part => part.text).join('\n')
-}
+import { completedMoodRounds } from './conversation'
+import { MoodObserver } from './observer'
+import { onPersonaControlsChanged } from './controls'
 
 function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
-  // Inspect resolved context: navigation, compaction and edits can remove a snapshot.
   const previous = ctx.sessionManager.buildSessionProjection().messages.findLast(
     message => message.role === 'custom' && message.customType === 'persona-mood',
   )
@@ -33,94 +20,148 @@ function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
 }
 
 export default function personaExtension(pi: ExtensionAPI): void {
-  const repeatedErrors = createRepeatedErrorState()
-  let pendingImplicitAcceptance = false
-  let currentAgentHadNegativeEvent = false
-  const reset = (): void => {
-    resetErrorStreak(repeatedErrors)
-    pendingImplicitAcceptance = false
-    currentAgentHadNegativeEvent = false
+  const activityId = `pid/${process.pid}/${randomUUID()}`
+  let working = false
+  let activityTimer: ReturnType<typeof setInterval> | undefined
+  let activityOperations = Promise.resolve()
+  const updateActivity = (active: boolean) => {
+    const task = activityOperations.then(() => setActivity(activityId, active))
+    activityOperations = task.catch(() => {})
+    return task
+  }
+  let live = false
+  let epoch = 0
+  let observer: MoodObserver | undefined
+  let observerKey = ''
+  let observerRevision = 0
+  let baseline = new Set<string>()
+  let submitted = new Set<string>()
+  let context: ExtensionContext | undefined
+  let unsubscribeControls: (() => void) | undefined
+
+  const rounds = (ctx: ExtensionContext) => completedMoodRounds(ctx.sessionManager.buildSessionProjection().entries, ctx.sessionManager)
+  const cancelObserver = (discardPending = false) => {
+    if (discardPending) for (const id of submitted) baseline.add(id)
+    submitted = new Set()
+    epoch++
+    observer?.dispose()
+    observer = undefined
+    observerKey = ''
+  }
+  const stopWorking = async () => {
+    if (activityTimer) clearInterval(activityTimer)
+    activityTimer = undefined
+    if (!working) return
+    // Cleared first so a failed release still lets the next agent_start register and renew the lease.
+    working = false
+    await updateActivity(false)
+  }
+  const observe = async (ctx: ExtensionContext) => {
+    const options = await readPersona(({ active, engine }) => ({
+      active, automatic: engine.persistent.emotionUpdatesEnabled, ...engine.persistent.observer,
+      controlsRevision: engine.persistent.controlsRevision, persona: engine.soul.systemPrompt,
+    }))
+    if (!live || !options.active || !options.automatic || !options.enabled || !ctx.model) {
+      cancelObserver()
+      // Disabled periods are not replayed after re-enabling observation.
+      baseline = new Set(rounds(ctx).map(round => round.id))
+      return
+    }
+    const key = JSON.stringify([options.provider ?? ctx.model.provider, options.modelId ?? ctx.model.id,
+      options.thinking, options.controlsRevision])
+    // Only an explicit control change invalidates queued evidence; model or thinking switches just rebuild the worker.
+    if (key !== observerKey) cancelObserver(observer !== undefined && observerRevision !== options.controlsRevision)
+    if (!observer) {
+      observerKey = key
+      observerRevision = options.controlsRevision
+      const generation = epoch
+      observer = new MoodObserver(async (result, roundIds) => {
+        if (!live || generation !== epoch || !context) return
+        const currentIds = new Set(rounds(context).map(round => round.id))
+        // A navigation that removed any pending evidence invalidates this observer generation.
+        if (roundIds.some(id => !currentIds.has(id))) { cancelObserver(); return }
+        await personaTransaction(transaction => {
+          const { engine, active } = transaction
+          const settings = engine.persistent.observer
+          if (!live || generation !== epoch || !active || !engine.persistent.emotionUpdatesEnabled || !settings.enabled) return
+          if (settings.provider !== options.provider || settings.modelId !== options.modelId || settings.thinking !== options.thinking) return
+          if (engine.persistent.controlsRevision !== options.controlsRevision) return
+          if (engine.applyObservation(result, 'conversation_observation')) transaction.appendHistory()
+        })
+      }, () => {
+        if (live && generation === epoch) console.warn('[Persona] Background mood observation failed; main task is unaffected.')
+      },
+      ids => { for (const id of ids) baseline.add(id) })
+    }
+    const fresh = rounds(ctx).filter(round => !baseline.has(round.id))
+    for (const round of fresh) submitted.add(round.id)
+    // Do not pass ctx.signal: it belongs to the already completed foreground turn.
+    const requestEpoch = epoch
+    void observer.observe({ rounds: fresh, model: ctx.model, modelRegistry: {
+      streamSimple: (model, request, settings) => ctx.modelRegistry.streamSimple(model, request, settings),
+      find: ctx.modelRegistry.find.bind(ctx.modelRegistry),
+      getApiKeyAndHeaders: ctx.modelRegistry.getApiKeyAndHeaders.bind(ctx.modelRegistry),
+    },
+      provider: options.provider, modelId: options.modelId, thinking: options.thinking, persona: options.persona,
+    }).catch(() => {
+      if (live && requestEpoch === epoch) console.warn('[Persona] Background mood observation failed; main task is unaffected.')
+    })
   }
 
-  pi.on('session_start', async () => { reset() })
-  pi.on('session_shutdown', async () => { reset() })
-  pi.on('agent_start', async () => { currentAgentHadNegativeEvent = false })
-
+  pi.on('session_start', async (_event, ctx) => {
+    cancelObserver()
+    live = true
+    unsubscribeControls?.()
+    unsubscribeControls = onPersonaControlsChanged(() => cancelObserver(true))
+    context = ctx
+    baseline = new Set(rounds(ctx).map(round => round.id))
+  })
+  pi.on('session_shutdown', async () => {
+    live = false
+    unsubscribeControls?.()
+    unsubscribeControls = undefined
+    cancelObserver()
+    context = undefined
+    await stopWorking()
+  })
+  pi.on('session_tree', async (_event, ctx) => {
+    cancelObserver()
+    context = ctx
+    baseline = new Set(rounds(ctx).map(round => round.id))
+  })
+  pi.on('agent_start', async (_event, ctx) => {
+    context = ctx
+    const active = await readPersona(view => view.active)
+    if (!active || working) return
+    await updateActivity(true)
+    working = true
+    activityTimer = setInterval(() => {
+      if (live && working) void updateActivity(true).catch(() => {
+        console.warn('[Persona] Could not renew activity state.')
+      })
+    }, 30 * 60_000)
+    activityTimer.unref?.()
+  })
   pi.on('before_agent_start', async (event, ctx) => {
-    const inject = ({ active, engine }: PersonaView) => {
-      if (!active) { reset(); return }
-      // `preamble` (allowed by Pig's SDK patch) is the only section rendered without an XML tag; it
-      // replaces Pi's identity while tools, rules and docs stay, and makes Pig's default identity
-      // step aside. Not a returned systemPrompt: a forced prompt is never recorded, so exports would
-      // miss it, and it defeats section patches.
-      // A custom prompt (SYSTEM.md) owns the preamble, as it does for Pig's default identity.
-      if (!event.systemPromptOptions.customPrompt) event.systemPromptOptions.sections.preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), new Date())
-      return { message: moodMessage(engine, ctx) }
-    }
-    if (event.messageType !== 'user' || !pendingImplicitAcceptance) return readPersona(inject)
-    pendingImplicitAcceptance = false
-    return personaTransaction(transaction => {
-      const { active, engine } = transaction
-      if (active && !detectExplicitUserFeedback(event.prompt, DEFAULT_EMOTION_CONFIG, engine.soul.traits.agreeableness)) {
-        apply(transaction, detectImplicitAcceptance(DEFAULT_EMOTION_CONFIG, engine.soul.traits.agreeableness))
+    context = ctx
+    return readPersona(({ active, engine }: PersonaView) => {
+      if (!active) { cancelObserver(); return }
+      if (!engine.persistent.emotionUpdatesEnabled || !engine.persistent.observer.enabled) cancelObserver(true)
+      if (!event.systemPromptOptions.customPrompt) {
+        event.systemPromptOptions.sections.preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), new Date())
       }
-      return inject(transaction)
+      return { message: moodMessage(engine, ctx) }
     })
   })
-
   pi.on('session_compact', async (event, ctx) => {
-    // Recovery/queued continuations skip before_agent_start. Only join an already
-    // scheduled continuation; an ordinary compaction must not start a new turn.
     if (!event.willRetry && !ctx.hasPendingMessages()) return
     const message = await readPersona(view => view.active ? moodMessage(view.engine, ctx) : undefined)
     if (message) pi.sendMessage(message, { deliverAs: 'steer' })
   })
-
-  pi.on('tool_result', async event => {
-    if (event.toolName !== 'bash') return
-    const { active, automatic } = await readPersona(view => ({ active: view.active, automatic: view.engine.persistent.emotionUpdatesEnabled }))
-    if (!active) return
-    const input = event.input as { command?: string }
-    const result = event.structuredContent as { exit_code?: number } | undefined
-    const command = input?.command ?? ''
-    const exitCode = result?.exit_code
-    const failed = !!event.isError || (exitCode !== undefined && exitCode !== 0)
-    const emotionalEvent = detectRepeatedErrors(command, failed, DEFAULT_EMOTION_CONFIG, repeatedErrors) ??
-      detectFromBashResult(exitCode, !!event.isError, command, DEFAULT_EMOTION_CONFIG)
-    if (!emotionalEvent) return
-    if (emotionalEvent.valence === 'negative') currentAgentHadNegativeEvent = true
-    // The lock is only taken to write; apply re-checks the setting against the locked state.
-    if (automatic) await personaTransaction(transaction => { if (transaction.active) apply(transaction, emotionalEvent) })
-  })
-
-  pi.on('agent_end', async event => {
-    if (!await readPersona(view => view.active)) { reset(); return }
-    await personaTransaction(transaction => {
-      if (!transaction.active) { reset(); return }
-      const { engine } = transaction
-      let sawUserMessage = false
-      let lastUserEvent: EmotionalEvent | null = null
-      for (const message of event.messages) {
-        if (message.role !== 'user') continue
-        sawUserMessage = true
-        const detected = detectFromUserMessage(userText(message.content), DEFAULT_EMOTION_CONFIG, engine.soul.traits.agreeableness)
-        if (detected) lastUserEvent = detected
-      }
-      if (lastUserEvent) {
-        apply(transaction, lastUserEvent)
-        pendingImplicitAcceptance = false
-      } else if (sawUserMessage && !currentAgentHadNegativeEvent) {
-        pendingImplicitAcceptance = true
-      }
-      if (sawUserMessage) {
-        const lateEvent = detectLateNight(DEFAULT_EMOTION_CONFIG, engine.soul.traits.extraversion)
-        const now = Date.now()
-        if (lateEvent && engine.persistent.emotionUpdatesEnabled && now - (engine.persistent.lastLateNightTrigger ?? 0) >= 30 * 60 * 1000) {
-          apply(transaction, lateEvent)
-          engine.persistent.lastLateNightTrigger = now
-        }
-      }
-      resetErrorStreak(repeatedErrors)
-    })
+  pi.on('agent_end', async () => { await stopWorking() })
+  pi.on('agent_settled', async (_event, ctx) => {
+    context = ctx
+    await stopWorking()
+    await observe(ctx)
   })
 }

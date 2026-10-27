@@ -32,7 +32,7 @@ async function fixture(): Promise<void> {
   const persona: PersonaSnapshot = {
     active: false,
     files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
-    mood: { emotion: 'joy', intensity: 0.15, angle: 0, level: 1, description: '', phrase: '', automatic: true, history: [] }
+    mood: { pleasantness: 0.15, activation: 0.35, energy: 0.75, feeling: '', description: '', automatic: true, observer: { enabled: true }, history: [] }
   }
   Object.assign(window, { api: {
     persona: { get: async () => persona },

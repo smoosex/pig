@@ -1,19 +1,19 @@
 /* Drafts own their original revisions independently of mood snapshots and other file saves. */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, History, Info } from 'lucide-react'
-import { PERSONA_EMOTIONS, PERSONA_FILES, type PersonaDocument, type PersonaEmotion, type PersonaFileName, type PersonaSnapshot } from '../../../../shared/persona'
+import { History, Info } from 'lucide-react'
+import { PERSONA_FILES, type PersonaDocument, type PersonaMoodValues, type PersonaFileName, type PersonaSnapshot } from '../../../../shared/persona'
 import { useT } from '../../hooks/useT'
 import { api } from '../../ipc/api'
+import { useModelCatalogStore } from '../../stores/model-catalog'
+import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert'
 import { Button } from '../ui/button'
 import { Field, FieldGroup, FieldLabel } from '../ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { Separator } from '../ui/separator'
 import { Slider } from '../ui/slider'
 import { Switch } from '../ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Textarea } from '../ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
@@ -32,7 +32,8 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
   const [snapshot, setSnapshot] = useState<PersonaSnapshot | null>(null)
   const [drafts, setDrafts] = useState<Drafts>({})
   const [file, setFile] = useState<PersonaFileName>('SOUL.md')
-  const [intensity, setIntensity] = useState(50)
+  const models = useModelCatalogStore((state) => state.models)
+  const [values, setValues] = useState<PersonaMoodValues>({ pleasantness: 0, activation: 0.5, energy: 0.5 })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const mounted = useRef(false)
@@ -54,7 +55,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
       }
       return result
     })
-    setIntensity(Math.round(next.mood.intensity * 100))
+    setValues({ pleasantness: next.mood.pleasantness, activation: next.mood.activation, energy: next.mood.energy })
   }
 
   async function run(operation: () => Promise<PersonaSnapshot>, replace: 'all' | PersonaFileName | null = null) {
@@ -66,7 +67,10 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
       const next = await operation()
       if (mounted.current) accept(next, replace)
     } catch (failure) {
-      if (mounted.current) setError(failure instanceof Error ? failure.message : String(failure))
+      if (mounted.current) {
+        setError(failure instanceof Error ? failure.message : String(failure))
+        if (snapshot) setValues({ pleasantness: snapshot.mood.pleasantness, activation: snapshot.mood.activation, energy: snapshot.mood.energy })
+      }
     } finally {
       locked.current = false
       if (mounted.current) setBusy(false)
@@ -89,7 +93,8 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
     return () => { current = false; mounted.current = false }
   }, [])
 
-  const applyMood = (emotion: PersonaEmotion, percent: number) => void run(() => api.persona.setEmotion(emotion, percent / 100))
+  const observer = snapshot?.mood.observer
+  const observerModel = models.find((item) => item.provider === observer?.provider && item.id === observer?.modelId) ?? null
   const save = () => {
     const draft = drafts[file]
     if (!draft || draft.content === draft.saved) return
@@ -103,50 +108,28 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
       {!snapshot && busy && <p role="status">{t('persona.loading')}</p>}
       {snapshot && <>
         <SettingsCard>
-          <SettingsRow title={t('persona.mood')} description={`${t(`persona.emotions.${snapshot.mood.emotion}`)} · ${Math.round(snapshot.mood.intensity * 100)}%`}>
-            <div className="flex items-center gap-2">
+          <SettingsRow title={t('persona.mood')} description={snapshot.mood.feeling}>
             <Popover>
               <Tooltip><TooltipTrigger asChild><PopoverTrigger asChild>
                 <Button size="icon-sm" variant="ghost" aria-label={t('persona.moodDetails')}><Info /></Button>
               </PopoverTrigger></TooltipTrigger><TooltipContent>{t('persona.moodDetails')}</TooltipContent></Tooltip>
-              <PopoverContent align="end" className="gap-3">
-                <div className="flex items-baseline gap-3">
-                  <span className="shrink-0 text-xs text-muted-foreground">{t('persona.moodDescription')}</span>
-                  <p>{snapshot.mood.description}</p>
-                </div>
-                <div className="flex items-baseline gap-3">
-                  <span className="shrink-0 text-xs text-muted-foreground">{t('persona.moodPhrase')}</span>
-                  <p>{snapshot.mood.phrase}</p>
-                </div>
-              </PopoverContent>
+              <PopoverContent align="end"><p>{snapshot.mood.description}</p></PopoverContent>
             </Popover>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button size="sm" variant="outline" disabled={busy} aria-label={t('persona.setMood')}>
-                  {t(`persona.emotions.${snapshot.mood.emotion}`)}<ChevronDown data-icon="inline-end" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" collisionPadding={8} className="max-h-[min(20rem,var(--radix-popover-content-available-height))] w-48 gap-0 p-1">
-                <div className="min-h-0 flex-1 overflow-y-auto p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <ToggleGroup type="single" orientation="vertical" className="w-full flex-col items-stretch" value={snapshot.mood.emotion} disabled={busy}
-                  onValueChange={(value) => { if (value) applyMood(value as PersonaEmotion, intensity) }}>
-                  {PERSONA_EMOTIONS.map((value) => <ToggleGroupItem key={value} value={value} size="sm" className="justify-start">{t(`persona.emotions.${value}`)}</ToggleGroupItem>)}
-                </ToggleGroup>
-                </div>
-                <Separator className="my-1 shrink-0" />
-                <div className="flex shrink-0 flex-col gap-2.5 px-2 pt-1 pb-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{t('persona.intensity')}</span>
-                    <span className="tabular-nums">{intensity}%</span>
-                  </div>
-                  <Slider aria-label={t('persona.intensity')} min={0} max={100} step={1} value={[intensity]} disabled={busy}
-                    onValueChange={([value]) => setIntensity(value)}
-                    onValueCommit={([value]) => applyMood(snapshot.mood.emotion, value)} />
-                </div>
-              </PopoverContent>
-            </Popover>
-            </div>
           </SettingsRow>
+          <p className="px-4 py-2 text-xs text-muted-foreground">{t('persona.styleHint')}</p>
+          <FieldGroup className="px-4 py-3">
+            {(['pleasantness', 'activation', 'energy'] as const).map((dimension) => (
+              <Field key={dimension} data-disabled={busy}>
+                <FieldLabel htmlFor={`persona-${dimension}`}>{t(`persona.${dimension}`)} · {values[dimension].toFixed(2)}</FieldLabel>
+                <Slider id={`persona-${dimension}`} aria-label={t(`persona.${dimension}`)}
+                  min={dimension === 'pleasantness' ? -1 : 0} max={1} step={0.01}
+                  value={[values[dimension]]} disabled={busy}
+                  onValueChange={([value]) => setValues((previous) => ({ ...previous, [dimension]: value }))}
+                  onValueCommit={([value]) => void run(() => api.persona.setMood({ ...values, [dimension]: value }))} />
+                <p className="text-xs text-muted-foreground">{t(`persona.${dimension}Hint`)}</p>
+              </Field>
+            ))}
+          </FieldGroup>
           <SettingsRow title={t('persona.automatic')} description={t('persona.automaticHint')}>
             <div className="flex items-center gap-2">
               <Popover>
@@ -157,13 +140,39 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
                   <span className="text-xs text-muted-foreground">{t('persona.history')}</span>
                   {snapshot.mood.history.length === 0 ? <p className="text-xs text-muted-foreground">{t('persona.noHistory')}</p> : <ul className="flex max-h-60 flex-col gap-2 overflow-y-auto text-xs">
                     {snapshot.mood.history.slice(-20).reverse().map((item, index) => <li key={`${item.timestamp}-${index}`}>
-                      <time dateTime={new Date(item.timestamp).toISOString()}>{new Date(item.timestamp).toLocaleString()}</time>{' · '}{t(`persona.emotions.${item.emotion}`)} {Math.round(item.intensity * 100)}%{item.trigger && ` · ${item.trigger}`}
+                      <time dateTime={new Date(item.timestamp).toISOString()}>{new Date(item.timestamp).toLocaleString()}</time>{' · '}{item.feeling}{item.trigger && ` · ${item.trigger}`}
                     </li>)}
                   </ul>}
                 </PopoverContent>
               </Popover>
               <Switch aria-label={t('persona.automatic')} checked={snapshot.mood.automatic} disabled={busy} onCheckedChange={(enabled) => void run(() => api.persona.setAutomatic(enabled))} />
             </div>
+          </SettingsRow>
+          <SettingsRow title={t('persona.observer')} description={t('persona.observerHint')}>
+            <Switch aria-label={t('persona.observer')} checked={snapshot.mood.observer.enabled} disabled={busy}
+              onCheckedChange={(enabled) => void run(() => api.persona.setObserver({ ...snapshot.mood.observer, enabled }))} />
+          </SettingsRow>
+          <SettingsRow title={t('persona.observerModel')} description={t('persona.observerDefault')}>
+            <fieldset disabled={busy} className="min-w-0">
+              <ModelThinkingPicker model={observerModel} models={models}
+                label={observer?.provider ? `${observer.provider}/${observer.modelId}` : undefined}
+                thinking={observer?.thinking ?? null}
+                onThinkingChange={(thinking) => {
+                  if (observer?.provider) void run(() => api.persona.setObserver({ ...observer, thinking }))
+                }}
+                defaultOption={{
+                  active: !observer?.provider,
+                  description: t('persona.observerDefault'),
+                  onSelect: () => void run(() => api.persona.setObserver({ enabled: snapshot.mood.observer.enabled }))
+                }}
+                onModelChange={(model) => {
+                  const thinking = supportedThinking(model, observer?.thinking ?? null)
+                  void run(() => api.persona.setObserver({
+                    enabled: snapshot.mood.observer.enabled, provider: model.provider, modelId: model.id,
+                    ...(thinking ? { thinking } : {})
+                  }))
+                }} />
+            </fieldset>
           </SettingsRow>
         </SettingsCard>
         <Tabs value={file} onValueChange={(value) => setFile(value as PersonaFileName)}>
