@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type {
+  ForkPosition,
   BashExecutionResult,
   DiffScope,
   DisplayTurn,
@@ -245,7 +246,7 @@ export interface SessionsStore {
   /** Drops the selection work in flight: the worktrees it was started for are gone. */
   invalidateSelection: () => void
   newSession: (cwd: string) => Promise<string | null>
-  forkSession: (sessionId: string, userEntryId: string) => Promise<void>
+  forkSession: (sessionId: string, entryId: string, position: ForkPosition) => Promise<void>
   newChat: () => Promise<string>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string) => Promise<void>

@@ -454,6 +454,14 @@ export interface DisplayTurn {
   endedAt: number
   /** Whether the turn has work beyond its summaries: the process disclosure has something behind it. */
   hasProcess: boolean
+  /** The turn's last visible entry: forking at it keeps the whole turn. */
+  lastEntryId: string
+  /** Summed over every model call of the turn; absent when no call reported usage. */
+  usage?: TurnUsage
+}
+
+export interface TurnUsage extends SessionTokenStats {
+  calls: number
 }
 
 /**
@@ -525,8 +533,12 @@ export interface RestoredSessionPrompt {
 
 /** A Pi fork is a separate session whose composer restores the selected user message. */
 export interface ForkedSessionRef extends OpenSessionRef {
-  restoredPrompt: RestoredSessionPrompt
+  /** Present for a fork before a user message, which hands that message back as input. */
+  restoredPrompt?: RestoredSessionPrompt
 }
+
+/** `before` drops the entry and restores its prompt; `at` keeps everything through the entry. */
+export type ForkPosition = 'before' | 'at'
 
 /** Switching a branch answers with the new window and any input restored from the selected node. */
 export interface SessionBranchRef extends DisplayTurnsResult {
@@ -955,7 +967,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   ) => Promise<Partial<Record<SessionTreeView, SessionTreeRow[]>>>
   setSessionLabel: (sessionId: string, targetId: string, label: string, path?: string) => Promise<void>
   viewBranch: (sessionId: string, tipId: string, options?: SessionBranchOptions) => Promise<SessionBranchRef>
-  forkSession: (sessionId: string, userEntryId: string) => Promise<ForkedSessionRef | null>
+  forkSession: (sessionId: string, entryId: string, position: ForkPosition) => Promise<ForkedSessionRef | null>
   getControls: (sessionId: string) => Promise<SessionControls>
   getTokenStats: (sessionId: string) => Promise<SessionTokenStats>
   getCommands: (sessionId: string) => Promise<SlashCommand[]>

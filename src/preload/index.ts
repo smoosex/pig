@@ -198,8 +198,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:set-label', sessionId, targetId, label, path),
   viewBranch: (sessionId: string, tipId: string, options?: Parameters<SessionApi['viewBranch']>[2]) =>
     ipcRenderer.invoke('session:view-branch', sessionId, tipId, options),
-  forkSession: (sessionId: string, userEntryId: string) =>
-    ipcRenderer.invoke('session:fork', sessionId, userEntryId),
+  forkSession: (sessionId, entryId, position) =>
+    ipcRenderer.invoke('session:fork', sessionId, entryId, position),
   getSessionCapabilities: (sessionId) => ipcRenderer.invoke('session:capabilities', sessionId),
   setSessionCapability: (sessionId, group, id, enabled) => ipcRenderer.invoke('session:set-capability', sessionId, group, id, enabled),
   getControls: (sessionId: string) =>

@@ -58,7 +58,7 @@ async function fixture(scenario: string): Promise<void> {
       hydrationCalls++
       if (scenario.startsWith('bash')) store.runtime.one.turns = [{
         id: 'bash-row', bash: { command: 'echo done', cancelled: false }, answer: [], branchSummaries: [], compactions: [], workBlocks: [false],
-        hasProcess: true, startedAt: 1, endedAt: 2
+        hasProcess: true, lastEntryId: 'last', startedAt: 1, endedAt: 2
       }]
       return true
     },

@@ -1,4 +1,5 @@
-import type { DisplayCompaction, DisplayTurn, GenerationStats } from '../../../shared/api'
+import type { DisplayCompaction, DisplayTurn, GenerationStats, TurnUsage } from '../../../shared/api'
+import { addUsage } from '../../../shared/turn-usage'
 import type { Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -88,6 +89,9 @@ export interface Turn {
   hasProcess?: boolean
   workedMs?: number
   generation?: GenerationStats
+  usage?: TurnUsage
+  /** The persisted turn's last entry; a live turn has none until it is saved. */
+  lastEntryId?: string
   /** Stable UI identity shared by the live and persisted versions of a turn. */
   renderKey?: string
 }
@@ -302,6 +306,7 @@ export function buildTurn(
   let answer: AnswerBlock[] = []
   let errorMessage: string | undefined
   let generation: GenerationStats | undefined
+  let usage: TurnUsage | undefined
   // Summarizing is not work: the clock runs from the prompt to the next landmark, and the blocks
   // either side of a compaction keep the totals they had reached. Pi writes compactions as session
   // entries rather than messages, so this only applies to a stream that carries one anyway.
@@ -349,6 +354,7 @@ export function buildTurn(
   rest.forEach((message, i) => {
     appendCompactionsThrough(messageOffset + (user ? 1 : 0) + i)
     if (message.role === 'assistant') {
+      usage = addUsage(usage, message.usage)
       if (message.generation) {
         generation = {
           outputTokens: (generation?.outputTokens ?? 0) + message.generation.outputTokens,
@@ -453,6 +459,7 @@ export function buildTurn(
     waitingForModel: streaming && !errorMessage && waitingForModel && !pendingToolCalls?.size,
     hasProcess: process.length > 0 || streaming,
     ...(generation ? { generation } : {}),
+    ...(usage ? { usage } : {}),
     ...(renderKey ? { renderKey } : {})
   }
 }

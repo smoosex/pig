@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { Activity, ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type CompactionItem, type ProcessItem, type Turn } from '../chat/turns'
 import { MIN_GENERATION_DURATION_MS, MAX_REALISTIC_TPS } from '../../../shared/api'
 import type { Translate } from '../../../shared/i18n'
@@ -10,6 +10,7 @@ import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Marker, MarkerContent } from './ui/marker'
 import { Answer, UserBubble } from './turn/TurnMessages'
+import { AssistantMessageActions } from './turn/AssistantMessageActions'
 import { BashTurn } from './turn/BashTurn'
 import { CompactionNotice } from './turn/CompactionNotice'
 import { BranchSummaryNotice } from './turn/BranchSummaryNotice'
@@ -79,16 +80,17 @@ function tpsTooltip(t: Translate, turn: Turn): string {
     : description
 }
 
-function WorkedLabel({ turn, landmarks, block, sessionId }: {
+function WorkedLabel({ turn, landmarks, block, sessionId, speed = true }: {
   sessionId?: string
   turn: Turn
   landmarks: CompactionItem[]
   block: number
+  speed?: boolean
 }) {
   const t = useT()
   // The clock lives in the label so a ticking timer re-renders this row and not the work below it.
   const workedMs = useWorkBlockMs(turn, landmarks, sessionId)
-  const tps = block === landmarks.length ? turnTps(turn) : null
+  const tps = speed && block === landmarks.length ? turnTps(turn) : null
   const generation = turn.generation
   return (
     <span className="flex items-center gap-1">
@@ -109,11 +111,14 @@ function WorkedLabel({ turn, landmarks, block, sessionId }: {
 function AgentTurnView({
   turn,
   sessionId,
-  onNeedProcess
+  onNeedProcess,
+  actions = true
 }: {
   sessionId?: string
   turn: Turn
   onNeedProcess?: (turnId: string) => Promise<void>
+  /** Off for the leftovers after a standalone command, which have no reply of their own. */
+  actions?: boolean
 }) {
   const trailing: SummarySegment[] = []
   const trailingCompactions: CompactionItem[] = []
@@ -229,66 +234,80 @@ function AgentTurnView({
     </Marker>
   ) : null
 
+  const showActions = actions && !turn.streaming &&
+    (turn.answer.length > 0 || Boolean(turn.errorMessage) || Boolean(turn.usage))
+
   return (
     <div className="mb-4">
       {turn.user ? <UserBubble message={turn.user} sessionId={sessionId} turnId={turn.id} /> : null}
-      {showBody ? (
-        <div className="mb-3">
-          {blocks.map((block, index) =>
-            block.kind === 'branchSummary' ? (
-              <BranchSummaryNotice key={`branch-${index}`} text={block.item.text} />
-            ) : block.kind === 'compaction' ? (
-              <CompactionNotice key={`compaction-${index}`} item={block.item} />
-            ) : (
-              // One Collapsible per work block, each with its own header: they open independently,
-              // and each gets its own content id (a single root reuses one id for every content).
-              <Collapsible
-                key={`work-${block.block}`}
-                open={openAt(block.block)}
-                onOpenChange={(next) => void toggleProcess(block.block, next)}
-              >
-                <Marker variant="separator" asChild>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={loading}
-                      className={cn(
-                        'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent solid:hover:bg-transparent solid:hover:text-muted-foreground solid:aria-expanded:bg-transparent solid:aria-expanded:text-muted-foreground solid:hover:aria-expanded:bg-transparent solid:dark:hover:bg-transparent solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-transparent',
-                        turn.streaming && 'pointer-events-none'
-                      )}
-                    >
-                      <MarkerContent className="flex shrink-0 items-center gap-1">
-                        <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={block.block} />
-                        <ChevronRight
-                          className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
-                        />
-                      </MarkerContent>
-                    </Button>
-                  </CollapsibleTrigger>
-                </Marker>
-                <CollapsibleContent className="duration-300">
-                  {liveOutline ? (
-                    <ProcessOutline
-                      items={block.items}
-                      streaming={index === activeWorkIndex}
-                      waitingForModel={index === activeWorkIndex && turn.waitingForModel}
-                    />
-                  ) : (
-                    <ProcessList items={block.items} />
-                  )}
-                </CollapsibleContent>
-              </Collapsible>
-            )
-          )}
-          {trailingTps}
-          {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
-        </div>
-      ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
-      {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
-      {trailing.map((segment, index) => segment.kind === 'compaction'
-        ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
-        : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+      <div className="group/agent-reply">
+        {showBody ? (
+          <div className="mb-3">
+            {blocks.map((block, index) =>
+              block.kind === 'branchSummary' ? (
+                <BranchSummaryNotice key={`branch-${index}`} text={block.item.text} />
+              ) : block.kind === 'compaction' ? (
+                <CompactionNotice key={`compaction-${index}`} item={block.item} />
+              ) : (
+                // One Collapsible per work block, each with its own header: they open independently,
+                // and each gets its own content id (a single root reuses one id for every content).
+                <Collapsible
+                  key={`work-${block.block}`}
+                  open={openAt(block.block)}
+                  onOpenChange={(next) => void toggleProcess(block.block, next)}
+                >
+                  <Marker variant="separator" asChild>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={loading}
+                        className={cn(
+                          'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent solid:hover:bg-transparent solid:hover:text-muted-foreground solid:aria-expanded:bg-transparent solid:aria-expanded:text-muted-foreground solid:hover:aria-expanded:bg-transparent solid:dark:hover:bg-transparent solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-transparent',
+                          turn.streaming && 'pointer-events-none'
+                        )}
+                      >
+                        <MarkerContent className="flex shrink-0 items-center gap-1">
+                          <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={block.block} />
+                          <ChevronRight
+                            className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
+                          />
+                        </MarkerContent>
+                      </Button>
+                    </CollapsibleTrigger>
+                  </Marker>
+                  <CollapsibleContent className="duration-300">
+                    {liveOutline ? (
+                      <ProcessOutline
+                        items={block.items}
+                        streaming={index === activeWorkIndex}
+                        waitingForModel={index === activeWorkIndex && turn.waitingForModel}
+                      />
+                    ) : (
+                      <ProcessList items={block.items} />
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              )
+            )}
+            {trailingTps}
+            {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
+          </div>
+        ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
+        {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
+        {trailing.map((segment, index) => segment.kind === 'compaction'
+          ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
+          : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+        {showActions ? (
+          <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Activity className="size-3.5 shrink-0" />
+              <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} speed={false} />
+            </span>
+            <AssistantMessageActions turn={turn} sessionId={sessionId} tps={turnTps(turn)} />
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -318,7 +337,7 @@ export const TurnView = memo(function TurnView({
   return (
     <>
       <BashTurn turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
-      {rest ? <AgentTurnView sessionId={sessionId} turn={rest} onNeedProcess={onNeedProcess} /> : null}
+      {rest ? <AgentTurnView sessionId={sessionId} turn={rest} onNeedProcess={onNeedProcess} actions={false} /> : null}
     </>
   )
 })

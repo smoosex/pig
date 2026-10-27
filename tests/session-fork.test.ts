@@ -90,7 +90,24 @@ test('the first pasted-text prompt forks before its metadata root', () => {
   const selected = source.appendMessage(user(composePromptText('问题', [attachment])))
   const forked = forkSessionManager(source, selected, cwd, targetDir)
   assert.deepEqual(forked.sessionManager.getEntries(), [])
-  assert.equal(forked.restoredPrompt.textAttachments?.[0].text, attachment.text)
+  assert.equal(forked.restoredPrompt?.textAttachments?.[0].text, attachment.text)
+})
+
+test('forking at a reply keeps the whole turn and restores no input', () => {
+  const { cwd, source, targetDir } = fixture()
+  const question = source.appendMessage(user('问题'))
+  const reply = source.appendMessage({
+    role: 'assistant' as const, timestamp: 2, content: [{ type: 'text' as const, text: '回答' }],
+    api: 'test', provider: 'test', model: 'test', stopReason: 'stop' as const,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+  })
+  source.appendMessage(user('之后的问题'))
+
+  const forked = forkSessionManager(source, reply, cwd, targetDir, 'at')
+
+  assert.deepEqual(forked.sessionManager.getEntries().map((entry) => entry.id), [question, reply])
+  assert.equal(forked.sessionManager.getLeafId(), reply)
+  assert.equal(forked.restoredPrompt, undefined)
 })
 
 test('fork fails when pasted-text metadata does not match the user entry', () => {

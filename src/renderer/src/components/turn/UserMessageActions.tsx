@@ -54,7 +54,7 @@ export function UserMessageActions({
     setPending(true)
     try {
       const store = useSessionsStore.getState()
-      if (action === 'fork') await store.forkSession(sessionId, turnId)
+      if (action === 'fork') await store.forkSession(sessionId, turnId, 'before')
       else if (action === 'retry') await store.retryUserMessage(sessionId, turnId)
       else await store.viewBranch(sessionId, turnId, { restoreUserInput: true })
     } catch (error) {

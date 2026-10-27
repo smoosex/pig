@@ -4,8 +4,10 @@ import type {
   DisplayCompaction,
   DisplayImage,
   DisplayTurn,
-  DisplayUser
+  DisplayUser,
+  TurnUsage
 } from '../../shared/api'
+import { addUsage, type UsageCounts } from '../../shared/turn-usage'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '../../shared/session-images'
 import {
@@ -217,7 +219,7 @@ function displayImage(
   return mimeType ? { mimeType, url: sessionImageUrl(sessionId, entryId, index) } : null
 }
 
-function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTurn, 'id'> {
+function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTurn, 'id' | 'lastEntryId'> {
   const userEntry = chunk[0]
   const userMsg = userEntry.message.role === 'user' ? userEntry.message : undefined
   const rest = userMsg ? chunk.slice(1) : chunk
@@ -250,6 +252,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
   const compactions: DisplayCompaction[] = []
   const branchSummaries: DisplayTurn['branchSummaries'] = []
   let errorMessage: string | undefined
+  let usage: TurnUsage | undefined
   // The work clock runs from the prompt to the next landmark and stops while a summary is written.
   // Entry write times, not message stamps: every row the projection reads has one.
   const workStart = userEntry.persistedAt || timeOf(userMsg?.timestamp) || rest[0]?.persistedAt || 0
@@ -262,6 +265,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     const precededAt = previousAt
     if (entry.persistedAt) previousAt = entry.persistedAt
     if (message.role === 'assistant') {
+      usage = addUsage(usage, message.usage as UsageCounts | undefined)
       const isLast = i === lastAssistant
       const trailingIsAnswer =
         isLast && rest.slice(i + 1).every((item) => item.message.role !== 'toolResult')
@@ -362,13 +366,15 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     errorMessage,
     startedAt,
     endedAt,
-    hasProcess
+    hasProcess,
+    ...(usage ? { usage } : {})
   }
 }
 
 export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry[]): DisplayTurn[] {
   return Array.from(groupPath(pathMessages(entries)), (chunk) => ({
     id: chunk[0].id,
+    lastEntryId: chunk[chunk.length - 1].id,
     ...summarizeChunk(chunk, sessionId)
   }))
 }

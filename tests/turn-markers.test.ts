@@ -484,7 +484,7 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { await Bun.sleep(30) })
       await render({ ...turn, streaming: false })
       assert.equal(separator().getAttribute('aria-expanded'), 'false')
-      assert.ok(separator().textContent?.startsWith('工作耗时'))
+      assert.ok(separator().textContent?.startsWith('耗时'))
       assert.equal(content.getAttribute('data-state'), 'closed')
       assert.ok(content.classList.contains('duration-300'))
       assert.equal(liveRow?.isConnected, true)
@@ -561,7 +561,7 @@ async function runFixture(name: string): Promise<void> {
         assert.equal(separator().getAttribute('aria-expanded'), 'false')
         now += 5_000
         await act(async () => { await Bun.sleep(0) })
-        assert.equal(separator().textContent, '工作耗时 4 秒')
+        assert.equal(separator().textContent, '耗时 4 秒')
       } finally {
         Date.now = originalNow
         window.setInterval = originalInterval
@@ -597,7 +597,7 @@ async function runFixture(name: string): Promise<void> {
         streaming: false,
         hasProcess: false
       }))
-      assert.equal(container.textContent?.includes('工作耗时'), false)
+      assert.equal(container.textContent?.includes('耗时'), false)
       assert.ok(container.textContent?.includes('上下文已压缩'))
       // A completed compaction does not settle the run: an otherwise empty turn still waits for model output.
       await render(makeTurn({
@@ -678,7 +678,7 @@ async function runFixture(name: string): Promise<void> {
         root.render(createElement(TooltipProvider, null, createElement(TurnView, { turn: toTurn(display, process), onNeedProcess: load })))
       }
       const workHeaders = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
-        .filter((button) => button.textContent?.includes('工作耗时'))
+        .filter((button) => button.textContent?.includes('耗时'))
       const summaryHeaders = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
         .filter((button) => button.textContent?.includes('分支摘要'))
       await render(canonical)
@@ -750,7 +750,7 @@ async function runFixture(name: string): Promise<void> {
           for (const turn of [toTurn(display, []), toTurn(display, canonical.process), canonical]) {
             await render(turn)
             const markers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
-              .filter((button) => !button.textContent?.includes('工作耗时'))
+              .filter((button) => !button.textContent?.includes('耗时'))
             assert.deepEqual(markers.map((button) => button.textContent?.startsWith('分支摘要') ? '分支摘要' : '上下文已压缩'), expected)
             const text = container.textContent!
             if (resumed) assert.ok(text.indexOf('后续回答') > text.lastIndexOf(expected.at(-1)!))
@@ -758,7 +758,7 @@ async function runFixture(name: string): Promise<void> {
             assert.ok(markers.every((button) => button.closest('[data-slot="collapsible-content"]') === null))
             if (resumed && turn.process.length > 0) {
               const work = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"]')]
-                .find((button) => button.textContent?.includes('工作耗时'))!
+                .find((button) => button.textContent?.includes('耗时'))!
               assert.ok(work)
               if (work.getAttribute('aria-expanded') === 'false') await act(async () => { work.click(); await Bun.sleep(0) })
               const body = document.getElementById(work.getAttribute('aria-controls')!)!
@@ -804,9 +804,9 @@ async function runFixture(name: string): Promise<void> {
         ))
       }
       const headers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
-        .filter((button) => button.textContent?.includes('工作耗时'))
+        .filter((button) => button.textContent?.includes('耗时'))
       const assertUnloaded = () => {
-        assert.deepEqual(headers().map((button) => button.textContent), retryText ? ['工作耗时 1 秒'] : ['工作耗时 1 秒', '工作耗时 3 秒'])
+        assert.deepEqual(headers().map((button) => button.textContent), retryText ? ['耗时 1 秒'] : ['耗时 1 秒', '耗时 3 秒'])
         assert.ok(headers().every((button) => button.getAttribute('aria-expanded') === 'false'))
         assert.ok(container.textContent?.includes('上下文已压缩'))
         assert.ok(container.textContent?.includes('最后回答'))
@@ -841,17 +841,17 @@ async function runFixture(name: string): Promise<void> {
       const compaction = (workMsBefore: number) => ({ kind: 'compaction' as const, text: '压缩', tokensBefore: 42, afterAnswer: false, workMsBefore, durationMs: 1_000 })
       const markers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
       await render(makeTurn({ streaming: false, hasProcess: true, workBlocks: [true, false], compactions: [compaction(1_000)] }))
-      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('工作耗时')), [true, false])
+      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('耗时')), [true, false])
       const landmarks = [compaction(0), compaction(1_000)]
       const turn = makeTurn({ streaming: false, hasProcess: true, workBlocks: [false, false, true], compactions: landmarks, endedAt: 9_000 })
       await render(turn)
-      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('工作耗时')), [false, false, true])
-      assert.equal(markers()[2].textContent, '工作耗时 6 秒')
+      assert.deepEqual(markers().map((button) => button.textContent?.startsWith('耗时')), [false, false, true])
+      assert.equal(markers()[2].textContent, '耗时 6 秒')
       await render({ ...turn, process: [...landmarks, { kind: 'tools', tools: [readTool('after', true)] }] })
-      assert.equal(markers()[2].textContent, '工作耗时 6 秒')
+      assert.equal(markers()[2].textContent, '耗时 6 秒')
       await render(makeTurn({ streaming: false, hasProcess: false, workBlocks: [false], compactions: [{ ...compaction(0), afterAnswer: true }] }))
       assert.equal(markers().length, 1)
-      assert.equal(container.textContent?.includes('工作耗时'), false)
+      assert.equal(container.textContent?.includes('耗时'), false)
     } else if (name === 'compaction-ids') {
       await render(makeTurn({
         streaming: true,
@@ -885,7 +885,7 @@ async function runFixture(name: string): Promise<void> {
       // While the summary is being written the work before it keeps the total it froze at, and the
       // compaction itself is the one thing still counting.
       const headers = () => [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
-        .filter((button) => button.textContent?.includes('工作'))
+        .filter((button) => /^(已工作|耗时)/.test(button.textContent ?? ''))
       assert.equal(headers().length, 1, 'the work before the summary has a header of its own')
       assert.ok(headers()[0].textContent?.startsWith('已工作 2 秒'), headers()[0].textContent ?? '')
       assert.deepEqual(shimmerText(), ['上下文接近上限，正在压缩'])
@@ -917,8 +917,8 @@ async function runFixture(name: string): Promise<void> {
       // the second carries on from it with the summary's own time left out.
       assert.deepEqual(shimmerText(), [])
       const [first, second] = headers()
-      assert.ok(first.textContent?.startsWith('工作耗时 2 秒'), first.textContent ?? '')
-      assert.ok(second.textContent?.startsWith('工作耗时 4 秒'), second.textContent ?? '')
+      assert.ok(first.textContent?.startsWith('耗时 2 秒'), first.textContent ?? '')
+      assert.ok(second.textContent?.startsWith('耗时 4 秒'), second.textContent ?? '')
       assert.equal(first.getAttribute('aria-expanded'), 'false')
       assert.equal(second.getAttribute('aria-expanded'), 'false')
       await act(async () => { second.click(); await Bun.sleep(0) })
@@ -976,7 +976,9 @@ async function runFixture(name: string): Promise<void> {
         generation: generation(20, 500)
       }))
       const standalone = container.querySelector<HTMLElement>('[data-slot="marker"][data-variant="separator"]')!
-      assert.match(standalone.textContent ?? '', /工作耗时 2 秒.*40.0 tok\/s/)
+      assert.match(standalone.textContent ?? '', /耗时 2 秒.*40.0 tok\/s/)
+      assert.equal(container.querySelector('[data-slot="assistant-message-footer"]')?.textContent?.includes('tok/s'), false,
+        'the reply footer shows only the duration')
       assert.equal(standalone.tagName, 'DIV')
       assert.equal(container.querySelector('button[data-slot="marker"]'), null)
 
@@ -1125,6 +1127,71 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { releaseFork() })
       assert.equal(retry.disabled, false)
       assert.equal(edit.disabled, false)
+    } else if (name === 'reply-actions') {
+      const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+      const forks: unknown[] = []
+      const retries: unknown[] = []
+      useSessionsStore.setState({
+        forkSession: async (...args) => { forks.push(args) },
+        retryUserMessage: async (...args) => { retries.push(args) }
+      })
+      let copied = ''
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: async (text: string) => { copied = text } },
+        configurable: true
+      })
+      const reply = makeTurn({
+        id: 'user-entry',
+        lastEntryId: 'reply-entry',
+        user: { role: 'user', content: '问题', timestamp: 1_000 },
+        answer: [{ type: 'text', text: '**第一段**' }, { type: 'text', text: '第二段' }],
+        usage: { input: 100, output: 20, cacheRead: 300, cacheWrite: 0, total: 420, calls: 2 },
+        streaming: false
+      })
+      await render(reply, undefined, 'session-one')
+      const toolbar = () => container.querySelector('[data-slot="assistant-message-actions"]')!
+      const button = (label: string) => toolbar().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+      assert.deepEqual([...toolbar().querySelectorAll('button')].map((item) => item.getAttribute('aria-label')),
+        ['复制', '重新生成', '用量', '更多操作'])
+      assert.ok(toolbar().className.includes('group-hover/agent-reply:opacity-100'))
+      const footer = container.querySelector('[data-slot="assistant-message-footer"]')!
+      assert.match(footer.textContent ?? '', /耗时/, 'the duration stays visible beside the hover actions')
+      assert.equal(toolbar().querySelector('time')?.getAttribute('datetime'), new Date(4_000).toISOString())
+
+      await act(async () => { button('复制').click() })
+      assert.equal(copied, '**第一段**\n\n第二段', 'copy takes only the answer, as Markdown')
+      await act(async () => { button('重新生成').click(); await Bun.sleep(0) })
+      assert.deepEqual(retries, [['session-one', 'user-entry']])
+
+      await act(async () => {
+        button('用量').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+        button('用量').click()
+        await Bun.sleep(0)
+      })
+      const usage = document.querySelector('[data-slot="popover-content"]')!.textContent ?? ''
+      for (const part of ['输入 Token100', '缓存读取300', '缓存命中率75%', '总 Token420', '模型调用2 次']) {
+        assert.ok(usage.includes(part), part)
+      }
+      await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+
+      await act(async () => {
+        button('更多操作').focus()
+        button('更多操作').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        await Bun.sleep(0)
+      })
+      const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      assert.deepEqual(items.map((item) => item.textContent), ['复制为 Markdown', '复制为纯文本', '创建分支'])
+      await act(async () => { items[2].click(); await Bun.sleep(0) })
+      assert.deepEqual(forks, [['session-one', 'reply-entry', 'at']], 'a reply forks at its last entry, keeping the turn')
+
+      await render({ ...reply, id: 'live:pending', lastEntryId: undefined, user: undefined, usage: undefined }, undefined, 'session-one')
+      assert.equal(button('重新生成').getAttribute('aria-disabled'), 'true', 'a prompt-less or unsaved turn cannot regenerate')
+      assert.equal(button('用量').disabled, true)
+      await act(async () => { button('重新生成').click(); await Bun.sleep(0) })
+      assert.equal(retries.length, 1)
+
+      await render({ ...reply, streaming: true }, undefined, 'session-one')
+      assert.equal(container.querySelector('[data-slot="assistant-message-actions"]'), null, 'no toolbar while the reply is streaming')
     } else if (name === 'disclosure') {
       let requested: string | undefined
       let release!: () => void
@@ -1203,6 +1270,7 @@ if (process.argv[2] === '--marker-fixture') {
     tps: 'completed model calls show weighted output speed and hide noisy short samples',
     'user-timestamp': 'user timestamps show a localized full date, weekday and seconds in an upper tooltip',
     'user-actions': 'user toolbar has four actions and its more menu contains both copy formats and native fork',
+    'reply-actions': 'reply toolbar copies the answer, regenerates the prompt, shows summed usage and forks at the reply',
     disclosure: 'separator stays one focusable button with lazy loading and no hover highlight'
   }
   for (const [name, title] of Object.entries(fixtures)) {

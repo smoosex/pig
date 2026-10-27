@@ -205,9 +205,10 @@ export function registerSessionIpc(): void {
     return { ...await getDisplayTurns(sessionId), ...branch }
   })
 
-  ipcMain.handle('session:fork', async (event, sessionId: string, userEntryId: string) => {
-    if (!sessionId || !userEntryId) throw new Error('Session id and user entry id are required')
-    const forked = await forkSessionFromMessage(sessionId, userEntryId, windowForEvent(event))
+  ipcMain.handle('session:fork', async (event, sessionId: string, entryId: string, position: unknown) => {
+    if (!sessionId || !entryId) throw new Error('Session id and entry id are required')
+    if (position !== 'before' && position !== 'at') throw new Error('Invalid fork position')
+    const forked = await forkSessionFromMessage(sessionId, entryId, position, windowForEvent(event))
     if (forked && !isChatCwd(forked.cwd)) {
       await rememberOpenProjectSession(forked.cwd, forked.sessionId)
     }

@@ -58,7 +58,7 @@ async function fixture(): Promise<void> {
   registerSessionIpc()
   const handler = handlers.get('session:fork')!
   const api = {
-    forkSession: async (id: string, entry: string) => handler({}, id, entry),
+    forkSession: async (id: string, entry: string, position: string) => handler({}, id, entry, position),
     getControls: async () => controls,
     isChatCwd: async () => false,
     listProject: async () => null,
@@ -74,7 +74,7 @@ async function fixture(): Promise<void> {
     openTabs: ['source', 'other'].map((id) => ({ id, title: id, cwd: '/project', kind: 'project', loadState: 'ready' }))
   })
 
-  const creating = store.getState().forkSession('source', 'user')
+  const creating = store.getState().forkSession('source', 'user', 'before')
   await enteredPersistence.promise
   assert.equal(store.getState().runtime.forked, undefined, 'the IPC cannot return success before persistence')
   await store.getState().activateTab('other')
@@ -88,7 +88,7 @@ async function fixture(): Promise<void> {
   persistence = deferred<void>()
   enteredPersistence = deferred<void>()
   await store.getState().activateTab('source')
-  const failing = store.getState().forkSession('source', 'user')
+  const failing = store.getState().forkSession('source', 'user', 'before')
   await enteredPersistence.promise
   await store.getState().activateTab('other')
   const error = Object.assign(new Error('Cannot write open project sessions'), { code: 'EACCES' })

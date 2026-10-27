@@ -38,6 +38,38 @@ test('the turn message index accepts every entry id in a turn', () => {
   expect(indexed.get('answer')?.map((message) => (message as { content: string }).content)).toEqual(['first', 'answer'])
 })
 
+test('a turn sums usage over its model calls and ends at its last visible entry', () => {
+  const entry = (id: string, message: Record<string, unknown>) => ({
+    type: 'message', id, parentId: null, timestamp: '2026-01-01T00:00:00.000Z', message: { timestamp: 1, ...message }
+  })
+  const usage = (input: number, output: number, cacheRead: number, cacheWrite: number) =>
+    ({ input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite })
+  const entries = [
+    entry('ask', { role: 'user', content: '问题' }),
+    entry('call', { role: 'assistant', content: [{ type: 'toolCall', id: 'c', name: 'read', arguments: {} }], usage: usage(10, 5, 90, 0) }),
+    entry('result', { role: 'toolResult', toolCallId: 'c', content: [{ type: 'text', text: 'ok' }] }),
+    entry('reply', { role: 'assistant', content: [{ type: 'text', text: '回答' }], usage: usage(20, 7, 100, 30) }),
+    { type: 'label', id: 'label', parentId: 'reply', timestamp: '2026-01-01T00:00:00.000Z', targetId: 'reply', label: 'x' },
+    entry('next', { role: 'user', content: '下一个' })
+  ] as unknown as SessionEntry[]
+  const [first, second] = displayTurnsFromEntries('s', entries)
+  expect(first.lastEntryId).toBe('reply')
+  expect(first.usage).toEqual({ input: 30, output: 12, cacheRead: 190, cacheWrite: 30, total: 262, calls: 2 })
+  expect(second.lastEntryId).toBe('next')
+  expect(second.usage).toBeUndefined()
+})
+
+test('a damaged usage record fails the projection instead of counting as zero', () => {
+  const entries = [
+    { type: 'message', id: 'ask', parentId: null, timestamp: '2026-01-01T00:00:00.000Z', message: { role: 'user', content: '问题', timestamp: 1 } },
+    {
+      type: 'message', id: 'reply', parentId: 'ask', timestamp: '2026-01-01T00:00:00.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: '回答' }], timestamp: 1, usage: { input: 1, output: '2', cacheRead: 0, cacheWrite: 0 } }
+    }
+  ] as unknown as SessionEntry[]
+  expect(() => displayTurnsFromEntries('s', entries)).toThrow('Invalid assistant usage: output is 2')
+})
+
 test('loading one turn ships no image bytes for the process panel', () => {
   const entries = [
     {

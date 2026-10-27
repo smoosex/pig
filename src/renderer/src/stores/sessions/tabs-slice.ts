@@ -948,15 +948,15 @@ export const createTabsSlice: SessionSlice<
       return selection === selectionVersion
     },
 
-    forkSession: async (sessionId, userEntryId) => {
+    forkSession: async (sessionId, entryId, position) => {
       const sourceTab = get().openTabs.find((tab) => tab.id === sessionId)
       if (!sourceTab || (sourceTab.kind !== 'project' && sourceTab.kind !== 'chat')) {
         throw new Error(`Open session tab not found: ${sessionId}`)
       }
       const selection = ++selectionVersion
-      const ref = await api.forkSession(sessionId, userEntryId)
+      const ref = await api.forkSession(sessionId, entryId, position)
       if (!ref) return
-      restorePromptDraft(ref.sessionId, ref.restoredPrompt)
+      if (ref.restoredPrompt) restorePromptDraft(ref.sessionId, ref.restoredPrompt)
       const added = addReadyTab({
         id: ref.sessionId,
         cwd: ref.cwd,

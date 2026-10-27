@@ -13,6 +13,7 @@ import type {
   DisplayTurnsResult,
   FollowUpAction,
   ForkedSessionRef,
+  ForkPosition,
   PromptStreamingBehavior,
   SessionControls,
   SessionBranchOptions,
@@ -872,7 +873,8 @@ export async function viewSessionBranch(sessionId: string, tipId: string, option
 
 export async function forkSessionFromMessage(
   sessionId: string,
-  userEntryId: string,
+  entryId: string,
+  position: ForkPosition,
   win: BrowserWindow
 ): Promise<ForkedSessionRef | null> {
   const source = await prepareSession(sessionId)
@@ -881,8 +883,8 @@ export async function forkSessionFromMessage(
   if (agentSession.extensionRunner.hasHandlers('session_before_fork')) {
     const result = await agentSession.extensionRunner.emit({
       type: 'session_before_fork',
-      entryId: userEntryId,
-      position: 'before'
+      entryId,
+      position
     })
     if (result?.cancel === true) return null
   }
@@ -894,16 +896,17 @@ export async function forkSessionFromMessage(
     : agentSession.sessionManager.getSessionDir()
   const forked = forkSessionManager(
     agentSession.sessionManager,
-    userEntryId,
+    entryId,
     targetCwd,
-    targetSessionDir
+    targetSessionDir,
+    position
   )
   const held = holdPendingSession(forked.sessionManager, targetCwd, win, false)
   copySessionCapabilities(sessionId, held.sessionId)
   return {
     ...previewFor(managerSource(forked.sessionManager), targetCwd),
     sessionId: held.sessionId,
-    restoredPrompt: forked.restoredPrompt
+    ...(forked.restoredPrompt ? { restoredPrompt: forked.restoredPrompt } : {})
   }
 }
 
