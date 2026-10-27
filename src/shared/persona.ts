@@ -44,4 +44,6 @@ export interface PersonaApi {
   setMood(values: PersonaMoodValues): Promise<PersonaSnapshot>
   setObserver(settings: PersonaObserverSettings): Promise<PersonaSnapshot>
   setAutomatic(enabled: boolean): Promise<PersonaSnapshot>
+  /** Any persona file, mood or control write, from the settings page or a conversation. */
+  onChanged(listener: () => void): () => void
 }

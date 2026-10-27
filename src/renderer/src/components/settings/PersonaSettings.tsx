@@ -93,6 +93,20 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
     return () => { current = false; mounted.current = false }
   }, [])
 
+  // Our own writes already accept their reply; this covers changes from conversations. Unsaved file
+  // drafts are kept, and only the newest reread may apply.
+  useEffect(() => {
+    let latest = 0
+    return api.persona.onChanged(() => {
+      const request = ++latest
+      void api.persona.get().then((next) => {
+        if (request === latest && mounted.current && !locked.current) accept(next)
+      }, (failure) => {
+        if (request === latest && mounted.current) setError(failure instanceof Error ? failure.message : String(failure))
+      })
+    })
+  }, [])
+
   const observer = snapshot?.mood.observer
   const observerModel = models.find((item) => item.provider === observer?.provider && item.id === observer?.modelId) ?? null
   const save = () => {

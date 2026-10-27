@@ -40,6 +40,33 @@ async function fixture(name: string) {
       return defaults
     }
   }))
+  let scopes: Record<string, string[]> = { 'pi-review': ['project'], 'pig-settings': ['project', 'chat'] }
+  let servers: Record<string, boolean> = { docs: false, files: true }
+  const guarded = <T extends Record<string, unknown>>(current: () => T, apply: (patch: T) => void) =>
+    async (patch: T, check?: (value: T) => void) => {
+      check?.(structuredClone(current()))
+      apply(patch)
+      return structuredClone(current())
+    }
+  mock.module(fileURLToPath(new URL('../src/main/pi/plugins.ts', import.meta.url)), () => ({
+    pluginScopes: async () => structuredClone(scopes),
+    updatePluginScopes: guarded(() => scopes, (patch) => {
+      for (const id of Object.keys(patch)) if (!scopes[id]) throw new Error('Plugin not found')
+      scopes = { ...scopes, ...patch }
+    }),
+    listPlugins: async () => Object.entries(scopes).map(([id, value]) => ({ id, name: id, source: 'Pig built-in', kind: 'system', scopes: value, available: true }))
+  }))
+  mock.module(fileURLToPath(new URL('../src/main/mcp/settings.ts', import.meta.url)), () => ({
+    mcpEnabled: async () => structuredClone(servers),
+    updateMcpEnabled: guarded(() => servers, (patch) => {
+      for (const name of Object.keys(patch)) if (!(name in servers)) throw new Error(`MCP server not found: ${name}`)
+      servers = { ...servers, ...patch }
+    }),
+    configuredServers: async () => [
+      { name: 'docs', config: { url: 'https://user:secret@example.test/mcp?token=hidden', enabled: servers.docs, description: 'Docs search' } },
+      { name: 'files', config: { command: 'npx', args: ['server', '--key', 'hidden'], env: { API_KEY: 'hidden' }, enabled: servers.files } }
+    ]
+  }))
   const settingsFile = join(process.env.PIG_DIR, 'settings.json')
   const disk = async () => JSON.parse(await readFile(settingsFile, 'utf8')) as Record<string, unknown>
   const exists = async () => readFile(settingsFile).then(() => true, () => false)
@@ -90,6 +117,7 @@ async function fixture(name: string) {
     const { supportsGlass } = await import('../src/main/surface-support')
     const log: unknown[] = []
     let applyFails = false
+    let reloadFails = false
     let prepareFails = false
     const service = new SettingsService({
       prepareSolid: async () => {
@@ -104,7 +132,12 @@ async function fixture(name: string) {
       applyShortcuts: (shortcuts) => log.push(['shortcuts', shortcuts]),
       applyLocale: (locale) => log.push(['locale', locale]),
       publish: (event) => log.push(['publish', event]),
-      isDark: () => true
+      isDark: () => true,
+      pluginsChanged: async () => {
+        log.push('plugins-changed')
+        if (reloadFails) throw new Error('reload failed')
+      },
+      mcpChanged: async () => { log.push('mcp-changed') }
     })
 
     if (name === 'validation') {
@@ -231,6 +264,65 @@ async function fixture(name: string) {
       return
     }
 
+    if (name === 'external') {
+      const plugins = await service.get('plugins')
+      assert.deepEqual(plugins.values, { scopes })
+      const enabled = await service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pi-review': ['project', 'chat'] } } })
+      assert.equal(enabled.ok, true)
+      assert.equal(enabled.application, 'sessions-reload')
+      assert.deepEqual(scopes['pi-review'], ['project', 'chat'])
+      assert.deepEqual(log.splice(0).filter((entry) => typeof entry === 'string'), ['plugins-changed'])
+      assert.equal((await service.get('plugins')).revision, enabled.after.revision)
+      await assert.rejects(service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pi-review': [] } } }), /revision conflict/)
+      for (const patch of [{ scopes: { 'pig-settings': [] } }, { scopes: { 'pi-review': ['web'] } }, { scopes: { 'pi-review': ['chat', 'chat'] } }, { scopes: { missing: [] } }]) {
+        await assert.rejects(service.update({ group: 'plugins', expectedRevision: enabled.after.revision, patch } as never), JSON.stringify(patch))
+      }
+      assert.deepEqual(scopes['pig-settings'], ['project', 'chat'], 'a conversation cannot unload its own settings tools')
+      await service.updateUi('plugins', { scopes: { 'pig-settings': ['project'] } })
+      assert.deepEqual(scopes['pig-settings'], ['project'], 'the settings page still can')
+      const same = await service.update({ group: 'plugins', expectedRevision: (await service.get('plugins')).revision, patch: { scopes: { 'pi-review': ['project', 'chat'] } } })
+      assert.equal(same.changed, false)
+      log.length = 0
+      reloadFails = true
+      const failed = await service.update({ group: 'plugins', expectedRevision: same.after.revision, patch: { scopes: { 'pi-review': [] } } })
+      assert.equal(failed.ok, false)
+      assert.match(failed.error!, /saved but sessions could not reload: reload failed/)
+      assert.deepEqual(scopes['pi-review'], [], 'a reload failure does not pretend to roll back')
+      assert.deepEqual(log.filter((entry) => typeof entry === 'string'), ['plugins-changed'])
+      const catalog = await service.list({ group: 'plugins' })
+      assert.ok(catalog.plugins?.find((plugin) => plugin.id === 'pig-settings')?.locked)
+
+      const mcp = await service.get('mcp')
+      const toggled = await service.update({ group: 'mcp', expectedRevision: mcp.revision, patch: { enabled: { docs: true, files: false } } })
+      assert.deepEqual(toggled.after.values, { enabled: { docs: true, files: false } })
+      assert.ok(log.includes('mcp-changed'))
+      await assert.rejects(service.update({ group: 'mcp', expectedRevision: toggled.after.revision, patch: { enabled: { ghost: true } } }), /not found/)
+      await assert.rejects(service.update({ group: 'mcp', expectedRevision: mcp.revision, patch: { enabled: { docs: false } } }), /revision conflict/)
+      const listed = JSON.stringify(await service.list({ group: 'mcp' }))
+      assert.doesNotMatch(listed, /secret|hidden|npx|example\.test/, 'commands, URLs and environment never leave main')
+      assert.deepEqual((await service.list({ group: 'mcp' })).mcpServers, [
+        { name: 'docs', transport: 'http', enabled: true, description: 'Docs search' },
+        { name: 'files', transport: 'stdio', enabled: false }
+      ])
+
+      const persona = await service.get('persona')
+      const { setActivity } = await import('../src/main/plugins/pi-persona/kernel')
+      await setActivity('other-session', true, Date.now() + 60_000)
+      await setActivity('other-session', false, Date.now() + 120_000)
+      assert.equal((await service.get('persona')).revision, persona.revision, 'activity leases persist decay without conflicting')
+      await assert.rejects(service.update({ group: 'persona', expectedRevision: persona.revision, patch: { mood: { energy: 2 } } }), /Invalid energy/)
+      await assert.rejects(service.update({ group: 'persona', expectedRevision: persona.revision, patch: { mood: { joy: 1 } } } as never), /Unknown settings field/)
+      const moody = await service.update({ group: 'persona', expectedRevision: persona.revision, patch: { mood: { energy: 0.2 }, automatic: false } })
+      assert.equal(moody.application, 'next-prompt')
+      const values = moody.after.values as { automatic: boolean; mood: { energy: number; activation: number } }
+      assert.equal(values.automatic, false)
+      assert.equal(values.mood.energy, 0.2)
+      assert.equal(values.mood.activation, (persona.values as typeof values).mood.activation, 'unspecified dimensions keep their value')
+      assert.equal((await service.get('persona')).revision, moody.after.revision, 'the returned revision matches what was saved')
+      await assert.rejects(service.update({ group: 'persona', expectedRevision: persona.revision, patch: { automatic: true } }), /revision conflict/)
+      return
+    }
+
     if (name === 'pi-corrupt') {
       await mkdir(process.env.PIG_DIR, { recursive: true })
       await writeFile(settingsFile, '{"version":1,"appearance":"dark","completionNotifications":false}')
@@ -280,6 +372,7 @@ if (process.argv[2] === '--settings-service-fixture') {
     updates: 'agent and UI writes share revisions, shortcut patches and model defaults',
     'surface-order': 'solid and glass hand off around the native material, and apply failures are reported',
     corrupt: 'unreadable settings fail instead of being overwritten',
+    external: 'plugin scopes, MCP enablement and persona mood use their own stores with checked revisions',
     'pi-corrupt': "a broken Pi settings file is reported beside the default model without hiding Pig's preferences",
     surface: 'the paint barrier waits for loaded UIs only and restores the old surface on cancel'
   })) {

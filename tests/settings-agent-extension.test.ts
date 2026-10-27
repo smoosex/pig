@@ -147,6 +147,9 @@ async function fixture() {
       { group: 'shortcuts', expectedRevision: before.revision, patch: { sendShortcut: 'shift-enter', bindings: { 'tab.close': null, 'tab.new': 'default', 'file.save': 'Mod+Shift+KeyS' } } },
       { group: 'defaults', expectedRevision: before.revision, patch: { model: { provider: 'test', id: 'real-model' } } },
       ...(['low', 'medium', 'high', 'xhigh', 'max'] as const).map(thinkingLevel => ({ group: 'defaults' as const, expectedRevision: before.revision, patch: { thinkingLevel } })),
+      { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pi-review': ['project', 'chat'], 'npm-plugin': [] } } },
+      { group: 'mcp', expectedRevision: before.revision, patch: { enabled: { docs: true, files: false } } },
+      { group: 'persona', expectedRevision: before.revision, patch: { automatic: false, mood: { pleasantness: -1, energy: 0.4 } } },
       ...SETTINGS_GROUPS.map(group => ({ group, expectedRevision: before.revision, patch: {} }))
     ]
     for (const params of valid) {
@@ -166,7 +169,12 @@ async function fixture() {
         ['shortcuts', { bindings: { 'unknown.action': null } }], ['shortcuts', { sendShortcut: 'ctrl-enter' }],
         ['defaults', { thinkingLevel: 'off' }], ['defaults', { thinkingLevel: 'minimal' }], ['defaults', { thinkingLevel: 'invalid' }],
         ['defaults', { model: { provider: 'test' } }], ['defaults', { model: { provider: 'test', id: 'model', apiKey: 'secret' } }],
-        ['defaults', { model: null }], ['defaults', { defaultModel: 'model' }]
+        ['defaults', { model: null }], ['defaults', { defaultModel: 'model' }],
+        ['plugins', { scopes: { 'pi-review': ['web'] } }], ['plugins', { scopes: { 'pi-review': ['chat', 'chat'] } }],
+        ['plugins', { scopes: { 'pi-review': 'project' } }], ['plugins', { install: 'npm:evil' }],
+        ['mcp', { enabled: { docs: 'yes' } }], ['mcp', { servers: { docs: true } }], ['mcp', { enabled: { docs: { command: 'sh' } } }],
+        ['persona', { mood: { energy: 2 } }], ['persona', { mood: { pleasantness: -1.5 } }], ['persona', { mood: { joy: 1 } }],
+        ['persona', { automatic: 'yes' }], ['persona', { files: { 'SOUL.md': '' } }]
       ].map(([group, patch]) => ({ group, patch, expectedRevision: before.revision }))
     ]
     for (const params of invalidUpdates) {

@@ -503,6 +503,9 @@ async function fixture(name: string): Promise<void> {
       updateDefaultSettings: noop, availableModels: () => [], pickerThinkingLevels: (levels: unknown[]) => levels,
       startModelRuntime: async () => {}
     }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
+      refreshPluginSessions: async () => {}, refreshToolSessions: async () => {}
+    }))
     try {
       process.env.PIG_DIR = join(root, 'settings')
       const { registerSettingsIpc } = await import('../src/main/ipc/settings')

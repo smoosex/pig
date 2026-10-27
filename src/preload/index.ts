@@ -65,7 +65,12 @@ const api: SessionApi = {
     saveFile: (document) => ipcRenderer.invoke('persona:save-file', document),
     setMood: (values) => ipcRenderer.invoke('persona:set-mood', values),
     setObserver: (settings) => ipcRenderer.invoke('persona:set-observer', settings),
-    setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled)
+    setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled),
+    onChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('persona:changed', handler)
+      return () => ipcRenderer.off('persona:changed', handler)
+    }
   },
   processes: {
     list: (sessionId) => ipcRenderer.invoke('processes:list', sessionId),

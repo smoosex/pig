@@ -20,6 +20,9 @@ import {
   availableModels, pickerThinkingLevels, readDefaultSettings, startModelRuntime, updateDefaultSettings,
   type DefaultSettingsSnapshot
 } from '../pi/model-settings'
+import { listPlugins, pluginScopes, updatePluginScopes } from '../pi/plugins'
+import { configuredServers, mcpEnabled, updateMcpEnabled } from '../mcp/settings'
+import { getPersonaControls, updatePersonaControls, type PersonaControls } from '../plugins/pi-persona/service'
 
 export interface SurfaceHandoff { finish(style: SurfaceStyle): void }
 export interface SettingsServiceDeps {
@@ -29,14 +32,23 @@ export interface SettingsServiceDeps {
   applyLocale(locale: PigSettings['locale']): void
   publish(event: SettingsChanged): void
   isDark(): boolean
+  /** Broadcast and reload sessions after a plugin scope change; running sessions reload once idle. */
+  pluginsChanged(): Promise<void>
+  /** Same for global MCP enablement. */
+  mcpChanged(): Promise<void>
 }
 
 type ObjectValue = Record<string, unknown>
+type PigGroup = 'theme' | 'general' | 'notifications' | 'shortcuts'
+type ToolGroup = 'plugins' | 'mcp'
+// The Agent changing this would unload the very tools it is using; the settings page still can.
+const SELF_PLUGIN = 'pig-settings'
 // Records keyed by the union fail to typecheck when a palette or locale is added without listing it here.
 const PALETTES = Object.keys({ pig: true, everforest: true } satisfies Record<PaletteId, true>)
 const LOCALE_SETTINGS = Object.keys({ system: true, ...Object.fromEntries(LOCALES.map((locale) => [locale, true])) } as Record<LocaleSetting, true>)
 const applications: Record<SettingsGroup, SettingsApplication> = {
-  theme: 'applied', general: 'applied', notifications: 'future-notifications', shortcuts: 'applied', defaults: 'new-sessions'
+  theme: 'applied', general: 'applied', notifications: 'future-notifications', shortcuts: 'applied', defaults: 'new-sessions',
+  plugins: 'sessions-reload', mcp: 'sessions-reload', persona: 'next-prompt'
 }
 const fields: SettingsCatalog['groups'] = [
   { id: 'theme', description: 'Application appearance, native material and light/dark palettes.', scope: 'application', applies: 'applied', fields: [
@@ -58,6 +70,16 @@ const fields: SettingsCatalog['groups'] = [
   { id: 'defaults', description: 'Default model and thinking for new sessions. Shared with Pi CLI; does not switch an existing session. An explicit thinking choice also updates the chosen model\'s remembered level, like the settings page.', scope: 'pi-shared', applies: 'new-sessions', fields: [
     { key: 'model', type: 'model', description: 'An available model, identified by provider and id. Use settings_list with group defaults to find candidates.' },
     { key: 'thinkingLevel', type: 'enum', values: ['low', 'medium', 'high', 'xhigh', 'max'], description: 'Must be supported by the selected/default model. off and minimal are not offered for general defaults.' }
+  ] },
+  { id: 'plugins', description: 'Which session types load each installed plugin. Installing, updating and removing plugins are not available here. Idle sessions reload immediately; running sessions, including this one, reload after their current run.', scope: 'application', applies: 'sessions-reload', fields: [
+    { key: 'scopes', type: 'scope-map', values: ['project', 'chat'], description: `Patch plugin IDs to the session types that load them; [] disables. Use settings_list with group plugins for IDs. ${SELF_PLUGIN} cannot be changed from a conversation.` }
+  ] },
+  { id: 'mcp', description: 'Global enablement of MCP servers already configured in Pig. Adding, editing and removing servers are not available here. Sessions reload like plugins.', scope: 'application', applies: 'sessions-reload', fields: [
+    { key: 'enabled', type: 'boolean-map', description: 'Patch server names to true or false. Use settings_list with group mcp for names.' }
+  ] },
+  { id: 'persona', description: 'The global persona\'s expressive mood and whether it changes automatically. It shapes wording only, never accuracy or capability. Takes effect when a conversation next starts a task.', scope: 'application', applies: 'next-prompt', fields: [
+    { key: 'automatic', type: 'boolean', description: 'Let mood drift and react to conversations; false freezes it.' },
+    { key: 'mood', type: 'mood', description: 'Any of pleasantness (-1 subdued to 1 pleasant), activation (0 calm to 1 activated) and energy (0 tired to 1 rested); unspecified dimensions keep their current value.' }
   ] }
 ]
 
@@ -87,7 +109,7 @@ function theme(pig: PigSettings): ThemePrefs {
   return { appearance: pig.appearance, surfaceStyle: pig.surfaceStyle, lightTheme: pig.lightTheme, darkTheme: pig.darkTheme }
 }
 
-function pigValues(pig: PigSettings, group: Exclude<SettingsGroup, 'defaults'>): SettingsValuesByGroup[Exclude<SettingsGroup, 'defaults'>] {
+function pigValues(pig: PigSettings, group: PigGroup): SettingsValuesByGroup[PigGroup] {
   switch (group) {
     case 'theme': return theme(pig)
     case 'general': return { locale: pig.locale }
@@ -103,6 +125,20 @@ function defaultsSnapshot(state: DefaultSettingsSnapshot): SettingsGroupSnapshot
     effective: { model: model ? { provider: model.provider, id: model.id } : null, thinkingLevel: state.effective.thinkingLevel },
     scope: 'pi-shared', applies: 'new-sessions'
   }
+}
+
+function personaSnapshot(state: PersonaControls): SettingsGroupSnapshot {
+  const values = { automatic: state.automatic, mood: state.mood }
+  return { group: 'persona', revision: state.revision, values, effective: { ...values, feeling: state.feeling }, scope: 'application', applies: 'next-prompt' }
+}
+
+function toolSnapshot(group: ToolGroup, map: Record<string, unknown>): SettingsGroupSnapshot {
+  const values = group === 'plugins' ? { scopes: map as SettingsValuesByGroup['plugins']['scopes'] } : { enabled: map as Record<string, boolean> }
+  return { group, revision: revision(values), values, effective: values, scope: 'application', applies: 'sessions-reload' }
+}
+
+function isPigGroup(group: SettingsGroup): group is PigGroup {
+  return group === 'theme' || group === 'general' || group === 'notifications' || group === 'shortcuts'
 }
 
 function errorText(error: unknown): string {
@@ -134,7 +170,7 @@ export class SettingsService {
     return event
   }
 
-  private pigSnapshot(pig: PigSettings, group: Exclude<SettingsGroup, 'defaults'>): SettingsGroupSnapshot {
+  private pigSnapshot(pig: PigSettings, group: PigGroup): SettingsGroupSnapshot {
     const values = pigValues(pig, group)
     let effective: SettingsGroupSnapshot['effective'] = values
     if (group === 'theme') effective = { ...theme(pig), appearance: pig.appearance === 'system' ? this.deps.isDark() ? 'dark' : 'light' : pig.appearance }
@@ -144,7 +180,10 @@ export class SettingsService {
   }
 
   private async snapshot(group: SettingsGroup): Promise<SettingsGroupSnapshot> {
-    if (group !== 'defaults') return this.pigSnapshot(await loadPigSettings(true), group)
+    if (isPigGroup(group)) return this.pigSnapshot(await loadPigSettings(true), group)
+    if (group === 'plugins') return toolSnapshot(group, await pluginScopes())
+    if (group === 'mcp') return toolSnapshot(group, await mcpEnabled())
+    if (group === 'persona') return personaSnapshot(await getPersonaControls())
     return defaultsSnapshot(await readDefaultSettings())
   }
 
@@ -171,6 +210,18 @@ export class SettingsService {
         const query = options.query?.trim().toLowerCase() ?? ''
         const models = availableModels().filter((model) => `${model.provider} ${model.providerName} ${model.id} ${model.name}`.toLowerCase().includes(query))
         catalog.models = { items: models.slice(offset, offset + limit).map((model) => ({ ...model, thinkingLevels: pickerThinkingLevels(model.thinkingLevels) })), total: models.length, offset, hasMore: offset + limit < models.length }
+      }
+      if (options.group === 'plugins') {
+        catalog.plugins = (await listPlugins()).map(({ id, name, kind, scopes, available, error }) => ({
+          id, name, kind, scopes, available, ...(error ? { error } : {}),
+          ...(id === SELF_PLUGIN ? { locked: 'Provides these settings tools; change it in Pig settings.' } : {})
+        }))
+      }
+      if (options.group === 'mcp') {
+        catalog.mcpServers = (await configuredServers()).map(({ name, config }) => ({
+          name, transport: 'url' in config ? 'http' as const : 'stdio' as const, enabled: config.enabled === true,
+          ...(typeof config.description === 'string' && config.description ? { description: config.description.slice(0, 300) } : {})
+        }))
       }
       if (options.group === 'shortcuts') {
         const pig = await loadPigSettings(true)
@@ -202,7 +253,7 @@ export class SettingsService {
     })
   }
 
-  private valuesForUi(pig: PigSettings, group: Exclude<SettingsGroup, 'defaults'>): SettingsChanged['values'] {
+  private valuesForUi(pig: PigSettings, group: PigGroup): SettingsChanged['values'] {
     switch (group) {
       case 'theme': return theme(pig)
       case 'general': return { localeSetting: pig.locale, systemLocale: systemLocale() }
@@ -223,6 +274,25 @@ export class SettingsService {
         if (typeof model.provider !== 'string' || !model.provider || typeof model.id !== 'string' || !model.id) throw new Error('Provider and model id are required')
       }
       if (field.type === 'shortcut-map') object(input, [...SHORTCUT_ACTIONS], false)
+      if (field.type === 'scope-map') {
+        for (const [id, scopes] of Object.entries(object(input, Object.keys(input as object)))) {
+          if (!Array.isArray(scopes) || scopes.some((scope) => scope !== 'project' && scope !== 'chat') || new Set(scopes).size !== scopes.length) {
+            throw new Error(`Invalid scopes for plugin ${id}; expected a list of project and chat`)
+          }
+          if (agent && id === SELF_PLUGIN) throw new Error(`${SELF_PLUGIN} provides the settings tools and cannot be changed from a conversation`)
+        }
+      }
+      if (field.type === 'boolean-map') {
+        for (const [name, enabled] of Object.entries(object(input, Object.keys(input as object)))) {
+          if (typeof enabled !== 'boolean') throw new Error(`Expected a boolean for MCP server ${name}`)
+        }
+      }
+      if (field.type === 'mood') {
+        for (const [key, number] of Object.entries(object(input, ['pleasantness', 'activation', 'energy']))) {
+          const [min, max] = key === 'pleasantness' ? [-1, 1] : [0, 1]
+          if (typeof number !== 'number' || !Number.isFinite(number) || number < min || number > max) throw new Error(`Invalid ${key}; expected ${min} to ${max}`)
+        }
+      }
     }
     if (agent && value.surfaceStyle === 'glass' && !supportsGlass) throw new Error('Glass is not supported on this platform')
     return value
@@ -249,6 +319,7 @@ export class SettingsService {
       })
       return { result: { ok: true, changed: before.revision !== after.revision, before, after, application: 'new-sessions' }, event }
     }
+    if (!isPigGroup(group)) return this.mutateExternal(group, value, before, expectedRevision, authorize)
     const beforePig = await loadPigSettings(true)
     let handoff: SurfaceHandoff | undefined
     let saved = false
@@ -287,6 +358,44 @@ export class SettingsService {
     } finally {
       handoff?.finish(saved ? next.surfaceStyle : beforePig.surfaceStyle)
     }
+  }
+
+  /**
+   * Plugins, MCP and persona keep their own stores and queues; the revision is checked again inside
+   * them. These groups have no renderer settings fields; their windows learn through plugins:changed,
+   * the MCP settings event and persona:changed.
+   */
+  private async mutateExternal(
+    group: Exclude<SettingsGroup, PigGroup | 'defaults'>, value: ObjectValue, before: SettingsGroupSnapshot,
+    expectedRevision: string | undefined, authorize: () => void
+  ): Promise<{ result: SettingsMutationResult; event: SettingsChanged }> {
+    const check = (current: Record<string, unknown>) => {
+      authorize()
+      if (expectedRevision !== undefined && toolSnapshot(group as ToolGroup, current).revision !== expectedRevision) {
+        throw new Error('Settings revision conflict; read the group again before saving')
+      }
+    }
+    let after: SettingsGroupSnapshot
+    let apply: (() => Promise<void>) | undefined
+    if (group === 'plugins') {
+      after = toolSnapshot(group, await updatePluginScopes(value.scopes as SettingsValuesByGroup['plugins']['scopes'], check))
+      apply = this.deps.pluginsChanged
+    } else if (group === 'mcp') {
+      after = toolSnapshot(group, await updateMcpEnabled(value.enabled as Record<string, boolean>, check))
+      apply = this.deps.mcpChanged
+    } else {
+      authorize()
+      after = personaSnapshot(await updatePersonaControls(value as Parameters<typeof updatePersonaControls>[0], expectedRevision))
+    }
+    const event = this.publish({})
+    const changed = before.revision !== after.revision
+    try {
+      // Saved is saved: a reload failure is reported, never rolled back over the file.
+      if (apply && changed) await apply()
+    } catch (error) {
+      return { result: { ok: false, changed, before, after, application: 'failed', error: `Settings were saved but sessions could not reload: ${errorText(error)}` }, event }
+    }
+    return { result: { ok: true, changed, before, after, application: applications[group] }, event }
   }
 
   async update(request: SettingsUpdateRequest, signal?: AbortSignal, authorize?: () => void): Promise<SettingsMutationResult> {

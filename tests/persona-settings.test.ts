@@ -16,6 +16,7 @@ async function fixture() {
     mood: { pleasantness: 0, activation: 0.5, energy: 0.5, feeling: 'Calm and rested', description: 'A steady mood', automatic: false, observer: { enabled: false }, history: [{ pleasantness: 0, activation: 0.5, energy: 0.5, feeling: 'Rested', trigger: 'Task completed', timestamp: 1700000000000 }] }
   }
   let getCount = 0
+  let changed: (() => void) | undefined
   let saved: PersonaDocument | undefined
   let settle: ((value: PersonaSnapshot) => void) | undefined
   let rejectSave = false
@@ -38,7 +39,8 @@ async function fixture() {
       snapshot = { ...snapshot, mood: { ...snapshot.mood, observer: settings } }
       return snapshot
     },
-    setAutomatic: async (automatic) => ({ ...snapshot, mood: { ...snapshot.mood, automatic } })
+    setAutomatic: async (automatic) => ({ ...snapshot, mood: { ...snapshot.mood, automatic } }),
+    onChanged: (listener) => { changed = listener; return () => { changed = undefined } }
   }
   Object.assign(window, { api: { persona } })
   mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate('en', key, params) }))
@@ -77,6 +79,10 @@ async function fixture() {
     assert.equal(host.querySelector('textarea')!.value, 'soul draft')
     assert.match(host.textContent!, /Calm and rested/)
     assert.match(host.textContent!, /additional model calls/)
+    snapshot = { ...snapshot, mood: { ...snapshot.mood, feeling: 'Changed in a conversation' } }
+    await act(async () => { changed!() })
+    assert.match(host.textContent!, /Changed in a conversation/, 'a conversation change reaches the open page')
+    assert.equal(host.querySelector('textarea')!.value, 'soul draft', 'unsaved drafts survive the reread')
     assert.match(host.textContent!, /not work capability/)
     const sliders = [...host.querySelectorAll<HTMLElement>('[role="slider"]')]
     assert.equal(sliders.length, 3)

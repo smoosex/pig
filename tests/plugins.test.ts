@@ -98,6 +98,16 @@ async function fixture(): Promise<void> {
     assert.equal((await module.enabledPluginPaths('project')).includes(terminalPath), false)
     assert.equal((await module.enabledPluginPaths('chat')).includes(terminalPath), true)
     await assert.rejects(module.setPluginScopes('pig-terminal', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
+    // Batches are one registry write: a failed check or one unknown ID leaves every plugin unchanged.
+    await assert.rejects(module.updatePluginScopes({ 'pig-terminal': [], 'pi-review': [] }, () => { throw new Error('stale') }), /stale/)
+    await assert.rejects(module.updatePluginScopes({ 'pig-terminal': [], missing: [] }), /Plugin not found/)
+    assert.deepEqual(JSON.parse(await readFile(registryFile, 'utf8')).terminalScopes, ['chat'])
+    let seen: Record<string, PluginScope[]> | undefined
+    const batch = await module.updatePluginScopes({ 'pig-terminal': ['project'], 'pi-review': [] }, (current) => { seen = current })
+    assert.deepEqual(seen?.['pig-terminal'], ['chat'], 'the check sees the state it guards')
+    assert.deepEqual([batch['pig-terminal'], batch['pi-review']], [['project'], []])
+    assert.deepEqual(await module.pluginScopes(), batch)
+    await module.setPluginScopes('pig-terminal', ['chat'])
     for (const terminalScopes of [true, ['unknown']]) {
       await writeFile(registryFile, JSON.stringify({ installed: [], terminalScopes }))
       await assert.rejects(module.listPlugins(), /Invalid plugin scopes/)

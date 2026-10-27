@@ -221,13 +221,35 @@ export function deleteMcpCredentials(name: string): Promise<void> {
   })
 }
 export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
+  return updateMcpEnabled({ [name]: enabled }).then(() => undefined)
+}
+
+function enabledServers(servers: Awaited<ReturnType<typeof configuredServers>>): Record<string, boolean> {
+  return Object.fromEntries(servers.map((entry) => [entry.name, entry.config.enabled === true]))
+}
+
+/** Global enablement by server name; the Agent settings tools hash this for compare-and-swap. */
+export function mcpEnabled(): Promise<Record<string, boolean>> {
+  return serialize(async () => enabledServers(await configuredServers()))
+}
+
+/** One `mcp.json` write for several servers; `check` sees the current state inside the mutation queue. */
+export function updateMcpEnabled(
+  patch: Record<string, boolean>,
+  check?: (current: Record<string, boolean>) => void
+): Promise<Record<string, boolean>> {
   return serialize(async () => {
-    if (typeof enabled !== 'boolean') throw new Error('Expected a boolean')
-    if (!(await configuredServers()).some((entry) => entry.name === name))
-      throw new Error(`MCP server not found: ${name}`)
+    const servers = await configuredServers()
+    for (const [name, enabled] of Object.entries(patch)) {
+      if (typeof enabled !== 'boolean') throw new Error('Expected a boolean')
+      if (!servers.some((entry) => entry.name === name)) throw new Error(`MCP server not found: ${name}`)
+    }
+    const current = enabledServers(servers)
+    check?.(current)
     const raw = document()
     const entries = object(raw.mcpServers ?? {})
-    entries[name] = { ...object(entries[name]), enabled }
+    for (const [name, enabled] of Object.entries(patch)) entries[name] = { ...object(entries[name]), enabled }
     privateJson(pigPath('mcp.json'), { ...raw, mcpServers: entries })
+    return { ...current, ...patch }
   })
 }

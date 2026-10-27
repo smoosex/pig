@@ -1,11 +1,12 @@
 /* Persona configuration is owned by Pig; only a window's UI main frame can edit its files. */
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
 import { refreshPluginSessions } from '../pi/session-registry'
 import {
   getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
 } from '../plugins/pi-persona/service'
+import { onPersonaControlsChanged } from '../plugins/pi-persona/controls'
 import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings } from '../../shared/persona'
 
 function assertUi(event: IpcMainInvokeEvent): void {
@@ -13,6 +14,12 @@ function assertUi(event: IpcMainInvokeEvent): void {
 }
 
 export function registerPersonaIpc(): void {
+  // Conversations change mood through the settings tools too; open settings pages must re-read.
+  onPersonaControlsChanged(() => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('persona:changed')
+    }
+  })
   ipcMain.handle('persona:get', (event) => {
     assertUi(event)
     return getPersona()

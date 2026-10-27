@@ -55,6 +55,13 @@ async function fixture(): Promise<void> {
       assert.ok(snapshot.servers.every((entry) => entry.config.enabled === false))
     }
     await settings.setMcpEnabled('docs', true)
+    await assert.rejects(settings.updateMcpEnabled({ files: true, ghost: true }), /MCP server not found: ghost/)
+    await assert.rejects(settings.updateMcpEnabled({ files: true }, () => { throw new Error('stale') }), /stale/)
+    assert.deepEqual([(await settings.mcpEnabled()).docs, (await settings.mcpEnabled()).files], [true, false], 'rejected batches write nothing')
+    const toggled = await settings.updateMcpEnabled({ docs: false, files: true })
+    assert.deepEqual([toggled.docs, toggled.files], [false, true])
+    assert.deepEqual(await settings.mcpEnabled(), toggled)
+    await settings.updateMcpEnabled({ docs: true, files: false })
 
     const before = await readFile(join(process.env.PIG_DIR, 'mcp.json'), 'utf8')
     await assert.rejects(settings.importMcpServers(imported, []), /Confirm replacement/)

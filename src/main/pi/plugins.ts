@@ -392,46 +392,80 @@ export function installPlugin(source: string): Promise<void> {
   })
 }
 
-export function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void> {
+const BUNDLED_SCOPES = {
+  'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pi-web-access': 'webAccessScopes',
+  'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
+  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pi-persona': 'personaScopes'
+} as const satisfies Record<string, keyof Registry>
+
+function registryScopes(registry: Registry): Record<string, PluginScope[]> {
+  return {
+    ...Object.fromEntries(Object.entries(BUNDLED_SCOPES).map(([id, key]) => [id, [...registry[key]]])),
+    ...Object.fromEntries(registry.installed.map((plugin) => [plugin.id, [...plugin.scopes]]))
+  }
+}
+
+async function applyScopes(registry: Registry, id: string, next: PluginScope[]): Promise<void> {
+  const addsScope = (current: PluginScope[]) => next.some((scope) => !current.includes(scope))
+  if (id === 'observational-memory') {
+    if (addsScope(registry.memoryScopes) && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
+    registry.memoryScopes = next
+  } else if (id === 'pi-review') {
+    if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
+    registry.reviewScopes = next
+  } else if (id === 'pi-web-access') {
+    if (addsScope(registry.webAccessScopes) && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
+    registry.webAccessScopes = next
+  } else if (id === 'pig-subagent') {
+    if (addsScope(registry.subagentScopes) && !existsSync(subagentPath())) throw new Error('Bundled extension is missing')
+    registry.subagentScopes = next
+  } else if (id === 'pig-browser') {
+    if (addsScope(registry.browserScopes) && !existsSync(browserPath())) throw new Error('Bundled extension is missing')
+    registry.browserScopes = next
+  } else if (id === 'pig-terminal') {
+    if (addsScope(registry.terminalScopes) && !existsSync(terminalPath())) throw new Error('Bundled extension is missing')
+    registry.terminalScopes = next
+  } else if (id === 'pig-process') {
+    if (addsScope(registry.processScopes) && !existsSync(processPath())) throw new Error('Bundled extension is missing')
+    registry.processScopes = next
+  } else if (id === 'pig-settings') {
+    if (addsScope(registry.settingsScopes) && !existsSync(settingsPath())) throw new Error('Bundled extension is missing')
+    registry.settingsScopes = next
+  } else if (id === 'pi-persona') {
+    if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
+    registry.personaScopes = next
+  } else {
+    const plugin = registry.installed.find((item) => item.id === id)
+    if (!plugin) throw new Error('Plugin not found')
+    if (addsScope(plugin.scopes) && !(await resourcesFor(plugin.source)).length) throw new Error('Plugin is missing or has no extensions')
+    plugin.scopes = next
+  }
+}
+
+/** Every plugin's saved scopes; the Agent settings tools hash this for compare-and-swap. */
+export function pluginScopes(): Promise<Record<string, PluginScope[]>> {
+  return serialize(async () => registryScopes(await readRegistry()))
+}
+
+/**
+ * Apply several scope changes in one registry write. `check` runs inside the registry queue with the
+ * current scopes, so a caller's revision cannot go stale between its check and this write.
+ */
+export function updatePluginScopes(
+  patch: Record<string, PluginScope[]>,
+  check?: (current: Record<string, PluginScope[]>) => void
+): Promise<Record<string, PluginScope[]>> {
   return serialize(async () => {
-    const next = parseScopes(scopes)
     const registry = await readRegistry()
-    const addsScope = (current: PluginScope[]) => next.some((scope) => !current.includes(scope))
-    if (id === 'observational-memory') {
-      if (addsScope(registry.memoryScopes) && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
-      registry.memoryScopes = next
-    } else if (id === 'pi-review') {
-      if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
-      registry.reviewScopes = next
-    } else if (id === 'pi-web-access') {
-      if (addsScope(registry.webAccessScopes) && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
-      registry.webAccessScopes = next
-    } else if (id === 'pig-subagent') {
-      if (addsScope(registry.subagentScopes) && !existsSync(subagentPath())) throw new Error('Bundled extension is missing')
-      registry.subagentScopes = next
-    } else if (id === 'pig-browser') {
-      if (addsScope(registry.browserScopes) && !existsSync(browserPath())) throw new Error('Bundled extension is missing')
-      registry.browserScopes = next
-    } else if (id === 'pig-terminal') {
-      if (addsScope(registry.terminalScopes) && !existsSync(terminalPath())) throw new Error('Bundled extension is missing')
-      registry.terminalScopes = next
-    } else if (id === 'pig-process') {
-      if (addsScope(registry.processScopes) && !existsSync(processPath())) throw new Error('Bundled extension is missing')
-      registry.processScopes = next
-    } else if (id === 'pig-settings') {
-      if (addsScope(registry.settingsScopes) && !existsSync(settingsPath())) throw new Error('Bundled extension is missing')
-      registry.settingsScopes = next
-    } else if (id === 'pi-persona') {
-      if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
-      registry.personaScopes = next
-    } else {
-      const plugin = registry.installed.find((item) => item.id === id)
-      if (!plugin) throw new Error('Plugin not found')
-      if (addsScope(plugin.scopes) && !(await resourcesFor(plugin.source)).length) throw new Error('Plugin is missing or has no extensions')
-      plugin.scopes = next
-    }
+    check?.(registryScopes(registry))
+    for (const [id, scopes] of Object.entries(patch)) await applyScopes(registry, id, parseScopes(scopes))
     await saveRegistry(registry)
+    return registryScopes(registry)
   })
+}
+
+export async function setPluginScopes(id: string, scopes: PluginScope[]): Promise<void> {
+  await updatePluginScopes({ [id]: scopes })
 }
 
 export function removePlugin(id: string): Promise<void> {

@@ -4,6 +4,8 @@ import { registerSettingsAgentHost } from '../plugins/pig-settings-host'
 import { applyLocaleSetting } from '../i18n'
 import { applyShortcutOverrides } from '../shortcuts'
 import { applyWindowSurfaceStyle } from '../window-surface'
+import { refreshPluginSessions, refreshToolSessions } from '../pi/session-registry'
+import { emitToolSettingsChanged } from '../mcp/events'
 import { SettingsService } from './service'
 import { SettingsSurfaceCoordinator } from './surface'
 
@@ -23,6 +25,17 @@ export function createSettingsRuntime(sessions?: SettingsSessions) {
     applyLocale: applyLocaleSetting,
     applyShortcuts: applyShortcutOverrides,
     isDark: () => nativeTheme.shouldUseDarkColors,
+    // Same notifications and reloads as the plugin and MCP settings IPC.
+    pluginsChanged: async () => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('plugins:changed')
+      }
+      await refreshPluginSessions()
+    },
+    mcpChanged: async () => {
+      await refreshToolSessions()
+      emitToolSettingsChanged()
+    },
     publish: (event) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed() && !win.webContents?.isDestroyed()) win.webContents?.send('settings:changed', event)

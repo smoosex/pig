@@ -1,10 +1,15 @@
 /** Allowlisted Agent settings and the versioned UI handoff; neither contract exposes credentials or paths. */
-import type { AppSettings, LocaleSetting, SendShortcut, SessionModelInfo, SurfaceStyle, ThemePrefs, ThinkingLevel } from './api'
+import type { AppSettings, LocaleSetting, PluginScope, SendShortcut, SessionModelInfo, SurfaceStyle, ThemePrefs, ThinkingLevel } from './api'
+import type { PersonaMoodValues } from './persona'
 import type { ShortcutActionId, ShortcutBindings, ShortcutOverrides, ShortcutPatch } from './shortcuts'
 
-export const SETTINGS_GROUPS = ['theme', 'general', 'notifications', 'shortcuts', 'defaults'] as const
+export const SETTINGS_GROUPS = ['theme', 'general', 'notifications', 'shortcuts', 'defaults', 'plugins', 'mcp', 'persona'] as const
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
-export type SettingsApplication = 'applied' | 'future-notifications' | 'new-sessions'
+/**
+ * `sessions-reload`: idle sessions reload now, running ones (including the caller) after their run.
+ * `next-prompt`: conversations pick the change up when their next task starts.
+ */
+export type SettingsApplication = 'applied' | 'future-notifications' | 'new-sessions' | 'sessions-reload' | 'next-prompt'
 
 export interface SettingsValuesByGroup {
   theme: ThemePrefs
@@ -12,6 +17,11 @@ export interface SettingsValuesByGroup {
   notifications: { completionNotifications: boolean }
   shortcuts: { sendShortcut: SendShortcut; bindings: ShortcutOverrides }
   defaults: { model: { provider: string; id: string } | null; thinkingLevel: ThinkingLevel | null }
+  /** Plugin ID to enabled session types; an empty list means disabled. */
+  plugins: { scopes: Record<string, PluginScope[]> }
+  /** Global enablement by MCP server name; per-session overrides are not settings. */
+  mcp: { enabled: Record<string, boolean> }
+  persona: { automatic: boolean; mood: PersonaMoodValues }
 }
 
 export interface SettingsPatchesByGroup {
@@ -20,6 +30,9 @@ export interface SettingsPatchesByGroup {
   notifications: { completionNotifications?: boolean }
   shortcuts: { sendShortcut?: SendShortcut; bindings?: ShortcutPatch }
   defaults: { model?: { provider: string; id: string }; thinkingLevel?: ThinkingLevel }
+  plugins: { scopes?: Record<string, PluginScope[]> }
+  mcp: { enabled?: Record<string, boolean> }
+  persona: { automatic?: boolean; mood?: Partial<PersonaMoodValues> }
 }
 
 export type SettingsUpdateRequest = {
@@ -30,7 +43,8 @@ export interface SettingsGroupSnapshot {
   group: SettingsGroup
   revision: string
   values: SettingsValuesByGroup[SettingsGroup]
-  effective: SettingsValuesByGroup[SettingsGroup] | { sendShortcut: SendShortcut; bindings: ShortcutBindings }
+  effective: SettingsValuesByGroup[SettingsGroup] | { sendShortcut: SendShortcut; bindings: ShortcutBindings } |
+    (SettingsValuesByGroup['persona'] & { feeling: string })
   scope: 'application' | 'pi-shared'
   applies: SettingsApplication
 }
@@ -53,7 +67,7 @@ export interface SettingsListOptions {
 
 export interface SettingsField {
   key: string
-  type: 'enum' | 'boolean' | 'model' | 'shortcut-map'
+  type: 'enum' | 'boolean' | 'model' | 'shortcut-map' | 'scope-map' | 'boolean-map' | 'mood'
   description: string
   values?: string[]
 }
@@ -70,6 +84,9 @@ export interface SettingsCatalog {
   }>
   models?: { items: SessionModelInfo[]; total: number; offset: number; hasMore: boolean }
   shortcuts?: Array<{ id: ShortcutActionId; label: string; binding: string | null; default: string | null }>
+  plugins?: Array<{ id: string; name: string; kind: 'system' | 'local' | 'npm' | 'git'; scopes: PluginScope[]; available: boolean; error?: string; locked?: string }>
+  /** Server identity only: commands, URLs, headers and environment can hold credentials and are never listed. */
+  mcpServers?: Array<{ name: string; description?: string; transport: 'stdio' | 'http'; enabled: boolean }>
 }
 
 export interface SettingsAgentHost {
