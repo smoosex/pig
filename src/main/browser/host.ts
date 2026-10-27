@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import type { View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
-  BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
+  BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenPage } from './hidden-screenshot'
@@ -23,8 +23,12 @@ interface Page {
   clip?: View
   /** The one view inside `clip`: whichever of the page and DevTools sits at the bottom. */
   clipped?: WebContentsView
-  /** Window y (DIP) of the DevTools top edge, for translating resize drags. */
+  /** Window y and page height (DIP) at the DevTools edge, for translating resize drags. */
   devtoolsTop?: number
+  devtoolsPageHeight?: number
+  devtoolsPageEdgeCss?: number
+  devtoolsDragging?: boolean
+  devtoolsPageEdgeBlocked?: boolean
   state: BrowserState
   bounds: BrowserBounds | null
   used: number
@@ -42,8 +46,9 @@ export interface BrowserConsoleEntry {
   source: string
 }
 const CONSOLE_LIMIT = 200
-/** Height (DIP) of the draggable top edge of docked DevTools. */
-const DEVTOOLS_EDGE = 4
+/** Height (DIP) of the draggable edges on either side of docked DevTools. */
+const DEVTOOLS_EDGE = 10
+const DEVTOOLS_PAGE_EDGE = 5
 // A hidden page that was never laid out has no size; agent snapshots and captures need a viewport.
 const AGENT_VIEWPORT = { x: 0, y: 0, width: 1280, height: 800 }
 interface WindowPages {
@@ -155,6 +160,10 @@ export class BrowserHost {
   private layout(owner: WindowPages, page: Page): void {
     if (!this.alive(owner, page)) return
     if (!page.bounds) {
+      page.devtoolsDragging = false
+      page.devtoolsTop = undefined
+      page.devtoolsPageHeight = undefined
+      this.syncDevtoolsPageEdge(owner, page)
       page.clip?.setVisible(false)
       page.view.setVisible(false)
       page.devtools?.setVisible(false)
@@ -199,7 +208,10 @@ export class BrowserHost {
     }
     // Move the upper corners above the clipped view; extend square split-pane edges past the clip.
     const bottomY = bounds.y + bounds.height - bottomHeight
-    page.devtoolsTop = dock ? bottomY : undefined
+    const resizeable = dock && bounds.width > 0 && tools > 0 && pageHeight > 0
+    if (!resizeable) page.devtoolsDragging = false
+    page.devtoolsTop = resizeable ? bottomY : undefined
+    page.devtoolsPageHeight = resizeable ? pageHeight : undefined
     const offsetX = page.clip && !left ? radius : 0
     const offsetY = page.clip ? radius : 0
     if (page.clip) {
@@ -219,6 +231,18 @@ export class BrowserHost {
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
       page.devtools.setVisible(bounds.width > 0 && tools > 0)
     }
+    this.syncDevtoolsPageEdge(owner, page)
+  }
+
+  /** The guest owns its transparent cursor surface; sizes cross IPC in the page's CSS pixels. */
+  private syncDevtoolsPageEdge(owner: WindowPages, page: Page, force = false): void {
+    if (!this.alive(owner, page)) return
+    const contents = page.view.webContents
+    const height = page.devtoolsPageHeight === undefined ? 0 : DEVTOOLS_PAGE_EDGE / contents.getZoomFactor()
+    if (height === 0 && page.devtoolsPageEdgeCss === undefined) return
+    if (!force && page.devtoolsPageEdgeCss === height) return
+    contents.send(BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, height)
+    page.devtoolsPageEdgeCss = height
   }
 
   /** Returns the clipped view, if any, to the window. */
@@ -249,6 +273,7 @@ export class BrowserHost {
     const devtools = page.devtools
     if (!devtools) return
     this.restoreHostFocus(owner, liveContents(devtools))
+    page.devtoolsDragging = false
     page.devtools = undefined
     page.state.devtools = false
     if (!owner.win.isDestroyed()) this.removeView(owner, page, devtools)
@@ -322,27 +347,66 @@ export class BrowserHost {
   }
 
   /**
-   * The page and DevTools touch with no gap, and native views hide any DOM between them, so the
-   * resize edge is the top few pixels of DevTools itself: main swallows the mouse there and sends the
-   * pointer to the renderer, which owns the height. Moves keep arriving outside DevTools while the
-   * button is held. Electron's mouse events carry no button-state modifiers, so only mouseUp ends it.
+   * The page and DevTools touch with no gap; both native views lend a few pixels to the resize edge.
+   * The shared drag stays anchored across their coordinates and layout changes. Electron's mouse
+   * events carry no button-state modifiers, so only mouseUp ends a drag.
    */
   private bindDevtoolsResize(owner: WindowPages, page: Page, contents: Electron.WebContents): void {
-    let dragging = false
+    let dragOffset = 0
+    let cursorZoom: number | undefined
+    let cursorRevision = 0
+    let cursorCssKey: string | undefined
+    const syncCursor = () => {
+      const zoom = contents.getZoomFactor()
+      if (zoom === cursorZoom) return
+      cursorZoom = zoom
+      const revision = cursorRevision
+      // Mouse coordinates are DIP, but the injected CSS uses DevTools' own zoomed CSS pixels.
+      contents.insertCSS(`html::after { content: ''; position: fixed; inset: 0 0 auto; height: ${DEVTOOLS_EDGE / zoom}px; cursor: row-resize; z-index: 2147483647 }`)
+        .then((key) => {
+          if (contents.isDestroyed() || revision !== cursorRevision) return
+          if (zoom !== cursorZoom) return contents.removeInsertedCSS(key)
+          const previous = cursorCssKey
+          cursorCssKey = key
+          if (previous) return contents.removeInsertedCSS(previous)
+          return undefined
+        })
+        .catch((error: unknown) => {
+          if (revision === cursorRevision && zoom === cursorZoom) cursorZoom = undefined
+          console.error('DevTools resize edge failed:', error)
+        })
+    }
     contents.on('dom-ready', () => {
-      contents.insertCSS(`html::after { content: ''; position: fixed; inset: 0 0 auto; height: ${DEVTOOLS_EDGE}px; cursor: row-resize; z-index: 2147483647 }`)
-        .catch((error: unknown) => console.error('DevTools resize edge failed:', error))
+      cursorRevision++
+      cursorZoom = undefined
+      cursorCssKey = undefined
+      syncCursor()
     })
-    contents.on('before-mouse-event', (event, mouse) => {
-      if (!this.alive(owner, page) || page.devtoolsTop === undefined) return
-      if (mouse.type === 'mouseDown' && mouse.button === 'left' && mouse.y < DEVTOOLS_EDGE) dragging = true
-      else if (!dragging) return
+    const onMouse = (event: Electron.Event, mouse: Electron.MouseInputEvent, fromPage: boolean) => {
+      if (!this.alive(owner, page) || page.devtools?.webContents !== contents ||
+        page.devtoolsTop === undefined || page.devtoolsPageHeight === undefined) {
+        page.devtoolsDragging = false
+        return
+      }
+      if (fromPage) this.syncDevtoolsPageEdge(owner, page)
+      else syncCursor()
+      const relativeY = fromPage ? mouse.y - page.devtoolsPageHeight : mouse.y
+      const inEdge = fromPage ? !page.devtoolsPageEdgeBlocked && relativeY >= -DEVTOOLS_PAGE_EDGE && relativeY < 0 : relativeY >= 0 && relativeY < DEVTOOLS_EDGE
+      if (!page.devtoolsDragging && mouse.type === 'mouseDown' && mouse.button === 'left' && inEdge) {
+        page.devtoolsDragging = true
+        dragOffset = relativeY
+      } else if (!page.devtoolsDragging) return
       event.preventDefault()
-      if (mouse.type === 'mouseUp') dragging = false
+      if (mouse.type === 'mouseUp') page.devtoolsDragging = false
       if (mouse.type !== 'mouseMove') return
       const zoom = owner.win.webContents.getZoomFactor()
-      owner.win.webContents.send(BROWSER_DEVTOOLS_RESIZE_CHANNEL, page.state.browserId, (page.devtoolsTop + mouse.y) / zoom)
-    })
+      owner.win.webContents.send(BROWSER_DEVTOOLS_RESIZE_CHANNEL, page.state.browserId, (page.devtoolsTop + relativeY - dragOffset) / zoom)
+    }
+    const pageContents = page.view.webContents
+    const onPageMouse = (event: Electron.Event, mouse: Electron.MouseInputEvent) => onMouse(event, mouse, true)
+    pageContents.on('before-mouse-event', onPageMouse)
+    contents.on('before-mouse-event', (event, mouse) => onMouse(event, mouse, false))
+    contents.once('destroyed', () => { pageContents.off('before-mouse-event', onPageMouse) })
   }
 
   private bind(owner: WindowPages, page: Page): void {
@@ -357,7 +421,10 @@ export class BrowserHost {
       this.layout(owner, page)
       this.push(owner, page)
     })
-    wc.on('dom-ready', () => this.picker(owner, page, page.state.selecting))
+    wc.on('dom-ready', () => {
+      this.picker(owner, page, page.state.selecting)
+      this.syncDevtoolsPageEdge(owner, page, true)
+    })
     wc.on('will-frame-navigate', event => {
       if (!isBrowserUrl(event.url)) event.preventDefault()
     })
@@ -375,6 +442,8 @@ export class BrowserHost {
     wc.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame) return
       if (!inPlace) {
+        page.devtoolsDragging = false
+        page.devtoolsPageEdgeBlocked = false
         page.console = []
         page.network.clear()
       }
@@ -408,6 +477,7 @@ export class BrowserHost {
       page.state.url = url
       owner.urls.set(page.state.browserId, url)
       this.onCommit(page.state.browserId, url)
+      this.syncDevtoolsPageEdge(owner, page, true)
       this.push(owner, page)
     })
     wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
@@ -451,6 +521,13 @@ export class BrowserHost {
   private guestMessage(owner: WindowPages, page: Page, event: IpcMainEvent, channel: string, payload: unknown): void {
     if (!this.alive(owner, page) || event.sender !== page.view.webContents || event.senderFrame !== page.view.webContents.mainFrame) return
     if (!payload || typeof payload !== 'object' || (payload as { documentId?: unknown }).documentId !== page.state.documentId) return
+    if (channel === BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL) {
+      const { blocked } = payload as { blocked?: unknown }
+      if (typeof blocked !== 'boolean') return
+      page.devtoolsPageEdgeBlocked = blocked
+      if (blocked) page.devtoolsDragging = false
+      return
+    }
     if (channel === BROWSER_SELECTION_CHANNEL) {
       const { element, comment } = payload as { element?: unknown; comment?: unknown }
       if (!page.state.selecting || !isBrowserElement(element) || typeof comment !== 'string' || comment.length > 4000) return

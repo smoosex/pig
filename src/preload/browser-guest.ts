@@ -1,7 +1,7 @@
-/** Isolated guest picker: DOM references stay here; only bounded snapshots cross IPC. */
+/** Isolated guest picker and DevTools resize edge; DOM references stay in the guest. */
 import { ipcRenderer } from 'electron'
 import {
-  BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL,
+  BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL,
   BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserElement, type BrowserMarker, type BrowserPickerOptions
 } from '../shared/browser'
@@ -99,6 +99,10 @@ function installPicker(): void {
   let hovered: Element | null = null
   let editing: Element | null = null
   let host: HTMLElement | null = null
+  let resizeEdge: HTMLElement | null = null
+  let resizeEdgeHeight = 0
+  let resizeEdgeBlocked = false
+  let modalObserver: MutationObserver | null = null
   let shadow: ShadowRoot | null = null
   let outline: HTMLElement | null = null
   let selectorLabel: HTMLElement | null = null
@@ -150,6 +154,7 @@ function installPicker(): void {
     closeEditor()
     closePreview()
     documentId = null
+    resizeEdgeBlocked = false
     markers = []
     mutations?.disconnect()
     resize?.disconnect()
@@ -453,7 +458,8 @@ function installPicker(): void {
 
   function target(event: Event): Element | null {
     const element = event.target
-    return !ownEvent(event) && element instanceof Element && element.ownerDocument === document &&
+    return !ownEvent(event) && !(resizeEdge && event.composedPath().includes(resizeEdge)) &&
+      element instanceof Element && element.ownerDocument === document &&
       element.getRootNode() === document ? element : null
   }
 
@@ -497,18 +503,68 @@ function installPicker(): void {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true })
     else mount()
     applyTheme()
+    syncResizeEdge()
     schedule()
+  }
+
+  function syncResizeEdge(): void {
+    if (resizeEdgeHeight === 0) {
+      resizeEdge?.remove()
+      resizeEdge = null
+      modalObserver?.disconnect()
+      modalObserver = null
+      document.removeEventListener('DOMContentLoaded', syncResizeEdge)
+      return
+    }
+    if (!document.documentElement) {
+      document.addEventListener('DOMContentLoaded', syncResizeEdge, { once: true })
+      return
+    }
+    if (!modalObserver) {
+      modalObserver = new MutationObserver(syncResizeEdge)
+      modalObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] })
+    }
+    const blocked = document.querySelector(':modal') !== null
+    if (blocked !== resizeEdgeBlocked && documentId) {
+      resizeEdgeBlocked = blocked
+      ipcRenderer.send(BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, { documentId, blocked })
+    }
+    if (blocked) {
+      resizeEdge?.remove()
+      resizeEdge = null
+      return
+    }
+    if (!resizeEdge) {
+      resizeEdge = document.createElement('div')
+      resizeEdge.dataset.pigDevtoolsResize = ''
+      resizeEdge.setAttribute('aria-hidden', 'true')
+      resizeEdge.style.cssText = 'all:initial!important;display:block!important;position:fixed!important;left:0!important;right:0!important;bottom:0!important;box-sizing:border-box!important;pointer-events:auto!important;cursor:row-resize!important;background:transparent!important;z-index:2147483647!important;'
+    }
+    if (resizeEdge.style.height !== `${resizeEdgeHeight}px`) resizeEdge.style.setProperty('height', `${resizeEdgeHeight}px`, 'important')
+    if (!resizeEdge.isConnected) document.documentElement.append(resizeEdge)
+  }
+
+  function onResizeEdge(_event: Electron.IpcRendererEvent, height: unknown): void {
+    if (disposed || typeof height !== 'number' || !Number.isFinite(height) || height < 0) return
+    resizeEdgeHeight = height
+    syncResizeEdge()
   }
 
   function cleanup(): void {
     cancel()
     reset()
+    resizeEdge?.remove()
+    resizeEdge = null
+    modalObserver?.disconnect()
+    modalObserver = null
+    document.removeEventListener('DOMContentLoaded', syncResizeEdge)
   }
 
   function dispose(): void {
     cleanup()
     disposed = true
     ipcRenderer.removeListener(BROWSER_PICKER_CHANNEL, onCommand)
+    ipcRenderer.removeListener(BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, onResizeEdge)
     for (const type of blockedEvents) window.removeEventListener(type, onClick, true)
     window.removeEventListener('pointermove', onMove, true)
     window.removeEventListener('mousemove', onMove, true)
@@ -518,13 +574,18 @@ function installPicker(): void {
     window.visualViewport?.removeEventListener('resize', schedule)
     window.visualViewport?.removeEventListener('scroll', schedule)
     window.removeEventListener('pagehide', onPageHide)
-    window.removeEventListener('beforeunload', cleanup)
+    window.removeEventListener('pageshow', onPageShow)
+    window.removeEventListener('beforeunload', cancel)
   }
 
   function onPageHide(event: PageTransitionEvent): void {
-    // BFCache restores this context; only its command listener survives navigation cleanup.
+    // BFCache restores this context; its command listeners survive navigation cleanup.
     if (event.persisted) cleanup()
     else dispose()
+  }
+
+  function onPageShow(event: PageTransitionEvent): void {
+    if (event.persisted) syncResizeEdge()
   }
 
   for (const type of blockedEvents) window.addEventListener(type, onClick, { capture: true, passive: false })
@@ -536,8 +597,11 @@ function installPicker(): void {
   window.visualViewport?.addEventListener('resize', schedule)
   window.visualViewport?.addEventListener('scroll', schedule)
   ipcRenderer.on(BROWSER_PICKER_CHANNEL, onCommand)
+  ipcRenderer.on(BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, onResizeEdge)
   window.addEventListener('pagehide', onPageHide)
-  window.addEventListener('beforeunload', cleanup)
+  window.addEventListener('pageshow', onPageShow)
+  // beforeunload is cancellable; keep the resize surface until pagehide confirms departure.
+  window.addEventListener('beforeunload', cancel)
 }
 
 if (process.isMainFrame) installPicker()

@@ -180,6 +180,9 @@ export type BrowserHostShortcut = import('./shortcuts').HostShortcutAction
 export const BROWSER_SHORTCUT_CHANNEL = 'browser:host-shortcut-requested'
 export const BROWSER_CLOSE_TAB_CHANNEL = 'browser:close-tab-requested'
 export const BROWSER_DEVTOOLS_RESIZE_CHANNEL = 'browser:devtools-resize'
+/** Main → page guest: height in CSS pixels of the transparent DevTools resize edge, or zero to remove it. */
+export const BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL = 'browser:devtools-page-edge'
+export const BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL = 'browser:devtools-page-edge-state'
 export const BROWSER_PICKER_CHANNEL = 'browser:picker'
 export const BROWSER_SELECTION_CHANNEL = 'browser:element-selected'
 export const BROWSER_PICKER_CANCEL_CHANNEL = 'browser:picker-cancelled'

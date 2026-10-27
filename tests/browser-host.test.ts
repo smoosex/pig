@@ -31,6 +31,10 @@ class FakeContents extends EventEmitter {
   isFocused() { return this.focused }
   focus() { this.focused = true; this.focusCalls++; this.emit('focus') }
   getZoomFactor() { return 1.5 }
+  insertedCss: string[] = []
+  removedCss: string[] = []
+  async insertCSS(css: string) { this.insertedCss.push(css); return String(this.insertedCss.length) }
+  async removeInsertedCSS(key: string) { this.removedCss.push(key) }
   getURL() { return this.url }
   isLoading() { return this.loading }
   setWindowOpenHandler() {}
@@ -539,28 +543,104 @@ describe('browser host', () => {
     expect(tools.visible).toBe(true)
     // The top edge of DevTools is the resize handle; main forwards the pointer in renderer CSS px.
     const sent = win.webContents.sent
-    const mouse = (type: string, y: number, extra: object = {}) => {
+    const mouse = (type: string, y: number, extra: object = {}, fromPage = false) => {
       let prevented = false
-      tools.webContents.emit('before-mouse-event', { preventDefault: () => { prevented = true } }, { type, x: 5, y, ...extra })
+      const contents = fromPage ? page.webContents : tools.webContents
+      contents.emit('before-mouse-event', { preventDefault: () => { prevented = true } }, { type, x: 5, y, ...extra })
       return prevented
     }
+    const pageEdges = () => page.webContents.sent.filter(([channel]) => channel === 'browser:devtools-page-edge')
+    expect(pageEdges().at(-1)).toEqual(['browser:devtools-page-edge', 5 / 1.5])
+    expect(mouse('mouseDown', 174, { button: 'left' }, true), 'outside the page edge remains clickable').toBe(false)
+    expect(mouse('mouseDown', 177, { button: 'right' }, true)).toBe(false)
+    expect(mouse('mouseDown', 177, { button: 'left' }, true), 'the page bottom starts a drag').toBe(true)
+    expect(mouse('mouseMove', 177, {}, true)).toBe(true)
+    expect(sent.at(-1), 'a page-side drag does not jump').toEqual(['browser:devtools-resize', 'a', 210 / 1.5])
+    expect(mouse('mouseMove', 182, {}, true)).toBe(true)
+    expect(sent.at(-1)).toEqual(['browser:devtools-resize', 'a', 215 / 1.5])
+    host.setBounds(owner, 'a', { ...bounds, devtools: { height: 115 / 1.5 } })
+    expect(mouse('mouseMove', 182, {}, true)).toBe(true)
+    expect(sent.at(-1), 'the page-side drag tracks layout changes').toEqual(['browser:devtools-resize', 'a', 215 / 1.5])
+    expect(mouse('mouseMove', 4)).toBe(true)
+    expect(sent.at(-1), 'the same drag continues across into DevTools').toEqual(['browser:devtools-resize', 'a', 222 / 1.5])
+    expect(mouse('mouseUp', 4)).toBe(true)
+    expect(mouse('mouseMove', 182, {}, true)).toBe(false)
+    host.setBounds(owner, 'a', docked)
+    page.webContents.getZoomFactor = () => 2
+    expect(mouse('mouseMove', 179, {}, true)).toBe(false)
+    expect(pageEdges().at(-1), 'the page cursor edge follows page zoom').toEqual(['browser:devtools-page-edge', 2.5])
+    page.webContents.emit('dom-ready')
+    expect(pageEdges().at(-1), 'the current edge is restored after navigation').toEqual(['browser:devtools-page-edge', 2.5])
+    const pageModal = (blocked: unknown, documentId = host.getState(owner, 'a').documentId, frame: unknown = page.webContents.mainFrame) => {
+      page.webContents.emit('ipc-message', { sender: page.webContents, senderFrame: frame },
+        'browser:devtools-page-edge-state', { documentId, blocked })
+    }
+    pageModal(true, 'stale')
+    pageModal(true, host.getState(owner, 'a').documentId, {})
+    pageModal('invalid')
+    expect(mouse('mouseDown', 177, { button: 'left' }, true), 'invalid modal reports cannot disable resizing').toBe(true)
+    pageModal(true)
+    expect(mouse('mouseMove', 170, {}, true), 'a modal cancels an existing drag').toBe(false)
+    expect(mouse('mouseDown', 177, { button: 'left' }, true), 'the invisible page edge does not swallow modal clicks').toBe(false)
+    expect(mouse('mouseDown', 2, { button: 'left' }), 'the DevTools edge remains available').toBe(true)
+    expect(mouse('mouseUp', 2)).toBe(true)
+    pageModal(false)
+    expect(mouse('mouseDown', 177, { button: 'left' }, true), 'closing the modal restores page-side resizing').toBe(true)
+    expect(mouse('mouseUp', 177, {}, true)).toBe(true)
+    sent.length = 0
+    tools.webContents.emit('dom-ready')
+    await Promise.resolve()
+    const cursorCssKey = String(tools.webContents.insertedCss.length)
+    expect(tools.webContents.insertedCss.at(-1)).toContain(`height: ${10 / 1.5}px`)
     expect(mouse('mouseDown', 10, { button: 'left' }), 'below the edge DevTools get the click').toBe(false)
+    expect(mouse('mouseDown', 9, { button: 'right' }), 'right clicks do not start a drag').toBe(false)
     expect(mouse('mouseMove', 10, { button: 'left' })).toBe(false)
     expect(sent.filter(([channel]) => channel === 'browser:devtools-resize')).toEqual([])
-    expect(mouse('mouseDown', 2, { button: 'left' })).toBe(true)
+    expect(mouse('mouseDown', 9, { button: 'left' }), 'the whole 10 DIP edge starts a drag').toBe(true)
+    expect(mouse('mouseMove', 9, { button: 'left' })).toBe(true)
+    expect(sent.at(-1), 'the edge does not jump to the pointer when a drag starts').toEqual(['browser:devtools-resize', 'a', 210 / 1.5])
+    expect(mouse('mouseMove', 14, { button: 'left' })).toBe(true)
+    expect(sent.at(-1)).toEqual(['browser:devtools-resize', 'a', 215 / 1.5])
+    host.setBounds(owner, 'a', { ...bounds, devtools: { height: 115 / 1.5 } })
+    expect(mouse('mouseMove', 9, { button: 'left' })).toBe(true)
+    expect(sent.at(-1), 'a layout update keeps the handle under the pointer').toEqual(['browser:devtools-resize', 'a', 215 / 1.5])
     // Electron mouse events carry no button-state modifiers; a held drag must not end on the first move.
-    expect(mouse('mouseMove', -20, { button: 'left' })).toBe(true)
     expect(mouse('mouseMove', -30, { button: 'left' }), 'the drag continues above DevTools').toBe(true)
-    expect(sent.at(-1)).toEqual(['browser:devtools-resize', 'a', (210 - 30) / 1.5])
+    expect(sent.at(-1)).toEqual(['browser:devtools-resize', 'a', (215 - 30 - 9) / 1.5])
     expect(mouse('mouseUp', -30, { button: 'left' })).toBe(true)
     expect(mouse('mouseMove', -40, { button: 'left' }), 'after mouseUp hovering no longer resizes').toBe(false)
+    tools.webContents.getZoomFactor = () => 2
+    expect(mouse('mouseMove', 9)).toBe(false)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(tools.webContents.insertedCss.at(-1), 'the cursor remains 10 DIP high when DevTools are zoomed').toContain('height: 5px')
+    expect(tools.webContents.removedCss).toContain(cursorCssKey)
+    expect(mouse('mouseDown', 10, { button: 'left' })).toBe(false)
+    expect(mouse('mouseDown', 9, { button: 'left' })).toBe(true)
+    expect(mouse('mouseUp', 9, { button: 'left' })).toBe(true)
+    expect(mouse('mouseDown', 2, { button: 'left' })).toBe(true)
     host.setBounds(owner, 'a', null)
     expect(tools.visible).toBe(false)
+    expect(pageEdges().at(-1), 'hiding the pane removes the page cursor edge').toEqual(['browser:devtools-page-edge', 0])
+    expect(mouse('mouseDown', 179, { button: 'left' }, true)).toBe(false)
     host.setBounds(owner, 'a', docked)
+    expect(pageEdges().at(-1)).toEqual(['browser:devtools-page-edge', 2.5])
+    const resizeMessages = sent.filter(([channel]) => channel === 'browser:devtools-resize').length
+    expect(mouse('mouseMove', 15), 'restoring after a lost mouseUp must not resume a drag').toBe(false)
+    expect(mouse('mouseDown', 15, { button: 'left' }), 'ordinary clicks after restoring remain usable').toBe(false)
+    expect(sent.filter(([channel]) => channel === 'browser:devtools-resize')).toHaveLength(resizeMessages)
+    expect(mouse('mouseDown', 177, { button: 'left' }, true)).toBe(true)
+    host.setBounds(owner, 'a', null)
+    host.setBounds(owner, 'a', docked)
+    expect(mouse('mouseMove', 170, {}, true), 'page-side drags also end on hide').toBe(false)
+    expect(mouse('mouseDown', 170, { button: 'left' }, true)).toBe(false)
     tools.webContents.close()
     expect(() => { (tools as { webContents?: unknown }).webContents = undefined; page.webContents.emit('devtools-closed') }, 'Electron drops webContents after destruction').not.toThrow()
     expect(host.getState(owner, 'a').devtools, 'the DevTools close button destroys their WebContents').toBe(false)
+    expect(pageEdges().at(-1), 'closing DevTools removes the page cursor edge').toEqual(['browser:devtools-page-edge', 0])
+    expect(page.webContents.listenerCount('before-mouse-event')).toBe(0)
     host.inspect(owner, 'a')
+    expect(page.webContents.listenerCount('before-mouse-event')).toBe(1)
     page.webContents.closeDevTools()
     expect(views[2].webContents.dead, 'closing from DevTools releases the docked view').toBe(true)
     expect(host.getState(owner, 'a').devtools).toBe(false)
@@ -569,6 +649,33 @@ describe('browser host', () => {
     host.inspect(owner, 'a')
     expect(views[3].webContents.dead).toBe(true)
     expect(page.webContents.isDevToolsOpened()).toBe(false)
+  })
+
+  test('late cursor styles cannot replace a newer DevTools zoom', async () => {
+    const { host, owner, views } = fixture()
+    await host.navigate(owner, 'a', 'localhost:3000')
+    host.setBounds(owner, 'a', bounds)
+    host.inspect(owner, 'a')
+    host.setBounds(owner, 'a', { ...bounds, devtools: { height: 80 } })
+    const contents = views[1]!.webContents
+    let zoom = 1
+    const pending: Array<{ css: string; resolve: (key: string) => void }> = []
+    contents.getZoomFactor = () => zoom
+    contents.insertCSS = (css) => new Promise((resolve) => pending.push({ css, resolve }))
+    contents.emit('dom-ready')
+    zoom = 2
+    contents.emit('before-mouse-event', { preventDefault: () => {} }, { type: 'mouseMove', x: 5, y: 9 })
+    expect(pending.map(({ css }) => css.match(/height: [^;]+/)?.[0])).toEqual(['height: 10px', 'height: 5px'])
+    pending[1].resolve('new')
+    await Promise.resolve()
+    pending[0].resolve('old')
+    await Promise.resolve()
+    expect(contents.removedCss).toEqual(['old'])
+    zoom = 1
+    contents.emit('before-mouse-event', { preventDefault: () => {} }, { type: 'mouseMove', x: 5, y: 9 })
+    pending[2].resolve('latest')
+    await Promise.resolve()
+    expect(contents.removedCss).toEqual(['old', 'new'])
   })
 
   test('agent control keeps hidden pages sized, unthrottled and pinned while the session lives', async () => {

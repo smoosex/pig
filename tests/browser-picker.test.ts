@@ -34,6 +34,7 @@ async function fixture(mainFrame: boolean): Promise<void> {
   const command = (active: boolean, documentId = 'doc-1', markers: BrowserMarker[] = []): void => {
     commands.get('browser:picker')!({}, { active, documentId, markers, options })
   }
+  const resizeEdge = (height: number): void => { commands.get('browser:devtools-page-edge')!({}, height) }
   const tick = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 35)) }
   const click = (element: Element): void => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }))
@@ -94,10 +95,57 @@ async function fixture(mainFrame: boolean): Promise<void> {
     return shadow
   }
   Object.defineProperty(document, 'readyState', { configurable: true, value: 'loading' })
+  resizeEdge(2.5)
   command(true)
   assert.equal(shadow, undefined)
   document.dispatchEvent(new Event('DOMContentLoaded'))
   Object.defineProperty(document, 'readyState', { configurable: true, value: 'complete' })
+  const edge = document.querySelector<HTMLElement>('[data-pig-devtools-resize]')!
+  assert.ok(edge, 'the page-side cursor edge can be enabled before the document is ready')
+  assert.equal(edge.style.height, '2.5px')
+  assert.equal(edge.style.cursor, 'row-resize')
+  assert.equal(edge.getAttribute('aria-hidden'), 'true')
+  // Page-owned mutations must not turn the cursor surface into trusted picker controls.
+  edge.style.setProperty('height', '100vh', 'important')
+  const injected = document.createElement('button')
+  injected.textContent = 'page action'
+  edge.append(injected)
+  let pageActions = 0
+  injected.addEventListener('click', () => { pageActions++ })
+  injected.addEventListener('contextmenu', () => { pageActions++ })
+  for (const type of ['click', 'contextmenu', 'mousedown', 'mouseup']) {
+    const event = new MouseEvent(type, { bubbles: true, composed: true, cancelable: true, button: type === 'contextmenu' ? 2 : 0 })
+    injected.dispatchEvent(event)
+    assert.equal(event.defaultPrevented, true, `${type} on a mutated resize edge stays blocked by the picker`)
+  }
+  assert.equal(pageActions, 0)
+  assert.equal(currentShadow().querySelector('.editor'), null, 'the resize edge is not an annotation target')
+  const unloading = new Event('beforeunload', { cancelable: true })
+  window.addEventListener('beforeunload', (event) => event.preventDefault(), { once: true })
+  window.dispatchEvent(unloading)
+  assert.equal(unloading.defaultPrevented, true)
+  assert.equal(edge.isConnected, true, 'cancelled navigation keeps the resize cursor surface')
+  assert.deepEqual(messages.pop(), { channel: 'browser:picker-cancelled', payload: { documentId: 'doc-1' } })
+  command(true)
+  const querySelector = document.querySelector.bind(document)
+  let modal: Element | null = null
+  // happy-dom does not model Chromium's top layer; only stub the modal predicate.
+  document.querySelector = ((selector: string) => selector === ':modal' ? modal : querySelector(selector)) as typeof document.querySelector
+  const dialog = document.createElement('dialog')
+  document.body.append(dialog)
+  modal = dialog
+  dialog.setAttribute('open', '')
+  await tick()
+  assert.equal(edge.isConnected, false, 'a modal hides the page-side cursor edge')
+  assert.deepEqual(messages.pop(), { channel: 'browser:devtools-page-edge-state', payload: { documentId: 'doc-1', blocked: true } })
+  modal = null
+  dialog.remove()
+  await tick()
+  assert.ok(querySelector('[data-pig-devtools-resize]'), 'closing the modal restores the cursor edge')
+  assert.deepEqual(messages.pop(), { channel: 'browser:devtools-page-edge-state', payload: { documentId: 'doc-1', blocked: false } })
+  document.querySelector = querySelector
+  resizeEdge(0)
+  assert.equal(querySelector('[data-pig-devtools-resize]'), null, 'closing DevTools leaves no page-side hit target')
   const overlayHost = currentShadow().host as HTMLElement
   assert.equal(overlayHost.shadowRoot, null)
   assert.equal(overlayHost.style.pointerEvents, 'none')
@@ -266,11 +314,20 @@ async function fixture(mainFrame: boolean): Promise<void> {
   command(true, 'doc-next')
   assert.equal(currentShadow().querySelector('textarea'), null)
   command(true, 'doc-cached')
+  resizeEdge(5)
+  const cachedEdge = document.querySelector<HTMLElement>('[data-pig-devtools-resize]')!
+  assert.ok(cachedEdge.isConnected)
   const cachedHide = new Event('pagehide')
   Object.defineProperty(cachedHide, 'persisted', { value: true })
   window.dispatchEvent(cachedHide)
-  assert.equal(commands.size, 1, 'BFCache keeps its isolated command listener')
+  assert.equal(commands.size, 2, 'BFCache keeps both isolated command listeners')
   assert.equal(currentShadow().host.isConnected, false)
+  assert.equal(cachedEdge.isConnected, false)
+  const cachedShow = new Event('pageshow')
+  Object.defineProperty(cachedShow, 'persisted', { value: true })
+  window.dispatchEvent(cachedShow)
+  assert.ok(document.querySelector('[data-pig-devtools-resize]'), 'BFCache restores the resize edge')
+  resizeEdge(0)
   command(true, 'doc-restored')
   assert.equal(currentShadow().host.isConnected, true)
   command(true, 'doc-navigation')
