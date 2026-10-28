@@ -929,6 +929,31 @@ export const en: Messages = {
     closeDescription: '{n} background subagents are still running and will be stopped.',
     closeConfirm: 'Close and stop'
   },
+  permissions: {
+    title: 'Permissions', description: 'Sandbox and permissions',
+    limitations: 'Currently protects only agent commands, background processes and built-in file tools. MCP, browser, interactive terminal and manual ! commands are not restricted. Mode changes do not alter processes already running.',
+    sandbox: 'Sandbox',
+    sandboxDescription: 'Agent commands and background processes run in the OS sandbox: they can write only the workspace, private temporary folders and package caches. Listed common credential paths are protected, not every application credential. Network access covers common package registries, allowed hosts and local services.',
+    sandboxState: { pending: 'Checking', ready: 'Sandbox available', unavailable: 'Sandbox unavailable', unsupported: 'Sandbox not supported on this platform' },
+    sandboxOn: 'On', sandboxOff: 'Not sandboxed',
+    sandboxMissing: 'Sandbox unavailable ({detail}): default mode asks per operation; read-only refuses execution.',
+    modes: 'Modes', defaultMode: 'Default mode for sessions', defaultModeDescription: 'Sessions without their own mode follow it; changes apply immediately.',
+    mode: { 'read-only': 'Read-only', default: 'Default', 'full-access': 'Full access' },
+    modeHint: {
+      'read-only': 'Commands run sandboxed without network and can write only temporary folders; file tools cannot write',
+      default: 'Commands run sandboxed; asks before writing outside the workspace or reading credentials',
+      'full-access': 'No sandbox and no questions'
+    },
+    followDefault: 'Follow the default mode',
+    hosts: 'Allowed hosts', noHosts: 'No hosts allowed yet. When the sandbox refuses a host, you are asked whether to allow it.',
+    allProjects: 'All projects', removeHost: 'Remove {host}',
+    hostsTitle: 'The sandbox refused {hosts}. Allow it?', hostsMessage: 'The command has finished. Allowing it does not rerun it; the agent runs it again if needed.', hostsSession: 'Allow for this session', hostsProject: 'Allow for this project', hostsDeny: 'Do not allow',
+    unsandboxedTitle: 'Run this command outside the sandbox?', unsandboxedMessage: 'Command: {command}\nReason: {reason}\n\nIt will run with Pig\'s full permissions.',
+    noSandboxTitle: 'Sandbox unavailable. Run anyway?', noSandboxMessage: 'Command: {command}\nReason: {detail}\n\nIt will run with Pig\'s full permissions.',
+    unsupported: 'The sandbox is not supported on this platform',
+    allowOnce: 'Allow once', allowSession: 'Allow for this session', deny: 'Deny', approvalHint: 'Press a number to choose, Esc to deny',
+    readTitle: 'Allow reading a sensitive path?', writeTitle: 'Allow writing this path?', pathMessage: '{tool}: {path}'
+  },
   processes: {
     summary: 'Background processes: {statuses}',
     title: 'Background processes',

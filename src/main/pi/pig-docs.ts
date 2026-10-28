@@ -17,7 +17,7 @@ export function pigDocsNote(): string {
   const agent = getAgentDir()
   const lines = [
     "You are running inside Pig, a desktop app built on the pi SDK. The pi documentation below describes the SDK and the pi CLI; Pig manages configuration differently:",
-    `- Pig's data directory for this install is ${pig}, owned by Pig alone: settings.json (Pig's app settings, not pi's), mcp.json and mcp-auth.json, plugins.json and plugin-settings/, web-search.json, subagent-settings.json, skills.json and imported skills/, persona/, chats/, worktrees/ and terminals/.`,
+    `- Pig's data directory for this install is ${pig}, owned by Pig alone: settings.json (Pig's app settings, not pi's), mcp.json and mcp-auth.json, plugins.json and plugin-settings/, web-search.json, subagent-settings.json, skills.json and imported skills/, persona/, chats/, worktrees/, terminals/, permissions.json and session-permissions/.`,
     `- Shared with the pi CLI, so changes affect both: ${join(agent, 'auth.json')} (sign-in), ${join(agent, 'sessions')} (session files), ${join(agent, 'skills')} (read-only for Pig), and the default model, default thinking level, modelThinkingLevels and enabledModels in ${join(agent, 'settings.json')}.`,
     "- Pig ignores pi packages and extensions (the packages setting, the extensions directories, `pi install`); plugins and MCP servers are managed in Pig's settings."
   ]

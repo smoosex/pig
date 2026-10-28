@@ -10,8 +10,12 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
           'branch-namer-worker': resolve(__dirname, 'src/main/pi/branch-namer-worker.ts'),
-          'pty-host-worker': resolve(__dirname, 'src/main/terminal/pty-host-worker.ts')
-        }
+          'pty-host-worker': resolve(__dirname, 'src/main/terminal/pty-host-worker.ts'),
+          'readonly-worker': resolve(__dirname, 'src/main/sandbox/readonly-worker.ts'),
+          'file-worker': resolve(__dirname, 'src/main/sandbox/file-worker.ts')
+        },
+        // Worker URLs resolve relative to their calling chunk, not necessarily index.js.
+        output: { chunkFileNames: '[name]-[hash].js' }
       }
     },
     resolve: {

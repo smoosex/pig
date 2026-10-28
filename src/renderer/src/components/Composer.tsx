@@ -12,6 +12,7 @@ import { Button } from './ui/button'
 import { Popover, PopoverAnchor } from './ui/popover'
 import { FollowUpQueue } from './FollowUpQueue'
 import { ImagePreview } from './ImagePreview'
+import { ApprovalPrompt, useApprovalPrompt } from './composer/ApprovalPrompt'
 import { CompactionStatus } from './composer/CompactionStatus'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
@@ -45,6 +46,13 @@ export function Composer({
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const reducedMotion = useReducedMotion()
+  const approval = useApprovalPrompt(sessionId)
+  // Answering hands the keyboard back to the prompt it replaced.
+  const hadApproval = useRef(false)
+  useEffect(() => {
+    if (hadApproval.current && !approval && isActive) editor?.commands.focus()
+    hadApproval.current = approval !== undefined
+  }, [approval, editor, isActive])
   // A home draft keeps its id when it becomes a tab, so an unchanged id means the same conversation got its first
   // message. A changed id is a tab switch: the transcript appears at once, and the box must not trail behind it.
   const renderedSessionId = useRef(sessionId)
@@ -65,9 +73,11 @@ export function Composer({
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
       <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />
-      <Popover open={commands.open || mentions.open} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
+      <ApprovalPrompt sessionId={sessionId} autoFocus={isActive} />
+      {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
+      <Popover open={!approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
-          <div ref={boxRef} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
+          <div ref={boxRef} hidden={approval !== undefined} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
             <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
               <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
@@ -115,8 +125,8 @@ export function Composer({
             </div>
           </div>
         </PopoverAnchor>
-        {commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
-        {mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
+        {!approval && commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
+        {!approval && mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}
       </Popover>
       {/* Where a new conversation will start matters before it exists; inside one the sidebar already says so. */}
       {centered && workspace ? (

@@ -16,7 +16,8 @@ async function fixture(): Promise<void> {
     ['ProvidersPane', 'settings.sectionProviders', 'settings.sectionProvidersDescription'],
     ['McpPane', 'mcp.title', 'mcp.description'],
     ['SkillsPane', 'skills.title', 'skills.description'],
-    ['PluginsPane', 'settings.sectionPlugins', 'settings.sectionPluginsDescription']
+    ['PluginsPane', 'settings.sectionPlugins', 'settings.sectionPluginsDescription'],
+    ['PermissionsPane', 'permissions.title', 'permissions.description']
   ] as const
   for (const [name] of panes) {
     mock.module(`../src/renderer/src/components/settings/${name}`, () => ({

@@ -19,6 +19,7 @@ import { statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { fenced } from '../../shared/browser-annotations'
 import { shellCandidates } from '../shell-env'
+import { sandboxEnvironment } from '../sandbox/environment'
 import type { BackgroundProcessInfo, BackgroundProcessStatus } from '../../shared/processes'
 import type { ProcessAgentHost, ProcessDelivery, ProcessStartOptions, ProcessToolResult, ProcessWaitOptions } from '../plugins/pig-process-host'
 
@@ -64,6 +65,8 @@ interface Process {
   version: number
   listeners: Set<() => void>
   exited: Promise<void>
+  networkApproval?: AbortController
+  sandboxError?: string
 }
 
 export interface BackgroundProcessDeps {
@@ -71,6 +74,12 @@ export interface BackgroundProcessDeps {
   sessionDirectory(sessionId: string): string | undefined
   /** The session's processes or their output changed. */
   changed?(sessionId: string): void
+  /**
+   * The command wrapped in the OS sandbox for `shell -c`, or null to run it as is (full access, or a
+   * missing sandbox the user already confirmed for this call). `finish` reports what was refused.
+   */
+  sandbox?(sessionId: string, command: string, shell: string, signal?: AbortSignal): Promise<{ command: string; finish(): { report: string; hosts?: string[] } } | null>
+  networkPermission?(sessionId: string, hosts: string[], signal: AbortSignal): Promise<string>
 }
 
 function environment(): Record<string, string> {
@@ -115,6 +124,7 @@ function elapsed(proc: Process): string {
 
 function status(proc: Process): string {
   if (proc.endedAt === undefined) return 'running'
+  if (proc.sandboxError) return `sandbox failed (${proc.sandboxError}); shell exited with code ${proc.exitCode}`
   if (proc.stoppedBy === 'user') return 'stopped by the user'
   if (proc.stoppedBy) return 'stopped'
   if (proc.exitCode !== null) return `exited with code ${proc.exitCode}`
@@ -136,6 +146,7 @@ function outputLines(proc: Process): Line[] {
 
 function uiStatus(proc: Process): BackgroundProcessStatus {
   if (proc.endedAt === undefined) return 'running'
+  if (proc.sandboxError) return 'failed'
   if (proc.stoppedBy) return 'stopped'
   return proc.exitCode === 0 ? 'exited' : 'failed'
 }
@@ -156,6 +167,8 @@ function render(lines: Line[]): { text: string; truncated: boolean } {
 export class BackgroundProcessController implements ProcessAgentHost {
   private readonly processes = new Map<string, Process>()
   private readonly counters = new Map<string, number>()
+  /** Starts past the limit check whose child has not spawned yet; they hold a running slot. */
+  private readonly spawning = new Map<string, number>()
   private readonly kills = new Set<Promise<void>>()
   private readonly deliveries = new Map<string, (delivery: ProcessDelivery) => void>()
   private shuttingDown = false
@@ -176,17 +189,39 @@ export class BackgroundProcessController implements ProcessAgentHost {
       throw error
     }
     if (!stat.isDirectory()) throw new Error(`Not a directory: ${cwd}`)
-    const running = this.own(sessionId).filter((proc) => proc.endedAt === undefined).length
-    if (running >= RUNNING_LIMIT) throw new Error(`This session already runs ${RUNNING_LIMIT} background processes; stop one first`)
+    const atLimit = () => this.own(sessionId).filter((proc) => proc.endedAt === undefined).length + (this.spawning.get(sessionId) ?? 0) >= RUNNING_LIMIT
+    const limitError = () => new Error(`This session already runs ${RUNNING_LIMIT} background processes; stop one first`)
+    if (atLimit()) throw limitError()
 
-    const { file, args } = shell(command)
-    const child = spawn(file, args, {
-      cwd, env: environment(), stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true
-    })
-    await new Promise<void>((resolveSpawn, reject) => {
-      child.once('spawn', resolveSpawn)
-      child.once('error', reject)
-    })
+    const plain = shell(command)
+    const sandboxed = await this.deps.sandbox?.(sessionId, command, plain.file, signal) ?? null
+    const { file, args } = sandboxed ? { file: '/bin/sh', args: ['-c', sandboxed.command] } : plain
+    let child: ChildProcess
+    try {
+      signal?.throwIfAborted()
+      if (this.deps.sessionDirectory(sessionId) === undefined || this.shuttingDown) throw new Error('This session is no longer open')
+      // Parallel starts can all wait on a sandbox approval and pass the first check together. The
+      // slot stays reserved until the record below is stored (synchronously after the spawn).
+      if (atLimit()) throw limitError()
+      this.spawning.set(sessionId, (this.spawning.get(sessionId) ?? 0) + 1)
+      try {
+        child = spawn(file, args, {
+          cwd, env: sandboxed ? sandboxEnvironment(environment()) : environment(),
+          stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true
+        })
+        await new Promise<void>((resolveSpawn, reject) => {
+          child.once('spawn', resolveSpawn)
+          child.once('error', reject)
+        })
+      } finally {
+        const left = this.spawning.get(sessionId)! - 1
+        if (left) this.spawning.set(sessionId, left)
+        else this.spawning.delete(sessionId)
+      }
+    } catch (error) {
+      sandboxed?.finish()
+      throw error
+    }
     // Later errors (a failed Windows kill) would otherwise be an uncaught 'error' event in main.
     child.on('error', (error) => console.error('Background process error:', error))
     const number = (this.counters.get(sessionId) ?? 0) + 1
@@ -217,6 +252,16 @@ export class BackgroundProcessController implements ProcessAgentHost {
         if (text) this.pushLine(proc, stream, text, version)
         proc.partial[stream] = { text: '', version: 0 }
       }
+      let refused: { report: string; hosts?: string[] } | undefined
+      try {
+        refused = sandboxed?.finish()
+      } catch (error) {
+        // The shell already exited: a crashed sandbox worker or failed OS cleanup becomes a failed
+        // record/tool result, never an uncaught EventEmitter error that kills Pig's main process.
+        proc.sandboxError = error instanceof Error ? error.message : String(error)
+        this.pushLine(proc, 'stderr', `Sandbox cleanup failed: ${proc.sandboxError}`, ++proc.version)
+      }
+      if (refused?.report) for (const line of refused.report.split('\n')) this.pushLine(proc, 'stderr', line, ++proc.version)
       proc.exitCode = code
       proc.signal = exitSignal
       proc.endedAt = Date.now()
@@ -226,6 +271,23 @@ export class BackgroundProcessController implements ProcessAgentHost {
       this.notify(proc)
       if (!proc.reported) this.deliver(proc)
       this.deps.changed?.(proc.sessionId)
+      if (refused?.hosts?.length && this.deps.networkPermission && !proc.stoppedBy && !this.shuttingDown && this.processes.has(`${sessionId}\0${proc.id}`)) {
+        const approval = proc.networkApproval = new AbortController()
+        const complete = (text: string) => {
+          if (approval.signal.aborted || this.shuttingDown || this.processes.get(`${sessionId}\0${proc.id}`) !== proc) return
+          this.append(proc, 'stderr', `${text.trim()}\n`)
+          this.deps.changed?.(sessionId)
+          // Independent of exit observation: process_wait may already have returned before the
+          // human answers. This only reports the decision, never retries the command or starts a turn.
+          this.deliveries.get(sessionId)?.({
+            text: `Background process ${proc.id} network permission result (command was not rerun):\n${fenced('text', text.trim())}`
+          })
+        }
+        // Approval outlives the process, not its record/session. Never hold process_wait, shutdown
+        // or process_stop waiting for a human, and never automatically rerun an exited command.
+        void this.deps.networkPermission(sessionId, refused.hosts, approval.signal).then(complete,
+          (error: unknown) => complete(`Network permission request failed: ${error instanceof Error ? error.message : String(error)}`))
+      }
     })
     this.processes.set(`${sessionId}\0${proc.id}`, proc)
     this.prune(sessionId)
@@ -262,6 +324,7 @@ export class BackgroundProcessController implements ProcessAgentHost {
       if (matched()) return { text: `Text appeared.\n${summary(proc)}` }
       if (proc.endedAt === undefined) return undefined
       proc.reported = true
+      if (proc.sandboxError) throw new Error(`Sandbox cleanup failed: ${proc.sandboxError}`)
       if (options.text !== undefined) throw new Error(`${proc.id} ${status(proc)} before the text appeared`)
       return { text: `${summary(proc)}\nLast output (untrusted):\n${fenced('text', render(outputLines(proc).slice(-20)).text)}` }
     }
@@ -332,6 +395,7 @@ export class BackgroundProcessController implements ProcessAgentHost {
   remove(sessionId: string, processId: string): void {
     const proc = this.find(sessionId, processId)
     if (proc.endedAt === undefined) throw new Error('Stop the background process before removing it')
+    proc.networkApproval?.abort()
     this.processes.delete(`${sessionId}\0${processId}`)
     this.deps.changed?.(sessionId)
   }
@@ -339,7 +403,10 @@ export class BackgroundProcessController implements ProcessAgentHost {
   /** Kills everything the session started and forgets it. Waits for exits, not for the group SIGKILL. */
   async sessionClosed(sessionId: string): Promise<void> {
     const own = this.own(sessionId)
-    for (const proc of own) this.processes.delete(`${sessionId}\0${proc.id}`)
+    for (const proc of own) {
+      proc.networkApproval?.abort()
+      this.processes.delete(`${sessionId}\0${proc.id}`)
+    }
     this.counters.delete(sessionId)
     this.deliveries.delete(sessionId)
     if (own.length) this.deps.changed?.(sessionId)
@@ -352,7 +419,10 @@ export class BackgroundProcessController implements ProcessAgentHost {
   /** Kills every process and resolves once each group SIGKILL has also run. */
   async shutdown(): Promise<void> {
     this.shuttingDown = true
-    for (const proc of this.processes.values()) if (proc.endedAt === undefined) this.terminate(proc, 'pig')
+    for (const proc of this.processes.values()) {
+      proc.networkApproval?.abort()
+      if (proc.endedAt === undefined) this.terminate(proc, 'pig')
+    }
     this.processes.clear()
     await Promise.all([...this.kills])
   }
@@ -419,7 +489,10 @@ export class BackgroundProcessController implements ProcessAgentHost {
   private prune(sessionId: string): void {
     const ended = this.own(sessionId).filter((proc) => proc.endedAt !== undefined)
     const excess = this.own(sessionId).length - RECORD_LIMIT
-    for (const proc of ended.slice(0, Math.max(0, excess))) this.processes.delete(`${sessionId}\0${proc.id}`)
+    for (const proc of ended.slice(0, Math.max(0, excess))) {
+      proc.networkApproval?.abort()
+      this.processes.delete(`${sessionId}\0${proc.id}`)
+    }
   }
 
   private directory(sessionId: string): string {

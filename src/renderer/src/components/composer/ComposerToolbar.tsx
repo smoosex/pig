@@ -10,6 +10,7 @@ import { useT } from '../../hooks/useT'
 import { InputGroupAddon, InputGroupButton } from '../ui/input-group'
 import { SessionTreeButton } from '../SessionTreeDialog'
 import { SessionCapabilitiesButton } from './SessionCapabilitiesButton'
+import { PermissionModeButton } from './PermissionModeButton'
 import { ContextUsageButton } from './ContextUsageButton'
 import { ProcessStatus } from './ProcessStatus'
 import { ReviewStatus } from './ReviewStatus'
@@ -134,6 +135,7 @@ export function ComposerToolbar({
               disabled={!sessionId || actions.pending || thinkingLevels.length <= 1}
             />
             <SessionCapabilitiesButton key={sessionId} sessionId={sessionId} busy={isStreaming || bashRunning} />
+            <PermissionModeButton sessionId={sessionId} />
             <SessionTreeButton disabled={!sessionId || isDraftSession || isStreaming || bashRunning} />
           </>
         )}

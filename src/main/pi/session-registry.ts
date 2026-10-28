@@ -36,6 +36,8 @@ import { featuredRecipe } from '../mcp/featured'
 import type { CapabilityGroup, SessionCapabilities, SessionCapability } from '../../shared/session-capabilities'
 import { assertExtensionResources, createSessionRuntime, SessionResourceError } from './session-runtime'
 import { closeSessionProcesses } from '../processes'
+import { forgetSessionHosts } from '../sandbox/service'
+import { forgetSessionGrants } from '../permissions/grants'
 import { closeSessionBrowserControl } from '../plugins/pig-browser-host'
 import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
@@ -763,7 +765,7 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
       // prepareSession so a new prompt cannot enter an extension runtime being replaced.
       if (!canReloadResources(session)) continue
       resetSystemUI(session.sessionId)
-      cancelExtensionUI(session.sessionId)
+      cancelExtensionUI(session.sessionId, 'extension')
       const previous = [...paths]
       paths.splice(0, paths.length, ...next)
       if (!resourceReloads.has(session.sessionId)) {
@@ -899,12 +901,27 @@ export async function forkSessionFromMessage(
     targetSessionDir,
     position
   )
-  const held = holdPendingSession(forked.sessionManager, targetCwd, win, false)
-  copySessionCapabilities(sessionId, held.sessionId)
-  return {
-    ...previewFor(managerSource(forked.sessionManager), targetCwd),
-    sessionId: held.sessionId,
-    ...(forked.restoredPrompt ? { restoredPrompt: forked.restoredPrompt } : {})
+  const forkId = forked.sessionManager.getSessionId()
+  try {
+    // Do not expose the fork until its queued permission inheritance has finished.
+    await copySessionCapabilities(sessionId, forkId)
+    const preview = previewFor(managerSource(forked.sessionManager), targetCwd)
+    const held = holdPendingSession(forked.sessionManager, targetCwd, win, false)
+    return {
+      ...preview,
+      sessionId: held.sessionId,
+      ...(forked.restoredPrompt ? { restoredPrompt: forked.restoredPrompt } : {})
+    }
+  } catch (error) {
+    const path = forked.sessionManager.getSessionFile()
+    const cleanup = await Promise.allSettled([
+      removeSessionCapabilities(forkId),
+      ...(path ? [rm(path, { force: true })] : []),
+      ...(chat ? [rm(targetCwd, { recursive: true, force: true })] : [])
+    ])
+    const failures = cleanup.flatMap((result) => result.status === 'rejected' ? [result.reason] : [])
+    if (failures.length) throw new AggregateError([error, ...failures], 'Fork failed and could not be fully cleaned up')
+    throw error
   }
 }
 
@@ -923,6 +940,9 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
   } catch (error) {
     shutdownErrors.push(error)
   }
+  // Hosts and approvals allowed "for this session" end with it.
+  forgetSessionHosts(session.sessionId)
+  forgetSessionGrants(session.sessionId)
   try {
     closeSessionBrowserControl(session.sessionId)
   } catch (error) {

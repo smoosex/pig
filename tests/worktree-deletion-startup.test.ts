@@ -56,6 +56,7 @@ async function fixture(failure: Failure): Promise<void> {
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: asyncNoop },
     'processes/index': { shutdownProcesses: asyncNoop },
+    'sandbox/service': { shutdownSandbox: asyncNoop },
     'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => {

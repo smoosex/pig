@@ -1,7 +1,8 @@
 /** SDK dialogs live outside settings and session panes so OAuth can complete while navigation changes. */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { api, type ExtensionUIEvent } from '../ipc/api'
+import { api } from '../ipc/api'
+import { replyExtensionPrompt, useExtensionPrompts, type ExtensionPrompt as Prompt } from '../stores/extension-prompts'
 import { useT } from '../hooks/useT'
 import { useSessionsStore, selectActiveSessionId } from '../stores/sessions'
 import { Button } from './ui/button'
@@ -25,7 +26,6 @@ import {
   SelectValue
 } from './ui/select'
 
-type Prompt = Extract<ExtensionUIEvent, { kind: 'prompt' }>
 function ExtensionPrompt({ prompt, reply }: { prompt: Prompt; reply(value: string | null): void }) {
   const t = useT()
   const [value, setValue] = useState(prompt.prefill ?? '')
@@ -96,13 +96,13 @@ function ExtensionPrompt({ prompt, reply }: { prompt: Prompt; reply(value: strin
 }
 export function ExtensionUI() {
   const active = useSessionsStore(selectActiveSessionId)
-  const [prompts, setPrompts] = useState<Prompt[]>([])
+  const prompts = useExtensionPrompts((state) => state.prompts)
   useEffect(
     () =>
       api.onExtensionUI((event) => {
-        if (event.kind === 'dismiss')
-          setPrompts((items) => items.filter((item) => item.id !== event.id))
-        else if (event.kind === 'prompt') setPrompts((items) => [...items, event])
+        const store = useExtensionPrompts.getState()
+        if (event.kind === 'dismiss') store.remove(event.id)
+        else if (event.kind === 'prompt') store.add(event)
         else if (
           event.owner.startsWith('mcp:') ||
           event.owner === selectActiveSessionId(useSessionsStore.getState())
@@ -118,14 +118,14 @@ export function ExtensionUI() {
       }),
     []
   )
-  const prompt = prompts.find((item) => item.owner.startsWith('mcp:') || item.owner === active)
+  // Approvals live above their session's composer (ApprovalPrompt), never in a dialog.
+  const prompt = prompts.find((item) => !item.approval && (item.owner.startsWith('mcp:') || item.owner === active))
   return prompt ? (
     <ExtensionPrompt
       key={prompt.id}
       prompt={prompt}
       reply={(value) => {
-        setPrompts((items) => items.filter((item) => item.id !== prompt.id))
-        void api.replyExtensionUI(prompt.id, value).catch((error) => toast.error(String(error)))
+        void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(String(error)))
       }}
     />
   ) : null

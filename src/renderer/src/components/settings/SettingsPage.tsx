@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, Snowflake, Webhook } from 'lucide-react'
+import { BookOpen, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
@@ -15,6 +15,7 @@ import { ProvidersPane } from './ProvidersPane'
 import { PluginsPane } from './PluginsPane'
 import { McpPane } from './McpPane'
 import { SkillsPane } from './SkillsPane'
+import { PermissionsPane } from './PermissionsPane'
 
 const sections = [
   {
@@ -66,6 +67,13 @@ const sections = [
     description: 'settings.sectionPluginsDescription',
     icon: Component,
     component: PluginsPane
+  },
+  {
+    id: 'permissions',
+    title: 'permissions.title',
+    description: 'permissions.description',
+    icon: ShieldCheck,
+    component: PermissionsPane
   }
 ] as const
 

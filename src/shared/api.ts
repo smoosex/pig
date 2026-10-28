@@ -901,6 +901,7 @@ export type * from './processes'
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi {
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
+  permissions: import('./permissions').PermissionsApi
   processes: import('./processes').ProcessApi
   terminal: import('./terminal').TerminalApi
   listProjects: () => Promise<ProjectGroup[]>

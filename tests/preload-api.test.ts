@@ -104,6 +104,12 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.persona.setObserver({ enabled: true, provider: 'test', modelId: 'observer' })
   await api.persona.setAutomatic(false)
   api.persona.onChanged(() => {})()
+  await api.permissions.getPermissions()
+  await api.permissions.setDefaultPermissionMode('read-only')
+  await api.permissions.removePermissionDomain('/repo/.git', 'example.com')
+  await api.permissions.getSessionPermission('session-1')
+  await api.permissions.setSessionPermission('session-1', null)
+  api.permissions.onPermissionsChanged(() => {})()
   await api.processes.list('session-1')
   await api.processes.stop('session-1', 'proc-1')
   await api.processes.remove('session-1', 'proc-1')
@@ -185,6 +191,11 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'persona:set-mood', args: [{ pleasantness: 0.6, activation: 0.4, energy: 0.8 }] },
     { channel: 'persona:set-observer', args: [{ enabled: true, provider: 'test', modelId: 'observer' }] },
     { channel: 'persona:set-automatic', args: [false] },
+    { channel: 'permissions:get', args: [] },
+    { channel: 'permissions:set-default-mode', args: ['read-only'] },
+    { channel: 'permissions:remove-domain', args: ['/repo/.git', 'example.com'] },
+    { channel: 'permissions:get-session', args: ['session-1'] },
+    { channel: 'permissions:set-session', args: ['session-1', null] },
     { channel: 'processes:list', args: ['session-1'] },
     { channel: 'processes:stop', args: ['session-1', 'proc-1'] },
     { channel: 'processes:remove', args: ['session-1', 'proc-1'] },
@@ -209,6 +220,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('browser:devtools-resize'))
   assert.ok(listeners.includes('browser:agent-open-request'))
   assert.ok(listeners.includes('browser:state'))
+  assert.ok(listeners.includes('permissions:changed'))
   assert.ok(listeners.includes('persona:changed'), 'open persona settings learn about conversation changes')
   assert.ok(listeners.includes('browser:selection'))
   assert.ok(listeners.includes('terminal:event'))

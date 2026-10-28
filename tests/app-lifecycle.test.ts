@@ -118,6 +118,7 @@ async function fixture(mode: string): Promise<void> {
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: () => { events.push('terminal:cleanup'); return terminalCleanup.promise } },
     'processes/index': { shutdownProcesses: asyncNoop },
+    'sandbox/service': { shutdownSandbox: asyncNoop },
     'terminal/history': { pruneTerminalHistories: asyncNoop },
     'i18n': { initLocale: asyncNoop },
     'pig-settings': { loadPigSettings: async () => { events.push('settings'); return { shortcuts: {} } } },

@@ -29,7 +29,9 @@ test('defaults and reads never create state or acquire locks; file revisions and
   const initial = await getPersona()
   expect(initial.active).toBe(false)
   expect(initial.files.map(file => file.name)).toEqual([...PERSONA_FILES])
-  expect(initial.mood).toMatchObject({ pleasantness: 0.15, activation: 0.35, energy: 0.75, automatic: true, observer: { enabled: true } })
+  expect(initial.mood).toMatchObject({ pleasantness: 0.15, activation: 0.35, automatic: true, observer: { enabled: true } })
+  // Energy recovers while idle, so the default may already have moved by a few milliseconds.
+  expect(initial.mood.energy).toBeCloseTo(0.75, 5)
   await setActivity('inactive', true)
   await setActivity('missing', false)
   await expect(stat(statePath())).rejects.toThrow()

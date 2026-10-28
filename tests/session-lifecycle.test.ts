@@ -1,5 +1,6 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -96,7 +97,10 @@ async function fixture(scenario: string): Promise<void> {
     }))
     registry = await import('../src/main/pi/session-registry')
     const sessions = registry
-    const win = {} as Parameters<typeof sessions.createPendingSession>[1]
+    const win = {
+      isDestroyed: () => false,
+      webContents: Object.assign(new EventEmitter(), { isDestroyed: () => false, send() {} })
+    } as unknown as Parameters<typeof sessions.createPendingSession>[1]
     const draft = sessions.createPendingSession(cwd, win, {
       draft: scenario !== 'persistent'
     })

@@ -69,6 +69,8 @@ export type ExtensionUIEvent =
       message?: string
       options?: string[]
       prefill?: string
+      /** A permission request: shown inline above the owning session's composer; the last option denies. */
+      approval?: true
     }
   | { kind: 'dismiss'; id: string }
   | { kind: 'notify'; owner: string; message: string; level: 'info' | 'warning' | 'error' }

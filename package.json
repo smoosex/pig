@@ -26,6 +26,7 @@
     "build:linux": "bun run build && electron-builder --linux"
   },
   "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.81",
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@electron-toolkit/utils": "^4.0.0",
     "@xterm/addon-serialize": "^0.14.0",

@@ -926,6 +926,31 @@ export const zh = {
     closeDescription: '{n} 个后台子 agent 仍在运行，关闭后会被中止。',
     closeConfirm: '关闭并中止'
   },
+  permissions: {
+    title: '权限', description: '沙箱和权限',
+    limitations: '当前仅保护 Agent 命令、后台进程和内置文件工具；MCP、浏览器和交互终端尚未纳入，手工 ! 命令也不受限制。切换模式不改变已经启动的进程。',
+    sandbox: '沙箱',
+    sandboxDescription: 'Agent 的命令和后台进程在系统沙箱里运行：只能写当前工作区、独立临时目录和包管理缓存，禁止读取已列入保护的常见凭据路径（并非所有应用凭据），只能访问常用包管理源、已放行域名及本地服务。',
+    sandboxState: { pending: '正在检测', ready: '沙箱可用', unavailable: '沙箱不可用', unsupported: '当前平台不支持沙箱' },
+    sandboxOn: '已启用', sandboxOff: '未受沙箱保护',
+    sandboxMissing: '沙箱不可用（{detail}）：默认模式逐次询问，只读模式拒绝执行。',
+    modes: '模式', defaultMode: '新会话的默认模式', defaultModeDescription: '没有单独设置模式的会话都跟随它，修改后立即生效。',
+    mode: { 'read-only': '只读', default: '默认', 'full-access': '完全访问' },
+    modeHint: {
+      'read-only': '命令在沙箱里运行，不能联网；只能写临时目录，文件工具不能写入',
+      default: '命令在沙箱里运行；在工作区外写文件、读凭据时询问',
+      'full-access': '不使用沙箱，也不询问'
+    },
+    followDefault: '跟随默认模式',
+    hosts: '已放行的域名', noHosts: '还没有放行过域名。命令访问未放行的域名被拦下时，会询问是否放行。',
+    allProjects: '所有项目', removeHost: '移除 {host}',
+    hostsTitle: '命令访问 {hosts} 被沙箱拦下，是否放行？', hostsMessage: '命令已经结束，放行后不会自动重跑，需要时由 Agent 再执行一次。', hostsSession: '本会话放行', hostsProject: '本项目放行', hostsDeny: '不放行',
+    unsandboxedTitle: '在沙箱外运行命令？', unsandboxedMessage: '命令：{command}\n理由：{reason}\n\n这条命令会以 Pig 的完整权限运行。',
+    noSandboxTitle: '沙箱不可用，直接运行？', noSandboxMessage: '命令：{command}\n原因：{detail}\n\n这条命令会以 Pig 的完整权限运行。',
+    unsupported: '当前平台不支持沙箱',
+    allowOnce: '本次允许', allowSession: '本会话允许', deny: '拒绝', approvalHint: '按数字键选择，Esc 拒绝',
+    readTitle: '允许读取敏感路径？', writeTitle: '允许写入这个路径？', pathMessage: '{tool}：{path}'
+  },
   processes: {
     summary: '后台进程: {statuses}',
     title: '后台进程',

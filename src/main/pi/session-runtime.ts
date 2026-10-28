@@ -5,6 +5,9 @@ import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionReso
 import { startModelRuntime } from './model-settings'
 import { pigDocsExtension } from './pig-docs'
 import { pigIdentityExtension } from './pig-identity'
+import { permissionsExtension } from '../permissions/extension'
+import { sessionPermission } from '../permissions/store'
+import type { PermissionMode } from '../../shared/permissions'
 import { sessionToolFactory } from './tool-resources'
 
 export class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
@@ -23,13 +26,23 @@ export async function createSessionRuntime(
     toolPreferences?: Parameters<typeof sessionToolFactory>[2]
     /** Subagents keep Pi's plain identity, like they skip the persona plugin. */
     identity?: boolean
+    /** Subagents run under their parent's mode and allowed hosts, fixed at launch. */
+    permissions?: { sessionId: string; mode: PermissionMode }
   } = {}
 ): Promise<AgentSession> {
   const settingsManager = sessionResourceSettings(cwd, getAgentDir())
   const sessionId = sessionManager.getSessionId()
+  const inherited = options.permissions
+  const permissions = permissionsExtension({
+    cwd, settingsManager,
+    sessionId: inherited?.sessionId ?? sessionId,
+    // Read on every call: the mode switch in the composer applies to the next tool call.
+    mode: inherited ? () => inherited.mode : () => sessionPermission(sessionId).mode
+  })
   const resources = { onSkillBase: options.onSkillBase, settingsManager, sessionId,
     extensionFactories: [
       pigDocsExtension,
+      permissions,
       ...(options.identity === false ? [] : [pigIdentityExtension]),
       sessionToolFactory(cwd, sessionId, options.toolPreferences)
     ], appendSystemPrompt }

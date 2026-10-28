@@ -14,6 +14,7 @@ import { createSessionRuntime } from '../pi/session-runtime'
 import { applySessionTools, readSessionCapabilities } from '../pi/session-capabilities'
 import { SUBAGENT_SYSTEM_PROMPT } from '../plugins/pig-subagent/prompts'
 import { worktrees } from '../project-worktrees'
+import { sessionPermission } from '../permissions/store'
 import type { RunEvent, RunResult, RunSpec, SubagentRun, SubagentRunner } from './runner'
 
 type Content = { type: string; text?: string }
@@ -55,7 +56,8 @@ export function createSdkRunner(): SubagentRunner {
       // Snapshot at launch: later parent edits must not mutate a running child's capabilities.
       const parentPreferences = readSessionCapabilities(spec.parentSessionId)
       const toolPreferences = { tools: { ...parentPreferences.tools, spawn: false }, mcp: { ...parentPreferences.mcp } }
-      const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences, identity: false })
+      const permissions = { sessionId: spec.parentSessionId, mode: sessionPermission(spec.parentSessionId).mode }
+      const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences, identity: false, permissions })
       try {
         await session.bindExtensions({
           mode: 'print',

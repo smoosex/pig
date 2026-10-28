@@ -8,6 +8,7 @@
  */
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -122,7 +123,10 @@ async function fixture(version: number): Promise<void> {
     }))
 
     const registry = await import('../src/main/pi/session-registry')
-    const win = { isDestroyed: () => true, webContents: { send: () => {} } } as unknown as Parameters<
+    const win = {
+      isDestroyed: () => true,
+      webContents: Object.assign(new EventEmitter(), { isDestroyed: () => false, send: () => {} })
+    } as unknown as Parameters<
       typeof registry.openSession
     >[1]
 

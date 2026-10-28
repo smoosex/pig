@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -162,10 +163,10 @@ async function runFixture(): Promise<void> {
     const pushes: Array<{ channel: string; update: Record<string, unknown> }> = []
     const win = {
       isDestroyed: () => false,
-      webContents: {
+      webContents: Object.assign(new EventEmitter(), {
         isDestroyed: () => false,
         send: (channel: string, update: Record<string, unknown>) => { pushes.push({ channel, update }) }
-      }
+      })
     } as unknown as import('electron').BrowserWindow
 
     registry = await import('../src/main/pi/session-registry')

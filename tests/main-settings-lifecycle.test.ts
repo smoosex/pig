@@ -1,5 +1,6 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -78,7 +79,10 @@ async function fixture(name: string): Promise<void> {
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: { assertAvailable() {} } }))
     try {
       registry = await import('../src/main/pi/session-registry')
-      const { sessionId } = registry.createPendingSession(root, {} as import('electron').BrowserWindow)
+      const { sessionId } = registry.createPendingSession(root, {
+        isDestroyed: () => false,
+        webContents: Object.assign(new EventEmitter(), { isDestroyed: () => false, send() {} })
+      } as unknown as import('electron').BrowserWindow)
       const preparing = registry.prepareSession(sessionId)
       await started.promise
       const model = registry.setSessionModel(sessionId, 'test', 'new-model')

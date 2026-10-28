@@ -9,6 +9,7 @@ import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
 import { shutdownTerminals } from './ipc/terminal'
 import { shutdownProcesses } from './processes'
+import { shutdownSandbox } from './sandbox/service'
 import { exitAfterCleanup } from './shutdown'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
@@ -159,8 +160,14 @@ app.on('before-quit', (event) => {
   ])
     .then(() => disposeAll())
     .catch(() => {})
-  void exitAfterCleanup(Promise.all([shutdownTerminals(), shutdownProcesses()]), Promise.race([
+  const sessionsStopped = Promise.race([
     teardown,
     new Promise((resolve) => setTimeout(resolve, QUIT_DEADLINE_MS))
-  ]), (code) => app.exit(code))
+  ])
+  const mandatory = Promise.allSettled([shutdownTerminals(), shutdownProcesses(), sessionsStopped]).then(async (results) => {
+    const sandbox = await Promise.allSettled([shutdownSandbox()])
+    const errors = [...results, ...sandbox].flatMap((result) => result.status === 'rejected' ? [result.reason] : [])
+    if (errors.length) throw new AggregateError(errors, 'Pig cleanup failed')
+  })
+  void exitAfterCleanup(mandatory, sessionsStopped, (code) => app.exit(code))
 })

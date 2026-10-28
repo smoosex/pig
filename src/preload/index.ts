@@ -72,6 +72,18 @@ const api: SessionApi = {
       return () => ipcRenderer.off('persona:changed', handler)
     }
   },
+  permissions: {
+    getPermissions: () => ipcRenderer.invoke('permissions:get'),
+    setDefaultPermissionMode: (mode) => ipcRenderer.invoke('permissions:set-default-mode', mode),
+    removePermissionDomain: (project, domain) => ipcRenderer.invoke('permissions:remove-domain', project, domain),
+    getSessionPermission: (sessionId) => ipcRenderer.invoke('permissions:get-session', sessionId),
+    setSessionPermission: (sessionId, mode) => ipcRenderer.invoke('permissions:set-session', sessionId, mode),
+    onPermissionsChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('permissions:changed', handler)
+      return () => ipcRenderer.off('permissions:changed', handler)
+    }
+  },
   processes: {
     list: (sessionId) => ipcRenderer.invoke('processes:list', sessionId),
     stop: (sessionId, processId) => ipcRenderer.invoke('processes:stop', sessionId, processId),

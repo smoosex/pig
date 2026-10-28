@@ -13,6 +13,7 @@ import { registerBrowserIpc } from './browser'
 import { registerTerminalIpc } from './terminal'
 import { getLive } from '../pi/session-registry'
 import { registerProcessIpc } from './processes'
+import { registerPermissionsIpc } from './permissions'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -30,4 +31,5 @@ export function registerIpc(): void {
   registerTerminalIpc(sessions)
   registerBrowserIpc(sessions)
   registerProcessIpc()
+  registerPermissionsIpc()
 }

@@ -38,6 +38,7 @@ async function fixture(scenario: Scenario): Promise<void> {
     listSubagents: async () => [],
     onSubagentsChanged: () => () => {},
     processes: { list: async () => [], onChanged: () => () => {} },
+    permissions: { getSessionPermission: async () => ({ mode: 'default', overridden: false }), getPermissions: async () => ({ defaultMode: 'default', domains: [], projects: [], sandbox: { state: 'ready' } }), onPermissionsChanged: () => () => {} },
     prompt: async (sessionId: string, text: string) => { submittedPrompts.push([sessionId, text]) }
   } as unknown as typeof window.api
   const React = await import('react')
@@ -129,6 +130,26 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.equal(editor().textContent, 'Keep this draft')
       assert.equal(sendButton().disabled, false)
       assert.equal(returnButton().getAttribute('aria-disabled'), 'false')
+      // A permission request stands in for the prompt box, owns the keyboard and keeps the draft.
+      const replies: Array<[string, string | null]> = []
+      window.api.replyExtensionUI = async (id, value) => { replies.push([id, value]) }
+      const { useExtensionPrompts } = await import('../src/renderer/src/stores/extension-prompts')
+      await act(async () => useExtensionPrompts.getState().add({
+        kind: 'prompt', id: 'approve', owner: 'one', method: 'select', title: 'Allow?', approval: true, options: ['Once', 'Session', 'Deny']
+      }))
+      const card = () => document.querySelector('[data-approval-prompt]')
+      assert.ok(card())
+      assert.ok(editor().closest('[hidden]'), 'the prompt box is hidden behind the request')
+      assert.equal(document.activeElement?.getAttribute('type'), 'radio')
+      const realNow = performance.now.bind(performance)
+      performance.now = () => realNow() + 1000
+      await act(async () => {
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true }))
+      })
+      assert.deepEqual(replies, [['approve', 'Once']])
+      assert.equal(card(), null)
+      assert.equal(editor().closest('[hidden]'), null)
+      assert.equal(editor().textContent, 'Keep this draft')
       return
     }
     if (scenario === 'returning') {

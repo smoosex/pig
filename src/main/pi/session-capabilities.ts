@@ -7,6 +7,8 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { CapabilityGroup, SessionCapability, SessionCapabilityOverrides, SessionToolProvider } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
 import { privateJson, sdkFile } from '../mcp/sdk'
+import { copySessionPermission, removeSessionPermission } from '../permissions/store'
+import { isPermissionTool } from '../permissions/extension'
 
 const empty = (): SessionCapabilityOverrides => ({ tools: {}, mcp: {}, skills: {} })
 function preferencePath(sessionId: string): string {
@@ -32,12 +34,14 @@ export function saveSessionCapability(sessionId: string, group: CapabilityGroup,
   }
   privateJson(preferencePath(sessionId), prefs)
 }
-/** A fork starts with its source's overrides; a session without any leaves no file behind. */
-export function copySessionCapabilities(from: string, to: string): void {
-  if (existsSync(preferencePath(from))) privateJson(preferencePath(to), readSessionCapabilities(from))
+/** A fork starts with its source's overrides and permission mode; a session without any leaves no file behind. */
+export async function copySessionCapabilities(from: string, to: string): Promise<void> {
+  const prefs = existsSync(preferencePath(from)) ? readSessionCapabilities(from) : null
+  await copySessionPermission(from, to)
+  if (prefs) privateJson(preferencePath(to), prefs)
 }
 export async function removeSessionCapabilities(sessionId: string): Promise<void> {
-  await rm(preferencePath(sessionId), { force: true })
+  await Promise.all([rm(preferencePath(sessionId), { force: true }), removeSessionPermission(sessionId)])
 }
 export function saveSessionCapabilityGroup(sessionId: string, group: CapabilityGroup, ids: readonly string[], enabled: boolean | null): void {
   const prefs = readSessionCapabilities(sessionId)
@@ -85,7 +89,7 @@ export function sessionTools(agent: AgentSession, overrides: Record<string, bool
     if (!original || captureDefaults) {
       const enabled = tool.name === 'tool_search'
         ? agent.getActiveToolNames().includes(tool.name)
-        : tool.sourceInfo.source !== 'builtin' || defaults.includes(tool.name)
+        : (tool.sourceInfo.source !== 'builtin' && !isPermissionTool(tool.parameters)) || defaults.includes(tool.name)
       original = { exposure: original?.exposure ?? tool.exposure, enabled }
       originals.set(definition, original)
     }

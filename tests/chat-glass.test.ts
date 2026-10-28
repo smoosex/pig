@@ -21,6 +21,7 @@ async function fixture(scenario: string): Promise<void> {
     listSubagents: async () => [],
     onSubagentsChanged: () => noop,
     processes: { list: async () => [], onChanged: () => () => {} },
+    permissions: { getSessionPermission: async () => ({ mode: 'default', overridden: false }), getPermissions: async () => ({ defaultMode: 'default', domains: [], projects: [], sandbox: { state: 'ready' } }), onPermissionsChanged: () => () => {} },
     onPluginsChanged: () => noop,
     setSidebarPrefs: async ({ reviewOpen }: { reviewOpen?: boolean }) => ({ sidebarTab: 'projects', split: 0.5, reviewOpen: reviewOpen ?? false })
   } })

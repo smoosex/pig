@@ -78,6 +78,8 @@ asarUnpack:
   - resources/**
   # The PTY host loads node-pty's native module and execs its spawn-helper from disk.
   - node_modules/node-pty/**
+  # The sandbox runtime execs its Linux seccomp helpers and Windows srt-win from disk.
+  - node_modules/@anthropic-ai/sandbox-runtime/vendor/**
 win:
   icon: build/icon.ico
   executableName: Pig

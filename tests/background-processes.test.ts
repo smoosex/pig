@@ -189,3 +189,167 @@ test('the environment drops Electron and Pig variables', async () => {
     delete process.env.ELECTRON_TEST_FLAG
   }
 })
+
+test('a sandboxed start runs the wrapped command and appends what the sandbox refused', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+  roots.push(root)
+  const wrapped: Array<{ command: string; shell: string }> = []
+  let finished = 0
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => root,
+    sandbox: async (_sessionId, command, shell) => {
+      wrapped.push({ command, shell })
+      return { command: `echo wrapped; ${command}`, finish: () => { finished++; return { report: '<sandbox_violations>\ndeny network-outbound x.test:443\n</sandbox_violations>' } } }
+    }
+  })
+  controllers.push(controller)
+  await controller.start('one', 'echo inner', {})
+  await controller.wait('one', 'proc-1', {})
+  const read = (await controller.read('one', 'proc-1', 100)).text
+  expect(read).toContain('wrapped\ninner')
+  expect(read).toContain('[stderr] deny network-outbound x.test:443')
+  expect(wrapped).toEqual([{ command: 'echo inner', shell: expect.any(String) }])
+  expect(finished).toBe(1)
+})
+
+test('an exited sandboxed process can request host approval without blocking wait or rerunning', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+  roots.push(root)
+  let allow!: (note: string) => void
+  let approvalSignal: AbortSignal | undefined
+  let starts = 0
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => root,
+    sandbox: async (_session, command) => {
+      starts++
+      return { command, finish: () => ({ report: 'host refused', hosts: ['x.test'] }) }
+    },
+    networkPermission: async (_session, hosts, signal) => {
+      expect(hosts).toEqual(['x.test'])
+      approvalSignal = signal
+      return new Promise<string>((resolve) => { allow = resolve })
+    }
+  })
+  controllers.push(controller)
+  const delivered: string[] = []
+  controller.attach('one', ({ text }) => delivered.push(text))
+  await controller.start('one', 'sleep 0.05; echo once', {})
+  await controller.wait('one', 'proc-1', {})
+  expect(approvalSignal?.aborted).toBe(false)
+  expect(delivered).toEqual([])
+  allow('Allowed for this session; not rerun.')
+  await Bun.sleep(0)
+  expect((await controller.read('one', 'proc-1', 100)).text).toContain('Allowed for this session; not rerun.')
+  expect(starts).toBe(1)
+  expect(delivered).toEqual([
+    'Background process proc-1 network permission result (command was not rerun):\n```text\nAllowed for this session; not rerun.\n```'
+  ])
+  await controller.wait('one', 'proc-1', {})
+  expect(delivered).toHaveLength(1)
+  controller.remove('one', 'proc-1')
+  expect(approvalSignal?.aborted).toBe(true)
+})
+
+test('evicting a finished process cancels its outstanding network approval', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+  roots.push(root)
+  let starts = 0
+  let approvalSignal: AbortSignal | undefined
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => root,
+    sandbox: async (_session, command) => {
+      const hosts = starts++ === 0 ? ['x.test'] : []
+      return { command, finish: () => ({ report: '', hosts }) }
+    },
+    networkPermission: async (_session, _hosts, signal) => {
+      approvalSignal = signal
+      return new Promise<string>((resolve) => signal.addEventListener('abort', () => resolve('cancelled'), { once: true }))
+    }
+  })
+  controllers.push(controller)
+  for (let index = 1; index <= 33; index++) {
+    await controller.start('one', 'true', {})
+    await controller.wait('one', `proc-${index}`, {})
+  }
+  expect(approvalSignal?.aborted).toBe(true)
+  expect(controller.snapshot('one')).toHaveLength(32)
+})
+
+for (const cancel of ['remove', 'session', 'shutdown'] as const) {
+  test(`late network approval is not delivered after ${cancel}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+    roots.push(root)
+    let resolveApproval!: (text: string) => void
+    let approvalSignal!: AbortSignal
+    const controller = new BackgroundProcessController({
+      sessionDirectory: () => root,
+      sandbox: async (_session, command) => ({ command, finish: () => ({ report: '', hosts: ['x.test'] }) }),
+      networkPermission: async (_session, _hosts, signal) => {
+        approvalSignal = signal
+        return new Promise<string>((resolve) => { resolveApproval = resolve })
+      }
+    })
+    controllers.push(controller)
+    const delivered: string[] = []
+    controller.attach('one', ({ text }) => delivered.push(text))
+    await controller.start('one', 'sleep 0.05', {})
+    await controller.wait('one', 'proc-1', {})
+    if (cancel === 'remove') controller.remove('one', 'proc-1')
+    else if (cancel === 'session') await controller.sessionClosed('one')
+    else await controller.shutdown()
+    expect(approvalSignal.aborted).toBe(true)
+    resolveApproval('Allowed for this session')
+    await Bun.sleep(0)
+    expect(delivered).toEqual([])
+  })
+}
+
+test('network approval failure is reported once, independently of observed exit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+  roots.push(root)
+  let rejectApproval!: (error: Error) => void
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => root,
+    sandbox: async (_session, command) => ({ command, finish: () => ({ report: '', hosts: ['x.test'] }) }),
+    networkPermission: async () => new Promise<string>((_resolve, reject) => { rejectApproval = reject })
+  })
+  controllers.push(controller)
+  const delivered: string[] = []
+  controller.attach('one', ({ text }) => delivered.push(text))
+  await controller.start('one', 'sleep 0.05', {})
+  await controller.wait('one', 'proc-1', {})
+  rejectApproval(new Error('preferences write failed'))
+  await Bun.sleep(0)
+  expect(delivered).toHaveLength(1)
+  expect(delivered[0]).toContain('proc-1 network permission result')
+  expect(delivered[0]).toContain('Network permission request failed: preferences write failed')
+  expect((await controller.read('one', 'proc-1', 100)).text).toContain('Network permission request failed: preferences write failed')
+})
+
+test('sandbox cleanup failure becomes a failed process result without fabricating its exit code', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-processes-'))
+  roots.push(root)
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => root,
+    sandbox: async (_session, command) => ({ command, finish: () => { throw new Error('sandbox worker gone') } })
+  })
+  controllers.push(controller)
+  await controller.start('one', 'true', {})
+  await expect(controller.wait('one', 'proc-1', {})).rejects.toThrow('Sandbox cleanup failed: sandbox worker gone')
+  expect(controller.snapshot('one')[0]).toMatchObject({ status: 'failed', exitCode: 0 })
+})
+
+test('starts waiting on a sandbox approval together cannot exceed the running limit', async () => {
+  let release!: () => void
+  const approved = new Promise<void>((done) => { release = done })
+  const controller = new BackgroundProcessController({
+    sessionDirectory: () => tmpdir(), changed: () => {},
+    sandbox: async () => { await approved; return null }
+  })
+  const starts = Array.from({ length: RUNNING_LIMIT + 2 }, () => controller.start('one', 'sleep 30', {}).then(() => 'ok', (error: Error) => error.message))
+  release()
+  const results = await Promise.all(starts)
+  expect(results.filter((result) => result === 'ok')).toHaveLength(RUNNING_LIMIT)
+  expect(results.filter((result) => result.includes(`already runs ${RUNNING_LIMIT}`))).toHaveLength(2)
+  await controller.sessionClosed('one')
+})
