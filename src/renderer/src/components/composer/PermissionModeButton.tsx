@@ -85,7 +85,9 @@ export function PermissionModeButton({ sessionId }: { sessionId: string | null }
         </TooltipTrigger>
         <TooltipContent side="top">{label}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent side="top" align="start" className="w-72">
+      <DropdownMenuContent side="top" align="start" className="w-72"
+        // Returning focus to the trigger would open its Tooltip and leave it up after a choice.
+        onCloseAutoFocus={(event) => event.preventDefault()}>
         <DropdownMenuGroup>
         <DropdownMenuRadioGroup value={mode ?? ''} onValueChange={(value) => choose(value as PermissionMode)}>
           {PERMISSION_MODES.map((item) => {

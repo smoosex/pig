@@ -4,6 +4,7 @@ import type { McpConfig, McpImportEntry } from '../../shared/tool-settings'
 import { mcpCredentials, mcpSdk, privateJson, readJson } from './sdk'
 import { withMcpAuthMutation } from './connections'
 import { openComputerUseMcp } from './featured'
+import { readPermissionSettings, updatePermissionSettings } from '../permissions/store'
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -153,8 +154,10 @@ export function importMcpServers(
         throw new Error(`Confirm replacement: ${entry.name}`)
     }
     const obsolete: { name: string; url: string }[] = []
+    const retargeted: string[] = []
     for (const entry of entries) {
       const previous = servers[entry.name] as McpConfig | undefined
+      if (previous && endpoint(previous) !== endpoint(entry.config)) retargeted.push(entry.name)
       if (
         previous &&
         'url' in previous &&
@@ -168,6 +171,9 @@ export function importMcpServers(
       // Only the catalog knows an icon, and only for the single entry it was added as.
       if (icon && entries.length === 1) icons[entry.name] = icon
     }
+    // A replacement that runs another command or URL is a different server: like removal, it must not
+    // inherit the old one's approval. Cleared before the swap so a failed write never leaves it trusted.
+    await forgetMcpApprovals(retargeted)
     await withMcpAuthMutation(
       obsolete.map((entry) => entry.name),
       async () => {
@@ -210,7 +216,21 @@ export function removeMcpServer(name: string): Promise<void> {
         privateJson(pigPath('mcp-icons.json'), { servers: icons })
       }
     })
+    // A server added later under the same name must not inherit this one's approval.
+    await forgetMcpApprovals([name])
   })
+}
+
+/** What a server runs or connects to; other edits (env, headers, timeouts) keep its approval. */
+function endpoint(config: McpConfig): string {
+  return 'url' in config ? JSON.stringify(['url', config.url]) : JSON.stringify(['command', config.command, config.args ?? []])
+}
+
+async function forgetMcpApprovals(names: readonly string[]): Promise<void> {
+  if (!names.some((name) => Object.hasOwn(readPermissionSettings().mcp, name))) return
+  await updatePermissionSettings((current) => ({
+    ...current, mcp: Object.fromEntries(Object.entries(current.mcp).filter(([server]) => !names.includes(server)))
+  }))
 }
 export function deleteMcpCredentials(name: string): Promise<void> {
   return serialize(async () => {

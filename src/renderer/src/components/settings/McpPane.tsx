@@ -33,6 +33,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '../ui/input-group'
 import { Switch } from '../ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { AddMcpDialog } from './AddMcpDialog'
+import { McpApprovalMenu, useMcpApprovals } from './McpApprovalMenu'
 import { McpIcon } from './McpIcon'
 import { ToolSettingsFeedback } from './ToolSettingsFields'
 
@@ -134,6 +135,7 @@ export function McpPane() {
   const load = useToolSettingsStore((s) => s.load)
   const run = useToolSettingsStore((s) => s.run)
   useEffect(() => { void load() }, [load])
+  const [approvals, setApprovals] = useMcpApprovals()
   const [query, setQuery] = useState('')
   const [market, setMarket] = useState<McpMarketResult>({ servers: [] })
   const [searching, setSearching] = useState(false)
@@ -310,6 +312,7 @@ export function McpPane() {
                       onClick={() => probe(server.name, true)}
                     />
                   ) : null}
+                  <McpApprovalMenu name={server.name} approvals={approvals} disabled={rowBusy} onChange={setApprovals} />
                   <McpAction
                     label={t('mcp.remove')}
                     name={server.name}

@@ -109,6 +109,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.permissions.removePermissionDomain('/repo/.git', 'example.com')
   await api.permissions.getSessionPermission('session-1')
   await api.permissions.setSessionPermission('session-1', null)
+  await api.permissions.setMcpApproval('docs', 'prompt')
   api.permissions.onPermissionsChanged(() => {})()
   await api.processes.list('session-1')
   await api.processes.stop('session-1', 'proc-1')
@@ -196,6 +197,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'permissions:remove-domain', args: ['/repo/.git', 'example.com'] },
     { channel: 'permissions:get-session', args: ['session-1'] },
     { channel: 'permissions:set-session', args: ['session-1', null] },
+    { channel: 'permissions:set-mcp-approval', args: ['docs', 'prompt'] },
     { channel: 'processes:list', args: ['session-1'] },
     { channel: 'processes:stop', args: ['session-1', 'proc-1'] },
     { channel: 'processes:remove', args: ['session-1', 'proc-1'] },

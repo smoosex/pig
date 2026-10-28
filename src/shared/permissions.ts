@@ -17,6 +17,18 @@ export interface SandboxStatus {
   detail?: string
 }
 
+/**
+ * How calls to one MCP server's tools are approved outside full access. `auto` follows the tool's
+ * annotations (like Codex: unannotated tools ask), `prompt` asks for every tool regardless of them,
+ * `approve` never asks in the default mode. Read-only mode still allows only read-only tools.
+ */
+export const MCP_APPROVALS = ['auto', 'prompt', 'approve'] as const
+export type McpApproval = (typeof MCP_APPROVALS)[number]
+
+export function isMcpApproval(value: unknown): value is McpApproval {
+  return (MCP_APPROVALS as readonly unknown[]).includes(value)
+}
+
 export interface PermissionProject {
   /** The repository's Git common directory, shared by all of its worktrees. */
   root: string
@@ -28,6 +40,8 @@ export interface PermissionsSnapshot {
   /** Hosts allowed for every session, beyond the built-in package registries. */
   domains: string[]
   projects: PermissionProject[]
+  /** Servers whose approval is not `auto`, by configured server name. */
+  mcp: Record<string, McpApproval>
   sandbox: SandboxStatus
 }
 
@@ -42,6 +56,8 @@ export interface PermissionsApi {
   setDefaultPermissionMode(mode: PermissionMode): Promise<PermissionsSnapshot>
   /** A null project removes a global host. */
   removePermissionDomain(project: string | null, domain: string): Promise<PermissionsSnapshot>
+  /** Only the user sets this; the Agent's settings tools cannot. */
+  setMcpApproval(server: string, approval: McpApproval): Promise<PermissionsSnapshot>
   getSessionPermission(sessionId: string): Promise<SessionPermission>
   /** Null returns the session to the default mode. */
   setSessionPermission(sessionId: string, mode: PermissionMode | null): Promise<SessionPermission>

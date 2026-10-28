@@ -126,7 +126,16 @@ async function fixture(): Promise<void> {
     assert.equal(credentials.tokens('docs', url)?.access_token, 'private-token')
     if (process.platform !== 'win32')
       assert.equal((await stat(join(process.env.PIG_DIR, 'mcp-auth.json'))).mode & 0o777, 0o600)
+    // Replacing a server keeps its approval only while it still runs the same command or URL.
+    const store = await import('../src/main/permissions/store')
+    await store.updatePermissionSettings((current) => ({ ...current, mcp: { docs: 'approve', files: 'prompt' } }))
+    const docsConfig = (await settings.configuredServers()).find((entry) => entry.name === 'docs')!.config
+    await settings.saveMcpServer('docs', { ...docsConfig, timeout: 5 }, true)
+    assert.deepEqual(store.readPermissionSettings().mcp, { docs: 'approve', files: 'prompt' })
+    await settings.saveMcpServer('files', { command: 'another-command' }, true)
+    assert.deepEqual(store.readPermissionSettings().mcp, { docs: 'approve' })
     await settings.removeMcpServer('docs')
+    assert.deepEqual(store.readPermissionSettings().mcp, {})
     assert.equal(credentials.tokens('docs', url), undefined)
     assert.equal(settings.mcpIcons().docs, undefined)
     assert.equal(

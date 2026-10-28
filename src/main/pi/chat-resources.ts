@@ -9,7 +9,7 @@ import {
   getAgentDir,
   SettingsManager,
   type ResourceLoader,
-  type ExtensionFactory
+  type InlineExtension
 } from '@earendil-works/pi-coding-agent'
 
 const CHAT_APPEND_PROMPT = `This session is a conversation, not a software project.
@@ -47,7 +47,7 @@ export function sessionResourceSettings(cwd: string, agentDir: string): Settings
 
 interface SessionResourceOptions {
   settingsManager?: SettingsManager
-  extensionFactories?: ExtensionFactory[]
+  extensionFactories?: InlineExtension[]
   appendSystemPrompt?: string[]
   sessionId?: string
   /** Receives the SDK's skills before Pig's preferences, so the full list can be built on demand. */

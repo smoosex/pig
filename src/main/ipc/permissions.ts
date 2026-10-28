@@ -1,6 +1,6 @@
 /* Permission modes and allowed hosts; only a window's UI main frame may change them. */
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { isPermissionDomain, isPermissionMode, type PermissionsSnapshot } from '../../shared/permissions'
+import { isMcpApproval, isPermissionDomain, isPermissionMode, type PermissionsSnapshot } from '../../shared/permissions'
 import { assertBrowserSender } from '../browser/validation'
 import {
   onPermissionsChanged, readPermissionSettings, saveSessionPermission, sessionPermission, updatePermissionSettings
@@ -45,6 +45,15 @@ export function registerPermissionsIpc(): void {
       : { ...current, projects: current.projects.map((entry) => entry.root === project ? { ...entry, domains: entry.domains.filter((host) => host !== domain) } : entry) })
     // Project hosts apply per command, so only the global list is live in the proxy.
     if (project === null) refreshSandboxHosts()
+    return snapshot()
+  })
+  ipcMain.handle('permissions:set-mcp-approval', async (event, server: unknown, approval: unknown) => {
+    assertUi(event)
+    if (typeof server !== 'string' || !server || !isMcpApproval(approval)) throw new Error('Invalid MCP approval')
+    await updatePermissionSettings((current) => {
+      const { [server]: _previous, ...rest } = current.mcp
+      return { ...current, mcp: approval === 'auto' ? rest : { ...rest, [server]: approval } }
+    })
     return snapshot()
   })
   ipcMain.handle('permissions:get-session', (event, id: unknown) => {

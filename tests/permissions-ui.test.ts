@@ -37,6 +37,7 @@ async function fixture(scenario: Scenario) {
     defaultMode: 'full-access',
     domains: ['global.example'],
     projects: [{ root: '/workspace/project/.git', domains: ['project.example'] }],
+    mcp: {},
     sandbox: { state: 'ready' }
   }
   let permission: SessionPermission = { mode: 'read-only', overridden: true }
@@ -74,6 +75,7 @@ async function fixture(scenario: Scenario) {
     setSessionPermission: (id, mode) => { sessionWrites.push([id, mode]); return writePermission(id, mode) },
     setDefaultPermissionMode: (mode) => { defaultWrites.push(mode); return writeDefault(mode) },
     removePermissionDomain: (project, domain) => { removals.push([project, domain]); return removeDomain(project, domain) },
+    setMcpApproval: async () => { throw new Error('not used') },
     onPermissionsChanged: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } }
   }
   Object.assign(window, { api: { permissions } })
@@ -276,7 +278,7 @@ async function fixture(scenario: Scenario) {
       removeDomain = () => pending.promise
       await click(remove('global.example'))
       assert.equal(remove('global.example').disabled, true, 'the domain remains while removal is pending')
-      snapshot = { defaultMode: 'default', domains: ['newer.example'], projects: [], sandbox: { state: 'ready' } }
+      snapshot = { defaultMode: 'default', domains: ['newer.example'], projects: [], mcp: {}, sandbox: { state: 'ready' } }
       await changed()
       await act(async () => { pending.resolve({ ...original, domains: [] }) })
       assert.equal(select().textContent, 'Default')

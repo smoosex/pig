@@ -928,7 +928,7 @@ export const zh = {
   },
   permissions: {
     title: '权限', description: '沙箱和权限',
-    limitations: '当前仅保护 Agent 命令、后台进程和内置文件工具；MCP、浏览器和交互终端尚未纳入，手工 ! 命令也不受限制。切换模式不改变已经启动的进程。',
+    limitations: '沙箱保护 Agent 命令、后台进程和内置文件工具；MCP 工具调用按服务声明的注解审批，但 MCP 服务进程本身不在沙箱里。浏览器、交互终端和手工 ! 命令不受限制。切换模式不改变已经启动的进程。',
     sandbox: '沙箱',
     sandboxDescription: 'Agent 的命令和后台进程在系统沙箱里运行：只能写当前工作区、独立临时目录和包管理缓存，禁止读取已列入保护的常见凭据路径（并非所有应用凭据），只能访问常用包管理源、已放行域名及本地服务。',
     sandboxState: { pending: '正在检测', ready: '沙箱可用', unavailable: '沙箱不可用', unsupported: '当前平台不支持沙箱' },
@@ -945,6 +945,9 @@ export const zh = {
     hosts: '已放行的域名', noHosts: '还没有放行过域名。命令访问未放行的域名被拦下时，会询问是否放行。',
     allProjects: '所有项目', removeHost: '移除 {host}',
     hostsTitle: '命令访问 {hosts} 被沙箱拦下，是否放行？', hostsMessage: '命令已经结束，放行后不会自动重跑，需要时由 Agent 再执行一次。', hostsSession: '本会话放行', hostsProject: '本项目放行', hostsDeny: '不放行',
+    mcpTitle: '调用 MCP 工具 {server} / {tool}？', mcpMessage: '参数：\n{arguments}\n\n「本会话允许」会放行 {server} 的所有工具，直到会话结束。',
+    mcpApproval: 'MCP 审批', mcpApprovalDescription: '默认模式下调用该服务的工具时是否询问。只读模式只放行服务标为只读的工具；设为「全部询问」时只读模式无法询问，会全部拒绝。',
+    mcpApprovals: { auto: '按注解', prompt: '全部询问', approve: '从不询问' },
     unsandboxedTitle: '在沙箱外运行命令？', unsandboxedMessage: '命令：{command}\n理由：{reason}\n\n这条命令会以 Pig 的完整权限运行。',
     noSandboxTitle: '沙箱不可用，直接运行？', noSandboxMessage: '命令：{command}\n原因：{detail}\n\n这条命令会以 Pig 的完整权限运行。',
     unsupported: '当前平台不支持沙箱',

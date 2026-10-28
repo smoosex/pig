@@ -28,7 +28,7 @@ async function fixture() {
     const requests: [string, unknown[]][] = [
       ['permissions:get', []], ['permissions:set-default-mode', ['full-access']],
       ['permissions:remove-domain', [null, 'example.com']], ['permissions:get-session', ['one']],
-      ['permissions:set-session', ['one', 'full-access']]
+      ['permissions:set-session', ['one', 'full-access']], ['permissions:set-mcp-approval', ['docs', 'prompt']]
     ]
     for (const [channel, args] of requests) {
       for (const foreign of [{ ...event, senderFrame: {} }, { ...event, sender: {} }]) {
@@ -39,6 +39,8 @@ async function fixture() {
     await expect(call('permissions:set-session', '../escape', 'full-access')).rejects.toThrow('Invalid session id')
     await expect(call('permissions:set-session', 'one', false)).rejects.toThrow('Invalid permission mode')
     await expect(call('permissions:remove-domain', null, 'https://example.com')).rejects.toThrow('Invalid permission host')
+    await expect(call('permissions:set-mcp-approval', 'docs', 'never')).rejects.toThrow('Invalid MCP approval')
+    await expect(call('permissions:set-mcp-approval', '', 'prompt')).rejects.toThrow('Invalid MCP approval')
     expect(existsSync(join(root, 'permissions.json'))).toBe(false)
     expect(sent).toEqual([])
 
@@ -46,7 +48,11 @@ async function fixture() {
     expect(await call('permissions:get-session', 'one')).toEqual({ mode: 'read-only', overridden: false })
     expect(await call('permissions:set-session', 'one', 'full-access')).toEqual({ mode: 'full-access', overridden: true })
     expect(await call('permissions:set-session', 'one', null)).toEqual({ mode: 'read-only', overridden: false })
-    expect(sent).toEqual(['permissions:changed', 'permissions:changed', 'permissions:changed'])
+    expect(await call('permissions:set-mcp-approval', 'docs', 'prompt')).toMatchObject({ mcp: { docs: 'prompt' } })
+    // auto is the default and is not stored.
+    expect(await call('permissions:set-mcp-approval', 'docs', 'auto')).toMatchObject({ mcp: {} })
+    expect(JSON.parse(readFileSync(join(root, 'permissions.json'), 'utf8')).mcp).toBeUndefined()
+    expect(sent).toEqual(Array(5).fill('permissions:changed'))
 
     writeFileSync(join(root, 'permissions.json'), '{')
     await expect(call('permissions:get')).rejects.toThrow()

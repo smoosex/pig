@@ -113,7 +113,9 @@ test('approval already written is not rolled back on abort', async () => {
 })
 
 test('a damaged file is an error, never a looser default', () => {
-  for (const content of ['{', '[]', '{"version":1,"defaultMode":"yolo","domains":[],"projects":{}}', '{"version":1,"defaultMode":"default","domains":["https://x"],"projects":{}}']) {
+  for (const content of ['{', '[]', '{"version":1,"defaultMode":"yolo","domains":[],"projects":{}}', '{"version":1,"defaultMode":"default","domains":["https://x"],"projects":{}}',
+    '{"version":1,"defaultMode":"default","domains":[],"projects":{},"mcp":{"docs":"never"}}',
+    '{"version":1,"defaultMode":"default","domains":[],"projects":{},"mcp":[]}']) {
     writeFileSync(join(root, 'permissions.json'), content)
     expect(() => store.readPermissionSettings()).toThrow()
     expect(() => store.sessionPermission('one')).toThrow()

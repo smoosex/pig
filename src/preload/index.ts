@@ -76,6 +76,7 @@ const api: SessionApi = {
     getPermissions: () => ipcRenderer.invoke('permissions:get'),
     setDefaultPermissionMode: (mode) => ipcRenderer.invoke('permissions:set-default-mode', mode),
     removePermissionDomain: (project, domain) => ipcRenderer.invoke('permissions:remove-domain', project, domain),
+    setMcpApproval: (server, approval) => ipcRenderer.invoke('permissions:set-mcp-approval', server, approval),
     getSessionPermission: (sessionId) => ipcRenderer.invoke('permissions:get-session', sessionId),
     setSessionPermission: (sessionId, mode) => ipcRenderer.invoke('permissions:set-session', sessionId, mode),
     onPermissionsChanged: (listener) => {

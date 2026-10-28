@@ -238,7 +238,8 @@ test('the permission section follows mode changes without returning a forced sys
   mode = 'read-only'
   await handlers.get('before_agent_start')!(event, context().ctx)
   expect(sections.permissions).toContain('No network')
-  expect(sections.permissions).toContain('not covered by this first-stage sandbox')
+  expect(sections.permissions).toContain('MCP tools run only when the server marks them read-only')
+  expect(sections.permissions).toContain('MCP server processes, the browser, the interactive terminal and trusted plugin code are not sandboxed')
 })
 
 test('a bash tool registered by another extension is refused outside full access', async () => {

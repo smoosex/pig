@@ -931,7 +931,7 @@ export const en: Messages = {
   },
   permissions: {
     title: 'Permissions', description: 'Sandbox and permissions',
-    limitations: 'Currently protects only agent commands, background processes and built-in file tools. MCP, browser, interactive terminal and manual ! commands are not restricted. Mode changes do not alter processes already running.',
+    limitations: 'The sandbox protects agent commands, background processes and built-in file tools. MCP tool calls are approved by the annotations the server declares, but MCP server processes are not sandboxed. The browser, interactive terminal and manual ! commands are not restricted. Mode changes do not alter processes already running.',
     sandbox: 'Sandbox',
     sandboxDescription: 'Agent commands and background processes run in the OS sandbox: they can write only the workspace, private temporary folders and package caches. Listed common credential paths are protected, not every application credential. Network access covers common package registries, allowed hosts and local services.',
     sandboxState: { pending: 'Checking', ready: 'Sandbox available', unavailable: 'Sandbox unavailable', unsupported: 'Sandbox not supported on this platform' },
@@ -948,6 +948,9 @@ export const en: Messages = {
     hosts: 'Allowed hosts', noHosts: 'No hosts allowed yet. When the sandbox refuses a host, you are asked whether to allow it.',
     allProjects: 'All projects', removeHost: 'Remove {host}',
     hostsTitle: 'The sandbox refused {hosts}. Allow it?', hostsMessage: 'The command has finished. Allowing it does not rerun it; the agent runs it again if needed.', hostsSession: 'Allow for this session', hostsProject: 'Allow for this project', hostsDeny: 'Do not allow',
+    mcpTitle: 'Call MCP tool {server} / {tool}?', mcpMessage: 'Arguments:\n{arguments}\n\n"Allow for this session" allows every tool of {server} until the session ends.',
+    mcpApproval: 'MCP approval', mcpApprovalDescription: 'Whether calls to this server\'s tools ask in the default mode. Read-only mode allows only tools the server marks read-only; with Always ask it cannot ask and refuses every call.',
+    mcpApprovals: { auto: 'By annotations', prompt: 'Always ask', approve: 'Never ask' },
     unsandboxedTitle: 'Run this command outside the sandbox?', unsandboxedMessage: 'Command: {command}\nReason: {reason}\n\nIt will run with Pig\'s full permissions.',
     noSandboxTitle: 'Sandbox unavailable. Run anyway?', noSandboxMessage: 'Command: {command}\nReason: {detail}\n\nIt will run with Pig\'s full permissions.',
     unsupported: 'The sandbox is not supported on this platform',

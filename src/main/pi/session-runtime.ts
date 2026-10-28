@@ -9,6 +9,7 @@ import { permissionsExtension } from '../permissions/extension'
 import { sessionPermission } from '../permissions/store'
 import type { PermissionMode } from '../../shared/permissions'
 import { sessionToolFactory } from './tool-resources'
+import { SESSION_TOOLS_EXTENSION } from '../permissions/mcp'
 
 export class SessionResourceError extends Error { readonly code = 'ERR_SESSION_RESOURCES_UNAVAILABLE' }
 
@@ -44,7 +45,7 @@ export async function createSessionRuntime(
       pigDocsExtension,
       permissions,
       ...(options.identity === false ? [] : [pigIdentityExtension]),
-      sessionToolFactory(cwd, sessionId, options.toolPreferences)
+      { name: SESSION_TOOLS_EXTENSION, factory: sessionToolFactory(cwd, sessionId, options.toolPreferences) }
     ], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)
     ? await createChatResourceLoader(cwd, pluginPaths, resources)

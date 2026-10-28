@@ -8,8 +8,8 @@ import { readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
-  DEFAULT_PERMISSION_MODE, isPermissionDomain, isPermissionMode,
-  type PermissionMode, type PermissionProject, type SessionPermission
+  DEFAULT_PERMISSION_MODE, isMcpApproval, isPermissionDomain, isPermissionMode,
+  type McpApproval, type PermissionMode, type PermissionProject, type SessionPermission
 } from '../../shared/permissions'
 import { pigPath } from '../pig-dir'
 import { privateJson } from '../mcp/sdk'
@@ -18,6 +18,8 @@ export interface PermissionSettings {
   defaultMode: PermissionMode
   domains: string[]
   projects: PermissionProject[]
+  /** Non-`auto` MCP server approvals by server name. */
+  mcp: Record<string, McpApproval>
 }
 
 const settingsPath = () => pigPath('permissions.json')
@@ -54,7 +56,7 @@ function readOptional(path: string): unknown {
 
 export function readPermissionSettings(): PermissionSettings {
   const raw = readOptional(settingsPath()) as Record<string, unknown> | undefined
-  if (raw === undefined) return { defaultMode: DEFAULT_PERMISSION_MODE, domains: [], projects: [] }
+  if (raw === undefined) return { defaultMode: DEFAULT_PERMISSION_MODE, domains: [], projects: [], mcp: {} }
   if (!raw || typeof raw !== 'object' || raw.version !== 1 || !isPermissionMode(raw.defaultMode) ||
     !raw.projects || typeof raw.projects !== 'object' || Array.isArray(raw.projects)) {
     throw new Error('Invalid permissions.json')
@@ -63,7 +65,15 @@ export function readPermissionSettings(): PermissionSettings {
     if (!root.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(root)) throw new Error('Invalid permissions.json: project')
     return { root, domains: domains(project?.domains) }
   })
-  return { defaultMode: raw.defaultMode, domains: domains(raw.domains), projects }
+  return { defaultMode: raw.defaultMode, domains: domains(raw.domains), projects, mcp: mcpApprovals(raw.mcp) }
+}
+
+function mcpApprovals(value: unknown): Record<string, McpApproval> {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid permissions.json: mcp')
+  const entries = Object.entries(value)
+  if (!entries.every(([server, approval]) => server !== '' && isMcpApproval(approval) && approval !== 'auto')) throw new Error('Invalid permissions.json: mcp')
+  return Object.fromEntries(entries) as Record<string, McpApproval>
 }
 
 let queue: Promise<unknown> = Promise.resolve()
@@ -82,11 +92,17 @@ export function updatePermissionSettings(update: (current: PermissionSettings) =
       version: 1,
       defaultMode: next.defaultMode,
       domains: next.domains,
-      projects: Object.fromEntries(next.projects.filter((project) => project.domains.length).map((project) => [project.root, { domains: project.domains }]))
+      projects: Object.fromEntries(next.projects.filter((project) => project.domains.length).map((project) => [project.root, { domains: project.domains }])),
+      ...mcpField(next.mcp)
     })
     changed()
     return next
   })
+}
+
+function mcpField(mcp: Record<string, McpApproval>): { mcp?: Record<string, McpApproval> } {
+  const entries = Object.entries(mcp).filter(([, approval]) => approval !== 'auto')
+  return entries.length ? { mcp: Object.fromEntries(entries) } : {}
 }
 
 export function projectDomains(settings: PermissionSettings, root: string | null): string[] {

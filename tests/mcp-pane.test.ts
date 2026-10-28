@@ -79,6 +79,15 @@ async function fixture(): Promise<void> {
       calls.push(['remove', name])
       state.servers = state.servers.filter((server) => server.name !== name)
       return state
+    },
+    permissions: {
+      getPermissions: async () => ({ defaultMode: 'default', domains: [], projects: [], mcp: {}, sandbox: { state: 'ready' } }),
+      setDefaultPermissionMode: async () => { throw new Error('unused') },
+      removePermissionDomain: async () => { throw new Error('unused') },
+      setMcpApproval: async () => { throw new Error('unused') },
+      getSessionPermission: async () => { throw new Error('unused') },
+      setSessionPermission: async () => { throw new Error('unused') },
+      onPermissionsChanged: () => () => {}
     }
   } satisfies Partial<SessionApi>
   Object.assign(window, { api: service })
@@ -199,18 +208,19 @@ async function fixture(): Promise<void> {
         'Edit configuration docs',
         'Test connection docs',
         'OAuth sign in docs',
+        'MCP approval docs: By annotations',
         'Remove docs',
         'Globally enabled docs'
       ]
     )
-    const icons = ['settings', 'radar', 'badge-check', 'trash-2']
+    const icons = ['settings', 'radar', 'badge-check', 'shield-check', 'trash-2']
     for (const [index, control] of controls.slice(0, -1).entries()) {
       assert.ok(control.querySelector(`svg.lucide-${icons[index]}`))
       assert.equal(control.textContent, '')
     }
     for (const [locale, labels] of [
-      ['en', ['Edit configuration', 'Test connection', 'OAuth sign in', 'Remove']],
-      ['zh-CN', ['编辑配置', '测试连接', 'OAuth 登录', '移除']]
+      ['en', ['Edit configuration', 'Test connection', 'OAuth sign in', 'MCP approval docs: By annotations', 'Remove']],
+      ['zh-CN', ['编辑配置', '测试连接', 'OAuth 登录', 'MCP 审批 docs: 按注解', '移除']]
     ] as const) {
       await act(async () => {
         useSettingsStore.setState({ localeSetting: locale, locale })
