@@ -39,7 +39,8 @@ export class TerminalHost {
   constructor(
     private readonly fork: () => PtyHostProcess,
     private readonly appVersion: string,
-    private readonly history: (id: string) => TerminalHistoryTarget
+    private readonly history: (id: string) => TerminalHistoryTarget,
+    private readonly onStopped?: (id: string, reason: Error) => void
   ) {}
 
   create(win: TerminalWindow, id: string, cwd: string, cols: number, rows: number): Promise<TerminalInfo> {
@@ -162,6 +163,7 @@ export class TerminalHost {
         if (terminal.exited) continue
         terminal.exited = true
         const message = `Terminal host exited with code ${code}`
+        this.onStopped?.(id, new Error(message))
         if (terminal.spawn) {
           this.terminals.delete(id)
           terminal.spawn.reject(new Error(message))
@@ -213,6 +215,7 @@ export class TerminalHost {
       case 'exit':
         this.rejectSnapshots(message.id, new Error('Terminal has exited'))
         terminal.exited = true
+        this.onStopped?.(message.id, new Error('Terminal shell has exited'))
         this.emit(terminal, { terminalId: message.id, kind: 'exit', exitCode: message.exitCode, signal: message.signal })
         break
     }

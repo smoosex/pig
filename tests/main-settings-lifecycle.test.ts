@@ -46,7 +46,7 @@ async function fixture(name: string): Promise<void> {
       abort: async () => { aborted = true }, dispose() { disposed = true },
       extensionRunner: { emit: async () => {} }
     }
-    mock.module('electron', () => ({ app: { isPackaged: false } }))
+    mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
     const sdk = await import('@earendil-works/pi-coding-agent')
     const resourceSettings = sdk.SettingsManager.fromStorage({ withLock(_scope, fn) { assert.equal(fn('{"packages":[]}'), undefined) } })
     mock.module('@earendil-works/pi-coding-agent', () => ({
@@ -490,7 +490,7 @@ async function fixture(name: string): Promise<void> {
     const handlers = new Map<string, (...args: any[]) => Promise<unknown>>()
     const noop = () => {}
     mock.module('electron', () => ({
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
       BrowserWindow: { getAllWindows: () => [window] },
       nativeTheme,
       ipcMain: { handle: (channel: string, handler: (...args: any[]) => Promise<unknown>) => handlers.set(channel, handler) }
@@ -572,7 +572,7 @@ async function fixture(name: string): Promise<void> {
   if (name === 'pig-settings') {
     const root = await mkdtemp(join(tmpdir(), 'pig-settings-lifecycle-'))
     const previous = process.env.PIG_DIR
-    mock.module('electron', () => ({ app: { isPackaged: false } }))
+    mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
     try {
       process.env.PIG_DIR = join(root, 'settings')
       const { loadPigSettings, savePigSettings } = await import('../src/main/pig-settings')

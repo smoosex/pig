@@ -6,7 +6,7 @@ import { allowSessionHost } from '../sandbox/service'
 import { updatePermissionSettings } from './store'
 import { grantSession, hasSessionGrant } from './grants'
 
-/** Pig's extension UI renders a select carrying this option inline above the session's composer. */
+/** Pig's extension UI renders a select carrying this option in place of the session's composer. */
 export interface ApprovalOptions { signal?: AbortSignal; approval: { message: string } }
 
 const ask = (ui: Pick<ExtensionUIContext, 'select'>, title: string, choices: string[], message: string, signal?: AbortSignal) =>
@@ -14,17 +14,19 @@ const ask = (ui: Pick<ExtensionUIContext, 'select'>, title: string, choices: str
 
 /**
  * Asks once / for this session / deny, unless an earlier session answer covers one of `keys`. The
- * first key is what an answer for the session records. Throws unless the operation may proceed.
+ * first key is what an answer for the session records; an empty list allows only once or deny.
+ * sessionLabel can describe the scope more precisely without changing the grant's lifetime.
+ * Throws unless the operation may proceed.
  */
-export async function approve(ui: Pick<ExtensionUIContext, 'select'> | undefined, sessionId: string, keys: readonly string[], title: string, message: string, signal?: AbortSignal): Promise<void> {
-  if (hasSessionGrant(sessionId, keys)) return
+export async function approve(ui: Pick<ExtensionUIContext, 'select'> | undefined, sessionId: string, keys: readonly string[], title: string, message: string, signal?: AbortSignal, sessionLabel?: string): Promise<void> {
+  if (keys.length && hasSessionGrant(sessionId, keys)) return
   signal?.throwIfAborted()
   if (!ui) throw new Error('This session cannot ask the user, so the operation was refused')
   const once = t('permissions.allowOnce')
-  const session = t('permissions.allowSession')
-  const answer = await ask(ui, title, [once, session, t('permissions.deny')], message, signal)
+  const session = sessionLabel ?? t('permissions.allowSession')
+  const answer = await ask(ui, title, [once, ...(keys.length ? [session] : []), t('permissions.deny')], message, signal)
   signal?.throwIfAborted()
-  if (answer === session) grantSession(sessionId, keys[0]!)
+  if (keys.length && answer === session) grantSession(sessionId, keys[0]!)
   else if (answer !== once) {
     throw new Error(answer === undefined ? 'The approval request was cancelled; nothing was allowed' : 'The user did not allow this operation. Do not retry it.')
   }

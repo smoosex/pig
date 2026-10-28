@@ -8,7 +8,19 @@ const flag = '--approval-prompt-fixture'
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  class GeometryResizeObserver {
+    static instances = new Set<GeometryResizeObserver>()
+    private targets = new Set<Element>()
+    constructor(private callback: ResizeObserverCallback) { GeometryResizeObserver.instances.add(this) }
+    observe(target: Element) { this.targets.add(target) }
+    disconnect() { this.targets.clear(); GeometryResizeObserver.instances.delete(this) }
+    static notify(target: Element) {
+      for (const observer of this.instances) {
+        if (observer.targets.has(target)) observer.callback([], observer as unknown as ResizeObserver)
+      }
+    }
+  }
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, ResizeObserver: GeometryResizeObserver })
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1]) => translate('en', key) }))
@@ -21,8 +33,8 @@ async function fixture() {
   const { ApprovalPrompt } = await import('../src/renderer/src/components/composer/ApprovalPrompt')
 
   const options = ['Allow once', 'Allow for this session', 'Deny']
-  const add = (id: string, owner = 'one', approval = true) => act(() => useExtensionPrompts.getState().add({
-    kind: 'prompt', id, owner, method: 'select', title: 'Allow writing this path?', message: 'write: /tmp/x', options,
+  const add = (id: string, owner = 'one', approval = true, message = 'write: /tmp/x') => act(() => useExtensionPrompts.getState().add({
+    kind: 'prompt', id, owner, method: 'select', title: 'Allow writing this path?', message, options,
     ...(approval ? { approval: true as const } : {})
   }))
   const container = document.createElement('div')
@@ -41,6 +53,8 @@ async function fixture() {
 
   await add('by-key')
   assert.ok(card()?.textContent?.includes('write: /tmp/x'))
+  assert.equal(card()?.querySelector('[aria-label="Approval details"]')?.getAttribute('tabindex'), null)
+  assert.equal(card()?.textContent?.includes('More details'), false)
   const labels = [...card()!.querySelectorAll('label')].map((label) => label.textContent)
   assert.deepEqual(labels, ['1Allow once', '2Allow for this session', '3Deny'])
   // The first choice takes focus so number keys work without clicking.
@@ -84,13 +98,60 @@ async function fixture() {
   now += 1000
   await key(document.activeElement!, '1')
   assert.deepEqual(replies.at(-1), ['background', 'Allow once'])
+
+  const input = `${'a'.repeat(3000)}; dangerous-tail`
+  const message = translate('en', 'permissions.terminalMessage', { terminal: 'terminal:1', detail: 'Type text', input })
+  await add('long', 'one', true, message)
+  const details = card()!.querySelector<HTMLElement>('[aria-label="Approval details"]')!
+  const content = details.querySelector('p')!
+  assert.equal(details.textContent, message)
+  assert.ok(details.closest('fieldset')?.getAttribute('aria-describedby')?.split(' ').includes(content.id))
+  assert.equal(content.getAttribute('aria-label'), null)
+  assert.ok(details.classList.contains('overflow-y-auto'))
+  assert.ok(!details.className.includes('scrollbar-width:none'))
+  assert.ok(!details.className.includes('scrollbar]:hidden'))
+  let scrollHeight = 600
+  Object.defineProperties(details, {
+    scrollHeight: { configurable: true, get: () => scrollHeight },
+    clientHeight: { configurable: true, get: () => 160 }
+  })
+  await act(() => GeometryResizeObserver.notify(content))
+  const hint = document.getElementById(details.getAttribute('aria-describedby')!)
+  assert.ok(hint?.textContent?.includes('More details'))
+  assert.equal(details.tabIndex, 0)
+  scrollHeight = 100
+  await act(() => GeometryResizeObserver.notify(details))
+  assert.equal(details.hasAttribute('tabindex'), false)
+  assert.equal(card()?.textContent?.includes('More details'), false)
+  scrollHeight = 600
+  await act(() => GeometryResizeObserver.notify(content))
+  await act(() => details.focus())
+  assert.equal(document.activeElement, details)
+  now += 1000
+  for (const value of ['ArrowDown', 'PageDown', 'End']) {
+    const event = new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })
+    await act(() => details.dispatchEvent(event))
+    assert.equal(event.defaultPrevented, false, `${value} must remain available for scrolling`)
+  }
+  assert.deepEqual(replies.at(-1), ['background', 'Allow once'])
+  await key(details, 'Escape')
+  assert.deepEqual(replies.at(-1), ['long', 'Deny'])
+  assert.equal(GeometryResizeObserver.instances.size, 0)
   await act(async () => root.unmount())
 }
 
 if (process.argv.includes(flag)) {
   await fixture()
 } else {
-  test('permission approvals render above their own composer and answer by number, mouse click or Esc', async () => {
+  test('terminal warnings precede arbitrarily long input in both locales', () => {
+    for (const [locale, warning] of [['en', 'This terminal is not sandboxed'], ['zh-CN', '终端不在沙箱中']] as const) {
+      const input = `${'x'.repeat(3000)}; dangerous-tail`
+      const message = translate(locale, 'permissions.terminalMessage', { terminal: 'terminal:1', detail: 'type', input })
+      assert.ok(message.indexOf(warning) >= 0 && message.indexOf(warning) < message.indexOf(input))
+      assert.ok(message.endsWith(input))
+    }
+  })
+  test('permission approvals render above their own composer, expose overflow and answer by number, mouse click or Esc', async () => {
     const child = Bun.spawn([process.execPath, import.meta.filename, flag], { stdout: 'pipe', stderr: 'pipe' })
     const timer = setTimeout(() => child.kill(), 10_000)
     try {

@@ -28,6 +28,7 @@ function fixture() {
       tabs.splice(tabs.findIndex(tab => tab.terminalId === id), 1)
       closed.push(id)
     },
+    authorizeInput: async (_win, _sessionId, _id, _input, signal) => ({ signal, check: () => {}, dispose: () => {} }),
     changed: (_win, state) => { changed.push(state) }
   }
   const controller = new TerminalAgentController(deps)
@@ -112,6 +113,57 @@ describe('terminal agent control', () => {
     expect(() => f.controller.type('a', 'x'.repeat(65001), false)).toThrow('Invalid terminal text')
     f.tabs[0]!.exited = true
     await expect(f.controller.type('a', 'after exit', true)).rejects.toThrow('exited')
+  })
+
+  test('input approval is bound to the original claim and cancellation prevents a late write', async () => {
+    const f = fixture()
+    await f.controller.open('a')
+    let answer!: () => void
+    let started!: () => void
+    const asking = new Promise<void>(resolve => { started = resolve })
+    let promptSignal: AbortSignal | undefined
+    f.deps.authorizeInput = async (_win, _session, id, input, signal) => {
+      expect(id).toBe('terminal:new-1')
+      expect(input).toEqual({ kind: 'type', text: 'first', submit: true })
+      promptSignal = signal
+      started()
+      await new Promise<void>(resolve => { answer = resolve })
+      return { signal, check: () => {}, dispose: () => {} }
+    }
+    const input = f.controller.type('a', 'first', true)
+    const outcome = input.then(() => undefined, (error: Error) => error)
+    await asking
+    f.controller.releaseAgent(f.win, 'terminal:new-1', 'a')
+    expect(promptSignal?.aborted).toBe(true)
+    await f.controller.open('b', 'terminal:new-1')
+    answer()
+    expect((await outcome)?.message).toContain('released or transferred')
+    expect(f.writes).toEqual([])
+  })
+
+  test('input rechecks permission after a delayed snapshot before writing', async () => {
+    const f = fixture()
+    await f.controller.open('a')
+    const changed = new AbortController()
+    let disposed = false
+    f.deps.authorizeInput = async (_win, _session, _id, _input, signal) => ({
+      signal: AbortSignal.any([signal, changed.signal]), check: () => {}, dispose: () => { disposed = true }
+    })
+    let finish!: () => void
+    let started!: () => void
+    const waiting = new Promise<void>(resolve => { started = resolve })
+    f.deps.host.snapshot = async () => {
+      started()
+      await new Promise<void>(resolve => { finish = resolve })
+      return f.screen
+    }
+    const input = f.controller.type('a', 'command', true)
+    await waiting
+    changed.abort(new Error('Permission mode changed'))
+    finish()
+    await expect(input).rejects.toThrow('Permission mode changed')
+    expect(disposed).toBe(true)
+    expect(f.writes).toEqual([])
   })
 
   test('release invalidates a pending read; its late response does not become a successful result', async () => {

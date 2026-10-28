@@ -98,7 +98,7 @@ async function runFixture(): Promise<void> {
     // tested where they run rather than through a copy of them.
     const handlers = new Map<string, (...args: any[]) => any>()
     mock.module('electron', () => ({
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
       ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => { handlers.set(channel, handler) } },
       dialog: {},
       nativeTheme: { shouldUseDarkColors: false },

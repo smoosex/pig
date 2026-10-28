@@ -15,7 +15,7 @@ async function fixture(): Promise<void> {
   let models: { id: string; provider: string; name: string; contextWindow: number; reasoning: boolean }[] = []
   const pushed: import('../src/shared/api').ModelCatalog[] = []
   mock.module('electron', () => ({
-    app: { isPackaged: false },
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
     BrowserWindow: { getAllWindows: () => [{
       isDestroyed: () => false,
       webContents: { isDestroyed: () => false, send: (channel: string, catalog: import('../src/shared/api').ModelCatalog) => {

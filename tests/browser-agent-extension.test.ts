@@ -22,7 +22,8 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       'browser_annotations', 'browser_click', 'browser_close', 'browser_console', 'browser_history', 'browser_navigate', 'browser_network', 'browser_network_capture', 'browser_network_detail', 'browser_network_requests', 'browser_open', 'browser_press', 'browser_release', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload', 'browser_wait'
     ])
     const tool = (name: string) => extension.tools.get(name)!.definition
-    const ctx = { cwd: root, sessionManager: { getSessionId: () => 'session-1' } }
+    const ui = { select: async () => undefined }
+    const ctx = { cwd: root, hasUI: true, ui, sessionManager: { getSessionId: () => 'session-1' } }
     const controller = new AbortController()
     await expect(tool('browser_tabs').execute('c0', {}, controller.signal, undefined, ctx as never)).rejects.toThrow('unavailable')
 
@@ -72,7 +73,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       ['release', 'session-1'],
       ['close', 'session-1', controller.signal],
       ['network', 'session-1', false],
-      ['upload', 'session-1', 'e4', ['/tmp/user-requested.txt'], controller.signal]
+      ['upload', 'session-1', 'e4', ['/tmp/user-requested.txt'], { cwd: root, ui }, controller.signal]
     ])
     calls.length = 0
     await tool('browser_network_capture').execute('n1', { action: 'start', urlIncludes: '/api', resourceTypes: ['Fetch'] }, controller.signal, undefined, ctx as never)

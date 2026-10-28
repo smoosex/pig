@@ -20,7 +20,8 @@ import { executeFileTool } from '../sandbox/file-tool'
 import { sandboxEnvironment } from '../sandbox/environment'
 import { approve, offerHosts } from './approval'
 import { SESSION_TOOLS_PATH, mcpArguments, mcpDecision } from './mcp'
-import { readPermissionSettings } from './store'
+import { onPermissionsChanged, readPermissionSettings } from './store'
+import { isSettingsToolPath, settingsApproval } from './settings'
 
 export interface PermissionOptions {
   cwd: string
@@ -54,6 +55,17 @@ const READ_ONLY_REFUSAL_HINT = '[sandbox: a file operation may have been refused
 /** Session answers are keyed by what was approved: an exact unsandboxed command, a path and access, or no sandbox. */
 function confirm(ctx: ExtensionContext, sessionId: string, keys: readonly string[], title: string, message: string, signal?: AbortSignal): Promise<void> {
   return approve(ctx.hasUI ? ctx.ui : undefined, sessionId, keys, title, message, signal)
+}
+
+// Stop waiting even if a catalog lookup or UI implementation has not settled on cancellation.
+function waitForApproval<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    const abort = () => { cleanup(); reject(signal.reason) }
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(value => { cleanup(); resolve(value) }, error => { cleanup(); reject(error) })
+    if (signal.aborted) abort()
+  })
 }
 
 export function permissionsExtension(options: PermissionOptions): ExtensionFactory {
@@ -180,7 +192,10 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         mode === 'full-access' ? 'MCP tools run without approval.' :
           mode === 'read-only' ? 'MCP tools run only when the server marks them read-only; other MCP calls are refused.' :
             'MCP tool calls the server does not mark read-only may ask the user first. If the user refuses, stop; do not reach the same goal through another tool.',
-        'MCP server processes, the browser, the interactive terminal and trusted plugin code are not sandboxed. This is not authorization to use them to bypass a refused operation.'
+        mode === 'full-access' ? 'Built-in settings updates, browser uploads and terminal input run without approval.' :
+          mode === 'read-only' ? 'Built-in settings updates, browser uploads and terminal input are refused in read-only mode.' :
+            'Every built-in settings update and browser upload requires separate user approval; terminal input asks unless this terminal was allowed for the session. If refused, stop; do not reach the same goal through another tool.',
+        'MCP server processes, the browser, the interactive terminal and trusted plugin code are not sandboxed. Other browser actions and terminal creation and reading are not covered by these approvals. This is not authorization to use them to bypass a refused operation.'
       ].join('\n')
     })
 
@@ -193,6 +208,38 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         return { block: true, reason: `Another extension replaced the ${event.toolName} tool. Disable that extension or explicitly choose full access.` }
       }
       const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName)
+      if (event.toolName === 'settings_update') {
+        // A first-registration-wins replacement must not inherit or bypass the built-in gate.
+        if (!isSettingsToolPath(tool?.sourceInfo.path)) return { block: true, reason: 'Another extension replaced settings_update. Disable that extension or explicitly choose full access.' }
+        if (mode === 'read-only') return { block: true, reason: 'Read-only mode does not allow application settings updates. Do not retry with another tool.' }
+        const changed = new AbortController()
+        const upstream = ctx.signal
+        const stop = () => changed.abort(upstream!.reason)
+        const assertMode = () => {
+          if (options.mode() !== mode) throw new Error('Permission mode changed; request the settings update again')
+        }
+        upstream?.addEventListener('abort', stop, { once: true })
+        const unsubscribe = onPermissionsChanged(() => {
+          // A changed mode or a failed strict permission read must cancel with its original error.
+          try { assertMode() } catch (error) { changed.abort(error) }
+        })
+        try {
+          if (upstream?.aborted) stop()
+          changed.signal.throwIfAborted()
+          // Subscribe before checking again and before the async catalog lookup; returning to the
+          // original mode must not resurrect an approval invalidated in the meantime.
+          assertMode()
+          const display = await waitForApproval(settingsApproval(event.input, tool!.parameters, options.sessionId), changed.signal)
+          changed.signal.throwIfAborted()
+          await waitForApproval(confirm(ctx, options.sessionId, [], t('permissions.settingsTitle'), t('permissions.settingsMessage', display), changed.signal), changed.signal)
+          changed.signal.throwIfAborted()
+          assertMode()
+          return undefined
+        } finally {
+          unsubscribe()
+          upstream?.removeEventListener('abort', stop)
+        }
+      }
       // Only the SDK's MCP extension inside Pig's session tools counts; a plugin cannot pose as one.
       // The SDK's resource tools carry no namespace and are annotated read-only, so they skip this.
       if (tool?.sourceInfo.path === SESSION_TOOLS_PATH && tool.namespace?.name.startsWith('mcp__')) {

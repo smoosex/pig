@@ -4,6 +4,7 @@
  * The extension only declares tools; pages, windows and session ownership live in main. Both module
  * instances meet on globalThis, like pig-subagent-host.
  */
+import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import type { BrowserInteraction } from '../browser/agent-interaction'
 
 export interface BrowserToolResult {
@@ -25,6 +26,12 @@ export interface BrowserNetworkCaptureOptions {
 }
 export type BrowserNetworkCaptureAction = 'start' | 'stop' | 'clear'
 
+/** The SDK tool context stays in main; only the approval select and workspace are needed. */
+export interface BrowserUploadContext {
+  cwd: string
+  ui?: Pick<ExtensionUIContext, 'select'>
+}
+
 export interface BrowserAgentHost {
   tabs(sessionId: string): Promise<BrowserToolResult>
   open(sessionId: string, options: { browserId?: string; url?: string }, signal?: AbortSignal): Promise<BrowserToolResult>
@@ -43,7 +50,7 @@ export interface BrowserAgentHost {
   networkCapture(sessionId: string, action: BrowserNetworkCaptureAction, options: BrowserNetworkCaptureOptions, signal?: AbortSignal): Promise<BrowserToolResult>
   networkRequests(sessionId: string, errorsOnly: boolean): Promise<BrowserToolResult>
   networkDetail(sessionId: string, requestId: string): Promise<BrowserToolResult>
-  upload(sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<BrowserToolResult>
+  upload(sessionId: string, ref: string, files: readonly string[], context: BrowserUploadContext, signal?: AbortSignal): Promise<BrowserToolResult>
 }
 
 // Session teardown must end opt-in capture even if the plugin is disabled or the tab stays open.

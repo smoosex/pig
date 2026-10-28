@@ -928,7 +928,7 @@ export const zh = {
   },
   permissions: {
     title: '权限', description: '沙箱和权限',
-    limitations: '沙箱保护 Agent 命令、后台进程和内置文件工具；MCP 工具调用按服务声明的注解审批，但 MCP 服务进程本身不在沙箱里。浏览器、交互终端和手工 ! 命令不受限制。切换模式不改变已经启动的进程。',
+    limitations: '沙箱保护 Agent 命令、后台进程和内置文件工具；MCP 调用、应用设置修改、浏览器上传和终端输入按权限模式审批。MCP 服务进程、浏览器和交互终端本身不在此沙箱中；浏览器的其他操作、终端创建与读取、手工 ! 命令不受这些审批限制。切换模式不改变已经启动的进程。',
     sandbox: '沙箱',
     sandboxDescription: 'Agent 的命令和后台进程在系统沙箱里运行：只能写当前工作区、独立临时目录和包管理缓存，禁止读取已列入保护的常见凭据路径（并非所有应用凭据），只能访问常用包管理源、已放行域名及本地服务。',
     sandboxState: { pending: '正在检测', ready: '沙箱可用', unavailable: '沙箱不可用', unsupported: '当前平台不支持沙箱' },
@@ -946,12 +946,18 @@ export const zh = {
     allProjects: '所有项目', removeHost: '移除 {host}',
     hostsTitle: '命令访问 {hosts} 被沙箱拦下，是否放行？', hostsMessage: '命令已经结束，放行后不会自动重跑，需要时由 Agent 再执行一次。', hostsSession: '本会话放行', hostsProject: '本项目放行', hostsDeny: '不放行',
     mcpTitle: '调用 MCP 工具 {server} / {tool}？', mcpMessage: '参数：\n{arguments}\n\n「本会话允许」会放行 {server} 的所有工具，直到会话结束。',
+    settingsTitle: '允许这次应用设置修改？', settingsMessage: '分组：{group}\n修改：\n{patch}\n\n这会修改全局设置，不仅影响当前会话。',
+    terminalTitle: '允许向终端发送输入？', terminalMessage: '终端不在沙箱中，输入可能执行命令。选择「允许此终端（本会话）」后，当前会话可继续向此终端发送输入，会话关闭后失效。\n\n终端：{terminal}\n操作：{detail}\n内容：{input}',
+    terminalAllowSession: '允许此终端（本会话）', terminalType: '输入文字', terminalTypeSubmit: '输入文字并提交', terminalKey: '按键',
+    browserUploadTitle: '允许网页访问本机文件？', browserUploadSensitive: '可能是受保护的敏感路径',
+    browserUploadMessage: '网页可以读取这些文件并发送到其他地方。\n\n文件（真实路径；箭头显示请求的路径）：\n{files}\n\n页面地址不代表实际上传目的地。敏感路径检查并不涵盖所有凭据。\n\n网页（不含查询参数和片段）：{page}\n标题：{title}\n文件输入：{ref}',
     mcpApproval: 'MCP 审批', mcpApprovalDescription: '默认模式下调用该服务的工具时是否询问。只读模式只放行服务标为只读的工具；设为「全部询问」时只读模式无法询问，会全部拒绝。',
     mcpApprovals: { auto: '按注解', prompt: '全部询问', approve: '从不询问' },
     unsandboxedTitle: '在沙箱外运行命令？', unsandboxedMessage: '命令：{command}\n理由：{reason}\n\n这条命令会以 Pig 的完整权限运行。',
     noSandboxTitle: '沙箱不可用，直接运行？', noSandboxMessage: '命令：{command}\n原因：{detail}\n\n这条命令会以 Pig 的完整权限运行。',
     unsupported: '当前平台不支持沙箱',
     allowOnce: '本次允许', allowSession: '本会话允许', deny: '拒绝', approvalHint: '按数字键选择，Esc 拒绝',
+    approvalDetails: '审批详情', approvalScrollHint: '还有更多详情，请滚动查看完整内容',
     readTitle: '允许读取敏感路径？', writeTitle: '允许写入这个路径？', pathMessage: '{tool}：{path}'
   },
   processes: {

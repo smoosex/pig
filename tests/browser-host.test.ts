@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { View, BrowserWindow, WebContentsView, IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../src/main/browser/host'
 import { assertBrowserSender, browserDipBounds, isBrowserElement, normalizeBrowserUrl, validateBounds } from '../src/main/browser/validation'
@@ -771,6 +774,62 @@ describe('browser host', () => {
     ])
     expect(views[0]!.visible).toBe(false)
     expect(contents.debuggerAttached).toBe(false)
+  })
+
+  test('pending upload approval is cancelled on navigation, release/reacquire, transfer, destruction and close', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pig-browser-approval-host-'))
+    const file = join(dir, 'upload.txt')
+    await writeFile(file, 'content')
+    try {
+      for (const change of ['navigation', 'same-document', 'in-page-commit', 'release-reacquire', 'transfer-reacquire', 'switch', 'close', 'window-close', 'crash'] as const) {
+        const { host, owner, views } = fixture()
+        host.setAgent(owner, 'browser:a', 'session-1')
+        await host.navigate(owner, 'browser:a', 'https://example.test/form?secret=hidden')
+        const contents = views[0]!.webContents
+        contents.evaluation = async () => [[[0, 'html']]]
+        let entered!: () => void, allow!: () => void
+        const ready = new Promise<void>(resolve => { entered = resolve })
+        const answer = new Promise<void>(resolve => { allow = resolve })
+        let approvalSignal: AbortSignal | undefined
+        let page: unknown
+        const pending = host.upload(owner, 'browser:a', 'session-1', 'e1', [file], {
+          loadTimeout: 1000, assertPolicy() {},
+          async approve(info, _files, signal) { page = info; approvalSignal = signal; entered(); await answer }
+        })
+        await ready
+        expect(page).toEqual({ url: 'https://example.test/form?secret=hidden', title: '' })
+        if (change === 'navigation') contents.emit('did-start-navigation', {}, 'https://example.test/other', false, true)
+        if (change === 'same-document') contents.emit('did-start-navigation', {}, 'https://example.test/#other', true, true)
+        if (change === 'in-page-commit') contents.emit('did-navigate-in-page', {}, 'https://example.test/#other', true)
+        if (change === 'release-reacquire') { host.setAgent(owner, 'browser:a', null); host.setAgent(owner, 'browser:a', 'session-1') }
+        if (change === 'transfer-reacquire') { host.setAgent(owner, 'browser:a', 'session-2'); host.setAgent(owner, 'browser:a', 'session-1') }
+        if (change === 'switch') { host.setAgent(owner, 'browser:a', null); host.setAgent(owner, 'browser:b', 'session-1') }
+        if (change === 'close') host.close(owner, 'browser:a')
+        if (change === 'window-close') host.closeWindow(owner)
+        if (change === 'crash') contents.emit('render-process-gone', {}, { reason: 'crashed' })
+        await expect(pending).rejects.toThrow(/cancelled/)
+        expect(approvalSignal?.aborted).toBe(true)
+        allow()
+        await Promise.resolve()
+        expect(contents.debuggerCommands).toEqual([])
+        host.closeWindow(owner)
+      }
+      const { host, owner, views } = fixture()
+      host.setAgent(owner, 'browser:a', 'session-1')
+      await host.navigate(owner, 'browser:a', 'https://example.test/')
+      const contents = views[0]!.webContents
+      contents.loading = true
+      const pending = host.upload(owner, 'browser:a', 'session-1', 'e1', [file], {
+        loadTimeout: 1000, assertPolicy() {}, async approve() { throw new Error('must not ask') }
+      })
+      host.setAgent(owner, 'browser:a', null)
+      host.setAgent(owner, 'browser:a', 'session-1')
+      await expect(pending).rejects.toThrow(/cancelled/)
+      contents.loading = false
+      contents.emit('did-stop-loading')
+      expect(contents.evaluated).toEqual([])
+      host.closeWindow(owner)
+    } finally { await rm(dir, { recursive: true, force: true }) }
   })
 
   test('agent takeover reloads the saved URL of an evicted tab without waiting for it to become visible', async () => {

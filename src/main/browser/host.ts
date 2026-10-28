@@ -11,7 +11,8 @@ import { hostShortcutBindings } from '../shortcuts'
 import { findShortcut, HOST_SHORTCUT_ACTIONS, strokeToAccelerator } from '../../shared/shortcuts'
 import { executeBrowserScript } from './browser-script'
 import { attachBrowserNetwork, type BrowserNetworkLog, type BrowserNetworkEntry } from './network-log'
-import { uploadBrowserFiles } from './agent-upload'
+import { uploadBrowserFiles, type BrowserUploadFile } from './agent-upload'
+import { waitForBrowserOperation } from './browser-debugger'
 import { attachBrowserNetworkCapture, type BrowserNetworkCapture } from './network-capture'
 import type { BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
 import { interactWithPage, type BrowserInteraction } from './agent-interaction'
@@ -39,6 +40,15 @@ interface Page {
   console: BrowserConsoleEntry[]
   network: BrowserNetworkLog
   networkCapture?: BrowserNetworkCapture
+  /** Invalidate pending approvals when control, navigation or the native page changes. */
+  pendingUploads: Set<AbortController>
+}
+
+export interface BrowserUploadOptions {
+  approve(page: { url: string; title: string }, files: readonly BrowserUploadFile[], signal?: AbortSignal): Promise<void>
+  assertPolicy(): void
+  signal?: AbortSignal
+  loadTimeout: number
 }
 export interface BrowserConsoleEntry {
   level: 'debug' | 'info' | 'warning' | 'error'
@@ -51,6 +61,11 @@ const DEVTOOLS_EDGE = 10
 const DEVTOOLS_PAGE_EDGE = 5
 // A hidden page that was never laid out has no size; agent snapshots and captures need a viewport.
 const AGENT_VIEWPORT = { x: 0, y: 0, width: 1280, height: 800 }
+
+function cancelUploads(page: Page, reason: string): void {
+  for (const controller of page.pendingUploads) controller.abort(new Error(reason))
+  page.pendingUploads.clear()
+}
 interface WindowPages {
   win: BrowserWindow
   pages: Map<string, Page>
@@ -283,6 +298,7 @@ export class BrowserHost {
   private dispose(owner: WindowPages, page: Page): void {
     if (page.disposed) return
     page.disposed = true
+    cancelUploads(page, 'Browser page closed; upload approval cancelled')
     // Removing a focused native view does not return keyboard input to the host renderer.
     this.restoreHostFocus(owner, liveContents(page.view))
     page.network.dispose()
@@ -314,7 +330,7 @@ export class BrowserHost {
       const agentSessionId = owner.agents.get(browserId) ?? null
       page = {
         view, state: { ...emptyBrowserState(browserId), url: owner.urls.get(browserId) ?? '', documentId: randomUUID(), agentSessionId },
-        bounds: null, used: ++this.clock, disposed: false, console: [], network: attachBrowserNetwork(view.webContents)
+        bounds: null, used: ++this.clock, disposed: false, console: [], network: attachBrowserNetwork(view.webContents), pendingUploads: new Set()
       }
       owner.pages.set(browserId, page)
       secureSession(view.webContents.session)
@@ -441,6 +457,7 @@ export class BrowserHost {
     })
     wc.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame) return
+      cancelUploads(page, 'Browser page changed; upload approval cancelled')
       if (!inPlace) {
         page.devtoolsDragging = false
         page.devtoolsPageEdgeBlocked = false
@@ -474,6 +491,7 @@ export class BrowserHost {
     wc.on('did-start-loading', () => { page.state.loading = true; this.push(owner, page) })
     wc.on('did-stop-loading', () => { page.state.loading = false; this.push(owner, page) })
     wc.on('did-navigate', (_event, url) => {
+      cancelUploads(page, 'Browser page changed; upload approval cancelled')
       page.state.url = url
       owner.urls.set(page.state.browserId, url)
       this.onCommit(page.state.browserId, url)
@@ -482,6 +500,7 @@ export class BrowserHost {
     })
     wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (isMainFrame) {
+        cancelUploads(page, 'Browser page changed; upload approval cancelled')
         page.state.url = url
         owner.urls.set(page.state.browserId, url)
         this.onCommit(page.state.browserId, url)
@@ -498,6 +517,7 @@ export class BrowserHost {
       this.push(owner, page)
     })
     wc.on('render-process-gone', (_event, details) => {
+      cancelUploads(page, 'Browser page closed; upload approval cancelled')
       page.state.loading = false
       page.annotationLimitReached = false
       page.state.error = `Browser process exited: ${details.reason}`
@@ -734,6 +754,7 @@ export class BrowserHost {
     const restoreUrl = !retained.page && sessionId !== null ? retained.owner.urls.get(id) : undefined
     const { owner, page } = sessionId === null ? retained : this.page(win, id)
     if (page && owner.agents.get(id) !== (sessionId ?? undefined)) {
+      cancelUploads(page, 'Browser control was released or transferred; upload approval cancelled')
       page.networkCapture?.dispose()
       page.networkCapture = undefined
     }
@@ -765,9 +786,22 @@ export class BrowserHost {
     await interactWithPage(page.view.webContents, request, signal, assertCurrent)
   }
 
-  async upload(win: BrowserWindow, id: string, sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<void> {
-    const { page, assertCurrent } = this.agentPage(win, id, sessionId, signal)
-    await uploadBrowserFiles(page.view.webContents, ref, files, signal, assertCurrent)
+  async upload(win: BrowserWindow, id: string, sessionId: string, ref: string, files: readonly string[], options: BrowserUploadOptions): Promise<void> {
+    const { page, assertCurrent } = this.agentPage(win, id, sessionId, options.signal)
+    const cancellation = new AbortController()
+    page.pendingUploads.add(cancellation)
+    const signal = options.signal ? AbortSignal.any([options.signal, cancellation.signal]) : cancellation.signal
+    const check = () => { signal.throwIfAborted(); assertCurrent(); options.assertPolicy() }
+    try {
+      check()
+      const loaded = await waitForBrowserOperation(this.waitForLoad(win, id, options.loadTimeout), signal)
+      check()
+      if (!loaded) throw new Error('Browser page load wait timed out')
+      const info = { url: page.state.url, title: page.state.title }
+      await uploadBrowserFiles(page.view.webContents, ref, files, (selected, cancel) => options.approve(info, selected, cancel), signal, check)
+    } finally {
+      page.pendingUploads.delete(cancellation)
+    }
   }
 
   networkEntries(win: BrowserWindow, id: string): BrowserNetworkEntry[] {

@@ -40,7 +40,9 @@ test('terminal environment drops the launching terminal and Pig internals, and d
 
 test('terminal host scopes shells to their window and survives a crashed PTY host', async () => {
   const workers: FakeWorker[] = []
-  const host = new TerminalHost(() => { const worker = new FakeWorker(); workers.push(worker); return worker }, '1.0.0', history)
+  const stopped: Array<[string, string]> = []
+  const host = new TerminalHost(() => { const worker = new FakeWorker(); workers.push(worker); return worker }, '1.0.0', history,
+    (id, error) => stopped.push([id, error.message]))
   const owner = fakeWindow()
   const other = fakeWindow()
 
@@ -73,6 +75,7 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   host.ack(owner.win, 'terminal:a', 0)
 
   workers[0].reply({ type: 'exit', id: 'terminal:a', exitCode: 3, signal: null })
+  assert.deepEqual(stopped, [['terminal:a', 'Terminal shell has exited']])
   assert.deepEqual(owner.events.at(-1), { terminalId: 'terminal:a', kind: 'exit', exitCode: 3, signal: null })
   host.write(owner.win, 'terminal:a', 'late')
   assert.equal(workers[0].sent.at(-1)?.type, 'ack', 'input after exit never reaches the host')
@@ -96,6 +99,7 @@ test('terminal host scopes shells to their window and survives a crashed PTY hos
   const starting = host.create(owner.win, 'terminal:e', '/project', 80, 24)
   workers[0].exit(1)
   await assert.rejects(starting, /exited with code 1/)
+  assert.deepEqual(stopped.slice(1), [['terminal:d', 'Terminal host exited with code 1'], ['terminal:e', 'Terminal host exited with code 1']])
   assert.deepEqual(owner.events.at(-1), { terminalId: 'terminal:d', kind: 'failed', message: 'Terminal host exited with code 1' })
   void host.create(owner.win, 'terminal:f', '/project', 80, 24)
   assert.equal(workers.length, 2, 'the next terminal forks a fresh host')

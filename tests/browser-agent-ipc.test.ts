@@ -19,6 +19,7 @@ async function fixture(): Promise<void> {
   const win = makeWindow()
   const other = makeWindow()
   mock.module('electron', () => ({
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
     View: class {},
     session: { fromPartition: () => ({ cookies: {} }) },
     clipboard: { writeText: () => {} },

@@ -11,6 +11,12 @@ import type { TerminalAgentHost, TerminalToolResult, TerminalWaitOptions } from 
 import type { TerminalHost } from './host'
 
 type Host = Pick<TerminalHost, 'list' | 'snapshot' | 'write'>
+export type TerminalInput = { kind: 'type'; text: string; submit: boolean } | { kind: 'press'; key: string }
+export interface TerminalInputAuthorization {
+  signal: AbortSignal
+  check(): void
+  dispose(): void
+}
 export interface TerminalAgentDeps {
   host: Host
   sessionWindow(sessionId: string): BrowserWindow | undefined
@@ -19,6 +25,7 @@ export interface TerminalAgentDeps {
   activateTab(win: BrowserWindow, sessionId: string, terminalId: string, signal?: AbortSignal): Promise<void>
   /** Kills the shell and removes the tab; the controller has already retired control. */
   closeTab(win: BrowserWindow, sessionId: string, terminalId: string, signal?: AbortSignal): Promise<void>
+  authorizeInput(win: BrowserWindow, sessionId: string, terminalId: string, input: TerminalInput, signal: AbortSignal): Promise<TerminalInputAuthorization>
   changed(win: BrowserWindow, state: TerminalAgentState): void
 }
 interface Claim {
@@ -77,9 +84,9 @@ export class TerminalAgentController implements TerminalAgentHost {
     return { terminalId: id, agentSessionId: claim?.sessionId ?? null }
   }
 
-  private clear(id: string, claim: Claim): void {
+  private clear(id: string, claim: Claim, reason = new Error('Terminal control was released or transferred')): void {
     this.claims.delete(id)
-    claim.abort.abort(new Error('Terminal control was released or transferred'))
+    claim.abort.abort(reason)
     this.deps.changed(claim.win, { terminalId: id, agentSessionId: null })
   }
 
@@ -87,6 +94,13 @@ export class TerminalAgentController implements TerminalAgentHost {
     const claim = this.claims.get(id)
     if (claim?.win === win) this.clear(id, claim)
     if (this.created.get(id)?.win === win) this.created.delete(id)
+  }
+
+  /** The host has stopped this shell, so a pending approval must not keep its claim or input queue. */
+  terminalStopped(id: string, reason: Error): void {
+    const claim = this.claims.get(id)
+    if (claim) this.clear(id, claim, reason)
+    this.created.delete(id)
   }
 
   closeWindow(win: BrowserWindow): void {
@@ -187,18 +201,26 @@ export class TerminalAgentController implements TerminalAgentHost {
     }, signal)
   }
 
-  private input(sessionId: string, build: (modes: { bracketedPaste: boolean; applicationCursor: boolean }) => string, signal?: AbortSignal): Promise<TerminalToolResult> {
+  private input(sessionId: string, input: TerminalInput, build: (modes: { bracketedPaste: boolean; applicationCursor: boolean }) => string, signal?: AbortSignal): Promise<TerminalToolResult> {
     return this.serial(sessionId, async () => {
       const { win, id, claim } = this.controlled(sessionId)
       const tab = this.deps.host.list(win).find(item => item.terminalId === id)!
       if (tab.exited) throw new Error('The terminal shell has exited')
       const reading = signal ? AbortSignal.any([signal, claim.abort.signal]) : claim.abort.signal
-      const snapshot = await this.deps.host.snapshot(win, id, 1, reading)
-      this.check(sessionId, id, claim, signal)
-      const data = build(snapshot)
-      if (data.length > TERMINAL_MAX_WRITE) throw new Error('Terminal input exceeds the write limit')
-      this.deps.host.write(win, id, data)
-      return { text: `Input sent to ${id}. This does not mean the command or program completed; use terminal_read to inspect the result.` }
+      // Approval and input are bound to the same claim. Release/close cancels the prompt, even if
+      // the same session subsequently takes this terminal over again.
+      const authorization = await this.deps.authorizeInput(win, sessionId, id, input, reading)
+      try {
+        this.check(sessionId, id, claim, authorization.signal)
+        authorization.check()
+        const snapshot = await this.deps.host.snapshot(win, id, 1, authorization.signal)
+        this.check(sessionId, id, claim, authorization.signal)
+        const data = build(snapshot)
+        if (data.length > TERMINAL_MAX_WRITE) throw new Error('Terminal input exceeds the write limit')
+        authorization.check()
+        this.deps.host.write(win, id, data)
+        return { text: `Input sent to ${id}. This does not mean the command or program completed; use terminal_read to inspect the result.` }
+      } finally { authorization.dispose() }
     }, signal)
   }
 
@@ -206,12 +228,12 @@ export class TerminalAgentController implements TerminalAgentHost {
     if (typeof text !== 'string' || text.length > 65_000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text) || typeof submit !== 'boolean') throw new Error('Invalid terminal text; use terminal_press for control keys')
     // Match xterm's clipboard encoding: both LF and CRLF become terminal carriage returns.
     const pasted = text.replace(/\r?\n/g, '\r')
-    return this.input(sessionId, modes => `${pasted && modes.bracketedPaste ? `\x1b[200~${pasted}\x1b[201~` : pasted}${submit ? '\r' : ''}`, signal)
+    return this.input(sessionId, { kind: 'type', text, submit }, modes => `${pasted && modes.bracketedPaste ? `\x1b[200~${pasted}\x1b[201~` : pasted}${submit ? '\r' : ''}`, signal)
   }
 
   press(sessionId: string, key: string, signal?: AbortSignal): Promise<TerminalToolResult> {
     terminalKey(key, false)
-    return this.input(sessionId, modes => terminalKey(key, modes.applicationCursor), signal)
+    return this.input(sessionId, { kind: 'press', key }, modes => terminalKey(key, modes.applicationCursor), signal)
   }
 
   async wait(sessionId: string, options: TerminalWaitOptions, signal?: AbortSignal): Promise<TerminalToolResult> {

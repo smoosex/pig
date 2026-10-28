@@ -74,7 +74,7 @@ async function reproduce(stage: string, useAlias: boolean): Promise<void> {
     }
 
     mock.module('electron', () => ({
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))
@@ -206,7 +206,7 @@ async function reproduceReopen(): Promise<void> {
     }
 
     mock.module('electron', () => ({
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))

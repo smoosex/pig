@@ -1,11 +1,11 @@
 /** Synthetic files and child-isolated DOM/CDP exercise upload boundaries without Electron or user data. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WebContents } from 'electron'
-import { uploadBrowserFiles } from '../src/main/browser/agent-upload'
+import { uploadBrowserFiles, type BrowserUploadApproval } from '../src/main/browser/agent-upload'
 import { withBrowserDebugger } from '../src/main/browser/browser-debugger'
 
 async function fixture() {
@@ -36,6 +36,7 @@ async function fixture() {
     let current = true
     let hook: ((method: string) => Promise<void> | void) | undefined
     let scriptHook: (() => Promise<void>) | undefined
+    let approve: BrowserUploadApproval = async () => {}
     let overrideNode: Record<string, unknown> | undefined
     const contents = {
       isDestroyed: () => false,
@@ -73,7 +74,7 @@ async function fixture() {
       }
     } as unknown as WebContents
     const guard = () => { checks++; if (!current) throw new Error('document/control changed') }
-    const run = (files: readonly string[] = [file], ref = 'e1', signal?: AbortSignal) => uploadBrowserFiles(contents, ref, files, signal, guard)
+    const run = (files: readonly string[] = [file], ref = 'e1', signal?: AbortSignal) => uploadBrowserFiles(contents, ref, files, approve, signal, guard)
     const reset = (markup = '<input type="file" hidden style="display:none">') => {
       document.body.innerHTML = markup
       refs.clear()
@@ -83,6 +84,7 @@ async function fixture() {
       scripts.length = 0
       hook = undefined
       scriptHook = undefined
+      approve = async () => {}
       overrideNode = undefined
       current = true
       return input
@@ -90,7 +92,7 @@ async function fixture() {
     reset()
     assert.equal(await run([link]), undefined)
     assert.deepEqual(calls.at(-1), { method: 'DOM.setFileInputFiles', params: { backendNodeId: idFor(refs.get('e1')!), files: [canonical] } })
-    assert.equal(scripts.length, 2)
+    assert.equal(scripts.length, 4)
     assert.equal(scripts.some(code => code.includes(directory)), false, 'paths never enter page code')
     assert.equal(document.querySelector('input')!.attributes.length, 3, 'no marker attributes')
     assert.equal(checks > 12, true)
@@ -163,6 +165,53 @@ async function fixture() {
       await assert.rejects(run(), /stale|moved|no longer exists|disabled|Directory|input\[type=file\]/)
       assert.equal(calls.some(call => call.method === 'DOM.setFileInputFiles'), false)
     }
+    // Approval is bound to the original ref map, element and canonical files, even if the same
+    // ref and DOM position are reused while the debugger queue is free for other operations.
+    for (const mutation of ['link', 'content', 'replacement', 'element', 'snapshot', 'move', 'disabled'] as const) {
+      const input = reset('<div><input type="file"></div><div></div>')
+      let enter!: () => void, allow!: () => void
+      const entered = new Promise<void>(resolve => { enter = resolve })
+      const pending = new Promise<void>(resolve => { allow = resolve })
+      let selected: unknown
+      approve = async files => { selected = files; enter(); await pending }
+      const uploading = run([link])
+      await entered
+      assert.deepEqual((selected as { requested: string; resolved: string; size: number }[]).map(({ requested, resolved, size }) => ({ requested, resolved, size })),
+        [{ requested: link, resolved: canonical, size: 9 }])
+      let queueRan = false
+      await withBrowserDebugger(contents, async () => { queueRan = true })
+      assert.equal(queueRan, true, 'approval does not monopolize CDP')
+      if (mutation === 'link') { await unlink(link); await symlink(other, link) }
+      if (mutation === 'content') await writeFile(file, 'modified contents')
+      if (mutation === 'replacement') { await rename(file, `${file}.old`); await writeFile(file, 'synthetic') }
+      if (mutation === 'element') { const next = input.cloneNode() as Element; input.replaceWith(next); refs.set('e1', next) }
+      if (mutation === 'snapshot') Object.assign(globalThis, { __pigAgentRefs: new Map([['e1', input]]) })
+      if (mutation === 'move') document.querySelectorAll('div')[1].append(input)
+      if (mutation === 'disabled') input.disabled = true
+      allow()
+      await assert.rejects(uploading, /path changed|file changed|ref changed|moved|disabled/)
+      assert.equal(calls.some(call => call.method === 'DOM.setFileInputFiles'), false)
+      Object.assign(globalThis, { __pigAgentRefs: refs })
+      if (mutation === 'link') { await unlink(link); await symlink(file, link) }
+      if (mutation === 'content') await writeFile(file, 'synthetic')
+      if (mutation === 'replacement') { await unlink(file); await rename(`${file}.old`, file) }
+    }
+    reset()
+    let enterApproval!: () => void, lateAllow!: () => void
+    const enteredApproval = new Promise<void>(resolve => { enterApproval = resolve })
+    const lateAnswer = new Promise<void>(resolve => { lateAllow = resolve })
+    let approvalSignal: AbortSignal | undefined
+    approve = async (_files, signal) => { approvalSignal = signal; enterApproval(); await lateAnswer }
+    const cancelled = new AbortController()
+    const pendingApproval = run([file], 'e1', cancelled.signal)
+    await enteredApproval
+    cancelled.abort(new Error('approval stopped'))
+    await assert.rejects(pendingApproval, /approval stopped/)
+    assert.equal(approvalSignal?.aborted, true)
+    lateAllow()
+    await Promise.resolve()
+    assert.equal(calls.some(call => call.method === 'DOM.setFileInputFiles'), false)
+
     reset()
     overrideNode = { backendNodeId: -1, nodeType: 1, nodeName: 'BUTTON', localName: 'input', attributes: ['type', 'file'] }
     await assert.rejects(run(), /CDP target/)

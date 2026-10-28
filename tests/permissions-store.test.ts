@@ -101,6 +101,19 @@ test('approval cancellation differs from user refusal and never grants permissio
   expect(existsSync(join(root, 'permissions.json'))).toBe(false)
 })
 
+test('one-time approvals never offer or remember a session grant', async () => {
+  const { approve } = await import('../src/main/permissions/approval')
+  let prompts = 0
+  const ui = { select: async (_title: string, choices: string[]) => {
+    prompts++
+    expect(choices).toHaveLength(2)
+    return choices[0]
+  } }
+  await approve(ui, 'once-only', [], 'Settings', 'Change settings')
+  await approve(ui, 'once-only', [], 'Settings', 'Change settings')
+  expect(prompts).toBe(2)
+})
+
 test('approval already written is not rolled back on abort', async () => {
   const { offerHosts } = await import('../src/main/permissions/approval')
   const abort = new AbortController()

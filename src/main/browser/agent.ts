@@ -9,7 +9,10 @@
 import type { BrowserWindow } from 'electron'
 import type { BrowserState } from '../../shared/browser'
 import { buildBrowserAnnotationsPrompt, fenced } from '../../shared/browser-annotations'
-import type { BrowserAgentHost, BrowserHistoryAction, BrowserToolResult, BrowserWaitOptions, BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
+import type { BrowserAgentHost, BrowserHistoryAction, BrowserToolResult, BrowserUploadContext, BrowserWaitOptions, BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
+import type { PermissionMode } from '../../shared/permissions'
+import { onPermissionsChanged, sessionPermission } from '../permissions/store'
+import { approveBrowserUpload } from './upload-approval'
 import type { BrowserInteraction } from './agent-interaction'
 import { pageElementMatches } from './agent-wait'
 import { waitForBrowserOperation as abortable } from './browser-debugger'
@@ -32,6 +35,7 @@ export interface BrowserAgentDeps {
   closeTab(win: BrowserWindow, sessionId: string, browserId: string, signal?: AbortSignal): Promise<void>
   navigationTimeout?: number
   loadTimeout?: number
+  permissionMode?(sessionId: string): PermissionMode
 }
 
 const SNAPSHOT_LIMIT = 40_000
@@ -188,11 +192,30 @@ export class BrowserAgentController implements BrowserAgentHost {
     ].join('\n') }
   }
 
-  async upload(sessionId: string, ref: string, files: readonly string[], signal?: AbortSignal): Promise<BrowserToolResult> {
+  async upload(sessionId: string, ref: string, files: readonly string[], context: BrowserUploadContext, signal?: AbortSignal): Promise<BrowserToolResult> {
     signal?.throwIfAborted()
+    const modeOf = () => this.deps.permissionMode?.(sessionId) ?? sessionPermission(sessionId).mode
+    const mode = modeOf()
+    if (mode === 'read-only') throw new Error('Read-only mode does not allow browser uploads. Do not retry with another tool.')
     const { win, id } = this.controlled(sessionId)
-    await this.ready(win, id, signal)
-    await abortable(this.deps.host.upload(win, id, sessionId, ref, files, signal), signal)
+    const assertPolicy = () => {
+      if (this.deps.sessionWindow(sessionId) !== win) throw new Error('The requesting browser session is no longer open')
+      if (modeOf() !== mode) throw new Error('Permission mode changed; request the upload again')
+    }
+    const changed = new AbortController()
+    const cancel = signal ? AbortSignal.any([signal, changed.signal]) : changed.signal
+    const unsubscribe = onPermissionsChanged(() => {
+      try { assertPolicy() } catch (error) { changed.abort(error) }
+    })
+    try {
+      assertPolicy()
+      await this.ready(win, id, cancel)
+      assertPolicy()
+      await abortable(this.deps.host.upload(win, id, sessionId, ref, files, {
+        signal: cancel, loadTimeout: this.deps.loadTimeout ?? 10_000, assertPolicy,
+        approve: (page, selected, requestSignal) => mode === 'full-access' ? Promise.resolve() : approveBrowserUpload(sessionId, context, page, ref, selected, requestSignal)
+      }), cancel)
+    } finally { unsubscribe() }
     return { text: `Assigned ${files.length} file(s) to the file input. The page may upload automatically; use browser_snapshot and browser_network to inspect the result. File contents and paths are not echoed.` }
   }
 

@@ -6,6 +6,10 @@ import { isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, ipcMain, utilityProcess, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { t } from '../i18n'
+import { createExtensionUI } from '../extension-ui'
+import { approve } from '../permissions/approval'
+import { hasSessionGrant } from '../permissions/grants'
+import { onPermissionsChanged, sessionPermission } from '../permissions/store'
 import { TerminalHost, type PtyHostProcess } from '../terminal/host'
 import { terminalHistoryPath } from '../terminal/history'
 import { TerminalAgentController, type TerminalAgentDeps } from '../terminal/agent'
@@ -48,9 +52,10 @@ export function shutdownTerminals(): Promise<void> {
 }
 
 export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionWindow' | 'isSessionLive'>): void {
+  let controller: TerminalAgentController | undefined
   const host = terminalHost = new TerminalHost(forkPtyHost, app.getVersion(), (id) => ({
     path: terminalHistoryPath(id), failed: t('terminal.historyRestoreFailed')
-  }))
+  }), (id, reason) => controller?.terminalStopped(id, reason))
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
   const pendingOpens = new Map<string, {
@@ -81,9 +86,40 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
       win.webContents.send('terminal:agent-open-request', request)
     })
   }
-  const controller = sessions ? new TerminalAgentController({
+  controller = sessions ? new TerminalAgentController({
     host, ...sessions, requestTab,
     activateTab: async (win, sessionId, terminalId, signal) => { await requestTab(win, sessionId, signal, { action: 'activate', terminalId }) },
+    authorizeInput: async (win, sessionId, terminalId, input, signal) => {
+      signal.throwIfAborted()
+      const { mode } = sessionPermission(sessionId)
+      const assertPolicy = () => {
+        if (sessionPermission(sessionId).mode !== mode) throw new Error('Permission mode changed; request terminal input again')
+      }
+      if (mode === 'read-only') throw new Error('Read-only mode does not allow input to an unsandboxed terminal. Do not retry it using another tool.')
+      const changed = new AbortController()
+      const cancel = AbortSignal.any([signal, changed.signal])
+      const unsubscribe = onPermissionsChanged(() => {
+        // A changed mode or a failed strict permission read must cancel the pending operation.
+        try { assertPolicy() } catch (error) { changed.abort(error) }
+      })
+      let authorized = false
+      try {
+        assertPolicy()
+        const key = `terminal:${terminalId}`
+        if (mode === 'default' && !hasSessionGrant(sessionId, [key])) {
+          const content = (input.kind === 'type' ? JSON.stringify(input.text) : input.key)
+            .replace(/[\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+          const ui = await createExtensionUI(win, sessionId)
+          await approve(ui, sessionId, [key], t('permissions.terminalTitle'),
+            t('permissions.terminalMessage', { terminal: terminalId, input: content, detail: t(input.kind === 'press' ? 'permissions.terminalKey' : input.submit ? 'permissions.terminalTypeSubmit' : 'permissions.terminalType') }), cancel, t('permissions.terminalAllowSession'))
+        }
+        cancel.throwIfAborted()
+        assertPolicy()
+        authorized = true
+        // The controller holds this subscription through the snapshot and final write.
+        return { signal: cancel, check: assertPolicy, dispose: unsubscribe }
+      } finally { if (!authorized) unsubscribe() }
+    },
     closeTab: async (win, sessionId, terminalId, signal) => {
       signal?.throwIfAborted()
       // Remove the PTY before the UI round-trip, preventing another session from taking it over.

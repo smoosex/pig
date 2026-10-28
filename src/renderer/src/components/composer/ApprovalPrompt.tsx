@@ -5,9 +5,9 @@
  * Keys are ignored briefly after the card takes focus: it replaces the prompt box, so a digit or
  * Enter the user was still typing into a draft must not become an answer.
  */
-import { useEffect, useMemo, useRef, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Questionnaire } from '@shadcn/react/questionnaire'
-import { ShieldAlert } from 'lucide-react'
+import { ArrowDown, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 import { useT } from '../../hooks/useT'
 import { replyExtensionPrompt, useExtensionPrompts, type ExtensionPrompt } from '../../stores/extension-prompts'
@@ -29,6 +29,10 @@ export function ApprovalPrompt({ sessionId, autoFocus = true }: { sessionId: str
 function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocus: boolean }) {
   const t = useT()
   const form = useRef<HTMLFormElement>(null)
+  const details = useRef<HTMLDivElement>(null)
+  const detailsContent = useRef<HTMLParagraphElement>(null)
+  const scrollHintId = useId()
+  const [detailsOverflow, setDetailsOverflow] = useState(false)
   const answered = useRef(false)
   const options = prompt.options ?? []
   // Declared up front so the item is active (not inert) on the first render and can take focus.
@@ -38,6 +42,19 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
     answered.current = true
     void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(String(error)))
   }
+
+  useLayoutEffect(() => {
+    const viewport = details.current
+    const content = detailsContent.current
+    if (!viewport || !content) return
+    const measure = () => setDetailsOverflow(viewport.scrollHeight > viewport.clientHeight)
+    measure()
+    // The viewport may stay at its height limit while wrapping changes the content height.
+    const observer = new ResizeObserver(measure)
+    observer.observe(viewport)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [prompt.message])
 
   const armedAt = useRef(performance.now() + ARM_MS)
   useEffect(() => {
@@ -88,9 +105,24 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
           {prompt.title}
         </Questionnaire.Title>
         {prompt.message ? (
-          <Questionnaire.Description className="mt-1 max-h-24 overflow-y-auto px-1 font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {prompt.message}
-          </Questionnaire.Description>
+          <>
+            <div
+              ref={details}
+              role="region"
+              aria-label={t('permissions.approvalDetails')}
+              aria-describedby={detailsOverflow ? scrollHintId : undefined}
+              tabIndex={detailsOverflow ? 0 : undefined}
+              className="mt-1 max-h-40 overflow-y-auto px-1 font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground focus-visible:rounded-sm focus-visible:outline-1 focus-visible:outline-focus-ring"
+            >
+              <Questionnaire.Description ref={detailsContent}>{prompt.message}</Questionnaire.Description>
+            </div>
+            {detailsOverflow ? (
+              <p id={scrollHintId} className="mt-1 flex items-center gap-1 px-1 text-xs font-medium text-muted-foreground">
+                <ArrowDown className="size-3 shrink-0" aria-hidden="true" />
+                {t('permissions.approvalScrollHint')}
+              </p>
+            ) : null}
+          </>
         ) : null}
         <Questionnaire.Choices className="mt-2 flex flex-col gap-0.5">
           {options.map((option) => (

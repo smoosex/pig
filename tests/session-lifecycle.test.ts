@@ -69,7 +69,7 @@ async function fixture(scenario: string): Promise<void> {
   try {
     process.env.PIG_DIR = join(cwd, 'pig')
     mock.module('electron', () => ({
-      app: { isPackaged: false },
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
       BrowserWindow: { getAllWindows: () => [] }
     }))
     mock.module(fileURLToPath(new URL('../src/main/project-worktrees.ts', import.meta.url)), () => ({ worktrees: service }))

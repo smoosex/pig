@@ -1,10 +1,14 @@
 /** Agent browser control over a fake host: binding, takeover, untrusted output and navigation waiting. */
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import type { BrowserWindow } from 'electron'
-import { BrowserAgentController, type BrowserAgentDeps } from '../src/main/browser/agent'
+import type { BrowserAgentDeps } from '../src/main/browser/agent'
 import { emptyBrowserState } from '../src/main/browser/host'
 import type { BrowserConsoleEntry } from '../src/main/browser/host'
 import type { BrowserState } from '../src/shared/browser'
+import type { PermissionMode } from '../src/shared/permissions'
+
+mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
+const { BrowserAgentController } = await import('../src/main/browser/agent')
 
 function fixture() {
   const win = { isDestroyed: () => false } as unknown as BrowserWindow
@@ -17,6 +21,7 @@ function fixture() {
   let navigation: Promise<void> = Promise.resolve()
   let evaluated = ''
   let created = 0
+  let mode: PermissionMode = 'default'
   const add = (id: string, patch: Partial<BrowserState> = {}) => {
     tabs.push(id)
     states.set(id, { ...emptyBrowserState(id), ...patch })
@@ -57,9 +62,10 @@ function fixture() {
       tabs.splice(tabs.indexOf(id), 1)
       states.delete(id)
     },
-    navigationTimeout: 20
+    navigationTimeout: 20,
+    permissionMode: () => mode
   }
-  return { controller: new BrowserAgentController(deps), deps, host, add, agents, live, states, consoles, navigations, setNavigation: (next: Promise<void>) => { navigation = next }, evaluated: () => evaluated }
+  return { controller: new BrowserAgentController(deps), deps, host, add, agents, live, states, consoles, navigations, setMode: (next: PermissionMode) => { mode = next }, setNavigation: (next: Promise<void>) => { navigation = next }, evaluated: () => evaluated }
 }
 
 describe('browser agent control', () => {
@@ -150,18 +156,46 @@ describe('browser agent control', () => {
     expect(actions).toHaveLength(3)
   })
 
-  test('upload requires control, forwards the explicit input and paths, and never echoes them', async () => {
+  test('upload enforces mode, binds the original session, and never echoes local paths', async () => {
     const f = fixture()
-    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'])).rejects.toThrow('no browser tab')
+    const context = { cwd: '/tmp' }
+    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'], context)).rejects.toThrow('no browser tab')
     await f.controller.open('s1', { url: 'https://example.test' })
     const controller = new AbortController()
     const calls: unknown[][] = []
     f.host.upload = async (...args) => { calls.push(args) }
-    const result = await f.controller.upload('s1', 'e1', ['/secret.txt'], controller.signal)
-    expect(calls[0]!.slice(1)).toEqual(['browser:new-1', 's1', 'e1', ['/secret.txt'], controller.signal])
+    const result = await f.controller.upload('s1', 'e1', ['/secret.txt'], context, controller.signal)
+    expect(calls[0]!.slice(1, 5)).toEqual(['browser:new-1', 's1', 'e1', ['/secret.txt']])
+    expect((calls[0]![5] as { signal: AbortSignal }).signal.aborted).toBe(false)
     expect(result.text).not.toContain('/secret.txt')
+    f.setMode('read-only')
+    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'], context)).rejects.toThrow('Read-only')
+    expect(calls).toHaveLength(1)
+    f.setMode('default')
+    f.host.upload = async (_win, _id, _session, _ref, _files, options) => {
+      f.setMode('read-only')
+      options.assertPolicy()
+    }
+    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'], context)).rejects.toThrow('Permission mode changed')
+    f.setMode('default')
     f.host.upload = async () => { throw new Error('File input disabled') }
-    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'])).rejects.toThrow('File input disabled')
+    await expect(f.controller.upload('s1', 'e1', ['/secret.txt'], context)).rejects.toThrow('File input disabled')
+  })
+
+  test('upload waits for a loading page before checking its URL', async () => {
+    const f = fixture()
+    f.add('browser:loading')
+    await f.controller.open('s1', { browserId: 'browser:loading' })
+    let finish!: () => void
+    f.host.waitForLoad = async () => new Promise<boolean>((resolve) => { finish = () => resolve(true) })
+    let uploaded = false
+    f.host.upload = async () => { uploaded = true }
+    const pending = f.controller.upload('s1', 'e1', ['/tmp/file'], { cwd: '/tmp' })
+    expect(uploaded).toBe(false)
+    f.states.set('browser:loading', { ...f.states.get('browser:loading')!, url: 'https://example.test/form' })
+    finish()
+    await pending
+    expect(uploaded).toBe(true)
   })
 
   test('a session controls one tab: opening creates a background tab, takeover moves control', async () => {

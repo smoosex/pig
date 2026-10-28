@@ -20,6 +20,7 @@ async function fixture(): Promise<void> {
   const other = makeWindow()
   const ui = win.webContents
   mock.module('electron', () => ({
+    app: { isPackaged: false, getAppPath: () => process.cwd() },
     View: class {},
     session: { fromPartition: (partition: string) => {
       assert.equal(partition, 'persist:pig-browser')
