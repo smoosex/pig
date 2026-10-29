@@ -34,6 +34,11 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
   const scrollHintId = useId()
   const [detailsOverflow, setDetailsOverflow] = useState(false)
   const answered = useRef(false)
+  // One highlight: the pointer's choice while the mouse moves, otherwise the keyboard's. CSS :hover
+  // would stay on a still pointer after the arrows move the selection away.
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [focused, setFocused] = useState<string | null>(null)
+  const highlighted = hovered ?? focused
   const options = prompt.options ?? []
   // Declared up front so the item is active (not inert) on the first render and can take focus.
   const items = useMemo(() => [{ name: 'approval', required: true, choices: options.map((value) => ({ value })) }], [options])
@@ -68,6 +73,7 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
   const onKeyDownCapture = (event: KeyboardEvent<HTMLFormElement>) => {
     if (event.nativeEvent.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
     // App shortcuts above still work.
+    setHovered(null)
     if (performance.now() < armedAt.current) {
       // Swallow, including Questionnaire's own Space/arrow selection and Enter submission.
       event.preventDefault()
@@ -130,17 +136,25 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
             ) : null}
           </>
         ) : null}
-        <Questionnaire.Choices className="mt-2 flex flex-col gap-0.5">
+        <Questionnaire.Choices className="mt-2 flex flex-col gap-0.5" onPointerLeave={() => setHovered(null)}>
           {options.map((option) => (
             <Questionnaire.Choice
               key={option}
               value={option}
               // A mouse click has a detail; the synthetic click of Space or arrow keys does not.
               onClick={(event) => { if (event.detail > 0) answer(option) }}
-              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-accent has-focus-visible:bg-accent data-checked:bg-accent"
+              onPointerMove={() => setHovered(option)}
+              data-highlighted={highlighted === option ? '' : undefined}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors data-highlighted:bg-glass-prompt-foreground/8 solid:data-highlighted:bg-accent solid:data-highlighted:text-accent-foreground"
             >
-              <Questionnaire.ChoiceInput className="sr-only" />
-              <Questionnaire.ChoiceShortcut render={<Kbd />} />
+              <Questionnaire.ChoiceInput
+                className="sr-only"
+                onFocus={() => setFocused(option)}
+                onBlur={() => setFocused((current) => (current === option ? null : current))}
+              />
+              <Questionnaire.ChoiceShortcut
+                render={<Kbd className="bg-glass-prompt-foreground/8 text-glass-prompt-foreground solid:bg-muted solid:text-muted-foreground" />}
+              />
               <Questionnaire.ChoiceLabel className="truncate">{option}</Questionnaire.ChoiceLabel>
             </Questionnaire.Choice>
           ))}
