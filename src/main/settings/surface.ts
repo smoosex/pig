@@ -4,34 +4,25 @@ import type { BrowserWindow } from 'electron'
 import type { SurfaceStyle } from '../../shared/api'
 import type { SettingsSurfaceRequest } from '../../shared/settings'
 import type { SurfaceHandoff } from './service'
+import { isLive, UiWindowTracker } from '../ui-window-tracker'
 
 interface PendingSurface {
   windows: Map<BrowserWindow, (error?: Error) => void>
 }
 
 export class SettingsSurfaceCoordinator {
-  private ready = new Set<BrowserWindow>()
-  private watched = new WeakSet<BrowserWindow>()
   private pending = new Map<string, PendingSurface>()
+  // A window that is gone or reloading cannot show the old material any more.
+  private windows = new UiWindowTracker((win) => {
+    for (const pending of this.pending.values()) pending.windows.get(win)?.()
+  })
 
   watch(win: BrowserWindow): void {
-    this.ready.add(win)
-    if (this.watched.has(win)) return
-    this.watched.add(win)
-    const invalidate = () => {
-      this.ready.delete(win)
-      // A window that is gone or reloading cannot show the old material any more.
-      for (const pending of this.pending.values()) pending.windows.get(win)?.()
-    }
-    win.once('closed', invalidate)
-    win.webContents.on('render-process-gone', invalidate)
-    win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-      if (mainFrame && !inPlace) invalidate()
-    })
+    this.windows.add(win)
   }
 
   private send(win: BrowserWindow, request: SettingsSurfaceRequest): void {
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('settings:surface', request)
+    if (isLive(win)) win.webContents.send('settings:surface', request)
   }
 
   reply(win: BrowserWindow, requestId: string, error?: string): void {
@@ -42,7 +33,7 @@ export class SettingsSurfaceCoordinator {
     signal?.throwIfAborted()
     const requestId = randomUUID()
     const waiting: PendingSurface = { windows: new Map() }
-    const windows = [...this.ready].filter((win) => !win.isDestroyed() && !win.webContents.isDestroyed())
+    const windows = this.windows.windows()
     this.pending.set(requestId, waiting)
     const finish = (surfaceStyle: SurfaceStyle) => {
       for (const win of windows) this.send(win, { type: 'finish', requestId, surfaceStyle })

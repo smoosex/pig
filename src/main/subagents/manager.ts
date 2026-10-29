@@ -222,6 +222,15 @@ export class SubagentManager implements SubagentHost {
     return [...parent.entries.values()].map((entry) => entry.info)
   }
 
+  /** Foreground children are part of their parent's running turn, so only background ones count. */
+  runningBackgroundCount(): number {
+    let count = 0
+    for (const parent of this.parents.values()) {
+      for (const { info } of parent.entries.values()) if (info.background && !isFinished(info.status)) count++
+    }
+    return count
+  }
+
   snapshot(parentSessionId: string): SubagentInfo[] {
     return [...(this.parents.get(parentSessionId)?.entries.values() ?? [])].map((entry) => entry.info)
   }

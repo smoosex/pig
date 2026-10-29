@@ -15,6 +15,7 @@ import { visibleNotificationSessions } from './chat/notification-visibility'
 import { SystemPluginUI } from './components/SystemPluginUI'
 import { SubagentTranscriptDialog } from './components/subagents/SubagentTranscriptDialog'
 import { SubagentCloseConfirm } from './components/subagents/SubagentCloseConfirm'
+import { QuitConfirm } from './components/QuitConfirm'
 import { ExtensionUI } from './components/ExtensionUI'
 import { useToolSettingsStore } from './stores/tool-settings'
 import { useSessionWindows } from './hooks/useSessionWindows'
@@ -460,6 +461,7 @@ export default function App() {
       <SystemPluginUI activeSessionId={activeSessionId} />
       <SubagentTranscriptDialog />
       <SubagentCloseConfirm />
+      <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">

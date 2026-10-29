@@ -321,6 +321,17 @@ const api: SessionApi = {
     ipcRenderer.on('settings:surface', handler)
     return () => ipcRenderer.off('settings:surface', handler)
   },
+  onQuitConfirm: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/quit').QuitConfirmRequest) => listener(request)
+    ipcRenderer.on('quit:confirm', handler)
+    void ipcRenderer.invoke('quit:listen')
+    return () => {
+      ipcRenderer.off('quit:confirm', handler)
+      void ipcRenderer.invoke('quit:unlisten')
+    }
+  },
+  ackQuitConfirm: (requestId) => ipcRenderer.invoke('quit:ack', requestId),
+  replyQuitConfirm: (requestId, confirmed) => ipcRenderer.invoke('quit:reply', requestId, confirmed),
   replySettingsSurface: (requestId, error) => error === undefined
     ? ipcRenderer.invoke('settings:surface-reply', requestId)
     : ipcRenderer.invoke('settings:surface-reply', requestId, error),

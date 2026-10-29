@@ -153,6 +153,15 @@ export const zh = {
     retryRestore: '重试恢复',
     openProject: '打开项目'
   },
+  quit: {
+    title: '确定退出 Pig？',
+    description: '{items}仍在运行，退出会中止它们。',
+    sessions: '{count} 个会话',
+    subagents: '{count} 个后台子 agent',
+    processes: '{count} 个后台进程',
+    separator: '、',
+    confirm: '仍要退出'
+  },
   notification: {
     replyReady: '回复已完成'
   },

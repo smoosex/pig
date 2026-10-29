@@ -151,6 +151,15 @@ export const en: Messages = {
     retryRestore: 'Retry',
     openProject: 'Open project'
   },
+  quit: {
+    title: 'Quit Pig?',
+    description: '{items} still running. Quitting will stop them.',
+    sessions: '{count} session(s)',
+    subagents: '{count} background subagent(s)',
+    processes: '{count} background process(es)',
+    separator: ', ',
+    confirm: 'Quit anyway'
+  },
   notification: {
     replyReady: 'Reply complete'
   },

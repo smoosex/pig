@@ -815,6 +815,11 @@ export async function refreshPluginSessions(force = false, cwd?: string): Promis
   }))
 }
 
+/** Live sessions whose turn, bash command or input is still in flight; quitting would abort them. */
+export function runningSessionCount(): number {
+  return [...live.values()].filter((session) => !canReloadResources(session)).length
+}
+
 export function hasBusyPluginSessions(): boolean {
   return [...live.values()].some((session) =>
     !canReloadResources(session) || refreshingPlugins.has(session.sessionId))

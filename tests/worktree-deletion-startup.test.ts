@@ -53,6 +53,7 @@ async function fixture(failure: Failure): Promise<void> {
     },
     'startup-window': { attachStartupScreen: () => ({ ready: Promise.resolve(), dismiss: () => {} }) },
     'tab-close-menu': { installTabCloseMenu: () => { menuInstalls++ } },
+    'quit-confirmation': { confirmQuit: async () => true, needsQuitConfirmation: () => false, registerQuitConfirmIpc: () => {} },
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: asyncNoop },
     'processes/index': { shutdownProcesses: asyncNoop },

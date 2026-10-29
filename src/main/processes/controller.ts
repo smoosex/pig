@@ -374,6 +374,10 @@ export class BackgroundProcessController implements ProcessAgentHost {
     if (this.deliveries.get(sessionId) === deliver) this.deliveries.delete(sessionId)
   }
 
+  runningCount(): number {
+    return [...this.processes.values()].filter((proc) => proc.endedAt === undefined).length
+  }
+
   snapshot(sessionId: string): BackgroundProcessInfo[] {
     return this.own(sessionId).map((proc) => ({
       id: proc.id, ...(proc.name ? { name: proc.name } : {}), command: proc.command, cwd: proc.cwd, pid: proc.pid,

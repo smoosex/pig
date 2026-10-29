@@ -11,6 +11,7 @@ import { shutdownTerminals } from './ipc/terminal'
 import { shutdownProcesses } from './processes'
 import { shutdownSandbox } from './sandbox/service'
 import { exitAfterCleanup } from './shutdown'
+import { confirmQuit, needsQuitConfirmation, registerQuitConfirmIpc } from './quit-confirmation'
 import { initLocale } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { applyShortcutOverrides } from './shortcuts'
@@ -80,6 +81,13 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId('dev.pig.desktop')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+    // Off macOS the last window's close is the quit, and by before-quit it is already gone.
+    window.on('close', (event) => {
+      if (process.platform === 'darwin' || isDisposing || BrowserWindow.getAllWindows().length > 1) return
+      if (!needsQuitConfirmation()) return
+      event.preventDefault()
+      void confirmQuit(openMainWindow, window).then((ok) => { if (ok && !window.isDestroyed()) window.close() })
+    })
   })
   const startup = createStartupMainWindow()
   await duringStartup(attachStartupScreen(startup.window).ready)
@@ -96,6 +104,7 @@ app.whenReady().then(async () => {
     .catch((error) => console.error('Model runtime initialization failed:', error))
   await duringStartup(initializeMcpDefaults())
   registerIpc()
+  registerQuitConfirmIpc()
   const settings = await duringStartup(loadPigSettings())
   nativeTheme.themeSource = settings.appearance
   applyShortcutOverrides(settings.shortcuts)
@@ -150,6 +159,10 @@ const QUIT_DEADLINE_MS = 5_000
 app.on('before-quit', (event) => {
   event.preventDefault()
   if (isDisposing) return
+  if (needsQuitConfirmation()) {
+    void confirmQuit(openMainWindow).then((ok) => { if (ok) app.quit() })
+    return
+  }
   isDisposing = true
   for (const window of BrowserWindow.getAllWindows()) window.hide()
   const teardown = Promise.allSettled([

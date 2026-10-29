@@ -13,7 +13,7 @@ async function fixture(scenario: string): Promise<void> {
   Object.assign(window, { api: {
     browser: { onShortcutRequested: (listener: typeof browserShortcut) => { browserShortcut = listener; return () => { browserShortcut = noop } } },
     supportsGlass: true,
-    onMcpChanged: () => noop, onSettingsChanged: () => noop, onSettingsSurface: () => noop,
+    onMcpChanged: () => noop, onSettingsChanged: () => noop, onSettingsSurface: () => noop, onQuitConfirm: () => noop,
     onNotificationClick: () => noop,
     setVisibleNotificationSessions: async () => {},
     getCommands: async () => [],

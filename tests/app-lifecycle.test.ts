@@ -114,6 +114,7 @@ async function fixture(mode: string): Promise<void> {
       }
     },
     'tab-close-menu': { installTabCloseMenu: noop },
+    'quit-confirmation': { confirmQuit: async () => true, needsQuitConfirmation: () => false, registerQuitConfirmIpc: noop },
     'window-surface': { applyWindowSurfaceStyle: noop },
     'ipc/index': { registerIpc: noop },
     'ipc/terminal': { shutdownTerminals: () => { events.push('terminal:cleanup'); return terminalCleanup.promise } },
