@@ -1,5 +1,6 @@
 import type { DisplayCompaction, DisplayTurn, GenerationStats, TurnUsage } from '../../../shared/api'
 import { addUsage } from '../../../shared/turn-usage'
+import { turnTiming } from '../../../shared/turn-timing'
 import type { Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -443,8 +444,7 @@ export function buildTurn(
   })
   appendCompactionsThrough(messageOffset + chunk.length)
 
-  const startedAt = rest[0]?.timestamp ?? user?.timestamp ?? 0
-  const endedAt = rest[rest.length - 1]?.timestamp ?? startedAt
+  const { startedAt, endedAt } = turnTiming(rest, user?.timestamp ?? 0)
 
   return {
     user,

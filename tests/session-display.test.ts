@@ -59,6 +59,52 @@ test('a turn sums usage over its model calls and ends at its last visible entry'
   expect(second.usage).toBeUndefined()
 })
 
+test('system context before the next prompt does not extend completed work in either projection', () => {
+  const entry = (id: string, role: string, timestamp: number, persistedAt = timestamp) => ({
+    type: 'message', id, parentId: null, timestamp: new Date(persistedAt).toISOString(),
+    message: {
+      role, timestamp,
+      ...(role === 'toolResult' ? { toolCallId: id, toolName: 'read', isError: false } : {}),
+      content: role === 'assistant' || role === 'toolResult' ? [{ type: 'text', text: id }] : id
+    }
+  })
+  for (const withTools of [false, true]) {
+    const entries = [
+      entry('ask', 'user', 1_000),
+      ...(withTools ? [
+        entry('call', 'assistant', 1_010, 2_000),
+        entry('result', 'toolResult', 3_000),
+        entry('call-again', 'assistant', 3_010, 4_000),
+        entry('result-again', 'toolResult', 5_000)
+      ] : []),
+      entry('reply', 'assistant', 5_010, 6_000),
+      entry('context', 'system', 20_000_000),
+      entry('next', 'user', 20_000_001)
+    ] as unknown as SessionEntry[]
+    const [display] = displayTurnsFromEntries('s', entries)
+    const messages = turnMessagesFromEntries(entries, 'ask') as Parameters<typeof buildTurn>[0]
+    const process = buildTurn(messages, false)
+    expect(messages.at(-1)?.role).toBe('system')
+    expect(display.startedAt).toBe(withTools ? 1_010 : 5_010)
+    expect(display.endedAt).toBe(6_000)
+    expect(process.startedAt).toBe(display.startedAt)
+    expect(process.endedAt).toBe(display.endedAt)
+  }
+})
+
+test('leading system context does not move the work start before actual execution', () => {
+  const entries = [
+    { type: 'message', id: 'context', parentId: null, timestamp: new Date(1_000).toISOString(), message: { role: 'system', content: 'context', timestamp: 1_000 } },
+    { type: 'message', id: 'reply', parentId: 'context', timestamp: new Date(20_000_000).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'answer' }], timestamp: 19_999_000 } }
+  ] as unknown as SessionEntry[]
+  const [display] = displayTurnsFromEntries('s', entries)
+  const process = buildTurn(turnMessagesFromEntries(entries, 'context') as Parameters<typeof buildTurn>[0], false)
+  expect(display.startedAt).toBe(19_999_000)
+  expect(display.endedAt).toBe(20_000_000)
+  expect(process.startedAt).toBe(display.startedAt)
+  expect(process.endedAt).toBe(display.endedAt)
+})
+
 test('a damaged usage record fails the projection instead of counting as zero', () => {
   const entries = [
     { type: 'message', id: 'ask', parentId: null, timestamp: '2026-01-01T00:00:00.000Z', message: { role: 'user', content: '问题', timestamp: 1 } },

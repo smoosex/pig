@@ -8,6 +8,7 @@ import type {
   TurnUsage
 } from '../../shared/api'
 import { addUsage, type UsageCounts } from '../../shared/turn-usage'
+import { turnTiming } from '../../shared/turn-timing'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import { imageMimeType, isImageBlock, sessionImageUrl, type ImageBlock } from '../../shared/session-images'
 import {
@@ -351,9 +352,10 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     }
   })
 
-  const startedAt =
-    timeOf(rest[0]?.message.timestamp) ?? timeOf(userMsg?.timestamp) ?? chunk[userMsg ? 1 : 0]?.persistedAt ?? 0
-  const endedAt = chunk[chunk.length - 1]?.persistedAt ?? startedAt
+  const { startedAt, endedAt } = turnTiming(
+    rest.map((entry) => ({ ...entry.message, persistedAt: entry.persistedAt })),
+    timeOf(userMsg?.timestamp) ?? 0
+  )
 
   return {
     user,
