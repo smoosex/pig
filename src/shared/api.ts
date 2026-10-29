@@ -882,7 +882,9 @@ export interface ProjectDirectoryListing {
   home: string
   parent: string | null
   breadcrumbs: { name: string; path: string }[]
-  directories: { name: string; path: string; git: boolean | null; warning?: string }[]
+  /** Set when a plugin file path was browsed: `path` is its folder and this file is preselected. */
+  file?: string
+  directories: { name: string; path: string; git: boolean | null; warning?: string; kind?: 'directory' | 'file' }[]
   truncated: boolean
 }
 
@@ -910,7 +912,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   listProject: (cwd: string) => Promise<ProjectGroup | null>
   listChats: () => Promise<ProjectGroup[]>
   isChatCwd: (cwd: string) => Promise<boolean>
-  browseProjectDirectories: (path?: string, showHidden?: boolean) => Promise<ProjectDirectoryListing>
+  browseProjectDirectories: (path?: string, showHidden?: boolean, includeFiles?: boolean) => Promise<ProjectDirectoryListing>
   searchProjectDirectories: (path: string, query: string, showHidden: boolean) => Promise<ProjectDirectorySearch>
   /** Stops this window's in-flight folder search; a new search also supersedes the previous one. */
   cancelProjectDirectorySearch: () => Promise<void>
@@ -987,7 +989,6 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   /** Re-reads the runtime and pushes the result to every window, including this one. */
   refreshModelCatalog: () => Promise<ModelCatalog>
   followUpAction: (sessionId: string, index: number, action: FollowUpAction, mode?: PromptStreamingBehavior) => Promise<RestoredSessionPrompt | null>
-  pickDirectory: () => Promise<string | null>
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   readDirectory: (cwd: string, path: string) => Promise<DirectoryListing>
@@ -1043,7 +1044,6 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   getSettings: () => Promise<SettingsReply<AppSettings>>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>
-  pickPluginPath: () => Promise<string | null>
   setPluginScopes: (id: string, scopes: PluginScope[]) => Promise<PluginInfo[]>
   updatePlugin: (id: string) => Promise<PluginInfo[]>
   removePlugin: (id: string) => Promise<PluginInfo[]>

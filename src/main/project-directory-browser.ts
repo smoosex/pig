@@ -1,10 +1,11 @@
 // Browse one directory at a time; filesystem paths are resolved before crossing the IPC boundary.
 import { readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, parse, relative, sep } from 'node:path'
+import { dirname, extname, isAbsolute, join, parse, relative, sep } from 'node:path'
 import type { ProjectDirectoryListing, ProjectDirectorySearch } from '../shared/api'
 
 const DIRECTORY_LIMIT = 500
+const PLUGIN_FILE_EXTENSIONS = new Set(['.ts', '.js', '.mjs', '.cjs', '.json'])
 const STAT_BATCH_SIZE = 32
 const SEARCH_RESULT_LIMIT = 200
 // Counts readdir and .git probes alike: the frontier level's probes are real work too.
@@ -23,11 +24,17 @@ function isMissing(error: unknown): boolean {
   return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
-export async function resolveProjectDirectory(path: string): Promise<string> {
+const isPluginFileName = (name: string) => PLUGIN_FILE_EXTENSIONS.has(extname(name).toLowerCase())
+
+async function resolveAbsolutePath(path: string): Promise<string> {
   if (typeof path !== 'string' || !path) throw new Error('Project directory path is required')
   const expanded = path === '~' ? homedir() : path.startsWith('~/') || (sep === '\\' && path.startsWith('~\\')) ? join(homedir(), path.slice(2)) : path
   if (!isAbsolute(expanded)) throw new Error('Project directory path must be absolute')
-  const resolved = await realpath(expanded)
+  return realpath(expanded)
+}
+
+export async function resolveProjectDirectory(path: string): Promise<string> {
+  const resolved = await resolveAbsolutePath(path)
   if (!(await stat(resolved)).isDirectory()) throw new Error('Project path must be a directory')
   return resolved
 }
@@ -120,10 +127,20 @@ export async function searchProjectDirectories(
 
 export async function browseProjectDirectories(
   path?: string,
-  showHidden = false
+  showHidden = false,
+  includeFiles = false
 ): Promise<ProjectDirectoryListing> {
   if (typeof showHidden !== 'boolean') throw new Error('Show hidden folders must be a boolean')
-  const current = await resolveProjectDirectory(path === undefined ? homedir() : path)
+  if (typeof includeFiles !== 'boolean') throw new Error('Include files must be a boolean')
+  let current = await resolveAbsolutePath(path === undefined ? homedir() : path)
+  let file: string | undefined
+  // A typed plugin file opens its folder with that file selected, as a native file dialog would.
+  const target = await stat(current)
+  if (!target.isDirectory()) {
+    if (!includeFiles || !target.isFile() || !isPluginFileName(current)) throw new Error('Project path must be a directory')
+    file = current
+    current = dirname(current)
+  }
   const home = homedir()
   const root = parse(current).root
   const breadcrumbs = [{ name: root, path: root }]
@@ -134,19 +151,28 @@ export async function browseProjectDirectories(
   }
 
   const entries = (await readdir(current, { withFileTypes: true }))
-    .filter((entry) => (showHidden || !entry.name.startsWith('.')) && (entry.isDirectory() || entry.isSymbolicLink()))
+    .filter((entry) => (showHidden || !entry.name.startsWith('.')) && (entry.isDirectory() || entry.isSymbolicLink() || (includeFiles && entry.isFile() && isPluginFileName(entry.name))))
     .sort((a, b) => a.name.localeCompare(b.name))
   const directories: ProjectDirectoryListing['directories'] = []
+  const files: ProjectDirectoryListing['directories'] = []
   scan: for (let offset = 0; offset < entries.length; offset += STAT_BATCH_SIZE) {
     const batch = await Promise.all(entries.slice(offset, offset + STAT_BATCH_SIZE).map(async (entry) => {
       const childPath = join(current, entry.name)
+      // Files sort after every directory, so once the file share is full only directories still matter.
+      if (entry.isFile() && files.length > DIRECTORY_LIMIT) return null
       try {
-        if (!(await stat(childPath)).isDirectory()) return null
-        return { name: entry.name, path: childPath, ...(await probeGit(childPath)) }
+        const metadata = await stat(childPath)
+        if (metadata.isDirectory()) return { name: entry.name, path: childPath, ...(await probeGit(childPath)) }
+        if (includeFiles && metadata.isFile() && isPluginFileName(entry.name)) {
+          return { name: entry.name, path: childPath, git: false, kind: 'file' as const }
+        }
+        return null
       } catch (error) {
         // A child is an independent inspection boundary. A denied child/Git probe must not hide its
         // readable siblings: return an explicit unknown marker and warning, never a false Git result.
         if (isPermissionDenied(error)) {
+          // An unresolvable link named like a plugin file is far more likely a file than a folder.
+          if (entry.isFile() || (includeFiles && isPluginFileName(entry.name))) return null
           return { name: entry.name, path: childPath, git: null, warning: error instanceof Error ? error.message : String(error) }
         }
         // Broken/cyclic links and children removed during this scan are not browseable. Only this
@@ -156,7 +182,11 @@ export async function browseProjectDirectories(
       }
     }))
     for (const directory of batch) {
-      if (directory) directories.push(directory)
+      if (directory) {
+        if ('kind' in directory && directory.kind === 'file') {
+          if (files.length <= DIRECTORY_LIMIT) files.push(directory)
+        } else directories.push(directory)
+      }
       if (directories.length > DIRECTORY_LIMIT) break scan
     }
   }
@@ -165,7 +195,8 @@ export async function browseProjectDirectories(
     home,
     parent: current === root ? null : dirname(current),
     breadcrumbs,
-    directories: directories.slice(0, DIRECTORY_LIMIT),
-    truncated: directories.length > DIRECTORY_LIMIT
+    ...(file ? { file } : {}),
+    directories: [...directories, ...files].slice(0, DIRECTORY_LIMIT),
+    truncated: directories.length + files.length > DIRECTORY_LIMIT
   }
 }

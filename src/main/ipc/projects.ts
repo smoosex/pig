@@ -27,8 +27,8 @@ export function registerProjectIpc(): void {
   )
   ipcMain.handle('session:list-project', async (_event, cwd: string) => loadProjectForCwd(cwd))
 
-  ipcMain.handle('project:browse-directories', async (_event, path?: string, showHidden?: boolean) =>
-    browseProjectDirectories(path, showHidden)
+  ipcMain.handle('project:browse-directories', async (_event, path?: string, showHidden?: boolean, includeFiles?: boolean) =>
+    browseProjectDirectories(path, showHidden, includeFiles)
   )
   // At most one folder walk per window: a new request or an explicit cancel aborts the previous one,
   // so pauses while typing cannot pile up concurrent walks on the libuv threadpool.

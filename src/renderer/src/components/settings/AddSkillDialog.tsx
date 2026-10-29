@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../ui/input-group'
+import { PathPickerDialog } from '../projects/PathPickerDialog'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 export interface AddSkillSource { source: string; target?: string }
@@ -29,6 +30,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
   const [installing, setInstalling] = useState(false)
   const [result, setResult] = useState<SkillInstallResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
   const request = useRef(0)
   const token = useRef<string | null>(null)
   const working = useRef(false)
@@ -113,9 +115,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
                 </InputGroup>
               </Field>
               <div className="flex items-center justify-between gap-2">
-                <Button type="button" size="sm" variant="outline" disabled={scanning || installing} onClick={() => {
-                  void api.pickDirectory().then((path) => { if (mounted.current && path) setSource(path) }, (failure) => { if (mounted.current) setError(errorText(failure)) })
-                }}><FolderOpen data-icon="inline-start" />{t('skills.chooseDirectory')}</Button>
+                <Button type="button" size="sm" variant="outline" disabled={scanning || installing} onClick={() => setPicking(true)}><FolderOpen data-icon="inline-start" />{t('skills.chooseDirectory')}</Button>
                 <Button type="submit" size="sm" disabled={!source.trim() || scanning || installing}>
                   {scanning ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <Search data-icon="inline-start" />}
                   {t(scanning ? 'skills.scanning' : 'skills.scan')}
@@ -162,6 +162,13 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
             {installing ? t('skills.installing') : t('skills.install', { n: picked.size })}
           </Button> : null}
         </DialogFooter>
+        {picking ? <PathPickerDialog
+          title={t('skills.chooseDirectory')}
+          description={t('skills.chooseDirectoryHint')}
+          confirmLabel={t('skills.useDirectory')}
+          onClose={() => setPicking(false)}
+          onSelect={(path) => { setSource(path); setPicking(false) }}
+        /> : null}
       </DialogContent>
     </Dialog>
   )

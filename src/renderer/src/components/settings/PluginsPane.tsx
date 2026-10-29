@@ -18,6 +18,7 @@ import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { WebSearchSettings } from './WebSearchSettings'
 import { SubagentSettings } from './SubagentSettings'
 import { PersonaSettings } from './PersonaSettings'
+import { PathPickerDialog } from '../projects/PathPickerDialog'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
@@ -55,6 +56,7 @@ export function PluginsPane() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [source, setSource] = useState('')
   const [installing, setInstalling] = useState(false)
+  const [pickingPath, setPickingPath] = useState(false)
   const [pendingPluginIds, setPendingPluginIds] = useState<Set<string>>(() => new Set())
   const loadRequest = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -300,7 +302,7 @@ export function PluginsPane() {
         <p className="text-xs text-muted-foreground">{t('plugins.installWarning')} {t('plugins.configHint')}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Input className="min-w-52 flex-1" value={source} disabled={installing} placeholder={t('plugins.sourcePlaceholder')} onChange={(event) => setSource(event.target.value)} />
-          <Button variant="outline" size="sm" disabled={installing} onClick={() => void api.pickPluginPath().then((path) => { if (path) setSource(path) }, (failure) => setError(errorText(failure)))}><FolderOpen data-icon="inline-start" />{t('plugins.choosePath')}</Button>
+          <Button variant="outline" size="sm" disabled={installing} onClick={() => setPickingPath(true)}><FolderOpen data-icon="inline-start" />{t('plugins.choosePath')}</Button>
           <Button size="sm" disabled={installing || !source.trim()} onClick={() => void installPlugin()}><Plus data-icon="inline-start" />{installing ? t('plugins.working') : t('plugins.install')}</Button>
         </div>
       </div>
@@ -429,6 +431,13 @@ export function PluginsPane() {
       {selectedPluginId === 'pi-persona' ? <PersonaSettings onBusyChange={setPersonaBusy} onDirtyChange={setPersonaDirty} /> : null}
         </DialogContent>
       </Dialog>
+      {pickingPath ? <PathPickerDialog includeFiles
+        title={t('plugins.choosePath')}
+        description={t('plugins.choosePathHint')}
+        confirmLabel={t('plugins.usePath')}
+        onClose={() => setPickingPath(false)}
+        onSelect={(path) => { setSource(path); setPickingPath(false) }}
+      /> : null}
       <AlertDialog open={discardPersona} onOpenChange={setDiscardPersona}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>

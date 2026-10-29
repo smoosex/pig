@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from '../sidebar-prefs'
 import {
   loadOpenProjectSessions,
@@ -9,7 +9,6 @@ import {
   saveOpenProjectTabOrder,
   selectOpenProjectWorkspace
 } from '../open-project-sessions'
-import { windowForEvent } from './window'
 
 export function registerSystemIpc(): void {
   ipcMain.handle('system:get-sidebar-prefs', async () => loadSidebarPrefs())
@@ -42,10 +41,4 @@ export function registerSystemIpc(): void {
   ipcMain.handle('system:save-open-split-layouts', async (_event, layouts: unknown) =>
     saveOpenSplitLayouts(layouts)
   )
-  ipcMain.handle('system:pick-directory', async (event) => {
-    const win = windowForEvent(event)
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-    if (result.canceled || result.filePaths.length === 0) return null
-    return result.filePaths[0]
-  })
 }

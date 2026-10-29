@@ -1,6 +1,5 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import type { MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch } from '../../shared/api'
-import { windowForEvent } from './window'
 import {
   getMemoryPluginDefaults,
   getMemoryPluginSettings,
@@ -32,13 +31,6 @@ function changed(): void {
 export function registerPluginIpc(): void {
   registerPersonaIpc()
   ipcMain.handle('plugins:list', () => listPlugins())
-  ipcMain.handle('plugins:pick-path', async (event) => {
-    const result = await dialog.showOpenDialog(windowForEvent(event), {
-      properties: ['openFile', 'openDirectory'],
-      filters: [{ name: 'Pi extension', extensions: ['ts', 'js', 'mjs', 'cjs', 'json'] }]
-    })
-    return result.canceled ? null : result.filePaths[0] ?? null
-  })
   ipcMain.handle('plugins:install', async (_event, source: string) => {
     if (typeof source !== 'string' || !source.trim()) throw new Error('Plugin source is required')
     await installPlugin(source)

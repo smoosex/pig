@@ -41,6 +41,25 @@ test('lists sorted directories, hidden entries, directory links and Git markers 
   for (const crumb of listing.breadcrumbs) expect(await resolveProjectDirectory(crumb.path)).toBe(crumb.path)
 })
 
+test('optionally lists plugin files and file links after directories', async () => {
+  const path = await fixture()
+  await mkdir(join(path, 'plugin'))
+  await Promise.all(['b.ts', 'a.json', 'notes.md', '.hidden.js'].map((name) => writeFile(join(path, name), '')))
+  await symlink(join(path, 'b.ts'), join(path, 'link.mjs'))
+  expect((await browseProjectDirectories(path)).directories.map((item) => item.name)).toEqual(['plugin'])
+  expect((await browseProjectDirectories(path, false, true)).directories).toEqual([
+    { name: 'plugin', path: join(path, 'plugin'), git: false },
+    { name: 'a.json', path: join(path, 'a.json'), git: false, kind: 'file' },
+    { name: 'b.ts', path: join(path, 'b.ts'), git: false, kind: 'file' },
+    { name: 'link.mjs', path: join(path, 'link.mjs'), git: false, kind: 'file' }
+  ])
+  const typed = await browseProjectDirectories(join(path, 'b.ts'), false, true)
+  expect(typed.path).toBe(path)
+  expect(typed.file).toBe(join(path, 'b.ts'))
+  await expect(browseProjectDirectories(join(path, 'b.ts'))).rejects.toThrow('must be a directory')
+  await expect(browseProjectDirectories(join(path, 'notes.md'), false, true)).rejects.toThrow('must be a directory')
+})
+
 test('cyclic child links do not hide readable siblings, but browsing a cycle directly still fails', async () => {
   const path = await fixture()
   await mkdir(join(path, 'project'))
