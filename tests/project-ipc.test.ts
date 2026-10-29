@@ -47,6 +47,7 @@ async function runFixture(): Promise<void> {
       discoveryCalls++
       return [{ cwd: '/project', hasGit: true, worktrees: [] }]
     },
+    forgetProjectBranches: () => {},
     loadOpenedWorktreeProjects: async () => [],
     loadProjectForCwd: async () => null,
     loadWorktreeSessions: async (projectCwd: string, cwd: string) => {

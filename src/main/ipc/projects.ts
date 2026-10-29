@@ -6,6 +6,7 @@ import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '..
 import { canonicalProject } from '../worktrees'
 import {
   discoverOpenedWorktrees,
+  forgetProjectBranches,
   loadOpenedWorktreeProjects,
   loadProjectForCwd,
   loadWorktreeProject,
@@ -82,6 +83,7 @@ export function registerProjectIpc(): void {
     await Promise.all([...cwds].map(closeSessionsForCwd))
     await removeOpenProjectWorkspaces(cwds)
     await removeOpenedProject(project)
+    forgetProjectBranches(project)
   })
 
   ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {
@@ -99,6 +101,7 @@ export function registerProjectIpc(): void {
         }
         await removeOpenProjectWorkspaces(cwds)
         await removeOpenedProject(project)
+        forgetProjectBranches(project)
       })
     })
     return true
