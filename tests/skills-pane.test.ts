@@ -13,6 +13,13 @@ async function fixture(): Promise<void> {
     { id: 'managed', name: 'managed-skill', description: 'A managed skill', filePath: '/pig/skills/managed/SKILL.md', source: 'https://github.com/owner/repo', kind: 'github', managed: true, enabled: true, available: true, manualOnly: false, diagnostics: [] },
     { id: 'external', name: 'external-skill', description: 'A discovered skill', filePath: '/home/.agents/skills/external/SKILL.md', source: '/home/.agents/skills/external', kind: 'discovered', managed: false, enabled: true, available: true, manualOnly: true, diagnostics: [] }
   ]
+  skills.push(
+    { ...skills[0]!, id: 'remote', name: 'remote-skill', update: { commit: 'old-commit', ref: 'main', path: 'remote' } },
+    { ...skills[0]!, id: 'local', name: 'local-skill', kind: 'local', source: '/original/local', filePath: '/original/local/SKILL.md', localReference: true }
+  )
+  const checks: string[] = []
+  const updates: string[] = []
+  let conflict = true
   const preferences: [string, boolean][] = []
   const discarded: string[] = []
   const installed: [string, string[]][] = []
@@ -25,6 +32,12 @@ async function fixture(): Promise<void> {
     supportsGlass: false,
     listSkills: async () => ({ skills: skills.map((skill) => ({ ...skill })), diagnostics: [] }),
     onSkillsChanged: () => () => {},
+    checkSkillUpdate: async (id: string) => { checks.push(id); return { available: true, currentCommit: 'old-commit', latestCommit: 'new-commit' } },
+    updateSkill: async (id: string) => {
+      updates.push(id)
+      if (conflict) throw new Error('Local changes conflict; update refused')
+      skills.find((skill) => skill.id === id)!.update!.commit = 'new-commit'
+    },
     setSkillEnabled: async (id: string, enabled: boolean) => { preferences.push([id, enabled]); skills.find((skill) => skill.id === id)!.enabled = enabled },
     searchSkillMarket: async (query: string) => {
       if (query === 'old') return new Promise<SkillMarketResult>((resolve) => { finishOld = resolve })
@@ -75,6 +88,24 @@ async function fixture(): Promise<void> {
     await click('Enable external-skill')
     assert.deepEqual(preferences, [['external', false]])
     assert.equal(button('Enable external-skill').getAttribute('aria-checked'), 'false')
+
+    assert.deepEqual(checks, [], 'render and inventory reload never check automatically')
+    assert.deepEqual(updates, [])
+    assert.ok(host.textContent?.includes('Removing it does not delete source files'))
+    assert.ok(host.textContent?.includes('Legacy snapshot copy'))
+    assert.equal([...host.querySelectorAll('button')].filter((node) => node.textContent === 'Check for updates').length, 1, 'only remote imports with update metadata offer checks')
+    await click('Check for updates')
+    assert.deepEqual(checks, ['remote'])
+    assert.deepEqual(updates, [], 'checking never installs an update')
+    assert.ok(host.textContent?.includes('old-commit → new-commit'))
+    await click('Update')
+    assert.ok(host.textContent?.includes('Local changes conflict; update refused'))
+    assert.equal(skills.find((skill) => skill.id === 'remote')!.update!.commit, 'old-commit')
+    conflict = false
+    await click('Update')
+    assert.deepEqual(updates, ['remote', 'remote'])
+    assert.equal(host.textContent?.includes('Local changes conflict; update refused'), false)
+    assert.equal([...host.querySelectorAll('button')].some((node) => node.textContent === 'Update'), false, 'successful update resets the checked result')
 
     await click('Discover')
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })

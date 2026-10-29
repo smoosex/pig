@@ -3,7 +3,7 @@ import { BrowserWindow, ipcMain, shell } from 'electron'
 import { dirname } from 'node:path'
 import {
   discardSkillProbe, installSkills, listSkills, probeSkills, readSkill,
-  removeSkill, setSkillEnabled, skillById
+  removeSkill, setSkillEnabled, skillById, checkSkillUpdate, updateSkill
 } from '../skills/manager'
 import { searchSkillMarket } from '../skills/market'
 import { hasBusyPluginSessions, refreshToolSessions } from '../pi/session-registry'
@@ -25,6 +25,19 @@ export function registerSkillsIpc(): void {
     if (typeof id !== 'string') throw new Error('Skill id is required')
     if (hasBusyPluginSessions()) throw new Error('Wait for active sessions to finish before removing a skill')
     await removeSkill(id)
+    await changed()
+  })
+  ipcMain.handle('skills:check-update', (_event, id: string) => {
+    if (typeof id !== 'string') throw new Error('Skill id is required')
+    return checkSkillUpdate(id)
+  })
+  ipcMain.handle('skills:update', async (_event, id: string) => {
+    if (typeof id !== 'string') throw new Error('Skill id is required')
+    const assertIdle = () => {
+      if (hasBusyPluginSessions()) throw new Error('Wait for active sessions to finish before updating a skill')
+    }
+    assertIdle()
+    await updateSkill(id, undefined, assertIdle)
     await changed()
   })
   ipcMain.handle('skills:read', (_event, id: string) => readSkill(id))

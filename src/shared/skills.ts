@@ -12,6 +12,8 @@ export interface SkillInfo {
   agent?: ExternalSkillAgent
   /** HTTPS avatar of the GitHub owner, shown through the `pig-mcp-icon` scheme; absent for local skills. */
   icon?: string
+  localReference?: boolean
+  update?: { commit: string; ref: string; path: string }
   managed: boolean
   enabled: boolean
   available: boolean
@@ -62,7 +64,15 @@ export interface SkillMarketResult {
   error?: string
 }
 
+export interface SkillUpdateCheck {
+  available: boolean
+  currentCommit: string
+  latestCommit: string
+}
+
 export interface SkillsApi {
+  checkSkillUpdate: (id: string) => Promise<SkillUpdateCheck>
+  updateSkill: (id: string) => Promise<void>
   listSkills: () => Promise<SkillInventory>
   setSkillEnabled: (id: string, enabled: boolean) => Promise<void>
   removeSkill: (id: string) => Promise<void>

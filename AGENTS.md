@@ -60,7 +60,7 @@ src/
 
 会话能力面板的工具页按来源折叠分组：「内置」只含 Pi 自身工具（builtin 与 codemode / tool_search 等 inline），逐个开关；「Pig 插件」与「其他来源」每个插件只占一行、一个开关，名称取插件设置页的名字（`toolProvidersByPath`，未登记的扩展文件按文件名），分组身份使用插件注册 ID，未登记扩展使用完整路径，不能按显示名称合并同名插件。插件行由 main 的 `groupPluginTools` 聚合，所有工具都启用才算开；会话偏好仍按工具名逐个记录，子 agent 与 `applySessionTools` 不感知分组。
 
-Skills 设置页分「已安装 / 发现」。个人 Pi 配置与 `~/.agents/skills` 自动发现的文件只读，启停仅写 Pig 的 `skills.json`，不修改共享目录。导入保存副本到 `$PIG_DIR/skills/<uuid>/<name>/`，仅这些副本允许移除，移除后留在 `skill-backups/`。GitHub 导入先按不可变 commit 探测 `SKILL.md` 再多选复制，不执行仓库代码，不走 Pi package 安装。`chat-resources.ts` 的两个 loader 都通过 `applySkillPreferences` 动态合并副本与过滤禁用项；Chat 仍排除项目 Skills，空闲会话自动重载，运行中的会话延后到任务结束。另外会扫描 `~/.claude/skills` 与 `~/.codex/skills`（遵循 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，跳过 `.system` 等隐藏目录），它们不是 Pi 的来源，所以默认关闭，启用状态记在 `skills.json` 的 `enabledPaths`，由 `applySkillPreferences` 按原路径直接加载（不复制，Chat 也生效）；这类 Skill 不占用安装时的同名检查。全局清单不依赖项目目录，也不解析或加载用户配置的 packages。
+Skills 设置页分「已安装 / 发现」。个人 Pi 配置与 `~/.agents/skills` 自动发现的文件只读，启停仅写 Pig 的 `skills.json`，不修改共享目录。本地导入仅在 `skills.json` 登记原 Skill 目录（`localPath`），直接加载，不复制也不创建软链接，移除只取消登记、绝不删除源目录。GitHub 导入先按不可变 commit 探测 `SKILL.md` 再多选复制到 `$PIG_DIR/skills/<uuid>/<name>/`，记录 `remote` 的 commit、ref、仓库内 manifest 路径与整目录 SHA-256 fingerprint，不执行仓库代码，不走 Pi package 安装。远程支持手动检查／更新，不静默更新；更新先下载完整新版本并验证，替换前再次检查本地修改（含文件、可执行位及链接），有冲突直接拒绝。下载与注册表临时文件写好后，IPC 传入的同步守卫在替换前再次检查会话空闲；守卫、目录 swap 与注册表 rename 同一同步段完成，任务启动不能穿插，注册表提交失败同样同步恢复旧目录并重抛 IO 错误。稳定路径不变，旧版本与移除的副本留在 `skill-backups/`。没有 `localPath`／`remote` 的旧快照保持不变，不推断或自动迁移来源；重新安装才获得引用或更新能力。`chat-resources.ts` 的两个 loader 都通过 `applySkillPreferences` 动态合并副本与过滤禁用项；会话清单与实际加载共用按真实路径去重后的选择，Pi／项目优先于导入项，导入引用优先于同路径的其他 Agent 发现项（引用关闭时也不借后者绕开启用）；Chat 仍排除项目 Skills，空闲会话自动重载，运行中的会话延后到任务结束。另外会扫描 `~/.claude/skills` 与 `~/.codex/skills`（遵循 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，跳过 `.system` 等隐藏目录），它们不是 Pi 的来源，所以默认关闭，启用状态记在 `skills.json` 的 `enabledPaths`，由 `applySkillPreferences` 按原路径直接加载（不复制，Chat 也生效）；这类 Skill 不占用安装时的同名检查。全局清单不依赖项目目录，也不解析或加载用户配置的 packages。
 
 模型思考强度偏好复用 Pi `settings.json` 的 `modelThinkingLevels`（按 `provider/modelId`），不另存 Pig 配置。输入框强度菜单的「记住此模型的强度」开启时保存当前值，关闭时删除该偏好但不改变当前会话；仅已有偏好的模型会跟随后续手动选档更新。用户切换模型时，live / pending 统一按模型偏好 → 全局默认 → 当前会话强度选择，再用 SDK `clampThinkingLevel` 适配支持档位（如不支持 `xhigh` 时降为 `high`，不能直接降到最低档）；打开历史与 materialization 保留历史/显式会话选择。SDK session 的只读 settings 快照可能较旧，用户切换时以 main 的共享偏好解析结果为准。UI 操作成功后，同步同模型已打开会话的偏好标记，并递增 controls revision 阻止旧读取覆盖；不改其他会话当前强度。只在 UI 控制入口持久化，Review / 插件临时切换不得写模型偏好；保存前重载、保存后 flush 并检查 SDK 缓冲错误；失败时废弃 settings 实例，后续读取必须验证新实例成功加载，避免残留未落盘值或读取失败后的假成功。
 
@@ -144,7 +144,7 @@ Pi SDK 当前固定为 1.4.0，直接依赖 `pi-ai` 同步固定为 1.4.0。`pat
 | `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |
 | `src/main/pi/plugins.ts`             | 内置 / 第三方插件注册表、启用状态与打包路径                             |
 | `src/main/pi/web-search-settings.ts` | 内置 pi-web-access 的配置读写（`$PIG_DIR/web-search.json`，权限 0600）  |
-| `src/main/skills/`                  | 个人 Skills 清单、Pig 副本与启停偏好、本地 / GitHub 导入及 skills.sh 搜索 |
+| `src/main/skills/`                  | 个人 Skills 清单、本地引用、远程副本与手动更新、启停偏好及 skills.sh 搜索 |
 | `src/main/subagents/`               | 子 agent 的排队、上限、生命周期、结果投递与落盘；执行器接口与同进程 SDK 实现 |
 | `scripts/build-system-plugins.ts`    | 用 esbuild 把 vendored 插件打成单文件到 `out/system-plugins/`           |
 | `src/renderer/src/ipc/api.ts`        | renderer 的接口入口，复用共享类型                                       |

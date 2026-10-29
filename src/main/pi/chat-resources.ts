@@ -62,9 +62,8 @@ function sessionSkills(base: SkillBase, chat: boolean, options: SessionResourceO
 }
 
 export function sessionSkillChoices(base: SkillBase, chat: boolean, overrides: Record<string, boolean>): SessionCapability[] {
-  const unique = new Map(listSkillChoices(base, chat).map(({ skill, defaultEnabled, source }) => [skill.filePath,
-    { ...capability(skill.filePath, skill.name, defaultEnabled, overrides, skill.description), source }]))
-  return [...unique.values()]
+  return listSkillChoices(base, chat).map(({ skill, defaultEnabled, source }) =>
+    ({ ...capability(skill.filePath, skill.name, defaultEnabled, overrides, skill.description), source }))
 }
 
 export async function createNoExtensionsResourceLoader(cwd: string, pluginPaths: string[] = [], options: SessionResourceOptions = {}): Promise<ResourceLoader> {

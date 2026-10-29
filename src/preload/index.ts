@@ -326,6 +326,8 @@ const api: SessionApi = {
     ? ipcRenderer.invoke('settings:surface-reply', requestId)
     : ipcRenderer.invoke('settings:surface-reply', requestId, error),
   listSkills: () => ipcRenderer.invoke('skills:list'),
+  checkSkillUpdate: (id) => ipcRenderer.invoke('skills:check-update', id),
+  updateSkill: (id) => ipcRenderer.invoke('skills:update', id),
   setSkillEnabled: (id, enabled) => ipcRenderer.invoke('skills:enable', id, enabled),
   removeSkill: (id) => ipcRenderer.invoke('skills:remove', id),
   readSkill: (id) => ipcRenderer.invoke('skills:read', id),

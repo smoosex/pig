@@ -1,27 +1,31 @@
 /**
- * Pig owns imported copies and preferences, never the skills it discovers elsewhere. Pi's own personal
+ * Pig owns remote snapshots and preferences, never local references or skills discovered elsewhere. Pi's own personal
  * directories load by default and are switched off by exclusion; Claude Code and Codex directories are
  * not Pi sources, so their skills load only when the user opts in, straight from the original files.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, renameSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   DefaultResourceLoader, SettingsManager, getAgentDir, loadSkills, loadSkillsFromDir,
   type LoadSkillsResult, type Skill
 } from '@earendil-works/pi-coding-agent'
-import type { ExternalSkillAgent, SkillInfo, SkillInstallResult, SkillInventory, SkillProbe } from '../../shared/skills'
+import type { ExternalSkillAgent, SkillInfo, SkillInstallResult, SkillInventory, SkillProbe, SkillUpdateCheck } from '../../shared/skills'
 import type { SessionSkillSource } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
-import { copyPreparedSkill, githubAvatar, prepareSkillSource, validSkillName, type PreparedSkills, type SkillFetcher } from './source'
+import { copyPreparedSkill, githubAvatar, githubSkillSource, prepareSkillSource, validSkillName, safeSkillPath, skillFingerprint, type PreparedSkills, type SkillFetcher } from './source'
 
-interface ManagedSkill { id: string; name: string; source: string; kind: 'github' | 'local'; enabled: boolean }
+interface ManagedSkill {
+  id: string; name: string; source: string; kind: 'github' | 'local'; enabled: boolean
+  localPath?: string
+  remote?: { commit: string; ref: string; path: string; fingerprint: string }
+}
 interface SkillRegistry { skills: ManagedSkill[]; disabledPaths: string[]; enabledPaths: string[] }
 const registryPath = () => pigPath('skills.json')
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
-const skillDirectory = (skill: ManagedSkill) => pigPath('skills', skill.id, skill.name)
+const skillDirectory = (skill: ManagedSkill) => skill.localPath ?? pigPath('skills', skill.id, skill.name)
 const probes = new Map<string, { prepared: PreparedSkills; at: number }>()
 let writes: Promise<unknown> = Promise.resolve()
 function change<T>(operation: () => Promise<T>): Promise<T> {
@@ -48,6 +52,12 @@ function registry(): SkillRegistry {
     !Array.isArray(raw.enabledPaths) || raw.enabledPaths.some((path) => typeof path !== 'string') || raw.skills.some((skill) =>
     !skill || !uuid.test(skill.id) || !validSkillName(skill.name) || typeof skill.source !== 'string' || !['github', 'local'].includes(skill.kind) || typeof skill.enabled !== 'boolean'
   )) throw new Error('Invalid Pig skills registry')
+  for (const skill of raw.skills) {
+    if (skill.localPath !== undefined && (skill.kind !== 'local' || typeof skill.localPath !== 'string' || !isAbsolute(skill.localPath))) throw new Error('Invalid local skill reference')
+    if (skill.remote !== undefined && (skill.kind !== 'github' || !skill.remote ||
+      !/^[a-f0-9]{40}$/.test(skill.remote.commit) || !/^[a-f0-9]{64}$/.test(skill.remote.fingerprint) ||
+      typeof skill.remote.ref !== 'string' || !skill.remote.ref || typeof skill.remote.path !== 'string' || !safeSkillPath(skill.remote.path))) throw new Error('Invalid remote skill tracking data')
+  }
   return raw
 }
 async function save(value: SkillRegistry): Promise<void> {
@@ -110,11 +120,19 @@ function skillChoices(base: LoadSkillsResult, chat: boolean, everything: boolean
       const entry = managedDefaults.get(canonical(skill.filePath))
       return { skill, defaultEnabled: entry?.enabled === true, source: { kind: 'imported' as const, name: entry?.source } }
     }),
-    ...external.map(({ skill, agent }) => ({
+    // Managed references own their path even when disabled and omitted from the ordinary load.
+    ...external.filter(({ skill }) => !managedDefaults.has(canonical(skill.filePath))).map(({ skill, agent }) => ({
       skill, defaultEnabled: optedIn.has(canonical(skill.filePath)), source: { kind: agent }
     }))
   ]
-  return { choices, diagnostics: [...base.diagnostics.filter((item) => item.type !== 'collision'), ...extra.diagnostics] }
+  const seen = new Set<string>()
+  const unique = choices.filter(({ skill }) => {
+    const path = canonical(skill.filePath)
+    if (seen.has(path)) return false
+    seen.add(path)
+    return true
+  })
+  return { choices: unique, diagnostics: [...base.diagnostics.filter((item) => item.type !== 'collision'), ...extra.diagnostics] }
 }
 
 export function listSkillChoices(base: LoadSkillsResult, chat: boolean): SkillChoice[] {
@@ -196,6 +214,8 @@ async function inventory(): Promise<SkillInventory> {
     entries.push({
       id: item.id, name: item.name, description: skill?.description ?? '', filePath: join(skillDirectory(item), 'SKILL.md'),
       source: item.source, kind: item.kind, managed: true, enabled: item.enabled,
+      ...(item.localPath ? { localReference: true } : {}),
+      ...(item.remote ? { update: { commit: item.remote.commit, ref: item.remote.ref, path: item.remote.path } } : {}),
       ...(item.kind === 'github' ? { icon: githubAvatar(item.source.replace('https://github.com/', '')) } : {}),
       available: !!skill && skill.name === item.name, manualOnly: skill?.disableModelInvocation ?? false,
       diagnostics: result.diagnostics.map((item) => item.message)
@@ -248,9 +268,77 @@ export function removeSkill(id: string): Promise<void> {
     if (!skill) throw new Error('Only skills imported by Pig can be removed here')
     const directory = pigPath('skills', skill.id)
     const backup = pigPath('skill-backups', `${Date.now()}-${skill.id}`)
-    if (existsSync(directory)) { await mkdir(dirname(backup), { recursive: true }); await rename(directory, backup) }
+    if (!skill.localPath && existsSync(directory)) { await mkdir(dirname(backup), { recursive: true }); await rename(directory, backup) }
     try { await save({ ...state, skills: state.skills.filter((item) => item.id !== id) }) }
     catch (error) { if (existsSync(backup)) await rename(backup, directory); throw error }
+  })
+}
+
+function trackedSkill(state: SkillRegistry, id: string): ManagedSkill & { remote: NonNullable<ManagedSkill['remote']> } {
+  const entry = state.skills.find((skill) => skill.id === id)
+  if (!entry?.remote) throw new Error('This skill is a local reference or a legacy snapshot without update tracking; reinstall it to enable updates')
+  return entry as ManagedSkill & { remote: NonNullable<ManagedSkill['remote']> }
+}
+
+function revisionSkill(prepared: PreparedSkills, entry: ManagedSkill & { remote: NonNullable<ManagedSkill['remote']> }): Skill {
+  const skill = prepared.skills.find((skill) => relative(prepared.root, skill.filePath).split(sep).join('/') === entry.remote.path)
+  if (!skill || skill.name !== entry.name) throw new Error('The upstream skill was removed or renamed; the installed version was left unchanged')
+  return skill
+}
+
+export function checkSkillUpdate(id: string, fetcher?: SkillFetcher): Promise<SkillUpdateCheck> {
+  return change(async () => {
+    const entry = trackedSkill(registry(), id)
+    const prepared = await prepareSkillSource(entry.source, fetcher)
+    try {
+      revisionSkill(prepared, entry)
+      return { available: prepared.commit !== entry.remote.commit, currentCommit: entry.remote.commit, latestCommit: prepared.commit! }
+    } finally { await prepared.cleanup() }
+  })
+}
+
+/** Stage first, then swap synchronously at the stable path so session-specific preferences survive updates. */
+export function updateSkill(id: string, fetcher?: SkillFetcher, assertIdle: () => void = () => {}): Promise<void> {
+  return change(async () => {
+    const state = registry()
+    const entry = trackedSkill(state, id)
+    const directory = pigPath('skills', entry.id)
+    const stage = pigPath('skills', `${entry.id}.stage-${randomUUID()}`)
+    const registryStage = `${registryPath()}.${randomUUID()}.tmp`
+    const backup = pigPath('skill-backups', `${Date.now()}-${entry.id}-${randomUUID()}`)
+    const assertUnmodified = async () => {
+      if (await skillFingerprint(skillDirectory(entry)) !== entry.remote.fingerprint) throw new Error('Local changes detected; update refused to avoid overwriting your edits')
+    }
+    await assertUnmodified()
+    const prepared = await prepareSkillSource(entry.source, fetcher)
+    try {
+      const skill = revisionSkill(prepared, entry)
+      if (prepared.commit === entry.remote.commit) return
+      await copyPreparedSkill(prepared, skill, join(stage, entry.name), fetcher)
+      const fingerprint = await skillFingerprint(join(stage, entry.name))
+      await mkdir(dirname(backup), { recursive: true })
+      const next = { ...state, skills: state.skills.map((item) => item === entry
+        ? { ...entry, remote: { ...entry.remote, commit: prepared.commit!, fingerprint } } : item) }
+      await writeFile(registryStage, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
+      await assertUnmodified()
+      // The synchronous guard, directory swap and registry commit cannot interleave with task startup.
+      assertIdle()
+      renameSync(directory, backup)
+      try { renameSync(stage, directory) }
+      // A failed directory swap restores the old files before propagating the original IO error.
+      catch (error) { renameSync(backup, directory); throw error }
+      try { renameSync(registryStage, registryPath()) }
+      // A failed registry commit rolls the directory back synchronously, before tasks can start.
+      catch (error) {
+        renameSync(directory, stage)
+        renameSync(backup, directory)
+        throw error
+      }
+    } finally {
+      await prepared.cleanup()
+      await rm(stage, { recursive: true, force: true })
+      await rm(registryStage, { force: true })
+    }
   })
 }
 
@@ -293,7 +381,18 @@ export function installSkills(token: string, paths: string[], fetcher?: SkillFet
         const entry: ManagedSkill = { id: randomUUID(), name: skill.name, source: probe.prepared.source, kind: probe.prepared.kind, enabled: true }
         const directory = skillDirectory(entry)
         try {
-          await copyPreparedSkill(probe.prepared, skill, directory, fetcher)
+          if (entry.kind === 'local') {
+            const current = loadSkillsFromDir({ dir: skill.baseDir, source: 'path' }).skills.find((item) => item.filePath === skill.filePath)
+            if (!current || current.name !== entry.name) throw new Error('Skill changed since the preview; scan the source again')
+            entry.localPath = skill.baseDir
+          } else {
+            await copyPreparedSkill(probe.prepared, skill, directory, fetcher)
+            entry.remote = {
+              commit: probe.prepared.commit!, ref: githubSkillSource(entry.source).ref,
+              path: relative(probe.prepared.root, skill.filePath).split(sep).join('/'),
+              fingerprint: await skillFingerprint(directory)
+            }
+          }
           state.skills.push(entry)
           try { await save(state) } catch (error) { state.skills.pop(); throw error }
           names.add(skill.name)

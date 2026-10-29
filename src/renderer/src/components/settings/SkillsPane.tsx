@@ -1,4 +1,4 @@
-/** Global skill inventory separates Pig-owned copies from files discovered in the user's Pi setup. */
+/** Global inventory includes local references, remote copies and automatically discovered files. */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, BookOpen, ChevronRight, Copy, FolderOpen, Info, LoaderCircle, MoreHorizontal, Plus, RotateCw, Search, Trash2 } from 'lucide-react'
 import { api, type SkillInfo, type SkillInventory } from '../../ipc/api'
@@ -19,7 +19,44 @@ import { AddSkillDialog, type AddSkillSource } from './AddSkillDialog'
 import { SkillDetailsDialog } from './SkillDetailsDialog'
 import { SkillsDiscover } from './SkillsDiscover'
 
+import type { SkillUpdateCheck } from '../../../../shared/skills'
+
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+function SkillUpdateActions({ skill, onUpdated, disabled }: { skill: SkillInfo; onUpdated(): Promise<void>; disabled: boolean }) {
+  const t = useT()
+  const [check, setCheck] = useState<SkillUpdateCheck | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const working = useRef(false)
+  const run = async (update: boolean) => {
+    if (working.current) return
+    working.current = true
+    setBusy(true)
+    setError(null)
+    try {
+      if (update) {
+        await api.updateSkill(skill.id)
+        setCheck(null)
+        await onUpdated()
+      } else {
+        setCheck(null)
+        setCheck(await api.checkSkillUpdate(skill.id))
+      }
+    } catch (failure) { setError(errorText(failure)) }
+    finally { working.current = false; setBusy(false) }
+  }
+  return <div className="mt-2 flex flex-col gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="xs" variant="outline" disabled={disabled || busy} onClick={() => void run(false)}>
+        {busy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t('skills.checkUpdate')}
+      </Button>
+      {check?.available ? <Button size="xs" variant="outline" disabled={disabled || busy} onClick={() => void run(true)}>{t('skills.update')}</Button> : null}
+    </div>
+    {check ? <p role="status" className="break-words text-xs text-muted-foreground">{check.available ? t('skills.updateAvailable', { current: check.currentCommit, latest: check.latestCommit }) : t('skills.upToDate')}</p> : null}
+    {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+  </div>
+}
 
 export function SkillsPane() {
   const t = useT()
@@ -83,6 +120,8 @@ export function SkillsPane() {
         </div>
         {skill.description ? <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{skill.description}</p> : null}
         <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={skill.filePath}>{skill.filePath}</p>
+        {skill.localReference ? <p className="mt-1 text-xs text-muted-foreground">{t('skills.localReferenceHint')}</p> : skill.managed && !skill.update ? <p className="mt-1 text-xs text-muted-foreground">{t('skills.snapshotHint')}</p> : null}
+        {skill.kind === 'github' && skill.update ? <SkillUpdateActions key={`${skill.id}-${skill.update.commit}`} skill={skill} onUpdated={load} disabled={pending.has(skill.id)} /> : null}
         {skill.diagnostics.map((message) => <p key={message} className="mt-1 break-words text-xs text-warning">{message}</p>)}
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -161,7 +200,7 @@ export function SkillsPane() {
       {detail ? <SkillDetailsDialog key={detail.id} skill={detail} onClose={() => setDetail(null)} /> : null}
       <AlertDialog open={!!remove} onOpenChange={(open) => { if (!open && !removing) setRemove(null) }}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>{t('skills.removeTitle', { name: remove?.name ?? '' })}</AlertDialogTitle><AlertDialogDescription>{t('skills.removeDescription')}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>{t('skills.removeTitle', { name: remove?.name ?? '' })}</AlertDialogTitle><AlertDialogDescription>{t(remove?.localReference ? 'skills.removeReferenceDescription' : 'skills.removeDescription')}</AlertDialogDescription></AlertDialogHeader>
           {removeError ? <Alert variant="destructive"><AlertDescription>{removeError}</AlertDescription></Alert> : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={removing}>{t('skills.cancel')}</AlertDialogCancel>

@@ -1,5 +1,6 @@
 /** Probe public GitHub trees without executing repository code; imports copy only bounded regular files. */
 import { mkdtemp, mkdir, readdir, lstat, realpath, readFile, writeFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir, homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, sep, posix } from 'node:path'
 import { loadSkillsFromDir, type Skill, type ResourceDiagnostic } from '@earendil-works/pi-coding-agent'
@@ -22,6 +23,31 @@ export interface PreparedSkills {
   skills: Skill[]
   diagnostics: ResourceDiagnostic[]
   cleanup: () => Promise<void>
+}
+
+/** Hash every installed file and executable bit; links and special files count as local conflicts. */
+export async function skillFingerprint(directory: string): Promise<string> {
+  const hash = createHash('sha256')
+  let bytes = 0
+  let count = 0
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true })
+    entries.sort((a, b) => a.name.localeCompare(b.name, 'en'))
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      const stat = await lstat(path)
+      if (stat.isDirectory()) await walk(path)
+      else if (stat.isFile()) {
+        bytes += stat.size
+        if (++count > 2000 || stat.size > MAX_FILE || bytes > MAX_SKILL) throw new Error('Installed skill exceeds the update size limit')
+        hash.update(JSON.stringify([relative(directory, path).split(sep).join('/'), stat.mode & 0o111, stat.size]))
+        hash.update(await readFile(path))
+      } else throw new Error('Installed skill contains links or special files; local changes must be resolved before updating')
+    }
+  }
+  if (!(await lstat(directory)).isDirectory()) throw new Error('Installed skill directory was replaced; update refused')
+  await walk(directory)
+  return hash.digest('hex')
 }
 
 export function safeSkillPath(path: string): boolean {
@@ -121,7 +147,7 @@ export async function prepareSkillSource(input: string, fetcher: SkillFetcher = 
     })
     const results = manifests.map((file) => loadSkillsFromDir({ dir: dirname(join(root, file.path)), source: 'path' }))
     return {
-      root, source: `https://github.com/${source.repo}${source.ref !== 'HEAD' || source.prefix ? `/tree/${encodeURIComponent(source.ref)}${source.prefix ? `/${source.prefix}` : ''}` : ''}`,
+      root, source: `https://github.com/${source.repo}${source.ref !== 'HEAD' || source.prefix ? `/tree/${encodeURIComponent(source.ref)}${source.prefix ? `/${source.prefix.split('/').map(encodeURIComponent).join('/')}` : ''}` : ''}`,
       kind: 'github', repo: source.repo, commit, files,
       skills: results.flatMap((result) => result.skills).filter((skill, index, list) => list.findIndex((other) => other.filePath === skill.filePath) === index),
       diagnostics: [
@@ -132,7 +158,7 @@ export async function prepareSkillSource(input: string, fetcher: SkillFetcher = 
   } catch (error) { await rm(temporary, { recursive: true, force: true }); throw error }
 }
 
-/** A local import is a copy, not ownership of the source directory; internal symlinks are refused. */
+/** Copy a prepared immutable remote revision (also used by source-level import tests). */
 export async function copyPreparedSkill(prepared: PreparedSkills, skill: Skill, target: string, fetcher: SkillFetcher = fetch): Promise<void> {
   let total = 0
   let count = 0

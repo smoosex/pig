@@ -1,9 +1,9 @@
 /** Skill imports use immutable GitHub files and never run repository code or follow internal links. */
 import { test, expect } from 'bun:test'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { copyPreparedSkill, githubSkillSource, prepareSkillSource, safeSkillPath, skillResponseText, type SkillFetcher } from '../src/main/skills/source'
+import { copyPreparedSkill, githubSkillSource, prepareSkillSource, safeSkillPath, skillFingerprint, skillResponseText, type SkillFetcher } from '../src/main/skills/source'
 
 const manifest = (name: string) => `---\nname: ${name}\ndescription: A useful workflow\n---\nRead references/guide.md.\n`
 const commit = 'a'.repeat(40)
@@ -60,6 +60,38 @@ test('GitHub preview pins the commit and imports supporting binary files', async
     prepared.files!.push({ path: 'skills/pdf/link', type: 'blob', mode: '120000', size: 2 })
     await expect(copyPreparedSkill(prepared, prepared.skills[0], join(root, 'unsafe', 'pdf'), fetcher)).rejects.toThrow(/symbolic links/)
   } finally { await prepared.cleanup(); await rm(root, { recursive: true, force: true }) }
+})
+
+test('tracked GitHub source URLs preserve literal percent and hash directory names', async () => {
+  const prefix = 'skills/literal%20#value'
+  const input = `https://github.com/owner/repo/tree/main/${prefix.split('/').map(encodeURIComponent).join('/')}`
+  const fetcher: SkillFetcher = async (url) => {
+    if (url.pathname.includes('/commits/')) return Response.json({ sha: commit })
+    if (url.hostname === 'api.github.com') return Response.json({ tree: [
+      { path: `${prefix}/SKILL.md`, type: 'blob', mode: '100644', size: 100 }
+    ] })
+    return new Response(manifest('literal-path'))
+  }
+  const prepared = await prepareSkillSource(input, fetcher)
+  try {
+    expect(prepared.source).toBe(input)
+    expect(githubSkillSource(prepared.source).prefix).toBe(prefix)
+    const next = await prepareSkillSource(prepared.source, fetcher)
+    try { expect(next.skills.map((skill) => skill.name)).toEqual(['literal-path']) }
+    finally { await next.cleanup() }
+  } finally { await prepared.cleanup() }
+})
+
+test.skipIf(process.platform === 'win32')('installed fingerprints detect individual executable permission changes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pig-skill-fingerprint-'))
+  try {
+    const path = join(root, 'script.sh')
+    await writeFile(path, 'echo example\n')
+    await chmod(path, 0o755)
+    const before = await skillFingerprint(root)
+    await chmod(path, 0o655)
+    expect(await skillFingerprint(root)).not.toBe(before)
+  } finally { await rm(root, { recursive: true, force: true }) }
 })
 
 test('rejects truncated GitHub trees before downloading files', async () => {
