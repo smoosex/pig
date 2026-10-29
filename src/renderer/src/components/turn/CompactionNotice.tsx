@@ -10,12 +10,11 @@ import { compactionReasonKey } from '../../chat/compactions'
 import { formatElapsed, type CompactionItem } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { formatTokens } from '../../lib/format'
-import { cn, hideScroll } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Marker, MarkerContent } from '../ui/marker'
-import { MarkdownText } from '../MarkdownText'
 import { Chevron } from './ProcessChrome'
+import { SummaryText } from './SummaryText'
 
 const landmarkRow = 'flex shrink-0 items-center gap-1.5'
 
@@ -71,9 +70,7 @@ export function CompactionNotice({ item }: { item: CompactionItem }) {
         </CollapsibleTrigger>
       </Marker>
       <CollapsibleContent className="duration-300">
-        <div className={cn('mt-2 max-h-80 overflow-auto', hideScroll)}>
-          <MarkdownText className="text-xs text-muted-foreground" text={text} />
-        </div>
+        <SummaryText text={text} />
       </CollapsibleContent>
     </Collapsible>
   )

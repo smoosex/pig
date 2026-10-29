@@ -2,12 +2,11 @@
 import { useState } from 'react'
 import { GitBranch } from 'lucide-react'
 import { useT } from '../../hooks/useT'
-import { cn, hideScroll } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Marker, MarkerContent } from '../ui/marker'
-import { MarkdownText } from '../MarkdownText'
 import { Chevron } from './ProcessChrome'
+import { SummaryText } from './SummaryText'
 
 export function BranchSummaryNotice({ text }: { text: string }) {
   const t = useT()
@@ -31,9 +30,7 @@ export function BranchSummaryNotice({ text }: { text: string }) {
         </CollapsibleTrigger>
       </Marker>
       <CollapsibleContent className="duration-300">
-        <div className={cn('mt-2 max-h-80 overflow-auto', hideScroll)}>
-          <MarkdownText className="text-xs text-muted-foreground" text={text} />
-        </div>
+        <SummaryText text={text} />
       </CollapsibleContent>
     </Collapsible>
   )

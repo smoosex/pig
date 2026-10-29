@@ -295,9 +295,14 @@ function AgentTurnView({
           </div>
         ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
         {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
-        {trailing.map((segment, index) => segment.kind === 'compaction'
-          ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
-          : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+        {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
+        {trailing.length ? (
+          <div className="mb-2">
+            {trailing.map((segment, index) => segment.kind === 'compaction'
+              ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
+              : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+          </div>
+        ) : null}
         {showActions ? (
           <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
             <span className="flex min-w-0 items-center gap-1.5">
