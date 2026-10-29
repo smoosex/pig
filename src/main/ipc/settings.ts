@@ -38,6 +38,8 @@ export function registerSettingsIpc(sessions?: SettingsSessions): void {
     service.updateUi('shortcuts', { bindings: patch }))
   ipcMain.handle('settings:set-completion-notifications', (_event, enabled: boolean) =>
     service.updateUi('notifications', { completionNotifications: enabled }))
+  ipcMain.handle('settings:set-approval-notifications', (_event, enabled: boolean) =>
+    service.updateUi('notifications', { approvalNotifications: enabled }))
   ipcMain.handle('settings:set-beam-border', (_event, enabled: boolean) => service.setBeamBorder(enabled))
   ipcMain.handle('settings:set-locale', (_event, locale: LocaleSetting) => service.updateUi('general', { locale }))
   ipcMain.handle('settings:set-theme', (_event, patch: Partial<ThemePrefs>) => service.updateUi('theme', patch))

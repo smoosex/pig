@@ -45,6 +45,14 @@ function trackWindow(sender: WebContents) {
   }
   return state
 }
+// Loaded lazily so modules that only open dialogs stay importable without Electron's Notification.
+let notifications: Promise<typeof import('./approval-notification')> | undefined
+function approvalNotifications(update: (module: typeof import('./approval-notification')) => void): void {
+  // One shared promise keeps a request's track and retire calls in order.
+  notifications ??= import('./approval-notification')
+  notifications.then(update).catch((error: unknown) => console.error('Approval notification failed:', error))
+}
+
 export function replyExtensionUI(sender: WebContents, id: string, value: string | null): void {
   const request = requests.get(id)
   if (request?.sender === sender && (value === null || typeof value === 'string'))
@@ -91,6 +99,7 @@ export async function createExtensionUI(
         if (timer) clearTimeout(timer)
         opts?.signal?.removeEventListener('abort', cancel)
         send({ kind: 'dismiss', id })
+        if (fields.approval) approvalNotifications((module) => module.retireApproval(owner, id))
         resolve(
           value !== null && (!fields.options || fields.options.includes(value)) ? value : undefined
         )
@@ -99,6 +108,10 @@ export async function createExtensionUI(
       opts?.signal?.addEventListener('abort', cancel, { once: true })
       if (opts?.timeout !== undefined) timer = setTimeout(cancel, opts.timeout)
       send({ kind: 'prompt', id, owner, ...fields })
+      if (fields.approval && fields.options) {
+        const notice = { id, title: fields.title, options: fields.options, sourceTitle: fields.approvalSource?.title, reply: finish }
+        approvalNotifications((module) => module.trackApproval(owner, win, notice))
+      }
     })
   }
   return {

@@ -163,7 +163,9 @@ export const zh = {
     confirm: '仍要退出'
   },
   notification: {
-    replyReady: '回复已完成'
+    replyReady: '回复已完成',
+    approvalPending: '等待权限确认：{title}',
+    approvalMore: '可能还有其他待确认的请求'
   },
   sidebar: {
     tabsAria: '项目 / 对话切换',
@@ -543,6 +545,8 @@ export const zh = {
     notifications: '通知',
     completionNotifications: '回复完成通知',
     completionNotificationsDescription: '窗口不在前台时发送系统通知',
+    approvalNotifications: '权限请求通知',
+    approvalNotificationsDescription: '会话等待权限确认且不在眼前时发送系统通知，通知上只能拒绝，允许需回到会话查看完整请求',
     notificationsOn: '开启',
     notificationsOff: '关闭',
     model: '模型',

@@ -35,6 +35,7 @@ function settings(patch: Partial<AppSettings> = {}): AppSettings & { settingsRev
     sendShortcut: 'enter',
     shortcuts: {},
     completionNotifications: true,
+    approvalNotifications: true,
     beamBorderEnabled: true,
     localeSetting: 'zh-CN',
     systemLocale: 'zh-CN',

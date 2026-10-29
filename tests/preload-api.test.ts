@@ -52,6 +52,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.onSessionNames(() => {})
   api.onNotificationClick(() => {})
   await api.setCompletionNotifications(false)
+  await api.setApprovalNotifications(false)
   await api.compactSession('session-1', 'Preserve decisions')
   await api.compactSession('session-2')
   await api.replyReviewUI('review-request', 'commit')
@@ -143,6 +144,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'diff:watch', args: ['/repo'] },
     { channel: 'diff:unwatch', args: ['/repo', 'lease-1'] },
     { channel: 'settings:set-completion-notifications', args: [false] },
+    { channel: 'settings:set-approval-notifications', args: [false] },
     { channel: 'session:compact', args: ['session-1', 'Preserve decisions'] },
     { channel: 'session:compact', args: ['session-2', undefined] },
     { channel: 'system-plugins:review-reply', args: ['review-request', 'commit'] },

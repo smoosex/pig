@@ -6,8 +6,7 @@ import type { GenerationStats } from '../../shared/api'
 import { GenerationSampler } from './generation-stats'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
-import { t } from '../i18n'
-import { previewText } from './session-preview'
+import { notificationTitle } from './session-preview'
 
 const bridged = new WeakSet<AgentSession>()
 const activeRuns = new WeakSet<AgentSession>()
@@ -33,18 +32,6 @@ async function notifyOnCompletion(
 ): Promise<void> {
   const { sendCompletionNotification } = await import('../completion-notification')
   await sendCompletionNotification(sessionId, win, signal, content)
-}
-
-function notificationTitle(session: AgentSession): string {
-  if (session.sessionName?.trim()) return session.sessionName
-  let hasImage = false
-  for (const entry of session.sessionManager.getEntries()) {
-    if (entry.type !== 'message' || entry.message.role !== 'user') continue
-    const preview = previewText(entry.message.content)
-    if (preview.text) return preview.text
-    hasImage ||= preview.image
-  }
-  return t(hasImage ? 'sessions.imagePreview' : 'sessions.newTitle')
 }
 
 interface QueueUpdateBatch {

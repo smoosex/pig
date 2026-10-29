@@ -36,6 +36,8 @@ export function GeneralPane() {
   const models = useModelCatalogStore((s) => s.models)
   const completionNotifications = useSettingsStore((s) => s.completionNotifications)
   const setCompletionNotifications = useSettingsStore((s) => s.setCompletionNotifications)
+  const approvalNotifications = useSettingsStore((s) => s.approvalNotifications)
+  const setApprovalNotifications = useSettingsStore((s) => s.setApprovalNotifications)
   const setDefaultModel = useSettingsStore((s) => s.setDefaultModel)
   const setDefaultThinking = useSettingsStore((s) => s.setDefaultThinking)
 
@@ -95,6 +97,25 @@ export function GeneralPane() {
             <Select
               value={completionNotifications ? 'on' : 'off'}
               onValueChange={(value) => void setCompletionNotifications(value === 'on')}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="end">
+                <SelectGroup>
+                  <SelectItem value="on">{t('settings.notificationsOn')}</SelectItem>
+                  <SelectItem value="off">{t('settings.notificationsOff')}</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+          <SettingsRow
+            title={t('settings.approvalNotifications')}
+            description={t('settings.approvalNotificationsDescription')}
+          >
+            <Select
+              value={approvalNotifications ? 'on' : 'off'}
+              onValueChange={(value) => void setApprovalNotifications(value === 'on')}
             >
               <SelectTrigger size="sm">
                 <SelectValue />

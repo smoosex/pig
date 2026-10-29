@@ -161,7 +161,9 @@ export const en: Messages = {
     confirm: 'Quit anyway'
   },
   notification: {
-    replyReady: 'Reply complete'
+    replyReady: 'Reply complete',
+    approvalPending: 'Waiting for approval: {title}',
+    approvalMore: 'Other requests may be waiting'
   },
   sidebar: {
     tabsAria: 'Projects / chats switch',
@@ -546,6 +548,8 @@ export const en: Messages = {
     notifications: 'Notifications',
     completionNotifications: 'Reply completion',
     completionNotificationsDescription: 'Show a system notification when Pig is not in the foreground',
+    approvalNotifications: 'Permission requests',
+    approvalNotificationsDescription: 'Notify when a session out of view waits for approval; the notification can only deny, allowing needs the full request in the session',
     notificationsOn: 'On',
     notificationsOff: 'Off',
     model: 'Model',

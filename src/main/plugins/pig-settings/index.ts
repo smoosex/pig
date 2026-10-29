@@ -62,7 +62,7 @@ const updateParameters = Type.Union([
   }, { additionalProperties: false }),
   Type.Object({
     group: Type.Literal('notifications'), expectedRevision: revision,
-    patch: Type.Object({ completionNotifications: Type.Optional(Type.Boolean()) }, { additionalProperties: false })
+    patch: Type.Object({ completionNotifications: Type.Optional(Type.Boolean()), approvalNotifications: Type.Optional(Type.Boolean()) }, { additionalProperties: false })
   }, { additionalProperties: false }),
   Type.Object({
     group: Type.Literal('shortcuts'), expectedRevision: revision,

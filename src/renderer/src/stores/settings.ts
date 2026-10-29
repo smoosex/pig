@@ -27,6 +27,7 @@ interface SettingsStore extends AppSettings {
   setSendShortcut: (shortcut: SendShortcut) => Promise<void>
   setShortcuts: (patch: ShortcutPatch) => Promise<void>
   setCompletionNotifications: (enabled: boolean) => Promise<void>
+  setApprovalNotifications: (enabled: boolean) => Promise<void>
   setBeamBorderEnabled: (enabled: boolean) => Promise<void>
   setLocale: (locale: LocaleSetting) => Promise<void>
   setTheme: (patch: Partial<ThemePrefs>) => Promise<void>
@@ -39,6 +40,7 @@ const empty: AppSettings = {
   sendShortcut: 'enter',
   shortcuts: {},
   completionNotifications: true,
+  approvalNotifications: true,
   beamBorderEnabled: true,
   localeSetting: 'system',
   // Until the first load the only hint is the locale of the last run, which the mirror holds.
@@ -220,6 +222,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       save({ completionNotifications: enabled }, async () => {
         const next = await api.setCompletionNotifications(enabled)
         return { completionNotifications: next.completionNotifications, settingsRevision: next.settingsRevision }
+      }),
+
+    setApprovalNotifications: (enabled) =>
+      save({ approvalNotifications: enabled }, async () => {
+        const next = await api.setApprovalNotifications(enabled)
+        return { approvalNotifications: next.approvalNotifications, settingsRevision: next.settingsRevision }
       }),
 
     setBeamBorderEnabled: (enabled) =>

@@ -14,6 +14,7 @@ export interface PigSettings extends ThemePrefs {
   sendShortcut: SendShortcut
   shortcuts: ShortcutOverrides
   completionNotifications: boolean
+  approvalNotifications: boolean
   beamBorderEnabled: boolean
   locale: LocaleSetting
 }
@@ -22,6 +23,7 @@ const defaults: PigSettings = {
   sendShortcut: 'enter',
   shortcuts: {},
   completionNotifications: true,
+  approvalNotifications: true,
   beamBorderEnabled: true,
   locale: 'system',
   appearance: 'system',
@@ -51,6 +53,7 @@ function normalize(data: Partial<PigSettings> | null | undefined): PigSettings {
     sendShortcut: parseShortcut(data?.sendShortcut),
     shortcuts: parseShortcutOverrides(data?.shortcuts, process.platform === 'darwin'),
     completionNotifications: data?.completionNotifications !== false,
+    approvalNotifications: data?.approvalNotifications !== false,
     beamBorderEnabled: data?.beamBorderEnabled !== false,
     locale: parseLocaleSetting(data?.locale),
     appearance: parseAppearance(data?.appearance),

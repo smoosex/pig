@@ -628,6 +628,7 @@ export interface AppSettings extends ThemePrefs {
   /** Only the user's changes; see `resolveShortcuts`. */
   shortcuts: ShortcutOverrides
   completionNotifications: boolean
+  approvalNotifications: boolean
   beamBorderEnabled: boolean
   /** The stored choice: a locale, or `system` to follow the OS language. */
   localeSetting: LocaleSetting
@@ -1073,6 +1074,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setSendShortcut: (shortcut: SendShortcut) => Promise<SettingsReply<{ sendShortcut: SendShortcut }>>
   setShortcuts: (patch: ShortcutPatch) => Promise<SettingsReply<{ shortcuts: ShortcutOverrides }>>
   setCompletionNotifications: (enabled: boolean) => Promise<SettingsReply<{ completionNotifications: boolean }>>
+  setApprovalNotifications: (enabled: boolean) => Promise<SettingsReply<{ approvalNotifications: boolean }>>
   setBeamBorderEnabled: (enabled: boolean) => Promise<SettingsReply<{ beamBorderEnabled: boolean }>>
   setLocaleSetting: (
     locale: LocaleSetting

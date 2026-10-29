@@ -12,6 +12,12 @@ async function fixture(): Promise<void> {
   mock.module(fileURLToPath(new URL('../src/main/mcp/sdk.ts', import.meta.url)), () => ({
     mcpSdk: async () => { await sdkGate; return { theme: {} } }
   }))
+  const tracked: Array<{ owner: string; id: string; title: string; options: string[]; reply(option: string): void }> = []
+  const retired: string[] = []
+  mock.module(fileURLToPath(new URL('../src/main/approval-notification.ts', import.meta.url)), () => ({
+    trackApproval: (owner: string, _win: unknown, notice: { id: string; title: string; options: string[]; reply(option: string): void }) => tracked.push({ owner, ...notice }),
+    retireApproval: (_owner: string, id: string) => retired.push(id)
+  }))
   const { createExtensionUI, replyExtensionUI, cancelExtensionUI, openMcpUrl } = await import(
     '../src/main/extension-ui'
   )
@@ -43,10 +49,20 @@ async function fixture(): Promise<void> {
   assert.ok(approval.kind === 'prompt' && approval.approval === true && approval.message === 'write: /x')
   if (approval.kind === 'prompt') replyExtensionUI(sender, approval.id, 'session')
   assert.equal(await approving, 'session')
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.ok(approval.kind === 'prompt')
+  assert.deepEqual(tracked.map(({ owner, id, title, options }) => ({ owner, id, title, options })), [{ owner: 'session', id: approval.id, title: 'Allow?', options: ['once', 'session', 'deny'] }])
+  assert.deepEqual(retired, [approval.id], 'answering in the app retires the notification')
+  const fromNotification = ui.select('Allow again?', ['once', 'deny'], { approval: { message: 'write: /y' } } as never)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  tracked.at(-1)!.reply('deny')
+  assert.equal(await fromNotification, 'deny', 'a notification action answers the request')
+  assert.equal(events.at(-1)?.kind, 'dismiss')
   ui.select('Plain', ['a'])
   const plain = events.at(-1)!
   assert.ok(plain.kind === 'prompt' && plain.approval === undefined)
   if (plain.kind === 'prompt') replyExtensionUI(sender, plain.id, null)
+  assert.equal(tracked.length, 2, 'ordinary selects never notify')
   const confirm = ui.confirm('Confirm', 'Message')
   const editor = ui.editor('Editor', 'original')
   cancelExtensionUI('session')

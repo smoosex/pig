@@ -2,7 +2,7 @@
 import { Notification, type BrowserWindow } from 'electron'
 import { t } from './i18n'
 import { loadPigSettings } from './pig-settings'
-import { isNotificationSessionVisible } from './completion-visibility'
+import { focusNotifiedSession, isNotificationSessionVisible } from './completion-visibility'
 
 // Keep native notifications alive until dismissed; macOS removes them when the object is collected.
 const activeNotifications = new Set<Notification>()
@@ -31,11 +31,7 @@ export async function sendCompletionNotification(
   notification.once('close', () => activeNotifications.delete(notification))
   notification.once('click', () => {
     activeNotifications.delete(notification)
-    if (win.isDestroyed() || win.webContents.isDestroyed()) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
-    win.webContents.send('notification:click', sessionId)
+    focusNotifiedSession(win, sessionId)
   })
   notification.show()
 }

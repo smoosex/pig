@@ -394,6 +394,8 @@ const api: SessionApi = {
   setShortcuts: (patch: unknown) => ipcRenderer.invoke('settings:set-shortcuts', patch),
   setCompletionNotifications: (enabled: boolean) =>
     ipcRenderer.invoke('settings:set-completion-notifications', enabled),
+  setApprovalNotifications: (enabled: boolean) =>
+    ipcRenderer.invoke('settings:set-approval-notifications', enabled),
   setBeamBorderEnabled: (enabled: boolean) => ipcRenderer.invoke('settings:set-beam-border', enabled),
   setLocaleSetting: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
   setTheme: (patch: unknown) => ipcRenderer.invoke('settings:set-theme', patch),

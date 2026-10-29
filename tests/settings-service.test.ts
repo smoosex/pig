@@ -195,7 +195,7 @@ async function fixture(name: string) {
         service.update({ group: 'notifications', expectedRevision: notifications.revision, patch: { completionNotifications: true } })
       ])
       assert.equal(ui.status, 'fulfilled')
-      if (ui.status === 'fulfilled') assert.deepEqual(ui.value, { completionNotifications: false, settingsRevision: 2 })
+      if (ui.status === 'fulfilled') assert.deepEqual(ui.value, { completionNotifications: false, approvalNotifications: true, settingsRevision: 2 })
       assert.equal(agent.status, 'rejected')
       assert.equal((await disk()).completionNotifications, false)
 

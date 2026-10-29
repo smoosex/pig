@@ -60,8 +60,9 @@ const fields: SettingsCatalog['groups'] = [
   { id: 'general', description: 'Application UI language; this does not set the conversation reply language.', scope: 'application', applies: 'applied', fields: [
     { key: 'locale', type: 'enum', values: LOCALE_SETTINGS, description: 'Follow the OS language or choose a shipped locale.' }
   ] },
-  { id: 'notifications', description: 'Pig completion notifications; operating-system notification permissions still apply.', scope: 'application', applies: 'future-notifications', fields: [
-    { key: 'completionNotifications', type: 'boolean', description: 'Enable completion notifications for subsequent replies.' }
+  { id: 'notifications', description: 'Pig desktop notifications; operating-system notification permissions still apply.', scope: 'application', applies: 'future-notifications', fields: [
+    { key: 'completionNotifications', type: 'boolean', description: 'Enable completion notifications for subsequent replies.' },
+    { key: 'approvalNotifications', type: 'boolean', description: 'Notify when a background session waits for a permission approval.' }
   ] },
   { id: 'shortcuts', description: 'Existing application actions only. Never replace a conflicting binding without user authorization.', scope: 'application', applies: 'applied', fields: [
     { key: 'sendShortcut', type: 'enum', values: ['enter', 'shift-enter'], description: 'Composer send key; IME composition stays protected.' },
@@ -113,7 +114,7 @@ function pigValues(pig: PigSettings, group: PigGroup): SettingsValuesByGroup[Pig
   switch (group) {
     case 'theme': return theme(pig)
     case 'general': return { locale: pig.locale }
-    case 'notifications': return { completionNotifications: pig.completionNotifications }
+    case 'notifications': return { completionNotifications: pig.completionNotifications, approvalNotifications: pig.approvalNotifications }
     case 'shortcuts': return { sendShortcut: pig.sendShortcut, bindings: pig.shortcuts }
   }
 }
@@ -245,7 +246,7 @@ export class SettingsService {
       ])
       return {
         ...theme(pig), sendShortcut: pig.sendShortcut, shortcuts: pig.shortcuts,
-        completionNotifications: pig.completionNotifications, beamBorderEnabled: pig.beamBorderEnabled,
+        completionNotifications: pig.completionNotifications, approvalNotifications: pig.approvalNotifications, beamBorderEnabled: pig.beamBorderEnabled,
         localeSetting: pig.locale, systemLocale: systemLocale(), defaultModel: defaults.model,
         defaultThinkingLevel: defaults.thinkingLevel, thinkingLevels: defaults.thinkingLevels,
         defaultSettingsError: defaults.error, settingsRevision: this.uiRevision
@@ -257,7 +258,7 @@ export class SettingsService {
     switch (group) {
       case 'theme': return theme(pig)
       case 'general': return { localeSetting: pig.locale, systemLocale: systemLocale() }
-      case 'notifications': return { completionNotifications: pig.completionNotifications }
+      case 'notifications': return { completionNotifications: pig.completionNotifications, approvalNotifications: pig.approvalNotifications }
       case 'shortcuts': return { sendShortcut: pig.sendShortcut, shortcuts: pig.shortcuts }
     }
   }
@@ -335,7 +336,10 @@ export class SettingsService {
         switch (group) {
           case 'theme': return value as Partial<ThemePrefs>
           case 'general': return { locale: value.locale as PigSettings['locale'] }
-          case 'notifications': return { completionNotifications: value.completionNotifications as boolean }
+          case 'notifications': return {
+            ...(value.completionNotifications !== undefined ? { completionNotifications: value.completionNotifications as boolean } : {}),
+            ...(value.approvalNotifications !== undefined ? { approvalNotifications: value.approvalNotifications as boolean } : {})
+          }
           case 'shortcuts': return {
             ...(value.sendShortcut !== undefined ? { sendShortcut: value.sendShortcut as PigSettings['sendShortcut'] } : {}),
             ...(value.bindings !== undefined ? { shortcuts: applyShortcutPatch(current.shortcuts, value.bindings, process.platform === 'darwin') } : {})

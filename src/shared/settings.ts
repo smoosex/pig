@@ -14,7 +14,7 @@ export type SettingsApplication = 'applied' | 'future-notifications' | 'new-sess
 export interface SettingsValuesByGroup {
   theme: ThemePrefs
   general: { locale: LocaleSetting }
-  notifications: { completionNotifications: boolean }
+  notifications: { completionNotifications: boolean; approvalNotifications: boolean }
   shortcuts: { sendShortcut: SendShortcut; bindings: ShortcutOverrides }
   defaults: { model: { provider: string; id: string } | null; thinkingLevel: ThinkingLevel | null }
   /** Plugin ID to enabled session types; an empty list means disabled. */
@@ -27,7 +27,7 @@ export interface SettingsValuesByGroup {
 export interface SettingsPatchesByGroup {
   theme: Partial<ThemePrefs>
   general: { locale?: LocaleSetting }
-  notifications: { completionNotifications?: boolean }
+  notifications: { completionNotifications?: boolean; approvalNotifications?: boolean }
   shortcuts: { sendShortcut?: SendShortcut; bindings?: ShortcutPatch }
   defaults: { model?: { provider: string; id: string }; thinkingLevel?: ThinkingLevel }
   plugins: { scopes?: Record<string, PluginScope[]> }
