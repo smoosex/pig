@@ -128,6 +128,42 @@ async function fixture(): Promise<void> {
     await loader.reload()
     assert.equal(loader.getSkills().skills.some((skill) => skill.name === 'shared-workflow'), false, 'exclusions follow a file identity, not one symlink spelling')
 
+    // Preferences follow stable discovery links across application upgrades, not versioned targets.
+    const versionOne = join(root, 'app', 'versions', 'one')
+    const versionTwo = join(root, 'app', 'versions', 'two')
+    for (const version of [versionOne, versionTwo]) {
+      await skill(join(version, 'linked-default'), 'linked-default')
+      await skill(join(version, 'linked-external'), 'linked-external')
+    }
+    const defaultLink = join(root, 'home', '.agents', 'skills', 'linked-default')
+    const externalLink = join(root, 'home', '.claude', 'skills', 'linked-external')
+    await mkdir(join(root, 'home', '.claude', 'skills'), { recursive: true })
+    await symlink(join(versionOne, 'linked-default'), defaultLink)
+    await symlink(join(versionOne, 'linked-external'), externalLink)
+    const linkedEntries = (await manager.listSkills()).skills
+    await manager.setSkillEnabled(linkedEntries.find((entry) => entry.name === 'linked-default')!.id, false)
+    await manager.setSkillEnabled(linkedEntries.find((entry) => entry.name === 'linked-external')!.id, true)
+    const preferences = JSON.parse(await readFile(join(root, 'pig', 'skills.json'), 'utf8'))
+    assert.ok(preferences.disabledPaths.includes(join(defaultLink, 'SKILL.md')))
+    assert.ok(preferences.enabledPaths.includes(join(externalLink, 'SKILL.md')))
+    for (const [link, name] of [[defaultLink, 'linked-default'], [externalLink, 'linked-external']]) {
+      await rm(link)
+      await symlink(join(versionTwo, name), link)
+    }
+    await loader.reload()
+    assert.equal(loader.getSkills().skills.some((entry) => entry.name === 'linked-default'), false)
+    assert.equal(loader.getSkills().skills.some((entry) => entry.name === 'linked-external'), true)
+    const upgradedEntries = (await manager.listSkills()).skills
+    assert.equal(upgradedEntries.find((entry) => entry.name === 'linked-default')?.enabled, false)
+    assert.equal(upgradedEntries.find((entry) => entry.name === 'linked-external')?.enabled, true)
+    await manager.setSkillEnabled(upgradedEntries.find((entry) => entry.name === 'linked-default')!.id, true)
+    await manager.setSkillEnabled(upgradedEntries.find((entry) => entry.name === 'linked-external')!.id, false)
+    await loader.reload()
+    assert.equal(loader.getSkills().skills.some((entry) => entry.name === 'linked-default'), true)
+    assert.equal(loader.getSkills().skills.some((entry) => entry.name === 'linked-external'), false)
+    await rm(defaultLink)
+    await rm(externalLink)
+
     // Imports after loader construction must appear on its next reload too.
     const another = await manager.probeSkills(join(source, 'imported-workflow'))
     await manager.installSkills(another.token, another.candidates.map((item) => item.path))

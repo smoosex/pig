@@ -89,14 +89,14 @@ export interface SkillChoice { skill: Skill; defaultEnabled: boolean; source: Se
 function skillChoices(base: LoadSkillsResult, chat: boolean, everything: boolean): { choices: SkillChoice[]; diagnostics: LoadSkillsResult['diagnostics'] } {
   const state = registry()
   const includeDisabled = everything
-  const disabled = new Set(state.disabledPaths)
+  const disabled = new Set(state.disabledPaths.map(canonical))
   const personal = (skill: Skill) => inside(skill.filePath, getAgentDir()) || inside(skill.filePath, join(homedir(), '.agents'))
   const candidates = allSkills(base).filter((skill) => !chat || personal(skill))
   const extra = loadSkills({
     cwd: homedir(), agentDir: getAgentDir(), includeDefaults: false,
     skillPaths: state.skills.filter((skill) => includeDisabled || skill.enabled).map(skillDirectory)
   })
-  const optedIn = new Set(state.enabledPaths)
+  const optedIn = new Set(state.enabledPaths.map(canonical))
   const external = includeDisabled || optedIn.size
     ? externalSkills().flatMap(({ agent, skills }) => skills.map((skill) => ({ skill, agent }))) : []
   const managedDefaults = new Map(state.skills.map((entry) => [canonical(join(skillDirectory(entry), 'SKILL.md')), entry]))
@@ -167,7 +167,7 @@ export async function listSkills(): Promise<SkillInventory> {
 async function inventory(): Promise<SkillInventory> {
   const state = registry()
   const base = await personalSkills()
-  const disabled = new Set(state.disabledPaths)
+  const disabled = new Set(state.disabledPaths.map(canonical))
   const entries: SkillInfo[] = base.skills.map((skill) => ({
     id: `discovered:${skill.filePath}`, name: skill.name, description: skill.description,
     filePath: skill.filePath, source: dirname(skill.filePath), kind: 'discovered', managed: false,
@@ -175,7 +175,7 @@ async function inventory(): Promise<SkillInventory> {
     diagnostics: base.diagnostics.filter((item) => item.path === skill.filePath && item.type !== 'collision').map((item) => item.message)
   }))
   const known = new Set(entries.map((entry) => canonical(entry.filePath)))
-  const optedIn = new Set(state.enabledPaths)
+  const optedIn = new Set(state.enabledPaths.map(canonical))
   for (const { agent, skills, diagnostics } of externalSkills()) {
     for (const skill of skills) {
       const path = canonical(skill.filePath)
@@ -231,9 +231,11 @@ export function setSkillEnabled(id: string, enabled: boolean): Promise<void> {
     else {
       const skill = (await inventory()).skills.find((skill) => skill.id === id && !skill.managed)
       if (!skill) throw new Error('Skill not found')
-      const path = canonical(skill.filePath)
+      // Persist the discovery path so versioned symlink targets can change without losing preferences.
+      const path = resolve(skill.filePath)
+      const target = canonical(path)
       const list = skill.agent ? 'enabledPaths' : 'disabledPaths'
-      state[list] = state[list].filter((item) => item !== path)
+      state[list] = state[list].filter((item) => canonical(item) !== target)
       if (enabled === !!skill.agent) state[list].push(path)
     }
     await save(state)
