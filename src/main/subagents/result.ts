@@ -21,7 +21,8 @@ export function formatReport(info: SubagentInfo): string {
     lines.push(`model: ${info.model.provider}/${info.model.id}${info.fallbackReason ? ` (fallback: ${info.fallbackReason})` : ''}`)
   }
   const elapsed = info.startedAt === undefined ? 0 : (info.endedAt ?? Date.now()) - info.startedAt
-  lines.push(`turns: ${info.turns} · duration: ${duration(elapsed)} · tokens: ${tokens(info.tokens.input)} in / ${tokens(info.tokens.output)} out`)
+  const sent = info.usage ? info.usage.input + info.usage.cacheRead + info.usage.cacheWrite : 0
+  lines.push(`turns: ${info.turns} · duration: ${duration(elapsed)} · tokens: ${tokens(sent)} in / ${tokens(info.usage?.output ?? 0)} out`)
   if (info.editedFiles.length) lines.push(`edited: ${info.editedFiles.join(', ')}`)
   if (info.error) lines.push(`error: ${info.error}`)
 

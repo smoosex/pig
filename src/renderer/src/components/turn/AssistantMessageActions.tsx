@@ -1,8 +1,7 @@
 /** Reply toolbar: regenerating resends the turn's prompt in place, forking keeps the whole turn. */
 import { useMemo, useState } from 'react'
-import { ChartColumn, Check, Copy, GitFork, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { Check, Copy, GitFork, MoreHorizontal, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
-import { cacheHitRate } from '../../../../shared/turn-usage'
 import type { Turn } from '../../chat/turns'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { useT } from '../../hooks/useT'
@@ -14,8 +13,9 @@ import { Button } from '../ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger
 } from '../ui/dropdown-menu'
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { TurnSubagentUsage } from '../subagents/TurnSubagentUsage'
+import { UsagePopover } from './UsagePopover'
 
 const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 
@@ -36,8 +36,6 @@ export function AssistantMessageActions({
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
   }), [locale])
-  const numbers = useMemo(() => new Intl.NumberFormat(locale), [locale])
-  const percent = useMemo(() => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }), [locale])
   const text = answerText(turn)
   const { copied, copy } = useCopyFeedback(text)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -51,7 +49,6 @@ export function AssistantMessageActions({
   const canChange = persisted && !busy && !pending
   const canRegenerate = canChange && Boolean(turn.user)
   const fullTimestamp = timestampFormat.format(turn.endedAt)
-  const usage = turn.usage
 
   async function copyAnswer(format: 'markdown' | 'plain' = 'markdown'): Promise<void> {
     try {
@@ -78,20 +75,6 @@ export function AssistantMessageActions({
       setPending(false)
     }
   }
-
-  const hitRate = usage ? cacheHitRate(usage) : null
-  const usageRows: Array<[string, string]> = usage
-    ? [
-        [t('turn.usageInput'), numbers.format(usage.input)],
-        [t('turn.usageOutput'), numbers.format(usage.output)],
-        [t('turn.usageCacheRead'), numbers.format(usage.cacheRead)],
-        [t('turn.usageCacheWrite'), numbers.format(usage.cacheWrite)],
-        ...(hitRate === null ? [] : [[t('turn.usageCacheHitRate'), percent.format(hitRate)] as [string, string]]),
-        [t('turn.usageTotal'), numbers.format(usage.total)],
-        [t('turn.usageCalls'), t('turn.usageCallCount', { count: usage.calls })],
-        ...(tps ? [[t('turn.usageSpeed'), tps] as [string, string]] : [])
-      ]
-    : []
 
   return (
     <div
@@ -127,29 +110,9 @@ export function AssistantMessageActions({
           {t(turn.user ? 'turn.retryMessage' : 'turn.regenerateNoPrompt')}
         </TooltipContent>
       </Tooltip>
-      <Popover open={usageOpen} onOpenChange={setUsageOpen}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="ghost" size="icon-xs" aria-label={t('turn.usage')} disabled={!usage}>
-                <ChartColumn />
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>{t('turn.usage')}</TooltipContent>
-        </Tooltip>
-        <PopoverContent align="end" side="top" className="w-64 gap-1.5 p-3 text-xs">
-          <p className="font-medium text-muted-foreground">{t('turn.usage')}</p>
-          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5">
-            {usageRows.map(([label, value]) => (
-              <div key={label} className="contents">
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="text-right font-mono tabular-nums">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </PopoverContent>
-      </Popover>
+      <UsagePopover usage={turn.usage} tps={tps} open={usageOpen} onOpenChange={setUsageOpen}>
+        {sessionId && turn.id && turn.usage ? <TurnSubagentUsage sessionId={sessionId} turnId={turn.id} usage={turn.usage} /> : null}
+      </UsagePopover>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <Tooltip>
           <TooltipTrigger asChild>

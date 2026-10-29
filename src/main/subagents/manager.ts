@@ -11,7 +11,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import type { SubagentInfo, SubagentSettings, SubagentStatus, SubagentTurn, ThinkingLevel } from '../../shared/api'
+import type { SubagentInfo, SubagentSettings, SubagentStatus, SubagentTurn, ThinkingLevel, TurnUsage } from '../../shared/api'
+import { addUsage, type UsageCounts } from '../../shared/turn-usage'
 import type { SpawnOutcome, SpawnRequest, SubagentDelivery, SubagentHost } from '../plugins/pig-subagent-host'
 import { backgroundAck, combineReports, formatReport } from './result'
 import { chooseSubagentAppearance } from './appearance'
@@ -69,6 +70,19 @@ export function timelineFromMessages(messages: readonly unknown[]): SubagentTurn
     })
   }
   return turns
+}
+
+/** Usage and cost over the transcript's assistant messages, summed as the live events add them. */
+export function usageFromMessages(messages: readonly unknown[]): { usage?: TurnUsage; cost: number } {
+  let usage: TurnUsage | undefined
+  let cost = 0
+  for (const message of messages) {
+    const value = message as { role?: unknown; usage?: UsageCounts & { cost?: { total?: number } } }
+    if (value.role !== 'assistant') continue
+    usage = addUsage(usage, value.usage)
+    cost += value.usage?.cost?.total ?? 0
+  }
+  return { usage, cost }
 }
 
 /**
@@ -155,7 +169,6 @@ export class SubagentManager implements SubagentHost {
         turnTools: [],
         toolCounts: {},
         editedFiles: [],
-        tokens: { input: 0, output: 0 },
         cost: 0
       },
       spec: {
@@ -297,16 +310,25 @@ export class SubagentManager implements SubagentHost {
       loading = (async () => {
         const items = await this.deps.store.load(parentSessionId)
         let repaired = false
-        for (const [index, info] of items.entries()) {
-          if (!needsTimeline(info)) continue
-          {
-            const turnTools = timelineFromMessages(await this.deps.runner.readTranscript(info.sessionFile!))
-            if (!turnTools.length) continue
+        for (const [index, stored] of items.entries()) {
+          // Earlier builds kept `tokens` with cache traffic folded into input, which cannot be split again.
+          const { tokens, ...info } = stored as SubagentInfo & { tokens?: unknown }
+          const stale = needsTimeline(info)
+          if (!stale && tokens === undefined) continue
+          let next: SubagentInfo = info
+          // Stale timelines mean the index missed live progress, usage included.
+          const messages = info.sessionFile ? await this.deps.runner.readTranscript(info.sessionFile) : []
+          const { usage, cost } = usageFromMessages(messages)
+          if (usage) next = { ...next, usage, cost }
+          const turnTools = stale ? timelineFromMessages(messages) : []
+          if (turnTools.length) {
             const toolCounts: Record<string, number> = {}
             for (const name of turnTools.flatMap((turn) => turn.tools)) toolCounts[name] = (toolCounts[name] ?? 0) + 1
-            items[index] = { ...info, turns: turnTools.length, turnTools, toolCounts }
-            repaired = true
+            next = { ...next, turns: turnTools.length, turnTools, toolCounts }
           }
+          if (next === info && tokens === undefined) continue
+          items[index] = next
+          repaired = true
         }
         if (repaired) await this.deps.store.save(parentSessionId, items)
         const parent: Parent = { entries: new Map(), pending: [], closed: false }
@@ -435,7 +457,7 @@ export class SubagentManager implements SubagentHost {
     }
     this.update(parentSessionId, entry, {
       ...(event.thinking ? { turnTools: withCurrentTurn(info.turnTools, (turn) => ({ ...turn, thinking: true })) } : {}),
-      tokens: { input: info.tokens.input + event.input, output: info.tokens.output + event.output },
+      usage: addUsage(info.usage, event.usage),
       cost: info.cost + event.cost,
       ...(event.text.trim() ? { output: event.text } : {})
     })

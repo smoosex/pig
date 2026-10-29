@@ -1,5 +1,6 @@
 /** The execution seam: the manager drives children through this interface and tests replace it. */
 import type { ThinkingLevel } from '../../shared/api'
+import type { UsageCounts } from '../../shared/turn-usage'
 
 export interface RunSpec {
   id: string
@@ -17,7 +18,7 @@ export interface RunSpec {
 export type RunEvent =
   | { type: 'turn_start' }
   | { type: 'tool'; name: string; args: Record<string, unknown> }
-  | { type: 'assistant'; text: string; thinking: boolean; input: number; output: number; cost: number }
+  | { type: 'assistant'; text: string; thinking: boolean; usage?: UsageCounts; cost: number }
 
 export interface RunResult {
   error?: string

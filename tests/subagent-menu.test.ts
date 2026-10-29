@@ -28,7 +28,7 @@ async function fixture(): Promise<void> {
   const done: SubagentInfo = {
     id: 'done', parentSessionId: 'parent', title: 'Finished child', prompt: 'test', toolCallId: 'call',
     background: true, status: 'completed', createdAt: 1, turns: 0, maxTurns: 0,
-    turnTools: [], toolCounts: {}, editedFiles: [], tokens: { input: 0, output: 0 }, cost: 0
+    turnTools: [], toolCounts: {}, editedFiles: [], cost: 0
   }
   const running: SubagentInfo = { ...done, id: 'running', title: 'Running child', status: 'running' }
   try {

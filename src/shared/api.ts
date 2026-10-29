@@ -752,7 +752,8 @@ export interface SubagentInfo {
   /** Paths changed through edit/write only; bash changes are not attributed. */
   editedFiles: string[]
   activity?: string
-  tokens: { input: number; output: number }
+  /** Summed over the child's model calls like a turn's usage; absent before the first call reports one. */
+  usage?: TurnUsage
   cost: number
   output?: string
   error?: string

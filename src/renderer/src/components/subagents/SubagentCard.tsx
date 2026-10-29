@@ -14,6 +14,7 @@ import { cn, hideScroll } from '../../lib/utils'
 import { isSubagentActive, isSubagentProblem, subagentColor, useSubagentStore } from '../../stores/subagents'
 import { MarkdownText } from '../MarkdownText'
 import { StackedIcons } from '../turn/ProcessChrome'
+import { UsagePopover, useUsageFormat } from '../turn/UsagePopover'
 import { stackKindForTool, toolUsageSummary, type IconKind } from '../turn/process-model'
 import { Button } from '../ui/button'
 import {
@@ -101,11 +102,13 @@ function Body({ item }: { item: SubagentInfo }) {
     ? t('subagents.turnsOf', { n: item.turns, max: item.maxTurns })
     : t('subagents.turns', { n: item.turns })
   const stats = toolSummary(item.toolCounts)
+  const { compact } = useUsageFormat()
+  const tokens = item.usage ? t('subagents.tokens', { n: compact.format(item.usage.total) }) : ''
   return (
     <div className="flex min-h-0 flex-col gap-3 px-4 pt-2 pb-4">
       <p className="text-center text-sm font-medium text-balance">{item.title}</p>
       <Timeline item={item} />
-      <p className="truncate text-center text-xs text-muted-foreground">{[turnLabel, stats].filter(Boolean).join(' · ')}</p>
+      <p className="truncate text-center text-xs text-muted-foreground">{[turnLabel, tokens, stats].filter(Boolean).join(' · ')}</p>
       {item.fallbackReason && item.model ? (
         <p className="text-xs text-warning">
           {t('subagents.fallback', { reason: item.fallbackReason, model: `${item.model.provider}/${item.model.id}` })}
@@ -281,6 +284,7 @@ export function SubagentCard({ sessionId, items, selected, history = false, onCl
             <CircleStop aria-hidden="true" />
           </Button>
         ) : null}
+        {selected.usage ? <UsagePopover usage={selected.usage} side="bottom" size="icon-sm" className="rounded-full" /> : null}
         <Button
           type="button"
           variant="ghost"

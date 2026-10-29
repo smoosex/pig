@@ -19,7 +19,7 @@ async function fixture(): Promise<void> {
   const item: SubagentInfo = {
     id: 'child', parentSessionId: 'parent', title: 'Historical task', prompt: 'test', toolCallId: 'call',
     background: true, status: 'completed', createdAt: 1, turns: 0, maxTurns: 0,
-    turnTools: [], toolCounts: {}, editedFiles: [], tokens: { input: 0, output: 0 }, cost: 0, cleared: true
+    turnTools: [], toolCounts: {}, editedFiles: [], cost: 0, cleared: true
   }
   store.setState({ bySession: { parent: [item] }, card: null, clearing: null })
   const host = document.createElement('div')

@@ -23,7 +23,7 @@ type AssistantLike = {
   content: Content[]
   stopReason?: string
   errorMessage?: string
-  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: { total?: number } }
 }
 
 function text(message: AssistantLike): string {
@@ -94,14 +94,12 @@ export function createSdkRunner(approvalUI?: (spec: RunSpec) => Pick<ExtensionUI
           onEvent({ type: 'tool', name: event.toolName, args })
         } else if (event.type === 'message_end' && (event.message as { role?: string }).role === 'assistant') {
           const message = event.message as unknown as AssistantLike
-          const usage = message.usage ?? {}
           onEvent({
             type: 'assistant',
             text: text(message),
             thinking: message.content.some((block) => block.type === 'thinking'),
-            input: (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0),
-            output: usage.output ?? 0,
-            cost: usage.cost?.total ?? 0
+            usage: message.usage,
+            cost: message.usage?.cost?.total ?? 0
           })
         }
       })

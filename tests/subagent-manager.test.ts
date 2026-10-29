@@ -104,7 +104,7 @@ describe('subagent manager', () => {
     await tick()
     expect(status(manager).c).toBe('running')
 
-    runs.find((run) => run.spec.prompt === 'do fg')!.emit({ type: 'assistant', text: 'report', thinking: false, input: 10, output: 2, cost: 0 })
+    runs.find((run) => run.spec.prompt === 'do fg')!.emit({ type: 'assistant', text: 'report', thinking: false, usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 }, cost: 0 })
     runs.find((run) => run.spec.prompt === 'do fg')!.finish()
     const outcome = await foreground
     expect(outcome.isError).toBe(false)
@@ -117,7 +117,7 @@ describe('subagent manager', () => {
     const controller = new AbortController()
     const pending = manager.spawn(request('fg', false, { signal: controller.signal }))
     await tick()
-    runs[0].emit({ type: 'assistant', text: 'half done', thinking: false, input: 1, output: 1, cost: 0 })
+    runs[0].emit({ type: 'assistant', text: 'half done', thinking: false, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }, cost: 0 })
     controller.abort()
     const outcome = await pending
     expect(runs[0].aborted).toBe(true)
@@ -127,13 +127,27 @@ describe('subagent manager', () => {
     expect(outcome.text).toContain('half done')
   })
 
+  test('usage adds up per model call and skips messages that report none', async () => {
+    const { manager, runs } = harness()
+    const pending = manager.spawn(request('fg', false))
+    await tick()
+    runs[0].emit({ type: 'assistant', text: '', thinking: false, usage: { input: 10, output: 2, cacheRead: 100, cacheWrite: 5 }, cost: 0.1 })
+    runs[0].emit({ type: 'assistant', text: '', thinking: false, cost: 0 })
+    runs[0].emit({ type: 'assistant', text: 'done', thinking: false, usage: { input: 3, output: 4, cacheRead: 110, cacheWrite: 0 }, cost: 0.2 })
+    runs[0].finish()
+    await pending
+    const info = manager.snapshot('parent')[0]
+    expect(info.usage).toEqual({ input: 13, output: 6, cacheRead: 210, cacheWrite: 5, total: 234, calls: 2 })
+    expect(info.cost).toBeCloseTo(0.3)
+  })
+
   test('turn and time limits stop the child with their own status', async () => {
     const { manager, runs } = harness({ maxTurns: 2, timeoutMinutes: 0 })
     const pending = manager.spawn(request('fg', false))
     await tick()
     runs[0].emit({ type: 'turn_start' })
     runs[0].emit({ type: 'tool', name: 'edit', args: { path: 'src/a.ts' } })
-    runs[0].emit({ type: 'assistant', text: '', thinking: true, input: 1, output: 1, cost: 0 })
+    runs[0].emit({ type: 'assistant', text: '', thinking: true, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }, cost: 0 })
     runs[0].emit({ type: 'turn_start' })
     runs[0].emit({ type: 'turn_start' })
     const outcome = await pending
@@ -279,7 +293,7 @@ describe('subagent reports', () => {
     id: 'abcd1234', parentSessionId: 'parent', toolCallId: 'call', title: 'Map IPC', prompt: 'p', background: true,
     status: 'completed', model: { provider: 'p', id: 'm' }, fallbackReason: 'q/x is not available',
     createdAt: 0, startedAt: 0, endedAt: 221_000, turns: 12, maxTurns: 50, turnTools: [], toolCounts: {},
-    editedFiles: [], tokens: { input: 48_000, output: 6_000 }, cost: 0.4, sessionFile: '/s/child.jsonl'
+    editedFiles: [], usage: { input: 8_000, output: 6_000, cacheRead: 39_000, cacheWrite: 1_000, total: 54_000, calls: 12 }, cost: 0.4, sessionFile: '/s/child.jsonl'
   }
 
   test('carries status, model fallback, usage and the report', () => {
@@ -319,12 +333,13 @@ test('a restart interrupts children that were still queued or running', () => {
   ])
 })
 
-test('an incomplete timeline is rebuilt from the transcript when the index loads', async () => {
+test('an incomplete timeline and legacy usage are rebuilt from the transcript when the index loads', async () => {
   const transcript = [
     { role: 'user', content: 'go' },
-    { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'toolCall', name: 'read' }, { type: 'toolCall', name: 'bash' }] },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'toolCall', name: 'read' }, { type: 'toolCall', name: 'bash' }],
+      usage: { input: 20, output: 5, cacheRead: 0, cacheWrite: 300, cost: { total: 0.01 } } },
     { role: 'toolResult', content: [] },
-    { role: 'assistant', content: [{ type: 'text', text: 'done' }] }
+    { role: 'assistant', content: [{ type: 'text', text: 'done' }], usage: { input: 4, output: 9, cacheRead: 300, cacheWrite: 0, cost: { total: 0.02 } } }
   ]
   const legacy = {
     id: 'old', parentSessionId: 'parent', toolCallId: 'c', title: 'Old', prompt: 'p', background: true,
@@ -353,6 +368,10 @@ test('an incomplete timeline is rebuilt from the transcript when the index loads
     await wait(20)
     const saved = JSON.parse(await readFile(join(root, 'parent', 'index.json'), 'utf8'))
     expect(saved.subagents[0].turnTools).toEqual(item.turnTools)
+    // Folded legacy tokens are replaced by the transcript's breakdown, not carried over.
+    expect(item.usage).toEqual({ input: 24, output: 14, cacheRead: 300, cacheWrite: 300, total: 638, calls: 2 })
+    expect(item.cost).toBeCloseTo(0.03)
+    expect('tokens' in saved.subagents[0]).toBe(false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

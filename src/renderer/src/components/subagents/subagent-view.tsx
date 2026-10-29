@@ -4,6 +4,7 @@ import type { SubagentInfo } from '../../ipc/api'
 import { formatElapsed } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
+import { useUsageFormat } from '../turn/UsagePopover'
 import { isSubagentActive, isSubagentProblem, subagentAppearance, subagentColor } from '../../stores/subagents'
 import type { SubagentAppearance } from '../../../../shared/subagent-appearance'
 
@@ -47,13 +48,15 @@ export function SubagentAvatar({ item, className, statusSize = 8 }: { item: Suba
   )
 }
 
-/** "Done · 16 s · 3 turns · Edited 2 files" */
+/** "Done · 16 s · 3 turns · 48K tokens · Edited 2 files" */
 export function SubagentMeta({ item, now, className }: { item: SubagentInfo; now: number; className?: string }) {
   const t = useT()
+  const { compact } = useUsageFormat()
   const parts = [t(`subagents.status.${item.status}`)]
   if (item.startedAt !== undefined) parts.push(formatElapsed(subagentElapsed(item, now), t))
   if (item.turns) parts.push(t('subagents.turns', { n: item.turns }))
   if (!isSubagentActive(item)) {
+    if (item.usage) parts.push(t('subagents.tokens', { n: compact.format(item.usage.total) }))
     parts.push(item.editedFiles.length ? t('subagents.edited', { n: item.editedFiles.length }) : t('subagents.editedNone'))
   }
   return (

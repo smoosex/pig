@@ -1135,6 +1135,17 @@ async function runFixture(name: string): Promise<void> {
         forkSession: async (...args) => { forks.push(args) },
         retryUserMessage: async (...args) => { retries.push(args) }
       })
+      const { useSubagentStore } = await import('../src/renderer/src/stores/subagents')
+      const child = (id: string, parentTurnId: string, total: number) => ({
+        id, parentTurnId, parentSessionId: 'session-one', toolCallId: id, title: `任务 ${id}`, prompt: 'p',
+        background: true, status: 'completed' as const, createdAt: 0, turns: 1, maxTurns: 0, turnTools: [],
+        toolCounts: {}, editedFiles: [], cost: 0,
+        usage: { input: total, output: 0, cacheRead: 0, cacheWrite: 0, total, calls: 1 }
+      })
+      useSubagentStore.setState({
+        ensure: () => {},
+        bySession: { 'session-one': [child('a', 'user-entry', 1_000), child('b', 'other-entry', 5_000)] }
+      })
       let copied = ''
       Object.defineProperty(navigator, 'clipboard', {
         value: { writeText: async (text: string) => { copied = text } },
@@ -1172,6 +1183,10 @@ async function runFixture(name: string): Promise<void> {
       for (const part of ['输入 Token100', '缓存读取300', '缓存命中率75%', '总 Token420', '模型调用2 次']) {
         assert.ok(usage.includes(part), part)
       }
+      for (const part of ['子 agent（1 个）', '任务 a1,000', '子 agent 合计1,000', '总计（含子 agent）1,420']) {
+        assert.ok(usage.includes(part), part)
+      }
+      assert.ok(!usage.includes('任务 b'), 'subagents of other turns stay out')
       await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
 
       await act(async () => {

@@ -21,7 +21,7 @@ export function SubagentTranscriptDialog() {
   const [messages, setMessages] = useState<PiMessage[] | null>(null)
   const [failed, setFailed] = useState(false)
   // Each finished turn, tool call or status change is a reason to read the transcript again.
-  const revision = item ? `${item.status}:${item.turns}:${Object.values(item.toolCounts).reduce((a, b) => a + b, 0)}:${item.tokens.output}` : ''
+  const revision = item ? `${item.status}:${item.turns}:${Object.values(item.toolCounts).reduce((a, b) => a + b, 0)}:${item.usage?.calls ?? 0}` : ''
 
   useEffect(() => {
     if (!target) {
