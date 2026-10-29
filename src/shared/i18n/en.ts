@@ -961,6 +961,7 @@ export const en: Messages = {
     unsupported: 'The sandbox is not supported on this platform',
     allowOnce: 'Allow once', allowSession: 'Allow for this session', deny: 'Deny', approvalHint: 'Press a number to choose, Esc to deny',
     approvalDetails: 'Approval details', approvalScrollHint: 'More details — scroll to review the full request',
+    approvalSubagent: 'From subagent: {title} ({id})', subagentGrantHint: 'Session grants are shared with the main agent and other subagents.',
     readTitle: 'Allow reading a sensitive path?', writeTitle: 'Allow writing this path?', pathMessage: '{tool}: {path}'
   },
   processes: {

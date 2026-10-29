@@ -4,6 +4,9 @@ import type { ThinkingLevel } from '../../shared/api'
 export interface RunSpec {
   id: string
   parentSessionId: string
+  title: string
+  /** The child's own lifetime, independent of the parent turn for background work. */
+  signal?: AbortSignal
   cwd: string
   prompt: string
   model?: { provider: string; id: string }

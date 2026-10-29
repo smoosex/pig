@@ -19,8 +19,8 @@ const ask = (ui: Pick<ExtensionUIContext, 'select'>, title: string, choices: str
  * Throws unless the operation may proceed.
  */
 export async function approve(ui: Pick<ExtensionUIContext, 'select'> | undefined, sessionId: string, keys: readonly string[], title: string, message: string, signal?: AbortSignal, sessionLabel?: string): Promise<void> {
-  if (keys.length && hasSessionGrant(sessionId, keys)) return
   signal?.throwIfAborted()
+  if (keys.length && hasSessionGrant(sessionId, keys)) return
   if (!ui) throw new Error('This session cannot ask the user, so the operation was refused')
   const once = t('permissions.allowOnce')
   const session = sessionLabel ?? t('permissions.allowSession')

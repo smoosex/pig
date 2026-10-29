@@ -958,6 +958,7 @@ export const zh = {
     unsupported: '当前平台不支持沙箱',
     allowOnce: '本次允许', allowSession: '本会话允许', deny: '拒绝', approvalHint: '按数字键选择，Esc 拒绝',
     approvalDetails: '审批详情', approvalScrollHint: '还有更多详情，请滚动查看完整内容',
+    approvalSubagent: '来自子 agent：{title}（{id}）', subagentGrantHint: '会话级授权由主 agent 和其他子 agent 共用。',
     readTitle: '允许读取敏感路径？', writeTitle: '允许写入这个路径？', pathMessage: '{tool}：{path}'
   },
   processes: {

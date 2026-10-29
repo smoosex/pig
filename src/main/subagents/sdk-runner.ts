@@ -1,11 +1,11 @@
 /**
  * Runs a child as an in-process SDK session persisted under the parent's subagent directory.
  *
- * Children get no window, no extension UI and no Pig system UI: nobody can answer a prompt, so
- * interactive extension calls resolve as cancelled. Prompts are sent without template or command
- * expansion, so a task starting with `/` stays plain text.
+ * Children have no ordinary extension UI or Pig system UI. Permission requests alone can be
+ * forwarded to the parent. Prompts are sent without template or command expansion, so a task
+ * starting with `/` stays plain text.
  */
-import { SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
+import { SessionManager, type AgentSession, type ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
 import { enabledPluginPaths, subagentPluginPaths } from '../pi/plugins'
 import { synchronizeModelCatalog } from '../pi/model-catalog'
@@ -47,18 +47,27 @@ async function shutdown(session: AgentSession): Promise<void> {
   synchronizeModelCatalog()
 }
 
-export function createSdkRunner(): SubagentRunner {
+export function createSdkRunner(approvalUI?: (spec: RunSpec) => Pick<ExtensionUIContext, 'select'>): SubagentRunner {
   return {
     async start(spec: RunSpec, onEvent: (event: RunEvent) => void): Promise<SubagentRun> {
+      spec.signal?.throwIfAborted()
       worktrees.assertAvailable(spec.cwd)
       const sessionManager = SessionManager.create(spec.cwd, spec.sessionDir)
       const pluginPaths = subagentPluginPaths(await enabledPluginPaths(isChatCwd(spec.cwd) ? 'chat' : 'project'))
+      spec.signal?.throwIfAborted()
       // Snapshot at launch: later parent edits must not mutate a running child's capabilities.
       const parentPreferences = readSessionCapabilities(spec.parentSessionId)
       const toolPreferences = { tools: { ...parentPreferences.tools, spawn: false }, mcp: { ...parentPreferences.mcp } }
-      const permissions = { sessionId: spec.parentSessionId, mode: sessionPermission(spec.parentSessionId).mode }
+      const permissions = { sessionId: spec.parentSessionId, mode: sessionPermission(spec.parentSessionId).mode, approvalUI: approvalUI?.(spec), signal: spec.signal }
       const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences, identity: false, permissions })
+      let aborted = false
+      const abort = () => {
+        aborted = true
+        void session.abort().catch(() => {})
+      }
+      spec.signal?.addEventListener('abort', abort, { once: true })
       try {
+        spec.signal?.throwIfAborted()
         await session.bindExtensions({
           mode: 'print',
           onError: (error) => console.warn(`Subagent extension error ${error.extensionPath}: ${error.error}`)
@@ -70,7 +79,9 @@ export function createSdkRunner(): SubagentRunner {
           await session.setModel(model)
         }
         if (spec.thinkingLevel) session.setThinkingLevel(spec.thinkingLevel)
+        spec.signal?.throwIfAborted()
       } catch (error) {
+        spec.signal?.removeEventListener('abort', abort)
         await shutdown(session)
         throw error
       }
@@ -95,7 +106,6 @@ export function createSdkRunner(): SubagentRunner {
         }
       })
 
-      let aborted = false
       const done = (async (): Promise<RunResult> => {
         try {
           await session.prompt(spec.prompt, { expandPromptTemplates: false, source: 'extension' })
@@ -106,6 +116,7 @@ export function createSdkRunner(): SubagentRunner {
         } catch (error) {
           return { error: error instanceof Error ? error.message : String(error) }
         } finally {
+          spec.signal?.removeEventListener('abort', abort)
           unsubscribe()
           await shutdown(session)
         }
@@ -114,10 +125,7 @@ export function createSdkRunner(): SubagentRunner {
       return {
         sessionFile: sessionManager.getSessionFile(),
         done,
-        abort: () => {
-          aborted = true
-          void session.abort().catch(() => {})
-        },
+        abort,
         messages: () => [...session.messages]
       }
     },

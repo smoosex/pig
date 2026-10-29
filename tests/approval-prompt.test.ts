@@ -23,7 +23,7 @@ async function fixture() {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, ResizeObserver: GeometryResizeObserver })
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
-  mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1]) => translate('en', key) }))
+  mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate('en', key, params) }))
   const replies: Array<[string, string | null]> = []
   mock.module('../src/renderer/src/ipc/api', () => ({ api: { replyExtensionUI: async (id: string, value: string | null) => { replies.push([id, value]) } } }))
   // The card ignores keys briefly after taking focus; tests advance this clock past that window.
@@ -99,6 +99,17 @@ async function fixture() {
   await key(document.activeElement!, '1')
   assert.deepEqual(replies.at(-1), ['background', 'Allow once'])
 
+  await act(() => useExtensionPrompts.getState().add({
+    kind: 'prompt', id: 'child', owner: 'one', method: 'select', title: 'Allow writing?',
+    message: 'write: /tmp/child', options, approval: true,
+    approvalSource: { kind: 'subagent', id: 'abcd1234', title: 'Inspect code' }
+  }))
+  assert.ok(card()?.querySelector('[data-approval-source]')?.textContent?.includes('Inspect code (abcd1234)'))
+  assert.ok(card()?.querySelector('[data-approval-source]')?.textContent?.includes('shared with the main agent'))
+  now += 1000
+  await key(card()!.querySelector('input')!, 'Escape')
+  assert.deepEqual(replies.at(-1), ['child', 'Deny'])
+
   const input = `${'a'.repeat(3000)}; dangerous-tail`
   const message = translate('en', 'permissions.terminalMessage', { terminal: 'terminal:1', detail: 'Type text', input })
   await add('long', 'one', true, message)
@@ -133,7 +144,7 @@ async function fixture() {
     await act(() => details.dispatchEvent(event))
     assert.equal(event.defaultPrevented, false, `${value} must remain available for scrolling`)
   }
-  assert.deepEqual(replies.at(-1), ['background', 'Allow once'])
+  assert.deepEqual(replies.at(-1), ['child', 'Deny'])
   await key(details, 'Escape')
   assert.deepEqual(replies.at(-1), ['long', 'Deny'])
   assert.equal(GeometryResizeObserver.instances.size, 0)

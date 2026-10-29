@@ -104,6 +104,12 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
           <ShieldAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
           {prompt.title}
         </Questionnaire.Title>
+        {prompt.approvalSource?.kind === 'subagent' ? (
+          <p className="mt-1 px-1 text-xs text-muted-foreground" data-approval-source>
+            {t('permissions.approvalSubagent', { title: prompt.approvalSource.title, id: prompt.approvalSource.id })}
+            {' '}{t('permissions.subagentGrantHint')}
+          </p>
+        ) : null}
         {prompt.message ? (
           <>
             <div

@@ -121,6 +121,7 @@ describe('subagent manager', () => {
     controller.abort()
     const outcome = await pending
     expect(runs[0].aborted).toBe(true)
+    expect(runs[0].spec.signal?.aborted).toBe(true)
     expect(outcome.isError).toBe(true)
     expect(outcome.text).toContain('— aborted')
     expect(outcome.text).toContain('half done')
@@ -194,6 +195,36 @@ describe('subagent manager', () => {
     await manager.clearFinished('parent')
     expect(manager.snapshot('parent').map((item) => [item.title, !!item.cleared])).toEqual([['a', true], ['b', false]])
   })
+})
+
+test('closing the parent aborts a child even while its runner is still starting', async () => {
+  let enter!: (spec: RunSpec) => void
+  const entered = new Promise<RunSpec>((resolve) => { enter = resolve })
+  let release!: () => void
+  const starting = new Promise<void>((resolve) => { release = resolve })
+  let ran = false
+  const manager = new SubagentManager({
+    runner: {
+      async start(spec) {
+        enter(spec)
+        await starting
+        spec.signal?.throwIfAborted()
+        ran = true
+        return { done: Promise.resolve({}), abort: () => {}, messages: () => [] }
+      },
+      readTranscript: async () => []
+    },
+    store: { dir: () => '/unused', load: async () => [], save: async () => {}, remove: async () => {} },
+    settings: async () => ({ maxConcurrent: 1, timeoutMinutes: 0, maxTurns: 0 }),
+    chooseModel: async () => ({}), onChange: () => {}, onError: (_id, error) => { throw error }
+  })
+  await manager.spawn(request('pending', true))
+  const spec = await entered
+  const closing = manager.closeParent('parent')
+  expect(spec.signal?.aborted).toBe(true)
+  release()
+  await closing
+  expect(ran).toBe(false)
 })
 
 test('parent removal waits for the final index write before deleting files', async () => {

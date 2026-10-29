@@ -51,7 +51,7 @@ async function fixture(): Promise<void> {
   }
   try {
     const runner = createSdkRunner()
-    const run = () => runner.start({ id: 'child', parentSessionId: 'parent', cwd: root, prompt: 'test', sessionDir: join(root, 'children') }, () => {})
+    const run = () => runner.start({ id: 'child', parentSessionId: 'parent', title: 'Test child', cwd: root, prompt: 'test', sessionDir: join(root, 'children') }, () => {})
     const first = await run()
     assert.deepEqual(await first.done, {})
     for (const name of ['codemode', 'fixture_deferred']) saveSessionCapability('parent', 'tools', name, null)

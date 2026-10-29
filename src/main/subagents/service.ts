@@ -1,10 +1,12 @@
 /** The app's single SubagentManager, published to the extension; IPC installs the window publisher. */
+import type { BrowserWindow } from 'electron'
 import type { SubagentListUpdate } from '../../shared/api'
 import { registerSubagentHost } from '../plugins/pig-subagent-host'
 import { startModelRuntime } from '../pi/model-settings'
 import { SubagentManager } from './manager'
 import { chooseModel } from './runner'
 import { createSdkRunner } from './sdk-runner'
+import { subagentApprovalUI } from './approval'
 import { readSubagentSettings } from './settings'
 import { createFileStore } from './store'
 import { pruneOrphanSubagents } from './cleanup'
@@ -31,10 +33,15 @@ export function setSubagentPublisher(next: (updates: SubagentListUpdate[]) => vo
 }
 
 let startup: Promise<void> | undefined
+let parentSession: (sessionId: string) => { win?: BrowserWindow } | undefined = () => undefined
 const store = createFileStore()
 
+export function setSubagentParentSession(lookup: typeof parentSession): void {
+  parentSession = lookup
+}
+
 export const manager = new SubagentManager({
-  runner: createSdkRunner(),
+  runner: createSdkRunner((spec) => subagentApprovalUI(spec, (sessionId) => parentSession(sessionId))),
   store: {
     ...store,
     // List/attach can load and repair an index too; they must not race the startup sweep either.

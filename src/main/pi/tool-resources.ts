@@ -4,7 +4,8 @@ import {
   createMcpExtension,
   createToolSearchExtension,
   type ExtensionFactory,
-  type ExtensionContext
+  type ExtensionContext,
+  type ToolDefinition
 } from '@earendil-works/pi-coding-agent'
 import { pigPath } from '../pig-dir'
 import { sessionMcpConfig } from '../mcp/settings'
@@ -16,11 +17,13 @@ import { t } from '../i18n'
 import { openMcpUrl } from '../extension-ui'
 import { loadAllowedRanges } from '../network-address'
 import { webSearchConfigPath } from './web-search-settings'
+import { authorizeMcpCall, type PermissionOptions } from '../permissions/extension'
 
 export function sessionToolFactory(
   cwd: string,
   sessionId: string,
-  inherited?: Pick<SessionCapabilityOverrides, 'tools' | 'mcp'>
+  inherited?: Pick<SessionCapabilityOverrides, 'tools' | 'mcp'>,
+  permissions?: PermissionOptions
 ): ExtensionFactory {
   return async (pi) => {
     const preferences = inherited ?? readSessionCapabilities(sessionId)
@@ -52,6 +55,26 @@ export function sessionToolFactory(
     )
     await createCodemodeExtension({ mode: 'on' })(pi)
     await createToolSearchExtension()(pi)
+    // Pi preflights a whole parallel batch before executing it. Wrap only SDK MCP tools so the
+    // permission decision happens at execution and remains cancellable while a client reconnects.
+    const mcpPi = permissions ? new Proxy(pi, {
+      get(target, key, receiver) {
+        if (key !== 'registerTool') return Reflect.get(target, key, receiver)
+        return (tool: ToolDefinition) => {
+          if (!tool.namespace?.name.startsWith('mcp__')) return pi.registerTool(tool)
+          return pi.registerTool({
+            ...tool,
+            async execute(id, input, signal, update, ctx) {
+              const guard = await authorizeMcpCall(permissions, tool, input, ctx, signal)
+              try {
+                guard.check()
+                return await tool.execute(id, input, guard.signal, update, ctx)
+              } finally { guard.dispose() }
+            }
+          })
+        }
+      }
+    }) : pi
     await createMcpExtension({
       loadConfig: () => snapshot,
       createTransport: connections.createTransport,
@@ -62,7 +85,7 @@ export function sessionToolFactory(
       updateConfig: () => {
         throw new Error('Manage MCP configuration in Pig settings')
       }
-    })(pi)
+    })(mcpPi)
     pi.on('session_shutdown', async () => {
       context = undefined
       await connections.close()

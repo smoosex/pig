@@ -9,25 +9,28 @@ import { sandboxEnvironment } from './environment'
 type Result = Awaited<ReturnType<ReturnType<typeof createReadToolDefinition>['execute']>>
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-export function executeFileTool(name: string, params: Record<string, unknown>, request: SandboxRequest): Promise<Result> {
+export function executeFileTool(name: string, params: Record<string, unknown>, request: SandboxRequest, guard?: { check(): void; dispose(): void }): Promise<Result> {
   // The worker's queue is process-local. Hold Pi's host queue too so sibling edits/writes retain the
   // same serialization as before sandboxing (and serialize with ordinary full-access file tools).
   return name === 'write' || name === 'edit'
-    ? withFileMutationQueue(params.path as string, () => runFileTool(name, params, request))
-    : runFileTool(name, params, request)
+    ? withFileMutationQueue(params.path as string, () => runFileTool(name, params, request, guard))
+    : runFileTool(name, params, request, guard)
 }
 
-async function runFileTool(name: string, params: Record<string, unknown>, request: SandboxRequest): Promise<Result> {
+async function runFileTool(name: string, params: Record<string, unknown>, request: SandboxRequest, guard?: { check(): void; dispose(): void }): Promise<Result> {
   request.signal?.throwIfAborted()
+  guard?.check()
   const worker = fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './file-worker.ts' : './file-worker.js', import.meta.url))
   const wrapped = await sandboxCommand(`${quote(process.execPath)} ${quote(worker)}`, { ...request, shell: '/bin/sh' })
   try {
     request.signal?.throwIfAborted()
+    guard?.check()
     return await new Promise<Result>((resolveResult, reject) => {
       const child = spawn('/bin/sh', ['-c', wrapped.command], {
         cwd: request.workspace.cwd, detached: true,
         env: { ...sandboxEnvironment(), ELECTRON_RUN_AS_NODE: '1' }, stdio: ['pipe', 'pipe', 'pipe']
       })
+      guard?.dispose()
       const stdout: Buffer[] = []
       const stderr: Buffer[] = []
       let bytes = 0

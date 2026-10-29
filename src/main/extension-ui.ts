@@ -5,7 +5,8 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import type { ExtensionUIEvent } from '../shared/api'
 import { mcpSdk } from './mcp/sdk'
 
-type Scope = 'extension' | 'process'
+type Scope = 'extension' | 'process' | 'subagent'
+type ApprovalSource = Extract<ExtensionUIEvent, { kind: 'prompt' }>['approvalSource']
 const requests = new Map<
   string,
   { owner: string; scope: Scope; sender: WebContents; finish(value: string | null): void }
@@ -62,7 +63,8 @@ export function openMcpUrl(value: string): Promise<void> {
 export async function createExtensionUI(
   win: BrowserWindow,
   owner: string,
-  scope: Scope = 'extension'
+  scope: Scope = 'extension',
+  approvalSource?: ApprovalSource
 ): Promise<ExtensionUIContext> {
   const sender = win.webContents
   const state = trackWindow(sender)
@@ -104,7 +106,7 @@ export async function createExtensionUI(
       // Pi forwards the options object unchanged, so the permission layer can mark its requests.
       const approval = (opts as { approval?: { message?: unknown } } | undefined)?.approval
       return prompt({ method: 'select', title, options, ...(approval && typeof approval.message === 'string'
-        ? { approval: true as const, message: approval.message } : {}) }, opts)
+        ? { approval: true as const, message: approval.message, ...(approvalSource ? { approvalSource } : {}) } : {}) }, opts)
     },
     confirm: async (title, message, opts) =>
       (await prompt({ method: 'confirm', title, message }, opts)) === 'yes',

@@ -22,6 +22,7 @@ interface Entry {
   info: SubagentInfo
   spec: RunSpec
   timeoutMinutes: number
+  lifetime: AbortController
   run?: SubagentRun
   /** Kept after the run is disposed, until the transcript file can take over. */
   messages?: unknown[]
@@ -133,6 +134,7 @@ export class SubagentManager implements SubagentHost {
     const finished = new Promise<void>((done) => { resolve = done })
     const used = [...parent.entries.values()].flatMap(({ info }) =>
       info.parentTurnId === request.parentTurnId && info.appearance ? [info.appearance] : [])
+    const lifetime = new AbortController()
     const entry: Entry = {
       info: {
         id,
@@ -159,6 +161,8 @@ export class SubagentManager implements SubagentHost {
       spec: {
         id,
         parentSessionId: request.parentSessionId,
+        title,
+        signal: lifetime.signal,
         cwd: request.cwd,
         prompt,
         model: choice.model,
@@ -166,6 +170,7 @@ export class SubagentManager implements SubagentHost {
         sessionDir: this.deps.store.dir(request.parentSessionId)
       },
       timeoutMinutes: settings.timeoutMinutes,
+      lifetime,
       onProgress: request.onProgress,
       finished,
       resolve
@@ -299,8 +304,9 @@ export class SubagentManager implements SubagentHost {
         for (const info of items) {
           parent.entries.set(info.id, {
             info,
-            spec: { id: info.id, parentSessionId, cwd: '', prompt: info.prompt, sessionDir: '' },
+            spec: { id: info.id, parentSessionId, title: info.title, cwd: '', prompt: info.prompt, sessionDir: '' },
             timeoutMinutes: 0,
+            lifetime: new AbortController(),
             finished: Promise.resolve(),
             resolve: () => {}
           })
@@ -348,6 +354,7 @@ export class SubagentManager implements SubagentHost {
 
   private async failJob(parentSessionId: string, entry: Entry, error: unknown): Promise<void> {
     if (entry.timer) clearTimeout(entry.timer)
+    entry.lifetime.abort(error)
     entry.onProgress = undefined
     if (entry.run) {
       entry.run.abort()
@@ -366,6 +373,10 @@ export class SubagentManager implements SubagentHost {
   private async start(parentSessionId: string, entry: Entry): Promise<void> {
     this.update(parentSessionId, entry, { status: 'running', startedAt: this.now() })
     await this.persist(parentSessionId)
+    if (entry.abortReason) {
+      await this.finish(parentSessionId, entry)
+      return
+    }
     if (entry.timeoutMinutes > 0) {
       entry.timer = setTimeout(() => this.abortEntry(parentSessionId, entry, 'timeout'), entry.timeoutMinutes * 60_000)
     }
@@ -424,6 +435,7 @@ export class SubagentManager implements SubagentHost {
   private abortEntry(parentSessionId: string, entry: Entry, reason: SubagentStatus): void {
     if (isFinished(entry.info.status)) return
     entry.abortReason ??= reason
+    entry.lifetime.abort(new Error(`Subagent ${entry.abortReason}`))
     if (entry.info.status === 'queued') {
       void this.finish(parentSessionId, entry).catch((error) => this.failJob(parentSessionId, entry, error))
       return
@@ -435,6 +447,7 @@ export class SubagentManager implements SubagentHost {
     if (isFinished(entry.info.status)) return
     if (entry.timer) clearTimeout(entry.timer)
     entry.timer = undefined
+    entry.lifetime.abort(new Error('Subagent finished'))
     entry.onProgress = undefined
     const status: SubagentStatus = entry.abortReason ?? (error ? 'failed' : 'completed')
     this.update(parentSessionId, entry, {

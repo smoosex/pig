@@ -1,13 +1,14 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { SubagentSettingsPatch } from '../../shared/api'
-import { manager, setSubagentPublisher, setSubagentErrorPublisher, startSubagents } from '../subagents/service'
+import { manager, setSubagentPublisher, setSubagentErrorPublisher, setSubagentParentSession, startSubagents } from '../subagents/service'
 import { readSubagentSettings, writeSubagentSettings } from '../subagents/settings'
 
 function assertIds(...values: unknown[]): void {
   if (values.some((value) => typeof value !== 'string' || !value)) throw new Error('Invalid subagent request')
 }
 
-export function registerSubagentIpc(): void {
+export function registerSubagentIpc(parentSession: (sessionId: string) => { win?: BrowserWindow } | undefined): void {
+  setSubagentParentSession(parentSession)
   setSubagentErrorPublisher((sessionId, error) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed() || win.webContents.isDestroyed()) continue

@@ -73,11 +73,27 @@ async function fixture(): Promise<void> {
   if (keptRequest.kind !== 'prompt') throw new Error('Missing extension prompt')
   replyExtensionUI(sender, keptRequest.id, 'kept')
   assert.equal(await extensionKept, 'kept')
+  const source = { kind: 'subagent' as const, id: 'abcd1234', title: 'Inspect code' }
+  const childUI = await createExtensionUI(win, 'session', 'subagent', source)
+  const childSignal = new AbortController()
+  const childApproval = childUI.select('Child approval', ['once', 'deny'], { signal: childSignal.signal, approval: { message: 'write: /x' } } as never)
+  const childRequest = events.at(-1)!
+  assert.ok(childRequest.kind === 'prompt' && childRequest.owner === 'session' && childRequest.approval === true)
+  if (childRequest.kind !== 'prompt') throw new Error('Missing child approval')
+  assert.deepEqual(childRequest.approvalSource, source)
+  cancelExtensionUI('session', 'extension')
+  assert.equal(events.at(-1), childRequest, 'parent extension reload leaves child approvals open')
+  childSignal.abort()
+  assert.equal(await childApproval, undefined)
+  replyExtensionUI(sender, childRequest.id, 'once')
+  assert.deepEqual(events.at(-1), { kind: 'dismiss', id: childRequest.id })
   const allExtension = ui.input('All extension')
   const allProcess = processUI.input('All process')
+  const allChild = childUI.select('All child', ['once'])
   cancelExtensionUI('session')
   assert.equal(await allExtension, undefined)
   assert.equal(await allProcess, undefined)
+  assert.equal(await allChild, undefined)
 
   // Electron 44 exposes navigation properties on its typed event object (the positional
   // arguments are deprecated). Child frames and same-document history must leave prompts alone.
