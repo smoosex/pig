@@ -223,10 +223,13 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const openTerminalTab = useSessionsStore((state) => state.openTerminalTab)
   const newTabShortcut = useShortcut('tab.new')
   const creatingRef = useRef(false)
+  // A picked item hands focus to the new tab; only a dismissed menu returns it to the trigger.
+  const pickedRef = useRef(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
   const createTab = async (kind: 'session' | 'browser' | 'terminal') => {
+    pickedRef.current = true
     if (creatingRef.current) return
     creatingRef.current = true
     setCreating(true)
@@ -274,7 +277,13 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent
+          align="end"
+          onCloseAutoFocus={(event) => {
+            if (pickedRef.current) event.preventDefault()
+            pickedRef.current = false
+          }}
+        >
           <DropdownMenuGroup>
             <DropdownMenuItem disabled={creating} onSelect={() => void createTab('session')}>
               <SquareDashedText />{t('tabBar.newSession')}
