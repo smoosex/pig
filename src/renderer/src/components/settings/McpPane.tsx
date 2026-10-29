@@ -212,13 +212,13 @@ export function McpPane() {
             {t('mcp.cancelLogin')}
           </Button>
         ) : null}
-        {loading || (!loaded && !error) ? (
+        {!loaded && !error ? (
           <p role="status" className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" />{t('mcp.loading')}
           </p>
         ) : null}
         {error && !loading ? <Button variant="outline" size="sm" className="self-start" onClick={() => void load()}>{t('common.retry')}</Button> : null}
-        {loaded && !loading && !error && !state.servers.length ? (
+        {loaded && !error && !state.servers.length ? (
           <Empty className="min-h-40 border">
             <EmptyHeader>
               <EmptyTitle>{t('mcp.empty')}</EmptyTitle>
@@ -403,7 +403,7 @@ export function McpPane() {
                   <Button
                     size="xs"
                     variant="outline"
-                    disabled={busy || added}
+                    disabled={added}
                     onClick={() => setDialog({ recipe: server })}
                     aria-label={t('mcp.addRecipe', { name: server.title })}
                   >
