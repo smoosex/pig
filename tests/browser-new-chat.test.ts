@@ -41,7 +41,9 @@ async function fixture() {
       answerAgentOpen: async () => {},
       setSelecting: async () => {},
       capture: async () => { captureCreations.push(creations); return { mimeType: 'image/png', data: 'YWJj' } },
-      removeAnnotations: async (_id: string, ids: string[]) => { removed.push(ids) }
+      removeAnnotations: async (_id: string, ids: string[]) => { removed.push(ids) },
+      topSites: async () => [],
+      onHistoryChanged: () => () => {}
     }
   } })
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')

@@ -52,6 +52,29 @@ export type BrowserAgentOpenRequest = { requestId: string; sessionId: string } &
   | { action: 'activate' | 'close'; browserId: string }
 )
 
+/** One page in the global browser history, deduplicated by exact URL. */
+export interface BrowserHistoryEntry {
+  url: string
+  title: string
+  visitCount: number
+  /** Visits the user started from the address bar; they weigh more when ranking. */
+  typedCount: number
+  lastVisitAt: number
+  /** The origin's favicon as a PNG data URL, when one was fetched. */
+  icon?: string
+}
+
+/** Where the next page of the newest-first list starts. */
+export interface BrowserHistoryCursor {
+  lastVisitAt: number
+  url: string
+}
+
+export interface BrowserHistoryPage {
+  entries: BrowserHistoryEntry[]
+  next: BrowserHistoryCursor | null
+}
+
 export interface BrowserScreenshot {
   mimeType: 'image/png'
   data: string
@@ -142,7 +165,8 @@ export interface BrowserApi {
   /** `url` is a restored tab's saved page, loaded once the pane is first shown. */
   create(browserId: string, url?: string): Promise<BrowserState>
   getState(browserId: string): Promise<BrowserState>
-  navigate(browserId: string, url: string): Promise<void>
+  /** `typed` marks input the user entered in the address bar, for history ranking. */
+  navigate(browserId: string, url: string, typed?: boolean): Promise<void>
   back(browserId: string): Promise<void>
   forward(browserId: string): Promise<void>
   reload(browserId: string): Promise<void>
@@ -162,6 +186,20 @@ export interface BrowserApi {
   previewCookies(browserId: string, sourceId: string, scope: BrowserCookieScope): Promise<BrowserCookiePreview>
   importCookies(browserId: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null): Promise<BrowserCookieImportResult>
   clearSiteCookies(browserId: string, expectedSite: string): Promise<BrowserCookieClearResult>
+  /** Best history matches for address bar input, most relevant first. */
+  queryHistory(text: string, limit?: number): Promise<BrowserHistoryEntry[]>
+  /** Newest first; `text` keeps entries whose URL or title contains every term. */
+  listHistory(text: string, cursor: BrowserHistoryCursor | null, limit?: number): Promise<BrowserHistoryPage>
+  removeHistory(url: string): Promise<void>
+  /** Gives the page keyboard focus once it is visible; for loads started from controls that then disappear. */
+  focusPage(browserId: string): Promise<void>
+  /** Most frecent sites for a blank tab, one page per site. */
+  topSites(limit?: number): Promise<BrowserHistoryEntry[]>
+  clearHistory(): Promise<void>
+  getHistoryRecording(): Promise<boolean>
+  setHistoryRecording(enabled: boolean): Promise<void>
+  /** Any history change, recording included; carries no data so listeners re-read what they show. */
+  onHistoryChanged(listener: () => void): () => void
   onCloseRequested(listener: (browserId: string) => void): () => void
   /** Pointer position (renderer CSS px) while the user drags the top edge of docked DevTools. */
   onDevtoolsResize(listener: (browserId: string, clientY: number) => void): () => void

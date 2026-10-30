@@ -25,6 +25,7 @@ import { handleSessionImages, registerSessionImageScheme } from './session-image
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
 import { handleWorktreeFiles, registerWorktreeFileScheme } from './worktree-file-protocol'
 import { flushOpenProjectSessions, loadOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
+import { flushBrowserHistory } from './browser/history'
 import { pruneTerminalHistories } from './terminal/history'
 import { pruneEmptyChatDirs } from './chats'
 import { pigDir } from './pig-dir'
@@ -168,6 +169,7 @@ app.on('before-quit', (event) => {
   const teardown = Promise.allSettled([
     worktrees.shutdown(),
     flushOpenProjectSessions(),
+    flushBrowserHistory(),
     cancelMcpOperations(),
     flushToolMutations()
   ])

@@ -73,6 +73,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.create('browser:one')
   await api.browser.getState('session-1')
   await api.browser.navigate('session-1', 'http://localhost:3000')
+  await api.browser.navigate('session-1', 'example.com', true)
   await api.browser.back('session-1')
   await api.browser.forward('session-1')
   await api.browser.reload('session-1')
@@ -90,6 +91,15 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.previewCookies('browser:one', 'chrome:profile', 'site')
   await api.browser.importCookies('browser:one', 'chrome:profile', 'all', null)
   await api.browser.clearSiteCookies('browser:one', 'example.com')
+  await api.browser.queryHistory('git')
+  await api.browser.removeHistory('https://github.com/')
+  await api.browser.listHistory('', { lastVisitAt: 1, url: 'https://a.test/' })
+  await api.browser.clearHistory()
+  await api.browser.topSites()
+  await api.browser.focusPage('session-1')
+  await api.browser.getHistoryRecording()
+  await api.browser.setHistoryRecording(false)
+  api.browser.onHistoryChanged(() => {})()
   await api.browser.releaseAgent('browser:one', 'session:one')
   await api.browser.answerAgentOpen('request-1', { browserId: 'browser:one' })
   api.browser.onAgentOpenRequest(() => {})()
@@ -169,6 +179,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:create', args: ['browser:one'] },
     { channel: 'browser:get-state', args: ['session-1'] },
     { channel: 'browser:navigate', args: ['session-1', 'http://localhost:3000'] },
+    { channel: 'browser:navigate', args: ['session-1', 'example.com', true] },
     { channel: 'browser:back', args: ['session-1'] },
     { channel: 'browser:forward', args: ['session-1'] },
     { channel: 'browser:reload', args: ['session-1'] },
@@ -186,6 +197,14 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:preview-cookies', args: ['browser:one', 'chrome:profile', 'site'] },
     { channel: 'browser:import-cookies', args: ['browser:one', 'chrome:profile', 'all', null] },
     { channel: 'browser:clear-site-cookies', args: ['browser:one', 'example.com'] },
+    { channel: 'browser:history-query', args: ['git', 8] },
+    { channel: 'browser:history-remove', args: ['https://github.com/'] },
+    { channel: 'browser:history-list', args: ['', { lastVisitAt: 1, url: 'https://a.test/' }, 50] },
+    { channel: 'browser:history-clear', args: [] },
+    { channel: 'browser:history-top', args: [8] },
+    { channel: 'browser:focus-page', args: ['session-1'] },
+    { channel: 'browser:history-recording', args: [] },
+    { channel: 'browser:history-set-recording', args: [false] },
     { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
     { channel: 'browser:close', args: ['session-1'] },

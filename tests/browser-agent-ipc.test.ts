@@ -28,6 +28,7 @@ async function fixture(): Promise<void> {
     BrowserWindow: { fromWebContents: (sender: unknown) => sender === other.webContents ? other : win },
     WebContentsView: class {}
   }))
+  mock.module('../src/main/browser/favicon', () => ({ fetchFavicon: async () => null }))
   mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {} }))
   mock.module('../src/main/browser/host', () => ({
     BrowserHost: class {

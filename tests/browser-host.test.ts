@@ -498,6 +498,19 @@ describe('browser host', () => {
     expect(views[2].webContents.dead).toBe(false)
   })
 
+  test('a page opened from a control that disappears takes focus once it is visible', async () => {
+    const { host, owner, views } = fixture()
+    await host.navigate(owner, 'a', 'https://example.com')
+    host.focusPage(owner, 'a')
+    expect(views[0].webContents.focusCalls).toBe(0)
+    host.setBounds(owner, 'a', null)
+    host.setBounds(owner, 'a', bounds)
+    expect(views[0].webContents.focusCalls).toBe(1)
+    host.setBounds(owner, 'a', { ...bounds, width: 280 })
+    expect(views[0].webContents.focusCalls).toBe(1)
+    host.focusPage(owner, 'missing')
+  })
+
   test('untrusted certificates are rejected until the user allows that exact host and certificate', async () => {
     const { host, owner, views } = fixture()
     await host.navigate(owner, 'a', 'https://example.test')

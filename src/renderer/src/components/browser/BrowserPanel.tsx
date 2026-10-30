@@ -1,7 +1,7 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MessageSquareShare, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, History, LoaderCircle, MessageSquareShare, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
 import type { BrowserScreenshot, BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
@@ -9,7 +9,6 @@ import { failureMessage } from '../../lib/ipc-error'
 import { cn } from '../../lib/utils'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { Button } from '../ui/button'
-import { Input } from '../ui/input'
 import { Badge } from '../ui/badge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { useSessionsStore } from '../../stores/sessions'
@@ -21,6 +20,9 @@ import { appendBrowserScreenshotDraft } from './browser-draft'
 import { useBrowserBounds } from './useBrowserBounds'
 import { decodeBrowserFrame, waitForBrowserPaint } from './browser-frame'
 import { CookieImportDialog } from './CookieImportDialog'
+import { BrowserAddressInput } from './BrowserAddressInput'
+import { BrowserHistoryDialog } from './BrowserHistoryDialog'
+import { BrowserTopSites } from './BrowserTopSites'
 
 /** Share of the viewport docked DevTools take; the last size the user dragged to applies to every pane. */
 let devtoolsRatio = 0.45
@@ -59,6 +61,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   const [state, setState] = useState<BrowserState | null>(null)
   const [address, setAddress] = useState('')
   const [cookieOpen, setCookieOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [releaseTarget, setReleaseTarget] = useState<string | null>(null)
   const [releasePending, setReleasePending] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
@@ -195,6 +198,15 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
     invalidateCapture()
     run(operation)
   }
+  const openUrl = (url: string, { typed = false, focus = false }: { typed?: boolean; focus?: boolean }) => {
+    if (busy) return
+    navigate(() => {
+      const load = api.browser.navigate(browserId, url, typed)
+      // Sent behind the navigation so main already has the page; it waits for the view to show.
+      if (focus) void api.browser.focusPage(browserId).catch(report)
+      return load
+    })
+  }
   const annotations = state?.annotations ?? []
   const selectedDestination = destinations.find((tab) => tab.id === targetSessionId)
   const destinationTitle = selectedDestination ? tooltipTitle(selectedDestination.title) : ''
@@ -283,7 +295,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
     <section className="flex min-h-0 flex-1 flex-col" aria-label={t('tabBar.newBrowser')} hidden={!active}>
       <form className="flex shrink-0 items-center gap-0.5 border-b border-glass-card-border bg-glass-card-background px-2 py-1.5 text-xs text-glass-prompt-foreground solid:border-border solid:bg-muted/50 solid:text-foreground" onSubmit={(event) => {
         event.preventDefault()
-        if (address.trim() && !busy && !composing.current) navigate(() => api.browser.navigate(browserId, address.trim()))
+        if (address.trim() && !busy && !composing.current) navigate(() => api.browser.navigate(browserId, address.trim(), true))
       }}>
         {iconButton(t('browser.back'), <ArrowLeft />, () => navigate(() => api.browser.back(browserId)), !state?.canGoBack)}
         {iconButton(t('browser.forward'), <ArrowRight />, () => navigate(() => api.browser.forward(browserId)), !state?.canGoForward)}
@@ -332,14 +344,11 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
             selectedDestination ? t('browser.sendMarksTo', { title: destinationTitle }) : t('browser.chooseSession'))}
           {iconButton(t('browser.clearMarks'), <Trash2 />, () => run(() => api.browser.removeAnnotations(browserId, state.annotations.map((mark) => mark.id))))}
         </> : null}
-        <Input aria-label={t('browser.address')} placeholder={t('browser.address')} value={address} onChange={(event) => setAddress(event.target.value)}
-          onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (composing.current || event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault()
-          }}
-          className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs border-glass-card-border bg-glass-prompt-foreground/4! solid:border-input solid:bg-background! solid:dark:bg-input/30!" />
+        <BrowserAddressInput value={address} onValueChange={setAddress} composing={composing}
+          onPick={(url, clicked) => openUrl(url, { typed: true, focus: clicked })} />
         <div className="flex shrink-0 items-center gap-1">
           {state?.agentSessionId ? iconButton(t('browser.releaseAgent'), <Bot />, () => { setReleaseError(null); setReleaseTarget(state.agentSessionId) }, false, true, t('browser.agentControlled')) : null}
+          {iconButton(t('browser.history'), <History />, () => setHistoryOpen(true))}
           {iconButton(t('browser.cookieImport'), <Cookie />, () => setCookieOpen(true))}
           {iconButton(t('browser.copyUrl'), <Copy />, () => run(() => api.browser.copyUrl(browserId)), !state?.url)}
           {iconButton(t('browser.openExternal'), <ExternalLink />, () => run(() => api.browser.openExternal(browserId)), !state?.url)}
@@ -362,12 +371,14 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <BrowserHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen}
+        onOpenUrl={(url) => openUrl(url, { focus: true })} />
       <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
       {(error || state?.error) && !certificate ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
       <div ref={viewport} data-browser-viewport className="relative min-h-0 flex-1 overflow-hidden">
         {frozen && state?.url && !certificate ? <img src={frozen} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
           style={{ '--devtools-ratio': ratio, height: state.devtools ? `calc(100% - ${DOCK_BOTTOM})` : '100%' } as CSSProperties} /> : null}
-        {!state?.url && !certificate ? <p className="p-4 text-xs text-muted-foreground">{t('browser.empty')}</p> : null}
+        {!state?.url && !certificate ? <BrowserTopSites onOpenUrl={(url) => openUrl(url, { focus: true })} /> : null}
         {/* Like Chrome's interstitial; the native page is hidden while it shows, so this replaces it. */}
         {certificate ? <div className="flex size-full items-center justify-center overflow-auto p-6">
           <div className="flex w-full max-w-md flex-col gap-3 text-sm">

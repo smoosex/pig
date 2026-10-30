@@ -18,6 +18,15 @@ import type { BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '
 import { interactWithPage, type BrowserInteraction } from './agent-interaction'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
+/** Page lifecycle the host reports outward; browser history listens here. */
+export interface BrowserPageEvents {
+  /** A main-frame commit. `status` is the HTTP status of a document load, `null` for same-document navigation. */
+  commit(browserId: string, url: string, status: number | null): void
+  title(browserId: string, url: string, title: string): void
+  /** Icon URLs the page declares, best first as Chromium lists them. */
+  icon?(browserId: string, url: string, icons: string[]): void
+}
+
 interface Page {
   view: WebContentsView
   devtools?: WebContentsView
@@ -42,6 +51,8 @@ interface Page {
   networkCapture?: BrowserNetworkCapture
   /** Invalidate pending approvals when control, navigation or the native page changes. */
   pendingUploads: Set<AbortController>
+  /** Keyboard focus goes to the page once it is next laid out visibly (dialogs hide it meanwhile). */
+  focusOnShow?: boolean
 }
 
 export interface BrowserUploadOptions {
@@ -114,7 +125,8 @@ export class BrowserHost {
     private createView: (kind: 'page' | 'devtools') => WebContentsView,
     private isAgentLive: (sessionId: string) => boolean,
     private createClip: () => View,
-    private onCommit: (browserId: string, url: string) => void
+    private onCommit: (browserId: string, url: string) => void,
+    private events?: BrowserPageEvents
   ) {}
 
   private owner(win: BrowserWindow): WindowPages {
@@ -242,6 +254,10 @@ export class BrowserHost {
       : { x: bounds.x, y, width: bounds.width, height: h }
     page.view.setBounds(at(bounds.y, pageHeight, page.clipped === page.view))
     page.view.setVisible(bounds.width > 0 && pageHeight > 0)
+    if (page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
+      page.focusOnShow = false
+      page.view.webContents.focus()
+    }
     if (page.devtools) {
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
       page.devtools.setVisible(bounds.width > 0 && tools > 0)
@@ -490,11 +506,12 @@ export class BrowserHost {
     })
     wc.on('did-start-loading', () => { page.state.loading = true; this.push(owner, page) })
     wc.on('did-stop-loading', () => { page.state.loading = false; this.push(owner, page) })
-    wc.on('did-navigate', (_event, url) => {
+    wc.on('did-navigate', (_event, url, status) => {
       cancelUploads(page, 'Browser page changed; upload approval cancelled')
       page.state.url = url
       owner.urls.set(page.state.browserId, url)
       this.onCommit(page.state.browserId, url)
+      this.events?.commit(page.state.browserId, url, status ?? 0)
       this.syncDevtoolsPageEdge(owner, page, true)
       this.push(owner, page)
     })
@@ -504,10 +521,18 @@ export class BrowserHost {
         page.state.url = url
         owner.urls.set(page.state.browserId, url)
         this.onCommit(page.state.browserId, url)
+        this.events?.commit(page.state.browserId, url, null)
         this.push(owner, page)
       }
     })
-    wc.on('page-title-updated', (_event, title) => { page.state.title = title; this.push(owner, page) })
+    wc.on('page-title-updated', (_event, title) => {
+      page.state.title = title
+      this.events?.title(page.state.browserId, page.state.url, title)
+      this.push(owner, page)
+    })
+    wc.on('page-favicon-updated', (_event, icons) => {
+      if (page.state.url) this.events?.icon?.(page.state.browserId, page.state.url, icons)
+    })
     wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
       if (!isMainFrame || code === -3) return // Superseded navigations are not page errors.
       page.annotationLimitReached = false
@@ -613,6 +638,17 @@ export class BrowserHost {
       this.push(owner, page)
       throw error
     }
+  }
+
+  /**
+   * Hands the keyboard to the page, as Chrome does after opening one from its new-tab page. The control
+   * that started the load usually unmounts with the blank page, leaving no useful host focus behind.
+   */
+  focusPage(win: BrowserWindow, id: string): void {
+    const { owner, page } = this.page(win, id, false)
+    if (!page) return
+    page.focusOnShow = true
+    this.layout(owner, page)
   }
 
   history(win: BrowserWindow, id: string, action: 'back' | 'forward' | 'reload'): void {

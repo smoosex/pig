@@ -133,6 +133,7 @@ async function fixture(mode: string): Promise<void> {
     'mcp/icon-protocol': { handleMcpIcons: noop, registerMcpIconScheme: noop },
     'worktree-file-protocol': { handleWorktreeFiles: noop, registerWorktreeFileScheme: noop },
     'open-project-sessions': { flushOpenProjectSessions: asyncNoop, loadOpenProjectSessions: async () => ({ tools: [] }), removeOpenProjectWorkspaces: asyncNoop },
+    'browser/history': { flushBrowserHistory: asyncNoop },
     'chats': { pruneEmptyChatDirs: asyncNoop },
     'pig-dir': { pigDir: () => '/unused' },
     'shell-env': { importShellEnvironment: () => shell.promise },

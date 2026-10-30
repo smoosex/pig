@@ -3,13 +3,15 @@ import { randomUUID } from 'node:crypto'
 import { t } from '../i18n'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { clipboard, shell, ipcMain, session, View, WebContentsView, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, shell, ipcMain, session, View, WebContentsView, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import { BrowserHost } from '../browser/host'
 import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { BrowserAgentController } from '../browser/agent'
 import { registerBrowserAgentHost, registerBrowserSessionCleanup } from '../plugins/pig-browser-host'
 import { assertBrowserSender, isBrowserUrl, normalizeBrowserUrl } from '../browser/validation'
 import { saveBrowserTabUrl } from '../open-project-sessions'
+import { browserHistory as history, BrowserHistoryRecorder } from '../browser/history'
+import { fetchFavicon } from '../browser/favicon'
 import { windowForEvent } from './window'
 import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest } from '../../shared/browser'
 
@@ -29,6 +31,7 @@ interface PendingOpen {
 }
 
 export function registerBrowserIpc(sessions?: BrowserSessions): void {
+  const visits = new BrowserHistoryRecorder(history, fetchFavicon)
   const owners = new Map<string, BrowserWindow>()
   const pendingOpens = new Map<string, PendingOpen>()
   const watched = new WeakSet<BrowserWindow>()
@@ -42,7 +45,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View(), (browserId, url) => {
     // Page events have no caller to hand a failed write to; navigation goes on and main logs it.
     void saveBrowserTabUrl(browserId, url).catch((error) => console.error('Browser URL persistence failed:', error))
-  })
+  }, visits)
   registerBrowserSessionCleanup((sessionId) => {
     for (const [id, win] of owners) {
       if (!win.isDestroyed() && host.agentOf(win, id) === sessionId) host.setAgent(win, id, null)
@@ -81,6 +84,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
         // while the renderer round-trip is pending. A late UI close remains idempotent.
         host.close(win, browserId)
         owners.delete(browserId)
+        visits.forget(browserId)
         await requestTab(win, sessionId, signal, { action: 'close', browserId })
       },
       sessionWindow: sessions.sessionWindow,
@@ -109,7 +113,11 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (!watched.has(win)) {
       watched.add(win)
       const clear = () => {
-        for (const [id, owner] of owners) if (owner === win) owners.delete(id)
+        for (const [id, owner] of owners) {
+          if (owner !== win) continue
+          owners.delete(id)
+          visits.forget(id)
+        }
         for (const pending of [...pendingOpens.values()]) if (pending.win === win) pending.fail(new Error('Browser UI was reloaded or closed'))
         host.closeWindow(win)
       }
@@ -139,7 +147,11 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   ipcMain.handle('browser:import-cookies', (event, id: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null) => cookies.import(cookieContext(event, id), sourceId, scope, expectedSite))
   ipcMain.handle('browser:clear-site-cookies', (event, id: string, expectedSite: string) => cookies.clear(cookieContext(event, id), expectedSite))
   ipcMain.handle('browser:get-state', (event, id: string) => host.getState(owner(event, id), id))
-  ipcMain.handle('browser:navigate', (event, id: string, url: string) => host.navigate(owner(event, id), id, url))
+  ipcMain.handle('browser:navigate', async (event, id: string, url: string, fromAddressBar?: unknown) => {
+    const win = owner(event, id)
+    if (fromAddressBar !== true) return host.navigate(win, id, url)
+    await visits.typedNavigation(id, () => host.navigate(win, id, url))
+  })
   ipcMain.handle('browser:back', (event, id: string) => host.history(owner(event, id), id, 'back'))
   ipcMain.handle('browser:forward', (event, id: string) => host.history(owner(event, id), id, 'forward'))
   ipcMain.handle('browser:reload', (event, id: string) => host.history(owner(event, id), id, 'reload'))
@@ -197,5 +209,40 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
     host.close(win, id)
     owners.delete(id)
+    visits.forget(id)
+  })
+  ipcMain.handle('browser:history-query', (event, text: unknown, limit: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.query(text, limit)
+  })
+  ipcMain.handle('browser:history-list', (event, text: unknown, cursor: unknown, limit: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.list(text, cursor, limit)
+  })
+  ipcMain.handle('browser:history-remove', (event, url: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.remove(url)
+  })
+  ipcMain.handle('browser:focus-page', (event, id: string) => host.focusPage(owner(event, id), id))
+  ipcMain.handle('browser:history-top', (event, limit: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.top(limit)
+  })
+  ipcMain.handle('browser:history-clear', (event) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.clear()
+  })
+  ipcMain.handle('browser:history-recording', (event) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.isRecording()
+  })
+  ipcMain.handle('browser:history-set-recording', (event, enabled: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return history.setRecording(enabled)
+  })
+  history.onChange(() => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('browser:history-changed')
+    }
   })
 }

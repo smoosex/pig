@@ -9,7 +9,9 @@ const api: SessionApi = {
       ? ipcRenderer.invoke('browser:create', browserId)
       : ipcRenderer.invoke('browser:create', browserId, url),
     getState: (browserId) => ipcRenderer.invoke('browser:get-state', browserId),
-    navigate: (browserId, url) => ipcRenderer.invoke('browser:navigate', browserId, url),
+    navigate: (browserId, url, typed) => typed
+      ? ipcRenderer.invoke('browser:navigate', browserId, url, true)
+      : ipcRenderer.invoke('browser:navigate', browserId, url),
     back: (browserId) => ipcRenderer.invoke('browser:back', browserId),
     forward: (browserId) => ipcRenderer.invoke('browser:forward', browserId),
     reload: (browserId) => ipcRenderer.invoke('browser:reload', browserId),
@@ -27,6 +29,19 @@ const api: SessionApi = {
     previewCookies: (browserId, sourceId, scope) => ipcRenderer.invoke('browser:preview-cookies', browserId, sourceId, scope),
     importCookies: (browserId, sourceId, scope, expectedSite) => ipcRenderer.invoke('browser:import-cookies', browserId, sourceId, scope, expectedSite),
     clearSiteCookies: (browserId, expectedSite) => ipcRenderer.invoke('browser:clear-site-cookies', browserId, expectedSite),
+    queryHistory: (text, limit) => ipcRenderer.invoke('browser:history-query', text, limit ?? 8),
+    listHistory: (text, cursor, limit) => ipcRenderer.invoke('browser:history-list', text, cursor, limit ?? 50),
+    removeHistory: (url) => ipcRenderer.invoke('browser:history-remove', url),
+    focusPage: (browserId) => ipcRenderer.invoke('browser:focus-page', browserId),
+    topSites: (limit) => ipcRenderer.invoke('browser:history-top', limit ?? 8),
+    clearHistory: () => ipcRenderer.invoke('browser:history-clear'),
+    getHistoryRecording: () => ipcRenderer.invoke('browser:history-recording'),
+    setHistoryRecording: (enabled) => ipcRenderer.invoke('browser:history-set-recording', enabled),
+    onHistoryChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('browser:history-changed', handler)
+      return () => ipcRenderer.off('browser:history-changed', handler)
+    },
     onCloseRequested: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, browserId: string) => listener(browserId)
       ipcRenderer.on('browser:close-tab-requested', handler)

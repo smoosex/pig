@@ -78,6 +78,7 @@ async function fixture(failure: Failure): Promise<void> {
       loadOpenProjectSessions: async () => ({ tools: [] }),
       removeOpenProjectWorkspaces: async () => { workspacePrunes++ }
     },
+    'browser/history': { flushBrowserHistory: async () => {} },
     'chats': { pruneEmptyChatDirs: async () => { chatPrunes++ } },
     'pig-dir': { pigDir: () => root },
     'shell-env': { importShellEnvironment: asyncNoop },
