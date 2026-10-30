@@ -6,12 +6,14 @@ import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
+import { fileMentionText } from '../../../../shared/file-mentions'
 import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
 import { useT } from '../../hooks/useT'
 import { FileMentionNode } from '../FileMentionNode'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
+import { activeFileDrag, type FileDrag } from './file-drag'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { isComposingKey, isShortcutRecording, matchesShortcut, shortcutText, useShortcut } from '../../lib/shortcuts'
 
@@ -19,6 +21,9 @@ interface ComposerEditorOptions {
   sessionId: string | null
   isActive?: boolean
   disabled?: boolean
+  /** The worktree `@` paths are relative to; a dragged row from any other one is refused. */
+  cwd?: string | null
+  isBashMode?: () => boolean
   onKeyDown: (event: KeyboardEvent) => boolean
   onPasteImages: (files: File[]) => Promise<void>
 }
@@ -48,6 +53,29 @@ function insertPastedText(view: EditorView, text: string, at?: number): void {
         schema.text(' ')
       ]))
     : plainTextSlice(schema, normalized)
+  insertSlice(view, slice, at)
+}
+
+function shellWord(text: string): string {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * A file becomes the same chip `@` completion leaves; a directory stays `@dir/` text, as completion
+ * leaves it too. In bash mode the shell gets the bare path, since `@` means nothing to it.
+ */
+function insertFileDrag(view: EditorView, drag: FileDrag, bashMode: boolean, at: number): void {
+  const { schema, doc } = view.state
+  const before = doc.textBetween(Math.max(0, at - 1), at, '\n', '\ufffc')
+  const nodes: ProseMirrorNode[] = []
+  if (before && !/\s/.test(before)) nodes.push(schema.text(' '))
+  if (bashMode) nodes.push(schema.text(`${shellWord(drag.path)} `))
+  else if (drag.isDirectory) nodes.push(schema.text(`${fileMentionText(`${drag.path}/`)} `))
+  else nodes.push(schema.nodes.fileMention.create({ path: drag.path }), schema.text(' '))
+  insertSlice(view, Slice.maxOpen(Fragment.fromArray(nodes)), at)
+}
+
+function insertSlice(view: EditorView, slice: Slice, at?: number): void {
   const { tr } = view.state
   if (at == null) {
     view.dispatch(tr.replaceSelection(slice).scrollIntoView())
@@ -133,6 +161,15 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           })
           return false
         },
+        dragover: (view, event) => {
+          const file = activeFileDrag(event)
+          if (!file) return false
+          event.preventDefault()
+          const accepted = view.editable && !callbacks.current.disabled && file.cwd === callbacks.current.cwd
+          event.dataTransfer!.dropEffect = accepted ? 'copy' : 'none'
+          // Falling through lets the drop cursor show where the path will land.
+          return !accepted
+        },
         drop: (view, event) => {
           if (callbacks.current.disabled || !view.editable) {
             event.preventDefault()
@@ -140,6 +177,15 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           }
           if (view.dragging) return false
           const drag = event as DragEvent
+          const file = activeFileDrag(drag)
+          if (file) {
+            event.preventDefault()
+            if (file.cwd !== callbacks.current.cwd) return true
+            const at = view.posAtCoords({ left: drag.clientX, top: drag.clientY })?.pos ?? view.state.selection.from
+            insertFileDrag(view, file, callbacks.current.isBashMode?.() ?? false, at)
+            view.focus()
+            return true
+          }
           const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
           if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
           const at = view.posAtCoords({ left: drag.clientX, top: drag.clientY })?.pos ?? view.state.selection.from

@@ -198,3 +198,54 @@ describe('file mention dismissal', () => {
     await act(async () => { root.unmount() })
   })
 })
+
+describe('file drag into the composer', () => {
+  test('a file from the same worktree lands as a chip; another worktree is refused', async () => {
+    await ensureDom()
+    const { act, createElement } = await import('react')
+    const { createRoot } = await import('react-dom/client')
+    const { useComposerEditor } = await import('../src/renderer/src/components/composer/useComposerEditor')
+    const { fileDragProps } = await import('../src/renderer/src/components/composer/file-drag')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+
+    let editorState!: ReturnType<typeof useComposerEditor>
+    function Probe() {
+      editorState = useComposerEditor({ sessionId: 'drag', cwd: '/repo', onKeyDown: () => false, onPasteImages: async () => {} })
+      return null
+    }
+    await act(async () => { root.render(createElement(Probe)) })
+    assert.ok(editorState.editor)
+    const view = editorState.editor.view
+    view.posAtCoords = () => null
+
+    const drop = (cwd: string, path: string, isDirectory: boolean) => {
+      const data = new Map<string, string>()
+      const dataTransfer = {
+        types: [] as string[],
+        effectAllowed: 'all',
+        dropEffect: 'none',
+        files: [],
+        setData(type: string, value: string) { data.set(type, value); this.types.push(type) },
+        getData: (type: string) => data.get(type) ?? ''
+      }
+      const props = fileDragProps({ cwd, path, isDirectory })
+      props.onDragStart({ dataTransfer } as never)
+      const event = new Event('drop', { bubbles: true, cancelable: true })
+      Object.assign(event, { dataTransfer, clientX: 0, clientY: 0 })
+      view.dom.dispatchEvent(event)
+      props.onDragEnd()
+      return event.defaultPrevented
+    }
+
+    await act(async () => { assert.equal(drop('/other', 'src/b.ts', false), true) })
+    assert.equal(editorState.getDraft().text, '')
+    await act(async () => { assert.equal(drop('/repo', 'src/a.ts', false), true) })
+    assert.equal(editorState.getDraft().text, '@src/a.ts ')
+    assert.equal(editorState.editor.getJSON().content?.[0].content?.[0].type, 'fileMention')
+    await act(async () => { drop('/repo', 'my dir', true) })
+    assert.equal(editorState.getDraft().text, '@src/a.ts @"my dir/" ')
+    await act(async () => { root.unmount() })
+  })
+})

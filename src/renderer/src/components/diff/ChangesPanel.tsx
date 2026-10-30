@@ -17,6 +17,7 @@ import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { FileTypeIcon } from '../files/FileTypeIcon'
 import { STATUS_META, splitPath, sumCounts } from './file-entry'
+import { fileDragProps } from '../composer/file-drag'
 
 type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
 
@@ -91,6 +92,8 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         title={entry.path}
         data-sidebar-hover-row
         data-sidebar-selected={isActive || undefined}
+        // A deleted file has nothing left on disk for the mention to point at.
+        {...(entry.status === 'deleted' ? {} : fileDragProps({ cwd, path: entry.path, isDirectory: false }))}
         onClick={() => void openChangesTab(cwd, entry.path, scope)}
         className={cn(
           'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',

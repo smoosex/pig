@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSessionsStore, selectActiveSessionCwd, selectActiveSessionId } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
 import { matchesShortcut } from '../../lib/shortcuts'
@@ -33,7 +33,17 @@ export function useComposer(
   // session's id on both sides; keying the home by cwd alone would clear the editor on promote.
   const draftKey = sessionId ?? (draftCwd ? `draft:${draftCwd}` : null)
   const attachments = useComposerImages(draftKey)
-  const document = useComposerEditor({ sessionId: draftKey, isActive, disabled: inputDisabled, onKeyDown: handleKeyDown, onPasteImages: attachments.add })
+  // A draft is its own workspace; a tab reads the workspace off the session behind it.
+  const activeCwd = useSessionsStore((state) => explicitSessionId
+    ? state.openTabs.find((tab) => tab.id === explicitSessionId)?.cwd ?? null
+    : selectActiveSessionCwd(state))
+  const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
+  // Bash mode is derived from the draft the editor produces, so the editor reads it back lazily.
+  const bashModeRef = useRef(false)
+  const document = useComposerEditor({
+    sessionId: draftKey, isActive, disabled: inputDisabled, cwd: mentionCwd,
+    isBashMode: () => bashModeRef.current, onKeyDown: handleKeyDown, onPasteImages: attachments.add
+  })
   const { editor, draft, replaceText } = document
   const restoreVersion = useComposerDraftsStore((state) => draftKey
     ? state.drafts[draftKey]?.restoreVersion ?? 0 : 0)
@@ -50,6 +60,7 @@ export function useComposer(
     bashModeKey !== draftKey && dismissedBashKey !== draftKey
   )
   const bashMode = (bashModeKey === draftKey && draftKey !== null) || enteringBash
+  bashModeRef.current = bashMode
   useLayoutEffect(() => {
     // Hydration ran earlier in layout effects; this render can still describe the previous session.
     if (!enteringBash || !editor || document.getDraft() !== draft) return
@@ -75,11 +86,6 @@ export function useComposer(
     replaceText(`/${command.name} `)
     editor?.commands.focus('end')
   }, bashMode || inputDisabled)
-  // A draft is its own workspace; a tab reads the workspace off the session behind it.
-  const activeCwd = useSessionsStore((state) => explicitSessionId
-    ? state.openTabs.find((tab) => tab.id === explicitSessionId)?.cwd ?? null
-    : selectActiveSessionCwd(state))
-  const mentionCwd = (isDraftSession ? draftCwd : activeCwd) ?? draftCwd ?? null
   const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode || inputDisabled })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 

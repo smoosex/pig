@@ -24,6 +24,7 @@ import { FileTreeMenu } from './FileTreeMenu'
 import { TreeNameField } from './TreeNameField'
 import { useTreeDrafts } from './useTreeDrafts'
 import { treeRows } from './tree-rows'
+import { fileDragProps } from '../composer/file-drag'
 
 export function FileTree({ cwd }: { cwd: string }) {
   const t = useT()
@@ -92,6 +93,7 @@ export function FileTree({ cwd }: { cwd: string }) {
                   data-sidebar-hover-row
                   data-sidebar-selected={shownPath === entry.path || undefined}
                   title={entry.path}
+                  {...fileDragProps({ cwd, path: entry.path, isDirectory: entry.kind === 'directory' })}
                   // The indent is the row's own, not a nested container's: a row has to keep the column's
                   // full width for the hover background to reach both edges.
                   style={{ paddingInlineStart: `${4 + depth * 12}px` }}
