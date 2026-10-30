@@ -32,6 +32,7 @@ export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle): void 
     root.dataset.surfaceStyle = style
     return
   }
+  dropNonEditableSelection()
   const radius = Math.hypot(Math.max(origin.x, innerWidth - origin.x), Math.max(origin.y, innerHeight - origin.y))
   root.style.setProperty('--surface-reveal-x', `${origin.x}px`)
   root.style.setProperty('--surface-reveal-y', `${origin.y}px`)
@@ -57,6 +58,19 @@ export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle): void 
     delete root.dataset.surfaceReveal
   }
   transition.finished.then(settle, settle)
+}
+
+/**
+ * The renderer crashes (a Chromium CHECK, SIGTRAP) when a view transition snapshots a selection that
+ * covers a non-editable island inside an editor, such as a chip the composer selected on click. The
+ * editor keeps its own selection state and restores it on focus, so only the DOM range is dropped.
+ */
+function dropNonEditableSelection(): void {
+  const selection = getSelection()
+  if (!selection?.rangeCount) return
+  const range = selection.getRangeAt(0)
+  const islands = document.querySelectorAll('[contenteditable="true"] [contenteditable="false"]')
+  if ([...islands].some((island) => range.intersectsNode(island))) selection.removeAllRanges()
 }
 
 function backgroundTransitions(surface: HTMLElement): CSSTransition[] {
