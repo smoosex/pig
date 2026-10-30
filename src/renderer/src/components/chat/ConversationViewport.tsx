@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { chatColumn } from '../../chat/layout'
 import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
 import type { ScrollSnapshot } from '../../chat/scroll-state'
@@ -23,6 +23,8 @@ import { useConversationScroll } from './useConversationScroll'
 const measuredItem = '[content-visibility:visible] [contain-intrinsic-size:none]'
 /** A jump pages at most this far; a click further back grows the window and can be repeated. */
 const MAX_JUMP_PAGES = 32
+/** The keys MessageScroller treats as the reader scrolling on their own. */
+const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp', ' '])
 
 const VisibleTurnRow = memo(function VisibleTurnRow({
   sessionId,
@@ -102,12 +104,24 @@ export function ConversationViewport({
   const loadTurnProcess = useSessionsStore((s) => s.loadTurnProcess)
   const loadOlderTurns = useSessionsStore((s) => s.loadOlderTurns)
   const onLoadOlder = useCallback((target?: number) => { void loadOlderTurns(sessionId, target) }, [loadOlderTurns, sessionId])
-  const { viewportRef, contentRef, visibleTurns, loadEarlier, hasMoreAbove, hasMoreBelow, onScroll, registerTurn, jumpToTurn } = useConversationScroll({
+  const { viewportRef, contentRef, visibleTurns, loadEarlier, hasMoreAbove, hasMoreBelow, readingTurn, subscribeReadingPosition, onScroll, registerTurn, jumpToTurn } = useConversationScroll({
     active, historical, live, windowStart, windowPending: !indexTrusted, hasMoreHistory: windowStart > 0, onLoadOlder, initialScrollState, onSave
   })
+  // A jump target cannot always reach the reading line (the last turns have nothing below them), so
+  // the minimap keeps showing the turn the reader asked for until they scroll on their own.
+  const [pinnedTurn, setPinnedTurn] = useState<number | null>(null)
+  const unpin = useCallback(() => setPinnedTurn(null), [])
+  const liveCount = useRef(live.length)
+  useLayoutEffect(() => {
+    if (live.length > liveCount.current) setPinnedTurn(null)
+    liveCount.current = live.length
+  }, [live.length])
   const jumpToRequested = useRef(0)
   const jumpToTurnIndex = useCallback(async (turnIndex: number) => {
     const token = ++jumpToRequested.current
+    setPinnedTurn(turnIndex)
+    // A jump that never reaches its turn must not leave the minimap pinned to it.
+    const abandon = () => { if (token === jumpToRequested.current) setPinnedTurn(null) }
     // A turn outside the loaded window is paged in step by step: one request never reads the whole gap.
     for (let page = 0; page < MAX_JUMP_PAGES; page += 1) {
       const state = useSessionsStore.getState().runtime[sessionId]
@@ -115,13 +129,15 @@ export function ConversationViewport({
       const before = state.turnStart
       await loadOlderTurns(sessionId, turnIndex)
       const after = useSessionsStore.getState().runtime[sessionId]
-      if (!after || after.instanceId !== state.instanceId || token !== jumpToRequested.current) return
+      if (!after || after.instanceId !== state.instanceId || token !== jumpToRequested.current) {
+        abandon()
+        return
+      }
       // Nothing above can be loaded any more; the jump must not spin on a stuck window.
       if (after.turnStart === before) break
     }
     const loaded = useSessionsStore.getState().runtime[sessionId]
-    if (!loaded) return
-    jumpToTurn(turnIndex - loaded.turnStart)
+    if (!loaded || !jumpToTurn(turnIndex - loaded.turnStart)) abandon()
   }, [jumpToTurn, loadOlderTurns, sessionId])
   const onNeedProcess = useCallback(async (turnId: string) => {
     await loadTurnProcess(sessionId, turnId)
@@ -149,6 +165,11 @@ export function ConversationViewport({
         preserveScrollOnPrepend={false}
         className="mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_1rem,rgb(0_0_0)_calc(100%-1rem),rgb(0_0_0/0.0))]"
         onScroll={onScroll}
+        onWheel={unpin}
+        onTouchMove={unpin}
+        onKeyDown={(event) => {
+          if (SCROLL_KEYS.has(event.key)) unpin()
+        }}
         onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest('[data-slot="collapsible-trigger"]')) {
             scroller.pauseAutoScroll()
@@ -224,9 +245,12 @@ export function ConversationViewport({
           ) : null}
         </MessageScrollerContent>
       </MessageScrollerViewport>
-      <MessageScrollerButton behavior="smooth" />
+      <MessageScrollerButton behavior="smooth" onClick={unpin} />
       <TurnMinimap
         items={items}
+        currentTurn={pinnedTurn ?? readingTurn}
+        pinned={pinnedTurn != null}
+        subscribeReadingPosition={subscribeReadingPosition}
         sessionId={sessionId}
         branchViewId={branchViewId}
         indexTrusted={indexTrusted}

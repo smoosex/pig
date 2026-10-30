@@ -40,8 +40,7 @@ async function fixture(): Promise<void> {
   })
   HTMLElement.prototype.getBoundingClientRect = function () {
     const height = Number.parseFloat(this.style.height) || navigationHeight(this)
-    const top = this.parentElement?.getAttribute('role') === 'navigation' ? 8 : 0
-    return new DOMRect(0, top, 120, height)
+    return new DOMRect(0, 0, 120, height)
   }
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
@@ -69,6 +68,9 @@ async function fixture(): Promise<void> {
     null,
     createElement(TurnMinimap, {
       items: nextItems,
+      currentTurn: null,
+      pinned: false,
+      subscribeReadingPosition: () => () => {},
       sessionId: 's1',
       branchViewId: 'b1',
       indexTrusted: false,

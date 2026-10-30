@@ -42,6 +42,8 @@ async function runFixture(name: string): Promise<void> {
     loadEarlier: noop,
     hasMoreAbove: true,
     hasMoreBelow: false,
+    readingTurn: null,
+    subscribeReadingPosition: () => noop,
     onScroll: noop,
     registerTurn,
     jumpToTurn: noop

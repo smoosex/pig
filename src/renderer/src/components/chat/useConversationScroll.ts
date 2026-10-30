@@ -70,6 +70,7 @@ export function useConversationScroll({
   const stableAnchor = useRef<TurnAnchor | null>(null)
   const [historyStart, setHistoryStart] = useState(() => Math.max(0, historical.length - INITIAL_TURNS))
   const [jumpRequest, setJumpRequest] = useState<{ index: number; token: number } | null>(null)
+  const [readingTurn, setReadingTurn] = useState<number | null>(null)
   const jumpToken = useRef(0)
   const loadedStart = useRef(windowStart)
 
@@ -115,6 +116,52 @@ export function useConversationScroll({
     return null
   }, [])
 
+  // The reading line sits at the top edge, but over the last screen of the branch it slides down to
+  // the bottom edge: the short turns at the end can never scroll up to the top, and they still need
+  // to take their turn as the reader reaches the end.
+  // The position is the turn index plus how far the line has gone through that turn, so the minimap
+  // can follow every pixel of the reader's scroll instead of stepping a whole turn at a time.
+  const measureReading = useCallback((): { turn: number; position: number } | null => {
+    const viewport = viewportRef.current
+    const content = contentRef.current
+    if (!viewport || !content || viewport.clientHeight === 0) return null
+    const span = viewport.clientHeight - TURN_ALIGN
+    const range = Math.min(span, viewport.scrollHeight - viewport.clientHeight)
+    const remaining = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
+    const slide = visibleEnd < historical.length || range <= 0
+      ? 0
+      : span * Math.min(1, Math.max(0, 1 - remaining / range))
+    const line = viewport.getBoundingClientRect().top + TURN_ALIGN + slide
+    let found: { turn: number; rect: DOMRect } | null = null
+    for (const element of content.querySelectorAll<HTMLElement>('[data-turn-key]')) {
+      const index = Number(element.dataset.turnIndex)
+      if (!Number.isFinite(index)) continue
+      const rect = element.getBoundingClientRect()
+      if (found && rect.top > line) break
+      found = { turn: index, rect }
+    }
+    if (!found) return null
+    const progress = Math.min(1, Math.max(0, (line - found.rect.top) / Math.max(1, found.rect.height)))
+    return { turn: found.turn, position: found.turn + progress }
+  }, [historical.length, visibleEnd])
+
+  // Kept out of React state: it changes on every scroll frame, and only the minimap's scroll box needs it.
+  const readingPosition = useRef<number | null>(null)
+  const positionListeners = useRef(new Set<(position: number) => void>())
+  const subscribeReadingPosition = useCallback((listener: (position: number) => void) => {
+    positionListeners.current.add(listener)
+    if (readingPosition.current != null) listener(readingPosition.current)
+    return () => { positionListeners.current.delete(listener) }
+  }, [])
+
+  const syncReadingTurn = useCallback(() => {
+    const reading = measureReading()
+    setReadingTurn(reading?.turn ?? null)
+    if (!reading || readingPosition.current === reading.position) return
+    readingPosition.current = reading.position
+    for (const listener of positionListeners.current) listener(reading.position)
+  }, [measureReading])
+
   const measureAnchor = useCallback((): TurnAnchor | null => {
     const row = measureRow()
     return row ? { key: row.key, offset: row.offset, ...(row.index === undefined ? {} : { index: row.index }) } : null
@@ -156,6 +203,7 @@ export function useConversationScroll({
 
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     capture()
+    syncReadingTurn()
     const viewport = event.currentTarget
     const previousScrollTop = lastScrollTop.current
     lastScrollTop.current = viewport.scrollTop
@@ -180,7 +228,7 @@ export function useConversationScroll({
     ) {
       changeWindow(visibleStart + LOAD_MORE_TURNS)
     }
-  }, [capture, changeWindow, hasMoreHistory, historical.length, onLoadOlder, scroller, visibleEnd, visibleStart])
+  }, [capture, changeWindow, hasMoreHistory, historical.length, onLoadOlder, scroller, syncReadingTurn, visibleEnd, visibleStart])
 
   // Older turns are prepended: the mounted slide has to shift with them, and the reading position
   // has to survive the resize, which the compensation below takes care of.
@@ -223,12 +271,17 @@ export function useConversationScroll({
     const content = contentRef.current
     if (!active || !content) return
     const observer = new ResizeObserver(() => {
-      if (windowChanging.current || scroller.getScrollState().following) return
-      reanchor()
+      if (!windowChanging.current && !scroller.getScrollState().following) reanchor()
+      syncReadingTurn()
     })
     observer.observe(content)
     return () => observer.disconnect()
-  }, [active, reanchor, scroller])
+  }, [active, reanchor, scroller, syncReadingTurn])
+
+  // Rows mount and unmount without a scroll event, so the reading turn is measured after each commit.
+  useLayoutEffect(() => {
+    if (active) syncReadingTurn()
+  }, [active, syncReadingTurn, visibleTurns])
 
   useLayoutEffect(() => {
     if (!active || allTurns.length === 0) return
@@ -311,10 +364,12 @@ export function useConversationScroll({
     if (element) turnRefs.current.set(key, element)
     else turnRefs.current.delete(key)
   }, [])
-  const jumpToTurn = useCallback((index: number) => {
-    if (index < 0 || index >= allTurns.length) return
+  /** Answers whether the turn is in the loaded window and the jump was requested. */
+  const jumpToTurn = useCallback((index: number): boolean => {
+    if (index < 0 || index >= allTurns.length) return false
     jumpToken.current += 1
     setJumpRequest({ index, token: jumpToken.current })
+    return true
   }, [allTurns.length])
 
   const saveRef = useRef(onSave)
@@ -330,6 +385,8 @@ export function useConversationScroll({
     loadEarlier,
     hasMoreAbove: visibleStart > 0,
     hasMoreBelow: visibleEnd < historical.length,
+    readingTurn,
+    subscribeReadingPosition,
     onScroll,
     registerTurn,
     jumpToTurn

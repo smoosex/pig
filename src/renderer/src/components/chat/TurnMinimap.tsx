@@ -32,7 +32,6 @@ const PREVIEW_CACHE_LIMIT = 128
 const CARD_DELAY = 50
 const CARD_MOVE_MS = 150
 const PREVIEW_REQUEST_DELAY = 100
-const SCROLL_BUFFER_ITEMS = 5
 
 const previewCache = new Map<string, MinimapPreview>()
 const previewRequests = new Map<string, Promise<MinimapPreview>>()
@@ -209,6 +208,9 @@ const MinimapBar = ({
 
 export const TurnMinimap = memo(function TurnMinimap({
   items,
+  currentTurn,
+  pinned,
+  subscribeReadingPosition,
   sessionId,
   branchViewId,
   indexTrusted,
@@ -216,6 +218,12 @@ export const TurnMinimap = memo(function TurnMinimap({
   onJump
 }: {
   items: MinimapItem[]
+  /** The branch index of the turn being read, or the one the reader just jumped to. */
+  currentTurn: number | null
+  /** `currentTurn` is a jump target rather than the reading position. */
+  pinned: boolean
+  /** Pushes the fractional reading position (turn index plus progress through it) on every change. */
+  subscribeReadingPosition: (listener: (position: number) => void) => () => void
   sessionId: string
   branchViewId: string
   indexTrusted: boolean
@@ -262,13 +270,16 @@ export const TurnMinimap = memo(function TurnMinimap({
       return index == null ? [] : [index]
     }))
   }, [indexById, indexTrusted, visibleMessageIds])
-  const currentMessageId = visibleMessageIds[visibleMessageIds.length - 1]
-  const currentIndex = indexTrusted ? indexById.get(currentMessageId ?? '') ?? -1 : -1
+  const currentIndex = indexTrusted && currentTurn != null && currentTurn < rows.length ? currentTurn : -1
+  // The padding belongs to the virtualizer, not to the scroll box: otherwise its offsets and
+  // scrollToIndex disagree with the DOM by the padding, and the padding swallows the pointer.
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => rootRef.current,
     getItemKey: (index) => rows[index]?.id ?? index,
     estimateSize: () => ITEM_SIZE,
+    paddingStart: PADDING_Y,
+    paddingEnd: PADDING_Y,
     overscan: OVERSCAN
   })
   const virtualRows = virtualizer.getVirtualItems()
@@ -354,27 +365,6 @@ export const TurnMinimap = memo(function TurnMinimap({
     setPendingFocusIndex(null)
   }, [pendingFocusIndex, virtualRows])
 
-  useLayoutEffect(() => {
-    const element = rootRef.current
-    if (currentIndex < 0 || !element || element.clientHeight <= 0) return
-    if (virtualizer.getTotalSize() + PADDING_Y * 2 <= element.clientHeight) return
-    const firstVisible = Math.max(
-      0,
-      Math.floor((element.scrollTop - PADDING_Y - BAR_HEIGHT) / ITEM_SIZE) + 1
-    )
-    const lastVisible = Math.min(
-      rows.length - 1,
-      Math.ceil((element.scrollTop + element.clientHeight - PADDING_Y) / ITEM_SIZE) - 1
-    )
-    if (lastVisible - firstVisible < SCROLL_BUFFER_ITEMS * 2) {
-      virtualizer.scrollToIndex(currentIndex, { align: 'center' })
-    } else if (currentIndex < firstVisible + SCROLL_BUFFER_ITEMS) {
-      virtualizer.scrollToIndex(Math.max(0, currentIndex - SCROLL_BUFFER_ITEMS), { align: 'start' })
-    } else if (currentIndex > lastVisible - SCROLL_BUFFER_ITEMS) {
-      virtualizer.scrollToIndex(Math.min(rows.length - 1, currentIndex + SCROLL_BUFFER_ITEMS), { align: 'end' })
-    }
-  }, [currentIndex, rows.length, virtualizer])
-
   const activeIndex = Math.min(focusIndex, items.length - 1)
   const tabbableIndex = virtualRows.some((row) => row.index === activeIndex)
     ? activeIndex
@@ -383,6 +373,40 @@ export const TurnMinimap = memo(function TurnMinimap({
   const hoveredIndex = hoverIndex ?? focusTarget ?? -1
   const docked = hoverIndex != null || focusTarget != null
   const targetIndex = hoverIndex ?? focusTarget
+
+  // The rail keeps the reading position at its middle and follows the conversation's scroll pixel by
+  // pixel, so the movement is the scroll itself. It holds still under the pointer or keyboard focus,
+  // where bars sliding away would move the hover target, and while a jump target is pinned.
+  const readingPositionRef = useRef<number | null>(null)
+  const followRef = useRef({ trusted: indexTrusted, pinned, interacting: docked })
+  const alignRail = useCallback((position: number, behavior: ScrollBehavior) => {
+    const element = rootRef.current
+    if (!element || element.clientHeight <= 0) return
+    const max = element.scrollHeight - element.clientHeight
+    if (max <= 0) return
+    const top = Math.min(max, Math.max(0, PADDING_Y + position * ITEM_SIZE + BAR_HEIGHT / 2 - element.clientHeight / 2))
+    if (Math.abs(element.scrollTop - top) < 0.5) return
+    if (behavior === 'smooth') element.scrollTo({ top, behavior })
+    else element.scrollTop = top
+  }, [])
+
+  useLayoutEffect(() => {
+    followRef.current = { trusted: indexTrusted, pinned, interacting: docked }
+  }, [docked, indexTrusted, pinned])
+
+  useLayoutEffect(() => subscribeReadingPosition((position) => {
+    readingPositionRef.current = position
+    const follow = followRef.current
+    if (follow.trusted && !follow.pinned && !follow.interacting) alignRail(position, 'auto')
+  }), [alignRail, subscribeReadingPosition])
+
+  // A jump, the pointer leaving or new rows are discrete changes: the rail glides there instead.
+  useLayoutEffect(() => {
+    if (!indexTrusted || docked) return
+    const position = pinned ? currentIndex : readingPositionRef.current
+    if (position == null || position < 0) return
+    alignRail(position, reduceMotion ? 'auto' : 'smooth')
+  }, [alignRail, currentIndex, docked, indexTrusted, pinned, reduceMotion, rows.length])
 
   useEffect(() => {
     const clearOpen = () => {
@@ -453,7 +477,7 @@ export const TurnMinimap = memo(function TurnMinimap({
     if (!track) return null
     const rect = track.getBoundingClientRect()
     if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
-    return (clientY - rect.top - BAR_HEIGHT / 2) / ITEM_SIZE
+    return (clientY - rect.top - PADDING_Y - BAR_HEIGHT / 2) / ITEM_SIZE
   }
   const pointerIndex = (clientX: number, clientY: number): number | null => {
     const position = pointerPosition(clientX, clientY)
@@ -471,7 +495,7 @@ export const TurnMinimap = memo(function TurnMinimap({
       ref={rootRef}
       role="navigation"
       aria-label={t('turn.navigation')}
-      className="absolute top-1/2 right-4 z-10 w-8 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="absolute top-1/2 right-4 z-10 w-8 max-h-3/4 -translate-y-1/2 cursor-pointer overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ maskImage: mask, WebkitMaskImage: mask }}
       onScroll={(event) => {
         syncOverflow(event.currentTarget)
@@ -555,7 +579,7 @@ export const TurnMinimap = memo(function TurnMinimap({
                 className="pointer-events-none absolute top-0 right-0 h-0.5 transition-transform ease-out"
                 style={{
                   width: MIN_WIDTH,
-                  transform: `translateY(${previewIndex * ITEM_SIZE}px)`,
+                  transform: `translateY(${PADDING_Y + previewIndex * ITEM_SIZE}px)`,
                   transitionDuration: movementSource.current === 'scroll' ? '0ms' : `${CARD_MOVE_MS}ms`
                 }}
               />
