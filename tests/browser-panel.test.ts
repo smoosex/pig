@@ -18,6 +18,7 @@ async function fixture() {
   let requestClose: (browserId: string) => void = () => {}
   let initial!: (next: BrowserState) => void
   let capture!: (next: BrowserScreenshot) => void
+  let captures = 0
   const bounds: { browserId: string; bounds: BrowserBounds | null }[] = []
   let reads = 0
   let created = 0
@@ -45,7 +46,7 @@ async function fixture() {
       }
       appliedBounds.set(browserId, rect)
     },
-    capture: async () => new Promise((resolve) => { capture = resolve }),
+    capture: async () => { captures++; return new Promise((resolve) => { capture = resolve }) },
     snapshot: async (browserId) => {
       if (browserId === 'two' && snapshotFailure) throw new Error('snapshot failed')
       return 'data:image/jpeg;base64,YWJj'
@@ -120,7 +121,7 @@ async function fixture() {
     assert.ok(toolbar.querySelector(`button[aria-label="browser.${action}"]`), 'all actions share one toolbar')
   }
   const buttons = [...toolbar.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))
-  assert.deepEqual(buttons, ['browser.back', 'browser.forward', 'browser.reload', 'browser.select', 'browser.screenshot', 'browser.cookieImport', 'browser.copyUrl', 'browser.openExternal', 'browser.inspect'])
+  assert.deepEqual(buttons, ['browser.back', 'browser.forward', 'browser.reload', 'browser.select', 'browser.screenshot', 'browser.chooseSession', 'browser.cookieImport', 'browser.copyUrl', 'browser.openExternal', 'browser.inspect'])
   assert.ok(address.compareDocumentPosition(toolbar.querySelector('[aria-label="browser.copyUrl"]')!) & Node.DOCUMENT_POSITION_FOLLOWING, 'page actions follow the address bar')
   for (const action of ['copyUrl', 'openExternal', 'inspect']) await click(action)
   assert.deepEqual(pageActions, [['copyUrl', 'a'], ['openExternal', 'a'], ['inspect', 'a']])
@@ -259,7 +260,23 @@ async function fixture() {
   assert.equal(container.querySelector('textarea'), null, 'comments are owned by the guest')
   await render('a', true, null)
   await click('select')
-  assert.equal(container.querySelector<HTMLButtonElement>('button[aria-label="browser.screenshot"]')!.disabled, true)
+  await click('screenshot')
+  assert.ok(document.querySelector('[role="menu"]'), 'without a chosen chat, the screenshot button opens the destination menu')
+  assert.equal(captures, 0, 'nothing is captured before a destination exists')
+  await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+  await flush()
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="browser.chooseSession"]')!
+  assert.equal(document.activeElement, trigger, 'Esc hands focus back to the destination trigger')
+  await act(async () => { trigger.blur() })
+  await act(async () => { trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: false })) })
+  assert.ok(document.querySelector('[role="menu"]'))
+  await act(async () => {
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }))
+  })
+  await flush()
+  assert.equal(document.querySelector('[role="menu"]'), null)
+  assert.notEqual(document.activeElement, trigger, 'an outside click closes the menu without focusing its trigger')
   await act(async () => { pushState({ ...state('a', 'fresh'), selecting: true, annotations: [{ ...selection(), ordinal: 1, comment: '' }] }) })
   assert.equal(container.querySelector('[aria-pressed="true"]')?.getAttribute('aria-label'), 'browser.select')
   assert.ok(container.querySelector('[aria-label="browser.sendMarks"]'))

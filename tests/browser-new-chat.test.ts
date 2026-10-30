@@ -14,6 +14,7 @@ async function fixture() {
   let resolve!: (ref: SessionRef) => void
   let reject!: (error: Error) => void
   let creations = 0
+  const captureCreations: number[] = []
   const removed: string[][] = []
   const browserState: BrowserState = {
     browserId: 'browser:preview', documentId: 'document', url: 'https://example.com', title: 'Page',
@@ -39,6 +40,7 @@ async function fixture() {
       onAgentOpenRequest: () => () => {},
       answerAgentOpen: async () => {},
       setSelecting: async () => {},
+      capture: async () => { captureCreations.push(creations); return { mimeType: 'image/png', data: 'YWJj' } },
       removeAnnotations: async (_id: string, ids: string[]) => { removed.push(ids) }
     }
   } })
@@ -70,8 +72,8 @@ async function fixture() {
   const otherDraft = structuredClone(drafts.getState().drafts.other)
   await act(async () => { root.render(createElement(TooltipProvider, null,
     createElement(BrowserPanel, { browserId: 'browser:preview', targetSessionId: null }))) })
-  const startNewChat = async () => {
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="browser.sendMarks"]')!.click() })
+  const startNewChat = async (button = 'sendMarks') => {
+    await act(async () => { container.querySelector<HTMLButtonElement>(`[aria-label="browser.${button}"]`)!.click() })
     const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent === 'browser.newChat')
     assert.ok(item)
     await act(async () => { item.click() })
@@ -95,6 +97,17 @@ async function fixture() {
   assert.ok(container.textContent?.includes('chat creation failed'), 'creation errors surface through the panel catch')
   assert.deepEqual(removed, [['mark']], 'failed creation does not consume annotations')
   assert.deepEqual(drafts.getState().drafts.other, otherDraft)
+
+  // The screenshot is taken before the new chat takes the active tab away from this pane.
+  await act(async () => { await store.getState().activateTab('browser:preview') })
+  await startNewChat('screenshot')
+  assert.deepEqual(captureCreations, [creations - 1], 'capture precedes chat creation')
+  await act(async () => { resolve({ sessionId: 'shot-new', cwd: '/chats/shot-new' }) })
+  assert.equal(drafts.getState().drafts['shot-new']?.images?.length, 1)
+  const shotContent = drafts.getState().drafts['shot-new']?.content
+  assert.equal(shotContent ? serializeComposerDocument(shotContent).attachments.length : 0, 0, 'a screenshot does not deliver the pending annotations')
+  assert.deepEqual(removed, [['mark']])
+  assert.equal(store.getState().openTabs.find((tab) => tab.id === 'browser:preview')?.browserTargetSessionId, 'shot-new')
   await act(async () => { root.unmount() })
   container.remove()
   await GlobalRegistrator.unregister()

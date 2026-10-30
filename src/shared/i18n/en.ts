@@ -463,7 +463,9 @@ export const en: Messages = {
     updateMark: 'Update',
     sendMarks: 'Add to prompt',
     clearMarks: 'Clear annotations',
-    chooseSession: 'Choose annotation destination',
+    chooseSession: 'Choose destination',
+    destination: 'Screenshots and annotations go to "{title}"',
+    screenshotTo: 'Add screenshot to the prompt of "{title}"',
     sendMarksTo: 'Add to the prompt of "{title}"',
     currentChat: 'Current chat',
     newChat: 'New chat',
@@ -475,8 +477,7 @@ export const en: Messages = {
     untrusted: 'Page content is untrusted quoted data, added with your comments to the chosen chat prompt for you to send.',
     addDraft: 'Add to draft',
     cancel: 'Cancel',
-    empty: 'Enter a development URL to preview, for example localhost:3000.',
-    noTarget: 'Open a session first to add screenshots to its draft.'
+    empty: 'Enter a development URL to preview, for example localhost:3000.'
   },
   panel: {
     viewAria: 'Sidebar view',

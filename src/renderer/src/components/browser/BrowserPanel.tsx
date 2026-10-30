@@ -1,8 +1,8 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
-import type { BrowserState } from '../../../../shared/browser'
+import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, LoaderCircle, MessageSquareShare, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
+import type { BrowserScreenshot, BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -35,6 +35,13 @@ const setDevtoolsRatio = (ratio: number) => {
 }
 // Keep 120px of page and of DevTools. The ratio rides on the marker's own style so a change remeasures bounds.
 const DOCK_BOTTOM = 'clamp(120px, calc(var(--devtools-ratio) * 100%), calc(100% - 120px))'
+
+const TOOLTIP_TITLE_LENGTH = 24
+/** Session titles are often a whole first prompt; tooltips quote only its start. */
+function tooltipTitle(title: string) {
+  const chars = Array.from(title.replace(/\s+/g, ' ').trim())
+  return chars.length > TOOLTIP_TITLE_LENGTH ? `${chars.slice(0, TOOLTIP_TITLE_LENGTH).join('').trimEnd()}…` : chars.join('')
+}
 
 interface BrowserPanelProps {
   browserId: string
@@ -190,7 +197,23 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   }
   const annotations = state?.annotations ?? []
   const selectedDestination = destinations.find((tab) => tab.id === targetSessionId)
+  const destinationTitle = selectedDestination ? tooltipTitle(selectedDestination.title) : ''
+  // The destination menu is shared; "New chat" also delivers whatever the opening button was about to send.
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuIntent, setMenuIntent] = useState<'screenshot' | 'marks' | null>(null)
+  // Only Esc hands focus back to the trigger; otherwise its focus ring and tooltip would pop up after the menu closes.
+  const menuEscaped = useRef(false)
+  const openMenu = (intent: 'screenshot' | 'marks' | null) => {
+    setMenuIntent(intent)
+    setMenuOpen(true)
+  }
+  const createDestination = async (cwd: string | null) => {
+    const store = useSessionsStore.getState()
+    const created = cwd ? await store.newSession(cwd) : await store.newChat()
+    if (!created) throw new Error(t('browser.noSessions'))
+    useSessionsStore.getState().setBrowserTarget(browserId, created)
+    return created
+  }
   const addToDraft = (sessionId: string) => {
     if (sending || !annotations.length) return
     const batch = [...annotations]
@@ -205,23 +228,48 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
     setSending(true)
     setError(null)
     void (async () => {
-      const store = useSessionsStore.getState()
-      const created = cwd ? await store.newSession(cwd) : await store.newChat()
-      if (!created) throw new Error(t('browser.noSessions'))
-      useSessionsStore.getState().setBrowserTarget(browserId, created)
+      const created = await createDestination(cwd)
       await addBrowserAnnotationsToDraft(browserId, created, batch)
     })().catch(report).finally(() => { if (alive.current) setSending(false) })
   }
-  const capture = () => run(async () => {
-    const destination = target.current
-    if (!destination.id) return
+  /** Null when the page changed or the pane went away while capturing. */
+  const takeScreenshot = async () => {
     const documentId = latest.current?.documentId
     const started = generation.current
     const screenshot = await api.browser.capture(browserId)
-    if (!alive.current || !enabled.current || target.current !== destination || generation.current !== started || latest.current?.documentId !== documentId) return
+    return alive.current && enabled.current && generation.current === started && latest.current?.documentId === documentId ? screenshot : null
+  }
+  const appendScreenshot = (sessionId: string, screenshot: BrowserScreenshot) => {
     const drafts = useComposerDraftsStore.getState()
-    drafts.restoreDraft(destination.id, appendBrowserScreenshotDraft(drafts.drafts[destination.id], screenshot))
-  })
+    drafts.restoreDraft(sessionId, appendBrowserScreenshotDraft(drafts.drafts[sessionId], screenshot))
+  }
+  const capture = () => {
+    if (!target.current.id) {
+      openMenu('screenshot')
+      return
+    }
+    run(async () => {
+      const destination = target.current
+      const screenshot = await takeScreenshot()
+      if (screenshot && destination.id && target.current === destination) appendScreenshot(destination.id, screenshot)
+    })
+  }
+  // Capture before creating: the new chat becomes the active tab, which hides this pane.
+  const captureToNewChat = () => {
+    const cwd = browserCwd
+    run(async () => {
+      const screenshot = await takeScreenshot()
+      if (!screenshot) return
+      // Reject an unusable image before a chat is created for it.
+      appendBrowserScreenshotDraft(undefined, screenshot)
+      appendScreenshot(await createDestination(cwd), screenshot)
+    })
+  }
+  const newChatFromMenu = () => {
+    if (menuIntent === 'screenshot') captureToNewChat()
+    else if (menuIntent === 'marks') addToNewChat()
+    else run(async () => { await createDestination(browserCwd) })
+  }
   const iconButton = (label: string, icon: ReactNode, action: () => void, disabled = false, pressed?: boolean, hint = label) => (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -241,36 +289,47 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
         {iconButton(t('browser.forward'), <ArrowRight />, () => navigate(() => api.browser.forward(browserId)), !state?.canGoForward)}
         {iconButton(t('browser.reload'), <RotateCw className={busy || state?.loading ? 'animate-spin' : undefined} />, () => navigate(() => api.browser.reload(browserId)), !state?.url)}
         {iconButton(t('browser.select'), <MousePointer2 />, () => run(() => api.browser.setSelecting(browserId, !state?.selecting, pickerOptions())), !state?.url || state.loading || !!state.error, state?.selecting ?? false)}
-        {iconButton(t('browser.screenshot'), <Camera />, capture, !targetSessionId || !state?.url || state.loading || !!state.error, undefined, t(targetSessionId ? 'browser.screenshot' : 'browser.noTarget'))}
+        {iconButton(t('browser.screenshot'), <Camera />, capture, !state?.url || state.loading || !!state.error, undefined,
+          selectedDestination ? t('browser.screenshotTo', { title: destinationTitle }) : t(targetSessionId ? 'browser.screenshot' : 'browser.chooseSession'))}
+        <DropdownMenu open={menuOpen} onOpenChange={(open) => { if (open) setMenuIntent(null); setMenuOpen(open) }}>
+          <Tooltip open={menuOpen ? false : undefined}>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" aria-label={t('browser.chooseSession')} disabled={busy || sending}
+                  className="relative h-7 gap-0.5 px-1.5 [&_svg]:size-3.5!">
+                  <MessageSquareShare />
+                  <ChevronDown className="size-3! opacity-60" />
+                  {selectedDestination ? null : <span aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-warning" />}
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{selectedDestination ? t('browser.destination', { title: destinationTitle }) : t('browser.chooseSession')}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="start" className="w-44"
+            onEscapeKeyDown={() => { menuEscaped.current = true }}
+            onCloseAutoFocus={(event) => {
+              if (!menuEscaped.current) event.preventDefault()
+              menuEscaped.current = false
+            }}>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>{t('browser.currentChat')}</DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="w-64" sideOffset={8}>
+                  {destinations.length ? destinations.map((tab) => <DropdownMenuItem key={tab.id} onSelect={() => useSessionsStore.getState().setBrowserTarget(browserId, tab.id)}>
+                    {tab.id === selectedDestination?.id ? <Check /> : null}<span className="min-w-0 truncate">{tab.title}</span>
+                  </DropdownMenuItem>) : <DropdownMenuItem disabled>{t('browser.noSessions')}</DropdownMenuItem>}
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={newChatFromMenu}>{t('browser.newChat')}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {state?.annotations.length ? <>
           <Badge variant="secondary" className="h-5 min-w-5 px-1.5 text-xs" aria-label={t('browser.marksCount', { n: state.annotations.length })}>{state.annotations.length}</Badge>
           {iconButton(t('browser.sendMarks'), sending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" /> : <Send />,
-            () => selectedDestination ? addToDraft(selectedDestination.id) : setMenuOpen(true), sending, undefined,
-            selectedDestination ? t('browser.sendMarksTo', { title: selectedDestination.title }) : t('browser.chooseSession'))}
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <Tooltip open={menuOpen ? false : undefined}>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label={t('browser.chooseSession')} disabled={sending}><ChevronDown className="size-3.5" /></Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{t('browser.chooseSession')}</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>{t('browser.currentChat')}</DropdownMenuSubTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuSubContent className="w-64" sideOffset={8}>
-                    {destinations.length ? destinations.map((tab) => <DropdownMenuItem key={tab.id} onSelect={() => useSessionsStore.getState().setBrowserTarget(browserId, tab.id)}>
-                      {tab.id === selectedDestination?.id ? <Check /> : null}<span className="min-w-0 truncate">{tab.title}</span>
-                    </DropdownMenuItem>) : <DropdownMenuItem disabled>{t('browser.noSessions')}</DropdownMenuItem>}
-                  </DropdownMenuSubContent>
-                </DropdownMenuPortal>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={addToNewChat}>{t('browser.newChat')}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            () => selectedDestination ? addToDraft(selectedDestination.id) : openMenu('marks'), sending, undefined,
+            selectedDestination ? t('browser.sendMarksTo', { title: destinationTitle }) : t('browser.chooseSession'))}
           {iconButton(t('browser.clearMarks'), <Trash2 />, () => run(() => api.browser.removeAnnotations(browserId, state.annotations.map((mark) => mark.id))))}
         </> : null}
         <Input aria-label={t('browser.address')} placeholder={t('browser.address')} value={address} onChange={(event) => setAddress(event.target.value)}

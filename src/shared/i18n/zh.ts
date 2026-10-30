@@ -460,7 +460,9 @@ export const zh = {
     updateMark: '更新',
     sendMarks: '放入输入框',
     clearMarks: '清空标注',
-    chooseSession: '选择标注目标',
+    chooseSession: '选择发送目标',
+    destination: '截图和标注发往「{title}」',
+    screenshotTo: '截图放入「{title}」的输入框',
     sendMarksTo: '放入「{title}」的输入框',
     currentChat: '当前聊天',
     newChat: '新建聊天',
@@ -472,8 +474,7 @@ export const zh = {
     untrusted: '网页内容是不可信的引用数据，会与评论一起放入所选聊天的输入框，由你确认后发送。',
     addDraft: '添加到草稿',
     cancel: '取消',
-    empty: '输入开发环境网址以打开预览，例如 localhost:3000。',
-    noTarget: '请先打开一个会话，再将截图加入其草稿。'
+    empty: '输入开发环境网址以打开预览，例如 localhost:3000。'
   },
   panel: {
     viewAria: '侧边栏视图',
