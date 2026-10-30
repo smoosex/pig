@@ -40,6 +40,12 @@ async function fixture() {
       return snapshot
     },
     setAutomatic: async (automatic) => ({ ...snapshot, mood: { ...snapshot.mood, automatic } }),
+    observerUsage: async (range) => ({
+      range, models: [],
+      totals: { requests: 0, measured: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: 0, durationMs: 0, estimatedInput: 0 },
+      outcomes: { changed: 0, unchanged: 0, invalid: 0, error: 0, timeout: 0, aborted: 0 },
+    }),
+    clearObserverUsage: async () => {},
     onChanged: (listener) => { changed = listener; return () => { changed = undefined } }
   }
   Object.assign(window, { api: { persona } })

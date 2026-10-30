@@ -9,6 +9,7 @@ import { personaDir } from './storage'
 import { completedMoodRounds } from './conversation'
 import { MoodObserver } from './observer'
 import { onPersonaControlsChanged } from './controls'
+import { appendObserverUsage } from './usage'
 
 function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
   const previous = ctx.sessionManager.buildSessionProjection().messages.findLast(
@@ -75,6 +76,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
       observerKey = key
       observerRevision = options.controlsRevision
       const generation = epoch
+      const sessionId = ctx.sessionManager.getSessionId()
       observer = new MoodObserver(async (result, roundIds) => {
         if (!live || generation !== epoch || !context) return
         const currentIds = new Set(rounds(context).map(round => round.id))
@@ -91,7 +93,13 @@ export default function personaExtension(pi: ExtensionAPI): void {
       }, () => {
         if (live && generation === epoch) console.warn('[Persona] Background mood observation failed; main task is unaffected.')
       },
-      ids => { for (const id of ids) baseline.add(id) })
+      ids => { for (const id of ids) baseline.add(id) },
+      // Usage is analytics only: a failed write never affects mood or retries the batch.
+      ({ usage, ...record }) => void appendObserverUsage({
+        v: 1, at: Date.now(), sessionId, ...record,
+        usage: usage ? { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite, reasoning: usage.reasoning ?? 0 } : null,
+        cost: usage ? usage.cost.total : null,
+      }).catch(error => console.warn('[Persona] Could not record mood observer usage.', error)))
     }
     const fresh = rounds(ctx).filter(round => !baseline.has(round.id))
     for (const round of fresh) submitted.add(round.id)

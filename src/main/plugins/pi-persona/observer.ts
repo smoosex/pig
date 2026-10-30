@@ -1,6 +1,6 @@
 /* Per-session, cancellable observation queue. Only plain completed rounds enter this worker;
  * observations are untrusted state estimates, never prompt/style instructions. */
-import { clampThinkingLevel, type Context, type Model } from '@earendil-works/pi-ai'
+import { clampThinkingLevel, type Context, type Model, type Usage } from '@earendil-works/pi-ai'
 import type { ThinkingLevel } from '../../../shared/api'
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../observational-memory/agents/worker-stream'
@@ -20,6 +20,25 @@ export interface MoodObserverArgs {
   /** Stable SOUL text, cropped here; identical across calls so it stays in the cached prefix. */
   persona?: string
   signal?: AbortSignal
+}
+
+/** One sent request; usage is absent when it was abandoned before the provider reported it. */
+export interface MoodObserverUsage {
+  provider: string
+  modelId: string
+  inherited: boolean
+  thinking: ThinkingLevel
+  rounds: { fresh: number; background: number }
+  estimatedInput: number
+  usage?: Usage
+  durationMs: number
+  outcome: 'changed' | 'unchanged' | 'invalid' | 'error' | 'timeout' | 'aborted'
+}
+/** Filled by runMoodObserver: `sent` once the provider is called, `usage` once it reports. */
+export interface MoodObserverMeter { sent?: boolean; usage?: Usage; stopReason?: string }
+
+class MoodObserverTimeout extends Error {
+  constructor() { super('Mood observation timed out') }
 }
 
 const INTERVAL = 60_000
@@ -94,20 +113,20 @@ export function parseMoodObservation(text: string): (MoodObservation & { changed
 }
 
 /** One request, no tools, no agent loop, no fallback. Errors never include response text. */
-export async function runMoodObserver(args: MoodObserverArgs, context: Context): Promise<MoodObservation | null> {
+export async function runMoodObserver(args: MoodObserverArgs, context: Context, meter: MoodObserverMeter = {}): Promise<MoodObservation | null> {
   const signal = args.signal
   signal?.throwIfAborted()
-  if (!signal) return requestObservation(args, context)
+  if (!signal) return requestObservation(args, context, meter)
   let cancel!: () => void
   const aborted = new Promise<never>((_resolve, reject) => {
     cancel = () => reject(signal.reason ?? new Error('Mood observation aborted'))
     signal.addEventListener('abort', cancel, { once: true })
   })
-  try { return await Promise.race([requestObservation(args, context), aborted]) }
+  try { return await Promise.race([requestObservation(args, context, meter), aborted]) }
   finally { signal.removeEventListener('abort', cancel) }
 }
 
-async function requestObservation(args: MoodObserverArgs, context: Context): Promise<MoodObservation | null> {
+async function requestObservation(args: MoodObserverArgs, context: Context, meter: MoodObserverMeter): Promise<MoodObservation | null> {
   args.signal?.throwIfAborted()
   const model = selectModel(args)
   const auth = await args.modelRegistry.getApiKeyAndHeaders(model)
@@ -115,6 +134,7 @@ async function requestObservation(args: MoodObserverArgs, context: Context): Pro
   if (!auth.ok) throw new Error('Mood observer authentication failed')
   const thinking = observerThinking(args, model)
   const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model
+  meter.sent = true
   const stream = resolveWorkerStreamSimple(requestModel, args.modelRegistry)(requestModel, context, {
     apiKey: auth.apiKey, headers: auth.headers, env: auth.env,
     signal: args.signal, maxTokens: outputTokens(args, model), cacheRetention: 'short',
@@ -123,6 +143,8 @@ async function requestObservation(args: MoodObserverArgs, context: Context): Pro
   // Draining is required even when a provider exposes result() immediately.
   for await (const _event of stream) { args.signal?.throwIfAborted() }
   const result = await stream.result()
+  meter.usage = result.usage
+  meter.stopReason = result.stopReason
   args.signal?.throwIfAborted()
   if (result.stopReason !== 'stop' || result.content.some(block => block.type === 'toolCall')) {
     throw new Error(`Mood observer did not complete (${result.stopReason})`)
@@ -149,6 +171,7 @@ export class MoodObserver {
     private readonly onObservation: (result: MoodObservation, roundIds: readonly string[]) => Promise<void>,
     private readonly onError?: (error: unknown) => void,
     private readonly onBatchComplete?: (roundIds: readonly string[]) => void,
+    private readonly onUsage?: (usage: MoodObserverUsage) => void,
   ) {}
 
   /** Accepts either a full projection or a delta. Immediate runs reject to the caller;
@@ -197,7 +220,7 @@ export class MoodObserver {
     const args = this.args
     const signal = args.signal ? AbortSignal.any([args.signal, controller.signal]) : controller.signal
     this.lastStarted = Date.now()
-    const timeout = setTimeout(() => controller.abort(new Error('Mood observation timed out')), 30_000)
+    const timeout = setTimeout(() => controller.abort(new MoodObserverTimeout()), 30_000)
     timeout.unref?.()
     const task = this.run({ ...args, signal }, epoch)
     this.flight = task
@@ -257,7 +280,23 @@ export class MoodObserver {
         ],
       }
       const ids = fresh.map(round => round.id)
-      const observation = await runMoodObserver(args, context)
+      const meter: MoodObserverMeter = {}
+      const started = Date.now()
+      const report = (outcome: MoodObserverUsage['outcome']) => {
+        if (!meter.sent) return
+        this.onUsage?.({
+          provider: model.provider, modelId: model.id, inherited: !args.provider, thinking: observerThinking(args, model),
+          rounds: { fresh: fresh.length, background: background.length },
+          estimatedInput: inputSize(system, rounds, fresh), usage: meter.usage, durationMs: Date.now() - started, outcome,
+        })
+      }
+      let observation: MoodObservation | null
+      try { observation = await runMoodObserver(args, context, meter) } catch (error) {
+        report(args.signal?.aborted ? (args.signal.reason instanceof MoodObserverTimeout ? 'timeout' : 'aborted')
+          : meter.stopReason === undefined || meter.stopReason === 'error' ? 'error' : 'invalid')
+        throw error
+      }
+      report(observation ? 'changed' : 'unchanged')
       if (epoch !== this.epoch || this.disposed) return
       args.signal?.throwIfAborted()
       if (observation) await this.onObservation(observation, ids)

@@ -38,12 +38,44 @@ export interface PersonaSnapshot {
     history: PersonaMoodHistory[]
   }
 }
+export type PersonaObserverUsageRange = 7 | 30 | 'all'
+export const PERSONA_OBSERVER_OUTCOMES = ['changed', 'unchanged', 'invalid', 'error', 'timeout', 'aborted'] as const
+export type PersonaObserverOutcome = typeof PERSONA_OBSERVER_OUTCOMES[number]
+export interface PersonaObserverUsageTotals {
+  requests: number
+  /** Requests whose provider reported usage; token and cost sums cover only these. */
+  measured: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  reasoning: number
+  cost: number
+  durationMs: number
+  /** The observer's conservative UTF-8 byte budget estimate, summed over measured requests. */
+  estimatedInput: number
+}
+export interface PersonaObserverUsageModel extends PersonaObserverUsageTotals {
+  provider: string
+  modelId: string
+  /** Conversation model rather than a configured observer model. */
+  inherited: boolean
+  thinking: ThinkingLevel
+}
+export interface PersonaObserverUsageSummary {
+  range: PersonaObserverUsageRange
+  totals: PersonaObserverUsageTotals
+  models: PersonaObserverUsageModel[]
+  outcomes: Record<PersonaObserverOutcome, number>
+}
 export interface PersonaApi {
   get(): Promise<PersonaSnapshot>
   saveFile(document: PersonaDocument): Promise<PersonaSnapshot>
   setMood(values: PersonaMoodValues): Promise<PersonaSnapshot>
   setObserver(settings: PersonaObserverSettings): Promise<PersonaSnapshot>
   setAutomatic(enabled: boolean): Promise<PersonaSnapshot>
+  observerUsage(range: PersonaObserverUsageRange): Promise<PersonaObserverUsageSummary>
+  clearObserverUsage(): Promise<void>
   /** Any persona file, mood or control write, from the settings page or a conversation. */
   onChanged(listener: () => void): () => void
 }

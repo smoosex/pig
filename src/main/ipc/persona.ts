@@ -7,7 +7,8 @@ import {
   getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
 } from '../plugins/pi-persona/service'
 import { onPersonaControlsChanged } from '../plugins/pi-persona/controls'
-import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings } from '../../shared/persona'
+import { clearObserverUsage, summarizeObserverUsage } from '../plugins/pi-persona/usage'
+import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings, PersonaObserverUsageRange } from '../../shared/persona'
 
 function assertUi(event: IpcMainInvokeEvent): void {
   assertBrowserSender(event, windowForEvent(event))
@@ -41,5 +42,13 @@ export function registerPersonaIpc(): void {
   ipcMain.handle('persona:set-automatic', (event, enabled: boolean) => {
     assertUi(event)
     return setPersonaAutomatic(enabled)
+  })
+  ipcMain.handle('persona:observer-usage', (event, range: PersonaObserverUsageRange) => {
+    assertUi(event)
+    return summarizeObserverUsage(range)
+  })
+  ipcMain.handle('persona:clear-observer-usage', (event) => {
+    assertUi(event)
+    return clearObserverUsage()
   })
 }

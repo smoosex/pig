@@ -66,6 +66,8 @@ const api: SessionApi = {
     setMood: (values) => ipcRenderer.invoke('persona:set-mood', values),
     setObserver: (settings) => ipcRenderer.invoke('persona:set-observer', settings),
     setAutomatic: (enabled) => ipcRenderer.invoke('persona:set-automatic', enabled),
+    observerUsage: (range) => ipcRenderer.invoke('persona:observer-usage', range),
+    clearObserverUsage: () => ipcRenderer.invoke('persona:clear-observer-usage'),
     onChanged: (listener) => {
       const handler = () => listener()
       ipcRenderer.on('persona:changed', handler)

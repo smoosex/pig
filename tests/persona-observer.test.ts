@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { cleanObserverText, MoodObserver, parseMoodObservation, runMoodObserver, type MoodObserverArgs } from '../src/main/plugins/pi-persona/observer'
+import { cleanObserverText, MoodObserver, parseMoodObservation, runMoodObserver, type MoodObserverArgs, type MoodObserverUsage } from '../src/main/plugins/pi-persona/observer'
 
 const model: Model<'openai-responses'> = {
   id: 'fixture', provider: 'fixture', name: 'Fixture', api: 'openai-responses', baseUrl: 'https://unused.invalid',
@@ -213,4 +213,28 @@ test('bounded windows never omit queued new rounds', async () => {
   }
   await worker.observe(bulky(4)); for (let i = 0; i < 4; i++) await advance(60000)
   expect(f.calls.flatMap(call => JSON.parse(String(call.context.messages.at(-1)?.content)).newRoundIds)).toEqual(['1', '2', '3', '4', '5', '6'])
+})
+
+test('every sent request reports usage and outcome; requests never sent are not reported', async () => {
+  const advance = clock(); const f = fixture(); f.hold()
+  const usage: MoodObserverUsage[] = []
+  const worker = new MoodObserver(async () => {}, () => {}, undefined, record => { usage.push(record) }); observers.push(worker)
+  const first = worker.observe(f.args()); await advance(0)
+  const reply = message(JSON.stringify(valid))
+  reply.usage = { ...reply.usage, input: 10, output: 5, cacheRead: 90, cacheWrite: 0, reasoning: 2, totalTokens: 105 }
+  f.streams[0]!.end(reply); await first
+  expect(usage[0]).toMatchObject({ provider: 'fixture', modelId: 'fixture', inherited: true, thinking: 'off', outcome: 'changed',
+    rounds: { fresh: 3, background: 0 }, usage: { input: 10, cacheRead: 90, reasoning: 2 } })
+  expect(usage[0]!.estimatedInput).toBeGreaterThan(0)
+
+  await worker.observe(f.args(4, 3)); await advance(60000)
+  f.streams[1]!.end(message('not json')); await advance(0)
+  expect(usage[1]).toMatchObject({ outcome: 'invalid', rounds: { fresh: 3, background: 3 } })
+
+  await worker.observe(f.args(7, 3)); await advance(60000); await advance(30000)
+  expect(usage[2]).toMatchObject({ outcome: 'timeout', usage: undefined, durationMs: 30000 })
+
+  f.auth.mockImplementation(async () => ({ ok: false }) as never)
+  await worker.observe(f.args(10, 3)); await advance(60000)
+  expect(usage).toHaveLength(3)
 })

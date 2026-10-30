@@ -6,6 +6,7 @@ import { useT } from '../../hooks/useT'
 import { api } from '../../ipc/api'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
+import { ObserverUsageRow } from './ObserverUsage'
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert'
 import { Button } from '../ui/button'
 import { Field, FieldGroup, FieldLabel } from '../ui/field'
@@ -188,6 +189,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
                 }} />
             </fieldset>
           </SettingsRow>
+          <ObserverUsageRow />
         </SettingsCard>
         <Tabs value={file} onValueChange={(value) => setFile(value as PersonaFileName)}>
           <TabsList>{PERSONA_FILES.map((name) => <TabsTrigger key={name} value={name}>{name}{drafts[name]?.content !== drafts[name]?.saved ? ' *' : ''}</TabsTrigger>)}</TabsList>
