@@ -35,7 +35,15 @@ async function fixture(): Promise<void> {
     mood: { pleasantness: 0.15, activation: 0.35, energy: 0.75, feeling: '', description: '', automatic: true, observer: { enabled: true }, history: [] }
   }
   Object.assign(window, { api: {
-    persona: { get: async () => persona, onChanged: () => () => {} },
+    persona: {
+      get: async () => persona,
+      observerUsage: async (range: number) => ({
+        range, models: [],
+        totals: { requests: 0, measured: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cost: 0, durationMs: 0, estimatedInput: 0 },
+        outcomes: { changed: 0, unchanged: 0, invalid: 0, error: 0, timeout: 0, aborted: 0 }
+      }),
+      onChanged: () => () => {}
+    },
     listPlugins: async () => plugins,
     setPluginScopes: async (id: string, scopes: PluginScope[]) => {
       if (rejectScopeChange) throw new Error('Scope save failed')

@@ -133,7 +133,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.terminal.onEvent(() => {})()
 
   assert.deepEqual(invokes, [
-    { channel: 'project:browse-directories', args: ['/home', true] },
+    { channel: 'project:browse-directories', args: ['/home', true, undefined] },
     { channel: 'project:search-directories', args: ['/home', 'web', false] },
     { channel: 'project:cancel-directory-search', args: [] },
     { channel: 'session:open-project', args: ['/home/project'] },
