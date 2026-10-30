@@ -1,6 +1,7 @@
 import { isNotARepoError } from '../git/exec'
 import { runGit } from '../git/run'
 import { baseName } from '../../shared/paths'
+import { compareFileNames } from '../../shared/file-order'
 import { readDirectory } from './tree'
 import type { FileSuggestion } from '../../shared/api'
 
@@ -80,7 +81,7 @@ async function suggestTopLevel(root: string, query: string): Promise<FileSuggest
     .filter((entry) => entry.name.toLowerCase().startsWith(q))
     .sort((a, b) =>
       (a.kind === 'directory' ? 0 : 1) - (b.kind === 'directory' ? 0 : 1) ||
-      a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' })
+      compareFileNames(a.name, b.name)
     )
     .slice(0, SUGGESTION_LIMIT)
     .map((entry) => ({

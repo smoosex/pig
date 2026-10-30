@@ -1,18 +1,20 @@
 /**
  * The change list inside the right column: what differs from HEAD right now, grouped the way git stages
- * it, with a flat 全部 view on top. Clicking a row opens the worktree's 全部变更 tab and reveals that file
+ * it, with a flat 全部 view on top; either can be drawn as a directory tree. Clicking a row opens the worktree's 全部变更 tab and reveals that file
  * there, so the column stays a list and the reading happens in the conversation area. Nothing here
  * mutates git, it only reads.
  */
 import { useLayoutEffect, useRef, useState } from 'react'
 import { scopeLabel } from '../../stores/diff'
 import { useT } from '../../hooks/useT'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Folder, FolderOpen, ListTree } from 'lucide-react'
+import { Button } from '../ui/button'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import { useDiffStore } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { sidebarRowSurface, sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
+import { changeTreeRows, type ChangeTreeRow } from './change-tree'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { FileTypeIcon } from '../files/FileTypeIcon'
@@ -31,6 +33,9 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   const visiblePath = useDiffStore((s) => s.visible[cwd])
   const [flat, setFlat] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [tree, setTree] = useState(false)
+  // Keyed by scope and path, so the same directory folds separately under 已暂存 and 未暂存.
+  const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   const diff = state?.diff
@@ -68,20 +73,63 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
       area.removeEventListener('scroll', updateClips)
       observer.disconnect()
     }
-  }, [collapsed, cwd, flat, state])
+  }, [collapsed, cwd, flat, state, tree, treeCollapsed])
 
   function rows(entries: DiffFileEntry[], scope: DiffScope, indented: boolean) {
     // The left column's rhythm: 2px between rows, inset 4px so the hover background can round off.
     return (
       <div className="flex flex-col gap-0.5 px-1">
-        {entries.map((entry) => row(entry, scope, indented))}
+        {tree
+          ? changeTreeRows(entries, (path) => treeCollapsed[`${scope}\u0000${path}`] === true).map((item) =>
+              treeRow(item, scope, indented)
+            )
+          : entries.map((entry) => row(entry, scope, indented))}
       </div>
+    )
+  }
+
+  // A tree row carries its indent itself, like the file column's, so the hover background spans the column.
+  // The base matches the list rows: under the group label's text when grouped, under its chevron when flat.
+  function treeRow(item: ChangeTreeRow, scope: DiffScope, indented: boolean) {
+    const indent = { paddingInlineStart: `${(indented ? 24 : 4) + item.depth * 12}px` }
+    if (item.kind === 'file') return row(item.entry, scope, indented, indent)
+    const key = `${scope}\u0000${item.path}`
+    const counts = item.entries.every((entry) => entry.additions !== null) ? sumCounts(item.entries) : null
+    return (
+      <button
+        key={`directory\u0000${item.path}`}
+        type="button"
+        title={item.path}
+        aria-expanded={item.open}
+        data-sidebar-hover-row
+        style={indent}
+        onClick={() => setTreeCollapsed((current) => ({ ...current, [key]: item.open }))}
+        className={cn(
+          'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',
+          sidebarRowSurface(false)
+        )}
+      >
+        <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', item.open && 'rotate-90')} />
+        {item.open ? (
+          <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+        {counts ? (
+          <>
+            <span className="shrink-0 tabular-nums text-success">+{counts.additions}</span>
+            <span className="shrink-0 tabular-nums text-destructive">-{counts.deletions}</span>
+          </>
+        ) : null}
+      </button>
     )
   }
 
   // The click carries the row's own group, so the canvas opens under the group the file was read in —
   // and the tab's title says which group that is.
-  function row(entry: DiffFileEntry, scope: DiffScope, indented: boolean) {
+  // In the tree the directory is the row above, so a tree row passes its indent and drops the path.
+  function row(entry: DiffFileEntry, scope: DiffScope, indented: boolean, indent?: React.CSSProperties) {
     const meta = STATUS_META[entry.status]
     const { name, directory } = splitPath(entry.path)
     const isActive = changesActive && visiblePath === entry.path
@@ -92,6 +140,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         title={entry.path}
         data-sidebar-hover-row
         data-sidebar-selected={isActive || undefined}
+        style={indent}
         // A deleted file has nothing left on disk for the mention to point at.
         {...(entry.status === 'deleted' ? {} : fileDragProps({ cwd, path: entry.path, isDirectory: false }))}
         onClick={() => void openChangesTab(cwd, entry.path, scope)}
@@ -104,12 +153,22 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           isActive && 'text-sidebar-accent-foreground'
         )}
       >
-        <span className={cn('w-2.5 shrink-0 font-medium', meta.className)} aria-label={t(meta.labelKey)}>
+        {/* As wide as a directory's chevron in the tree, so a file's icon lines up under its sibling folders'. */}
+        <span
+          className={cn('shrink-0 font-medium', indent ? 'w-3.5 text-center' : 'w-2.5', meta.className)}
+          aria-label={t(meta.labelKey)}
+        >
           {meta.letter}
         </span>
         <FileTypeIcon path={entry.path} className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="max-w-1/2 shrink-0 truncate">{name}</span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">{directory}</span>
+        {indent ? (
+          <span className="min-w-0 flex-1 truncate">{name}</span>
+        ) : (
+          <>
+            <span className="max-w-1/2 shrink-0 truncate">{name}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{directory}</span>
+          </>
+        )}
         {entry.additions === null ? null : (
           <span className="shrink-0 tabular-nums text-success">+{entry.additions}</span>
         )}
@@ -190,6 +249,19 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
             {t('diff.flat')}
           </ToggleGroupItem>
         </ToggleGroup>
+        <span className="flex-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className={cn('text-muted-foreground', sidebarSurfaceToggle)}
+          aria-pressed={tree}
+          aria-label={t('diff.treeView')}
+          title={t('diff.treeView')}
+          onClick={() => setTree(!tree)}
+        >
+          <ListTree />
+        </Button>
       </footer>
     </div>
   )

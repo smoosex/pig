@@ -298,6 +298,7 @@ export const zh = {
     groupsAria: '变更列表分组方式',
     group: '分组',
     flat: '全部',
+    treeView: '以树状显示',
     statusAdded: '新增',
     statusModified: '修改',
     statusDeleted: '删除',

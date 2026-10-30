@@ -301,6 +301,7 @@ export const en: Messages = {
     groupsAria: 'How the change list is grouped',
     group: 'Grouped',
     flat: 'Flat',
+    treeView: 'View as tree',
     statusAdded: 'Added',
     statusModified: 'Modified',
     statusDeleted: 'Deleted',

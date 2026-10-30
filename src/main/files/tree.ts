@@ -6,6 +6,7 @@
  */
 import { readdir } from 'node:fs/promises'
 import type { DirectoryListing, FileTreeEntry } from '../../shared/api'
+import { compareFileNames } from '../../shared/file-order'
 import { GitExecError, isNotARepoError } from '../git/exec'
 import { execGit } from '../git/exec'
 import { resolveWorktreePath } from './paths'
@@ -54,7 +55,7 @@ export async function readDirectory(cwd: string, path: string): Promise<Director
 
 /** Directories first, then everything else, each by name — the order every file tree uses. */
 function byName(left: FileTreeEntry, right: FileTreeEntry): number {
-  return left.name.localeCompare(right.name, 'en', { numeric: true, sensitivity: 'base' })
+  return compareFileNames(left.name, right.name)
 }
 
 /**
