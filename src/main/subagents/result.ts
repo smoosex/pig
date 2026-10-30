@@ -25,6 +25,7 @@ export function formatReport(info: SubagentInfo): string {
   lines.push(`turns: ${info.turns} · duration: ${duration(elapsed)} · tokens: ${tokens(sent)} in / ${tokens(info.usage?.output ?? 0)} out`)
   if (info.editedFiles.length) lines.push(`edited: ${info.editedFiles.join(', ')}`)
   if (info.error) lines.push(`error: ${info.error}`)
+  if (info.status !== 'completed') lines.push('The task may be incomplete. Inspect the result and decide independently whether to resume with subagent_restart; do not retry automatically.')
 
   const output = info.output?.trim()
   if (output) {

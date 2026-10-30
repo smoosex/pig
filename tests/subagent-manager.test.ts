@@ -55,7 +55,7 @@ function harness(settings: Partial<SubagentSettings> = {}) {
     coalesceMs: 5
   })
   manager.attach('parent', (delivery) => deliveries.push(delivery))
-  return { manager, runs, saved, deliveries }
+  return { manager, runs, saved, deliveries, store }
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -70,6 +70,123 @@ function status(manager: Manager): Record<string, string> {
 }
 
 describe('subagent manager', () => {
+  test('explicit restart preserves identity and resumes only an unfinished transcript', async () => {
+    const { manager, runs, deliveries } = harness({ maxTurns: 1 })
+    const spawned = await manager.spawn(request('resume', true))
+    await tick()
+    runs[0].emit({ type: 'turn_start' })
+    runs[0].finish({ error: 'failed' })
+    await tick()
+    const info = manager.snapshot('parent')[0]
+    const args = { parentSessionId: 'parent', id: spawned.id, cwd: '/repo', instruction: 'verify changes' }
+    await expect(manager.restart(args)).rejects.toThrow('transcript is unavailable')
+    await expect(manager.restart({ ...args, parentSessionId: 'other' })).rejects.toThrow('not found')
+    info.sessionFile = import.meta.path
+    const [first, second] = await Promise.allSettled([manager.restart(args), manager.restart(args)])
+    expect(first.status).toBe('fulfilled')
+    expect(second.status).toBe('rejected')
+    await tick()
+    expect(runs[1].spec.resumeFile).toBe(import.meta.path)
+    expect(runs[1].spec.prompt).toContain('verify changes')
+    runs[1].emit({ type: 'turn_start' })
+    expect(runs[1].aborted).toBe(false)
+    runs[1].finish()
+    await wait(15)
+    expect(manager.snapshot('parent')[0]).toMatchObject({ id: spawned.id, status: 'completed' })
+    expect(deliveries.some((delivery) => delivery.text.includes('completed'))).toBe(true)
+    expect(deliveries.some((delivery) => delivery.text.includes('failed'))).toBe(false)
+    await expect(manager.restart(args)).rejects.toThrow('Completed')
+    await manager.closeParent('parent')
+  })
+
+  test('restart cancellation before queueing rejects, but cancellation after acknowledgement does not stop the child', async () => {
+    const { manager, runs } = harness()
+    const spawned = await manager.spawn(request('cancel-restart', true))
+    await tick()
+    runs[0].finish({ error: 'failed' })
+    await tick()
+    manager.snapshot('parent')[0].sessionFile = import.meta.path
+    const args = { parentSessionId: 'parent', id: spawned.id, cwd: '/repo' }
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(manager.restart({ ...args, signal: cancelled.signal })).rejects.toThrow()
+    expect(manager.snapshot('parent')[0].status).toBe('failed')
+    const controller = new AbortController()
+    await manager.restart({ ...args, signal: controller.signal })
+    controller.abort()
+    await tick()
+    expect(runs[1].aborted).toBe(false)
+    runs[1].finish()
+    await manager.closeParent('parent')
+  })
+
+  test.each(['cancel', 'failure', 'close'] as const)('restart is not scheduled while saving: %s', async (scenario) => {
+    const { manager, runs, store, saved } = harness({ maxConcurrent: 1 })
+    const spawned = await manager.spawn(request('restart', true))
+    await tick()
+    runs[0].finish({ error: 'failed' })
+    await tick()
+    const old = manager.snapshot('parent')[0]
+    old.sessionFile = import.meta.path
+    old.fallbackReason = 'old fallback'
+    old.model = { provider: 'old', id: 'old' }
+    await manager.spawn(request('other', true))
+    await tick()
+    const save = store.save
+    let release!: () => void
+    let entered!: () => void
+    const enteredSave = new Promise<void>((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let block = true
+    store.save = async (id, items) => {
+      if (block && items.some((item) => item.id === spawned.id && item.status === 'queued')) {
+        block = false
+        entered()
+        await gate
+        if (scenario === 'failure') throw new Error('save failed')
+      }
+      await save(id, items)
+    }
+    const controller = new AbortController()
+    const restarting = manager.restart({ parentSessionId: 'parent', id: spawned.id, cwd: '/repo', signal: controller.signal,
+      parentModel: { provider: 'new', id: 'new' } })
+    const result = restarting.then(() => null, (error: unknown) => error)
+    await enteredSave
+    expect(manager.snapshot('parent').find((item) => item.id === spawned.id)).toMatchObject({ model: { provider: 'new', id: 'new' }, fallbackReason: undefined })
+    runs[1].finish()
+    await tick()
+    expect(runs).toHaveLength(2)
+    if (scenario === 'cancel') controller.abort()
+    const closing = scenario === 'close' ? manager.closeParent('parent') : undefined
+    release()
+    expect(await result).toBeInstanceOf(Error)
+    if (closing) await closing
+    else {
+      expect(manager.snapshot('parent').find((item) => item.id === spawned.id)).toMatchObject({ status: 'failed', fallbackReason: 'old fallback', model: { provider: 'old', id: 'old' } })
+      expect(saved.get('parent')?.find((item) => item.id === spawned.id)?.status).toBe('failed')
+      await manager.closeParent('parent')
+    }
+    expect(runs).toHaveLength(2)
+  })
+
+  test('restart updates model and clears stale fallback on successful commit', async () => {
+    const { manager, runs } = harness()
+    const spawned = await manager.spawn(request('model', true))
+    await tick()
+    runs[0].finish({ error: 'failed' })
+    await tick()
+    const old = manager.snapshot('parent')[0]
+    old.sessionFile = import.meta.path
+    old.fallbackReason = 'old fallback'
+    old.model = { provider: 'old', id: 'old' }
+    await manager.restart({ parentSessionId: 'parent', id: spawned.id, cwd: '/repo', parentModel: { provider: 'new', id: 'new' } })
+    await tick()
+    expect(manager.snapshot('parent')[0]).toMatchObject({ model: { provider: 'new', id: 'new' }, fallbackReason: undefined })
+    expect(runs[1].spec.model).toEqual({ provider: 'new', id: 'new' })
+    runs[1].finish()
+    await manager.closeParent('parent')
+  })
+
   test('parallel spawns persist distinct animals and balanced colors within each user run', async () => {
     const { manager, saved } = harness({ maxConcurrent: 1 })
     try {

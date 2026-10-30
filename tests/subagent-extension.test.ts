@@ -28,6 +28,7 @@ test('the jiti-loaded spawn tool reaches the host registered by main', async () 
         requests.push(request)
         return { id: 'abcd1234', text: 'report', isError: false }
       },
+      restart: async () => ({ id: 'abcd1234', text: 'resuming', isError: false }),
       attach: () => {},
       detach: () => {}
     })
@@ -55,6 +56,9 @@ test('the jiti-loaded spawn tool reaches the host registered by main', async () 
     await spawn.execute('call-2', { title: 'Bg', prompt: 'Later', background: true }, controller.signal, undefined, ctx as never)
     expect(requests[1].signal).toBeUndefined()
     expect(requests[1].parentTurnId).toBe('current-user')
+    const restart = extension.tools.get('subagent_restart')!.definition
+    const resumed = await restart.execute('call-3', { id: 'abcd1234' }, controller.signal, undefined, ctx as never)
+    expect(resumed.content).toEqual([{ type: 'text', text: 'resuming' }])
     registerSubagentHost(undefined)
   } finally {
     if (previousPig === undefined) delete process.env.PIG_DIR

@@ -36,8 +36,19 @@ export interface SubagentDelivery {
   details: unknown
 }
 
+export interface RestartRequest {
+  signal?: AbortSignal
+  parentSessionId: string
+  id: string
+  cwd: string
+  instruction?: string
+  parentModel?: { provider: string; id: string }
+  parentThinkingLevel?: ThinkingLevel
+}
+
 export interface SubagentHost {
   spawn(request: SpawnRequest): Promise<SpawnOutcome>
+  restart(request: RestartRequest): Promise<SpawnOutcome>
   /** The extension instance of a live parent registers how results reach that session. */
   attach(parentSessionId: string, deliver: (delivery: SubagentDelivery) => void): void
   detach(parentSessionId: string, deliver: (delivery: SubagentDelivery) => void): void

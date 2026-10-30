@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { SubagentInfo, SubagentSettings, SubagentStatus, SubagentTurn, ThinkingLevel, TurnUsage } from '../../shared/api'
 import { addUsage, type UsageCounts } from '../../shared/turn-usage'
-import type { SpawnOutcome, SpawnRequest, SubagentDelivery, SubagentHost } from '../plugins/pig-subagent-host'
+import type { RestartRequest, SpawnOutcome, SpawnRequest, SubagentDelivery, SubagentHost } from '../plugins/pig-subagent-host'
 import { backgroundAck, combineReports, formatReport } from './result'
 import { chooseSubagentAppearance } from './appearance'
 import type { ModelChoice, RunEvent, RunSpec, SubagentRun, SubagentRunner } from './runner'
@@ -28,6 +28,9 @@ interface Entry {
   /** Kept after the run is disposed, until the transcript file can take over. */
   messages?: unknown[]
   abortReason?: SubagentStatus
+  restarting?: boolean
+  preparing?: boolean
+  initialTurns?: number
   timer?: ReturnType<typeof setTimeout>
   onProgress?: (activity: string) => void
   finished: Promise<void>
@@ -102,6 +105,17 @@ function withCurrentTurn(turns: SubagentTurn[], change: (turn: SubagentTurn) => 
   const next = turns.length ? [...turns] : [{ tools: [], thinking: false }]
   next[next.length - 1] = change(next[next.length - 1])
   return next
+}
+
+async function duringPreparation<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work
+  signal.throwIfAborted()
+  let onAbort!: () => void
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try { return await Promise.race([work, aborted]) } finally { signal.removeEventListener('abort', onAbort) }
 }
 
 const TERMINAL = new Set<SubagentStatus>(['completed', 'failed', 'timeout', 'turn_limit', 'aborted', 'interrupted'])
@@ -215,6 +229,62 @@ export class SubagentManager implements SubagentHost {
     this.pump(request.parentSessionId)
     const position = this.queuedBackground(parent).indexOf(entry) + 1
     return { id, text: backgroundAck(entry.info, position), isError: false }
+  }
+
+  async restart(request: RestartRequest): Promise<SpawnOutcome> {
+    request.signal?.throwIfAborted()
+    const parent = await duringPreparation(this.parent(request.parentSessionId), request.signal)
+    request.signal?.throwIfAborted()
+    if (parent.closed) throw new Error('The parent session is closing')
+    const old = parent.entries.get(request.id)
+    if (!old) throw new Error(`Subagent not found in this session: ${request.id}`)
+    if (old.restarting || !isFinished(old.info.status)) throw new Error('Subagent is already running or restarting')
+    if (old.info.status === 'completed') throw new Error('Completed subagents cannot be restarted')
+    if (!old.info.sessionFile || !existsSync(old.info.sessionFile)) throw new Error('Cannot resume this subagent: its original transcript is unavailable')
+    old.restarting = true
+    try {
+      await duringPreparation(old.finished, request.signal)
+      const settings = await duringPreparation(this.deps.settings(), request.signal)
+      request.signal?.throwIfAborted()
+      const choice = await duringPreparation(this.deps.chooseModel(settings, { model: request.parentModel, thinkingLevel: request.parentThinkingLevel }), request.signal)
+      request.signal?.throwIfAborted()
+      if (parent.closed) throw new Error('The parent session is closing')
+      const lifetime = new AbortController()
+      let resolve!: () => void
+      const finished = new Promise<void>((done) => { resolve = done })
+      const entry: Entry = {
+        info: { ...old.info, background: true, status: 'queued', cleared: false, startedAt: undefined, endedAt: undefined, error: undefined, output: undefined, activity: undefined, maxTurns: settings.maxTurns,
+          model: choice.model ? { ...choice.model, ...(choice.thinkingLevel ? { thinkingLevel: choice.thinkingLevel } : {}) } : undefined,
+          fallbackReason: choice.fallbackReason }, 
+        spec: { id: old.info.id, parentSessionId: request.parentSessionId, title: old.info.title, cwd: request.cwd, sessionDir: this.deps.store.dir(request.parentSessionId), resumeFile: old.info.sessionFile,
+          prompt: `Continue the unfinished task. Inspect the transcript and check the effects of any interrupted operations before proceeding.${request.instruction?.trim() ? `\n\nAdditional instruction: ${request.instruction.trim()}` : ''}`,
+          model: choice.model, thinkingLevel: choice.thinkingLevel, signal: lifetime.signal },
+        initialTurns: old.info.turns, timeoutMinutes: settings.timeoutMinutes, lifetime, finished, resolve, preparing: true
+      }
+      parent.entries.set(request.id, entry)
+      try {
+        await this.persist(request.parentSessionId)
+        request.signal?.throwIfAborted()
+      } catch (error) {
+        parent.entries.set(request.id, old)
+        try { await this.persist(request.parentSessionId) } finally { resolve() }
+        throw error
+      }
+      entry.preparing = false
+      if (entry.abortReason || parent.closed) {
+        try { await this.finish(request.parentSessionId, entry) } catch (error) {
+          await this.failJob(request.parentSessionId, entry, error)
+          throw error
+        }
+        throw new Error(parent.closed ? 'The parent session is closing' : 'Subagent restart was aborted')
+      }
+      parent.pending = parent.pending.filter((item) => item.id !== request.id)
+      this.maxConcurrent = settings.maxConcurrent
+      this.pump(request.parentSessionId)
+      return { id: request.id, text: backgroundAck(entry.info, this.queuedBackground(parent).indexOf(entry) + 1), isError: false }
+    } finally {
+      old.restarting = false
+    }
   }
 
   attach(parentSessionId: string, deliver: (delivery: SubagentDelivery) => void): void {
@@ -352,7 +422,7 @@ export class SubagentManager implements SubagentHost {
 
   private queuedBackground(parent: Parent): Entry[] {
     return [...parent.entries.values()]
-      .filter((entry) => entry.info.background && entry.info.status === 'queued')
+      .filter((entry) => entry.info.background && entry.info.status === 'queued' && !entry.preparing)
       .sort((a, b) => a.info.createdAt - b.info.createdAt)
   }
 
@@ -434,7 +504,7 @@ export class SubagentManager implements SubagentHost {
   private onEvent(parentSessionId: string, entry: Entry, event: RunEvent): void {
     const info = entry.info
     if (event.type === 'turn_start') {
-      if (info.maxTurns > 0 && info.turns >= info.maxTurns) {
+      if (info.maxTurns > 0 && info.turns - (entry.initialTurns ?? 0) >= info.maxTurns) {
         this.abortEntry(parentSessionId, entry, 'turn_limit')
         return
       }
@@ -467,6 +537,7 @@ export class SubagentManager implements SubagentHost {
     if (isFinished(entry.info.status)) return
     entry.abortReason ??= reason
     entry.lifetime.abort(new Error(`Subagent ${entry.abortReason}`))
+    if (entry.preparing) return
     if (entry.info.status === 'queued') {
       void this.finish(parentSessionId, entry).catch((error) => this.failJob(parentSessionId, entry, error))
       return

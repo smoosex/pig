@@ -41,6 +41,19 @@ export default function subagentExtension(pi: ExtensionAPI) {
 		subagentHost()?.detach(ctx.sessionManager.getSessionId(), deliver);
 	});
 
+	pi.registerTool(defineTool({
+		name: "subagent_restart",
+		label: "Restart subagent",
+		description: "Explicitly resume an unfinished, ended subagent of this session from its original transcript in the background. Check the previous failure and decide whether resuming is appropriate; never retry automatically. The result arrives through the usual background notification.",
+		parameters: Type.Object({ id: Type.String({ description: "Subagent ID" }), instruction: Type.Optional(Type.String({ description: "Additional instruction for continuing" })) }),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const host = subagentHost();
+			if (!host) throw new Error("Subagents are unavailable in this host");
+			const outcome = await host.restart({ signal, parentSessionId: ctx.sessionManager.getSessionId(), id: params.id, cwd: ctx.cwd, instruction: params.instruction, parentModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined, parentThinkingLevel: ctx.thinkingLevel });
+			return { content: [{ type: "text", text: outcome.text }], details: { subagentId: outcome.id }, isError: outcome.isError };
+		},
+	}));
+
 	pi.registerTool(
 		defineTool({
 			name: "spawn",

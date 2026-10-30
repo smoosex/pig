@@ -16,6 +16,7 @@ import { SUBAGENT_SYSTEM_PROMPT } from '../plugins/pig-subagent/prompts'
 import { worktrees } from '../project-worktrees'
 import { sessionPermission } from '../permissions/store'
 import type { RunEvent, RunResult, RunSpec, SubagentRun, SubagentRunner } from './runner'
+import { openResumeSession } from './resume-session'
 
 type Content = { type: string; text?: string }
 type AssistantLike = {
@@ -52,7 +53,9 @@ export function createSdkRunner(approvalUI?: (spec: RunSpec) => Pick<ExtensionUI
     async start(spec: RunSpec, onEvent: (event: RunEvent) => void): Promise<SubagentRun> {
       spec.signal?.throwIfAborted()
       worktrees.assertAvailable(spec.cwd)
-      const sessionManager = SessionManager.create(spec.cwd, spec.sessionDir)
+      const sessionManager = spec.resumeFile
+        ? openResumeSession(spec.resumeFile, spec.sessionDir)
+        : SessionManager.create(spec.cwd, spec.sessionDir)
       const pluginPaths = subagentPluginPaths(await enabledPluginPaths(isChatCwd(spec.cwd) ? 'chat' : 'project'))
       spec.signal?.throwIfAborted()
       // Snapshot at launch: later parent edits must not mutate a running child's capabilities.
@@ -110,6 +113,8 @@ export function createSdkRunner(approvalUI?: (spec: RunSpec) => Pick<ExtensionUI
           await session.waitForIdle()
           const last = lastAssistant(session.messages)
           if (!aborted && last?.stopReason === 'error') return { error: last.errorMessage || 'The model request failed' }
+          if (!aborted && last?.stopReason === 'length') return { error: 'The model output was truncated by its length limit; the task may be incomplete.' }
+          if (!aborted && last?.stopReason === 'aborted') return { error: 'The model response was aborted; the task may be incomplete.' }
           return {}
         } catch (error) {
           return { error: error instanceof Error ? error.message : String(error) }

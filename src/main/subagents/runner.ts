@@ -13,6 +13,7 @@ export interface RunSpec {
   model?: { provider: string; id: string }
   thinkingLevel?: ThinkingLevel
   sessionDir: string
+  resumeFile?: string
 }
 
 export type RunEvent =

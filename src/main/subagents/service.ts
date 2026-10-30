@@ -69,6 +69,7 @@ export function startSubagents(): void {
   registerSubagentHost({
     // No new child files may be created until the startup sweep has finished.
     spawn: async (request) => { await ready; return manager.spawn(request) },
+    restart: async (request) => { await ready; return manager.restart(request) },
     attach: (id, deliver) => manager.attach(id, deliver),
     detach: (id, deliver) => manager.detach(id, deliver)
   })
