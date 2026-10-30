@@ -69,7 +69,7 @@ export function TurnFileChanges({ sessionId, turnId }: { sessionId: string; turn
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mb-4 rounded-xl border border-glass-card-border bg-glass-composer-background/60 shadow-glass-card-edge solid:border-border solid:bg-card solid:shadow-none">
-      <div className="group/row relative flex h-12 items-center gap-2.5 px-2.5 text-sm">
+      <div className="group/row relative flex h-12 items-center gap-2.5 px-2.5 text-xs">
         <CollapsibleTrigger asChild>
           <button type="button" aria-label={singleShown ?? title} title={singleShown ?? undefined} className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
         </CollapsibleTrigger>
@@ -136,7 +136,7 @@ function TurnFileRow({ file, cwd, expanded, details, onToggle }: {
   const shown = file.relativePath ?? file.path
   return (
     <li className="not-first:border-t not-first:border-glass-card-border/60 solid:not-first:border-border/60">
-      <div className="group/row relative flex h-11 items-center gap-2.5 rounded-lg px-1 text-sm hover:bg-foreground/5">
+      <div className="group/row relative flex h-11 items-center gap-2.5 rounded-lg px-1 text-xs hover:bg-foreground/5">
         <button type="button" aria-expanded={expanded} aria-label={shown} title={shown} onClick={onToggle} className="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
         <IconBox><FileTypeIcon path={shown} className="size-3.5" /></IconBox>
         <span className="pointer-events-none min-w-0 flex-1 truncate">{baseName(shown)}</span>
