@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import type { SubagentSettings, SubagentSettingsPatch, ThinkingLevel } from '../../shared/api'
 import { pigPath } from '../pig-dir'
 
-export const SUBAGENT_DEFAULTS: SubagentSettings = { maxConcurrent: 4, timeoutMinutes: 30, maxTurns: 50 }
+export const SUBAGENT_DEFAULTS: SubagentSettings = { maxConcurrent: 4, timeoutMinutes: 60, maxTurns: 100 }
 
 const THINKING: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 const settingsPath = () => pigPath('subagent-settings.json')
