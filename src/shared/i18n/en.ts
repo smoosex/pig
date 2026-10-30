@@ -874,12 +874,26 @@ export const en: Messages = {
     pastedText: 'Pasted text',
     imageReadFailed: 'An image could not be read; paste it again.'
   },
+  turnChanges: {
+    title: '{n} changed files',
+    tabTitle: 'Turn diff',
+    openDiff: 'Open diff',
+    openFile: 'Open file',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all',
+    loading: 'Loading…',
+    notOnBranch: 'This turn has no changes on the current branch',
+    operation: '{n}/{total} · {tool}',
+    unavailable: 'Diff unavailable: this change recorded no diff',
+    writeUnavailable: 'Diff unavailable: this write recorded no contents'
+  },
   fileMention: {
     loading: 'Loading…',
     missing: 'File not found',
     lines: '{n} lines',
     modified: 'Modified {time}',
-    copyPath: 'Copy path'
+    copyPath: 'Copy path',
+    edited: 'Edited in this chat'
   },
   retry: {
     requestWaiting: 'Request failed, retrying in {seconds}s (attempt {attempt}/{total})',

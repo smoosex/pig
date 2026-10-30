@@ -871,12 +871,26 @@ export const zh = {
     pastedText: '粘贴的文本',
     imageReadFailed: '有图片读取失败，请重新粘贴。'
   },
+  turnChanges: {
+    title: '{n} 个已更改文件',
+    tabTitle: '本轮差异',
+    openDiff: '打开差异',
+    openFile: '打开文件',
+    expandAll: '全部展开',
+    collapseAll: '全部收起',
+    loading: '读取中…',
+    notOnBranch: '当前分支上没有这一轮的修改',
+    operation: '第 {n}/{total} 次 · {tool}',
+    unavailable: '差异不可用：这次修改没有记录差异',
+    writeUnavailable: '差异不可用：这次写入没有记录内容'
+  },
   fileMention: {
     loading: '读取中…',
     missing: '文件不存在',
     lines: '{n} 行',
     modified: '修改于 {time}',
-    copyPath: '复制路径'
+    copyPath: '复制路径',
+    edited: '已在此聊天中编辑'
   },
   retry: {
     requestWaiting: '请求失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',

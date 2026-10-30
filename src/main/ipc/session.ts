@@ -29,7 +29,7 @@ import {
   type SessionThinkingLevel,
   type SessionTreeView
 } from '../pi/session-registry'
-import { getDisplayTurns, getTurnMessages, getTurnWindow } from '../pi/session-display'
+import { getDisplayTurns, getSessionFileChanges, getTurnFileChanges, getTurnMessages, getTurnWindow } from '../pi/session-display'
 import { removeSession } from '../pi/session-removal'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { forgetOpenProjectSession, rememberOpenProjectSession } from '../open-project-sessions'
@@ -193,6 +193,16 @@ export function registerSessionIpc(): void {
   ipcMain.handle('session:get-turn-messages', async (_event, sessionId: string, turnId: string) => {
     if (!sessionId || !turnId) throw new Error('Session id and turn id are required')
     return getTurnMessages(sessionId, turnId)
+  })
+
+  ipcMain.handle('session:file-changes', async (_event, sessionId: string) => {
+    if (!sessionId) throw new Error('Session id is required')
+    return getSessionFileChanges(sessionId)
+  })
+
+  ipcMain.handle('session:turn-file-changes', async (_event, sessionId: string, turnId: string) => {
+    if (!sessionId || !turnId) throw new Error('Session id and turn id are required')
+    return getTurnFileChanges(sessionId, turnId)
   })
 
   ipcMain.handle('session:get-trees', async (_event, sessionId: string, views?: SessionTreeView[]) => {

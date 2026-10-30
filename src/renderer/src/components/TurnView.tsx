@@ -16,6 +16,7 @@ import { CompactionNotice } from './turn/CompactionNotice'
 import { BranchSummaryNotice } from './turn/BranchSummaryNotice'
 import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkBlockMs } from './turn/useWorkBlockMs'
+import { TurnFileChanges } from './turn/TurnFileChanges'
 
 /**
  * A mid-turn compaction splits the process: the work either side of it is rendered as its own block,
@@ -295,6 +296,7 @@ function AgentTurnView({
           </div>
         ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
         {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
+        {turn.streaming || !sessionId || !turn.id ? null : <TurnFileChanges sessionId={sessionId} turnId={turn.id} />}
         {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
         {trailing.length ? (
           <div className="mb-2">

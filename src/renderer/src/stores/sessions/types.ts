@@ -104,7 +104,7 @@ export interface RuntimeState extends SessionControls {
   queuedEditText: string | null
 }
 
-export type TabKind = 'project' | 'chat' | 'diff' | 'file' | 'browser' | 'terminal'
+export type TabKind = 'project' | 'chat' | 'diff' | 'file' | 'turn-diff' | 'browser' | 'terminal'
 export type TabLoadState = 'cold' | 'opening' | 'ready' | 'error'
 
 /**
@@ -135,6 +135,8 @@ export interface OpenTab {
   path?: string
   /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
   diffScope?: DiffScope
+  /** A history diff tab's source: one turn's recorded operations. */
+  turnDiff?: { sessionId: string; turnId: string }
   /** Optional real session that receives browser annotations; never the browser's own id. */
   browserTargetSessionId?: string
 }
@@ -224,6 +226,8 @@ export interface SessionsStore {
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
   /** Brings a file's tab to the front, opening it when the strip does not hold it. */
   openFileTab: (cwd: string, path: string) => Promise<void>
+  /** Shows one turn's recorded changes in a pane beside the session. */
+  openTurnDiffTab: (sessionId: string, turnId: string) => Promise<void>
   /** Resolves the new tab's id. `background` keeps the current selection (agent-opened tabs). */
   openBrowserTab: (cwd?: string | null, options?: { background?: boolean; targetSessionId?: string }) => Promise<string>
   /** Opens a terminal in the worktree, or the home directory when `cwd` is null; returns its tab id. */

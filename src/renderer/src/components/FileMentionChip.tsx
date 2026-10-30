@@ -6,17 +6,20 @@ import { useT } from '../hooks/useT'
 import { relativeTime } from '../lib/relative-time'
 import { failureMessage } from '../lib/ipc-error'
 import { cn } from '../lib/utils'
+import { useSessionFileChanges } from '../stores/file-changes'
 import { useSessionsStore } from '../stores/sessions'
 import { FileTypeIcon } from './files/FileTypeIcon'
 import { Button } from './ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 import { INLINE_CHIP_CLASS } from './inline-chip'
+import { FileChangeCounts } from './turn/TurnFileChanges'
 
 /**
- * The worktree a chip's path is relative to. Tiptap renders node views through portals inside
- * EditorContent, so the composer provides it around the editor the same way a message bubble does.
+ * The worktree a chip's path is relative to, and the session whose recorded edits the hover card
+ * counts. Tiptap renders node views through portals inside EditorContent, so the composer provides it
+ * around the editor the same way a message bubble does.
  */
-export const FileMentionCwdContext = createContext<string | null>(null)
+export const FileMentionContext = createContext<{ cwd: string | null; sessionId: string | null }>({ cwd: null, sessionId: null })
 
 type InfoState =
   | { status: 'loading' }
@@ -37,7 +40,8 @@ function splitPath(path: string): { directory: string; name: string } {
  */
 export function FileMentionChip({ path, opensFile = false, className }: { path: string; opensFile?: boolean; className?: string }) {
   const t = useT()
-  const cwd = useContext(FileMentionCwdContext)
+  const { cwd, sessionId } = useContext(FileMentionContext)
+  const edits = useSessionFileChanges(sessionId)?.summary?.files.find((file) => file.relativePath === path)
   const [state, setState] = useState<InfoState>({ status: 'loading' })
   const [copied, setCopied] = useState(false)
   const request = useRef(0)
@@ -98,6 +102,12 @@ export function FileMentionChip({ path, opensFile = false, className }: { path: 
           </Button>
         </div>
         <FileMentionFacts state={state} hasCwd={Boolean(cwd)} />
+        {edits ? (
+          <p className="flex gap-1.5 text-xs text-muted-foreground">
+            <span>{t('fileMention.edited')}</span>
+            <FileChangeCounts file={edits} />
+          </p>
+        ) : null}
       </HoverCardContent>
     </HoverCard>
   )

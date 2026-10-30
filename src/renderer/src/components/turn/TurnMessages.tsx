@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { FileText } from 'lucide-react'
 import { composePromptText, formatPastedTextSize } from '../../../../shared/pasted-text'
 import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/types'
@@ -11,7 +11,7 @@ import { Button } from '../ui/button'
 import { Message, MessageContent } from '../ui/message'
 import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
-import { FileMentionChip, FileMentionCwdContext } from '../FileMentionChip'
+import { FileMentionChip, FileMentionContext } from '../FileMentionChip'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { UserMessageActions } from './UserMessageActions'
@@ -77,6 +77,7 @@ export const UserBubble = memo(function UserBubble({
   const [preview, setPreview] = useState<string | null>(null)
   const hasTextBubble = Boolean(segments) || text.length > 0 || textAttachments.length > 0
   const cwd = useSessionsStore((state) => sessionId ? state.openTabs.find((tab) => tab.id === sessionId)?.cwd ?? null : null)
+  const mentionContext = useMemo(() => ({ cwd, sessionId: sessionId ?? null }), [cwd, sessionId])
 
   return (
     <Message align="end" className="group/user-message mb-4" data-turn-user="">
@@ -114,9 +115,9 @@ export const UserBubble = memo(function UserBubble({
               )}
             >
               {segments ? (
-                <FileMentionCwdContext.Provider value={cwd}>
+                <FileMentionContext.Provider value={mentionContext}>
                   <InlinePastedText segments={segments} />
-                </FileMentionCwdContext.Provider>
+                </FileMentionContext.Provider>
               ) : null}
               {!segments ? textAttachments.map((attachment) => (
                 <PastedTextPreview

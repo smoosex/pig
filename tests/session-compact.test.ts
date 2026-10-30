@@ -43,7 +43,7 @@ async function fixture(): Promise<void> {
     }
   }))
   mock.module(modulePath('../src/main/pi/session-display.ts'), () => ({
-    getDisplayTurns: () => {}, getTurnMessages: () => {}, getTurnWindow: () => {}
+    getDisplayTurns: () => {}, getSessionFileChanges: () => {}, getTurnFileChanges: () => {}, getTurnMessages: () => {}, getTurnWindow: () => {}
   }))
   mock.module(modulePath('../src/main/pi/session-loader.ts'), () => ({
     sessionDirForCwd: () => '/sessions'

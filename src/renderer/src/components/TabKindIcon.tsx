@@ -7,6 +7,6 @@ import { cn } from '../lib/utils'
 export function TabKindIcon({ kind, path, className }: { kind: OpenTab['kind']; path?: string; className?: string }) {
   const classes = cn('size-3.5 shrink-0', className)
   if (kind === 'file') return <FileTypeIcon path={path ?? ''} className={classes} />
-  const Icon = kind === 'browser' ? Globe : kind === 'terminal' ? SquareTerminal : kind === 'diff' ? FileDiff : SquareDashedText
+  const Icon = kind === 'browser' ? Globe : kind === 'terminal' ? SquareTerminal : kind === 'diff' || kind === 'turn-diff' ? FileDiff : SquareDashedText
   return <Icon className={classes} aria-hidden />
 }

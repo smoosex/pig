@@ -39,7 +39,7 @@ async function fixture(): Promise<void> {
     setSessionThinking: noop, setSessionModelThinkingPreference: noop, isNavigatingSessionBranch: noop, abortSessionBranchSummary: noop, updateFollowUpMessage: noop, viewSessionBranch: noop,
     forkSessionFromMessage: async () => forked
   }))
-  mock.module('../src/main/pi/session-display', () => ({ getDisplayTurns: noop, getTurnMessages: noop, getTurnWindow: noop }))
+  mock.module('../src/main/pi/session-display', () => ({ getDisplayTurns: noop, getSessionFileChanges: noop, getTurnFileChanges: noop, getTurnMessages: noop, getTurnWindow: noop }))
   mock.module('../src/main/pi/session-removal', () => ({ removeSession: noop }))
   mock.module('../src/main/pi/session-prompt', () => ({ promptSession: noop }))
   mock.module('../src/main/chats', () => ({ isChatCwd: () => false, isChatsRoot: () => false }))

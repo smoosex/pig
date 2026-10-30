@@ -26,6 +26,7 @@ async function fixture(scenario: string): Promise<void> {
         closed.push(id)
       },
       selectOpenProjectWorkspace: async () => {},
+      getSessionFileChanges: async () => ({ leafId: null, files: [], turns: {} }),
       saveOpenProjectChangesTab: async () => {},
       saveOpenChatTabs: async () => {},
       saveOpenToolTabs: async () => {},

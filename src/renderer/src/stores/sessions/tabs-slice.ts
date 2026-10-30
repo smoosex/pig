@@ -24,6 +24,11 @@ export function fileTabId(cwd: string, path: string): string {
   return `file:${cwd}\u0000${path}`
 }
 
+/** One history diff pane per session: opening another turn's diff in that session retargets it. */
+export function turnDiffTabId(sessionId: string): string {
+  return `turn-diff:${sessionId}`
+}
+
 /** Drops a draft slot, but only while `cwd` still points at `sessionId`. */
 function dropDraftSlot(
   cwd: string,
@@ -61,6 +66,7 @@ export const createTabsSlice: SessionSlice<
   | 'openExisting'
   | 'openChangesTab'
   | 'openFileTab'
+  | 'openTurnDiffTab'
   | 'openBrowserTab'
   | 'openTerminalTab'
   | 'setBrowserTarget'
@@ -482,7 +488,7 @@ export const createTabsSlice: SessionSlice<
             ...restoredTabs.map((tab) => liveTabs.get(tab.id) ?? tab),
             ...state.openTabs.filter(
               (tab) =>
-                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') &&
+                (tab.kind === 'project' || tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'turn-diff' || tab.kind === 'browser' || tab.kind === 'terminal') &&
                 !restoredIds.has(tab.id) && !restoredChatIds.has(tab.id)
             )
           ]
@@ -576,16 +582,16 @@ export const createTabsSlice: SessionSlice<
         persistChangesTab(tab.cwd)
         return
       }
-      if (tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal') {
-        // These views load their own data, never Pi controls or history. A file tab's selection lasts
-        // only this run; a browser or terminal comes back after a restart, so its selection is saved.
+      if (tab.kind === 'file' || tab.kind === 'turn-diff' || tab.kind === 'browser' || tab.kind === 'terminal') {
+        // These views load their own data, never Pi controls or history. A file or history diff tab's
+        // selection lasts only this run; a browser or terminal comes back after a restart, so its selection is saved.
         ++selectionVersion
         set((state) => ({
           ...activeTabPatch(state, tab.id, tab.cwd || null),
           currentProjectCwd: tab.cwd || null,
           openTabs: state.openTabs
         }))
-        if (tab.kind !== 'file') persistToolSelection(tab)
+        if (tab.kind === 'browser' || tab.kind === 'terminal') persistToolSelection(tab)
         return
       }
       if (tab.kind === 'project' && get().draftSessionByCwd[tab.cwd] === tab.id) {
@@ -712,6 +718,39 @@ export const createTabsSlice: SessionSlice<
           }]
         }))
       }
+      await get().activateTab(id)
+    },
+
+    /**
+     * Docks the session's history diff pane to the right of the session, or retargets the pane it
+     * already has. The pane is placed by the session it came from, never by whichever tab is active.
+     */
+    openTurnDiffTab: async (sessionId, turnId) => {
+      const source = get().openTabs.find((tab) => tab.id === sessionId)
+      if (!source || (source.kind !== 'project' && source.kind !== 'chat')) return
+      const id = turnDiffTabId(sessionId)
+      const turnDiff = { sessionId, turnId }
+      const title = t('turnChanges.tabTitle')
+      set((state) => ({
+        openTabs: state.openTabs.some((tab) => tab.id === id)
+          ? state.openTabs.map((tab) => tab.id === id ? { ...tab, title, turnDiff } : tab)
+          : [...state.openTabs, {
+              id,
+              cwd: source.kind === 'chat' ? '' : source.cwd,
+              title,
+              kind: 'turn-diff' as const,
+              loadState: 'ready' as const,
+              turnDiff
+            }]
+      }))
+      const layout = useSplitLayoutStore.getState()
+      if (!paneOfTab(layout.groups, id)) {
+        const sourcePane = paneOfTab(layout.groups, sessionId)
+        if (sourcePane) layout.splitPane(sourcePane.id, id, 'right')
+        else layout.splitTab(sessionId, id, 'right')
+      }
+      const pane = paneOfTab(useSplitLayoutStore.getState().groups, id)
+      if (pane) useSplitLayoutStore.getState().setActivePane(pane.id)
       await get().activateTab(id)
     },
 
@@ -1029,6 +1068,10 @@ export const createTabsSlice: SessionSlice<
           return
         }
       }
+      // A session's history pane reads through it, so it goes first and cannot become the fallback.
+      if (tab.kind === 'project' || tab.kind === 'chat') {
+        if (get().openTabs.some((item) => item.id === turnDiffTabId(tabId))) get().closeTab(turnDiffTabId(tabId))
+      }
       useComposerDraftsStore.getState().discard(tabId)
       // All close entry points remove the pane and prefer the split's surviving selection.
       const layout = useSplitLayoutStore.getState()
@@ -1042,7 +1085,7 @@ export const createTabsSlice: SessionSlice<
       const wasActive = state.activeTabId === tabId
       const fallback =
         splitFallback?.id ?? neighbourTab(state.openTabs, tab)?.id ??
-        (tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'browser' || tab.kind === 'terminal' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
+        (tab.kind === 'diff' || tab.kind === 'file' || tab.kind === 'turn-diff' || tab.kind === 'browser' || tab.kind === 'terminal' ? state.activeSessionByCwd[tab.cwd] ?? null : null)
       const fallbackCwd = splitFallback
         ? (isChatScope(splitFallback) ? null : splitFallback.cwd)
         : (isChatScope(tab) ? null : tab.cwd)
@@ -1053,7 +1096,7 @@ export const createTabsSlice: SessionSlice<
           ? { activeSessionByCwd: { ...current.activeSessionByCwd, [splitFallback.cwd]: splitFallback.id } }
           : {})
       })
-      if (tab.kind === 'browser' || tab.kind === 'terminal') {
+      if (tab.kind === 'browser' || tab.kind === 'terminal' || tab.kind === 'turn-diff') {
         if (wasActive) ++selectionVersion
         set((current) => ({
           openTabs: current.openTabs.filter((item) => item.id !== tabId),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
 import { EditorContent } from '@tiptap/react'
 import { motion, useReducedMotion } from 'motion/react'
@@ -17,7 +17,7 @@ import { CompactionStatus } from './composer/CompactionStatus'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
-import { FileMentionCwdContext } from './FileMentionChip'
+import { FileMentionContext } from './FileMentionChip'
 import { RetryNotice } from './composer/RetryNotice'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
@@ -43,6 +43,7 @@ export function Composer({
   const t = useT()
   const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
   const appearance = useComposerAppearance()
+  const mentionContext = useMemo(() => ({ cwd: mentions.cwd, sessionId: sessionId ?? null }), [mentions.cwd, sessionId])
   const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
   const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -97,12 +98,12 @@ export function Composer({
                         {t('composer.bashModeHint')}
                       </p>
                     ) : null}
-                    <FileMentionCwdContext.Provider value={mentions.cwd}>
+                    <FileMentionContext.Provider value={mentionContext}>
                       <EditorContent
                         editor={editor}
                         className={cn('min-h-16 w-full shrink-0 px-3.5 pt-3 text-sm leading-snug [&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', bashMode && 'font-mono')}
                       />
-                    </FileMentionCwdContext.Provider>
+                    </FileMentionContext.Provider>
                     <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} disabled={inputDisabled} />
                     {attachments.error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{attachments.error}</p> : null}
                     {error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{error}</p> : null}

@@ -373,6 +373,15 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
   }
 }
 
+/** The display turn (its first entry's id) each shown entry belongs to, by the same grouping as the turns. */
+export function displayTurnOwners(entries: SessionEntry[]): Map<string, string> {
+  const owners = new Map<string, string>()
+  for (const group of groupPath(pathMessages(entries))) {
+    for (const item of group) owners.set(item.id, group[0].id)
+  }
+  return owners
+}
+
 export function displayTurnsFromEntries(sessionId: string, entries: SessionEntry[]): DisplayTurn[] {
   return Array.from(groupPath(pathMessages(entries)), (chunk) => ({
     id: chunk[0].id,

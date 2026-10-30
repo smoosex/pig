@@ -38,6 +38,7 @@ import type { OpenTab } from './stores/sessions'
 import { BrowserPanel } from './components/browser/BrowserPanel'
 import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
+import { TurnDiffPanel } from './components/diff/TurnDiffPanel'
 import { WorkspacePanel } from './components/panel/WorkspacePanel'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
@@ -154,19 +155,21 @@ export function PaneViewContent({
   const empty = useSessionsStore((s) => paneTab?.loadState === 'ready' && isSessionEmpty(s.runtime[node.tabId]))
   const isDiff = paneTab?.kind === 'diff'
   const isFile = paneTab?.kind === 'file'
+  const isTurnDiff = paneTab?.kind === 'turn-diff'
 
   useEffect(() => {
     if (
       paneTab &&
       !isDiff &&
       !isFile &&
+      !isTurnDiff &&
       paneTab.kind !== 'browser' &&
       paneTab.kind !== 'terminal' &&
       paneTab.loadState === 'cold'
     ) {
       void useSessionsStore.getState().activateTab(node.tabId)
     }
-  }, [paneTab, isDiff, isFile, node.tabId])
+  }, [paneTab, isDiff, isFile, isTurnDiff, node.tabId])
 
   if (paneTab?.loadState === 'error') {
     return (
@@ -188,6 +191,8 @@ export function PaneViewContent({
         <TerminalTabContent tab={paneTab} active={isActive} />
       ) : isDiff ? (
         <ChangesView cwd={paneTab.cwd} />
+      ) : isTurnDiff && paneTab.turnDiff ? (
+        <TurnDiffPanel tab={paneTab} />
       ) : isFile && paneTab.path ? (
         <Suspense
           fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
@@ -562,6 +567,8 @@ export default function App() {
                       <TerminalTabContent tab={activeTab} active />
                     ) : diffTab ? (
                       <ChangesView cwd={diffTab.cwd} />
+                    ) : activeTab?.kind === 'turn-diff' && activeTab.turnDiff ? (
+                      <TurnDiffPanel tab={activeTab} />
                     ) : fileTab?.path ? (
                       <Suspense
                         fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}

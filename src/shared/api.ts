@@ -20,6 +20,9 @@ import type {
   PastedTextDisplaySegment
 } from './pasted-text'
 import type { FileMention } from './file-mentions'
+import type { SessionFileChangesSummary, TurnFileChangesResult } from './file-change-api'
+export type * from './file-change-api'
+export type * from './session-file-changes'
 
 export type { Locale, LocaleSetting } from './i18n'
 
@@ -976,6 +979,10 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
    * compaction never resumes it. Failures reach the renderer as `compaction_end`, not as rejection.
    */
   compactSession: (sessionId: string, instructions?: string) => Promise<void>
+  /** Recorded edit/write operations on the current branch, per file and per turn; not the Git diff. */
+  getSessionFileChanges: (sessionId: string) => Promise<SessionFileChangesSummary>
+  /** Every file one turn changed, with each recorded operation and its patch. */
+  getTurnFileChanges: (sessionId: string, turnId: string) => Promise<TurnFileChangesResult>
   getDisplayTurns: (sessionId: string) => Promise<DisplayTurnsResult>
   getTurnWindow: (sessionId: string, start: number, count: number) => Promise<DisplayTurnsResult>
   getTurnMessages: (sessionId: string, turnId: string) => Promise<unknown[]>

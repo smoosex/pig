@@ -207,6 +207,8 @@ const api: SessionApi = {
   abortBranchSummary: (sessionId: string) => ipcRenderer.invoke('session:abort-branch-summary', sessionId),
   compactSession: (sessionId: string, instructions?: string) =>
     ipcRenderer.invoke('session:compact', sessionId, instructions),
+  getSessionFileChanges: (sessionId: string) => ipcRenderer.invoke('session:file-changes', sessionId),
+  getTurnFileChanges: (sessionId: string, turnId: string) => ipcRenderer.invoke('session:turn-file-changes', sessionId, turnId),
   getDisplayTurns: (sessionId: string) =>
     ipcRenderer.invoke('session:get-display-turns', sessionId),
   getTurnWindow: (sessionId: string, start: number, count: number) =>
