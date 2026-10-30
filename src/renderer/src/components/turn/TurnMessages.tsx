@@ -5,11 +5,13 @@ import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/type
 import { turnImageSrc, type AnswerBlock } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
+import { useSessionsStore } from '../../stores/sessions'
 import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
 import { Message, MessageContent } from '../ui/message'
 import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
+import { FileMentionChip, FileMentionCwdContext } from '../FileMentionChip'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { UserMessageActions } from './UserMessageActions'
@@ -39,11 +41,12 @@ function InlinePastedText({
       {segments.map((segment, index) =>
         segment.type === 'text' ? (
           <span key={index}>{segment.text}</span>
+        ) : segment.type === 'file' ? (
+          <FileMentionChip key={index} path={segment.path} opensFile />
         ) : (
           <PastedTextChip
             key={segment.attachment.id}
             attachment={segment.attachment}
-            className="mx-0.5"
           />
         )
       )}
@@ -73,6 +76,7 @@ export const UserBubble = memo(function UserBubble({
     : text
   const [preview, setPreview] = useState<string | null>(null)
   const hasTextBubble = Boolean(segments) || text.length > 0 || textAttachments.length > 0
+  const cwd = useSessionsStore((state) => sessionId ? state.openTabs.find((tab) => tab.id === sessionId)?.cwd ?? null : null)
 
   return (
     <Message align="end" className="group/user-message mb-4" data-turn-user="">
@@ -109,7 +113,11 @@ export const UserBubble = memo(function UserBubble({
                 (segments || textAttachments.length > 0) && 'border-border'
               )}
             >
-              {segments ? <InlinePastedText segments={segments} /> : null}
+              {segments ? (
+                <FileMentionCwdContext.Provider value={cwd}>
+                  <InlinePastedText segments={segments} />
+                </FileMentionCwdContext.Provider>
+              ) : null}
               {!segments ? textAttachments.map((attachment) => (
                 <PastedTextPreview
                   key={attachment.id}

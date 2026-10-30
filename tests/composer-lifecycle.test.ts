@@ -75,11 +75,11 @@ async function runFixture(name: string): Promise<void> {
       assert.equal((await paste('a\rb\rc')).text, 'a\nb\nc')
 
       // Past the line threshold the paste becomes a chip, whose stored text and byte size must be
-      // measured on the same LF version the prompt receives.
+      // measured on the same LF version the prompt receives. A space follows to keep the caret in text.
       await act(async () => { state.clear() })
       const long = Array.from({ length: 22 }, (_, index) => `line${index}`).join('\r\n')
       const chipped = await paste(long)
-      assert.equal(chipped.text, long.replace(/\r\n/g, '\n'))
+      assert.equal(chipped.text, `${long.replace(/\r\n/g, '\n')} `)
       assert.equal(chipped.attachments.length, 1)
       const attachment = chipped.attachments[0]
       assert.equal(chipped.text.slice(attachment.start, attachment.end), attachment.text)

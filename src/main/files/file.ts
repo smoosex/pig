@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
 import { lstat, open, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { FileReadResult, FileStamp, FileWriteResult } from '../../shared/api'
+import type { FileMentionInfo, FileReadResult, FileStamp, FileWriteResult } from '../../shared/api'
 import { t } from '../i18n'
 import { readLanes } from '../git/limit'
 import { resolveWorktreePath } from './paths'
@@ -128,6 +128,35 @@ export async function openablePath(cwd: string, path: string): Promise<string> {
   })
   if (info?.isSymbolicLink()) throw new Error(t('error.symlinkFollow'))
   return absolute
+}
+
+/**
+ * The facts a file chip's hover card shows. Lines are counted from the same bounded, link-refusing read a
+ * file tab gets, so a binary or oversized file has no count rather than a costly or misleading one.
+ */
+export async function fileMentionInfo(cwd: string, path: string): Promise<FileMentionInfo> {
+  const target = await resolveWorktreePath(cwd, path, 'file')
+  if (!target || target.relative === '') return { kind: 'missing' }
+  const info = await lstat(target.absolute).catch((error: unknown) => {
+    if (isMissingError(error)) return null
+    throw error
+  })
+  if (!info) return { kind: 'missing' }
+  if (info.isDirectory()) return { kind: 'directory', absolutePath: target.absolute, modifiedAt: info.mtimeMs }
+  const read = await readFile(cwd, path)
+  if (read.kind === 'missing') return { kind: 'missing' }
+  return {
+    kind: 'file',
+    absolutePath: target.absolute,
+    modifiedAt: read.kind === 'text' ? read.mtimeMs : info.mtimeMs,
+    lineCount: read.kind === 'text' ? lineCount(read.contents) : null
+  }
+}
+
+/** Counted the way an editor numbers them: a trailing newline does not open another line. */
+function lineCount(contents: string): number {
+  if (!contents) return 0
+  return contents.split('\n').length - (contents.endsWith('\n') ? 1 : 0)
 }
 
 function stampOf(info: Stats): FileStamp {

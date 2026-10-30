@@ -5,9 +5,10 @@
  */
 import type { JSONContent } from '@tiptap/core'
 import { createInlinePastedTextDisplayMetadata, isInlinePastedTextAttachments, normalizeNewlines, utf8ByteLength, type PastedTextAttachmentInput, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
+import { fileMentionText, isFileMentionAt, type FileMention } from '../../../../shared/file-mentions'
 import type { PigUserMessage } from '../../pi/types'
 
-export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [] }
+export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [], mentions: [] }
 
 export function textToComposerDocument(text: string): JSONContent {
   return {
@@ -20,10 +21,11 @@ export function textToComposerDocument(text: string): JSONContent {
 
 export function restoredPromptToComposerDocument(
   text: string,
-  attachments: PastedTextAttachmentInput[] = []
+  attachments: PastedTextAttachmentInput[] = [],
+  mentions: FileMention[] = []
 ): JSONContent {
   const normalizedText = normalizeNewlines(text)
-  if (attachments.length === 0) return textToComposerDocument(normalizedText)
+  if (attachments.length === 0 && mentions.length === 0) return textToComposerDocument(normalizedText)
   const normalized = attachments.map((attachment) => ({
     ...attachment,
     start: attachment.start,
@@ -32,6 +34,9 @@ export function restoredPromptToComposerDocument(
   })).sort((left, right) => (left.start ?? -1) - (right.start ?? -1))
   if (!isInlinePastedTextAttachments(normalizedText, normalized)) {
     throw new Error('Invalid restored pasted-text attachment ranges')
+  }
+  if (!mentions.every((mention) => isFileMentionAt(normalizedText, mention))) {
+    throw new Error('Invalid restored file mention ranges')
   }
 
   const paragraphs: JSONContent[] = [{ type: 'paragraph' }]
@@ -43,11 +48,8 @@ export function restoredPromptToComposerDocument(
       paragraph.content = [...(paragraph.content ?? []), { type: 'text', text: part }]
     })
   }
-  let cursor = 0
-  for (const attachment of normalized) {
-    appendText(normalizedText.slice(cursor, attachment.start))
-    const paragraph = paragraphs[paragraphs.length - 1]
-    paragraph.content = [...(paragraph.content ?? []), {
+  const ranges = [
+    ...normalized.map((attachment) => ({ start: attachment.start!, end: attachment.end!, node: {
       type: 'pastedText',
       attrs: {
         id: attachment.id,
@@ -55,8 +57,18 @@ export function restoredPromptToComposerDocument(
         byteSize: attachment.byteSize,
         ...(attachment.filename ? { filename: attachment.filename } : {})
       }
-    }]
-    cursor = attachment.end
+    } })),
+    ...mentions.map((mention) => ({ start: mention.start, end: mention.end, node: {
+      type: 'fileMention',
+      attrs: { path: mention.path }
+    } }))
+  ].sort((left, right) => left.start - right.start)
+  let cursor = 0
+  for (const range of ranges) {
+    appendText(normalizedText.slice(cursor, range.start))
+    const paragraph = paragraphs[paragraphs.length - 1]
+    paragraph.content = [...(paragraph.content ?? []), range.node]
+    cursor = range.end
   }
   appendText(normalizedText.slice(cursor))
   return { type: 'doc', content: paragraphs }
@@ -65,12 +77,31 @@ export function restoredPromptToComposerDocument(
 export type SerializedComposer = {
   text: string
   attachments: PastedTextPromptAttachment[]
+  mentions: FileMention[]
+}
+
+/**
+ * Trims surrounding whitespace the way a plain prompt is trimmed, shifting the ranges with it. Whitespace
+ * a range owns (a pasted block that starts with indentation) stays, so no range is cut.
+ */
+export function trimComposer(serialized: SerializedComposer): SerializedComposer {
+  const { text, attachments, mentions } = serialized
+  const ranges = [...attachments, ...mentions]
+  const leading = Math.min(text.length - text.trimStart().length, ...ranges.map((range) => range.start))
+  const end = Math.max(text.trimEnd().length, ...ranges.map((range) => range.end))
+  if (leading === 0 && end === text.length) return serialized
+  return {
+    text: text.slice(leading, Math.max(leading, end)),
+    attachments: attachments.map((attachment) => ({ ...attachment, start: attachment.start - leading, end: attachment.end - leading })),
+    mentions: mentions.map((mention) => ({ ...mention, start: mention.start - leading, end: mention.end - leading }))
+  }
 }
 
 export function composerUserMessage(
   text: string,
   images: Array<{ mimeType: string; data: string }>,
-  attachments: PastedTextPromptAttachment[]
+  attachments: PastedTextPromptAttachment[],
+  mentions: FileMention[] = []
 ): PigUserMessage {
   const imageBlocks = images.map((image) => ({
     type: 'image' as const,
@@ -85,8 +116,8 @@ export function composerUserMessage(
     role: 'user',
     content,
     timestamp: Date.now(),
-    ...(attachments.length > 0
-      ? { pastedText: createInlinePastedTextDisplayMetadata(text, attachments) }
+    ...(attachments.length > 0 || mentions.length > 0
+      ? { pastedText: createInlinePastedTextDisplayMetadata(text, attachments, mentions) }
       : {})
   }
 }
@@ -94,6 +125,7 @@ export function composerUserMessage(
 export function serializeComposerDocument(json: JSONContent): SerializedComposer {
   let text = ''
   const attachments: PastedTextPromptAttachment[] = []
+  const mentions: FileMention[] = []
 
   const append = (node: JSONContent) => {
     if (node.type === 'text') {
@@ -119,6 +151,13 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
       })
       return
     }
+    if (node.type === 'fileMention') {
+      const path = String(node.attrs?.path ?? '')
+      const start = text.length
+      text += fileMentionText(path)
+      mentions.push({ path, start, end: text.length })
+      return
+    }
     for (const child of node.content ?? []) append(child)
   }
 
@@ -126,5 +165,5 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
     if (index > 0) text += '\n'
     append(node)
   }
-  return { text, attachments }
+  return { text, attachments, mentions }
 }

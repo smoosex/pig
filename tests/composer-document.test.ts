@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument, textToComposerDocument } from '../src/renderer/src/components/composer/document'
+import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument, textToComposerDocument, trimComposer } from '../src/renderer/src/components/composer/document'
 import { filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
 import type { SlashCommand } from '../src/shared/api'
 
 describe('composer document protocol', () => {
   test('preserves blank lines and literal backslash sequences in edited queue text', () => {
     const text = '第一段\n\n第二段 \\n 不换行\n'
-    expect(serializeComposerDocument(textToComposerDocument(text))).toEqual({ text, attachments: [] })
+    expect(serializeComposerDocument(textToComposerDocument(text))).toEqual({ text, attachments: [], mentions: [] })
   })
 
   test('round-trips clipboard line endings as LF', () => {
@@ -53,8 +53,31 @@ describe('composer document protocol', () => {
         byteSize: 18,
         start: 4,
         end: text.length
-      }]
+      }],
+      mentions: []
     })
+  })
+
+  test('serializes file chips as @path and restores them as chips', () => {
+    const document = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [
+        { type: 'text', text: '  看 ' },
+        { type: 'fileMention', attrs: { path: 'my file.md' } },
+        { type: 'text', text: ' ' }
+      ] }]
+    }
+    const serialized = serializeComposerDocument(document)
+    expect(serialized).toEqual({ text: '  看 @"my file.md" ', attachments: [], mentions: [{ path: 'my file.md', start: 4, end: 17 }] })
+    const trimmed = trimComposer(serialized)
+    expect(trimmed).toEqual({ text: '看 @"my file.md"', attachments: [], mentions: [{ path: 'my file.md', start: 2, end: 15 }] })
+    expect(serializeComposerDocument(restoredPromptToComposerDocument(trimmed.text, [], trimmed.mentions))).toEqual(trimmed)
+    expect(composerUserMessage(trimmed.text, [], [], trimmed.mentions).pastedText?.segments?.map((segment) => segment.type)).toEqual(['text', 'file'])
+  })
+
+  test('trimming keeps whitespace that belongs to a pasted range', () => {
+    const serialized = { text: ' \n  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 2, end: 6 }], mentions: [] }
+    expect(trimComposer(serialized)).toEqual({ text: '  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 0, end: 4 }], mentions: [] })
   })
 
   test('restores prompts without attachments as ordinary text', () => {
@@ -72,7 +95,8 @@ describe('composer document protocol', () => {
       attachments: [
         { id: 'first', text: 'A', byteSize: 1, start: 0, end: 1 },
         { id: 'second', text: 'B', byteSize: 1, start: 3, end: 4 }
-      ]
+      ],
+      mentions: []
     })
     expect(() => restoredPromptToComposerDocument('AAAA', [
       { id: 'first', text: 'AA', start: 0, end: 2 },

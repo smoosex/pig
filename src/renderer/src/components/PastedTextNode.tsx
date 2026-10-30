@@ -1,7 +1,6 @@
 import { mergeAttributes, Node } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import type { PastedTextAttachment } from '../../../shared/pasted-text'
-import { cn } from '../lib/utils'
 import { PastedTextChip } from './PastedTextChip'
 
 function PastedTextNodeView({ node, selected }: NodeViewProps) {
@@ -15,9 +14,9 @@ function PastedTextNodeView({ node, selected }: NodeViewProps) {
     <NodeViewWrapper
       as="span"
       contentEditable={false}
-      className={cn('inline-flex align-baseline', selected && 'rounded-md ring-2 ring-ring/50')}
+      className="inline-flex align-middle"
     >
-      <PastedTextChip attachment={attachment} />
+      <PastedTextChip attachment={attachment} className={selected ? 'ring-2 ring-ring/50' : undefined} />
     </NodeViewWrapper>
   )
 }

@@ -8,6 +8,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
 import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
 import { useT } from '../../hooks/useT'
+import { FileMentionNode } from '../FileMentionNode'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
@@ -36,12 +37,16 @@ function insertPastedText(view: EditorView, text: string, at?: number): void {
   const { schema } = view.state
   const normalized = normalizeNewlines(text)
   const slice = isLongPastedText(normalized)
-    ? Slice.maxOpen(Fragment.from(schema.nodes.pastedText.create({
-        id: crypto.randomUUID(),
-        text: normalized,
-        byteSize: utf8ByteLength(normalized),
-        filename: createPastedTextFilename()
-      })))
+    // The trailing space keeps the caret in text: beside an atom the browser sizes it to the chip.
+    ? Slice.maxOpen(Fragment.fromArray([
+        schema.nodes.pastedText.create({
+          id: crypto.randomUUID(),
+          text: normalized,
+          byteSize: utf8ByteLength(normalized),
+          filename: createPastedTextFilename()
+        }),
+        schema.text(' ')
+      ]))
     : plainTextSlice(schema, normalized)
   const { tr } = view.state
   if (at == null) {
@@ -95,7 +100,8 @@ export function useComposerEditor(options: ComposerEditorOptions) {
         underline: false
       }),
       Placeholder.configure({ placeholder: () => placeholder.current }),
-      PastedTextNode
+      PastedTextNode,
+      FileMentionNode
     ],
     content: textToComposerDocument(''),
     onUpdate: ({ editor: nextEditor }) => {

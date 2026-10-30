@@ -1,3 +1,5 @@
+import { isFileMentionAt, isFileMentionShape, rangesAreDisjoint, type FileMention } from './file-mentions'
+
 export const PASTED_TEXT_CUSTOM_TYPE = 'pig.pasted-text'
 export const PASTED_TEXT_MAX_CHARS = 2000
 export const PASTED_TEXT_MAX_LINES = 20
@@ -44,6 +46,8 @@ export interface PastedTextInlineMetadata {
   contentLength: number
   contentHash: string
   attachments: PastedTextMetadataAttachment[]
+  /** Optional so entries written before file chips existed stay valid. */
+  mentions?: FileMention[]
 }
 
 export type PastedTextInputMetadata = PastedTextLegacyMetadata | PastedTextInlineMetadata
@@ -61,6 +65,7 @@ export type PastedTextMetadata = PastedTextInputMetadata | PastedTextTransformed
 export type PastedTextDisplaySegment =
   | { type: 'text'; text: string }
   | { type: 'attachment'; attachment: PastedTextAttachment }
+  | { type: 'file'; path: string; text: string }
 
 export interface PastedTextDisplayMetadata {
   body: string
@@ -153,7 +158,9 @@ export function resolvePastedTextMetadata(
       source.text.length !== source.metadata.contentLength ||
       pastedTextFingerprint(source.text) !== source.metadata.contentHash
     )) ||
-    source.metadata.attachments.some((attachment) => attachment.end > source.text.length)
+    source.metadata.attachments.some((attachment) => attachment.end > source.text.length) ||
+    (source.metadata.version === 2 &&
+      !(source.metadata.mentions ?? []).every((mention) => isFileMentionAt(source.text, mention)))
   ) {
     throw Object.assign(new Error('Pasted-text metadata does not match its user message or source input'), {
       code: 'PASTED_TEXT_METADATA_MISMATCH'
@@ -190,7 +197,8 @@ export function createPastedTextMetadata(
 
 export function createInlinePastedTextMetadata(
   content: string,
-  attachments: PastedTextPromptAttachment[]
+  attachments: PastedTextPromptAttachment[],
+  mentions: FileMention[] = []
 ): PastedTextInlineMetadata {
   return {
     version: 2,
@@ -202,29 +210,42 @@ export function createInlinePastedTextMetadata(
       end,
       byteSize,
       ...(filename ? { filename } : {})
-    }))
+    })),
+    ...(mentions.length > 0
+      ? { mentions: [...mentions].sort((a, b) => a.start - b.start).map(({ path, start, end }) => ({ path, start, end })) }
+      : {})
   }
 }
 
 export function createInlinePastedTextDisplayMetadata(
   content: string,
-  attachments: PastedTextPromptAttachment[]
+  attachments: PastedTextPromptAttachment[],
+  mentions: FileMention[] = []
 ): PastedTextDisplayMetadata {
   const sorted = [...attachments].sort((a, b) => a.start - b.start)
+  const ranges = [
+    ...sorted.map((attachment) => ({ start: attachment.start, end: attachment.end, attachment })),
+    ...mentions.map((mention) => ({ start: mention.start, end: mention.end, mention }))
+  ].sort((a, b) => a.start - b.start)
   const segments: PastedTextDisplaySegment[] = []
   let cursor = 0
-  for (const attachment of sorted) {
-    if (attachment.start > cursor) segments.push({ type: 'text', text: content.slice(cursor, attachment.start) })
-    segments.push({
-      type: 'attachment',
-      attachment: {
-        id: attachment.id,
-        text: content.slice(attachment.start, attachment.end),
-        byteSize: attachment.byteSize,
-        ...(attachment.filename ? { filename: attachment.filename } : {})
-      }
-    })
-    cursor = attachment.end
+  for (const range of ranges) {
+    if (range.start > cursor) segments.push({ type: 'text', text: content.slice(cursor, range.start) })
+    const text = content.slice(range.start, range.end)
+    if ('mention' in range) {
+      segments.push({ type: 'file', path: range.mention.path, text })
+    } else {
+      segments.push({
+        type: 'attachment',
+        attachment: {
+          id: range.attachment.id,
+          text,
+          byteSize: range.attachment.byteSize,
+          ...(range.attachment.filename ? { filename: range.attachment.filename } : {})
+        }
+      })
+    }
+    cursor = range.end
   }
   if (cursor < content.length) segments.push({ type: 'text', text: content.slice(cursor) })
   return {
@@ -323,11 +344,17 @@ function isPastedTextInputMetadata(value: unknown): value is PastedTextInputMeta
   }
   if (metadata.version !== 2) return false
   let cursor = -1
-  return metadata.attachments.every((attachment) => {
+  const attachmentsOrdered = metadata.attachments.every((attachment) => {
     if (attachment.start < cursor || attachment.end > contentLength) return false
     cursor = attachment.end
     return true
   })
+  const mentions = (metadata as { mentions?: unknown }).mentions
+  if (mentions === undefined) return attachmentsOrdered
+  return attachmentsOrdered &&
+    Array.isArray(mentions) &&
+    mentions.every((mention) => isFileMentionShape(mention) && mention.end <= contentLength) &&
+    rangesAreDisjoint([...metadata.attachments, ...mentions])
 }
 
 export function isPastedTextMetadata(value: unknown): value is PastedTextMetadata {

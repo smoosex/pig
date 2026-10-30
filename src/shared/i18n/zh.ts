@@ -871,6 +871,13 @@ export const zh = {
     pastedText: '粘贴的文本',
     imageReadFailed: '有图片读取失败，请重新粘贴。'
   },
+  fileMention: {
+    loading: '读取中…',
+    missing: '文件不存在',
+    lines: '{n} 行',
+    modified: '修改于 {time}',
+    copyPath: '复制路径'
+  },
   retry: {
     requestWaiting: '请求失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',
     requestRetrying: '请求失败，正在重试（第 {attempt}/{total} 次）',

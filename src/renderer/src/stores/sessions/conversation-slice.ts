@@ -611,9 +611,9 @@ export const createConversationSlice: SessionSlice<
       if (!prompt) throw new Error(`User prompt not restored: ${userEntryId}`)
       const current = currentInstance(sessionId, initial)!
       if (current.isStreaming || current.bashExecution) throw new Error('Session is busy')
-      const content = restoredPromptToComposerDocument(prompt.text, prompt.textAttachments)
+      const content = restoredPromptToComposerDocument(prompt.text, prompt.textAttachments, prompt.fileMentions)
       const serialized = serializeComposerDocument(content)
-      const optimistic = composerUserMessage(prompt.text, prompt.images, serialized.attachments)
+      const optimistic = composerUserMessage(prompt.text, prompt.images, serialized.attachments, serialized.mentions)
       const agentRunRevision = current.agentRunRevision
       const isCurrent = () => currentInstance(sessionId, initial)?.branchRequest === branchRequest
       get().beginPrompt(sessionId, optimistic)
@@ -621,7 +621,9 @@ export const createConversationSlice: SessionSlice<
         await api.prompt(
           sessionId, prompt.text,
           prompt.images.length ? prompt.images : undefined,
-          prompt.textAttachments?.length ? prompt.textAttachments : undefined
+          prompt.textAttachments?.length ? prompt.textAttachments : undefined,
+          undefined,
+          prompt.fileMentions?.length ? prompt.fileMentions : undefined
         )
       } catch (error) {
         if (!isCurrent()) return

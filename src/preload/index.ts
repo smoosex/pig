@@ -196,8 +196,9 @@ const api: SessionApi = {
     text: string,
     images?: Parameters<SessionApi['prompt']>[2],
     textAttachments?: Parameters<SessionApi['prompt']>[3],
-    streamingBehavior?: Parameters<SessionApi['prompt']>[4]
-  ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior),
+    streamingBehavior?: Parameters<SessionApi['prompt']>[4],
+    fileMentions?: Parameters<SessionApi['prompt']>[5]
+  ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior, fileMentions),
   abort: (sessionId: string) => ipcRenderer.invoke('session:abort', sessionId),
   executeBash: (sessionId: string, command: string, id: string) =>
     ipcRenderer.invoke('session:execute-bash', sessionId, command, id),
@@ -250,6 +251,7 @@ const api: SessionApi = {
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
   readDirectory: (cwd: string, path: string) => ipcRenderer.invoke('files:read-directory', cwd, path),
   suggestFiles: (cwd: string, query: string) => ipcRenderer.invoke('files:suggest', cwd, query),
+  fileMentionInfo: (cwd: string, path: string) => ipcRenderer.invoke('files:mention-info', cwd, path),
   readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (
     cwd: string,

@@ -17,6 +17,7 @@ import {
   stripPastedTextAttachments,
   utf8ByteLength
 } from '../src/shared/pasted-text'
+import { normalizeSessionPrompt } from '../src/main/pi/prompt-input'
 
 describe('pasted text attachments', () => {
   test('uses strict character and line thresholds', () => {
@@ -114,5 +115,31 @@ describe('pasted text attachments', () => {
       contentHash: pastedTextFingerprint('正文\n\n附件'),
       attachments: [{ id: '', start: 4, end: 6, byteSize: 6 }]
     })).toBe(false)
+  })
+
+  test('file mentions persist beside attachments and must match their @path text', () => {
+    const content = '看 @src/a.ts 和 @"my file.md"附件'
+    const mentions = [
+      { path: 'src/a.ts', start: 2, end: 11 },
+      { path: 'my file.md', start: 14, end: 27 }
+    ]
+    const attachments = [{ id: 'one', text: '附件', byteSize: 6, start: 27, end: 29 }]
+    const metadata = createInlinePastedTextMetadata(content, attachments, mentions)
+    expect(isPastedTextMetadata(metadata)).toBe(true)
+    expect(resolvePastedTextMetadata(content, metadata).metadata).toEqual(metadata)
+    expect(createInlinePastedTextDisplayMetadata(content, attachments, mentions).segments).toEqual([
+      { type: 'text', text: '看 ' },
+      { type: 'file', path: 'src/a.ts', text: '@src/a.ts' },
+      { type: 'text', text: ' 和 ' },
+      { type: 'file', path: 'my file.md', text: '@"my file.md"' },
+      { type: 'attachment', attachment: { id: 'one', text: '附件', byteSize: 6 } }
+    ])
+    expect(isPastedTextMetadata({ ...metadata, mentions: [{ path: 'x', start: 26, end: 28 }] })).toBe(false)
+    expect(() => resolvePastedTextMetadata(content, { ...metadata, mentions: [{ path: 'src/b.ts', start: 2, end: 11 }] })).toThrow()
+
+    const prompt = normalizeSessionPrompt({ text: '看 @src/a.ts', fileMentions: [mentions[0]] })
+    expect(prompt.modelText).toBe('看 @src/a.ts')
+    expect(prompt.metadata).toMatchObject({ version: 2, attachments: [], mentions: [mentions[0]] })
+    expect(() => normalizeSessionPrompt({ text: '看 @src/b.ts', fileMentions: [mentions[0]] })).toThrow()
   })
 })

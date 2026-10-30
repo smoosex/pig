@@ -40,6 +40,4 @@ export function atMentionToken(before: string): AtToken | null {
 }
 
 /** A row's completion text: quoted when the token was quoted or the path needs it to survive. */
-export function mentionValue(path: string, quoted: boolean): string {
-  return quoted || /\s/.test(path) ? `@"${path}"` : `@${path}`
-}
+export { fileMentionText as mentionValue } from '../../../../shared/file-mentions'

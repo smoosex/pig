@@ -1,6 +1,6 @@
 import { clipboard, ipcMain, shell } from 'electron'
 import type { FileStamp } from '../../shared/api'
-import { externalPath, openablePath, readFile, writeFile } from '../files/file'
+import { externalPath, fileMentionInfo, openablePath, readFile, writeFile } from '../files/file'
 import { absolutePath, createEntry, renameEntry } from '../files/mutations'
 import { suggestFiles } from '../files/suggest'
 import { readDirectory } from '../files/tree'
@@ -24,6 +24,9 @@ export function registerFilesIpc(): void {
     if (!root) return []
     return suggestFiles(root, query)
   })
+  ipcMain.handle('files:mention-info', async (_event, cwd: string, path: string) =>
+    fileMentionInfo(await requireWorktree(cwd), path)
+  )
   ipcMain.handle(
     'files:write',
     async (

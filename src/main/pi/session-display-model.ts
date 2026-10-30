@@ -165,7 +165,7 @@ function displayUser(
       ...(attachment.filename ? { filename: attachment.filename } : {})
     }))
     if (metadata.version === 2) {
-      const display = createInlinePastedTextDisplayMetadata(sourceText, attachments)
+      const display = createInlinePastedTextDisplayMetadata(sourceText, attachments, metadata.mentions)
       return {
         text: sourceText,
         images,

@@ -29,13 +29,16 @@ export function appendBrowserScreenshotDraft(draft: ExistingDraft, screenshot: B
 
 export function appendBrowserAnnotationsDraft(draft: ExistingDraft, annotations: BrowserAnnotation[], filename: string): FailedDraft {
   const text = buildBrowserAnnotationsPrompt(annotations)
-  const attachment = { type: 'pastedText', attrs: { id: crypto.randomUUID(), text, byteSize: utf8ByteLength(text), filename } }
+  const attachment = [
+    { type: 'pastedText', attrs: { id: crypto.randomUUID(), text, byteSize: utf8ByteLength(text), filename } },
+    { type: 'text', text: ' ' }
+  ]
   const blocks = draft?.content?.content ?? []
   const last = blocks.at(-1)
   // Reuse a trailing empty paragraph so the chip sits where the caret would be.
   const content = last?.type === 'paragraph' && !last.content?.length
-    ? [...blocks.slice(0, -1), { type: 'paragraph', content: [attachment] }]
-    : [...blocks, { type: 'paragraph', content: [attachment] }]
+    ? [...blocks.slice(0, -1), { type: 'paragraph', content: attachment }]
+    : [...blocks, { type: 'paragraph', content: attachment }]
   return {
     content: { ...(draft?.content ?? { type: 'doc' }), content },
     images: [...(draft?.images ?? [])]

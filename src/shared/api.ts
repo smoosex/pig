@@ -19,10 +19,11 @@ import type {
   PastedTextAttachmentInput,
   PastedTextDisplaySegment
 } from './pasted-text'
+import type { FileMention } from './file-mentions'
 
 export type { Locale, LocaleSetting } from './i18n'
 
-export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment }
+export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment, FileMention }
 
 /** An app-written stand-in title for an attachments/images-only first message; the renderer translates it. */
 export type SessionPreviewFallback = 'pastedText' | 'image'
@@ -361,6 +362,12 @@ export interface FileSuggestion {
   isDirectory: boolean
 }
 
+/** What a file chip's hover card shows; `lineCount` is null for binary or oversized files. */
+export type FileMentionInfo =
+  | { kind: 'missing' }
+  | { kind: 'directory'; absolutePath: string; modifiedAt: number }
+  | { kind: 'file'; absolutePath: string; modifiedAt: number; lineCount: number | null }
+
 /** A file's identity on disk, so a write can tell whether it still holds the bytes that were read. */
 export interface FileStamp {
   mtimeMs: number
@@ -531,6 +538,7 @@ export interface RestoredSessionPrompt {
   text: string
   images: Array<{ mimeType: string; data: string }>
   textAttachments?: PastedTextAttachmentInput[]
+  fileMentions?: FileMention[]
 }
 
 /** A Pi fork is a separate session whose composer restores the selected user message. */
@@ -953,7 +961,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
     text: string,
     images?: { mimeType: string; data: string }[],
     textAttachments?: PastedTextAttachmentInput[],
-    streamingBehavior?: PromptStreamingBehavior
+    streamingBehavior?: PromptStreamingBehavior,
+    fileMentions?: FileMention[]
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   executeBash: (sessionId: string, command: string, id: string) => Promise<BashExecutionResult>
@@ -996,6 +1005,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   readDirectory: (cwd: string, path: string) => Promise<DirectoryListing>
   suggestFiles: (cwd: string, query: string) => Promise<FileSuggestion[]>
+  fileMentionInfo: (cwd: string, path: string) => Promise<FileMentionInfo>
   readFile: (cwd: string, path: string) => Promise<FileReadResult>
   /**
    * Writes a file tab's draft. `expected` is the stamp the draft was edited against: a file that has

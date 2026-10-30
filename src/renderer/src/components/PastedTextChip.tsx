@@ -4,6 +4,7 @@ import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { PastedTextPreview } from './PastedTextPreview'
+import { INLINE_CHIP_CLASS } from './inline-chip'
 
 export function PastedTextChip({
   attachment,
@@ -17,15 +18,12 @@ export function PastedTextChip({
     <PastedTextPreview text={attachment.text} byteSize={attachment.byteSize} title={attachment.filename}>
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         size="xs"
-        className={cn(
-          'gap-1 rounded-xs font-normal mx-1',
-          className
-        )}
+        className={cn(INLINE_CHIP_CLASS, className)}
         aria-label={attachment.filename ?? t('composer.pastedText')}
       >
-        <FileText />
+        <FileText className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate">{attachment.filename ?? t('composer.pastedText')}</span>
       </Button>
     </PastedTextPreview>

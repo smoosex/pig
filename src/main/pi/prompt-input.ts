@@ -12,8 +12,10 @@ import {
   utf8ByteLength,
   type PastedTextAttachment,
   type PastedTextAttachmentInput,
-  type PastedTextDisplayMetadata
+  type PastedTextDisplayMetadata,
+  type PastedTextPromptAttachment
 } from '../../shared/pasted-text'
+import { isFileMentionAt, isFileMentionShape, rangesAreDisjoint, type FileMention } from '../../shared/file-mentions'
 import { isImagePayload } from '../../shared/session-images'
 import { t } from '../i18n'
 
@@ -28,6 +30,7 @@ export interface SessionPromptInput {
   text: unknown
   images?: unknown
   textAttachments?: unknown
+  fileMentions?: unknown
   streamingBehavior?: unknown
 }
 
@@ -49,21 +52,36 @@ function normalizeTextAttachments(value: unknown): PastedTextAttachment[] {
   })
 }
 
+/** Mentions are only ever produced by the composer, so a range that does not fit the text is a bug. */
+function normalizeFileMentions(body: string, value: unknown, attachments: PastedTextPromptAttachment[]): FileMention[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || !value.every(isFileMentionShape)) throw new Error('Invalid file mentions')
+  const mentions = value.map(({ path, start, end }) => ({ path, start, end }))
+  const ranges = [...mentions, ...attachments]
+  if (!mentions.every((mention) => isFileMentionAt(body, mention)) || !rangesAreDisjoint(ranges)) {
+    throw new Error('File mentions do not match the prompt text')
+  }
+  return mentions
+}
+
 export function normalizeSessionPrompt(input: SessionPromptInput) {
   const body = typeof input.text === 'string' ? input.text : ''
   const textAttachments = normalizeTextAttachments(input.textAttachments)
-  const inlineAttachments = textAttachments.length > 0 && isInlinePastedTextAttachments(body, textAttachments)
+  const inlineAttachments = isInlinePastedTextAttachments(body, textAttachments)
     ? textAttachments
     : undefined
+  // A legacy prompt appends its attachments after the body; mentions only exist beside inline ranges.
+  const mentions = inlineAttachments ? normalizeFileMentions(body, input.fileMentions, inlineAttachments) : []
   const modelText = inlineAttachments ? body : composePromptText(body, textAttachments)
-  const metadata = textAttachments.length > 0
+  const hasRanges = textAttachments.length > 0 || mentions.length > 0
+  const metadata = hasRanges
     ? inlineAttachments
-      ? createInlinePastedTextMetadata(modelText, inlineAttachments)
+      ? createInlinePastedTextMetadata(modelText, inlineAttachments, mentions)
       : createPastedTextMetadata(body, textAttachments)
     : undefined
-  const displayMetadata: PastedTextDisplayMetadata | undefined = textAttachments.length > 0
+  const displayMetadata: PastedTextDisplayMetadata | undefined = hasRanges
     ? inlineAttachments
-      ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments)
+      ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments, mentions)
       : { body, attachments: textAttachments }
     : undefined
   const attachments = (Array.isArray(input.images) ? input.images : []).flatMap((image) => {

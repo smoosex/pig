@@ -50,13 +50,15 @@ export function restoreSessionUserPrompt(
     end: attachment.end,
     ...(attachment.filename ? { filename: attachment.filename } : {})
   }))
+  const fileMentions = source?.metadata.version === 2 ? source.metadata.mentions : undefined
 
   return {
     parentId: pastedTextEntry ? pastedTextEntry.parentId : entry.parentId,
     prompt: {
       text,
       images,
-      ...(textAttachments ? { textAttachments } : {})
+      ...(textAttachments ? { textAttachments } : {}),
+      ...(fileMentions?.length ? { fileMentions } : {})
     }
   }
 }

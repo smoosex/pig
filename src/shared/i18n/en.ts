@@ -874,6 +874,13 @@ export const en: Messages = {
     pastedText: 'Pasted text',
     imageReadFailed: 'An image could not be read; paste it again.'
   },
+  fileMention: {
+    loading: 'Loading…',
+    missing: 'File not found',
+    lines: '{n} lines',
+    modified: 'Modified {time}',
+    copyPath: 'Copy path'
+  },
   retry: {
     requestWaiting: 'Request failed, retrying in {seconds}s (attempt {attempt}/{total})',
     requestRetrying: 'Request failed, retrying (attempt {attempt}/{total})',

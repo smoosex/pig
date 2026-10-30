@@ -3,7 +3,7 @@ import { t } from '../../lib/i18n'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
 import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
-import { composerUserMessage, textToComposerDocument } from './document'
+import { composerUserMessage, textToComposerDocument, trimComposer } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import type { useComposerImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
@@ -75,12 +75,13 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
 
     const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images: images.map(({ id, mimeType, data }) => ({ id, mimeType, data })) }
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
-    const titleText = hasAttachments ? stripPastedTextAttachments(serialized.text, serialized.attachments).trim() : trimmed
+    const prompt = trimComposer(serialized)
+    const titleText = hasAttachments ? stripPastedTextAttachments(prompt.text, prompt.attachments).trim() : trimmed
     // An attachments/images-only first message has no text to show: the title is a marker the store
     // translates, never a frozen word.
     const fallback: SessionPreviewFallback | undefined = hasAttachments ? 'pastedText' : images.length > 0 ? 'image' : undefined
     const title = titleText.slice(0, 500) || (fallback === 'pastedText' ? t('composer.pastedText') : fallback === 'image' ? t('common.image') : '')
-    const text = hasAttachments ? serialized.text : trimmed
+    const text = prompt.text
     if (command !== null) bashInFlight.current.add(target)
 
     if (isDraftSession) {
@@ -172,7 +173,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const agentRunRevision = runtime.agentRunRevision
     setErrors((current) => ({ ...current, [target]: undefined }))
 
-    const optimistic = composerUserMessage(text, payload, serialized.attachments)
+    const optimistic = composerUserMessage(text, payload, prompt.attachments, prompt.mentions)
     if (!streaming) state.beginPrompt(target, optimistic)
     if (title) state.previewSessionTitle(target, title, fallback)
     document.clear()
@@ -198,8 +199,9 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
         target,
         text,
         payload.length > 0 ? payload : undefined,
-        hasAttachments ? serialized.attachments : undefined,
-        streamingBehavior
+        hasAttachments ? prompt.attachments : undefined,
+        streamingBehavior,
+        prompt.mentions.length > 0 ? prompt.mentions : undefined
       )
     } catch (error) {
       if (!isCurrent()) return

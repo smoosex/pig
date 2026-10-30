@@ -131,8 +131,8 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle(
     'session:prompt',
-    async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown) => {
-      await promptSession(sessionId, { text, images, textAttachments, streamingBehavior })
+    async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown, fileMentions?: unknown) => {
+      await promptSession(sessionId, { text, images, textAttachments, fileMentions, streamingBehavior })
     }
   )
 
