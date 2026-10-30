@@ -14,10 +14,12 @@ import { registerTerminalIpc } from './terminal'
 import { getLive } from '../pi/session-registry'
 import { registerProcessIpc } from './processes'
 import { registerPermissionsIpc } from './permissions'
+import { registerSessionReader } from '../pi/session-read'
 
 export function registerIpc(): void {
   registerProjectIpc()
   registerSessionIpc()
+  registerSessionReader()
   registerSystemIpc()
   registerDiffIpc()
   registerFilesIpc()

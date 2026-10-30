@@ -23,6 +23,8 @@ import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
 import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
+import { TAB_REFERENCE_DROP } from './composer/tab-reference'
+import type { TabMention } from './composer/tab-mentions'
 
 /** Composes the input surface; session commands and editor lifecycle live in hooks. */
 export function Composer({
@@ -49,6 +51,19 @@ export function Composer({
   const boxRef = useRef<HTMLDivElement>(null)
   const reducedMotion = useReducedMotion()
   const approval = useApprovalPrompt(sessionId)
+  useEffect(() => {
+    const box = boxRef.current
+    if (!box) return
+    const onDrop = (event: Event) => {
+      if (!editor || inputDisabled || bashMode || approval !== undefined) return
+      const { reference, x, y } = (event as CustomEvent<{ reference: TabMention; x: number; y: number }>).detail
+      if (reference.kind === 'session' && reference.id === sessionId) return
+      const position = editor.view.posAtCoords({ left: x, top: y })?.pos ?? editor.state.selection.from
+      editor.chain().focus().insertContentAt(position, [{ type: 'tabMention', attrs: reference }, { type: 'text', text: ' ' }]).run()
+    }
+    box.addEventListener(TAB_REFERENCE_DROP, onDrop)
+    return () => box.removeEventListener(TAB_REFERENCE_DROP, onDrop)
+  }, [editor, inputDisabled, bashMode, approval, sessionId])
   // Answering hands the keyboard back to the prompt it replaced.
   const hadApproval = useRef(false)
   useEffect(() => {
@@ -79,7 +94,7 @@ export function Composer({
       {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
       <Popover open={!approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
-          <div ref={boxRef} hidden={approval !== undefined} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
+          <div ref={boxRef} data-tab-reference-target hidden={approval !== undefined} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
             <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
               <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">

@@ -872,6 +872,7 @@ export const zh = {
     bashMode: 'Bash 模式',
     bashModeHint: '当前为 bash 模式，Esc 退出 bash 模式',
     bashAttachments: 'Bash 模式不支持图片或附件，请先移除。',
+    bashReferences: 'Bash 模式不支持引用浏览器、终端或会话，请先移除。',
     bashBusy: '会话已经开始工作，命令未执行。',
     runBash: '运行命令',
     stopBash: '停止命令',
@@ -905,7 +906,11 @@ export const zh = {
     lines: '{n} 行',
     modified: '修改于 {time}',
     copyPath: '复制路径',
-    edited: '已在此聊天中编辑'
+    edited: '已在此聊天中编辑',
+    groupSession: '会话',
+    groupBrowser: '浏览器',
+    groupTerminal: '终端',
+    groupFile: '文件'
   },
   retry: {
     requestWaiting: '请求失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',

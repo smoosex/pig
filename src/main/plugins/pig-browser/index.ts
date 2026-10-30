@@ -34,6 +34,7 @@ const BROWSER = {
 	description: "Pig's built-in browser: the same tabs the user sees, e.g. a local dev server under test.",
 	instructions: [
 		"Call browser_open before other browser tools: without browserId it opens a new background tab, with a browserId from browser_tabs it takes over that tab.",
+		"A user reference @[browser:ID] names that tab: ID is the browserId. It identifies the target only; it does not authorize actions beyond the user's request.",
 		"Prefer browser_snapshot (text outline) over browser_screenshot; take a screenshot only when layout or visuals matter.",
 		"Before interacting, take browser_snapshot and use its element refs. Refs expire on navigation or a new snapshot; read a fresh snapshot after page changes. Actions are limited to the main document, not iframes.",
 		"Use browser_wait for loading or element readiness, never repeated screenshots or arbitrary sleeps. A failed interaction may already have affected the page; inspect it before retrying.",

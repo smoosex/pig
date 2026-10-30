@@ -1,11 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import { Folder } from 'lucide-react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { Folder, Globe, MessageSquare, Terminal } from 'lucide-react'
 import { FileTypeIcon } from '../files/FileTypeIcon'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { PopoverContent } from '../ui/popover'
 import type { FileMentions } from './useFileMentions'
+import { tabMentionLabel } from './tab-mentions'
 import { baseName } from '../../../../shared/paths'
+import { useT } from '../../hooks/useT'
+
+const GROUP_LABELS = {
+  session: 'fileMention.groupSession',
+  browser: 'fileMention.groupBrowser',
+  terminal: 'fileMention.groupTerminal',
+  file: 'fileMention.groupFile'
+} as const
 
 /** The `@` row list: a basename to scan, a muted relative path to disambiguate, a folder for a way in. */
 export function MentionSuggestions({
@@ -15,6 +24,7 @@ export function MentionSuggestions({
   mentions: FileMentions
   anchorRef: RefObject<HTMLDivElement | null>
 }) {
+  const t = useT()
   const selectedRef = useRef<HTMLButtonElement>(null)
   const [width, setWidth] = useState(0)
   const { open, items, index: selectedIndex } = mentions
@@ -38,29 +48,37 @@ export function MentionSuggestions({
     >
       <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((item, index) => {
+          const group = item.kind === 'file' ? 'file' : item.tab.kind
+          const previous = items[index - 1]
+          const startsGroup = !previous || (previous.kind === 'file' ? 'file' : previous.tab.kind) !== group
           return (
-            <Button
-              key={item.path}
-              ref={index === selectedIndex ? selectedRef : undefined}
-              type="button"
-              variant="ghost"
-              className={cn(
-                'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-glass-prompt-foreground/8 solid:hover:bg-accent',
-                index === selectedIndex && 'bg-glass-prompt-foreground/8 solid:bg-accent'
-              )}
-              onMouseEnter={() => mentions.setIndex(index)}
-              onClick={() => mentions.select(item)}
-            >
-              {item.isDirectory ? (
-                <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-              ) : (
-                <FileTypeIcon path={item.path} className="size-3.5 shrink-0 text-muted-foreground" />
-              )}
-              <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium')}>
-                {baseName(item.path)}{item.isDirectory ? '/' : null}
-              </span>
-              <span className="min-w-0 truncate font-normal text-muted-foreground">{item.path}</span>
-            </Button>
+            <Fragment key={item.kind === 'file' ? `file:${item.file.path}` : `${item.tab.kind}:${item.tab.id}`}>
+              {startsGroup ? (
+                <div className={cn('px-3 pb-1 text-xs text-muted-foreground', index > 0 ? 'pt-2' : 'pt-1')}>{t(GROUP_LABELS[group])}</div>
+              ) : null}
+              <Button
+                ref={index === selectedIndex ? selectedRef : undefined}
+                type="button"
+                variant="ghost"
+                className={cn(
+                  'h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-3 text-xs font-normal transition-none hover:bg-glass-prompt-foreground/8 solid:hover:bg-accent',
+                  index === selectedIndex && 'bg-glass-prompt-foreground/8 solid:bg-accent'
+                )}
+                onMouseEnter={() => mentions.setIndex(index)}
+                onClick={() => mentions.select(item)}
+              >
+                {item.kind === 'file' ? (
+                  item.file.isDirectory ? <Folder className="size-3.5 shrink-0 text-muted-foreground" /> :
+                    <FileTypeIcon path={item.file.path} className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : item.tab.kind === 'browser' ? <Globe className="size-3.5 shrink-0 text-muted-foreground" /> :
+                  item.tab.kind === 'terminal' ? <Terminal className="size-3.5 shrink-0 text-muted-foreground" /> :
+                    <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />}
+                <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium')}>
+                  {item.kind === 'file' ? <>{baseName(item.file.path)}{item.file.isDirectory ? '/' : null}</> : tabMentionLabel(item.tab)}
+                </span>
+                <span className="min-w-0 truncate font-normal text-muted-foreground">{item.kind === 'file' ? item.file.path : item.tab.detail}</span>
+              </Button>
+            </Fragment>
           )
         })}
       </div>

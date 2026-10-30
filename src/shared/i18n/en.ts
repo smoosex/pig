@@ -875,6 +875,7 @@ export const en: Messages = {
     bashMode: 'Bash mode',
     bashModeHint: 'Bash mode · press Esc to exit',
     bashAttachments: 'Remove images and attachments before running a Bash command.',
+    bashReferences: 'Remove browser, terminal and session references before running a Bash command.',
     bashBusy: 'The session started working; the command was not run.',
     runBash: 'Run command',
     stopBash: 'Stop command',
@@ -908,7 +909,11 @@ export const en: Messages = {
     lines: '{n} lines',
     modified: 'Modified {time}',
     copyPath: 'Copy path',
-    edited: 'Edited in this chat'
+    edited: 'Edited in this chat',
+    groupSession: 'Sessions',
+    groupBrowser: 'Browsers',
+    groupTerminal: 'Terminals',
+    groupFile: 'Files'
   },
   retry: {
     requestWaiting: 'Request failed, retrying in {seconds}s (attempt {attempt}/{total})',

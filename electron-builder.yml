@@ -48,6 +48,10 @@ extraResources:
     to: system-plugins/pig-process
     filter:
       - '**/*.ts'
+  - from: src/main/plugins/pig-session-host.ts
+    to: system-plugins/pig-session-host.ts
+  - from: src/main/plugins/pig-session
+    to: system-plugins/pig-session
   - from: src/main/plugins/pig-settings-host.ts
     to: system-plugins/pig-settings-host.ts
   - from: src/main/plugins/pig-settings

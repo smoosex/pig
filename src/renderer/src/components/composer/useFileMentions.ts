@@ -3,6 +3,10 @@ import type { Editor } from '@tiptap/react'
 import { api, type FileSuggestion } from '../../ipc/api'
 import { fileMentionText } from '../../../../shared/file-mentions'
 import { atMentionToken, mentionValue } from './mentions'
+import { useSessionsStore } from '../../stores/sessions'
+import { tabMentionMatches, tabMentions, tabMentionText, type TabMention } from './tab-mentions'
+
+type MentionItem = { kind: 'file'; file: FileSuggestion } | { kind: 'tab'; tab: TabMention }
 
 /**
  * `@` path completion for the composer, mirroring the slash-command hook's contract: a debounced
@@ -32,6 +36,7 @@ function pieceText(node: { isText: boolean; text?: string | null; type: { name: 
   if (node.type.name === 'hardBreak') return '\n'
   if (node.type.name === 'pastedText') return String(node.attrs.text ?? '')
   if (node.type.name === 'fileMention') return fileMentionText(String(node.attrs.path ?? ''))
+  if (node.type.name === 'tabMention') return tabMentionText(node.attrs as unknown as TabMention)
   return ''
 }
 
@@ -91,7 +96,9 @@ export function useFileMentions({
   disabled: boolean
 }) {
   const [target, setTarget] = useState<MentionTarget | null>(null)
-  const [items, setItems] = useState<FileSuggestion[]>([])
+  const [files, setItems] = useState<FileSuggestion[]>([])
+  const tabs = useSessionsStore((state) => state.openTabs)
+  const [browserUrls, setBrowserUrls] = useState<Record<string, string>>({})
   const [itemsFor, setItemsFor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
   const [dismissed, setDismissed] = useState(false)
@@ -129,19 +136,24 @@ export function useFileMentions({
     setDismissed(false)
   }, [query])
 
-  const select = useCallback((item: FileSuggestion) => {
+  const select = useCallback((item: MentionItem) => {
     const live = editor ? readMentionTarget(editor) : null
     if (!editor || !live) {
       setDismissed(true)
       return
     }
     const chain = editor.chain().focus().deleteRange({ from: live.from, to: live.to })
-    if (!item.isDirectory) {
-      chain.insertContent([{ type: 'fileMention', attrs: { path: item.path } }, { type: 'text', text: ' ' }]).run()
+    if (item.kind === 'tab') {
+      chain.insertContent([{ type: 'tabMention', attrs: item.tab }, { type: 'text', text: ' ' }]).run()
       setDismissed(true)
       return
     }
-    const value = mentionValue(item.path, live.quoted)
+    if (!item.file.isDirectory) {
+      chain.insertContent([{ type: 'fileMention', attrs: { path: item.file.path } }, { type: 'text', text: ' ' }]).run()
+      setDismissed(true)
+      return
+    }
+    const value = mentionValue(item.file.path, live.quoted)
     chain.insertContent(value).run()
     if (value.endsWith('"')) {
       // The value carries its closing quote — from the token or from whitespace in the path — so park
@@ -151,12 +163,12 @@ export function useFileMentions({
   }, [editor])
 
   useEffect(() => {
+    const pending = ++request.current
     if (!cwd || query === null) {
       setItems([])
       setItemsFor(null)
       return
     }
-    const pending = ++request.current
     const timer = setTimeout(() => {
       void api.suggestFiles(cwd, query).then(
         (list) => {
@@ -166,7 +178,7 @@ export function useFileMentions({
           setIndex(0)
           const queued = pendingSelect.current
           pendingSelect.current = null
-          if (queued !== null && list.length > 0) select(list[Math.min(queued, list.length - 1)])
+          if (queued !== null && list.length > 0) select({ kind: 'file', file: list[Math.min(queued, list.length - 1)] })
         },
         () => {
           if (request.current !== pending) return
@@ -179,8 +191,26 @@ export function useFileMentions({
     return () => clearTimeout(timer)
   }, [cwd, query, select])
 
+  useEffect(() => {
+    if (query === null || disabled || !tabs.some((tab) => tab.kind === 'browser')) return
+    let active = true
+    const accept = (state: { browserId: string; url: string }) => {
+      if (active) setBrowserUrls((current) => current[state.browserId] === state.url ? current : { ...current, [state.browserId]: state.url })
+    }
+    const off = api.browser.onState(accept)
+    for (const tab of tabs) if (tab.kind === 'browser') void api.browser.getState(tab.id).then(accept, (error: unknown) => {
+      console.error(`Failed to read browser ${tab.id} for @ mentions`, error)
+    })
+    return () => { active = false; off() }
+  }, [tabs, query === null, disabled])
+
   // Stale rows stay up while the fresh fetch is in flight: closing per keystroke is what flickers.
   // itemsFor only marks the loading state now, so Enter can queue behind it instead of misfiring.
+  const tabItems: MentionItem[] = query === null ? [] : tabMentions(tabs, resetKey)
+    .map((tab) => tab.kind === 'browser' && browserUrls[tab.id] ? { ...tab, detail: [browserUrls[tab.id], tab.detail].filter(Boolean).join(' · ') } : tab)
+    .filter((tab) => tabMentionMatches(tab, query))
+    .map((tab) => ({ kind: 'tab', tab }))
+  const items: MentionItem[] = [...tabItems, ...files.map((file): MentionItem => ({ kind: 'file', file }))]
   const loading = itemsFor !== query
   const open = !disabled && query !== null && !dismissed && items.length > 0
   const selectedIndex = Math.min(index, Math.max(0, items.length - 1))
@@ -202,7 +232,7 @@ export function useFileMentions({
     if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault()
       // Loading rows are stale: queue the key behind the fresh fetch instead of completing one.
-      if (loading) pendingSelect.current = selectedIndex
+      if (loading && items[selectedIndex].kind === 'file') pendingSelect.current = selectedIndex - tabItems.length
       else select(items[selectedIndex])
       return true
     }

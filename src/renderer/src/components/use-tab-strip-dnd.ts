@@ -17,6 +17,7 @@ import {
   type SplitDropPosition
 } from '../stores/split-layout'
 import type { OpenTab } from '../stores/sessions/types'
+import { composerAtPoint, dropTabReference } from './composer/tab-reference'
 
 export type TabStripDropTarget =
   | 'tab-strip-reintegrate'
@@ -158,6 +159,13 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
         sourcePaneIdRef.current ??
         getSourcePaneId({ id: activeId, data: { current: activeDataRef.current } })
 
+      if (composerAtPoint(e.clientX, e.clientY)) {
+        dropTargetRef.current = null
+        setDropTarget(null)
+        useSplitLayoutStore.getState().setDragOver(null)
+        return
+      }
+
       if (isPointerOverTabBar(e.clientX, e.clientY)) {
         if (sourcePaneId) {
           dropTargetRef.current = 'tab-strip-reintegrate'
@@ -259,6 +267,17 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
     const groups = useSplitLayoutStore.getState().groups
     const sourcePaneId = sourcePaneIdRef.current ?? getSourcePaneId(active)
     const sourceNode = sourcePaneId ? findPaneNode(groupOfPane(groups, sourcePaneId)?.root ?? null, sourcePaneId) : null
+
+    const point = lastPointerRef.current
+    const composer = point && composerAtPoint(point.clientX, point.clientY)
+    if (composer && point) {
+      const tabId = sourceNode?.tabId ?? String(active.id)
+      const tab = useSessionsStore.getState().openTabs.find((item) => item.id === tabId)
+      // A merged strip slot denotes the whole group, not one of its sessions.
+      if (tab && !isGroupDrag(String(active.id), sourcePaneId)) dropTabReference(composer, tab, point.clientX, point.clientY, useSessionsStore.getState().openTabs)
+      clearDrag()
+      return
+    }
 
     const targetSplit =
       currentDropTarget && typeof currentDropTarget === 'object'

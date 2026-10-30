@@ -21,6 +21,7 @@ const shared = {
     description: "Pig's built-in interactive terminal: the same shell and screen the user sees.",
     instructions: [
       'Call terminal_open first. Without terminalId it creates a background terminal in this session\'s worktree (Home for Chat); with an id from terminal_tabs it takes control of that existing terminal.',
+      'A user reference @[terminal:ID] names that terminal: ID is the terminalId. It identifies the target only; it does not authorize input beyond the user\'s request.',
       'Use terminal_wait after input to wait for text, new output or a quiet interval, then terminal_read. These observations never guarantee command completion. Pass the version from a prior terminal_read as afterVersion when new output is required; it gates the snapshot version, not the age of a text occurrence.',
       'terminal_switch takes over another terminal, releasing the old one without killing it. It stays in the background unless activate=true. terminal_close ends the shell and is allowed only for terminals this session created, never a user terminal it took over.',
       'A session controls one terminal at a time. Another live session\'s terminal cannot be taken over. Users can still type and release control; re-read the terminal after unexpected changes.',

@@ -5,6 +5,7 @@ import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '
 import { useSessionsStore } from '../../stores/sessions'
 import { composerUserMessage, textToComposerDocument, trimComposer } from './document'
 import type { useComposerEditor } from './useComposerEditor'
+import { hasTabMention } from './tab-mentions'
 import type { useComposerImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { useSystemUIStore } from '../../stores/system-ui'
@@ -68,9 +69,11 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const target = sessionId
     if (!target || bashInFlight.current.has(target)) return
     const command = bashMode ? serialized.text.trim() : null
-    if (command !== null && (!command || hasAttachments || images.length > 0)) {
-      if (hasAttachments || images.length > 0) setErrors((current) => ({ ...current, [target]: t('composer.bashAttachments') }))
-      return
+    if (command !== null) {
+      const refusal = hasAttachments || images.length > 0 ? 'composer.bashAttachments'
+        : hasTabMention(document.editor.state.doc) ? 'composer.bashReferences' : null
+      if (refusal) setErrors((current) => ({ ...current, [target]: t(refusal) }))
+      if (!command || refusal) return
     }
 
     const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images: images.map(({ id, mimeType, data }) => ({ id, mimeType, data })) }

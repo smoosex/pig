@@ -10,6 +10,7 @@ import { fileMentionText } from '../../../../shared/file-mentions'
 import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
 import { useT } from '../../hooks/useT'
 import { FileMentionNode } from '../FileMentionNode'
+import { TabMentionNode } from '../TabMentionNode'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
@@ -129,7 +130,8 @@ export function useComposerEditor(options: ComposerEditorOptions) {
       }),
       Placeholder.configure({ placeholder: () => placeholder.current }),
       PastedTextNode,
-      FileMentionNode
+      FileMentionNode,
+      TabMentionNode
     ],
     content: textToComposerDocument(''),
     onUpdate: ({ editor: nextEditor }) => {

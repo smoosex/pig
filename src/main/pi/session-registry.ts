@@ -1025,7 +1025,7 @@ export async function disposeAll(): Promise<void> {
   ))
 }
 
-function sessionState(sessionId: string): SessionState {
+export function sessionState(sessionId: string): SessionState {
   const session = live.get(sessionId) ?? pending.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   return session

@@ -5,6 +5,7 @@ import { matchesShortcut } from '../../lib/shortcuts'
 import { useComposerEditor } from './useComposerEditor'
 import { useComposerImages } from './useComposerImages'
 import { useFileMentions } from './useFileMentions'
+import { hasTabMention } from './tab-mentions'
 import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
@@ -57,6 +58,7 @@ export function useComposer(
   }, [draftKey, restoreVersion])
   const enteringBash = Boolean(
     draftKey && draft.text.startsWith('!') && draft.attachments[0]?.start !== 0 &&
+    !(editor && hasTabMention(editor.state.doc)) &&
     bashModeKey !== draftKey && dismissedBashKey !== draftKey
   )
   const bashMode = (bashModeKey === draftKey && draftKey !== null) || enteringBash

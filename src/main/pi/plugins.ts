@@ -32,6 +32,7 @@ interface Registry {
   terminalScopes: PluginScope[]
   processScopes: PluginScope[]
   settingsScopes: PluginScope[]
+  sessionScopes: PluginScope[]
   personaScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
@@ -58,6 +59,9 @@ const terminalPath = () => app.isPackaged
 const processPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-process', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-process', 'index.ts')
+const sessionPath = () => app.isPackaged
+  ? join(process.resourcesPath, 'system-plugins', 'pig-session', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
 const personaPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
@@ -80,7 +84,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], personaScopes: ['project', 'chat'], installed: [] }
+  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], personaScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -117,6 +121,7 @@ async function readRegistry(): Promise<Registry> {
     terminalScopes: 'terminalScopes' in value ? parseScopes(value.terminalScopes) : defaults.terminalScopes,
     processScopes: 'processScopes' in value ? parseScopes(value.processScopes) : defaults.processScopes,
     settingsScopes: 'settingsScopes' in value ? parseScopes(value.settingsScopes) : defaults.settingsScopes,
+    sessionScopes: 'sessionScopes' in value ? parseScopes(value.sessionScopes) : defaults.sessionScopes,
     personaScopes: 'personaScopes' in value ? parseScopes(value.personaScopes) : defaults.personaScopes,
     installed
   }
@@ -196,6 +201,7 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' },
     { scopes: registry.processScopes, path: processPath(), name: 'background process' },
     { scopes: registry.settingsScopes, path: settingsToolPath(), name: 'settings' },
+    { scopes: registry.sessionScopes, path: sessionPath(), name: 'session' },
     { scopes: registry.personaScopes, path: personaPath(), name: 'persona' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
@@ -218,7 +224,7 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
  * background processes (owned by the parent's session, which a subagent cannot manage), and
  * application settings (only the parent handles the user's global preferences). */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), personaPath()].map((path) => resolve(path)))
+  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), sessionPath(), personaPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -274,6 +280,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
+    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Session Reader' }],
     [resolve(personaPath()), { kind: 'pig', id: 'pi-persona', name: 'Persona' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
@@ -349,6 +356,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.settingsScopes, available: existsSync(settingsToolPath()),
     ...(!existsSync(settingsToolPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
+    id: 'pig-session', name: 'Session Reader', source: 'Pig built-in',
+    kind: 'system', scopes: registry.sessionScopes, available: existsSync(sessionPath()),
+    ...(!existsSync(sessionPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
     id: 'pi-persona', name: 'Persona', source: 'Pig built-in',
     kind: 'system', scopes: registry.personaScopes, available: existsSync(personaPath()),
     ...(!existsSync(personaPath()) ? { error: 'Bundled extension is missing' } : {})
@@ -393,7 +404,7 @@ export function installPlugin(source: string): Promise<void> {
 const BUNDLED_SCOPES = {
   'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pi-web-access': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
-  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pi-persona': 'personaScopes'
+  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pi-persona': 'personaScopes'
 } as const satisfies Record<string, keyof Registry>
 
 function registryScopes(registry: Registry): Record<string, PluginScope[]> {
@@ -429,6 +440,9 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   } else if (id === 'pig-settings') {
     if (addsScope(registry.settingsScopes) && !existsSync(settingsToolPath())) throw new Error('Bundled extension is missing')
     registry.settingsScopes = next
+  } else if (id === 'pig-session') {
+    if (addsScope(registry.sessionScopes) && !existsSync(sessionPath())) throw new Error('Bundled extension is missing')
+    registry.sessionScopes = next
   } else if (id === 'pi-persona') {
     if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
     registry.personaScopes = next

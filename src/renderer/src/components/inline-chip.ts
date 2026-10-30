@@ -1,5 +1,5 @@
 /**
- * Shared look for chips that sit inside a line of prompt text: file references and pasted text.
+ * Shared look for chips that sit inside a line of prompt text: file and tab references and pasted text.
  * The height stays near the composer's line height so a caret drawn beside a chip matches one in text.
  * Middle, not baseline: an inline-flex box takes its baseline from the leading icon's bottom edge,
  * which would lift the chip above the text. Middle in turn means half an x-height above the
