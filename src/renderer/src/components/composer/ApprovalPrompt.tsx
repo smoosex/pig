@@ -1,7 +1,8 @@
 /**
  * A permission request of this session, shown in place of its prompt box instead of a dialog. A
- * click or a number key answers at once; arrows/Space only move the choice and Enter confirms it, so
- * keyboard navigation cannot approve by accident. Esc picks the last option, which always denies.
+ * click or a number key answers at once; arrows/Space only move the choice and Enter confirms the
+ * highlighted (focused) one, so keyboard navigation cannot approve by accident. Esc picks the last
+ * option, which always denies.
  * Keys are ignored briefly after the card takes focus: it replaces the prompt box, so a digit or
  * Enter the user was still typing into a draft must not become an answer.
  */
@@ -80,7 +81,10 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
       event.stopPropagation()
       return
     }
-    const index = event.key === 'Escape' ? options.length - 1 : /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1
+    // Focus alone highlights a choice without checking it, and Questionnaire's Enter ignores an
+    // unchecked choice, so Enter answers with the focused choice itself.
+    const focusedIndex = event.key === 'Enter' && event.target instanceof HTMLInputElement ? options.indexOf(event.target.value) : -1
+    const index = event.key === 'Escape' ? options.length - 1 : /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : focusedIndex
     const option = options[index]
     if (option === undefined) return
     // Prevented before Questionnaire's own shortcut, which would only select the choice.

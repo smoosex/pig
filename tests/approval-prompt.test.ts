@@ -70,6 +70,18 @@ async function fixture() {
   await key(card()?.querySelector('input') ?? document.body, '2')
   assert.deepEqual(replies, [['by-key', 'Allow for this session']])
 
+  // Enter confirms the highlighted choice, including the initially focused one that is not checked.
+  await add('by-enter')
+  now += 1000
+  await key(document.activeElement!, 'Enter')
+  assert.deepEqual(replies.at(-1), ['by-enter', 'Allow once'])
+  await add('by-focus-enter')
+  now += 1000
+  const second = card()!.querySelectorAll('input')[1]!
+  await act(() => second.focus())
+  await key(second, 'Enter')
+  assert.deepEqual(replies.at(-1), ['by-focus-enter', 'Allow for this session'])
+
   await add('by-escape')
   now += 1000
   await key(card()!.querySelector('input')!, 'Escape')
