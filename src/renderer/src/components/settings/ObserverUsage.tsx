@@ -1,6 +1,6 @@
 /* The only UI entry for mood observer token records: a 7-day summary row and a read-only details dialog. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RotateCw } from 'lucide-react'
 import {
   PERSONA_OBSERVER_OUTCOMES, type PersonaObserverUsageRange, type PersonaObserverUsageSummary, type PersonaObserverUsageTotals,
 } from '../../../../shared/persona'
@@ -85,7 +85,7 @@ function UsageDialog({ onCleared }: { onCleared(): void }) {
           <SelectItem value="all">{t('persona.usageRangeAll')}</SelectItem>
         </SelectGroup></SelectContent>
       </Select>
-      <Button size="icon-sm" variant="ghost" aria-label={t('persona.usageRefresh')} disabled={loading} onClick={() => load(range)}><RefreshCw /></Button>
+      <Button size="icon-sm" variant="ghost" aria-label={t('persona.usageRefresh')} disabled={loading} onClick={() => load(range)}><RotateCw className={loading ? 'animate-spin' : undefined} /></Button>
     </div>
     {error && <p className="text-sm text-destructive">{t('persona.usageError', { error })}</p>}
     {summary && <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
