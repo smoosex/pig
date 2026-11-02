@@ -7,7 +7,7 @@ import { waitForBrowserPaint } from './browser-frame'
 let writes: Promise<void> = Promise.resolve()
 const owners = new Map<string, object>()
 
-const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview]'
+const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview], [data-sidebar-overlay]'
 const REVEAL = '[data-surface-reveal]'
 /** Zero-height marker at the top of docked DevTools; everything below it is DevTools. */
 const DIVIDER = '[data-devtools-divider]'
@@ -108,7 +108,7 @@ export function useBrowserBounds(
           ...(devtools ? { devtools } : {}) } : null
       // Enter/exit transforms can move a menu across the viewport without DOM or resize mutations.
       if ([...document.querySelectorAll<HTMLElement>(RELEVANT)].some(element =>
-        element.getAnimations().some(animation => animation.playState === 'running'))) schedule()
+        element.getAnimations({ subtree: true }).some(animation => animation.playState === 'running'))) schedule()
       const key = JSON.stringify(bounds)
       if (last === key) return
       last = key
@@ -118,7 +118,7 @@ export function useBrowserBounds(
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
     const overlayMotion = (event: Event) => {
-      if (event.target instanceof Element && event.target.matches(RELEVANT)) schedule()
+      if (event.target instanceof Element && event.target.closest(RELEVANT)) schedule()
     }
     const motionEvents = ['animationstart', 'animationend', 'animationcancel', 'transitionrun', 'transitionend', 'transitioncancel']
     for (const event of motionEvents) document.addEventListener(event, overlayMotion, true)
@@ -127,12 +127,12 @@ export function useBrowserBounds(
     // Ignore streaming text and unrelated row mutations; inspect only overlay roots and their state.
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === 'attributes'
-        ? record.attributeName === 'data-surface-reveal' || (record.target instanceof Element && record.target.matches(RELEVANT))
+        ? record.attributeName === 'data-surface-reveal' || record.attributeName === 'data-sidebar-overlay' || (record.target instanceof Element && record.target.matches(RELEVANT))
         : [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
           (node.matches(RELEVANT) || node.querySelector(RELEVANT))))) schedule()
     })
     mutations.observe(document.body, { subtree: true, childList: true, attributes: true,
-      attributeFilter: ['data-state', 'hidden', 'style', 'data-surface-reveal'] })
+      attributeFilter: ['data-state', 'hidden', 'style', 'data-surface-reveal', 'data-sidebar-overlay'] })
     mutations.observe(document.documentElement, { attributes: true, attributeFilter: ['data-surface-reveal', 'style'] })
     window.addEventListener('resize', schedule)
     window.addEventListener('scroll', schedule, true)

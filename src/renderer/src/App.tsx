@@ -4,6 +4,7 @@ import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { isSessionEmpty } from './chat/session-empty'
 import { useDiffStore } from './stores/diff'
 import { useT } from './hooks/useT'
+import { useFloatingSidebar } from './hooks/useFloatingSidebar'
 import { useEventBridge } from './hooks/useEventBridge'
 import { useSessionNames } from './hooks/useSessionNames'
 import { useWorktreeDeletions } from './hooks/useWorktreeDeletions'
@@ -268,8 +269,31 @@ export default function App() {
     }
   }, [openTabs, splitGroups])
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
+  const [autoCollapsed, setAutoCollapsed] = useState({ left: false, right: false })
+  const floatingSidebar = useFloatingSidebar()
+  const hoverSidebar = floatingSidebar.side
+  useEffect(() => {
+    const resize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const toggleLeftSidebar = () => {
+    if (autoCollapsed.left) {
+      floatingSidebar.toggle('left')
+      setSidebarOpen(true)
+    } else setSidebarOpen((open) => !open)
+  }
+  const toggleRightSidebar = () => {
+    if (!currentProjectCwd) return
+    const diff = useDiffStore.getState()
+    if (autoCollapsed.right) {
+      floatingSidebar.toggle('right')
+      diff.setReviewOpen(true)
+    } else diff.setReviewOpen(!diff.reviewOpen)
+  }
   /**
    * What each half of the switcher was left on. A chat clears `currentProjectCwd`, so the worktree
    * the projects half sat in has to be remembered here; the chat half remembers its tab because the
@@ -332,12 +356,11 @@ export default function App() {
           })
           break
         case 'project.add': void openProject(); break
-        case 'sidebar.toggleLeft': setSidebarOpen((open) => !open); break
+        case 'sidebar.toggleLeft': toggleLeftSidebar(); break
         case 'settings.toggle': setSettingsOpen((open) => !open); break
         case 'sidebar.toggleRight': {
           if (!currentProjectCwd) break
-          const diff = useDiffStore.getState()
-          diff.setReviewOpen(!diff.reviewOpen)
+          toggleRightSidebar()
           break
         }
         default: selectStripTab(action)
@@ -358,7 +381,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown, true)
       offBrowserShortcut()
     }
-  }, [activeTabId, closeTab, currentProjectCwd, openProject, sidebarTab])
+  }, [activeTabId, closeTab, currentProjectCwd, openProject, sidebarTab, autoCollapsed.left, autoCollapsed.right])
 
   useEffect(() => {
     if (!sidebarReady || requestedWorkspaceRestore.current) return
@@ -375,7 +398,22 @@ export default function App() {
   const diffTab = activeTab?.kind === 'diff' ? activeTab : null
   const fileTab = activeTab?.kind === 'file' ? activeTab : null
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
-  const setReviewOpen = useDiffStore((s) => s.setReviewOpen)
+  useEffect(() => {
+    setAutoCollapsed((previous) => {
+      const left = windowWidth < 648 + (previous.left ? 24 : 0)
+      const rightLimit = sidebarOpen && !left ? 896 : 648
+      const right = windowWidth < rightLimit + (previous.right ? 24 : 0)
+      return left === previous.left && right === previous.right ? previous : { left, right }
+    })
+  }, [windowWidth, sidebarOpen])
+  const leftCollapsed = !sidebarOpen || autoCollapsed.left
+  const rightCollapsed = !reviewOpen || autoCollapsed.right
+  useEffect(() => {
+    if (settingsOpen || (hoverSidebar === 'left' && !leftCollapsed) ||
+        (hoverSidebar === 'right' && (!rightCollapsed || !currentProjectCwd))) {
+      floatingSidebar.close()
+    }
+  }, [settingsOpen, hoverSidebar, leftCollapsed, rightCollapsed, currentProjectCwd, floatingSidebar.close])
   const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
   const sessionEmpty = useSessionsStore((s) => sessionReady && isSessionEmpty(s.runtime[activeSessionId!]))
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
@@ -471,10 +509,10 @@ export default function App() {
       <ProjectPickerDialog />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
-          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (sidebarOpen || settingsOpen) && 'w-62')}>
+          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (!leftCollapsed || settingsOpen) && 'w-62')}>
             {settingsOpen ? null : (
               <>
-                <SidebarToggle onClick={() => setSidebarOpen((v) => !v)} />
+                <SidebarToggle onClick={toggleLeftSidebar} />
                 <GooglyEyesButton
                   label={t(sidebarTab === 'projects' ? 'sidebar.projects' : 'sidebar.chats')}
                   alternateLabel={t(sidebarTab === 'projects' ? 'sidebar.chats' : 'sidebar.projects')}
@@ -503,7 +541,7 @@ export default function App() {
                       className={cn('no-drag translate-y-px', sidebarSurfaceToggle)}
                       aria-label={t('app.sidebarRight')}
                       aria-pressed={reviewOpen}
-                      onClick={() => setReviewOpen(!reviewOpen)}
+                      onClick={toggleRightSidebar}
                     >
                       <PanelRight />
                     </Button>
@@ -532,13 +570,30 @@ export default function App() {
             </AlertAction>
           </Alert>
         ) : null}
-        <div className="flex min-h-0 flex-1">
-          <Sidebar
-            hidden={!sidebarOpen || settingsOpen}
-            onOpenSettings={() => setSettingsOpen(true)}
-            tab={sidebarTab}
-            preferencesError={sidebarPrefsError}
-          />
+        <div className="relative flex min-h-0 flex-1">
+          {!settingsOpen && leftCollapsed && hoverSidebar !== 'left' ? (
+            <div className="absolute inset-y-0 left-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('left')} />
+          ) : null}
+          <div
+            className={cn('flex shrink-0', leftCollapsed && 'absolute inset-y-0 left-0 z-30',
+              leftCollapsed && hoverSidebar === 'left' && !settingsOpen && 'p-2',
+              leftCollapsed && hoverSidebar !== 'left' && 'pointer-events-none')}
+            onMouseLeave={() => floatingSidebar.leave('left')}
+          >
+            <div
+              data-sidebar-overlay={leftCollapsed && hoverSidebar === 'left' && !settingsOpen ? '' : undefined}
+              className={cn('flex', leftCollapsed && hoverSidebar === 'left' && !settingsOpen &&
+                'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
+            >
+              <Sidebar
+                floating={leftCollapsed}
+                hidden={settingsOpen || (leftCollapsed && hoverSidebar !== 'left')}
+                onOpenSettings={() => setSettingsOpen(true)}
+                tab={sidebarTab}
+                preferencesError={sidebarPrefsError}
+              />
+            </div>
+          </div>
           {settingsOpen ? (
             <SettingsPage onClose={() => setSettingsOpen(false)} />
           ) : (
@@ -640,7 +695,27 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            {currentProjectCwd ? <WorkspacePanel cwd={currentProjectCwd} hidden={!reviewOpen} /> : null}
+            {currentProjectCwd ? (
+              <>
+                {rightCollapsed && hoverSidebar !== 'right' ? (
+                  <div className="absolute inset-y-0 right-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('right')} />
+                ) : null}
+                <div
+                  className={cn('flex shrink-0', rightCollapsed && 'absolute inset-y-0 right-0 z-30',
+                    rightCollapsed && hoverSidebar === 'right' && 'p-2',
+                    rightCollapsed && hoverSidebar !== 'right' && 'pointer-events-none')}
+                  onMouseLeave={() => floatingSidebar.leave('right')}
+                >
+                  <div
+                    data-sidebar-overlay={rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
+                    className={cn('flex', rightCollapsed && hoverSidebar === 'right' &&
+                      'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
+                  >
+                    <WorkspacePanel cwd={currentProjectCwd} floating={rightCollapsed} hidden={rightCollapsed && hoverSidebar !== 'right'} />
+                  </div>
+                </div>
+              </>
+            ) : null}
             </>
           )}
         </div>

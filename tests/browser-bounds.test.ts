@@ -164,6 +164,35 @@ async function fixture(scenario: string) {
       content.remove()
       await settle()
       assert.ok(native)
+    } else if (scenario === 'animated-sidebar') {
+      const content = document.createElement('div')
+      content.setAttribute('data-sidebar-overlay', '')
+      const rail = document.createElement('aside')
+      content.append(rail)
+      let width = 0
+      let running = false
+      content.getBoundingClientRect = () => new DOMRect(8, 8, width, 500)
+      content.getAnimations = (options) => options?.subtree && running
+        ? [{ playState: 'running' } as Animation] : []
+      document.body.append(content)
+      await settle()
+      assert.ok(native)
+      assert.equal(frames.size, 0)
+      running = true
+      rail.dispatchEvent(new Event('transitionrun', { bubbles: true }))
+      await paint()
+      assert.ok(frames.size > 0, 'a descendant transition starts subtree animation polling')
+      width = 248
+      await settle()
+      assert.equal(native, null, 'the expanding sidebar hides the native page once they overlap')
+      assert.equal(still, image)
+      running = false
+      rail.dispatchEvent(new Event('transitionend', { bubbles: true }))
+      await settle()
+      assert.equal(frames.size, 0)
+      content.remove()
+      await settle()
+      assert.ok(native)
     } else if (scenario === 'split-preview') {
       // The pane drop preview is DOM; a native page above it would hide where the tab lands.
       const preview = document.createElement('div')
@@ -369,6 +398,7 @@ const scenarios = {
   'split-corners': 'native bounds and frozen frame use the split pane inner bottom corners',
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',
   'animated-menu': 'an entering menu crossing into a split page is remeasured without DOM mutations',
+  'animated-sidebar': 'sidebar child width transitions remeasure native page occlusion',
   'split-preview': 'the split drop preview over a page swaps it for its still until the drag leaves',
   devtools: 'docked DevTools take the viewport below their marker and follow it when it moves',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',

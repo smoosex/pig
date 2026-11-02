@@ -19,11 +19,13 @@ import { useProjectAction } from './sidebar/project-action'
 export function Sidebar({
   onOpenSettings,
   hidden = false,
+  floating = false,
   tab,
   preferencesError
 }: {
   onOpenSettings: () => void
   hidden?: boolean
+  floating?: boolean
   tab: SidebarTab
   preferencesError: string | null
 }) {
@@ -48,7 +50,8 @@ export function Sidebar({
       inert={hidden}
       aria-hidden={hidden}
       className={cn(
-        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground transition-[width,background-color] duration-200 ease-in-out motion-reduce:transition-none',
+        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground duration-200 ease-in-out motion-reduce:transition-none',
+        floating && hidden ? 'transition-[background-color]' : 'transition-[width,background-color]',
         hidden ? 'w-0' : 'w-62'
       )}
     >

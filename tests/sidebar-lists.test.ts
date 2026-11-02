@@ -18,6 +18,9 @@ mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({
 mock.module('../src/renderer/src/components/sidebar/ChatList', () => ({
   ChatList: () => createElement('div', { 'data-stub': 'chat-list' })
 }))
+mock.module('../src/renderer/src/components/diff/ChangesPanel', () => ({
+  ChangesPanel: () => createElement('div', { 'data-stub': 'changes-panel' })
+}))
 
 let domReady = false
 let domOurs = false
@@ -44,6 +47,36 @@ afterEach(async () => {
 })
 
 describe('sidebar list per half', () => {
+  test('floating sidebars close without a width transition; docked sidebars retain it', async () => {
+    await ensureDom()
+    const { act, createElement: h } = await import('react')
+    const { createRoot } = await import('react-dom/client')
+    const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
+    const { WorkspacePanel } = await import('../src/renderer/src/components/panel/WorkspacePanel')
+    const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    try {
+      for (const floating of [false, true]) {
+        await act(async () => root.render(h(TooltipProvider, null,
+          h(Sidebar, { hidden: true, floating, onOpenSettings: () => {}, tab: 'projects', preferencesError: null }),
+          h(WorkspacePanel, { cwd: '/sidebar-transition-test', hidden: true, floating })
+        )))
+        const rails = container.querySelectorAll('aside')
+        assert.equal(rails.length, 2)
+        for (const rail of rails) {
+          assert.ok(rail.classList.contains('w-0'))
+          assert.equal(rail.classList.contains('transition-[width,background-color]'), !floating)
+          assert.equal(rail.classList.contains('transition-[background-color]'), floating,
+            'a floating rail must reach zero width as soon as its occlusion marker is removed')
+        }
+      }
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
+  })
   test('each half renders only its own list and action', async () => {
     await ensureDom()
     const { act, createElement: h } = await import('react')

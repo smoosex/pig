@@ -18,7 +18,7 @@ import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
 
-export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
+export function WorkspacePanel({ cwd, hidden = false, floating = false }: { cwd: string; hidden?: boolean; floating?: boolean }) {
   const t = useT()
   const tab = useDiffStore((s) => s.panelTab[cwd] ?? 'changes')
   const setPanelTab = useDiffStore((s) => s.setPanelTab)
@@ -34,7 +34,8 @@ export function WorkspacePanel({ cwd, hidden = false }: { cwd: string; hidden?: 
       inert={hidden}
       aria-hidden={hidden}
       className={cn(
-        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground transition-[width,background-color] duration-200 ease-in-out motion-reduce:transition-none',
+        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground duration-200 ease-in-out motion-reduce:transition-none',
+        floating && hidden ? 'transition-[background-color]' : 'transition-[width,background-color]',
         hidden ? 'w-0' : 'w-62'
       )}
     >
