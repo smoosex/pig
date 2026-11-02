@@ -220,7 +220,7 @@ export function SmoothHoverHighlight({
     <motion.span
       aria-hidden
       className={cn(
-        'pointer-events-none absolute top-0 left-0 rounded-md bg-accent will-change-transform',
+        'pointer-events-none absolute top-0 left-0 rounded-md bg-glass-prompt-foreground/8 will-change-transform solid:bg-accent',
         highlightClassName
       )}
       style={{ x, y, width, height, opacity }}

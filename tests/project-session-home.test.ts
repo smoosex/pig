@@ -35,8 +35,8 @@ async function fixture(): Promise<void> {
   try {
     await act(async () => { root.render(h(ProjectSessionHome, { cwd })) })
     const highlight = container.querySelector('span.will-change-transform')!
-    assert.ok(highlight.classList.contains('bg-muted'), 'the recent-session panel keeps its existing hover surface')
-    assert.ok(highlight.classList.contains('dark:bg-muted/50'))
+    assert.ok(highlight.classList.contains('bg-glass-prompt-foreground/8'), 'the recent-session panel tints the glass surface')
+    assert.ok(highlight.classList.contains('solid:bg-accent'), 'solid keeps the opaque accent row')
     const rows = [...container.querySelectorAll<HTMLButtonElement>('[data-sidebar-hover-row]')]
     assert.deepEqual(rows.map((row) => row.querySelector('.truncate')?.textContent), ['s1', 's2', 's3', 's4', 's5'])
     assert.equal(rows[0]!.querySelector('.lucide-corner-down-right'), null, 'ancestors outside the candidates do not add rows')

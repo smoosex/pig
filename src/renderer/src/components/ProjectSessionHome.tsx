@@ -59,7 +59,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
           className="flex flex-col gap-1 px-4"
           rowSelector="[data-sidebar-hover-row]"
           targetAttribute="data-sidebar-hover-target"
-          highlightClassName="bg-muted dark:bg-muted/50"
+          highlightClassName="bg-glass-prompt-foreground/8 solid:bg-accent"
         >
           {sessions.map((row) => (
             <Button
