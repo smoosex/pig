@@ -11,13 +11,13 @@
  * will be rather than in a box over it; the rows below are the tree's own, the field included.
  */
 import { useEffect, useMemo } from 'react'
-import { ChevronRight, Eye, EyeOff, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronRight, Eye, EyeOff, Folder, FolderOpen } from 'lucide-react'
 import { watchWorktreeFiles, useFilesStore } from '../../stores/files'
 import { useSessionsStore } from '../../stores/sessions'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
-import { sidebarRowSurface, sidebarSurfaceHover, sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
+import { sidebarRowSurface, sidebarSurfaceToggle } from '../sidebar/sidebar-surface'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { FileTypeIcon } from './FileTypeIcon'
 import { FileTreeMenu } from './FileTreeMenu'
@@ -138,18 +138,8 @@ export function FileTree({ cwd }: { cwd: string }) {
         </SidebarHoverHighlight>
       </div>
 
-      <footer className="flex shrink-0 items-center gap-2 px-3 pt-1.5 pb-2">
+      <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">
         <span className="flex-1" />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className={cn('text-muted-foreground', sidebarSurfaceHover)}
-          aria-label={t('panel.newFileAria')}
-          onClick={() => drafts.startNew('file', '')}
-        >
-          <File />
-        </Button>
         <Button
           type="button"
           variant="ghost"
