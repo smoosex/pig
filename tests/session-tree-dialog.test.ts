@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, SessionTreeRow, SessionTreeView } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -552,16 +553,8 @@ if (process.argv.includes('--session-tree-dialog-fixture')) {
     ['tree-label-refetch-order', 'tree: a slower label reread never paints over a newer one']
   ] as const) {
     test(title, async () => {
-      const child = Bun.spawn(
-        [process.execPath, import.meta.path, '--session-tree-dialog-fixture', flag],
-        { stdout: 'pipe', stderr: 'pipe' }
-      )
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--session-tree-dialog-fixture', flag], { timeoutMs: 15_000 })
       assert.equal(code, 0, stdout + stderr)
-    })
+    }, 20_000)
   }
 }

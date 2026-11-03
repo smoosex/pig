@@ -8,7 +8,6 @@ import {
   forgetSessionName,
   listProject,
   listProjectFiles,
-  listProjects,
   onSessionNamesResolved,
   removeProjectDir,
   sessionDirForCwd
@@ -172,7 +171,7 @@ test('a relative PI_CODING_AGENT_DIR produces absolute paths matching SDK fork h
     expect(sessions.find((meta) => meta.id === forkId)?.parentSession).toBe(parentPath)
     expect(withSessionForks(sessions).map((row) => row.id)).toEqual([parentId, forkId])
     expect(withSessionForks(sessions)[1]!.forkedFrom).toBe(parentPath)
-    expect((await listProjects())[0]!.sessions.every((meta) => isAbsolute(meta.path))).toBe(true)
+    expect(sessions.every((meta) => isAbsolute(meta.path))).toBe(true)
     expect((await listProjectFiles(cwd)).sort()).toEqual([parentPath, forkPath].sort())
   } finally {
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR

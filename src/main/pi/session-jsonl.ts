@@ -47,7 +47,6 @@ const IS_ERROR_KEY = Buffer.from('"isError":')
 const MESSAGE_OBJECT_KEY = Buffer.from('"message":{')
 const TOKENS_BEFORE_KEY = Buffer.from('"tokensBefore":')
 const TIMESTAMP_KEY = Buffer.from('"timestamp":"')
-/** A user line heavier than this is treated as "heavy": the minimap must stay readable. */
 /**
  * The byte size a minimap bar grows to before it stops growing. Both sources measure the same thing:
  * the length of the line the SDK writes for the turn's opening entry, with an image turn simply full.
@@ -571,10 +570,6 @@ export function readRowsStrict(path: string, rows: SessionFileEntry[]): SessionE
     throw new UnsupportedSessionFile(path, 'index disagrees with the file')
   }
   return entries
-}
-
-export function turnCount(index: SessionFileIndex): number {
-  return index.turnStarts.length
 }
 
 /** The rows of turns `[from, to)`, plus the leading userless group when `from` is 0. */

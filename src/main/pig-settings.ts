@@ -81,10 +81,6 @@ export async function loadPigSettings(strict = false): Promise<PigSettings> {
   return readSettings(filePath(), strict)
 }
 
-export function savePigSettings(patch: Partial<PigSettings>): Promise<PigSettings> {
-  return updatePigSettings(() => patch)
-}
-
 /** For patches computed from the current file; `update` runs inside the queue and may throw to abort. */
 export function updatePigSettings(update: (current: PigSettings) => Partial<PigSettings>): Promise<PigSettings> {
   const path = filePath()

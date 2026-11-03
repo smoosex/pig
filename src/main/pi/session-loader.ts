@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import type { ProjectGroup, SessionMeta, SessionNameUpdate } from '../../shared/api'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
-import { compareGroupsByLatestSession } from '../../shared/session-order'
 import {
   isPastedTextMetadata,
   resolvePastedTextMetadata,
@@ -471,23 +470,6 @@ export async function readProjectNamingText(cwd: string): Promise<string | undef
     }
   })
   return tasks.filter((task) => task !== undefined).sort((a, b) => a.created.localeCompare(b.created))[0]?.text
-}
-
-export async function listProjects(): Promise<ProjectGroup[]> {
-  // Every session of every project: the project tree sorts by newest activity, so names are not worth
-  // walking long files for here.
-  const metas = await scanFiles(await collectAllFiles(), { deep: false })
-  const byCwd = new Map<string, SessionMeta[]>()
-  for (const meta of metas) {
-    const cwd = meta.cwd || '(unknown)'
-    const arr = byCwd.get(cwd)
-    if (arr) arr.push(meta)
-    else byCwd.set(cwd, [meta])
-  }
-
-  const groups = [...byCwd].map(([cwd, sessions]) => projectGroup(cwd, sessions))
-  groups.sort(compareGroupsByLatestSession)
-  return groups
 }
 
 export async function listProjectFiles(cwd: string): Promise<string[]> {

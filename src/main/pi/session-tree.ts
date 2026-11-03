@@ -477,15 +477,6 @@ function projectView(prepared: PreparedTree, view: SessionTreeView): SessionTree
   }))
 }
 
-export function sessionTreeRows(source: SessionSource, view: SessionTreeView = 'default'): SessionTreeRow[] {
-  return projectView(prepareTree(source), view)
-}
-
-/** All five views from a single walk, so switching tabs never rebuilds the tree. */
-export function sessionTreeViews(source: SessionSource): Record<SessionTreeView, SessionTreeRow[]> {
-  return buildSessionTreeViews(source, SESSION_TREE_VIEWS) as Record<SessionTreeView, SessionTreeRow[]>
-}
-
 /** Only the requested views: one walk still serves them all, but unasked rows never cross IPC. */
 export function buildSessionTreeViews(
   source: SessionSource,

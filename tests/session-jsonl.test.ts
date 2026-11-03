@@ -15,10 +15,10 @@ import {
   readTreeEntries,
   readTailWindow,
   readTurnEntries,
-  turnCount,
   turnRowsOf,
   UnsupportedSessionFile
 } from '../src/main/pi/session-jsonl'
+import { fileSource } from '../src/main/pi/session-source'
 
 const header = (id = 'session-1', version = 3) =>
   JSON.stringify({ type: 'session', version, id, cwd: '/tmp/project', timestamp: '2026-01-01T00:00:00.000Z' })
@@ -94,7 +94,7 @@ test('drops a trailing line the probe accepted but JSON cannot parse', async () 
     const index = indexSessionFile(path)
     expect(index.branch.map((row) => row.id)).toEqual(['u0'])
     expect(index.leafId).toBe('u0')
-    expect(turnCount(index)).toBe(1)
+    expect(fileSource(index).turnCount()).toBe(1)
     expect(readBranchEntries(index).map((item) => (item as { id: string }).id)).toEqual(['u0'])
   })
 })
@@ -119,7 +119,7 @@ test('keeps a trailing line whose braces only look unbalanced inside a string', 
   await withFile([header(), entry('u0', null, 'user'), tricky], (path) => {
     const index = indexSessionFile(path)
     expect(index.branch.map((row) => row.id)).toEqual(['u0', 'u1'])
-    expect(turnCount(index)).toBe(2)
+    expect(fileSource(index).turnCount()).toBe(2)
     expect(readBranchEntries(index).map((item) => (item as { id: string }).id)).toEqual(['u0', 'u1'])
   })
 })
@@ -142,7 +142,7 @@ test('indexes entries, the branch, and turn boundaries without reading payloads'
       expect(index.leafId).toBe('u3')
       expect(index.branch.map((row) => row.id)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3'])
       expect(index.turnStarts).toEqual([0, 2, 4])
-      expect(turnCount(index)).toBe(3)
+      expect(fileSource(index).turnCount()).toBe(3)
       expect(index.entries[0]!.role).toBe('user')
       expect(index.branch[1]!.role).toBe('assistant')
       expect(index.branch[1]!.type).toBe('message')
@@ -220,7 +220,7 @@ test('skips malformed lines the way the SDK does', async () => {
     (path) => {
       const index = indexSessionFile(path)
       expect(index.branch.map((row) => row.id)).toEqual(['u1', 'a1'])
-      expect(turnCount(index)).toBe(1)
+      expect(fileSource(index).turnCount()).toBe(1)
     }
   )
 })
@@ -384,7 +384,7 @@ test('a hidden custom message is skipped instead of opening a turn', async () =>
     const index = indexSessionFile(path)
     expect(index.entries.map((row) => row.hidden === true)).toEqual([true, false, false])
     expect(index.turnStarts).toEqual([1])
-    expect(turnCount(index)).toBe(1)
+    expect(fileSource(index).turnCount()).toBe(1)
   })
   await withFile([header(), hidden(true), entry('u1', 'h1', 'user'), entry('a1', 'u1', 'assistant')], (path) => {
     const index = indexSessionFile(path)
