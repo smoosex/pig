@@ -1,11 +1,12 @@
 /** Own Git topology, branch naming and deletion tombstones; cleanup retries live in the same atomic state file. */
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { execGit, GitExecError, isNotARepoError, type GitExecOptions } from './git/exec'
 import { t } from './i18n'
 import type { WorktreeDeletionJob } from '../shared/api'
+import { writeFileAtomic } from './atomic-write'
 
 function resolve(path: string): string {
   const absolute = resolvePath(path)
@@ -170,14 +171,7 @@ export class WorktreeService {
     const task = this.stateLock.then(async () => {
       const records = fn(await this.records())
       await mkdir(this.root, { recursive: true })
-      const target = join(this.root, '.state.json')
-      const temp = `${target}.${randomUUID()}.tmp`
-      try {
-        await writeFile(temp, `${JSON.stringify({ version: 1, worktrees: records }, null, 2)}\n`, { mode: 0o600 })
-        await rename(temp, target)
-      } finally {
-        await rm(temp, { force: true })
-      }
+      await writeFileAtomic(join(this.root, '.state.json'), `${JSON.stringify({ version: 1, worktrees: records }, null, 2)}\n`)
     })
     this.stateLock = task.catch(() => {})
     return task

@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
+import { writeFileAtomic } from './atomic-write'
 import { pigDir, pigPath } from './pig-dir'
 import type { SidebarPrefs } from '../shared/api'
 
@@ -62,6 +63,6 @@ export async function saveSidebarPrefs(patch: Partial<SidebarPrefs>): Promise<Si
     reviewOpen: patch.reviewOpen === undefined ? current.reviewOpen : Boolean(patch.reviewOpen)
   }
   await mkdir(pigDir(), { recursive: true })
-  await writeFile(filePath(), `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
+  await writeFileAtomic(filePath(), `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
   return next
 }

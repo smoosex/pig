@@ -5,9 +5,10 @@
  */
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { mkdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readlink, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { promisify } from 'node:util'
+import { writeFileAtomic } from '../atomic-write'
 
 export interface TerminalHistory {
   version: 1
@@ -42,9 +43,7 @@ export function readTerminalHistory(path: string): TerminalHistory | null {
 
 export async function writeTerminalHistory(path: string, record: TerminalHistory): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${process.pid}.tmp`
-  await writeFile(temporary, JSON.stringify(record), { mode: 0o600 })
-  await rename(temporary, path)
+  await writeFileAtomic(path, JSON.stringify(record))
 }
 
 export async function removeTerminalHistory(path: string): Promise<void> {

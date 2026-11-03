@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { writeFileAtomic } from './atomic-write'
 import { pigDir, pigPath } from './pig-dir'
 import { t } from './i18n'
 
@@ -30,7 +31,7 @@ async function read(): Promise<OpenedProject[]> {
 async function write(projects: OpenedProject[]): Promise<void> {
   await mkdir(pigDir(), { recursive: true })
   const body: OpenedProjectsFile = { version: 1, projects }
-  await writeFile(filePath(), `${JSON.stringify(body, null, 2)}\n`)
+  await writeFileAtomic(filePath(), `${JSON.stringify(body, null, 2)}\n`)
 }
 
 let mutationQueue: Promise<void> = Promise.resolve()

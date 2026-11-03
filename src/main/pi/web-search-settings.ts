@@ -6,8 +6,7 @@
  * Saving does not reload sessions; the caller does that because providers cache configuration
  * and the extension caches provider routing at load time.
  */
-import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { isIP } from 'node:net'
 import type {
   WebSearchFetchMode,
@@ -19,6 +18,7 @@ import type {
   WebSearchToolFlags
 } from '../../shared/api'
 import { pigPath } from '../pig-dir'
+import { writeFileAtomic } from '../atomic-write'
 
 const FETCH_MODES: WebSearchFetchMode[] = ['readable', 'raw', 'answer']
 const TOOL_KEYS: Array<keyof WebSearchToolFlags> = ['webSearch', 'sourceCheck', 'fetchContent', 'getSearchContent']
@@ -535,16 +535,7 @@ export function patchWebSearchSettings(patch: WebSearchSettingsPatch): Promise<W
     validatePatchedFields(config, patch)
     const path = configPath()
     await mkdir(pigPath(), { recursive: true })
-    const temp = `${path}.${randomUUID()}.tmp`
-    try {
-      await writeFile(temp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
-      await rename(temp, path)
-      await chmod(path, 0o600)
-    } catch (error) {
-      const { rm } = await import('node:fs/promises')
-      await rm(temp, { force: true })
-      throw error
-    }
+    await writeFileAtomic(path, `${JSON.stringify(config, null, 2)}\n`)
     return webSearchSettingsState()
   })
 }

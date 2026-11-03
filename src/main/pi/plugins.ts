@@ -2,7 +2,8 @@
 import { app } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
+import { writeFileAtomic } from '../atomic-write'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import {
   DefaultPackageManager,
@@ -128,17 +129,8 @@ async function readRegistry(): Promise<Registry> {
 }
 
 async function saveRegistry(value: Registry): Promise<void> {
-  const path = registryPath()
   await mkdir(pigPath(), { recursive: true })
-  const temp = `${path}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temp, `${JSON.stringify({ version: 2, ...value }, null, 2)}\n`)
-    await rename(temp, path)
-  } catch (error) {
-    const { rm } = await import('node:fs/promises')
-    await rm(temp, { force: true })
-    throw error
-  }
+  await writeFileAtomic(registryPath(), `${JSON.stringify({ version: 2, ...value }, null, 2)}\n`)
 }
 
 function packageManager(source: string): DefaultPackageManager {
@@ -550,15 +542,7 @@ export async function getMemoryPluginSettings(): Promise<MemoryPluginSettings> {
 
 async function saveNamespacedSettings(path: string, settings: Record<string, unknown>): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  const temp = `${path}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`)
-    await rename(temp, path)
-  } catch (error) {
-    const { rm } = await import('node:fs/promises')
-    await rm(temp, { force: true })
-    throw error
-  }
+  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`)
 }
 
 export function setMemoryPluginSettings(patch: MemoryPluginSettingsPatch): Promise<MemoryPluginSettings> {

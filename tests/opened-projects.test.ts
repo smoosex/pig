@@ -80,11 +80,12 @@ describe('opened project ordering', () => {
     await opened.addOpenedProject(b)
     const before = await readFile(join(root, 'opened-projects.json'), 'utf8')
 
-    await chmod(join(root, 'opened-projects.json'), 0o400)
+    // A read-only file can still be replaced by rename; the directory is what blocks the write.
+    await chmod(root, 0o500)
     try {
       await expect(opened.reorderOpenedProjects([b, a])).rejects.toThrow()
     } finally {
-      await chmod(join(root, 'opened-projects.json'), 0o600)
+      await chmod(root, 0o700)
     }
 
     expect(await readFile(join(root, 'opened-projects.json'), 'utf8')).toBe(before)

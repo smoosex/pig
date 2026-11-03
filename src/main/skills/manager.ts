@@ -16,6 +16,7 @@ import type { ExternalSkillAgent, SkillInfo, SkillInstallResult, SkillInventory,
 import type { SessionSkillSource } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
 import { copyPreparedSkill, githubAvatar, githubSkillSource, prepareSkillSource, validSkillName, safeSkillPath, skillFingerprint, type PreparedSkills, type SkillFetcher } from './source'
+import { writeFileAtomic } from '../atomic-write'
 
 interface ManagedSkill {
   id: string; name: string; source: string; kind: 'github' | 'local'; enabled: boolean
@@ -62,11 +63,7 @@ function registry(): SkillRegistry {
 }
 async function save(value: SkillRegistry): Promise<void> {
   await mkdir(dirname(registryPath()), { recursive: true })
-  const temporary = `${registryPath()}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
-    await rename(temporary, registryPath())
-  } finally { await rm(temporary, { force: true }) }
+  await writeFileAtomic(registryPath(), JSON.stringify(value, null, 2) + '\n')
 }
 
 /** Collisions have already been deduplicated by Pi. Recover losers before applying Pig's exclusions. */

@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { pigPath } from './pig-dir'
 import { supportsGlass } from './surface-support'
@@ -7,6 +6,7 @@ import { parseLocaleSetting } from '../shared/i18n'
 import { parseSurfaceStyle } from '../shared/surface-style'
 import type { Appearance, LocaleSetting, PaletteId, SendShortcut, ThemePrefs } from '../shared/api'
 import { parseShortcutOverrides, type ShortcutOverrides } from '../shared/shortcuts'
+import { writeFileAtomic } from './atomic-write'
 
 export type { Appearance, PaletteId, SendShortcut } from '../shared/api'
 
@@ -89,13 +89,7 @@ export function updatePigSettings(update: (current: PigSettings) => Partial<PigS
     const current = await readSettings(path, true)
     const next = normalize({ ...current, ...update(current) })
     await mkdir(dirname(path), { recursive: true })
-    const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
-    try {
-      await writeFile(temp, `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`, { mode: 0o600 })
-      await rename(temp, path)
-    } finally {
-      await rm(temp, { force: true })
-    }
+    await writeFileAtomic(path, `${JSON.stringify({ version: 1, ...next }, null, 2)}\n`)
     return next
   })
   mutationQueue = result.then(() => undefined, () => undefined)

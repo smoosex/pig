@@ -59,10 +59,10 @@ async function runFixture(): Promise<void> {
       await assert.rejects(loadSidebarPrefs(), /EACCES/, 'a read that failed is reported, not defaulted')
       await chmod(file, 0o644)
       assert.equal((await loadSidebarPrefs()).reviewOpen, true, 'and the file is still there to read')
-      // Writing over an existing file needs the file to be writable, not the directory.
-      await chmod(file, 0o444)
+      // The write lands through a rename, so a read-only file is not what stops it: the directory is.
+      await chmod(root, 0o500)
       await assert.rejects(saveSidebarPrefs({ reviewOpen: false }), /EACCES/, 'a write that failed is reported')
-      await chmod(file, 0o644)
+      await chmod(root, 0o700)
       assert.equal(
         JSON.parse(await readFile(file, 'utf8')).reviewOpen,
         true,

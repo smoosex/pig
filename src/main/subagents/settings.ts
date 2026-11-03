@@ -1,9 +1,9 @@
 /** Subagent preferences in `$PIG_DIR/subagent-settings.json`; read per spawn so edits apply to the next child. */
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { SubagentSettings, SubagentSettingsPatch, ThinkingLevel } from '../../shared/api'
 import { pigPath } from '../pig-dir'
+import { writeFileAtomic } from '../atomic-write'
 
 export const SUBAGENT_DEFAULTS: SubagentSettings = { maxConcurrent: 4, timeoutMinutes: 60, maxTurns: 100 }
 
@@ -64,14 +64,7 @@ export function writeSubagentSettings(patch: SubagentSettingsPatch): Promise<Sub
     }
     const path = settingsPath()
     await mkdir(dirname(path), { recursive: true })
-    const temp = `${path}.${randomUUID()}.tmp`
-    try {
-      await writeFile(temp, `${JSON.stringify(next, null, 2)}\n`)
-      await rename(temp, path)
-    } catch (error) {
-      await rm(temp, { force: true })
-      throw error
-    }
+    await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`)
     return next
   })
   writing = run.catch(() => undefined)

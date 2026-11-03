@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { writeFileAtomic } from './atomic-write'
 import type { OpenProjectSessionsState, OpenProjectWorkspace, OpenToolTab, OpenToolTabMembership } from '../shared/api'
 import { pigDir, pigPath } from './pig-dir'
 import { changesTabId } from '../shared/tab-ids'
@@ -229,16 +230,9 @@ function chatStateFor(
 
 async function writeState(state: OpenProjectSessionsState): Promise<void> {
   await mkdir(pigDir(), { recursive: true })
-  const path = filePath()
-  const temporary = `${path}.${process.pid}.tmp`
   const body: OpenProjectSessionsFile = { version: 5, ...state }
-  try {
-    // Saved browser URLs keep their query and hash so pages reopen where they were, and those can carry tokens.
-    await writeFile(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 })
-    await rename(temporary, path)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => {})
-  }
+  // Saved browser URLs keep their query and hash so pages reopen where they were, and those can carry tokens.
+  await writeFileAtomic(filePath(), `${JSON.stringify(body, null, 2)}\n`)
 }
 
 let mutationQueue: Promise<void> = Promise.resolve()

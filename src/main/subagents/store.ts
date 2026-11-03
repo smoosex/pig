@@ -3,11 +3,11 @@
  * beside it. Writes are serialized per parent. Pig does not resume children, so loading an index
  * from a previous run turns anything still queued or running into `interrupted`.
  */
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SubagentInfo } from '../../shared/api'
 import { pigPath } from '../pig-dir'
+import { writeFileAtomic } from '../atomic-write'
 
 export interface SubagentStore {
   dir(parentSessionId: string): string
@@ -68,15 +68,7 @@ export function createFileStore(root: () => string = () => pigPath('subagents'))
       const previous = writes.get(parentSessionId) ?? Promise.resolve()
       const next = previous.then(async () => {
         await mkdir(target, { recursive: true })
-        const path = join(target, 'index.json')
-        const temp = `${path}.${randomUUID()}.tmp`
-        try {
-          await writeFile(temp, snapshot)
-          await rename(temp, path)
-        } catch (error) {
-          await rm(temp, { force: true })
-          throw error
-        }
+        await writeFileAtomic(join(target, 'index.json'), snapshot)
       })
       // Only the queue tail absorbs rejection to allow later writes. The returned promise still
       // rejects, and the manager's invoke/job boundary reports that failure to callers or the UI.

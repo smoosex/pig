@@ -9,12 +9,13 @@
  * Favicons are kept per origin beside the pages, as small PNG data URLs, and go with the last page of
  * their origin. Fetching them is the recorder's job; this store only decides whether one is wanted.
  */
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserHistoryCursor, BrowserHistoryEntry, BrowserHistoryPage } from '../../shared/browser'
 import type { BrowserPageEvents } from './host'
 import { pigPath } from '../pig-dir'
 import { isBrowserUrl } from './validation'
+import { writeFileAtomic } from '../atomic-write'
 
 const VERSION = 1
 const MAX_ENTRIES = 2000
@@ -312,14 +313,8 @@ export class BrowserHistory {
     })}\n`
     const run = this.writes.then(async () => {
       const path = this.path()
-      const temporary = `${path}.${process.pid}.tmp`
       await mkdir(dirname(path), { recursive: true })
-      try {
-        await writeFile(temporary, body, { mode: 0o600 })
-        await rename(temporary, path)
-      } finally {
-        await rm(temporary, { force: true }).catch(() => {})
-      }
+      await writeFileAtomic(path, body)
     })
     // A failed write leaves memory ahead of disk; the next change writes the whole list again.
     this.writes = run.catch((error) => {

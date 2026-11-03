@@ -7,7 +7,8 @@
  * so an icon can never become a way to reach an internal service.
  */
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
+import { writeFileAtomic } from '../atomic-write'
 import { join } from 'node:path'
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
@@ -136,10 +137,8 @@ export function createMcpIconCache(deps: McpIconDeps = {}) {
   const store = async (source: string, icon: McpIcon): Promise<void> => {
     const file = cachePath(source)
     await mkdir(directory, { recursive: true })
-    const temporary = `${file}.tmp`
-    await writeFile(temporary, icon.body)
-    await rename(temporary, file)
-    await writeFile(`${file}.type`, icon.mimeType, 'utf8')
+    await writeFileAtomic(file, icon.body)
+    await writeFileAtomic(`${file}.type`, icon.mimeType)
   }
   const loadFromDisk = async (source: string): Promise<McpIcon | null> => {
     const file = cachePath(source)

@@ -2,6 +2,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { writeFileAtomic } from '../../atomic-write'
 
 export function personaDir(): string {
   const root = process.env.PIG_DIR
@@ -21,13 +22,7 @@ export async function readOptional(path: string): Promise<string | null> {
 }
 
 export async function atomicWrite(dir: string, name: string, content: string): Promise<void> {
-  const temporary = join(dir, `.${name}.${randomUUID()}.tmp`)
-  try {
-    await fs.writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    await fs.rename(temporary, join(dir, name))
-  } finally {
-    await fs.rm(temporary, { force: true })
-  }
+  await writeFileAtomic(join(dir, name), content)
 }
 
 interface Owner { pid: number; token: string; createdAt: number }
