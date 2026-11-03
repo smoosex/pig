@@ -190,6 +190,11 @@ bun run build
 tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型推导），改跨进程
 数据结构时 typecheck 会连同 fixtures 一起报错。
 
+需要隔离模块状态的用例重跑本文件来起 fixture 进程，统一走 `tests/helpers/subprocess.ts`
+的 `runSelf`（换别的运行时跑同一文件时用 `runChild`）：捕获、超时与回收都在那里，别在用例里
+另写一套 `Bun.spawn` + `setTimeout` + `finally`。`env` 只写差量，helper 会合并 `process.env`。
+唯一保留的手写 `Bun.spawn` 是测试要驱动的那条外部命令本身，例如沙箱包装后的 `/bin/sh -c`。
+
 ## 注意事项
 
 - 能用 `components/ui` 里的 shadcn 组件就不要写原生标签：按钮、输入、选择、对话框等都走现成封装。图标用 `lucide-react`，不要手画 SVG。

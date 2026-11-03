@@ -2,6 +2,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, PromptStreamingBehavior } from '../src/shared/api'
 import type { PiMessage } from '../src/renderer/src/pi/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -340,15 +341,8 @@ if (process.argv[2] === '--submission-fixture') {
 } else {
   for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'review-returning', 'branch-navigating']) {
     test(`composer submission recovery: ${scenario}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--submission-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--submission-fixture', scenario], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

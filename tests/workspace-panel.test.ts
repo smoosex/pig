@@ -8,6 +8,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, SidebarPrefs, WorktreeDiff } from '../src/shared/api'
 import type { OpenTab } from '../src/renderer/src/stores/sessions'
+import { runSelf } from './helpers/subprocess.ts'
 
 const CWD = '/project'
 
@@ -496,22 +497,11 @@ if (process.argv[2] === '--review-panel-fixture') {
     width: 'the fixed rail matches the left sidebar and retains its contents while collapsing'
   })) {
     test(`review panel: ${title}`, async () => {
-      const child = Bun.spawn(
-        [process.execPath, import.meta.path, '--review-panel-fixture', name],
-        { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
-      )
-      const timeout = setTimeout(() => child.kill(), 12_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--review-panel-fixture', name], {
+        cwd: new URL('..', import.meta.url).pathname,
+        timeoutMs: 12_000
+      })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

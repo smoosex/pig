@@ -10,6 +10,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { ThinkingLevel } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -367,22 +368,8 @@ if (process.argv[2] === '--model-controls-fixture') {
 } else {
   for (const scenario of ['switched', 'replaced', 'mounted-twice', 'thinking-preference', 'shared-save', 'shared-clear', 'replaced-preference']) {
     test(`model controls survive a ${scenario} session`, async () => {
-      const child = Bun.spawn(
-        [process.execPath, import.meta.path, '--model-controls-fixture', scenario],
-        { stdout: 'pipe', stderr: 'pipe' }
-      )
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--model-controls-fixture', scenario], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

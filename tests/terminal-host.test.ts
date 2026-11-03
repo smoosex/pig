@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { TerminalHost, type PtyHostProcess, type TerminalWindow } from '../src/main/terminal/host'
 import { terminalEnvironment } from '../src/main/terminal/environment'
 import type { PtyHostMessage, PtyHostRequest, TerminalEvent } from '../src/shared/terminal'
+import { runChild } from './helpers/subprocess.ts'
 
 class FakeWorker implements PtyHostProcess {
   sent: PtyHostRequest[] = []
@@ -206,7 +207,6 @@ test('terminal IPC rejects malformed binary input before forwarding to the host'
     write({}, 'terminal:a', '😀', false)
     assert.deepEqual(writes, [[win, 'terminal:a', bytes, true], [win, 'terminal:a', '中文', undefined], [win, 'terminal:a', '😀', false]])
   `
-  const child = Bun.spawn([process.execPath, '-e', fixture], { stdout: 'pipe', stderr: 'pipe', timeout: 8_000 })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runChild([process.execPath, '-e', fixture], { timeoutMs: 8_000 })
   assert.equal(code, 0, stderr || stdout)
 })

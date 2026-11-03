@@ -7,6 +7,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { DiffFileEntry, WorktreeDiff, WorktreePatch } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const real = await import('@pierre/diffs')
@@ -34,21 +35,10 @@ if (process.argv[2] === '--diff-sections-parse-error-fixture') {
   await runFixture()
 } else {
   test('a parser that throws is reported on the cards, not swallowed', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--diff-sections-parse-error-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--diff-sections-parse-error-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

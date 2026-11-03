@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { SessionManager, type AgentSession, type AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import type { SessionApi, SessionControls } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-transformed-prompts-'))
@@ -192,10 +193,7 @@ if (process.argv[2] === '--transformed-prompt-fixture') {
   await fixture()
 } else {
   test('transformed direct and queued prompts retain pasted attachments when reopened, edited, forked and regenerated', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--transformed-prompt-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--transformed-prompt-fixture'])
     assert.equal(code, 0, stderr || stdout)
   })
 }

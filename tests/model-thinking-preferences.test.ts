@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { LiveSession, MemorySession } from '../src/main/pi/session-state'
 import type { ThinkingLevel } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const sdk = await import('@earendil-works/pi-coding-agent')
@@ -115,10 +116,6 @@ async function fixture() {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('model thinking preferences are consistent, opt-in, durable and isolated from temporary changes', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timeout = setTimeout(() => child.kill(), 10_000)
-  try {
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, stderr || stdout)
-  } finally { clearTimeout(timeout); child.kill() }
+  const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+  assert.equal(code, 0, stderr || stdout)
 })

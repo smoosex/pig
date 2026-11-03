@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { useMessageScroller } from '@shadcn/react/message-scroller'
+import { runSelf } from './helpers/subprocess.ts'
 
 type Scroller = ReturnType<typeof useMessageScroller>
 type Row = { id: string; height: number; anchor?: boolean }
@@ -608,23 +609,12 @@ if (process.argv[2] === '--message-scroller-fixture') {
   }
   for (const [name, title] of Object.entries(fixtures)) {
     test(`message-scroller DOM unit: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--message-scroller-fixture', name], {
-        cwd: new URL('..', import.meta.url).pathname,
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode, stdout, stderr } = await runSelf(
+        import.meta.path,
+        ['--message-scroller-fixture', name],
+        { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 10_000 }
+      )
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 15_000)
   }
 }

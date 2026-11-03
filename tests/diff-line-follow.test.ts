@@ -14,6 +14,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { FileReadResult, SessionApi } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const CWD = '/project'
 const PATH = 'src/work.ts'
@@ -172,16 +173,8 @@ if (process.argv[2] === '--diff-follow-fixture') {
   ]
   for (const [name, description, hoveredLine] of cases) {
     test(description, async () => {
-      const child = Bun.spawn(
-        [process.execPath, import.meta.path, '--diff-follow-fixture', name, JSON.stringify(hoveredLine)],
-        { stdout: 'pipe', stderr: 'pipe' }
-      )
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--diff-follow-fixture', name, JSON.stringify(hoveredLine)], { timeoutMs: 15_000 })
       assert.equal(code, 0, stdout + stderr)
-    })
+    }, 20_000)
   }
 }

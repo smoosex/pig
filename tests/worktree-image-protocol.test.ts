@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'pig-file-')))
@@ -52,8 +53,7 @@ if (process.argv[2] === '--worktree-image-fixture') {
   await runFixture()
 } else {
   test('pig-file serves worktree images and refuses everything else', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--worktree-image-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--worktree-image-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

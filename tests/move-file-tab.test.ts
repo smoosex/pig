@@ -13,6 +13,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   Object.defineProperty(globalThis, 'window', { value: { api: {} as Partial<SessionApi> }, configurable: true })
@@ -112,15 +113,7 @@ if (process.argv[2] === '--move-tab-fixture') {
     absent: 'a rename for a tab that is not open adds nothing'
   })) {
     test(description, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--move-tab-fixture', name], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--move-tab-fixture', name])
       assert.equal(code, 0, stdout + stderr)
     })
   }

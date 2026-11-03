@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 const modulePath = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -110,20 +111,7 @@ if (process.argv[2] === '--project-worktree-discovery-fixture') {
   await runFixture()
 } else {
   test('project discovery: focus refresh does not scan session files', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--project-worktree-discovery-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 5_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--project-worktree-discovery-fixture'], { timeoutMs: 5_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 10_000)
 }

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-mcp-auth-race-'))
@@ -163,19 +164,6 @@ async function fixture() {
 if (process.argv.includes('--fixture')) await fixture()
 else
   test('OAuth refresh cannot resurrect credentials after logout, server removal or URL replacement', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 10000)
-    try {
-      const [code, out, err] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, err || out)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+    assert.equal(code, 0, err || out)
   }, 12000)

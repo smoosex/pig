@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-mcp-defaults-'))
@@ -79,10 +80,6 @@ async function fixture() {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('Open Computer Use is preconfigured, disabled and shared by project/chat without overwriting user choices', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timeout = setTimeout(() => child.kill(), 10_000)
-  try {
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, stderr || stdout)
-  } finally { clearTimeout(timeout); child.kill() }
+  const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+  assert.equal(code, 0, stderr || stdout)
 })

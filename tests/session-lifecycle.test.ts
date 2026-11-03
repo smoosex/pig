@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WorktreeService } from '../src/main/worktrees'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -295,22 +296,8 @@ if (process.argv[2] === '--lifecycle-fixture') {
   }
   for (const [scenario, name] of Object.entries(scenarios)) {
     test(name, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--lifecycle-fixture', scenario], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 5_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--lifecycle-fixture', scenario], { timeoutMs: 5_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 10_000)
   }
 }

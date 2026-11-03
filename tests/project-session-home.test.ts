@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'bun:test'
 import type { SessionMeta } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -54,12 +55,7 @@ if (process.argv[2] === '--project-home-fixture') {
   await fixture()
 } else {
   test('recent sessions retain the newest leaf of a fork chain longer than five rows', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--project-home-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--project-home-fixture'])
     assert.equal(code, 0, stderr || stdout)
   })
 }

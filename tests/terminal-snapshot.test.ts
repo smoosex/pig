@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runChild } from './helpers/subprocess.ts'
 
 // Exercise the real headless parser with a fake PTY, isolated from other node-pty mocks.
 const workerUrl = new URL('../src/main/terminal/pty-host-worker.ts', import.meta.url).href
@@ -117,8 +118,7 @@ process.exit(0)
 `
 
 test('terminal snapshots parse queued output, alternate screen, resize and bounded scrollback', async () => {
-  const child = Bun.spawn([process.execPath, '-e', fixture], { stdout: 'pipe', stderr: 'pipe', timeout: 10_000 })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runChild([process.execPath, '-e', fixture], { timeoutMs: 10_000 })
   assert.equal(code, 0, stderr || stdout)
   assert.match(stdout, /verified/)
 }, 15_000)

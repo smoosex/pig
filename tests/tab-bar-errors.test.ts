@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -55,12 +56,7 @@ if (process.argv[2] === '--tab-errors-fixture') {
   await runFixture()
 } else {
   test('tab load, rename and export errors have visible accessible indicators', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--tab-errors-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--tab-errors-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

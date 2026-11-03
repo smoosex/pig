@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-scoped-models-'))
@@ -113,13 +114,7 @@ if (process.argv[2] === '--scoped-models-fixture') {
   await fixture()
 } else {
   test('scoped models share Pi settings and SDK pattern semantics', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--scoped-models-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 15_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--scoped-models-fixture'], { timeoutMs: 15_000 })
+    assert.equal(code, 0, stderr || stdout)
   })
 }

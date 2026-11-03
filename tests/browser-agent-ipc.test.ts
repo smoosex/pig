@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const handlers = new Map<string, (...args: any[]) => any>()
@@ -116,10 +117,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--browser-agent-ipc-fixture')) await fixture()
 else test('agent browser tabs are requested from and answered by the session window only', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--browser-agent-ipc-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 10_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, err || out)
-  } finally { clearTimeout(timer) }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--browser-agent-ipc-fixture'], { timeoutMs: 10_000 })
+  assert.equal(code, 0, err || out)
 })

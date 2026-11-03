@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { WorktreeService } from '../src/main/worktrees'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-tools-reload-')))
@@ -273,19 +274,10 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--fixture')) await fixture()
 else
   test('tool settings reload: global scope, settlement boundary, prompt gate, queued writes and ordinary chats', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timer = setTimeout(() => child.kill(), 6000)
-    try {
-      const [code, out, err] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, err || out)
-    } finally {
-      clearTimeout(timer)
-    }
+    const { exitCode: code, stdout: out, stderr: err } = await runSelf(
+      import.meta.path,
+      ['--fixture'],
+      { timeoutMs: 6000 }
+    )
+    assert.equal(code, 0, err || out)
   }, 8000)

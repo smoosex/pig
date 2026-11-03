@@ -2,6 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { BrowserApi, BrowserBounds, BrowserSelection, BrowserState, BrowserScreenshot } from '../src/shared/browser'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -405,11 +406,7 @@ if (process.argv[2] === '--browser-fixture') {
   await fixture()
 } else {
   test('browser panel: state ordering, overlay visibility, draft append and stale captures', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--browser-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timeout); child.kill() }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--browser-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

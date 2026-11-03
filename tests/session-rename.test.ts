@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -109,15 +110,7 @@ if (process.argv.includes('--session-rename-fixture')) {
   await runFixture(process.argv[process.argv.indexOf('--session-rename-fixture') + 1]!)
 } else {
   test('rename: the menu hands focus to the inline field, which keeps it until Enter commits', async () => {
-    const child = Bun.spawn(
-      [process.execPath, import.meta.path, '--session-rename-fixture', 'rename-field-keeps-focus'],
-      { stdout: 'pipe', stderr: 'pipe' }
-    )
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--session-rename-fixture', 'rename-field-keeps-focus'], { timeoutMs: 15_000 })
     assert.equal(code, 0, stdout + stderr)
-  })
+  }, 20_000)
 }

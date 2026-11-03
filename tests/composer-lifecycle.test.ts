@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -258,23 +259,11 @@ if (process.argv[2] === '--composer-fixture') {
     images: 'pending image reads cannot escape their session or cleared draft'
   })) {
     test(`composer lifecycle: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--composer-fixture', name], {
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--composer-fixture', name], {
         cwd: new URL('..', import.meta.url).pathname,
-        stdout: 'pipe',
-        stderr: 'pipe'
+        timeoutMs: 12_000
       })
-      const timeout = setTimeout(() => child.kill(), 12_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 15_000)
   }
 }

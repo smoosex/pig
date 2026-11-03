@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { GroupProps, PanelProps } from 'react-resizable-panels'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -413,15 +414,8 @@ else {
         ? 'header tabs: selection keeps full width and stable nodes while icon tabs remain renamable and closable'
         : `chat glass: ${scenario} preserves reading surfaces and lifecycle in both palettes and schemes`
     test(name, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-      const timer = setTimeout(() => child.kill(), 12_000)
-      try {
-        const [code, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, output + errors)
-      } finally {
-        clearTimeout(timer)
-        child.kill()
-      }
+      const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 12_000 })
+      assert.equal(code, 0, output + errors)
     }, 15_000)
   }
 

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { Translate } from '../src/shared/i18n'
 import type { Turn } from '../src/renderer/src/chat/turns'
 import type { AssistantMessage, PigUserMessage, ToolResultMessage } from '../src/renderer/src/pi/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -211,19 +212,8 @@ if (process.argv[2] === '--fixture') {
     ['tool-row', 'real tool rows skip unrelated groupTurns updates without dropping args, output or status changes']
   ]) {
     test(name, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', scenario], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

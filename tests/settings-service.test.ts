@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(name: string) {
   const root = await mkdtemp(join(tmpdir(), 'pig-settings-service-'))
@@ -377,15 +378,8 @@ if (process.argv[2] === '--settings-service-fixture') {
     surface: 'the paint barrier waits for loaded UIs only and restores the old surface on cancel'
   })) {
     test(`settings service: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--settings-service-fixture', name], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--settings-service-fixture', name], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -70,16 +71,7 @@ if (process.argv[2] === '--pending-message-queue-fixture') {
   await fixture()
 } else {
   test('pending queue shows delivery modes, keeps promoted rows mounted, and routes steering edits', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--pending-message-queue-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--pending-message-queue-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

@@ -13,6 +13,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { FileTreeEntry, SessionApi } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const CWD = '/project'
 
@@ -326,15 +327,7 @@ if (process.argv.includes('--file-tree-fixture')) {
     'empty-space': 'the space below the rows offers the worktree itself'
   })) {
     test(description, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--file-tree-fixture', name], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--file-tree-fixture', name])
       assert.equal(code, 0, stdout + stderr)
     })
   }

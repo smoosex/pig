@@ -9,6 +9,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 const PATH = 'src/big.ts'
 
@@ -109,21 +110,11 @@ if (process.argv[2] === '--tool-edit-diff-fixture') {
   await runFixture()
 } else {
   test('process log: the edit diff is handed to @pierre/diffs when the step opens', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--tool-edit-diff-fixture'], {
-      cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(
+      import.meta.path,
+      ['--tool-edit-diff-fixture'],
+      { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 12_000 }
+    )
+    assert.equal(code, 0, stderr || stdout)
   })
 }

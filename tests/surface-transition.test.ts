@@ -1,6 +1,7 @@
 /** The opacity barrier waits for real background transitions and paint, not a hard-coded delay. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -180,16 +181,12 @@ else {
     hidden: 'hidden windows do not strand preference writes behind suspended RAF'
   })) {
     test(`surface transition: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', name], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 6000)
-      try {
-        const [code, output, errors] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, `${output}\n${errors}`)
-      } finally {
-        clearTimeout(timeout)
-      }
+      const { exitCode: code, stdout: output, stderr: errors } = await runSelf(
+        import.meta.path,
+        ['--fixture', name],
+        { timeoutMs: 6000 }
+      )
+      assert.equal(code, 0, `${output}\n${errors}`)
     })
   }
 }

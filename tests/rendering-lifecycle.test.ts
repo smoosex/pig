@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -361,15 +362,8 @@ if (process.argv[2] === '--rendering-fixture') {
 } else {
   for (const scenario of ['highlight', 'mermaid', 'model-controls', 'worked-label', 'turn-timer', 'turn-process', 'highlight-fallback', 'highlight-viewport', 'highlight-no-observer']) {
     test(`rendering lifecycle: ${scenario}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--rendering-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--rendering-fixture', scenario], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

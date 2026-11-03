@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SystemUIEvent } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 type Scenario = 'base' | 'bounds' | 'expiry' | 'theme' | 'returning' | 'returning-race'
 
@@ -380,14 +381,7 @@ if (process.argv[2] === '--system-ui-fixture') {
     ['theme', 'real system toasts follow Pig themes and review state stays with its session']
   ]
   for (const [scenario, name] of cases) test(name, async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--system-ui-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timer)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--system-ui-fixture', scenario], { timeoutMs: 10_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

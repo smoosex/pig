@@ -6,6 +6,7 @@ import { browserKeyEvent, interactWithPage, type BrowserInteraction } from '../s
 import { snapshotPage } from '../src/main/browser/agent-snapshot'
 import { captureHiddenPage } from '../src/main/browser/hidden-screenshot'
 import { withBrowserDebugger } from '../src/main/browser/browser-debugger'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -204,8 +205,7 @@ if (process.argv[2] === '--interaction-fixture') {
   await fixture()
 } else {
   test('serialized browser interactions validate refs, edit native fields and use safe CDP input', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--interaction-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--interaction-fixture'])
     assert.equal(code, 0, stderr || stdout)
   })
 

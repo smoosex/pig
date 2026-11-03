@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ProcessAgentHost } from '../src/main/plugins/pig-process-host'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-process-extension-'))
@@ -55,7 +56,6 @@ async function fixture() {
 
 if (process.argv.includes('--process-extension-fixture')) await fixture()
 else test('jiti process tools are deferred and forward only the calling session to main', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--process-extension-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--process-extension-fixture'], { timeoutMs: 25_000 })
   expect(code, err || out).toBe(0)
 }, 30_000)

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { test } from 'bun:test'
 import type { OpenTab } from '../src/renderer/src/stores/sessions'
 import type { SessionMeta } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -149,12 +150,7 @@ if (process.argv[2] === '--session-lineage-fixture') {
     ['chat-locale', 'chat fallback titles update on locale changes without refreshing the catalog']
   ] as const) {
     test(title, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--session-lineage-fixture', name], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--session-lineage-fixture', name])
       assert.equal(code, 0, stderr || stdout)
     })
   }

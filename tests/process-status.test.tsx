@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { BackgroundProcessInfo, BackgroundProcessUpdate } from '../src/shared/processes'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -65,7 +66,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--process-status-fixture')) await fixture()
 else test('the background process button mirrors its session and stops or removes rows', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--process-status-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--process-status-fixture'], { timeoutMs: 10_000 })
   assert.equal(code, 0, err || out)
 }, 15_000)

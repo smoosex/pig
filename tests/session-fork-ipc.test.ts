@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { ForkedSessionRef, SessionApi, SessionControls } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -106,10 +107,7 @@ if (process.argv[2] === '--fork-ipc-fixture') {
   await fixture()
 } else {
   test('fork IPC awaits tab persistence and propagates failure after selection changes', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fork-ipc-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fork-ipc-fixture'])
     assert.equal(code, 0, stderr || stdout)
   })
 }

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { chooseSubagentAppearance } from '../src/main/subagents/appearance'
 import { SUBAGENT_ANIMALS, type SubagentAppearance } from '../src/shared/subagent-appearance'
 import type { SubagentInfo } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function avatarFixture(): Promise<void> {
   Object.assign(globalThis, { window: { api: {} } })
@@ -76,13 +77,7 @@ else {
   })
 
   test('animal avatars use theme-colored strokes without a background and inset status marks', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      expect({ code, output: err || out }).toEqual({ code: 0, output: '' })
-    } finally {
-      clearTimeout(timer)
-    }
+    const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+    expect({ code, output: err || out }).toEqual({ code: 0, output: '' })
   }, 15_000)
 }

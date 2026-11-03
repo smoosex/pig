@@ -6,6 +6,7 @@ import type { DragEndEvent, DndContextProps } from '@dnd-kit/core'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
 import type { PaneNode } from '../src/renderer/src/stores/split-layout'
 import type { Turn } from '../src/renderer/src/chat/turns'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -812,21 +813,11 @@ else
     'timers'
   ]) {
     test(`split pane regressions: ${scenario}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', scenario], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const timer = setTimeout(() => child.kill(), 12_000)
-      try {
-        const [code, out, err] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, err || out)
-      } finally {
-        clearTimeout(timer)
-        child.kill()
-      }
+      const { exitCode: code, stdout: out, stderr: err } = await runSelf(
+        import.meta.path,
+        ['--fixture', scenario],
+        { timeoutMs: 12_000 }
+      )
+      assert.equal(code, 0, err || out)
     }, 15_000)
   }

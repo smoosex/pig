@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { DisplayTurn } from '../src/renderer/src/ipc/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const VIEWPORT_HEIGHT = 240
 const VIEWPORT_TOP = 37
@@ -661,6 +662,13 @@ async function runFixture(name: string): Promise<void> {
     } else if (name === 'page-above-reachable') {
       const total = 2000
       const start = 1850
+      const loadOlder = store.loadOlderTurns
+      let requested = false
+      let requestedTarget: number | undefined
+      store.loadOlderTurns = async (_sessionId: string, target?: number) => {
+        requested = true
+        requestedTarget = target
+      }
       change({
         turns: turns(total).slice(start),
         turnStart: start,
@@ -668,19 +676,18 @@ async function runFixture(name: string): Promise<void> {
       })
       await render()
       atEnd()
-      // The reader pages up locally until the window cannot move any further, and ends at the very
-      // top of the scroll range.
-      for (let round = 0; round < 6; round += 1) {
+      // Hold the fetch response until the reader has reached the loaded window's top.
+      for (let round = 0; round < 12 && !requested; round += 1) {
         await act(async () => { input('wheel', viewport()); viewport().scrollTop = 0 })
         await settle()
       }
-      await act(async () => { viewport().scrollTop = 0 })
+      assert.ok(requested, 'reaching the loaded window top asks for an older page')
       const parked = store.runtime.s1.turnStart
       const anchored = topRow()
       assert.equal(viewport().scrollTop, 0, 'the reader sits at the very top')
       // A page lands while they are still there: there is no scroll event left to page it in, so
       // the hint is what mounts it.
-      await act(async () => { await store.loadOlderTurns('s1') })
+      await act(async () => { await loadOlder('s1', requestedTarget) })
       await settle()
       assert.ok(store.runtime.s1.turnStart < parked, 'a page landed above the loaded window')
       assert.deepEqual(topRow(), anchored, 'the landing itself keeps the reading row in place')
@@ -694,7 +701,8 @@ async function runFixture(name: string): Promise<void> {
         Number.isFinite(first) && first <= anchored.index - 20,
         `the hint mounts the page that landed: first=${first}, before=${anchored.index}`
       )
-      assert.deepEqual(topRow(), anchored, 'mounting it above keeps the reading row in place')
+      // A newly mounted predecessor can cross the reading line; the saved row itself must not move.
+      assert.equal(rowOffset(anchored.index), anchored.offset, 'mounting it above keeps the reading row in place')
       assert.ok(viewport().scrollTop > 0, 'the page above leaves room to keep scrolling')
       const reached = Number(rows()[0]?.dataset.turnIndex)
       for (let round = 0; round < 4; round += 1) {
@@ -766,20 +774,16 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'pending-window-status': 'a provisional window asks for its window instead of pretending to page',
     'empty-window-error': 'an empty window with a failed read still shows the failure',
     'remote-history': 'a windowed history loads older turns on demand and keeps the reading position',
+    'page-above-reachable': 'a page arriving above a reader remains reachable without losing the reading position',
     'switch-unmount-cleanup': 'hidden panes stay quiet and unmount cancels detached work'
   }
   for (const [name, title] of Object.entries(fixtures)) {
     test(`chat view scroll: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--chat-view-scroll-fixture', name], {
-        cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe'
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--chat-view-scroll-fixture', name], {
+        cwd: new URL('..', import.meta.url).pathname,
+        timeoutMs: 25_000
       })
-      const timeout = setTimeout(() => child.kill(), 25_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally { clearTimeout(timeout); child.kill() }
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 30_000)
   }
 }

@@ -8,6 +8,7 @@ import type {
   McpSettingsState,
   SessionApi
 } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -393,21 +394,7 @@ if (process.argv.includes('--add-mcp-fixture')) {
   await fixture()
 } else {
   test('manual MCP sheet supports quoted commands, key/value rows and safe paste without Agent selection', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--add-mcp-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timer = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stdout + stderr)
-    } finally {
-      clearTimeout(timer)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--add-mcp-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stdout + stderr)
   }, 14_000)
 }

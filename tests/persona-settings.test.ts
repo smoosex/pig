@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { translate } from '../src/shared/i18n'
 import { PERSONA_FILES, type PersonaApi, type PersonaDocument, type PersonaSnapshot } from '../src/shared/persona'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -162,10 +163,6 @@ async function fixture() {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('persona drafts preserve saved files, pending locks and revision conflicts', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 10000)
-  try {
-    const [code, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, errors || output)
-  } finally { clearTimeout(timer); child.kill() }
+  const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10000 })
+  assert.equal(code, 0, errors || output)
 }, 12000)

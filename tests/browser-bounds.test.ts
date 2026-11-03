@@ -2,6 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { BrowserBounds } from '../src/shared/browser'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -414,19 +415,8 @@ if (process.argv[2] === '--browser-bounds-fixture') {
 } else {
   for (const [scenario, description] of Object.entries(scenarios)) {
     test(`browser bounds: ${description}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--browser-bounds-fixture', scenario], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 8_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--browser-bounds-fixture', scenario], { timeoutMs: 8_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 10_000)
   }
 }

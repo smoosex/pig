@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-completion-notification-'))
@@ -28,7 +29,7 @@ async function runFixture(): Promise<void> {
     }))
     const { sendCompletionNotification } = await import('../src/main/completion-notification')
     const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
-    const { savePigSettings } = await import('../src/main/pig-settings')
+    const { updatePigSettings } = await import('../src/main/pig-settings')
     const { t } = await import('../src/main/i18n')
     const events: Array<{ channel: string; sessionId: string }> = []
     const windowActions: string[] = []
@@ -87,9 +88,9 @@ async function runFixture(): Promise<void> {
     focused = false
     await sendCompletionNotification('project-1', win, new AbortController().signal, { title: '标题', reply: '回复' })
     assert.equal(FakeNotification.instances.length, 5, 'a visible session still notifies when the window is unfocused')
-    await savePigSettings({ completionNotifications: false })
+    await updatePigSettings(() => ({ completionNotifications: false }))
     await sendCompletionNotification('chat-2', win, new AbortController().signal, { title: '标题', reply: '回复' })
-    await savePigSettings({ completionNotifications: true })
+    await updatePigSettings(() => ({ completionNotifications: true }))
     const cancelled = new AbortController()
     cancelled.abort()
     await sendCompletionNotification('chat-2', win, cancelled.signal, { title: '标题', reply: '回复' })
@@ -111,21 +112,10 @@ if (process.argv[2] === '--completion-notification-fixture') {
   await runFixture()
 } else {
   test('completion notifications respect focus, settings, cancellation and route clicks', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--completion-notification-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--completion-notification-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

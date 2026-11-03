@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-subagent-permissions-'))
@@ -119,10 +120,6 @@ async function fixture() {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('subagent approvals forward while effective permissions follow the parent without widening beyond launch', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timeout = setTimeout(() => child.kill(), 20_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, err || out)
-  } finally { clearTimeout(timeout) }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 20_000 })
+  assert.equal(code, 0, err || out)
 }, 25_000)

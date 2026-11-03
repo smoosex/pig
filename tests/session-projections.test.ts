@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { normalizeSessionPrompt } from '../src/main/pi/prompt-input'
-import { sessionTreeRows, sessionTreeViews } from '../src/main/pi/session-tree'
+import { buildSessionTreeViews, SESSION_TREE_VIEWS } from '../src/main/pi/session-tree'
+import type { SessionTreeView } from '../src/shared/api'
 import type { SessionSource } from '../src/main/pi/session-source'
 
 describe('prompt input projection', () => {
@@ -79,13 +80,13 @@ describe('session tree projection', () => {
       branch: () => ['user', 'meta', 'call', 'result'].map((id) => ({ id }) as SessionEntry),
       branchIds: () => ['user', 'meta', 'call', 'result']
     } as SessionSource
-    const rows = sessionTreeRows(source)
+    const rows = buildSessionTreeViews(source, ['default']).default!
     // Parsing the branch only to learn which entries are on it would make the tree as expensive as
     // the projection it deliberately avoids; the ids come from the index instead.
-    expect(() => sessionTreeRows({
+    expect(() => buildSessionTreeViews({
       ...source,
       branch: () => { throw new Error('branch() must not be called to collect ids') }
-    })).not.toThrow()
+    }, ['default'])).not.toThrow()
     expect(rows.map((row) => row.id)).toEqual(['user', 'result', 'alternate'])
     expect(rows[1]).toMatchObject({ parentId: 'user', text: '[read: src/main.ts]', onPath: true, current: true })
     expect(rows[2]).toMatchObject({ parentId: 'user', onPath: false, current: false })
@@ -105,15 +106,15 @@ describe('session tree projection', () => {
       branchIds: () => ['u1', 'answer', 'custom1', 'custom2']
     } as SessionSource
     for (const view of ['default', 'no-tools', 'all'] as const) {
-      const rows = sessionTreeRows(source, view)
+      const rows = buildSessionTreeViews(source, [view])[view]!
       expect(rows.filter((row) => row.current).map((row) => row.id)).toEqual(['answer'])
       expect(rows.find((row) => row.id === 'answer')).toMatchObject({ onPath: true })
     }
-    const all = sessionTreeRows(source, 'all')
+    const all = buildSessionTreeViews(source, ['all']).all!
     expect(all.find((row) => row.id === 'custom1')).toMatchObject({ current: false, onPath: true })
     expect(all.find((row) => row.id === 'custom2')).toMatchObject({ current: false, onPath: true })
     expect(source.leafId()).toBe('custom2')
-    expect(sessionTreeRows({ ...source, leafId: () => 'answer' }).filter((row) => row.current)
+    expect(buildSessionTreeViews({ ...source, leafId: () => 'answer' }, ['default']).default!.filter((row) => row.current)
       .map((row) => row.id)).toEqual(['answer'])
   })
 
@@ -158,21 +159,21 @@ describe('session tree projection', () => {
       branch: () => entries,
       branchIds: () => entries.map((entry) => entry.id)
     } as SessionSource
-    const ids = (view?: Parameters<typeof sessionTreeRows>[1]) =>
-      sessionTreeRows(source, view).map((row) => row.id)
+    const ids = (view: SessionTreeView = 'default') =>
+      buildSessionTreeViews(source, [view])[view]!.map((row) => row.id)
     expect(ids()).toEqual(['u1', 'a1', 'r1', 'b1', 'u2'])
     expect(ids('no-tools')).toEqual(['u1', 'a1', 'b1', 'u2'])
     expect(ids('user-only')).toEqual(['u1', 'u2'])
     expect(ids('labeled-only')).toEqual(['u1'])
     expect(ids('all')).toEqual(['u1', 'a1', 'r1', 'b1', 'ce', 'info', 'lbl', 'lbl2', 'lbl3', 'u2'])
-    const tool = sessionTreeRows(source).find((row) => row.id === 'r1')
+    const tool = buildSessionTreeViews(source, ['default']).default!.find((row) => row.id === 'r1')
     expect(tool).toMatchObject({ text: '[read: a.ts]' })
-    const leaf = sessionTreeRows(source, 'user-only').find((row) => row.id === 'u2')
+    const leaf = buildSessionTreeViews(source, ['user-only'])['user-only']!.find((row) => row.id === 'u2')
     expect(leaf).toMatchObject({ current: true, onPath: true, text: 'user: 继续' })
-    expect(sessionTreeRows(source).find((row) => row.id === 'u1')).toMatchObject({ label: '起点' })
-    expect(sessionTreeRows(source).find((row) => row.id === 'a1')?.label).toBeUndefined()
-    expect(sessionTreeRows(source).find((row) => row.id === 'u2')?.label).toBeUndefined()
-    const all = sessionTreeRows(source, 'all')
+    expect(buildSessionTreeViews(source, ['default']).default!.find((row) => row.id === 'u1')).toMatchObject({ label: '起点' })
+    expect(buildSessionTreeViews(source, ['default']).default!.find((row) => row.id === 'a1')?.label).toBeUndefined()
+    expect(buildSessionTreeViews(source, ['default']).default!.find((row) => row.id === 'u2')?.label).toBeUndefined()
+    const all = buildSessionTreeViews(source, ['all']).all!
     expect(all.find((row) => row.id === 'lbl')).toMatchObject({ text: '[label: 起点]' })
     expect(all.find((row) => row.id === 'lbl3')).toMatchObject({ text: '[label: ]' })
     expect(all.find((row) => row.id === 'info')).toMatchObject({ text: '[title: 名字]' })
@@ -198,12 +199,12 @@ describe('session tree projection', () => {
       branch: () => entries,
       branchIds: () => entries.map((entry) => entry.id)
     } as SessionSource
-    const views = sessionTreeViews(source)
+    const views = buildSessionTreeViews(source, SESSION_TREE_VIEWS)
     expect(Object.keys(views).sort()).toEqual(['all', 'default', 'labeled-only', 'no-tools', 'user-only'])
     expect(walks).toEqual(1)
-    expect(views.default.map((row) => row.id)).toEqual(['u1', 'a1', 'u2'])
-    expect(views['user-only'].map((row) => row.id)).toEqual(['u1', 'u2'])
-    expect(views['labeled-only'].map((row) => row.id)).toEqual(['u1'])
-    expect(views.all.map((row) => row.id)).toEqual(['u1', 'a1', 'lbl', 'u2'])
+    expect(views.default!.map((row) => row.id)).toEqual(['u1', 'a1', 'u2'])
+    expect(views['user-only']!.map((row) => row.id)).toEqual(['u1', 'u2'])
+    expect(views['labeled-only']!.map((row) => row.id)).toEqual(['u1'])
+    expect(views.all!.map((row) => row.id)).toEqual(['u1', 'a1', 'lbl', 'u2'])
   })
 })

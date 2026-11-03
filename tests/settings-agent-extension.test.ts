@@ -9,6 +9,7 @@ import { LOCALES } from '../src/shared/i18n'
 import { SETTINGS_GROUPS } from '../src/shared/settings'
 import type { SettingsAgentHost, SettingsCatalog, SettingsGroupSnapshot, SettingsMutationResult, SettingsUpdateRequest } from '../src/shared/settings'
 import { SHORTCUT_ACTIONS } from '../src/shared/shortcuts'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-settings-extension-'))
@@ -242,10 +243,6 @@ async function fixture() {
 
 if (process.argv.includes('--settings-extension-fixture')) await fixture()
 else test('jiti settings tools enforce the write allowlist and forward real host data, session IDs and cancellation', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--settings-extension-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 25_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    expect(code, err || out).toBe(0)
-  } finally { clearTimeout(timer) }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--settings-extension-fixture'], { timeoutMs: 25_000 })
+  expect(code, err || out).toBe(0)
 }, 30_000)

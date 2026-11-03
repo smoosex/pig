@@ -2,6 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { BrowserApi, BrowserCookiePreview, BrowserCookieSources } from '../src/shared/browser'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -180,11 +181,7 @@ if (process.argv[2] === '--cookie-fixture') {
   await fixture()
 } else {
   test('cookie dialog: confirmations, metadata races, permissions and partial results', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--cookie-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timeout); child.kill() }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--cookie-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

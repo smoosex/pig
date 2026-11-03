@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, symlink, write
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionCapability } from '../src/shared/session-capabilities'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'pig-skills-manager-')))
@@ -375,10 +376,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('skill ownership, collisions, preferences and project/Chat loading use the real SDK safely', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 15_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, err || out)
-  } finally { clearTimeout(timer); child.kill() }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 15_000 })
+  assert.equal(code, 0, err || out)
 }, 20_000)

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BrowserWindow } from 'electron'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-mcp-manager-'))
@@ -107,19 +108,6 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--fixture')) await fixture()
 else
   test('MCP management: serialized login, window abort and awaiting exactly one connection close', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timer = setTimeout(() => child.kill(), 5000)
-    try {
-      const [code, out, err] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, err || out)
-    } finally {
-      clearTimeout(timer)
-    }
+    const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 5000 })
+    assert.equal(code, 0, err || out)
   }, 7000)

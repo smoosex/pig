@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PluginInfo } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-plugin-scopes-ipc-'))
@@ -66,10 +67,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('plugin IPC scopes memory availability and details to the requested session', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 10_000)
-  try {
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, stderr || stdout)
-  } finally { clearTimeout(timer); child.kill() }
+  const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+  assert.equal(code, 0, stderr || stdout)
 }, 12_000)

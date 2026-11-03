@@ -6,6 +6,7 @@ import {
   subtractHighlightRect,
   type HighlightRect
 } from '../src/renderer/src/components/ui/hover-highlight-clip'
+import { runSelf } from './helpers/subprocess.ts'
 
 const rect = (left: number, top: number, right: number, bottom: number): HighlightRect =>
   ({ left, top, right, bottom })
@@ -144,15 +145,7 @@ else {
   })
 
   test('glass hover keeps selection at 12% and respects transparent sticky titles', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 6000)
-    try {
-      const [code, output, errors] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, `${output}\n${errors}`)
-    } finally {
-      clearTimeout(timer)
-    }
+    const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 6000 })
+    assert.equal(code, 0, `${output}\n${errors}`)
   })
 }

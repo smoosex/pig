@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
 import { reviewSettingsSchema } from '../src/main/plugins/pi-review/settings'
 import { PERSONA_FILES, type PersonaSnapshot } from '../src/shared/persona'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -329,11 +330,7 @@ if (process.argv.includes('--plugins-pane-fixture')) {
   await fixture()
 } else {
   test('plugin scopes are independently selectable and settings save Pig-only global config', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--plugins-pane-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timer); child.kill() }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--plugins-pane-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 14_000)
 }

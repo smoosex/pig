@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fetchRemoteUrl } from '../src/main/plugins/pi-web-access/ssrf-protection.ts'
 import { runWithProxy } from '../src/main/plugins/pi-web-access/utils.ts'
+import { runChild } from './helpers/subprocess.ts'
 
 async function rebindingFixture() {
   let hits = 0
@@ -256,20 +257,11 @@ if (process.argv.includes('--web-network-fixture')) {
   const { test } = await import('bun:test')
   for (const [key, fixture] of Object.entries(fixtures)) {
     test(`web access: ${fixture.name}`, async () => {
-      const child = Bun.spawn(['node', '--experimental-strip-types', import.meta.path, '--web-network-fixture', key], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 20000)
-      try {
-        const [code, output, errors] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, errors || output)
-      } finally {
-        clearTimeout(timeout)
-      }
-    }, 22000)
+      const { exitCode: code, stdout: output, stderr: errors } = await runChild(
+        ['node', '--experimental-strip-types', import.meta.path, '--web-network-fixture', key],
+        { timeoutMs: 20_000 }
+      )
+      assert.equal(code, 0, errors || output)
+    }, 22_000)
   }
 }

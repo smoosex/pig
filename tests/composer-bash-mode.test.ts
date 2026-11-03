@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 /** Isolate Tiptap and its DOM so Esc's mode latch is exercised through the real editor key handler. */
 async function fixture(): Promise<void> {
@@ -128,16 +129,7 @@ if (process.argv[2] === '--bash-mode-fixture') {
   await fixture()
 } else {
   test('only a first-character ! enters Bash mode; Esc preserves ! without immediately re-entering', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--bash-mode-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--bash-mode-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

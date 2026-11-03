@@ -6,6 +6,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { RetryNotice } from '../src/renderer/src/stores/sessions/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -68,12 +69,7 @@ if (process.argv[2] === '--retry-notice-fixture') {
   await runFixture()
 } else {
   test('retry notice: one row of copy per retry state, counting down on its own', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--retry-notice-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--retry-notice-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

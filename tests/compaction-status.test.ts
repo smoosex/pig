@@ -7,6 +7,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { LiveCompaction } from '../src/renderer/src/chat/compactions'
 import type { PiMessage } from '../src/renderer/src/pi/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -91,12 +92,7 @@ if (process.argv[2] === '--compaction-status-fixture') {
   await runFixture()
 } else {
   test('compaction status: a summary between turns reports itself and can be stopped or dismissed', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--compaction-status-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--compaction-status-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

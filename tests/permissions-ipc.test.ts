@@ -2,6 +2,7 @@ import { expect, mock, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
@@ -69,11 +70,7 @@ if (process.argv.includes('--permissions-ipc-fixture')) {
   await fixture()
 } else {
   test('permission IPC rejects guests and invalid inputs; UI updates broadcast and corrupt policy stays untouched', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.filename, '--permissions-ipc-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      if (code !== 0) throw new Error(`Permission IPC fixture exited ${code}: ${stdout}\n${stderr}`)
-    } finally { clearTimeout(timeout) }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.filename, ['--permissions-ipc-fixture'], { timeoutMs: 10_000 })
+    if (code !== 0) throw new Error(`Permission IPC fixture exited ${code}: ${stdout}\n${stderr}`)
   }, 15_000)
 }

@@ -1,6 +1,7 @@
 /** Multi-select stays open, saves immediately, preserves order and only cleans missing providers. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -77,11 +78,7 @@ if (process.argv[2] === '--scoped-models-setting-fixture') {
   await fixture()
 } else {
   test('scoped model multi-select pins selections and cleans only missing providers', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--scoped-models-setting-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 15_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timeout) }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--scoped-models-setting-fixture'], { timeoutMs: 15_000 })
+    assert.equal(code, 0, stderr || stdout)
   })
 }

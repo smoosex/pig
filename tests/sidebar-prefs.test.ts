@@ -10,6 +10,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SidebarPrefs } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const defaults: SidebarPrefs = {
   sidebarTab: 'projects',
@@ -78,21 +79,11 @@ if (process.argv[2] === '--sidebar-prefs-fixture') {
   await runFixture()
 } else {
   test('sidebar prefs report a failed read and keep a file they cannot parse', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--sidebar-prefs-fixture'], {
-      cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(
+      import.meta.path,
+      ['--sidebar-prefs-fixture'],
+      { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 12_000 }
+    )
+    assert.equal(code, 0, stderr || stdout)
   })
 }

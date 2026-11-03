@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 if (process.argv.includes('--terminal-input-fixture')) {
   const { mock } = await import('bun:test')
@@ -241,8 +242,7 @@ if (process.argv.includes('--terminal-input-fixture')) {
   GlobalRegistrator.unregister()
 } else {
   test('terminal clamps measured sizes, forwards binary mouse events and chunks oversized pastes', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--terminal-input-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--terminal-input-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

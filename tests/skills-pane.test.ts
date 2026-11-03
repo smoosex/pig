@@ -2,6 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, SkillInfo, SkillMarketResult, SkillProbe } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -141,10 +142,6 @@ async function fixture(): Promise<void> {
 }
 if (process.argv.includes('--fixture')) await fixture()
 else test('skills UI handles preferences, stale discovery searches and preview lifetime', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 10_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    assert.equal(code, 0, err || out)
-  } finally { clearTimeout(timer); child.kill() }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
+  assert.equal(code, 0, err || out)
 }, 12_000)

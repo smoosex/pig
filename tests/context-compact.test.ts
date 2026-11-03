@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionContextUsage } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -102,11 +103,7 @@ if (process.argv.includes('--context-compact-fixture')) {
   await fixture()
 } else {
   test('context popover compacts manually and marks the auto-compaction threshold', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--context-compact-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timer); child.kill() }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--context-compact-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 14_000)
 }

@@ -1,6 +1,7 @@
 /** Shared button surfaces are checked in isolation from renderer module mocks. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { buttonVariants } = await import('../src/renderer/src/components/ui/button')
@@ -39,9 +40,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('buttons share glass surfaces while preserving semantic variants and solid styling', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, output, errors] = await Promise.all([
-    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-  ])
+  const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 25_000 })
   assert.equal(code, 0, errors || output)
 })

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver } from '../src/main/plugins/pi-persona/service'
 import { personaTransaction, setActivity } from '../src/main/plugins/pi-persona/kernel'
 import { withPersonaLock } from '../src/main/plugins/pi-persona/storage'
+import { runChild } from './helpers/subprocess.ts'
 
 let root: string
 let oldPig: string | undefined
@@ -88,12 +89,10 @@ test('observer persists globally, omitted model inherits, paired model IDs are r
 test('independent processes serialize global history under the disk lock', async () => {
   const service = new URL('../src/main/plugins/pi-persona/service.ts', import.meta.url).pathname
   const script = `import { setPersonaMood } from ${JSON.stringify(service)}; for (let i = 0; i < 4; i++) await setPersonaMood(${JSON.stringify(values)});`
-  const children = [0, 1].map(() => Bun.spawn([process.execPath, '-e', script], {
-    env: { ...process.env, PIG_DIR: process.env.PIG_DIR! }, stdout: 'pipe', stderr: 'pipe',
-  }))
+  const children = [0, 1].map(() => runChild([process.execPath, '-e', script], { env: { PIG_DIR: process.env.PIG_DIR! } }))
   for (const child of children) {
-    const error = await new Response(child.stderr).text()
-    expect(await child.exited, error).toBe(0)
+    const { exitCode, stderr } = await child
+    expect(exitCode, stderr).toBe(0)
   }
   expect((await getPersona()).mood.history).toHaveLength(8)
   expect(JSON.parse(await readFile(statePath(), 'utf8')).nextHistorySequence).toBe(9)

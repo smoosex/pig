@@ -15,7 +15,7 @@ import {
   windowUpdate
 } from '../src/main/pi/session-source'
 import type { SessionFileSession } from '../src/main/pi/session-state'
-import { sessionTreeRows } from '../src/main/pi/session-tree'
+import { buildSessionTreeViews } from '../src/main/pi/session-tree'
 import { composePromptText, createPastedTextMetadata, pastedTextFingerprint } from '../src/shared/pasted-text'
 
 const STAMP = '2026-01-01T00:00:00.000Z'
@@ -492,8 +492,8 @@ test('the reduced tree read shows what the full read shows', async () => {
     const index = indexSessionFile(path)
     const full = fileSource(index)
     const reduced = { ...full, treeEntries: () => readTreeEntries(index) }
-    const rows = sessionTreeRows(reduced)
-    expect(rows).toEqual(sessionTreeRows(full))
+    const rows = buildSessionTreeViews(reduced, ['default']).default!
+    expect(rows).toEqual(buildSessionTreeViews(full, ['default']).default!)
     // The assistant row holds no text and is not current, so only the call it made and its
     // result show up: the reduced read still labels the result from the call it answers.
     expect(rows.map((row) => row.text)).toEqual(['user: q0', '[read: /tmp/a.ts]'])

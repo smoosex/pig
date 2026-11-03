@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runChild } from './helpers/subprocess.ts'
 
 // Keep node-pty's mock and process.parentPort confined to a separate Bun process.
 const workerUrl = new URL('../src/main/terminal/pty-host-worker.ts', import.meta.url).href
@@ -97,12 +98,7 @@ console.log('verified')
 
 for (const mode of ['descendant', 'esrch', 'eperm', 'shell'] as const) {
   test.skipIf(process.platform === 'win32')(`terminal worker retains post-exit group cleanup: ${mode}`, async () => {
-    const child = Bun.spawn([process.execPath, '-e', fixture(mode)], {
-      stdout: 'pipe', stderr: 'pipe', timeout: 8_000
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runChild([process.execPath, '-e', fixture(mode)], { timeoutMs: 8_000 })
     if (mode === 'eperm') {
       assert.notEqual(code, 0, 'non-ESRCH errors must escape the timer callback')
       assert.match(stderr, /GROUP_KILL_EPERM/)
@@ -157,8 +153,7 @@ console.log('verified')
 `
 
 test('terminal worker ignores a resize between the pty closing and the shell exit', async () => {
-  const child = Bun.spawn([process.execPath, '-e', closedResizeFixture], { stdout: 'pipe', stderr: 'pipe', timeout: 8_000 })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runChild([process.execPath, '-e', closedResizeFixture], { timeoutMs: 8_000 })
   assert.equal(code, 0, stderr)
   assert.match(stdout, /verified/)
 })
@@ -281,8 +276,7 @@ console.log('verified')
 `
 
 test.skipIf(process.platform === 'win32')('terminal worker restores, saves and discards the restart record', async () => {
-  const child = Bun.spawn([process.execPath, '-e', historyFixture], { stdout: 'pipe', stderr: 'pipe', timeout: 12_000 })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runChild([process.execPath, '-e', historyFixture], { timeoutMs: 12_000 })
   assert.equal(code, 0, stderr)
   assert.match(stdout, /verified/)
 }, 15_000)

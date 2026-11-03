@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WorktreeService } from '../src/main/worktrees'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -291,41 +292,15 @@ if (process.argv[2] === '--reopen-fixture') {
   await reproduce(process.argv[3], process.argv[4] === 'alias')
 } else {
   test('reopening a path whose preparation was in flight does not serve a stale preview', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--reopen-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 5_000)
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(exitCode, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--reopen-fixture'], { timeoutMs: 5_000 })
+    assert.equal(exitCode, 0, stderr || stdout)
   }, 10_000)
 
   for (const stage of ['create', 'bind']) {
     for (const pathKind of ['direct', 'alias']) {
       test(`deletion waits for ${stage} during openSession (${pathKind} cwd)`, async () => {
-        const child = Bun.spawn([process.execPath, import.meta.path, '--race-fixture', stage, pathKind], {
-          stdout: 'pipe',
-          stderr: 'pipe'
-        })
-        const timeout = setTimeout(() => child.kill(), 5_000)
-        try {
-          const [exitCode, stdout, stderr] = await Promise.all([
-            child.exited,
-            new Response(child.stdout).text(),
-            new Response(child.stderr).text()
-          ])
-          assert.equal(exitCode, 0, stderr || stdout)
-        } finally {
-          clearTimeout(timeout)
-          child.kill()
-        }
+        const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--race-fixture', stage, pathKind], { timeoutMs: 5_000 })
+        assert.equal(exitCode, 0, stderr || stdout)
       }, 10_000)
     }
   }

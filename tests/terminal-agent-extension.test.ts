@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TerminalAgentHost } from '../src/main/plugins/pig-terminal-host'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-terminal-extension-'))
@@ -52,7 +53,6 @@ async function fixture() {
 
 if (process.argv.includes('--terminal-extension-fixture')) await fixture()
 else test('jiti terminal tools are deferred and forward only the calling session to main', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--terminal-extension-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--terminal-extension-fixture'], { timeoutMs: 25_000 })
   expect(code, err || out).toBe(0)
 }, 30_000)

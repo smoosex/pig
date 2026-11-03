@@ -2,6 +2,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import type { SessionApi, WorktreeDeletionJob } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -91,16 +92,7 @@ if (process.argv[2] === '--worktree-deletion-notices') {
   await fixture()
 } else {
   test('background deletion failures toast, retry and recover after renderer reload', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--worktree-deletion-notices'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--worktree-deletion-notices'], { timeoutMs: 10_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

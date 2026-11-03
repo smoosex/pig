@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 const PASSING_TURNS = 120
 const PADDING = 20_000
@@ -436,20 +437,10 @@ if (process.argv.includes('--open-window-fixture')) {
   await runFixture()
 } else {
   test('opening shows the tail before the branch index exists', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--open-window-fixture'], {
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--open-window-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 25_000
     })
-    const timeout = setTimeout(() => child.kill(), 25_000)
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(exitCode, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    assert.equal(exitCode, 0, stderr || stdout)
   }, 30_000)
 }

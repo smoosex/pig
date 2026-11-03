@@ -5,6 +5,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MemoryPluginSettingsPatch, PluginScope } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-plugins-'))
@@ -459,13 +460,10 @@ if (process.argv.includes('--plugins-fixture')) {
   await fixture()
 } else {
   test('Pig plugin allowlist, private registry, Pi config and UI bridge', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--plugins-fixture'], {
-      cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe'
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--plugins-fixture'], {
+      cwd: new URL('..', import.meta.url).pathname,
+      timeoutMs: 20_000
     })
-    const timer = setTimeout(() => child.kill(), 20_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timer) }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

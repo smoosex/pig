@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { DisplayTurn, TurnSummary } from '../src/renderer/src/ipc/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -219,19 +220,11 @@ if (process.argv[2] === '--conversation-minimap-fixture') {
     weight: 'the minimap measures loaded and unloaded turns on one scale'
   })) {
     test(`conversation minimap: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--conversation-minimap-fixture', name], {
-        cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe'
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--conversation-minimap-fixture', name], {
+        cwd: new URL('..', import.meta.url).pathname,
+        timeoutMs: 15_000
       })
-      const timeout = setTimeout(() => child.kill(), 15_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 20_000)
   }
 }

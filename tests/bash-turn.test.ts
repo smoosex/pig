@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { Turn } from '../src/renderer/src/chat/turns'
+import { runSelf } from './helpers/subprocess.ts'
 
 /** Standalone command cards render the SDK's bashExecution message, not the model's bash tool. */
 async function fixture(): Promise<void> {
@@ -158,14 +159,7 @@ if (process.argv[2] === '--bash-turn-fixture') {
   await fixture()
 } else {
   test('standalone commands reveal persisted output and can stop a running command', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--bash-turn-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--bash-turn-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

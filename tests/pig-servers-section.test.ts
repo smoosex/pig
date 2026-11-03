@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-servers-'))
@@ -59,7 +60,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--pig-servers-fixture')) await fixture()
 else test('built-in browser and terminal list themselves in pig_servers and follow session tool switches', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--pig-servers-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--pig-servers-fixture'], { timeoutMs: 25_000 })
   assert.equal(code, 0, err || out)
 }, 30_000)

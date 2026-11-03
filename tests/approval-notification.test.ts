@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BrowserWindow } from 'electron'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-approval-notification-'))
@@ -36,7 +37,7 @@ async function runFixture(): Promise<void> {
     }))
     const { trackApproval, retireApproval } = await import('../src/main/approval-notification')
     const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
-    const { savePigSettings } = await import('../src/main/pig-settings')
+    const { updatePigSettings } = await import('../src/main/pig-settings')
     const poll = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
     const waitForNotifications = async (count: number): Promise<void> => {
       const deadline = performance.now() + 2_000
@@ -117,11 +118,11 @@ async function runFixture(): Promise<void> {
     setVisibleNotificationSessions(win, ['chat-1'])
 
     focused = false
-    await savePigSettings({ approvalNotifications: false })
+    await updatePigSettings(() => ({ approvalNotifications: false }))
     trackApproval('chat-1', win, notice('d'))
     await expectNoNewNotifications(4, 'the setting turns them off')
     retireApproval('chat-1', 'd')
-    await savePigSettings({ approvalNotifications: true })
+    await updatePigSettings(() => ({ approvalNotifications: true }))
 
     trackApproval('chat-1', win, notice('e'))
     retireApproval('chat-1', 'e')
@@ -137,21 +138,10 @@ if (process.argv[2] === '--approval-notification-fixture') {
   await runFixture()
 } else {
   test('approval notifications follow pending requests, answer through actions and respect visibility', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--approval-notification-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--approval-notification-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

@@ -1,6 +1,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { GitExecError } from '../src/main/git/exec'
+import { runSelf } from './helpers/subprocess.ts'
 
 const first = `diff --git a/first.txt b/first.txt
 index 1111111..2222222 100644
@@ -45,16 +46,10 @@ if (process.argv[2] === '--git-diff-overflow-fixture') {
   await runFixture()
 } else {
   test('a maxBuffer patch keeps complete files and reports truncation', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--git-diff-overflow-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--git-diff-overflow-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 25_000
     })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text()
-    ])
     assert.equal(code, 0, stderr || stdout)
   })
 }

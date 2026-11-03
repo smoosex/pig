@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runGit } from '../src/main/git/run'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'pig-access-')))
@@ -62,7 +63,6 @@ async function runFixture(): Promise<void> {
     },
     shell: { openPath: async () => '', showItemInFolder: () => {} },
     clipboard: { writeText: () => {} },
-    dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
     BrowserWindow: { getAllWindows: () => [] }
   }))
 
@@ -125,15 +125,7 @@ if (process.argv[2] === '--worktree-access-fixture') {
   await runFixture()
 } else {
   test('worktree access: only the opened projects and their worktrees are readable', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--worktree-access-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--worktree-access-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import type { BrowserWindow, WebContents } from 'electron'
 import type { ExtensionUIEvent } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const launchError = Object.assign(new Error('Browser launch failed'), { code: 'E_BROWSER_LAUNCH' })
@@ -176,14 +177,6 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--fixture')) await fixture()
 else
   test('extension UI: sender ownership, responses, cancellation, timeout and window teardown', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const [code, out, err] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 25_000 })
     assert.equal(code, 0, err || out)
   })

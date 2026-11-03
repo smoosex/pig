@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { translate } from '../src/shared/i18n'
 import type { Turn } from '../src/renderer/src/chat/turns'
 import { summaryMinimapItem, turnMinimapItem } from '../src/renderer/src/chat/minimap'
+import { runSelf } from './helpers/subprocess.ts'
 
 /** The labels this file spells out are the Chinese ones, so the translator is pinned to zh-CN. */
 const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
@@ -130,14 +131,7 @@ if (process.argv[2] === '--minimap-fixture') {
   await fixture()
 } else {
   test('turn minimap supports keyboard navigation and activates the exact turn once', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--minimap-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timeout = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--minimap-fixture'], { timeoutMs: 10_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PermissionMode } from '../src/shared/permissions'
+import { runSelf } from './helpers/subprocess.ts'
 
 const flag = '--sandbox-boundaries-fixture'
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
@@ -67,18 +68,15 @@ if (process.argv.includes(flag)) {
     const agent = join(root, 'custom-agent')
     mkdirSync(home)
     mkdirSync(agent)
-    const child = Bun.spawn([process.execPath, import.meta.filename, flag], {
-      env: { ...process.env, HOME: home, PIG_DIR: join(root, 'pig[1]'), PI_CODING_AGENT_DIR: agent,
-        NPM_CONFIG_USERCONFIG: join(root, 'custom-npmrc'), SANDBOX_FIXTURE_ROOT: root }, stdout: 'pipe', stderr: 'pipe'
-    })
-    const timer = setTimeout(() => child.kill(), 20_000)
     try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.filename, [flag], {
+        env: { HOME: home, PIG_DIR: join(root, 'pig[1]'), PI_CODING_AGENT_DIR: agent,
+          NPM_CONFIG_USERCONFIG: join(root, 'custom-npmrc'), SANDBOX_FIXTURE_ROOT: root },
+        timeoutMs: 20_000
+      })
       if (code !== 0) throw new Error(`Sandbox boundaries fixture exited ${code}: ${stdout}\n${stderr}`)
       expect(code).toBe(0)
     } finally {
-      clearTimeout(timer)
-      child.kill()
       rmSync(root, { recursive: true, force: true })
     }
   }, 25_000)

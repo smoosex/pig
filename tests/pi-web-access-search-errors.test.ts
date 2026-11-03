@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function routingFixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-web-search-errors-'))
@@ -88,19 +89,7 @@ if (process.argv.includes('--web-search-errors-fixture')) {
 } else {
   const { test } = await import('bun:test')
   test('OpenAI routing preserves error codes/types, rejects malformed SSE, and never classifies prose as quota', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--web-search-errors-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 10000)
-    try {
-      const [code, output, errors] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, errors || output)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--web-search-errors-fixture'], { timeoutMs: 10000 })
+    assert.equal(code, 0, errors || output)
   }, 12000)
 }

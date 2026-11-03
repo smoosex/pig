@@ -13,6 +13,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, UntrackedFileResult, WorktreeDiff } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const CWD = '/project'
 const OTHER_CWD = '/other-project'
@@ -592,21 +593,10 @@ if (process.argv[2] === '--changes-view-fixture') {
   await runFixture()
 } else {
   test('changes view: every file is its own collapsible card', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--changes-view-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--changes-view-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

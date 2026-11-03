@@ -10,6 +10,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { FileReadResult, SessionApi } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -354,15 +355,7 @@ if (process.argv[2] === '--files-store-fixture') {
     'forget-folder': 'trashing a folder drops the drafts under it'
   })) {
     test(`files store: ${description}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--files-store-fixture', name], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--files-store-fixture', name])
       assert.equal(code, 0, stdout + stderr)
     })
   }

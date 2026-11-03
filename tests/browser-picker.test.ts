@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import type { BrowserElement, BrowserMarker, BrowserPickerOptions } from '../src/shared/browser'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(mainFrame: boolean): Promise<void> {
   GlobalRegistrator.register()
@@ -346,17 +347,9 @@ if (process.argv[2] === '--browser-picker-fixture') {
   await fixture(process.argv[3] === 'main')
 } else {
   for (const mode of ['main', 'subframe']) test(`sandbox browser picker (${mode})`, async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--browser-picker-fixture', mode], {
-      stdout: 'pipe', stderr: 'pipe'
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--browser-picker-fixture', mode], {
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    assert.equal(code, 0, stderr || stdout)
   })
 }

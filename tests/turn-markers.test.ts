@@ -2,6 +2,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { buildTurn, groupTurns } from '../src/renderer/src/chat/turns'
 import type { CompactionItem, ProcessItem, ToolStep, Turn } from '../src/renderer/src/chat/turns'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -1290,22 +1291,8 @@ if (process.argv[2] === '--marker-fixture') {
   }
   for (const [name, title] of Object.entries(fixtures)) {
     test(title, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--marker-fixture', name], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--marker-fixture', name], { timeoutMs: 10_000 })
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 15_000)
   }
 

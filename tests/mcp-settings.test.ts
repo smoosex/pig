@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), 'pig-mcp-settings-'))
@@ -151,14 +152,6 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--fixture')) await fixture()
 else
   test('Pig MCP configuration: opt-in import, global enablement, serial writes, credentials and repository isolation', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const [code, output, errors] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 25_000 })
     assert.equal(code, 0, errors || output)
   })

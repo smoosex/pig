@@ -2,6 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { SessionApi, SessionCapabilities } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -141,7 +142,6 @@ async function fixture(): Promise<void> {
 }
 if (process.argv.includes('--fixture')) await fixture()
 else test('session capability popover scopes toggles, resets overrides and blocks changes while busy', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'])
   assert.equal(code, 0, stderr || stdout)
 }, 15_000)

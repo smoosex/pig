@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { WebContents } from 'electron'
 import { uploadBrowserFiles, type BrowserUploadApproval } from '../src/main/browser/agent-upload'
 import { withBrowserDebugger } from '../src/main/browser/browser-debugger'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -272,7 +273,6 @@ async function fixture() {
 
 if (process.argv.includes('--upload-fixture')) await fixture()
 else test('browser uploads validate explicit files, original refs, shadow paths and cancellation ownership', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--upload-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--upload-fixture'])
   assert.equal(code, 0, stderr || stdout)
 })

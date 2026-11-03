@@ -1,5 +1,6 @@
 /** Files may lay themselves out with HTML; chat output never renders it, and neither lets scripts through. */
 import { expect, test } from 'bun:test'
+import { runSelf } from './helpers/subprocess.ts'
 
 const readme = [
   '<p align="center"><img src="logo.png" width="80" onerror="alert(1)"></p>',
@@ -49,8 +50,7 @@ if (process.argv[2] === '--markdown-html-fixture') {
   await runFixture()
 } else {
   test('a file preview renders sanitized HTML while chat markdown still shows it as text', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--markdown-html-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--markdown-html-fixture'])
     expect(code, stdout + stderr).toBe(0)
   })
 }

@@ -1,6 +1,7 @@
 /** The outline script runs serialized in an isolated world; this evaluates the serialized source in a DOM. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -86,8 +87,7 @@ if (process.argv[2] === '--snapshot-fixture') {
   await fixture()
 } else {
   test('browser agent snapshot outlines roles, names, values and refs without hidden or secret content', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--snapshot-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--snapshot-fixture'])
     assert.equal(code, 0, stderr || stdout)
   })
 }

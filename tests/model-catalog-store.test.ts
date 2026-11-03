@@ -12,6 +12,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -103,20 +104,7 @@ if (process.argv[2] === '--catalog-store-fixture') {
   await fixture()
 } else {
   test('catalog store: a newer push is never undone by an older read', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--catalog-store-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 8_000)
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(exitCode, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--catalog-store-fixture'], { timeoutMs: 8_000 })
+    assert.equal(exitCode, 0, stderr || stdout)
   })
 }

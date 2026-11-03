@@ -13,6 +13,7 @@ import type {
   SessionBranchRef,
   SessionMeta
 } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -2211,12 +2212,7 @@ if (process.argv[2] === '--session-store-fixture') {
   }
   for (const [name, description] of Object.entries(cases)) {
     test(`session store: ${description}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--session-store-fixture', name], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--session-store-fixture', name])
       assert.equal(code, 0, stdout + stderr)
     })
   }

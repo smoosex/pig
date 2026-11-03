@@ -1,6 +1,7 @@
 /** Isolate module mocks from the runtime and store tests in the shared Bun registry. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 if (process.argv.includes('--terminal-agent-renderer-fixture')) {
   const { mock } = await import('bun:test')
@@ -77,8 +78,7 @@ if (process.argv.includes('--terminal-agent-renderer-fixture')) {
   assert.ok(!tabs.some((tab) => tab.id === 'terminal:new'), 'a rejected late answer closes the orphan')
 } else {
   test('terminal agent opens background worktree/home tabs, awaits readiness and cleans rejected requests', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--terminal-agent-renderer-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--terminal-agent-renderer-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

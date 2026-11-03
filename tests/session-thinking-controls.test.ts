@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WorktreeService } from '../src/main/worktrees'
+import { runSelf } from './helpers/subprocess.ts'
 
 const stamp = '2026-01-01T00:00:00.000Z'
 const MODELS = [
@@ -154,22 +155,8 @@ if (process.argv[2] === '--thinking-controls-fixture') {
   }
   for (const [scenario, name] of Object.entries(scenarios)) {
     test(name, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--thinking-controls-fixture', scenario], {
-        stdout: 'pipe',
-        stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 5_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--thinking-controls-fixture', scenario], { timeoutMs: 5_000 })
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 10_000)
   }
 }

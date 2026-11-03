@@ -6,6 +6,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -123,15 +124,7 @@ async function fixture(): Promise<void> {
 if (process.argv.includes('--fixture')) await fixture()
 else {
   test('the hover layer only re-measures when its region or an ancestor stops animating', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 8000)
-    try {
-      const [code, output, errors] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, `${output}\n${errors}`)
-    } finally {
-      clearTimeout(timer)
-    }
+    const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 8000 })
+    assert.equal(code, 0, `${output}\n${errors}`)
   })
 }

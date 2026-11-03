@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { runSelf } from './helpers/subprocess.ts'
 
 const run = promisify(execFile)
 const git = (cwd: string, ...args: string[]) => run('git', ['-C', cwd, ...args])
@@ -90,22 +91,10 @@ if (process.argv[2] === '--git-watch-fixture') {
   await runFixture()
 } else {
   test('a linked worktree reports staging and commits to the renderer', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--git-watch-fixture'], {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--git-watch-fixture'], {
       cwd: new URL('..', import.meta.url).pathname,
-      stdout: 'pipe',
-      stderr: 'pipe'
+      timeoutMs: 12_000
     })
-    const timeout = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    assert.equal(code, 0, stderr || stdout)
   }, 20_000)
 }

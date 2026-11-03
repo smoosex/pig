@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { translate } from '../src/shared/i18n'
+import { runSelf } from './helpers/subprocess.ts'
 
 const flag = '--approval-prompt-fixture'
 
@@ -175,11 +176,7 @@ if (process.argv.includes(flag)) {
     }
   })
   test('permission approvals render above their own composer, expose overflow and answer by number, mouse click or Esc', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.filename, flag], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally { clearTimeout(timer) }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, [flag], { timeoutMs: 10_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

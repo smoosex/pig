@@ -1,6 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { IpcMainInvokeEvent } from 'electron'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { mock } = await import('bun:test')
@@ -55,7 +56,6 @@ async function fixture(): Promise<void> {
 
 if (process.argv.includes('--fixture')) await fixture()
 else test('persona IPC restricts configuration to the UI main frame and refreshes after file saves', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const [code, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+  const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 25_000 })
   assert.equal(code, 0, errors || output)
 })

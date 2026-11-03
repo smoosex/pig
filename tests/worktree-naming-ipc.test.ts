@@ -5,6 +5,7 @@ import { appendFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 const modulePath = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -188,21 +189,10 @@ if (process.argv[2] === '--worktree-naming-ipc-fixture') {
   await runFixture()
 } else {
   test('naming retries replay saved tasks and recover legacy first prompts without swallowing errors', async () => {
-    const child = Bun.spawn(
-      [process.execPath, import.meta.path, '--worktree-naming-ipc-fixture'],
-      { cwd: new URL('..', import.meta.url).pathname, stdout: 'pipe', stderr: 'pipe' }
-    )
-    const timeout = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--worktree-naming-ipc-fixture'], {
+      cwd: new URL('..', import.meta.url).pathname,
+      timeoutMs: 10_000
+    })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

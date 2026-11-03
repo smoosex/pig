@@ -7,6 +7,7 @@ import type {
   McpSettingsState,
   SessionApi
 } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -468,21 +469,7 @@ if (process.argv.includes('--mcp-pane-fixture')) {
   await fixture()
 } else {
   test('MCP rows and discovery share one pane with accessible icon actions and the enable switch last', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--mcp-pane-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timer = setTimeout(() => child.kill(), 12_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, stdout + stderr)
-    } finally {
-      clearTimeout(timer)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--mcp-pane-fixture'], { timeoutMs: 12_000 })
+    assert.equal(code, 0, stdout + stderr)
   }, 14_000)
 }

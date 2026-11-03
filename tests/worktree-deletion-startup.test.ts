@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WorktreeService } from '../src/main/worktrees'
+import { runSelf } from './helpers/subprocess.ts'
 
 type Failure = 'malformed' | 'unreadable'
 
@@ -119,19 +120,8 @@ if (process.argv[2] === '--worktree-deletion-startup') {
 } else {
   for (const failure of ['malformed', 'unreadable'] as const) {
     test(`${failure} deletion state stops startup before opening a window`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--worktree-deletion-startup', failure], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const timeout = setTimeout(() => child.kill(), 5_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--worktree-deletion-startup', failure], { timeoutMs: 5_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 10_000)
   }
 }

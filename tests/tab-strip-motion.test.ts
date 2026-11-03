@@ -3,6 +3,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
 import { interleave } from '../src/renderer/src/components/use-tab-strip-motion'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -71,12 +72,7 @@ if (process.argv[2] === '--tab-motion-fixture') {
   })
 
   test('closing and adding tabs animate within one strip only', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--tab-motion-fixture'], {
-      stdout: 'pipe', stderr: 'pipe'
-    })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--tab-motion-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }

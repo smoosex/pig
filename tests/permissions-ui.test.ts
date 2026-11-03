@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { translate } from '../src/shared/i18n'
 import { PERMISSION_MODES, type PermissionMode, type PermissionsApi, type PermissionsSnapshot, type SessionPermission } from '../src/shared/permissions'
+import { runSelf } from './helpers/subprocess.ts'
 
 const scenarios = {
   'button-modes': 'permission button reads the session mode and offers three exclusive modes plus follow-default',
@@ -297,11 +298,7 @@ async function fixture(scenario: Scenario) {
 if (process.argv.includes('--fixture')) await fixture(process.argv[process.argv.indexOf('--fixture') + 1] as Scenario)
 else for (const [scenario, description] of Object.entries(scenarios)) {
   test(description, async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 10000)
-    try {
-      const [code, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, errors || output)
-    } finally { clearTimeout(timer); child.kill() }
+    const { exitCode: code, stdout: output, stderr: errors } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10000 })
+    assert.equal(code, 0, errors || output)
   }, 12000)
 }

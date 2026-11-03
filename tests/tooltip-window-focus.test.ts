@@ -1,5 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -62,21 +63,7 @@ if (process.argv[2] === '--tooltip-window-focus-fixture') {
   await fixture()
 } else {
   test('tooltips close on window blur without reopening from restored focus', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--tooltip-window-focus-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(exitCode, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-      child.kill()
-    }
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--tooltip-window-focus-fixture'], { timeoutMs: 10_000 })
+    assert.equal(exitCode, 0, stderr || stdout)
   }, 15_000)
 }

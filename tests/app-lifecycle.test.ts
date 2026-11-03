@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import type { BrowserWindow } from 'electron'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -183,14 +184,8 @@ if (process.argv[2] === '--app-lifecycle') {
 } else {
   for (const mode of ['loading-screen', 'handoff', 'quit-loading', 'quit-before-ready']) {
     test(`app lifecycle: ${mode}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--app-lifecycle', mode], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--app-lifecycle', mode], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     })
   }
 }

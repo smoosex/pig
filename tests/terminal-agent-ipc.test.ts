@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PtyHostRequest } from '../src/shared/terminal'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'pig-terminal-approval-'))
@@ -254,10 +255,6 @@ async function fixture() {
 
 if (process.argv.includes('--terminal-agent-ipc-fixture')) await fixture()
 else test('terminal agent IPC scopes ownership, confirmations, cancellation and reload to the window', async () => {
-  const child = Bun.spawn([process.execPath, import.meta.path, '--terminal-agent-ipc-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-  const timer = setTimeout(() => child.kill(), 15_000)
-  try {
-    const [code, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-    expect(code, err || out).toBe(0)
-  } finally { clearTimeout(timer) }
+  const { exitCode: code, stdout: out, stderr: err } = await runSelf(import.meta.path, ['--terminal-agent-ipc-fixture'], { timeoutMs: 15_000 })
+  expect(code, err || out).toBe(0)
 }, 20_000)

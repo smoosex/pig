@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { ThinkingLevel } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -323,15 +324,8 @@ if (process.argv.includes('--fixture')) {
 } else {
   for (const name of ['read', 'validation', 'updates', 'cas', 'queue', 'write-failure', 'read-failure', 'partial-write', 'reread-failure']) {
     test(`default model settings: ${name}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--fixture', name], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture', name], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     })
   }
 }

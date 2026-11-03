@@ -9,6 +9,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
   const { mock } = await import('bun:test')
@@ -120,20 +121,7 @@ if (process.argv[2] === '--model-catalog-fixture') {
   await fixture()
 } else {
   test('model catalog: refreshes reach every window and always end', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--model-catalog-fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 8_000)
-    try {
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(exitCode, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timeout)
-    }
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--model-catalog-fixture'], { timeoutMs: 8_000 })
+    assert.equal(exitCode, 0, stderr || stdout)
   })
 }

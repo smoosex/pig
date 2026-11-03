@@ -8,6 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { runChild } from './helpers/subprocess.ts'
 
 async function addressFixture() {
   for (const address of [
@@ -207,20 +208,10 @@ if (process.argv.includes('--fixture')) {
   const { test } = await import('bun:test')
   test('MCP real Node sockets: DNS restrictions, local authorization, rebinding and redirect isolation', async () => {
     // Bun's undici shim ignores dispatchers; exercise the production Node connector, not that shim.
-    const child = Bun.spawn(['node', '--experimental-strip-types', import.meta.path, '--fixture'], {
-      stdout: 'pipe',
-      stderr: 'pipe'
-    })
-    const timeout = setTimeout(() => child.kill(), 10000)
-    try {
-      const [code, output, errors] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text()
-      ])
-      assert.equal(code, 0, errors || output)
-    } finally {
-      clearTimeout(timeout)
-    }
-  }, 12000)
+    const { exitCode: code, stdout: output, stderr: errors } = await runChild(
+      ['node', '--experimental-strip-types', import.meta.path, '--fixture'],
+      { timeoutMs: 10_000 }
+    )
+    assert.equal(code, 0, errors || output)
+  }, 12_000)
 }

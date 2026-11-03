@@ -3,6 +3,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { OpenTab } from '../src/renderer/src/stores/sessions'
 import type { SessionMeta } from '../src/shared/api'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function runFixture(kind: 'project' | 'chat'): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -208,12 +209,7 @@ if (process.argv[2] === '--sidebar-actions-fixture') {
 } else {
   for (const kind of ['project', 'chat'] as const) {
     test(`sidebar ${kind}: breathing shares the close slot and hover/focus reveals the tab-style close ring`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--sidebar-actions-fixture', kind], {
-        stdout: 'pipe', stderr: 'pipe'
-      })
-      const [code, stdout, stderr] = await Promise.all([
-        child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-      ])
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--sidebar-actions-fixture', kind])
       assert.equal(code, 0, stdout + stderr)
     })
   }

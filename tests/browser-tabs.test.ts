@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
 import { persistableIds, sameScopeTabs, neighbourTab } from '../src/renderer/src/stores/sessions/tab-order'
 import { halfSwitch, visibleTabsFor } from '../src/renderer/src/components/tab-strip'
+import { runSelf } from './helpers/subprocess.ts'
 
 const tab = (id: string, kind: OpenTab['kind'], cwd = '/project'): OpenTab => ({
   id, kind, cwd, title: id, loadState: 'ready'
@@ -175,10 +176,7 @@ if (process.argv.includes('--browser-tabs-fixture')) {
   await fixture()
 } else {
   test('browser lifecycle creates independent views, never Pi sessions, and supports split and stale selection', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--browser-tabs-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-    ])
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--browser-tabs-fixture'])
     assert.equal(code, 0, stdout + stderr)
   })
 }
