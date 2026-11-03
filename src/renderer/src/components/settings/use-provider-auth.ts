@@ -8,13 +8,10 @@ import {
   type SettingsProvider
 } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
+import { failureMessage } from '../../lib/ipc-error'
 
 type AuthPrompt = SettingsAuthPrompt & { id: string }
 type ProviderOperation = { kind: 'login' | 'logout'; cancelled: boolean }
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 /**
  * Owns one provider operation and its prompts. Cancellation keeps that operation
@@ -80,16 +77,18 @@ export function useProviderAuth() {
     setError(null)
     setBusy(true)
     try {
-      const next = await api.loginProvider(provider.id, method)
+      const result = await api.loginProvider(provider.id, method)
       if (!isCurrent(request)) return
-      setProviders(next)
+      if (result.cancelled) {
+        setLogin(null)
+        return
+      }
+      setProviders(result.providers)
       await load()
       if (isCurrent(request)) setLogin(null)
     } catch (error) {
       if (!isCurrent(request)) return
-      const message = errorMessage(error)
-      if (message === 'Login cancelled') setLogin(null)
-      else setError(message)
+      setError(failureMessage(error))
     } finally {
       if (operation.current === request) {
         operation.current = null
@@ -104,7 +103,7 @@ export function useProviderAuth() {
     if (request?.kind === 'login' && !request.cancelled) {
       request.cancelled = true
       void api.cancelLogin().catch((error) => {
-        if (mounted.current && operation.current === request) setActionError(errorMessage(error))
+        if (mounted.current && operation.current === request) setActionError(failureMessage(error))
       })
     }
     setLogin(null)
@@ -124,7 +123,7 @@ export function useProviderAuth() {
       setProviders(next)
       await load()
     } catch (error) {
-      if (isCurrent(request)) setActionError(errorMessage(error))
+      if (isCurrent(request)) setActionError(failureMessage(error))
     } finally {
       if (operation.current === request) {
         operation.current = null
@@ -140,7 +139,7 @@ export function useProviderAuth() {
     updatePrompt(null)
     setError(null)
     void api.replyAuthPrompt(currentPrompt.id, value).catch((error) => {
-      if (isCurrent(request)) setError(errorMessage(error))
+      if (isCurrent(request)) setError(failureMessage(error))
     })
   }
 

@@ -76,11 +76,19 @@ export function cancelProviderLogin(): void {
   loginAbort?.abort()
 }
 
+/** The only rejection that means "the reader backed out"; the IPC layer turns it into a normal result. */
+export class LoginCancelledError extends Error {
+  constructor() {
+    super('Login cancelled')
+    this.name = 'LoginCancelledError'
+  }
+}
+
 export function resolveAuthPrompt(id: string, value: string | null): void {
   const waiter = promptWaiters.get(id)
   if (!waiter) return
   promptWaiters.delete(id)
-  if (value == null || value === '') waiter.reject(new Error('Login cancelled'))
+  if (value == null || value === '') waiter.reject(new LoginCancelledError())
   else waiter.resolve(value)
 }
 
@@ -152,7 +160,7 @@ export async function loginProvider(
   cancelProviderLogin()
   const abort = new AbortController()
   loginAbort = abort
-  const cancelled = new Error('Login cancelled')
+  const cancelled = new LoginCancelledError()
   abort.signal.addEventListener(
     'abort',
     () => {

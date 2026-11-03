@@ -2,11 +2,12 @@ import { ipcMain } from 'electron'
 import { windowForEvent } from './window'
 import { assertBrowserSender } from '../browser/validation'
 import { createSettingsRuntime, type SettingsSessions } from '../settings'
-import type { LocaleSetting, SendShortcut, ThemePrefs } from '../../shared/api'
+import type { LocaleSetting, SendShortcut, SettingsLoginResult, ThemePrefs } from '../../shared/api'
 import {
   cancelProviderLogin,
   listProviders,
   loginProvider,
+  LoginCancelledError,
   logoutProvider,
   resolveAuthPrompt,
   type ProviderAuthType
@@ -55,11 +56,17 @@ export function registerSettingsIpc(sessions?: SettingsSessions): void {
 
   ipcMain.handle(
     'settings:login',
-    async (event, providerId: string, authType: ProviderAuthType) => {
+    async (event, providerId: string, authType: ProviderAuthType): Promise<SettingsLoginResult> => {
       if (!providerId) throw new Error('Provider id is required')
       const win = windowForEvent(event)
-      await loginProvider(win, providerId, authType)
-      return listProviders()
+      try {
+        await loginProvider(win, providerId, authType)
+      } catch (error) {
+        // A cancelled login reads as a normal outcome in the renderer, not as a failure to display.
+        if (error instanceof LoginCancelledError) return { cancelled: true }
+        throw error
+      }
+      return { cancelled: false, providers: await listProviders() }
     }
   )
 

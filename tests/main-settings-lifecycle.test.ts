@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred() {
   let resolve!: () => void
@@ -497,6 +498,7 @@ async function fixture(name: string): Promise<void> {
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/providers.ts', import.meta.url)), () => ({
       cancelProviderLogin: noop, listProviders: async () => [], loginProvider: noop,
+      LoginCancelledError: class extends Error {},
       logoutProvider: noop, resolveAuthPrompt: noop
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
@@ -575,40 +577,100 @@ async function fixture(name: string): Promise<void> {
     mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
     try {
       process.env.PIG_DIR = join(root, 'settings')
-      const { loadPigSettings, savePigSettings } = await import('../src/main/pig-settings')
+      const { loadPigSettings, updatePigSettings } = await import('../src/main/pig-settings')
       await mkdir(process.env.PIG_DIR, { recursive: true })
       await writeFile(join(process.env.PIG_DIR, 'settings.json'), '{"version":1,"appearance":"light"}')
       const { supportsGlass } = await import('../src/main/surface-support')
       assert.equal((await loadPigSettings()).surfaceStyle, supportsGlass ? 'glass' : 'solid', 'legacy preferences use the supported default surface')
       await Promise.all([
-        savePigSettings({ appearance: 'dark' }),
-        savePigSettings({ sendShortcut: 'shift-enter' }),
-        savePigSettings({ lightTheme: 'everforest' }),
-        savePigSettings({ darkTheme: 'everforest' }),
-        savePigSettings({ surfaceStyle: 'solid' })
+        updatePigSettings(() => ({ appearance: 'dark' })),
+        updatePigSettings(() => ({ sendShortcut: 'shift-enter' })),
+        updatePigSettings(() => ({ lightTheme: 'everforest' })),
+        updatePigSettings(() => ({ darkTheme: 'everforest' })),
+        updatePigSettings(() => ({ surfaceStyle: 'solid' }))
       ])
       assert.deepEqual(await loadPigSettings(), {
         appearance: 'dark', surfaceStyle: 'solid', sendShortcut: 'shift-enter', shortcuts: {}, locale: 'system',
         completionNotifications: true, approvalNotifications: true, beamBorderEnabled: true, lightTheme: 'everforest', darkTheme: 'everforest'
       })
-      const updating = savePigSettings({ appearance: 'light' })
+      const updating = updatePigSettings(() => ({ appearance: 'light' }))
       assert.equal((await loadPigSettings()).appearance, 'light')
       await updating
       const invalid = join(root, 'file')
       await writeFile(invalid, 'not a directory')
       process.env.PIG_DIR = invalid
-      await assert.rejects(savePigSettings({ appearance: 'system' }))
+      await assert.rejects(updatePigSettings(() => ({ appearance: 'system' })))
       process.env.PIG_DIR = join(root, 'settings')
-      assert.equal((await savePigSettings({ appearance: 'system' })).sendShortcut, 'shift-enter')
-      assert.equal((await savePigSettings({ completionNotifications: false })).completionNotifications, false)
+      assert.equal((await updatePigSettings(() => ({ appearance: 'system' }))).sendShortcut, 'shift-enter')
+      assert.equal((await updatePigSettings(() => ({ completionNotifications: false }))).completionNotifications, false)
       assert.equal((await loadPigSettings()).completionNotifications, false)
-      assert.equal((await savePigSettings({ beamBorderEnabled: false })).beamBorderEnabled, false)
+      assert.equal((await updatePigSettings(() => ({ beamBorderEnabled: false }))).beamBorderEnabled, false)
       assert.equal((await loadPigSettings()).beamBorderEnabled, false)
     } finally {
       if (previous === undefined) delete process.env.PIG_DIR
       else process.env.PIG_DIR = previous
       await rm(root, { recursive: true, force: true })
     }
+    return
+  }
+
+  if (name === 'login-cancelled') {
+    const root = await mkdtemp(join(tmpdir(), 'pig-login-cancelled-'))
+    const previous = process.env.PIG_DIR
+    const handlers = new Map<string, (...args: any[]) => Promise<unknown>>()
+    const noop = () => {}
+    const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: noop } }
+    mock.module('electron', () => ({
+      app: { isPackaged: false, getAppPath: () => process.cwd() },
+      BrowserWindow: { getAllWindows: () => [window], fromWebContents: () => window },
+      nativeTheme: { themeSource: 'system' },
+      ipcMain: { handle: (channel: string, handler: (...args: any[]) => Promise<unknown>) => handlers.set(channel, handler) }
+    }))
+    class LoginCancelledError extends Error {
+      constructor() {
+        super('Login cancelled')
+        this.name = 'LoginCancelledError'
+      }
+    }
+    let outcome: 'cancelled' | 'failure' | 'success' = 'cancelled'
+    mock.module(fileURLToPath(new URL('../src/main/pi/providers.ts', import.meta.url)), () => ({
+      cancelProviderLogin: noop,
+      LoginCancelledError,
+      listProviders: async () => [{ id: 'test' }],
+      loginProvider: async () => {
+        if (outcome === 'success') return
+        throw outcome === 'cancelled' ? new LoginCancelledError() : new Error('invalid api key')
+      },
+      logoutProvider: noop,
+      resolveAuthPrompt: noop
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
+      readDefaultSettings: async () => ({
+        stored: { model: null, thinkingLevel: null }, modelThinkingLevel: null, revision: '0'.repeat(64),
+        effective: { model: null, thinkingLevel: null, thinkingLevels: [] }
+      }),
+      updateDefaultSettings: noop, availableModels: () => [], pickerThinkingLevels: (levels: unknown[]) => levels,
+      startModelRuntime: async () => {}
+    }))
+    mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
+      refreshPluginSessions: async () => {}, refreshToolSessions: async () => {}
+    }))
+    try {
+      process.env.PIG_DIR = join(root, 'settings')
+      const { registerSettingsIpc } = await import('../src/main/ipc/settings')
+      registerSettingsIpc()
+      const login = handlers.get('settings:login')!
+      assert.deepEqual(await login({ sender: {} }, 'test', 'api_key'), { cancelled: true }, 'backing out of a login is a result, not a failure')
+      outcome = 'failure'
+      await assert.rejects(login({ sender: {} }, 'test', 'api_key'), /invalid api key/, 'genuine failures still reject')
+      outcome = 'success'
+      assert.deepEqual(await login({ sender: {} }, 'test', 'api_key'), { cancelled: false, providers: [{ id: 'test' }] }, 'a completed login hands back the refreshed providers')
+    } finally {
+      if (previous === undefined) delete process.env.PIG_DIR
+      else process.env.PIG_DIR = previous
+      await rm(root, { recursive: true, force: true })
+    }
+    return
   }
 }
 
@@ -633,20 +695,12 @@ if (process.argv[2] === '--main-settings-fixture') {
     'native-theme-windows10': 'Windows 10 stays solid even with copied glass preferences',
     'native-theme-windows11-old': 'Windows 11 before 22H2 stays solid without unsupported material calls',
     'native-theme-linux': 'Linux stays solid even with copied glass preferences',
-    'pig-settings': 'concurrent preference updates preserve each other and recover after a write failure'
+    'pig-settings': 'concurrent preference updates preserve each other and recover after a write failure',
+    'login-cancelled': 'a backed-out provider login resolves as a normal result while real failures still reject'
   })) {
     test(`main settings lifecycle: ${title}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--main-settings-fixture', name], { stdout: 'pipe', stderr: 'pipe' })
-      const timeout = setTimeout(() => child.kill(), 8_000)
-      try {
-        const [exitCode, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(exitCode, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--main-settings-fixture', name], { timeoutMs: 8_000 })
+      assert.equal(exitCode, 0, stderr || stdout)
     }, 10_000)
   }
 }

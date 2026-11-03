@@ -6,6 +6,7 @@ import type {
   SessionApi,
   SessionMeta,
   SettingsAuthEvent,
+  SettingsLoginResult,
   SettingsProvider,
   SidebarPrefs,
   ThemePrefs,
@@ -14,6 +15,7 @@ import type {
   WorktreeGroup
 } from '../src/shared/api'
 import type { OpenTab } from '../src/renderer/src/stores/sessions'
+import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -491,7 +493,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(toggle().getAttribute('aria-checked'), 'true')
     } else if (name === 'auth') {
       const listeners = new Set<(event: SettingsAuthEvent) => void>()
-      const requests: ReturnType<typeof deferred<SettingsProvider[]>>[] = []
+      const requests: ReturnType<typeof deferred<SettingsLoginResult>>[] = []
       const replies: { id: string; value: string | null }[] = []
       let cancellations = 0
       api.onAuthEvent = (listener) => {
@@ -501,9 +503,9 @@ async function runFixture(name: string): Promise<void> {
         }
       }
       api.loginProvider = () => {
-        const request = deferred<SettingsProvider[]>()
+        const request = deferred<SettingsLoginResult>()
         requests.push(request)
-        return request.promise.then((value) => ({ settingsRevision: 0, ...value }))
+        return request.promise
       }
       api.cancelLogin = async () => {
         cancellations += 1
@@ -558,7 +560,7 @@ async function runFixture(name: string): Promise<void> {
       assert.deepEqual(state.lines, [])
       assert.equal(requests.length, 1)
       await act(async () => {
-        requests[0].reject(new Error('Login cancelled'))
+        requests[0].resolve({ cancelled: true })
         await first
       })
       assert.equal(state.busy, false)
@@ -573,7 +575,7 @@ async function runFixture(name: string): Promise<void> {
       unmounted = true
       assert.equal(cancellations, 2)
       assert.equal(listeners.size, 0)
-      requests[1].resolve([provider])
+      requests[1].resolve({ cancelled: false, providers: [provider] })
       await second
       assert.deepEqual(useSettingsStore.getState().providers, [])
       assert.deepEqual(replies, [{ id: 'one', value: 'a' }])
@@ -1155,26 +1157,11 @@ if (process.argv[2] === '--settings-sidebar-fixture') {
       'project and worktree expansion survives switching to chat and back'
   })) {
     test(`settings/sidebar: ${title}`, async () => {
-      const child = Bun.spawn(
-        [process.execPath, import.meta.path, '--settings-sidebar-fixture', name],
-        {
-          cwd: new URL('..', import.meta.url).pathname,
-          stdout: 'pipe',
-          stderr: 'pipe'
-        }
-      )
-      const timeout = setTimeout(() => child.kill(), 12_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited,
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timeout)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--settings-sidebar-fixture', name], {
+        cwd: new URL('..', import.meta.url).pathname,
+        timeoutMs: 12_000
+      })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

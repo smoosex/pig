@@ -601,6 +601,9 @@ export interface SettingsProvider {
   source?: string
 }
 
+/** A cancelled login is a normal outcome, not a rejection: nothing was written and nothing failed. */
+export type SettingsLoginResult = { cancelled: true } | { cancelled: false; providers: SettingsProvider[] }
+
 export type SettingsAuthPrompt =
   | { type: 'text' | 'secret' | 'manual_code'; message: string; placeholder?: string }
   | {
@@ -1100,7 +1103,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setDefaultModelSetting: (provider: string, id: string) => Promise<SettingsReply<DefaultSessionSettings>>
   setDefaultThinkingSetting: (level: ThinkingLevel) => Promise<SettingsReply<DefaultSessionSettings>>
   listProviders: () => Promise<SettingsProvider[]>
-  loginProvider: (providerId: string, authType: ProviderAuthType) => Promise<SettingsProvider[]>
+  loginProvider: (providerId: string, authType: ProviderAuthType) => Promise<SettingsLoginResult>
   logoutProvider: (providerId: string) => Promise<SettingsProvider[]>
   replyAuthPrompt: (id: string, value: string | null) => Promise<void>
   cancelLogin: () => Promise<void>
