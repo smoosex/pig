@@ -123,10 +123,6 @@ function parse(value: string): ParsedAccelerator | null {
   return { modifiers, code }
 }
 
-export function isAccelerator(value: unknown): value is string {
-  return typeof value === 'string' && parse(value) !== null
-}
-
 /** Command is always `Mod` on macOS and Control is always `Mod` elsewhere, so the other spelling never fires. */
 function isPlatformAccelerator(value: unknown, mac: boolean): value is string {
   const parsed = typeof value === 'string' ? parse(value) : null
