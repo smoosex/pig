@@ -6,7 +6,7 @@
 import { constants as fsConstants } from 'node:fs'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { Type } from '@earendil-works/pi-ai'
+import { Type } from 'typebox'
 import {
   createBashToolDefinition, createPowerShellToolDefinition, getPowerShellConfig, getShellConfig,
   createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,

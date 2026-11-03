@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Compile } from 'typebox/compile'
-import { validateToolArguments } from '@earendil-works/pi-ai'
+import { validateToolArguments, type JsonObject } from '@earendil-works/pi-ai'
 import { LOCALES } from '../src/shared/i18n'
 import { SETTINGS_GROUPS } from '../src/shared/settings'
 import type { SettingsAgentHost, SettingsCatalog, SettingsGroupSnapshot, SettingsMutationResult, SettingsUpdateRequest } from '../src/shared/settings'
@@ -154,6 +154,7 @@ async function fixture() {
     ]
     for (const params of valid) {
       expect(updateSchema.Check(params), JSON.stringify(params)).toBe(true)
+      expect(tool('settings_update').prepareArguments(params)).toBe(params)
       expect(validateToolArguments(tool('settings_update'), { type: 'toolCall', id: 'valid', name: 'settings_update', arguments: params })).toEqual(params)
     }
     const branches = tool('settings_update').parameters.anyOf as Array<{ properties: { group: { const: string }; patch: { properties: Record<string, { properties?: Record<string, unknown> }> } } }>
@@ -169,7 +170,7 @@ async function fixture() {
         ['shortcuts', { bindings: { 'unknown.action': null } }], ['shortcuts', { sendShortcut: 'ctrl-enter' }],
         ['defaults', { thinkingLevel: 'off' }], ['defaults', { thinkingLevel: 'minimal' }], ['defaults', { thinkingLevel: 'invalid' }],
         ['defaults', { model: { provider: 'test' } }], ['defaults', { model: { provider: 'test', id: 'model', apiKey: 'secret' } }],
-        ['defaults', { model: null }], ['defaults', { defaultModel: 'model' }],
+        ['defaults', { model: null }], ['defaults', { thinkingLevel: null }], ['defaults', { defaultModel: 'model' }],
         ['plugins', { scopes: { 'pi-review': ['web'] } }], ['plugins', { scopes: { 'pi-review': ['chat', 'chat'] } }],
         ['plugins', { scopes: { 'pi-review': 'project' } }], ['plugins', { install: 'npm:evil' }],
         ['mcp', { enabled: { docs: 'yes' } }], ['mcp', { servers: { docs: true } }], ['mcp', { enabled: { docs: { command: 'sh' } } }],
@@ -179,8 +180,45 @@ async function fixture() {
     ]
     for (const params of invalidUpdates) {
       expect(updateSchema.Check(params), JSON.stringify(params)).toBe(false)
-      expect(() => validateToolArguments(tool('settings_update'), { type: 'toolCall', id: 'invalid', name: 'settings_update', arguments: params as any })).toThrow()
+      expect(() => tool('settings_update').prepareArguments(params)).toThrow('Invalid settings update')
     }
+    const coercible = { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pi-review': 'project' } } }
+    expect(validateToolArguments(tool('settings_update'), { type: 'toolCall', id: 'coerce', name: 'settings_update', arguments: coercible })).toEqual({
+      ...coercible, patch: { scopes: { 'pi-review': ['project'] } }
+    })
+    expect(coercible.patch.scopes['pi-review']).toBe('project')
+
+    // Exercise the real SDK ordering: strict preparation must stop malformed writes before approval or host execution.
+    const { Agent } = await import('@earendil-works/pi-agent-core')
+    const { wrapRegisteredTool } = await import('@earendil-works/pi-coding-agent')
+    const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai')
+    const model = { id: 'fixture', name: 'Fixture', provider: 'fixture', api: 'openai-completions' as const,
+      baseUrl: 'http://unused.invalid', reasoning: false, input: ['text' as const], contextWindow: 10000,
+      maxTokens: 1000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+    let requests = 0
+    let approvals = 0
+    const originals = structuredClone(invalidUpdates)
+    const agent = new Agent({
+      initialState: { model, tools: [wrapRegisteredTool(extension.tools.get('settings_update')!, { createToolContext: () => ctx } as never)] },
+      streamFn: () => {
+        const stream = createAssistantMessageEventStream()
+        const first = requests++ === 0
+        stream.push({ type: 'done', reason: first ? 'toolUse' : 'stop', message: {
+          role: 'assistant', timestamp: Date.now(), api: model.api, provider: model.provider, model: model.id,
+          content: first ? invalidUpdates.map((params, i) => ({ type: 'toolCall' as const, id: `invalid-${i}`, name: 'settings_update', arguments: params as JsonObject })) : [{ type: 'text', text: 'done' }],
+          stopReason: first ? 'toolUse' : 'stop',
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
+        } })
+        return stream
+      }
+    })
+    agent.beforeToolCall = async () => { approvals++; return undefined }
+    await agent.prompt('test invalid writes')
+    expect(approvals).toBe(0)
+    expect(calls).toEqual([])
+    expect(agent.state.messages.filter(message => message.role === 'toolResult' && message.isError)).toHaveLength(invalidUpdates.length)
+    expect(invalidUpdates).toEqual(originals)
 
     // No shared source files exist here; type-only contract imports must disappear during jiti loading.
     const packaged = join(root, 'resources', 'system-plugins')

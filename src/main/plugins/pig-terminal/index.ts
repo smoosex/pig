@@ -1,5 +1,5 @@
 /** Deferred tools for the same terminal tabs the user sees; shell and control state stay in main. */
-import { Type } from '@earendil-works/pi-ai'
+import { Type } from 'typebox'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { terminalAgentHost, type TerminalToolResult } from '../pig-terminal-host.js'
 import { listPigServer } from '../pig-servers.js'

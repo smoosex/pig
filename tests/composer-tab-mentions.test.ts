@@ -16,10 +16,10 @@ const matching = (query: string) => tabMentions(tabs).filter((item) => tabMentio
 describe('open tab mentions', () => {
   test('filters by title, kind and id, excluding non-session tabs', () => {
     expect(tabMentions(tabs).map((item) => item.id)).toEqual(['session-123', 'chat-456', 'browser:abc', 'terminal:def'])
-    expect(matching('浏览器')).toEqual(['browser:abc'])
-    expect(matching('Terminal')).toEqual(['terminal:def'])
+    for (const alias of ['browser', 'web', '浏览器', '网页']) expect(matching(alias)).toEqual(['browser:abc'])
+    for (const alias of ['Terminal', 'shell', '终端']) expect(matching(alias)).toEqual(['terminal:def'])
+    for (const alias of ['session', 'chat', '会话', '聊天']) expect(matching(alias)).toEqual(['session-123', 'chat-456'])
     expect(matching('DOCS')).toEqual(['browser:abc'])
-    expect(matching('session')).toEqual(['session-123', 'chat-456'])
     expect(matching('def')).toEqual(['terminal:def'])
   })
 

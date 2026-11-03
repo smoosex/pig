@@ -1,5 +1,5 @@
 /** Deferred read-only access to another open conversation. */
-import { Type } from '@earendil-works/pi-ai'
+import { Type } from 'typebox'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { sessionReadHost } from '../pig-session-host.js'
 import { listPigServer } from '../pig-servers.js'

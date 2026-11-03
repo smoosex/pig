@@ -15,7 +15,7 @@ index 4af86187b69e25f58d4f1959df02629da2c53621..8156c93edf7e9ee3fe310ca92ff1542f
      /** Working directory. */
      cwd: string;
 diff --git a/dist/core/system-prompt.js b/dist/core/system-prompt.js
-index 83bf10846ff4ea275e73b29c54739af89d8c6028..c8c6f349bd74fff1818bc9059db145946fc84b4e 100644
+index 94c320ec7175265d067891d044d5b37407bdbbb4..89d88aa17e6355b38a928eb89ccbac4069870a05 100644
 --- a/dist/core/system-prompt.js
 +++ b/dist/core/system-prompt.js
 @@ -68,8 +68,10 @@ function buildRules(selectedTools, toolGuidelines, promptGuidelines) {
@@ -99,7 +99,7 @@ index 8ebc6df8ab912f6af3ebb1a4446dcb1e285af77f..2ed79a0f7555bc07a56a1b4c259c5b4e
                      promptForRedirectUrl: (signal) => ctx.ui.input(`Waiting for sign-in to "${name}". If the browser cannot reach this machine, paste the URL it was redirected to.`, "http://127.0.0.1:.../callback?code=...", { signal }),
                  });
 diff --git a/dist/extensions/mcp/oauth.d.ts b/dist/extensions/mcp/oauth.d.ts
-index 6e9ee3ef8d4c1c7df168ee1e2c2ca475c2cebe58..f8fa6a3516d856c76d64468ed79d1b483039c1aa 100644
+index 8dcb386c4aee449040186f1396c4175d16194c35..08e2df78354c3ce92f7625be09fdd342b14f0048 100644
 --- a/dist/extensions/mcp/oauth.d.ts
 +++ b/dist/extensions/mcp/oauth.d.ts
 @@ -9,7 +9,7 @@
@@ -134,10 +134,10 @@ index 6e9ee3ef8d4c1c7df168ee1e2c2ca475c2cebe58..f8fa6a3516d856c76d64468ed79d1b48
  //# sourceMappingURL=oauth.d.ts.map
 \ No newline at end of file
 diff --git a/dist/extensions/mcp/oauth.js b/dist/extensions/mcp/oauth.js
-index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c9134e051 100644
+index 9b02ab844d9adca9e3bbbb0ade3facc3a4847368..13cf4096a05642a0e4a10c2e0e95f5bda363d92d 100644
 --- a/dist/extensions/mcp/oauth.js
 +++ b/dist/extensions/mcp/oauth.js
-@@ -226,7 +226,7 @@ export function createMcpAuthProvider(options) {
+@@ -245,7 +245,7 @@ export function createMcpAuthProvider(options) {
      const { serverUrl, store } = options;
      let refreshing;
      /** Replace `staleToken`, the access token that expired or was rejected. */
@@ -146,7 +146,7 @@ index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c
          refreshing ??= store
              .withRefreshLock(async () => {
              const state = await store.load();
-@@ -394,7 +394,7 @@ export async function signInMcpServer(options) {
+@@ -417,7 +417,7 @@ export async function signInMcpServer(options) {
          });
          const flow = {
              serverUrl,
@@ -155,7 +155,7 @@ index 24852eb70f68f14757a32520ffbce3ff91163e60..c1c807b298ec7557ccfc453915f3fe9c
              signal,
              resourceMetadataUrl: options.challenge?.resourceMetadataUrl,
              authorizationServerMetadataUrl: settings.authServerMetadataUrl,
-@@ -411,7 +411,7 @@ export async function signInMcpServer(options) {
+@@ -434,7 +434,7 @@ export async function signInMcpServer(options) {
          const state = await provider.state();
          // The flow picks the redirect URI, which may be specific to the MCP server.
          const authorizationRedirectUrl = new URL(authorizationUrl.searchParams.get("redirect_uri") ?? redirectUrl);
@@ -223,7 +223,7 @@ index 833ea47b21071c2abcda79b70549f58a62affa39..a2b44cecdc394cbaa846786698298f25
                      this.challenge = challenge;
                  },
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 4a4e958c645bdf8b292c6e8076ac51e85dc1e0e2..f0e2087e4cfc8b80ce90debb0c652db414771f82 100644
+index 247233807ec7ba7b5c897b162eff9f40d0985e30..0b5e12fc6782e09f642f67e8abc79c6fdcd57b9d 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -11,7 +11,7 @@ export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts"
@@ -233,10 +233,10 @@ index 4a4e958c645bdf8b292c6e8076ac51e85dc1e0e2..f0e2087e4cfc8b80ce90debb0c652db4
 -export { type ModelScopeDiagnostic, type ResolveCliModelResult, type ResolveModelScopeResult, resolveCliModel, resolveModelScopeWithDiagnostics, type ScopedModel, } from "./core/model-resolver.ts";
 +export { type ModelScopeDiagnostic, type ResolveCliModelResult, type ResolveModelScopeResult, resolveCliModel, resolveModelScopeFromModels, resolveModelScopeWithDiagnostics, type ScopedModel, } from "./core/model-resolver.ts";
  export { type CreateModelRuntimeOptions, CredentialSynchronizationError, type CredentialSynchronizationOperation, ModelRuntime, type ModelRuntimeAuthOverrides, } from "./core/model-runtime.ts";
- export type { PackageManager, PathMetadata, ProgressCallback, ProgressEvent, ResolvedPaths, ResolvedResource, } from "./core/package-manager.ts";
+ export type { PackageInstallFailure, PackageManager, PathMetadata, ProgressCallback, ProgressEvent, ResolvedPaths, ResolvedResource, } from "./core/package-manager.ts";
  export { DefaultPackageManager } from "./core/package-manager.ts";
 diff --git a/dist/index.js b/dist/index.js
-index c48934f78d61fd5f5f8008bc9e09d8c4558d330a..3ef6266a567fe840df951b8c25692adf5978fb4f 100644
+index ab5cfccc3a90939e533b9118122189507a7af326..4d82b03a7b7b739cb23bf133254728f19c2710eb 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -10,7 +10,7 @@ export { createEventBus } from "./core/event-bus.js";

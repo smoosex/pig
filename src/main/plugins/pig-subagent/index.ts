@@ -6,7 +6,7 @@
  * session_shutdown also fires on resource reloads, so it only detaches delivery; Pig itself aborts
  * children when the parent session is closed.
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { subagentHost, type SubagentDelivery } from "../pig-subagent-host.js";
 import {

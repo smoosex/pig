@@ -37,7 +37,22 @@ async function runFixture(): Promise<void> {
     const { trackApproval, retireApproval } = await import('../src/main/approval-notification')
     const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
     const { savePigSettings } = await import('../src/main/pig-settings')
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+    const poll = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
+    const waitForNotifications = async (count: number): Promise<void> => {
+      const deadline = performance.now() + 2_000
+      while (FakeNotification.instances.length < count && performance.now() < deadline) await poll()
+      assert.equal(FakeNotification.instances.length, count, `waiting for ${count} notifications`)
+    }
+    const expectNoNewNotifications = async (count: number, message: string): Promise<void> => {
+      // A negative condition is initially true even while refresh is still pending; observe the
+      // entire window instead of returning at the first matching count.
+      const deadline = performance.now() + 250
+      do {
+        assert.equal(FakeNotification.instances.length, count, message)
+        await poll()
+      } while (performance.now() < deadline)
+      assert.equal(FakeNotification.instances.length, count, message)
+    }
     const sent: unknown[][] = []
     let focused = false
     const win = Object.assign(new EventEmitter(), {
@@ -60,8 +75,8 @@ async function runFixture(): Promise<void> {
 
     trackApproval('chat-1', win, notice('a'))
     trackApproval('chat-1', win, notice('b', 'Write file?', 'Inspect code'))
-    await settle()
-    assert.equal(FakeNotification.instances.length, 1, 'one notification per session, for the oldest request')
+    await waitForNotifications(1)
+    await expectNoNewNotifications(1, 'one notification per session, for the oldest request')
     const first = FakeNotification.instances[0]
     assert.equal(first.shown, true)
     assert.equal(first.options.title, '修复登录')
@@ -73,7 +88,7 @@ async function runFixture(): Promise<void> {
     first.emit('action', { actionIndex: 0 }, 0)
     assert.deepEqual(replies, ['a:Deny'])
     assert.equal(first.closed, true)
-    await settle()
+    await waitForNotifications(2)
     assert.equal(FakeNotification.instances.length, 2, 'the next pending request follows')
     assert.match(FakeNotification.instances[1].options.body, /Inspect code · Write file\?/)
 
@@ -86,18 +101,17 @@ async function runFixture(): Promise<void> {
     focused = true
     setVisibleNotificationSessions(win, ['chat-1'])
     trackApproval('chat-1', win, notice('c'))
-    await settle()
-    assert.equal(FakeNotification.instances.length, 2, 'a visible session answers in its composer')
+    await expectNoNewNotifications(2, 'a visible session answers in its composer')
     focused = false
     ;(win as unknown as EventEmitter).emit('blur')
-    await settle()
+    await waitForNotifications(3)
     assert.equal(FakeNotification.instances.length, 3, 'looking away from a waiting approval notifies')
     retireApproval('chat-1', 'c')
     focused = true
     trackApproval('chat-1', win, notice('c2'))
-    await settle()
+    await expectNoNewNotifications(3, 'a focused visible session does not notify before switching tabs')
     setVisibleNotificationSessions(win, ['chat-2'])
-    await settle()
+    await waitForNotifications(4)
     assert.equal(FakeNotification.instances.length, 4, 'switching tabs away from a waiting approval notifies')
     retireApproval('chat-1', 'c2')
     setVisibleNotificationSessions(win, ['chat-1'])
@@ -105,15 +119,13 @@ async function runFixture(): Promise<void> {
     focused = false
     await savePigSettings({ approvalNotifications: false })
     trackApproval('chat-1', win, notice('d'))
-    await settle()
-    assert.equal(FakeNotification.instances.length, 4, 'the setting turns them off')
+    await expectNoNewNotifications(4, 'the setting turns them off')
     retireApproval('chat-1', 'd')
     await savePigSettings({ approvalNotifications: true })
 
     trackApproval('chat-1', win, notice('e'))
     retireApproval('chat-1', 'e')
-    await settle()
-    assert.equal(FakeNotification.instances.length, 4, 'a request finished before the check never shows')
+    await expectNoNewNotifications(4, 'a request finished before the check never shows')
   } finally {
     if (previous === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previous

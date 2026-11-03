@@ -1,5 +1,7 @@
 /** Deferred, allowlisted application preferences; main owns validation, revisions and persistence. */
-import { StringEnum, Type, type JsonValue } from '@earendil-works/pi-ai'
+import type { JsonValue } from '@earendil-works/pi-ai'
+import { Type } from 'typebox'
+import { Compile } from 'typebox/compile'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import type {
   SettingsCatalog, SettingsGroup, SettingsGroupSnapshot, SettingsMutationResult
@@ -8,6 +10,9 @@ import type { LocaleSetting, PaletteId, PluginScope } from '../../../shared/api'
 import type { ShortcutActionId } from '../../../shared/shortcuts'
 import { settingsAgentHost } from '../pig-settings-host.js'
 import { listPigServer } from '../pig-servers.js'
+
+// Keep TypeBox inference until the schema-builder migration; pi-ai's StringEnum now returns a pi-schema type.
+const StringEnum = <T extends readonly string[]>(values: T) => Type.Unsafe<T[number]>({ type: 'string', enum: [...values] })
 
 const group = StringEnum(['theme', 'general', 'notifications', 'shortcuts', 'defaults', 'plugins', 'mcp', 'persona'] as const satisfies readonly SettingsGroup[])
 const revision = Type.String({ pattern: '^[a-f0-9]{64}$', description: 'Exact revision returned by settings_get for this group' })
@@ -91,6 +96,8 @@ const updateParameters = Type.Union([
     }, { additionalProperties: false })
   }, { additionalProperties: false })
 ])
+
+const updateValidator = Compile(updateParameters)
 
 const scope = StringEnum(['application', 'pi-shared'] as const)
 const applies = StringEnum(['applied', 'future-notifications', 'new-sessions', 'sessions-reload', 'next-prompt'] as const)
@@ -177,6 +184,11 @@ export default function settingsExtension(pi: ExtensionAPI) {
     ...shared, name: 'settings_update', label: 'Update application settings',
     description: 'Apply only an explicitly user-requested global preference patch, using the exact group revision from settings_get (compare-and-swap). Returns before/after snapshots; conflicts and application failures are errors with structured data. Unspecified fields stay unchanged.',
     parameters: updateParameters,
+    // Reject malformed writes before the SDK coerces arrays, booleans or optional nulls.
+    prepareArguments(args) {
+      if (!updateValidator.Check(args)) throw new Error('Invalid settings update; arguments must match the schema without coercion')
+      return args
+    },
     outputSchema: mutationOutput,
     annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, signal, _update, ctx) {

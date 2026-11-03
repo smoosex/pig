@@ -29,7 +29,7 @@ async function fixture(): Promise<void> {
     assert.match(docs, /^<docs>\nYou are running inside Pig/)
     assert.ok(docs.includes(`Pig's data directory for this install is ${join(root, 'pig')}`))
     assert.ok(docs.includes(join(root, 'agent', 'auth.json')), 'shared pi files use the resolved agent directory')
-    assert.match(docs, /\n\nPi documentation \(read only when the user asks about pi itself/, 'the original pi docs follow')
+    assert.match(docs, /\n\nPi documentation \(read only when the user asks about the harness itself/, 'the original pi docs follow')
     assert.equal(docs.match(/<docs>/g)?.length, 1)
     const order = Object.keys(sections)
     assert.ok(order.indexOf('rules') < order.indexOf('docs') && order.indexOf('docs') < order.indexOf('cwd'), 'docs keeps its position')

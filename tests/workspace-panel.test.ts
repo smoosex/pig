@@ -81,9 +81,9 @@ async function runFixture(name: string): Promise<void> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const row = (path: string) => container.querySelector(`button[title="${path}"]`)
+  const row = (path: string) => container.querySelector(`aside button[data-sidebar-hover-row][title="${path}"]`)
   const rowTexts = () =>
-    [...container.querySelectorAll('aside button[title]')].map((button) => button.textContent ?? '')
+    [...container.querySelectorAll('aside button[data-sidebar-hover-row][title]')].map((button) => button.textContent ?? '')
   const click = async (target: Element | null | undefined) => {
     assert.ok(target, 'expected the element to exist')
     await act(async () => {

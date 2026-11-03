@@ -35,7 +35,7 @@ test('a preamble section replaces only the identity line', async () => {
       return messages.find((message) => message.role === 'system')?.sections
     }
     const initial = await prepare()
-    assert.match(initial?.preamble ?? '', /^You are an expert coding assistant/)
+    assert.match(initial?.preamble ?? '', /^You are a coding assistant running inside pi/)
     // Seed the transcript so the next run diffs against the recorded sections.
     session.agent.state.messages.push({ role: 'system', content: '', sections: initial as Record<string, string>, timestamp: 1 } as never)
     identity = 'You are Susan. A loyal familiar.'

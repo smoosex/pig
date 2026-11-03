@@ -4,7 +4,7 @@
  * Tools only forward to Pig's controller (see pig-browser-host); pages, windows and session control
  * live in main. Read and interact with the same page; arbitrary JS and arbitrary network requests are not tools.
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { browserAgentHost, type BrowserToolResult } from "../pig-browser-host.js";
 import { listPigServer } from "../pig-servers.js";

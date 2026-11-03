@@ -96,7 +96,8 @@ async function fixture() {
 
     // Real Pi parallel batching preflights the first call while a sibling's preflight waits.
     const { Agent } = await import('@earendil-works/pi-agent-core')
-    const { Type, createAssistantMessageEventStream } = await import('@earendil-works/pi-ai')
+    const { Type } = await import('typebox')
+    const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai')
     const mcp = session.agent.state.tools.find(item => item.name === info.name)!
     let unblock!: () => void
     let preflightEntered!: () => void

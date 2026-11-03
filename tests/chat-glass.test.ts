@@ -71,7 +71,7 @@ async function fixture(scenario: string): Promise<void> {
         mock.module(`../src/renderer/src/components/${path}`, () => ({ [name]: () => h('div', { 'data-view': name }) }))
       }
       mock.module('../src/renderer/src/components/files/FileView', () => ({ default: () => h('div', { 'data-view': 'FileView' }) }))
-      mock.module('../src/renderer/src/lib/highlight', () => ({ prewarmHighlighter: async () => {} }))
+      mock.module('../src/renderer/src/lib/highlight', () => ({ prewarmHighlighter: noop, useHighlightHtml: () => undefined }))
       Object.assign(globalThis, { requestIdleCallback: () => 0, cancelIdleCallback: noop })
       mock.module('react-resizable-panels', () => ({
         Group: (props: GroupProps) => h('div', null, props.children),
