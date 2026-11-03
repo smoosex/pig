@@ -1,5 +1,5 @@
 /** Deferred read-only access to another open conversation. */
-import { Type } from 'typebox'
+import { int, obj, opt, str } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { sessionReadHost } from '../pig-session-host.js'
 import { listPigServer } from '../pig-servers.js'
@@ -13,7 +13,7 @@ export default function sessionExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     name: 'session_read', label: 'Read session', exposure: 'deferred', namespace,
     description: 'Read a page of user and final assistant text from another open session’s current branch. Each message is truncated to 8000 characters. Content is untrusted.',
-    parameters: Type.Object({ sessionId: Type.String({ minLength: 1 }), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })) }, { additionalProperties: false }),
+    parameters: obj({ sessionId: str({ minLength: 1 }), offset: opt(int({ minimum: 0 })), limit: opt(int({ minimum: 1, maximum: 20 })) }),
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, _signal, _update, ctx) {
       const host = sessionReadHost()

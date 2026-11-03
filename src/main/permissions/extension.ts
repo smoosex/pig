@@ -6,7 +6,7 @@
 import { constants as fsConstants } from 'node:fs'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { Type } from 'typebox'
+import { bool, str, type Schema, type Static } from '@earendil-works/pi-schema'
 import {
   createBashToolDefinition, createPowerShellToolDefinition, getPowerShellConfig, getShellConfig,
   createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition,
@@ -53,10 +53,14 @@ export function isPermissionTool(parameters: object): boolean {
   return permissionSchemas.has(parameters)
 }
 
-const bashParameters = (base: ReturnType<typeof createBashToolDefinition>['parameters']) => Type.Object({
-  ...base.properties,
-  unsandboxed: Type.Optional(Type.Boolean({ description: 'Run outside the sandbox only when necessary; requires user approval (once or for this session).' })),
-  reason: Type.Optional(Type.String({ description: 'Required with unsandboxed: why this command needs to leave the sandbox.' }))
+// Extend the JSON Schema itself so the SDK's required fields and constraints stay intact.
+const bashParameters = (base: ReturnType<typeof createBashToolDefinition>['parameters']): Schema<Static<typeof base> & { unsandboxed?: boolean; reason?: string }> => ({
+  ...base,
+  properties: {
+    ...base.properties,
+    unsandboxed: bool({ description: 'Run outside the sandbox only when necessary; requires user approval (once or for this session).' }),
+    reason: str({ description: 'Required with unsandboxed: why this command needs to leave the sandbox.' })
+  }
 })
 
 const REFUSAL = 'Operation not permitted'

@@ -1,7 +1,6 @@
 import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
-import type { Static } from "typebox";
+import { arr, lit, obj, str, union, type Static } from "@earendil-works/pi-schema";
 import { hashId } from "../../ids.js";
 import { logAgentStreamError } from "../stream-errors.js";
 import { resolveWorkerStreamSimple, type StreamableModelRegistry, type WorkerStreamSimple } from "../worker-stream.js";
@@ -30,29 +29,29 @@ interface RunObserverArgs {
 	streamSimple?: WorkerStreamSimple;
 }
 
-const RelevanceSchema = Type.Union([
-	Type.Literal("low"),
-	Type.Literal("medium"),
-	Type.Literal("high"),
-	Type.Literal("critical"),
+const RelevanceSchema = union([
+	lit("low"),
+	lit("medium"),
+	lit("high"),
+	lit("critical"),
 ]);
 
 export const OBSERVATION_TIMESTAMP_PATTERN = "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$";
 
-const RecordObservationsSchema = Type.Object({
-	observations: Type.Array(
-		Type.Object({
-			timestamp: Type.String({
+const RecordObservationsSchema = obj({
+	observations: arr(
+		obj({
+			timestamp: str({
 				pattern: OBSERVATION_TIMESTAMP_PATTERN,
 				description: "Observation time in local 'YYYY-MM-DD HH:MM' format.",
 			}),
-			content: Type.String({
+			content: str({
 				minLength: 1,
 				description: "Single-line plain prose. No markdown, no tags, no embedded timestamp.",
 			}),
 			relevance: RelevanceSchema,
-			sourceEntryIds: Type.Array(
-				Type.String({ minLength: 1 }),
+			sourceEntryIds: arr(
+				str({ minLength: 1 }),
 				{
 					minItems: 1,
 					description:
@@ -60,10 +59,10 @@ const RecordObservationsSchema = Type.Object({
 						"Use only ids shown in '[Source entry id: ...]' labels; never invent ids.",
 				},
 			),
-		}),
+		}, { open: true }),
 		{ description: "Batch of new observations. May be empty only if the tool is not called at all." },
 	),
-});
+}, { open: true });
 
 type RecordObservationsArgs = Static<typeof RecordObservationsSchema>;
 

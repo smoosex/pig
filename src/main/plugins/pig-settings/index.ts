@@ -1,7 +1,6 @@
 /** Deferred, allowlisted application preferences; main owns validation, revisions and persistence. */
 import type { JsonValue } from '@earendil-works/pi-ai'
-import { Type } from 'typebox'
-import { Compile } from 'typebox/compile'
+import { arr, bool, int, lit, map, nul, num, obj, oneOf, opt, str, union, compile } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import type {
   SettingsCatalog, SettingsGroup, SettingsGroupSnapshot, SettingsMutationResult
@@ -11,19 +10,16 @@ import type { ShortcutActionId } from '../../../shared/shortcuts'
 import { settingsAgentHost } from '../pig-settings-host.js'
 import { listPigServer } from '../pig-servers.js'
 
-// Keep TypeBox inference until the schema-builder migration; pi-ai's StringEnum now returns a pi-schema type.
-const StringEnum = <T extends readonly string[]>(values: T) => Type.Unsafe<T[number]>({ type: 'string', enum: [...values] })
-
-const group = StringEnum(['theme', 'general', 'notifications', 'shortcuts', 'defaults', 'plugins', 'mcp', 'persona'] as const satisfies readonly SettingsGroup[])
-const revision = Type.String({ pattern: '^[a-f0-9]{64}$', description: 'Exact revision returned by settings_get for this group' })
+const group = oneOf(['theme', 'general', 'notifications', 'shortcuts', 'defaults', 'plugins', 'mcp', 'persona'] as const satisfies readonly SettingsGroup[])
+const revision = str({ pattern: '^[a-f0-9]{64}$', description: 'Exact revision returned by settings_get for this group' })
 // Records keyed by the union fail to typecheck when a palette or locale ships without being listed here.
-const palette = StringEnum(Object.keys({ pig: true, everforest: true } satisfies Record<PaletteId, true>) as PaletteId[])
-const locale = StringEnum(Object.keys({ system: true, 'zh-CN': true, en: true } satisfies Record<LocaleSetting, true>) as LocaleSetting[])
-const sendShortcut = StringEnum(['enter', 'shift-enter'] as const)
-const binding = Type.Union([Type.String(), Type.Null()], { description: 'Canonical physical-key binding (e.g. Mod+Shift+KeyE), null to disable, or "default" to reset. Main validates platform rules and conflicts.' })
+const palette = oneOf(Object.keys({ pig: true, everforest: true } satisfies Record<PaletteId, true>) as PaletteId[])
+const locale = oneOf(Object.keys({ system: true, 'zh-CN': true, en: true } satisfies Record<LocaleSetting, true>) as LocaleSetting[])
+const sendShortcut = oneOf(['enter', 'shift-enter'] as const)
+const binding = union([str(), nul()], { description: 'Canonical physical-key binding (e.g. Mod+Shift+KeyE), null to disable, or "default" to reset. Main validates platform rules and conflicts.' })
 // These plugins ship as standalone TS resources: keep runtime schemas local, with all action IDs typechecked.
-const optionalBinding = Type.Optional(binding)
-const bindings = Type.Object({
+const optionalBinding = opt(binding)
+const bindings = obj({
   'sidebar.toggleLeft': optionalBinding,
   'sidebar.toggleRight': optionalBinding,
   'settings.toggle': optionalBinding,
@@ -44,84 +40,84 @@ const bindings = Type.Object({
   'terminal.clear': optionalBinding,
   'terminal.selectAll': optionalBinding,
   'projectPicker.addCurrent': optionalBinding
-} satisfies Record<ShortcutActionId, typeof optionalBinding>, { additionalProperties: false })
+} satisfies Record<ShortcutActionId, typeof optionalBinding>)
 
-const scopes = Type.Array(StringEnum(['project', 'chat'] as const satisfies readonly PluginScope[]), {
+const scopes = arr(oneOf(['project', 'chat'] as const satisfies readonly PluginScope[]), {
   uniqueItems: true, maxItems: 2, description: 'Session types that load the plugin; [] disables it'
 })
-const unit = (minimum: number) => Type.Optional(Type.Number({ minimum, maximum: 1 }))
+const unit = (minimum: number) => opt(num({ minimum, maximum: 1 }))
 
-const updateParameters = Type.Union([
-  Type.Object({
-    group: Type.Literal('theme'), expectedRevision: revision,
-    patch: Type.Object({
-      surfaceStyle: Type.Optional(StringEnum(['glass', 'solid'] as const)),
-      appearance: Type.Optional(StringEnum(['system', 'light', 'dark'] as const)),
-      lightTheme: Type.Optional(palette),
-      darkTheme: Type.Optional(palette)
-    }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('general'), expectedRevision: revision,
-    patch: Type.Object({ locale: Type.Optional(locale) }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('notifications'), expectedRevision: revision,
-    patch: Type.Object({ completionNotifications: Type.Optional(Type.Boolean()), approvalNotifications: Type.Optional(Type.Boolean()) }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('shortcuts'), expectedRevision: revision,
-    patch: Type.Object({ sendShortcut: Type.Optional(sendShortcut), bindings: Type.Optional(bindings) }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('defaults'), expectedRevision: revision,
-    patch: Type.Object({
-      model: Type.Optional(Type.Object({ provider: Type.String({ minLength: 1 }), id: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
-      thinkingLevel: Type.Optional(StringEnum(['low', 'medium', 'high', 'xhigh', 'max'] as const))
-    }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('plugins'), expectedRevision: revision,
-    patch: Type.Object({ scopes: Type.Optional(Type.Record(Type.String({ minLength: 1 }), scopes)) }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('mcp'), expectedRevision: revision,
-    patch: Type.Object({ enabled: Type.Optional(Type.Record(Type.String({ minLength: 1 }), Type.Boolean())) }, { additionalProperties: false })
-  }, { additionalProperties: false }),
-  Type.Object({
-    group: Type.Literal('persona'), expectedRevision: revision,
-    patch: Type.Object({
-      automatic: Type.Optional(Type.Boolean()),
-      mood: Type.Optional(Type.Object({ pleasantness: unit(-1), activation: unit(0), energy: unit(0) }, { additionalProperties: false }))
-    }, { additionalProperties: false })
-  }, { additionalProperties: false })
+const updateParameters = union([
+  obj({
+    group: lit('theme'), expectedRevision: revision,
+    patch: obj({
+      surfaceStyle: opt(oneOf(['glass', 'solid'] as const)),
+      appearance: opt(oneOf(['system', 'light', 'dark'] as const)),
+      lightTheme: opt(palette),
+      darkTheme: opt(palette)
+    })
+  }),
+  obj({
+    group: lit('general'), expectedRevision: revision,
+    patch: obj({ locale: opt(locale) })
+  }),
+  obj({
+    group: lit('notifications'), expectedRevision: revision,
+    patch: obj({ completionNotifications: opt(bool()), approvalNotifications: opt(bool()) })
+  }),
+  obj({
+    group: lit('shortcuts'), expectedRevision: revision,
+    patch: obj({ sendShortcut: opt(sendShortcut), bindings: opt(bindings) })
+  }),
+  obj({
+    group: lit('defaults'), expectedRevision: revision,
+    patch: obj({
+      model: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
+      thinkingLevel: opt(oneOf(['low', 'medium', 'high', 'xhigh', 'max'] as const))
+    })
+  }),
+  obj({
+    group: lit('plugins'), expectedRevision: revision,
+    patch: obj({ scopes: opt(map(scopes)) })
+  }),
+  obj({
+    group: lit('mcp'), expectedRevision: revision,
+    patch: obj({ enabled: opt(map(bool())) })
+  }),
+  obj({
+    group: lit('persona'), expectedRevision: revision,
+    patch: obj({
+      automatic: opt(bool()),
+      mood: opt(obj({ pleasantness: unit(-1), activation: unit(0), energy: unit(0) }))
+    })
+  })
 ])
 
-const updateValidator = Compile(updateParameters)
+const updateValidator = compile(updateParameters)
 
-const scope = StringEnum(['application', 'pi-shared'] as const)
-const applies = StringEnum(['applied', 'future-notifications', 'new-sessions', 'sessions-reload', 'next-prompt'] as const)
-const dataObject = Type.Object({}, { additionalProperties: true })
-const snapshotOutput = Type.Object({
+const scope = oneOf(['application', 'pi-shared'] as const)
+const applies = oneOf(['applied', 'future-notifications', 'new-sessions', 'sessions-reload', 'next-prompt'] as const)
+const dataObject = obj({}, { open: true })
+const snapshotOutput = obj({
   group, revision, values: dataObject, effective: dataObject, scope, applies
-}, { additionalProperties: true })
-const catalogOutput = Type.Object({
-  platform: Type.String(), supportsGlass: Type.Boolean(),
-  groups: Type.Array(Type.Object({
-    id: group, description: Type.String(), scope, applies, fields: Type.Array(dataObject)
-  }, { additionalProperties: true })),
-  models: Type.Optional(Type.Object({
-    items: Type.Array(dataObject), total: Type.Integer(), offset: Type.Integer(), hasMore: Type.Boolean()
-  }, { additionalProperties: true })),
-  shortcuts: Type.Optional(Type.Array(dataObject)),
-  plugins: Type.Optional(Type.Array(dataObject)),
-  mcpServers: Type.Optional(Type.Array(dataObject))
-}, { additionalProperties: true })
-const mutationOutput = Type.Object({
-  ok: Type.Boolean(), changed: Type.Boolean(), before: snapshotOutput, after: snapshotOutput,
-  application: StringEnum(['applied', 'future-notifications', 'new-sessions', 'sessions-reload', 'next-prompt', 'failed'] as const),
-  error: Type.Optional(Type.String())
-}, { additionalProperties: true })
+}, { open: true })
+const catalogOutput = obj({
+  platform: str(), supportsGlass: bool(),
+  groups: arr(obj({
+    id: group, description: str(), scope, applies, fields: arr(dataObject)
+  }, { open: true })),
+  models: opt(obj({
+    items: arr(dataObject), total: int(), offset: int(), hasMore: bool()
+  }, { open: true })),
+  shortcuts: opt(arr(dataObject)),
+  plugins: opt(arr(dataObject)),
+  mcpServers: opt(arr(dataObject))
+}, { open: true })
+const mutationOutput = obj({
+  ok: bool(), changed: bool(), before: snapshotOutput, after: snapshotOutput,
+  application: oneOf(['applied', 'future-notifications', 'new-sessions', 'sessions-reload', 'next-prompt', 'failed'] as const),
+  error: opt(str())
+}, { open: true })
 
 function host() {
   const found = settingsAgentHost()
@@ -160,10 +156,10 @@ export default function settingsExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     ...shared, name: 'settings_list', label: 'List application settings',
     description: 'Discover allowlisted settings and their scope, supported values, available models and shortcut IDs. Filter or page catalog choices with group/query/offset/limit; use settings_get for values and revisions.',
-    parameters: Type.Object({
-      group: Type.Optional(group), query: Type.Optional(Type.String()),
-      offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1 }))
-    }, { additionalProperties: false }),
+    parameters: obj({
+      group: opt(group), query: opt(str()),
+      offset: opt(int({ minimum: 0 })), limit: opt(int({ minimum: 1 }))
+    }),
     outputSchema: catalogOutput,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, _signal, _update, ctx) {
@@ -173,7 +169,7 @@ export default function settingsExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     ...shared, name: 'settings_get', label: 'Read application settings',
     description: 'Read one global settings group, including stored/effective values, revision, scope and when changes apply.',
-    parameters: Type.Object({ group }, { additionalProperties: false }),
+    parameters: obj({ group }),
     outputSchema: snapshotOutput,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, _signal, _update, ctx) {
@@ -186,7 +182,7 @@ export default function settingsExtension(pi: ExtensionAPI) {
     parameters: updateParameters,
     // Reject malformed writes before the SDK coerces arrays, booleans or optional nulls.
     prepareArguments(args) {
-      if (!updateValidator.Check(args)) throw new Error('Invalid settings update; arguments must match the schema without coercion')
+      if (!updateValidator.check(args)) throw new Error('Invalid settings update; arguments must match the schema without coercion')
       return args
     },
     outputSchema: mutationOutput,

@@ -1,7 +1,6 @@
 import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
-import type { Static } from "typebox";
+import { arr, obj, str, type Static } from "@earendil-works/pi-schema";
 import { debugLog } from "../../debug-log.js";
 import { hashId } from "../../ids.js";
 import { logAgentStreamError } from "../stream-errors.js";
@@ -45,15 +44,15 @@ interface RunReflectorArgs {
 	streamSimple?: WorkerStreamSimple;
 }
 
-const RecordReflectionsSchema = Type.Object({
-	reflections: Type.Array(
-		Type.Object({
-			content: Type.String({ minLength: 1 }),
-			supportingObservationIds: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-		}),
+const RecordReflectionsSchema = obj({
+	reflections: arr(
+		obj({
+			content: str({ minLength: 1 }),
+			supportingObservationIds: arr(str({ minLength: 1 }), { minItems: 1 }),
+		}, { open: true }),
 		{ minItems: 1 },
 	),
-});
+}, { open: true });
 
 type RecordReflectionsArgs = Static<typeof RecordReflectionsSchema>;
 

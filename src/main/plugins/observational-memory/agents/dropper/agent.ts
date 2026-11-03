@@ -1,7 +1,6 @@
 import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
-import type { Static } from "typebox";
+import { arr, obj, opt, str, type Static } from "@earendil-works/pi-schema";
 import { debugLog } from "../../debug-log.js";
 import { AGENT_LOOP_MAX_TOKENS, boundedMaxTokens } from "../../model-budget.js";
 import { logAgentStreamError } from "../stream-errors.js";
@@ -73,10 +72,10 @@ const RELEVANCE_DROP_RANK: Record<Observation["relevance"], number> = {
 	critical: 3,
 };
 
-const DropObservationsSchema = Type.Object({
-	ids: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-	reason: Type.Optional(Type.String()),
-});
+const DropObservationsSchema = obj({
+	ids: arr(str({ minLength: 1 }), { minItems: 1 }),
+	reason: opt(str()),
+}, { open: true });
 
 type DropObservationsArgs = Static<typeof DropObservationsSchema>;
 

@@ -1,7 +1,6 @@
 /** Settings approval only displays the built-in tool's validated, allowlisted patch, never its revision or catalog details. */
 import { isAbsolute, resolve } from 'node:path'
-import { Compile } from 'typebox/compile'
-import type { TSchema } from 'typebox'
+import { compile, type JsonSchema } from '@earendil-works/pi-schema'
 import { settingsAgentHost } from '../plugins/pig-settings-host'
 import { settingsToolPath } from '../pi/system-plugin-paths'
 
@@ -23,8 +22,8 @@ function safeValue(value: unknown): boolean {
   return value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
 }
 
-export async function settingsApproval(input: unknown, schema: TSchema, sessionId: string): Promise<{ group: string; patch: string }> {
-  if (!Compile(schema).Check(input)) throw new Error('Invalid settings update; no approval was requested')
+export async function settingsApproval(input: unknown, schema: JsonSchema, sessionId: string): Promise<{ group: string; patch: string }> {
+  if (!compile(schema).check(input)) throw new Error('Invalid settings update; no approval was requested')
   const { group, patch } = input as { group: string; patch: Record<string, unknown> }
   if (!safeValue(patch)) throw new Error('Settings update contains values that cannot be safely displayed for approval')
   let names: Record<string, string> | undefined

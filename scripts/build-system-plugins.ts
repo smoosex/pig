@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-// The SDK aliases @earendil-works/* and typebox through jiti, so those stay external; every
+// The SDK aliases the Pi packages (including pi-schema) through jiti, so those stay external; every
 // other dependency is inlined because the packaged app ships no node_modules for plugins.
 for (const name of ['pi-web-access', 'pi-persona']) {
   const source = join(root, 'src/main/plugins', name)
@@ -20,7 +20,7 @@ for (const name of ['pi-web-access', 'pi-persona']) {
     platform: 'node',
     format: 'esm',
     target: 'node22',
-    external: ['@earendil-works/*', 'typebox', 'typebox/*'],
+    external: ['@earendil-works/*'],
     // Bundled dependencies can retain CJS requires even inside ESM output.
     banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
     logLevel: 'warning'

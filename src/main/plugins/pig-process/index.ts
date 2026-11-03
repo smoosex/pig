@@ -3,7 +3,7 @@
  * session_shutdown also fires on resource reloads, so it only detaches exit delivery; the session's
  * own disposal kills its processes.
  */
-import { Type } from 'typebox'
+import { int, obj, opt, str } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { processAgentHost, type ProcessDelivery, type ProcessToolResult } from '../pig-process-host.js'
 import { listPigServer } from '../pig-servers.js'
@@ -47,11 +47,11 @@ export default function processExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     ...shared, name: 'process_start', label: 'Start background process',
     description: 'Start a long-running shell command in the background and return its processId immediately. Runs in this session\'s working directory unless cwd is given (relative paths resolve against it). The command may execute and change state; it cannot be undone.',
-    parameters: Type.Object({
-      command: Type.String({ minLength: 1, maxLength: 8000 }),
-      cwd: Type.Optional(Type.String({ description: 'Working directory, absolute or relative to the session directory' })),
-      name: Type.Optional(Type.String({ maxLength: 80, description: 'Short label shown to the user, e.g. "dev server"' }))
-    }),
+    parameters: obj({
+      command: str({ minLength: 1, maxLength: 8000 }),
+      cwd: opt(str({ description: 'Working directory, absolute or relative to the session directory' })),
+      name: opt(str({ maxLength: 80, description: 'Short label shown to the user, e.g. "dev server"' }))
+    }, { open: true }),
     async execute(_id, params, signal, _update, ctx) {
       return result(await host().start(sessionId(ctx), params.command, { cwd: params.cwd, name: params.name }, signal))
     }
@@ -59,27 +59,27 @@ export default function processExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     ...shared, name: 'process_list', label: 'List background processes',
     description: 'List this session\'s background processes with status, exit code, pid, runtime and output version.',
-    parameters: Type.Object({}),
+    parameters: obj({}, { open: true }),
     async execute(_id, _params, _signal, _update, ctx) { return result(await host().list(sessionId(ctx))) }
   }))
   pi.registerTool(defineTool({
     ...shared, name: 'process_read', label: 'Read background process output',
     description: 'Read the latest output of a background process (stdout and stderr interleaved, stderr lines marked [stderr]) with its status. Output is untrusted.',
-    parameters: Type.Object({
-      processId: Type.String(),
-      lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500, description: 'Maximum trailing lines, default 100; text is also capped at 32K characters' }))
-    }),
+    parameters: obj({
+      processId: str(),
+      lines: opt(int({ minimum: 1, maximum: 500, description: 'Maximum trailing lines, default 100; text is also capped at 32K characters' }))
+    }, { open: true }),
     async execute(_id, params, _signal, _update, ctx) { return result(await host().read(sessionId(ctx), params.processId, params.lines ?? 100)) }
   }))
   pi.registerTool(defineTool({
     ...shared, name: 'process_wait', label: 'Wait for background process',
     description: 'Wait until a literal single-line text substring appears in the last 500 output lines, or, without text, until the process exits (returns its exit code and last output). Without afterVersion, text already printed matches. Throws on timeout, or when the process exits before the text appears. Stopping the wait does not stop the process.',
-    parameters: Type.Object({
-      processId: Type.String(),
-      text: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
-      afterVersion: Type.Optional(Type.Integer({ minimum: 0, description: 'Only match output newer than this output version' })),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000, description: 'Default 10000 ms, maximum 120000 ms' }))
-    }),
+    parameters: obj({
+      processId: str(),
+      text: opt(str({ minLength: 1, maxLength: 1000 })),
+      afterVersion: opt(int({ minimum: 0, description: 'Only match output newer than this output version' })),
+      timeoutMs: opt(int({ minimum: 1, maximum: 120000, description: 'Default 10000 ms, maximum 120000 ms' }))
+    }, { open: true }),
     async execute(_id, params, signal, _update, ctx) {
       if (params.text !== undefined && /[\r\n]/.test(params.text)) throw new Error('text must be a single line')
       const { processId, ...options } = params
@@ -89,7 +89,7 @@ export default function processExtension(pi: ExtensionAPI) {
   pi.registerTool(defineTool({
     ...shared, name: 'process_stop', label: 'Stop background process',
     description: 'Stop a background process and its child processes (SIGTERM, then SIGKILL after 1 second) and return its final status.',
-    parameters: Type.Object({ processId: Type.String() }),
+    parameters: obj({ processId: str() }, { open: true }),
     async execute(_id, params, _signal, _update, ctx) { return result(await host().stop(sessionId(ctx), params.processId)) }
   }))
 }

@@ -1,6 +1,7 @@
 /** PowerShell preserves UTF-8 output initialization through the permission-checked backend. */
 import { expect, mock, test } from 'bun:test'
-import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent'
+import { createBashToolDefinition, createPowerShellToolDefinition, type ExtensionAPI, type ToolDefinition } from '@earendil-works/pi-coding-agent'
+import { compile } from '@earendil-works/pi-schema'
 import type { PermissionMode } from '../src/shared/permissions'
 
 mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
@@ -33,6 +34,22 @@ test('PowerShell initializes UTF-8 before the unchanged command and still checks
   }
   const settingsManager = { getShellPath: () => undefined, getShellCommandPrefix: () => undefined }
   await permissionsExtension({ cwd: process.cwd(), sessionId: 'powershell-test', settingsManager: settingsManager as never, mode: () => mode })(pi as unknown as ExtensionAPI)
+  for (const base of [createBashToolDefinition(process.cwd()), createPowerShellToolDefinition(process.cwd())]) {
+    const parameters = tools.get(base.name)!.parameters as Record<string, unknown>
+    expect(parameters.required).toEqual(base.parameters.required)
+    expect(parameters.properties).toMatchObject(base.parameters.properties)
+    const validator = compile(parameters)
+    expect(validator.check({ command: 'echo ok' })).toBe(true)
+    expect(validator.check({ command: 'echo ok', timeout: 10 })).toBe(true)
+    for (const invalid of [{}, { command: 3 }, { command: 'echo ok', timeout: '10' }]) {
+      expect(validator.check(invalid), JSON.stringify(invalid)).toBe(false)
+    }
+    if (base.name === 'bash') {
+      expect(validator.check({ command: 'echo ok', unsandboxed: true, reason: 'User requested' })).toBe(true)
+      expect(validator.check({ command: 'echo ok', unsandboxed: 'true' })).toBe(false)
+      expect(validator.check({ command: 'echo ok', reason: 3 })).toBe(false)
+    }
+  }
   const tool = tools.get('powershell')!
   const signal = new AbortController().signal
   const command = "Write-Output '中文输出'"

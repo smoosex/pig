@@ -1,4 +1,4 @@
-import { Type } from "typebox";
+import { obj, str } from "@earendil-works/pi-schema";
 import type { Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -302,12 +302,12 @@ export const recallObservationTool = defineTool({
 		"Do not use recall as semantic search or transcript browsing; you must already have a specific 12-character memory id.",
 		"Do not recall every id preemptively. Recall only when exact source context will materially improve the next action.",
 	],
-	parameters: Type.Object({
-		id: Type.String({
+	parameters: obj({
+		id: str({
 			pattern: "^[a-f0-9]{12}$",
 			description: "12-character lowercase hex observation or reflection id shown in Pig's memory view or a previous recall result. Must be a specific id; this tool does not search by topic.",
 		}),
-	}),
+	}, { open: true }),
 	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 		const memoryId = params.id;
 		if (!MEMORY_ID_PATTERN.test(memoryId)) {

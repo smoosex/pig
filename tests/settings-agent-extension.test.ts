@@ -3,7 +3,7 @@ import { expect, mock, test } from 'bun:test'
 import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Compile } from 'typebox/compile'
+import { compile } from '@earendil-works/pi-schema'
 import { validateToolArguments, type JsonObject } from '@earendil-works/pi-ai'
 import { LOCALES } from '../src/shared/i18n'
 import { SETTINGS_GROUPS } from '../src/shared/settings'
@@ -90,7 +90,7 @@ async function fixture() {
       expect(response.content).toEqual([{ type: 'text', text: JSON.stringify(expected) }])
       expect(response.details).toBeUndefined()
       expect(response.isError).not.toBe(true)
-      expect(Compile(tool(name).outputSchema!).Check(response.structuredContent)).toBe(true)
+      expect(compile(tool(name).outputSchema!).check(response.structuredContent)).toBe(true)
     }
     const empty = {}
     await tool('settings_list').execute('4', empty, undefined, undefined, ctx as never)
@@ -101,7 +101,7 @@ async function fixture() {
     expect(failed.isError).toBe(true)
     expect(failed.structuredContent).toBe(mutation)
     expect(failed.content).toEqual([{ type: 'text', text: JSON.stringify(mutation) }])
-    expect(Compile(tool('settings_update').outputSchema!).Check(failed.structuredContent)).toBe(true)
+    expect(compile(tool('settings_update').outputSchema!).check(failed.structuredContent)).toBe(true)
     expect(calls.pop()).toEqual(['update', 'session-2', request, undefined])
     hostError = new Error('Configuration read failed')
     for (const [name, params] of [['settings_list', {}], ['settings_get', { group: 'theme' }], ['settings_update', request]] as const) {
@@ -131,14 +131,14 @@ async function fixture() {
       expect(tool('settings_update').namespace?.instructions).toContain(phrase)
     }
 
-    const listSchema = Compile(tool('settings_list').parameters)
-    const getSchema = Compile(tool('settings_get').parameters)
-    const updateSchema = Compile(tool('settings_update').parameters)
-    expect(listSchema.Check({})).toBe(true)
-    expect(listSchema.Check(options)).toBe(true)
-    for (const group of SETTINGS_GROUPS) expect(getSchema.Check({ group })).toBe(true)
-    for (const invalid of [{ group: 'providers' }, { group: 'theme', extra: true }, {}]) expect(getSchema.Check(invalid)).toBe(false)
-    for (const invalid of [{ group: 'providers' }, { offset: -1 }, { offset: 0.5 }, { limit: 0 }, { extra: true }]) expect(listSchema.Check(invalid)).toBe(false)
+    const listSchema = compile(tool('settings_list').parameters)
+    const getSchema = compile(tool('settings_get').parameters)
+    const updateSchema = compile(tool('settings_update').parameters)
+    expect(listSchema.check({})).toBe(true)
+    expect(listSchema.check(options)).toBe(true)
+    for (const group of SETTINGS_GROUPS) expect(getSchema.check({ group })).toBe(true)
+    for (const invalid of [{ group: 'providers' }, { group: 'theme', extra: true }, {}]) expect(getSchema.check(invalid)).toBe(false)
+    for (const invalid of [{ group: 'providers' }, { offset: -1 }, { offset: 0.5 }, { limit: 0 }, { extra: true }]) expect(listSchema.check(invalid)).toBe(false)
     const valid: SettingsUpdateRequest[] = [
       request,
       { group: 'theme', expectedRevision: before.revision, patch: { surfaceStyle: 'solid', appearance: 'light', lightTheme: 'everforest', darkTheme: 'pig' } },
@@ -153,7 +153,7 @@ async function fixture() {
       ...SETTINGS_GROUPS.map(group => ({ group, expectedRevision: before.revision, patch: {} }))
     ]
     for (const params of valid) {
-      expect(updateSchema.Check(params), JSON.stringify(params)).toBe(true)
+      expect(updateSchema.check(params), JSON.stringify(params)).toBe(true)
       expect(tool('settings_update').prepareArguments(params)).toBe(params)
       expect(validateToolArguments(tool('settings_update'), { type: 'toolCall', id: 'valid', name: 'settings_update', arguments: params })).toEqual(params)
     }
@@ -179,7 +179,7 @@ async function fixture() {
       ].map(([group, patch]) => ({ group, patch, expectedRevision: before.revision }))
     ]
     for (const params of invalidUpdates) {
-      expect(updateSchema.Check(params), JSON.stringify(params)).toBe(false)
+      expect(updateSchema.check(params), JSON.stringify(params)).toBe(false)
       expect(() => tool('settings_update').prepareArguments(params)).toThrow('Invalid settings update')
     }
     const coercible = { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pi-review': 'project' } } }

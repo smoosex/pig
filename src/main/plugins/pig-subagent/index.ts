@@ -6,7 +6,7 @@
  * session_shutdown also fires on resource reloads, so it only detaches delivery; Pig itself aborts
  * children when the parent session is closed.
  */
-import { Type } from "typebox";
+import { bool, obj, opt, str } from "@earendil-works/pi-schema";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { subagentHost, type SubagentDelivery } from "../pig-subagent-host.js";
 import {
@@ -45,7 +45,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 		name: "subagent_restart",
 		label: "Restart subagent",
 		description: "Explicitly resume an unfinished, ended subagent of this session from its original transcript in the background. Check the previous failure and decide whether resuming is appropriate; never retry automatically. The result arrives through the usual background notification.",
-		parameters: Type.Object({ id: Type.String({ description: "Subagent ID" }), instruction: Type.Optional(Type.String({ description: "Additional instruction for continuing" })) }),
+		parameters: obj({ id: str({ description: "Subagent ID" }), instruction: opt(str({ description: "Additional instruction for continuing" })) }, { open: true }),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const host = subagentHost();
 			if (!host) throw new Error("Subagents are unavailable in this host");
@@ -62,11 +62,11 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			promptSnippet: SPAWN_SNIPPET,
 			promptGuidelines: SPAWN_GUIDELINES,
 			executionMode: "parallel",
-			parameters: Type.Object({
-				title: Type.String({ description: TITLE_DESCRIPTION }),
-				prompt: Type.String({ description: PROMPT_DESCRIPTION }),
-				background: Type.Boolean({ description: BACKGROUND_DESCRIPTION }),
-			}),
+			parameters: obj({
+				title: str({ description: TITLE_DESCRIPTION }),
+				prompt: str({ description: PROMPT_DESCRIPTION }),
+				background: bool({ description: BACKGROUND_DESCRIPTION }),
+			}, { open: true }),
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
 				const host = subagentHost();
 				if (!host) throw new Error("Subagents are unavailable in this host");

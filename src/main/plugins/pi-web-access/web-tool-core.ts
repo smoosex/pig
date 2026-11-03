@@ -542,7 +542,7 @@ export interface WebSearchCallOptions extends WebToolCallOptions {
 	awaitContent?: boolean;
 }
 
-// Pi's TypeBox schemas type enums as plain strings; the core normalizes them.
+// Non-Pi callers can supply raw strings; the core normalizes them.
 export type WebSearchParams = Omit<WebSearchCallParams, "recencyFilter"> & { recencyFilter?: string; workflow?: string };
 export type FetchContentToolParams = FetchContentCallParams & FetchContentParams;
 export type SourceCheckParams = Omit<SourceCheckCallParams, "recencyFilter"> & { recencyFilter?: string };

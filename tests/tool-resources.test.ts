@@ -68,7 +68,7 @@ async function fixture(): Promise<void> {
   await removeProjectSessions(root)
   for (const id of ['bulk-one', 'bulk-two']) assert.equal(existsSync(sidecar(id)), false, 'bulk deletion removes every sidecar')
   assert.ok(existsSync(sidecar('fork-source')), 'bulk deletion preserves other sessions')
-  const { Type } = await import('typebox')
+  const { obj } = await import('@earendil-works/pi-schema')
   let registerDeferred!: () => void
   const settingsManager = sessionResourceSettings(root, getAgentDir())
   const pluginFile = join(root, 'fixture-plugin.ts')
@@ -78,7 +78,7 @@ async function fixture(): Promise<void> {
     extensionFactories: [sessionToolFactory(root, 'fixture-session'), (pi) => {
       registerDeferred = () => pi.registerTool({
         name: 'fixture_deferred', label: 'Fixture deferred', description: 'Deferred fixture',
-        exposure: 'deferred', parameters: Type.Object({}),
+        exposure: 'deferred', parameters: obj({}, { open: true }),
         execute: async () => ({ content: [{ type: 'text', text: 'called' }], details: {} })
       })
     }]

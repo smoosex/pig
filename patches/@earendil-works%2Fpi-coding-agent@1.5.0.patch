@@ -1,3 +1,30 @@
+diff --git a/dist/core/extensions/loader.js b/dist/core/extensions/loader.js
+index 4bf25d50ea728ef1307c166e9f038643b474f101..4e89643547fde05129e55bb2f7bf1bd41b9f5485 100644
+--- a/dist/core/extensions/loader.js
++++ b/dist/core/extensions/loader.js
+@@ -62,6 +62,8 @@ function getAliases() {
+     const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@earendil-works/pi-ai/oauth");
+     const piAiProvidersEntry = resolveWorkspaceOrImport("ai/dist/providers/all.js", "@earendil-works/pi-ai/providers/all");
+     _aliases = {
++        "@earendil-works/pi-schema/formats": resolveWorkspaceOrImport("schema/dist/formats/index.js", "@earendil-works/pi-schema/formats"),
++        "@earendil-works/pi-schema": resolveWorkspaceOrImport("schema/dist/index.js", "@earendil-works/pi-schema"),
+         "@earendil-works/pi-coding-agent": piCodingAgentEntry,
+         "@earendil-works/pi-agent-core": piAgentCoreEntry,
+         "@earendil-works/pi-tui": piTuiEntry,
+diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
+index 6b59306873b66ac54750ecde8f2036006c5fd90d..8d12ae3e7b7beb58ae5ae4754a7a3f387b8f5c06 100644
+--- a/dist/core/extensions/types.d.ts
++++ b/dist/core/extensions/types.d.ts
+@@ -10,7 +10,8 @@
+ import type { AgentMessage, AgentTool, AgentToolCallOutcome, AgentToolResult, AgentToolUpdateCallback, ThinkingLevel, ToolExecutionMode } from "@earendil-works/pi-agent-core";
+ import type { AnyModel, Api, AssistantMessageEvent, AssistantMessageEventStream, ClassifierApi, ConstrainedSamplingConfig, ImageApi, ImageContent, JsonValue, Message, Model, OAuthCredentials, OAuthLoginCallbacks, Provider, ProviderClassifier, ProviderHeaders, ProviderId, ProviderImages, RefreshModelsContext, SimpleStreamOptions, TextContent, ToolResultMessage, TranscriptContext, Usage } from "@earendil-works/pi-ai";
+ import type { AutocompleteItem, AutocompleteProvider, Component, EditorComponent, EditorTheme, Keybinding, KeyId, OverlayHandle, OverlayOptions, ProgramStatus, TUI } from "@earendil-works/pi-tui";
+-import type { Static, TSchema } from "typebox";
++import type { Static } from "@earendil-works/pi-schema";
++import type { TSchema } from "typebox";
+ import type { Theme } from "../../modes/interactive/theme/theme.ts";
+ import type { BashResult } from "../bash-executor.ts";
+ import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult } from "../cache-warmer.ts";
 diff --git a/dist/core/system-prompt.d.ts b/dist/core/system-prompt.d.ts
 index 4af86187b69e25f58d4f1959df02629da2c53621..8156c93edf7e9ee3fe310ca92ff1542f67cf7ade 100644
 --- a/dist/core/system-prompt.d.ts

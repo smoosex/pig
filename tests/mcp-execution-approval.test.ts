@@ -96,7 +96,7 @@ async function fixture() {
 
     // Real Pi parallel batching preflights the first call while a sibling's preflight waits.
     const { Agent } = await import('@earendil-works/pi-agent-core')
-    const { Type } = await import('typebox')
+    const { obj } = await import('@earendil-works/pi-schema')
     const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai')
     const mcp = session.agent.state.tools.find(item => item.name === info.name)!
     let unblock!: () => void
@@ -109,7 +109,7 @@ async function fixture() {
     let requests = 0
     const agent = new Agent({
       initialState: { model, tools: [mcp, { name: 'barrier', label: 'Barrier', description: 'test',
-        parameters: Type.Object({}), execute: async () => ({ content: [], details: undefined }) }] },
+        parameters: obj({}, { open: true }), execute: async () => ({ content: [], details: undefined }) }] },
       toolExecution: 'parallel',
       streamFn: () => {
         const stream = createAssistantMessageEventStream()

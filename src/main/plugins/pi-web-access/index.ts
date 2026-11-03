@@ -2,7 +2,7 @@
 // registers the tools, wires session state, and renders nothing (Pig draws tool output
 // in its own UI, so there is no pi-tui surface here).
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { arr, bool, int, nul, num, obj, oneOf, opt, str, union } from "@earendil-works/pi-schema";
 import type { ExtractedContent } from "./extract.ts";
 import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github-extract.ts";
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, providerLabel, RESOLVED_SEARCH_PROVIDERS, type ResolvedSearchProvider } from "./gemini-search.ts";
@@ -39,43 +39,33 @@ import {
 	type WebSearchConfig,
 } from "./web-tool-core.ts";
 
-// Match pi-ai's StringEnum without loading its compat barrel during registration.
-function StringEnum<T extends string[]>(values: T, options?: { description?: string; default?: T[number] }) {
-	return Type.Unsafe<T[number]>({
-		type: "string",
-		enum: values,
-		...(options?.description && { description: options.description }),
-		...(options?.default && { default: options.default }),
-	});
-}
-
 // structuredContent shapes that codemode scripts receive (web-tool-contract.ts),
 // on success and on isError results.
-const nullableString = (description: string) => Type.Union([Type.String(), Type.Null()], { description });
-const webSearchOutputSchema = Type.Object({
-	responseId: Type.String({ description: "Id of the stored search results" }),
+const nullableString = (description: string) => union([str(), nul()], { description });
+const webSearchOutputSchema = obj({
+	responseId: str({ description: "Id of the stored search results" }),
 	fetchId: nullableString("Stored page content id when includeContent fetched or started fetching content, else null"),
-	queries: Type.Array(Type.Object({
-		query: Type.String(),
-		answer: Type.String({ description: "Provider answer text, empty when the provider returned only results" }),
+	queries: arr(obj({
+		query: str(),
+		answer: str({ description: "Provider answer text, empty when the provider returned only results" }),
 		error: nullableString("Why this query failed, null on success"),
-		provider: Type.Optional(Type.String()),
-		providers: Type.Optional(Type.Array(Type.String())),
-		results: Type.Array(Type.Object({ title: Type.String(), url: Type.String(), snippet: Type.String() })),
-	})),
-});
-const fetchContentOutputSchema = Type.Object({
+		provider: opt(str()),
+		providers: opt(arr(str())),
+		results: arr(obj({ title: str(), url: str(), snippet: str() }, { open: true })),
+	}, { open: true })),
+}, { open: true });
+const fetchContentOutputSchema = obj({
 	responseId: nullableString("Id of the stored content, null when nothing was stored"),
-	urls: Type.Array(Type.Object({
-		url: Type.String(),
-		title: Type.String(),
-		content: Type.String({ description: "Full extracted content, not limited by the inline character cap" }),
+	urls: arr(obj({
+		url: str(),
+		title: str(),
+		content: str({ description: "Full extracted content, not limited by the inline character cap" }),
 		error: nullableString("Why this URL failed, null on success"),
-		mimeType: Type.Optional(Type.String()),
-		status: Type.Optional(Type.Number()),
-		duration: Type.Optional(Type.Number()),
-	})),
-});
+		mimeType: opt(str()),
+		status: opt(num()),
+		duration: opt(num()),
+	}, { open: true })),
+}, { open: true });
 
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
@@ -85,9 +75,9 @@ const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
 };
 
 function searchProviderSchema(description: string, allowedProviders: readonly ResolvedSearchProvider[]) {
-	return Type.Union([
-		StringEnum(["auto", "all", ...allowedProviders]),
-		Type.Array(StringEnum([...allowedProviders]), { minItems: 1 }),
+	return union([
+		oneOf(["auto", "all", ...allowedProviders]),
+		arr(oneOf([...allowedProviders]), { minItems: 1 }),
 	], { description });
 }
 
@@ -313,21 +303,21 @@ export default function (pi: ExtensionAPI) {
 			`Search the web and return source-linked results or provider answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} using the returned responseId.` : ""} For research, prefer queries with 2-4 varied angles over a single query. Omit provider to use the configured default; set it only to override that.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
-		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently (up to three at a time), each returning source-linked search results or a provider answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
-			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)" })),
-			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
-			recencyFilter: Type.Optional(
-				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
+		parameters: obj({
+			query: opt(str({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
+			queries: opt(arr(str(), { description: "Multiple queries searched concurrently (up to three at a time), each returning source-linked search results or a provider answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
+			numResults: opt(int({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)" })),
+			includeContent: opt(bool({ description: "Fetch full page content (async)" })),
+			recencyFilter: opt(
+				oneOf(["day", "week", "month", "year"], { description: "Filter by recency" }),
 			),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
-			category: Type.Optional(Type.String({ description: "Exa only: result category, e.g. news, research paper" })),
-			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}; omit this field to use the configured provider, or use auto when none is configured`, allowedSearchProviders)),
-			proxy: Type.Optional(Type.String({
+			domainFilter: opt(arr(str(), { description: "Limit to domains (prefix with - to exclude)" })),
+			category: opt(str({ description: "Exa only: result category, e.g. news, research paper" })),
+			provider: opt(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}; omit this field to use the configured provider, or use auto when none is configured`, allowedSearchProviders)),
+			proxy: opt(str({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for every outbound request in this call (search APIs and content fetches). Node fetch ignores HTTP(S)_PROXY env vars, so set this (or `proxy` in web-search.json) when direct access is blocked; empty string forces direct access.",
 			})),
-		}),
+		}, { open: true }),
 		outputSchema: webSearchOutputSchema,
 
 		async execute(callId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
@@ -347,18 +337,18 @@ export default function (pi: ExtensionAPI) {
 		label: "Source Check",
 		description: "Gather web sources for a claim and return a bounded machine-readable research artifact with exact passage citations for manual review.",
 		promptSnippet: "Gather structured source evidence and passage-level citations for manual semantic review of a claim.",
-		parameters: Type.Object({
-			claim: Type.String({ description: "The assertion to gather web sources for." }),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Search queries (default: the claim)." })),
-			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)." })),
-			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch up to 5 result pages for exact passage extraction." })),
-			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"], { description: "Filter by recency." })),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." })),
-			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}`, allowedSearchProviders)),
-			proxy: Type.Optional(Type.String({
+		parameters: obj({
+			claim: str({ description: "The assertion to gather web sources for." }),
+			queries: opt(arr(str(), { description: "Search queries (default: the claim)." })),
+			numResults: opt(int({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)." })),
+			fetchContent: opt(bool({ description: "Fetch up to 5 result pages for exact passage extraction." })),
+			recencyFilter: opt(oneOf(["day", "week", "month", "year"], { description: "Filter by recency." })),
+			domainFilter: opt(arr(str(), { description: "Limit to domains; prefix with - to exclude." })),
+			provider: opt(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}`, allowedSearchProviders)),
+			proxy: opt(str({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for every outbound request in this call (search APIs and result-page fetches). Empty string forces direct access.",
 			})),
-		}),
+		}, { open: true }),
 		async execute(_callId, params, signal, _onUpdate, ctx) {
 			return markToolError(await core.sourceCheck(params, signal, { extensionContext: ctx }));
 		},
@@ -370,46 +360,46 @@ export default function (pi: ExtensionAPI) {
 		description: `Fetch URL(s). Available modes: ${fetchModeDescription}. Direct image URLs return resized image content when supported by the selected mode. Supports YouTube transcripts, GitHub repositories, PDFs, and local videos when supported by the selected mode. ${fetchContentStorageNote}`,
 		promptSnippet:
 			"Use to fetch URL content, direct images, GitHub repos, and videos.",
-		parameters: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
-			forceClone: Type.Optional(Type.Boolean({
+		parameters: obj({
+			url: opt(str({ description: "Single URL to fetch" })),
+			urls: opt(arr(str(), { description: "Multiple URLs (parallel)" })),
+			forceClone: opt(bool({
 				description: "Force cloning large GitHub repositories that exceed the size threshold",
 			})),
-			prompt: Type.Optional(Type.String({
+			prompt: opt(str({
 				description: resolvedFetchModes.allowedModes.includes("answer")
 					? "Question or instruction for video analysis, or the page-local question required by answer mode."
 					: "Question or instruction for video analysis.",
 			})),
-			mode: Type.Optional(StringEnum(resolvedFetchModes.allowedModes, {
+			mode: opt(oneOf(resolvedFetchModes.allowedModes, {
 				description: `Fetch mode. ${fetchModeDescription}.`,
 			})),
 			...(resolvedFetchModes.allowedModes.includes("answer") ? {
-				answerModel: Type.Optional(Type.String({
+				answerModel: opt(str({
 					description: "Optional provider/model-id override for answer mode. Defaults to fetch.answerProvider + fetch.answerModel when configured, otherwise the current Pi model.",
 				})),
 			} : {}),
-			timestamp: Type.Optional(Type.String({
+			timestamp: opt(str({
 				description: "Extract video frame(s) at a timestamp or time range. Single: '1:23:45', '23:45', or '85' (seconds). Range: '23:41-25:00' extracts evenly-spaced frames across that span (default 6). Use frames with ranges to control density; single+frames uses a fixed 5s interval. YouTube requires yt-dlp + ffmpeg; local videos require ffmpeg. Use a range when you know the approximate area but not the exact moment — you'll get a contact sheet to visually identify the right frame.",
 			})),
-			frames: Type.Optional(Type.Integer({
+			frames: opt(int({
 				minimum: 1,
 				maximum: 12,
 				description: "Number of frames to extract. Use with timestamp range for custom density, with single timestamp to get N frames at 5s intervals, or alone to sample across the entire video. Requires yt-dlp + ffmpeg for YouTube, ffmpeg for local video.",
 			})),
-			model: Type.Optional(Type.String({
+			model: opt(str({
 				description: "Override the Gemini model for video/YouTube analysis (e.g. 'gemini-3.6-flash'). Defaults to config or gemini-3.6-flash.",
 			})),
-			auth: Type.Optional(Type.Union([Type.String(), Type.Boolean()], {
+			auth: opt(union([str(), bool()], {
 				description: "Opt into an authFetch profile for local browser-cookie fetching. Use a profile name, or true only when exactly one profile exists.",
 			})),
-			proxy: Type.Optional(Type.String({
+			proxy: opt(str({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for this fetch. Needed when the target is unreachable directly; localhost and NO_PROXY hosts always bypass the proxy. Empty string forces direct access.",
 			})),
-			redirects: Type.Optional(StringEnum(["same-origin"], {
+			redirects: opt(oneOf(["same-origin"], {
 				description: "Refuse cross-origin redirects: every redirect target must match the requested URL's scheme, hostname and effective port, and extraction paths whose redirect chain cannot be observed are refused instead of used.",
 			})),
-		}),
+		}, { open: true }),
 		outputSchema: fetchContentOutputSchema,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
@@ -425,20 +415,20 @@ export default function (pi: ExtensionAPI) {
 			description: `Retrieve bounded pages of full stored search results or fetched content, or find matching passages, from a previous ${storedContentSources} call.`,
 			promptSnippet:
 				`Use after ${storedContentSources} to retrieve stored content via responseId. Use findText to locate passages without paging through the full content.`,
-			parameters: Type.Object({
-				responseId: Type.String({ description: `The responseId from ${storedContentSources}` }),
-				query: Type.Optional(Type.String({ description: searchQueryDescription })),
-				queryIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for query at index" })),
-				url: Type.Optional(Type.String({ description: "Get content for this URL" })),
-				urlIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for URL at index" })),
-				offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset in stored search or fetched URL content (default 0). Ignored when findText is supplied." })),
-				limit: Type.Optional(Type.Integer({ minimum: 1, maximum: maxInlineContentChars, description: "Requested maximum stored-content characters (default and max use maxInlineContentChars). Search-page continuation guidance shares the global output cap and may reduce returnedChars. Ignored when findText is supplied." })),
-				findText: Type.Optional(Type.Union([
-					Type.String({ minLength: 1, maxLength: 500 }),
-					Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
+			parameters: obj({
+				responseId: str({ description: `The responseId from ${storedContentSources}` }),
+				query: opt(str({ description: searchQueryDescription })),
+				queryIndex: opt(int({ minimum: 0, description: "Get content for query at index" })),
+				url: opt(str({ description: "Get content for this URL" })),
+				urlIndex: opt(int({ minimum: 0, description: "Get content for URL at index" })),
+				offset: opt(int({ minimum: 0, description: "Character offset in stored search or fetched URL content (default 0). Ignored when findText is supplied." })),
+				limit: opt(int({ minimum: 1, maximum: maxInlineContentChars, description: "Requested maximum stored-content characters (default and max use maxInlineContentChars). Search-page continuation guidance shares the global output cap and may reduce returnedChars. Ignored when findText is supplied." })),
+				findText: opt(union([
+					str({ minLength: 1, maxLength: 500 }),
+					arr(str({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
 				], { description: "Text or texts to find in the selected stored content. When supplied, offset and limit are ignored." })),
-				findMode: Type.Optional(StringEnum(["exact", "case-insensitive", "fuzzy"], { description: "Matching mode for findText (default: case-insensitive). Requires findText." })),
-			}),
+				findMode: opt(oneOf(["exact", "case-insensitive", "fuzzy"], { description: "Matching mode for findText (default: case-insensitive). Requires findText." })),
+			}, { open: true }),
 
 			async execute(_toolCallId, rawParams): Promise<AgentToolResult<Record<string, unknown>>> {
 				return markToolError(await core.getSearchContent(rawParams));
