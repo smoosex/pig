@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
+import { failureMessage } from '../../lib/ipc-error'
 
 export type RunProjectAction = (action: string, run: () => Promise<unknown>) => Promise<void>
 
@@ -27,7 +25,7 @@ export function useProjectAction() {
     try {
       await run()
     } catch (error) {
-      if (mounted.current) setError(errorMessage(error))
+      if (mounted.current) setError(failureMessage(error))
     } finally {
       pendingRef.current = false
       if (mounted.current) setPending(null)

@@ -21,6 +21,7 @@ import { stripShowsChats, stripSlots, visibleTabsFor } from './tab-strip'
 import { useTabStripDnd } from './use-tab-strip-dnd'
 import { collapseLeavingTab, interleave, useTabStripMotion, type LeavingTab } from './use-tab-strip-motion'
 import { useSplitLayoutStore, allPanes, paneOfTab } from '../stores/split-layout'
+import { failureMessage } from '../lib/ipc-error'
 
 /** The strip follows the sidebar switcher, not the workspace: the projects half lists the open
  * worktree's tabs, the chats half the chats, and outside a project it falls back to chats. */
@@ -241,7 +242,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
       else if (kind === 'terminal') openTerminalTab(stripShowsChats(sidebarTab, currentProjectCwd) ? null : currentProjectCwd)
       else await newStripSession(sidebarTab)
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : String(error))
+      setCreateError(failureMessage(error))
     } finally {
       creatingRef.current = false
       setCreating(false)

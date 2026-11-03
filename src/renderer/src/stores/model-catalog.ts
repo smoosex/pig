@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand'
 import { api, type ModelCatalog } from '../ipc/api'
+import { failureMessage } from '../lib/ipc-error'
 
 interface CatalogStore extends ModelCatalog {
   error: string | null
@@ -39,7 +40,7 @@ export const useModelCatalogStore = create<CatalogStore>((set, get) => ({
       },
       (error: unknown) => {
         // IPC initialization/auth/file failures are a UI boundary: retain data, show failure + retry.
-        set({ error: error instanceof Error ? error.message : String(error) })
+        set({ error: failureMessage(error) })
       }
     ).finally(() => {
       reading = null

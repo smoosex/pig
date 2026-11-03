@@ -17,6 +17,7 @@ import { eventAccelerator, IS_MAC, isShellChord, shortcutBindings } from '../lib
 import { findShortcut, WINDOW_SHORTCUT_ACTIONS } from '../../../shared/shortcuts'
 import { useSessionsStore } from '../stores/sessions'
 import { TERMINAL_COLS, TERMINAL_ROWS, TERMINAL_MAX_WRITE, type TerminalEvent } from '../../../shared/terminal'
+import { failureMessage } from '../lib/ipc-error'
 
 const TERMINAL_ACTIONS = ['terminal.clear', 'terminal.selectAll'] as const
 
@@ -65,7 +66,7 @@ function reportError(id: string, error: unknown): void {
   const entry = entries.get(id)
   if (!entry || entry.status === 'ended') return
   entry.status = 'ended'
-  notice(entry.term, t('terminal.failed', { message: error instanceof Error ? error.message : String(error) }))
+  notice(entry.term, t('terminal.failed', { message: failureMessage(error) }))
 }
 
 function receive(event: TerminalEvent): void {
@@ -119,7 +120,7 @@ function dispose(id: string): void {
   entry.term.dispose()
   entry.element.remove()
   api.terminal.close(id).catch((error: unknown) => {
-    useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+    useSessionsStore.setState({ workspaceError: failureMessage(error) })
   })
 }
 
@@ -153,7 +154,7 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     if (action) {
       if (event.type === 'keydown' && action === 'terminal.clear') {
         if (entry.status === 'running') api.terminal.clear(id).catch((error: unknown) => {
-          if (entries.get(id) === entry) notice(term, t('terminal.failed', { message: error instanceof Error ? error.message : String(error) }))
+          if (entries.get(id) === entry) notice(term, t('terminal.failed', { message: failureMessage(error) }))
         })
         else term.clear()
       } else if (event.type === 'keydown') {
@@ -184,7 +185,7 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
       // A rejected input request is an operation error, not evidence that the shell exited.
       api.terminal.write(id, data.slice(offset, end), binary).catch((error: unknown) => {
         if (entries.get(id) !== entry) return
-        notice(term, t('terminal.writeFailed', { message: error instanceof Error ? error.message : String(error) }))
+        notice(term, t('terminal.writeFailed', { message: failureMessage(error) }))
       })
       offset = end
     }
@@ -222,7 +223,7 @@ function create(id: string, cwd: string | null, host: HTMLElement): Entry {
     } catch (error) {
       if (entries.get(id) === entry) {
         entry.status = 'ended'
-        notice(term, t('terminal.startFailed', { message: error instanceof Error ? error.message : String(error) }))
+        notice(term, t('terminal.startFailed', { message: failureMessage(error) }))
       }
       throw error
     }

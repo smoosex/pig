@@ -52,6 +52,7 @@ import { prewarmHighlighter } from './lib/highlight'
 import { cn } from './lib/utils'
 import { eventAccelerator, isComposingKey, isShortcutRecording, isTerminalShellChord, shortcutBindings } from './lib/shortcuts'
 import { findShortcut, HOST_SHORTCUT_ACTIONS, TAB_SELECT_ACTIONS, type HostShortcutAction } from '../../shared/shortcuts'
+import { failureMessage } from './lib/ipc-error'
 
 import { useSplitLayoutStore, allPanes, collectPaneNodes, groupOfTab, paneOfTab, type PaneNode } from './stores/split-layout'
 import { SplitPaneContainer } from './components/chat/SplitPaneContainer'
@@ -352,7 +353,7 @@ export default function App() {
         case 'tab.new':
           setSettingsOpen(false)
           newStripSession(sidebarTab).catch((error: unknown) => {
-            useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+            useSessionsStore.setState({ workspaceError: failureMessage(error) })
           })
           break
         case 'project.add': void openProject(); break

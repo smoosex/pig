@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../ipc/api'
 import type { SidebarTab } from '../../../../shared/api'
-import { errorMessage } from './project-action'
+import { failureMessage } from '../../lib/ipc-error'
 
 type PrefField = 'sidebarTab' | 'read'
 
@@ -43,8 +43,8 @@ export function useSidebarPreferences() {
       (error: unknown) => {
         if (disposed || timedOut) return
         clearTimeout(timeout)
-        failures.current.set('read', errorMessage(error))
-        setError(errorMessage(error))
+        failures.current.set('read', failureMessage(error))
+        setError(failureMessage(error))
         setReady(true)
       }
     )
@@ -71,7 +71,7 @@ export function useSidebarPreferences() {
         (error: unknown) => {
           // Re-inserting keeps the map ordered oldest first, so a repeated failure becomes the one shown.
           failures.current.delete('sidebarTab')
-          failures.current.set('sidebarTab', errorMessage(error))
+          failures.current.set('sidebarTab', failureMessage(error))
           publishError()
         }
       )

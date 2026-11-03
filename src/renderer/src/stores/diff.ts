@@ -127,8 +127,6 @@ function dropUntrackedClaims(cwd: string): void {
   }
 }
 
-/** Electron prefixes a rejected invoke with the channel it went through; the card wants main's own words. */
-
 /**
  * The untracked row's line count arrives with the read of its card, not with a refresh — main counted it
  * from the bytes it just handed over. The number is written into every list that holds the path so the
@@ -276,7 +274,7 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
           ...state.worktrees,
           [cwd]: {
             status: 'error',
-            error: error instanceof Error ? error.message : String(error),
+            error: failureMessage(error),
             watchError: state.worktrees[cwd]?.watchError
           }
         }
@@ -303,7 +301,7 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
       set((state) => ({
         patches: {
           ...state.patches,
-          [key]: { status: 'error', error: error instanceof Error ? error.message : String(error) }
+          [key]: { status: 'error', error: failureMessage(error) }
         }
       }))
     }

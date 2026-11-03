@@ -12,6 +12,7 @@ import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
 import { restorePromptDraft } from './restore-prompt'
+import { failureMessage } from '../../lib/ipc-error'
 
 /** Turns fetched when the reader scrolls above the loaded window. */
 const PAGE_TURNS = 40
@@ -70,9 +71,6 @@ export const createConversationSlice: SessionSlice<
     const current = get().runtime[sessionId]
     return current?.instanceId === expected.instanceId ? current : undefined
   }
-
-  const describeError = (error: unknown) =>
-    error instanceof Error ? error.message : String(error)
 
   const update = (
     sessionId: string,
@@ -242,7 +240,7 @@ export const createConversationSlice: SessionSlice<
           // Callers are `void` and the view must hear about it instead of the console.
           update(sessionId, (rt) =>
             rt.instanceId === initial.instanceId && !rt.turnError
-              ? { turnError: describeError(error), turnLoading: false }
+              ? { turnError: failureMessage(error), turnLoading: false }
               : null
           )
         }
@@ -277,7 +275,7 @@ export const createConversationSlice: SessionSlice<
           // The reader asked for these turns: the failure has to reach the view, not a console.
           // No change means no new runtime object: this response belongs to a window that moved on.
           update(sessionId, (rt) =>
-            rt.instanceId === current.instanceId ? { turnError: describeError(error) } : null
+            rt.instanceId === current.instanceId ? { turnError: failureMessage(error) } : null
           )
           return
         }
@@ -327,7 +325,7 @@ export const createConversationSlice: SessionSlice<
           // This branch means the file moved under the index: if the refetch fails, the provisional
           // window must stop promising older turns and say why, like any other failed read.
           update(next.sessionId, (rt) => (
-            rt.leafId === runtime.leafId ? { turnPending: false, turnError: describeError(error) } : null
+            rt.leafId === runtime.leafId ? { turnPending: false, turnError: failureMessage(error) } : null
           ))
         })
         return
@@ -354,7 +352,7 @@ export const createConversationSlice: SessionSlice<
         update(sessionId, (rt) => (rt.instanceId === initial.instanceId ? { tokens } : null))
       } catch (error) {
         update(sessionId, (rt) =>
-          rt.instanceId === initial.instanceId ? { tokensError: describeError(error) } : null
+          rt.instanceId === initial.instanceId ? { tokensError: failureMessage(error) } : null
         )
       } finally {
         // A read that belongs to a replaced instance must not touch the new one, and clearing a flag

@@ -19,6 +19,7 @@ import { WebSearchSettings } from './WebSearchSettings'
 import { SubagentSettings } from './SubagentSettings'
 import { PersonaSettings } from './PersonaSettings'
 import { PathPickerDialog } from '../projects/PathPickerDialog'
+import { failureMessage } from '../../lib/ipc-error'
 
 const numericKeys = [
   'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
@@ -45,10 +46,6 @@ function scopeIndex(scopes: PluginScope[]): number {
 /** Drafts keep the unset level as a sentinel string; the picker takes null. */
 function thinkingOf(value: string | undefined): ThinkingLevel | null {
   return value && value !== 'default' && value !== '__pig_default__' ? value as ThinkingLevel : null
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function PluginsPane() {
@@ -101,7 +98,7 @@ export function PluginsPane() {
       const items = await api.listPlugins()
       if (request === loadRequest.current) setPlugins(items)
     } catch (failure) {
-      if (request === loadRequest.current) setError(errorText(failure))
+      if (request === loadRequest.current) setError(failureMessage(failure))
     }
   }, [])
 
@@ -130,7 +127,7 @@ export function PluginsPane() {
       setFallbackId(config.fallbackModel?.id ?? '')
       setFallbackThinking(config.fallbackModel?.thinking ?? 'default')
       setSettingsError(null)
-    }, (failure) => { if (!cancelled) setSettingsError(errorText(failure)) })
+    }, (failure) => { if (!cancelled) setSettingsError(failureMessage(failure)) })
     return () => { cancelled = true }
   }, [selectedPluginId])
 
@@ -142,7 +139,7 @@ export function PluginsPane() {
       setPluginConfig(config)
       setPluginDraft(Object.fromEntries(selectedPlugin.settings!.fields.map((field) => [field.key, config[field.key] === undefined ? '__pig_default__' : String(config[field.key])])))
       setPluginConfigError(null)
-    }, (failure) => { if (!cancelled) setPluginConfigError(errorText(failure)) })
+    }, (failure) => { if (!cancelled) setPluginConfigError(failureMessage(failure)) })
     return () => { cancelled = true }
   }, [selectedPlugin?.id, selectedPlugin?.settings])
 
@@ -152,7 +149,7 @@ export function PluginsPane() {
       await operation()
       // Independent actions can finish out of order; their full-list replies may already be stale.
       await loadPlugins()
-    } catch (failure) { setError(errorText(failure)) }
+    } catch (failure) { setError(failureMessage(failure)) }
   }
 
   const actOnPlugin = async (id: string, operation: () => Promise<PluginInfo[]>) => {
@@ -215,7 +212,7 @@ export function PluginsPane() {
       setDraft(next)
       setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, next[key] == null ? '' : String(next[key])])))
       setSelectedPluginId(null)
-    } catch (failure) { setSettingsError(errorText(failure)) }
+    } catch (failure) { setSettingsError(failureMessage(failure)) }
     finally { setSaving(false) }
   }
 
@@ -234,7 +231,7 @@ export function PluginsPane() {
     try {
       setPluginConfig(await api.setPluginSettings(selectedPlugin.id, patch))
       setSelectedPluginId(null)
-    } catch (failure) { setPluginConfigError(errorText(failure)) }
+    } catch (failure) { setPluginConfigError(failureMessage(failure)) }
     finally { setConfigSaving(false) }
   }
 

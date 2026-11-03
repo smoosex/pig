@@ -11,6 +11,7 @@ import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { SmoothHoverHighlight } from '../ui/smooth-hover-highlight'
 import { matchesShortcut, shortcutText, useShortcut } from '../../lib/shortcuts'
+import { failureMessage } from '../../lib/ipc-error'
 
 export interface PathPickerDialogProps {
   onClose(): void
@@ -68,7 +69,7 @@ export function PathPickerDialog({ onClose, onSelect, title, description, confir
       setLoading(false)
     }, (failure: unknown) => {
       if (!current) return
-      setBrowseError(failure instanceof Error ? failure.message : String(failure))
+      setBrowseError(failureMessage(failure))
       setLoading(false)
     })
     return () => { current = false }
@@ -86,7 +87,7 @@ export function PathPickerDialog({ onClose, onSelect, title, description, confir
       void api.searchProjectDirectories(listing.path, needle, showHidden).then((next) => {
         if (current) setSearch(next)
       }, (failure: unknown) => {
-        if (current) setSearchError(failure instanceof Error ? failure.message : String(failure))
+        if (current) setSearchError(failureMessage(failure))
       })
     }, 200)
     return () => {
@@ -137,7 +138,7 @@ export function PathPickerDialog({ onClose, onSelect, title, description, confir
     try {
       await onSelect(selectedFile ?? listing.path)
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure))
+      setError(failureMessage(failure))
     } finally {
       savingRef.current = false
       setAdding(false)

@@ -18,10 +18,9 @@ import { McpIcon } from './McpIcon'
 import { AddSkillDialog, type AddSkillSource } from './AddSkillDialog'
 import { SkillDetailsDialog } from './SkillDetailsDialog'
 import { SkillsDiscover } from './SkillsDiscover'
+import { failureMessage } from '../../lib/ipc-error'
 
 import type { SkillUpdateCheck } from '../../../../shared/skills'
-
-const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 
 function SkillUpdateActions({ skill, onUpdated, disabled }: { skill: SkillInfo; onUpdated(): Promise<void>; disabled: boolean }) {
   const t = useT()
@@ -43,7 +42,7 @@ function SkillUpdateActions({ skill, onUpdated, disabled }: { skill: SkillInfo; 
         setCheck(null)
         setCheck(await api.checkSkillUpdate(skill.id))
       }
-    } catch (failure) { setError(errorText(failure)) }
+    } catch (failure) { setError(failureMessage(failure)) }
     finally { working.current = false; setBusy(false) }
   }
   return <div className="mt-2 flex flex-col gap-2">
@@ -80,7 +79,7 @@ export function SkillsPane() {
     try {
       const next = await api.listSkills()
       if (current === request.current) { setInventory(next); setLoadError(null) }
-    } catch (failure) { if (current === request.current) setLoadError(errorText(failure)) }
+    } catch (failure) { if (current === request.current) setLoadError(failureMessage(failure)) }
     finally { if (current === request.current) setLoading(false) }
   }, [])
   useEffect(() => {
@@ -94,7 +93,7 @@ export function SkillsPane() {
     setPending(new Set(active.current))
     setError(null)
     try { await operation(); await load() }
-    catch (failure) { setError(errorText(failure)) }
+    catch (failure) { setError(failureMessage(failure)) }
     finally { active.current.delete(id); setPending(new Set(active.current)) }
   }
   const q = query.trim().toLowerCase()
@@ -209,7 +208,7 @@ export function SkillsPane() {
               if (!remove || removing) return
               setRemoving(true)
               setRemoveError(null)
-              void api.removeSkill(remove.id).then(async () => { setRemove(null); await load() }, (failure) => setRemoveError(errorText(failure))).finally(() => setRemoving(false))
+              void api.removeSkill(remove.id).then(async () => { setRemove(null); await load() }, (failure) => setRemoveError(failureMessage(failure))).finally(() => setRemoving(false))
             }}>{t(removing ? 'skills.removing' : 'skills.remove')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

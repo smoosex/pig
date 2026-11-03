@@ -11,6 +11,7 @@ import {
   DropdownMenuRadioItem, DropdownMenuTrigger
 } from '../ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { failureMessage } from '../../lib/ipc-error'
 
 const ICONS: Record<McpApproval, LucideIcon> = { auto: ShieldCheck, prompt: ShieldQuestionMark, approve: ShieldOff }
 
@@ -23,7 +24,7 @@ export function useMcpApprovals(): [Record<string, McpApproval> | null, (next: R
       const current = ++revision.current
       api.permissions.getPermissions().then(
         (snapshot) => { if (current === revision.current) setApprovals(snapshot.mcp) },
-        (error: unknown) => toast.error(error instanceof Error ? error.message : String(error)))
+        (error: unknown) => toast.error(failureMessage(error)))
     }
     read()
     return api.permissions.onPermissionsChanged(read)
@@ -47,7 +48,7 @@ export function McpApprovalMenu({ name, approvals, disabled, onChange }: {
     setSaving(true)
     api.permissions.setMcpApproval(name, next as McpApproval).then(
       (snapshot) => onChange(snapshot.mcp),
-      (error: unknown) => toast.error(error instanceof Error ? error.message : String(error))
+      (error: unknown) => toast.error(failureMessage(error))
     ).finally(() => setSaving(false))
   }
   return (

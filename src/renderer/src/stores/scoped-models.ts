@@ -2,6 +2,7 @@
 import { create } from 'zustand'
 import { api } from '../ipc/api'
 import type { ScopedModelSettings } from '../../../shared/api'
+import { failureMessage } from '../lib/ipc-error'
 
 let generation = 0
 
@@ -27,7 +28,7 @@ export const useScopedModelsStore = create<ScopedModelSettings & {
       const settings = await api.getScopedModels()
       if (request === generation) set({ ...settings, loaded: true, error: null })
     } catch (error) {
-      if (request === generation) set({ error: error instanceof Error ? error.message : String(error) })
+      if (request === generation) set({ error: failureMessage(error) })
     }
   }
 }))

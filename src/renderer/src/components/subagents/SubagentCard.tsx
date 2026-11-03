@@ -27,11 +27,12 @@ import {
 } from '../ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { SubagentAvatar, SubagentMeta, subagentElapsed, useNow } from './subagent-view'
+import { failureMessage } from '../../lib/ipc-error'
 
 const MAX_CELLS = 60
 
 function reportFailure(error: unknown): void {
-  toast.error(error instanceof Error ? error.message : String(error))
+  toast.error(failureMessage(error))
 }
 
 /** Turns covered by one cell: 1:1 up to MAX_CELLS, otherwise each cell spans a contiguous range. */

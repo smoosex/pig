@@ -12,8 +12,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '../ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../ui/input-group'
 import { PathPickerDialog } from '../projects/PathPickerDialog'
+import { failureMessage } from '../../lib/ipc-error'
 
-const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 export interface AddSkillSource { source: string; target?: string }
 
 export function AddSkillDialog({ initial, onClose, onInstalled }: {
@@ -57,7 +57,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
       const fresh = next.candidates.filter((candidate) => !candidate.installed)
       const matches = target ? fresh.filter((candidate) => candidate.name === target || candidate.path.split('/').at(-2) === target) : []
       setPicked(new Set((target ? matches : fresh.length <= 3 ? fresh : []).map((candidate) => candidate.path)))
-    } catch (failure) { if (mounted.current && current === request.current) setError(errorText(failure)) }
+    } catch (failure) { if (mounted.current && current === request.current) setError(failureMessage(failure)) }
     finally {
       if (current === request.current) {
         working.current = false
@@ -91,7 +91,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
       if (!next.skipped.length) onClose()
     } catch (failure) {
       token.current = null
-      if (mounted.current) { setError(`${errorText(failure)} ${t('skills.expiredHint')}`); setProbe(null) }
+      if (mounted.current) { setError(`${failureMessage(failure)} ${t('skills.expiredHint')}`); setProbe(null) }
     } finally { working.current = false; if (mounted.current) setInstalling(false) }
   }
   const fresh = probe?.candidates.filter((candidate) => !candidate.installed) ?? []

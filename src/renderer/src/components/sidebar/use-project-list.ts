@@ -9,7 +9,7 @@ import {
 import { arrayMove } from '@dnd-kit/sortable'
 import { api } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
-import { errorMessage } from './project-action'
+import { failureMessage } from '../../lib/ipc-error'
 
 /** Keeps filesystem synchronization and drag ordering outside the project tree UI. */
 export function useProjectList() {
@@ -35,7 +35,7 @@ export function useProjectList() {
           if (!disposed) setSyncError(null)
         },
         (error: unknown) => {
-          if (!disposed) setSyncError(errorMessage(error))
+          if (!disposed) setSyncError(failureMessage(error))
         }
       )
     }
@@ -45,7 +45,7 @@ export function useProjectList() {
           if (!disposed) setSyncError(null)
         },
         (error: unknown) => {
-          if (!disposed) setSyncError(errorMessage(error))
+          if (!disposed) setSyncError(failureMessage(error))
         }
       )
     }
@@ -80,7 +80,7 @@ export function useProjectList() {
     const nextProjects = arrayMove(projects, oldIndex, newIndex)
     void reorderProjects(nextProjects.map((project) => project.cwd)).then(
       () => setSyncError(null),
-      (error: unknown) => setSyncError(errorMessage(error))
+      (error: unknown) => setSyncError(failureMessage(error))
     )
   }
 

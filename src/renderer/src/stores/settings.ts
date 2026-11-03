@@ -16,6 +16,7 @@ import { IS_MAC } from '../lib/platform'
 import { applyDocumentTheme, storedThemePrefs } from '../lib/theme'
 import { waitForSurfacePaint } from '../lib/surface-transition'
 import type { SettingsChanged, SettingsSurfaceRequest } from '../../../shared/settings'
+import { failureMessage } from '../lib/ipc-error'
 
 interface SettingsStore extends AppSettings {
   /** The setting resolved against the system language: what the UI actually speaks. */
@@ -159,7 +160,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       try {
         confirm(await write())
       } catch (error) {
-        set({ error: error instanceof Error ? error.message : String(error) })
+        set({ error: failureMessage(error) })
       } finally {
         pending.shift()
         publish()
@@ -185,7 +186,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
           return
         }
       } catch (error) {
-        set({ error: error instanceof Error ? error.message : String(error) })
+        set({ error: failureMessage(error) })
       } finally {
         loading = null
       }

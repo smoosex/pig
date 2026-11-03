@@ -15,6 +15,7 @@ import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './sessio
 import { restorePromptDraft } from './restore-prompt'
 import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs, isChatScope } from './tab-order'
 import type { OpenTab, SessionsStore, SessionSlice } from './types'
+import { failureMessage } from '../../lib/ipc-error'
 
 /** The scope a changes tab starts on, and what a workspace restored without one shows. */
 const DEFAULT_SCOPE: DiffScope = 'all'
@@ -110,8 +111,6 @@ export const createTabsSlice: SessionSlice<
   const closedChatIdsBeforeRestore = new Set<string>()
   let lastActiveChatTabId: string | null = null
 
-  const describeError = (error: unknown) => error instanceof Error ? error.message : String(error)
-
   /**
    * Creates the session a draft slot already owns. The slot is written before this runs, so the home
    * composer keeps whatever the reader typed whichever way the create goes: a failure leaves the slot
@@ -139,7 +138,7 @@ export const createTabsSlice: SessionSlice<
         try {
           await get().loadControls(sessionId)
         } catch (error) {
-          get().setControlsStatus(sessionId, { controlsError: describeError(error) })
+          get().setControlsStatus(sessionId, { controlsError: failureMessage(error) })
         }
       } catch (error) {
         if (get().draftSessionByCwd[cwd] !== sessionId) return
@@ -156,7 +155,7 @@ export const createTabsSlice: SessionSlice<
         }
         draftRetry.add(cwd)
         set((state) => ({
-          draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: describeError(error) }
+          draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: failureMessage(error) }
         }))
       }
     })().finally(() => {
@@ -173,7 +172,7 @@ export const createTabsSlice: SessionSlice<
         if (version === persistenceVersion) set({ workspaceError: null })
       },
       (error: unknown) => {
-        if (version === persistenceVersion) set({ workspaceError: describeError(error) })
+        if (version === persistenceVersion) set({ workspaceError: failureMessage(error) })
       }
     )
   }
@@ -301,10 +300,10 @@ export const createTabsSlice: SessionSlice<
         try {
           await get().loadControls(ref.sessionId)
         } catch (error) {
-          get().setControlsStatus(ref.sessionId, { controlsError: describeError(error) })
+          get().setControlsStatus(ref.sessionId, { controlsError: failureMessage(error) })
         }
       } catch (error) {
-        if (chatLeases > 0) set({ chatDraftError: describeError(error) })
+        if (chatLeases > 0) set({ chatDraftError: failureMessage(error) })
       }
     })().finally(() => {
       if (chatCreating === request) chatCreating = null
@@ -531,7 +530,7 @@ export const createTabsSlice: SessionSlice<
         }
       })().catch((error: unknown) => {
         // A failed scan stays retryable: the restore only counts as done once it actually succeeded.
-        set({ workspaceRestoreError: describeError(error) })
+        set({ workspaceRestoreError: failureMessage(error) })
       }).finally(() => {
         initializeRequest = null
       })
@@ -562,7 +561,7 @@ export const createTabsSlice: SessionSlice<
       try {
         await get().loadWorktreeSessions(cwd)
       } catch (error) {
-        if (selection === selectionVersion) set({ workspaceError: describeError(error) })
+        if (selection === selectionVersion) set({ workspaceError: failureMessage(error) })
       }
       if (tabId && selection === selectionVersion) await get().activateTab(tabId)
     },
@@ -649,7 +648,7 @@ export const createTabsSlice: SessionSlice<
       } catch (error) {
         set((state) => ({
           openTabs: state.openTabs.map((item) => item.id === sessionId
-            ? { ...item, loadState: 'error', loadError: describeError(error) }
+            ? { ...item, loadState: 'error', loadError: failureMessage(error) }
             : item)
         }))
         return
@@ -657,7 +656,7 @@ export const createTabsSlice: SessionSlice<
       try {
         await get().loadControls(sessionId)
       } catch (error) {
-        get().setControlsStatus(sessionId, { controlsError: describeError(error) })
+        get().setControlsStatus(sessionId, { controlsError: failureMessage(error) })
       }
     },
 
@@ -871,7 +870,7 @@ export const createTabsSlice: SessionSlice<
         draftSessionErrorByCwd: { ...state.draftSessionErrorByCwd, [cwd]: undefined }
       }))
       void api.discardDraftSession(sessionId).catch((error: unknown) => {
-        set({ workspaceError: describeError(error) })
+        set({ workspaceError: failureMessage(error) })
       })
     },
 
@@ -899,7 +898,7 @@ export const createTabsSlice: SessionSlice<
         return { chatDraft: null, runtime }
       })
       void api.deleteChat(draft.cwd).catch((error: unknown) => {
-        set({ workspaceError: describeError(error) })
+        set({ workspaceError: failureMessage(error) })
       })
     },
 
@@ -1007,7 +1006,7 @@ export const createTabsSlice: SessionSlice<
         persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
       }
       if (added) await hydrateReady(ref)
-      void get().refreshCwd(ref.cwd).catch((error) => set({ workspaceError: describeError(error) }))
+      void get().refreshCwd(ref.cwd).catch((error) => set({ workspaceError: failureMessage(error) }))
     },
 
     newSession: async (cwd) => {
@@ -1035,7 +1034,7 @@ export const createTabsSlice: SessionSlice<
         try {
           await get().loadControls(ref.sessionId)
         } catch (error) {
-          get().setControlsStatus(ref.sessionId, { controlsError: describeError(error) })
+          get().setControlsStatus(ref.sessionId, { controlsError: failureMessage(error) })
         }
       }
       return selection === selectionVersion ? ref.sessionId : null
@@ -1165,7 +1164,7 @@ export const createTabsSlice: SessionSlice<
           )
         }
       }, (error: unknown) => {
-        set({ workspaceError: describeError(error) })
+        set({ workspaceError: failureMessage(error) })
       }).finally(() => {
         if (closing.get(sessionId) === request) closing.delete(sessionId)
       })

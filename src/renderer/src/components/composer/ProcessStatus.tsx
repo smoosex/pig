@@ -11,6 +11,7 @@ import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { failureMessage } from '../../lib/ipc-error'
 
 const STATUSES: BackgroundProcessStatus[] = ['running', 'failed', 'exited', 'stopped']
 const DOT: Record<BackgroundProcessStatus, string> = {
@@ -48,7 +49,7 @@ function ProcessRow({ sessionId, item, now }: { sessionId: string; item: Backgro
     try {
       await (ended ? api.processes.remove(sessionId, item.id) : api.processes.stop(sessionId, item.id))
     } catch (error) {
-      toast.error(t('processes.actionFailed'), { description: error instanceof Error ? error.message : String(error) })
+      toast.error(t('processes.actionFailed'), { description: failureMessage(error) })
     } finally {
       setPending(false)
     }

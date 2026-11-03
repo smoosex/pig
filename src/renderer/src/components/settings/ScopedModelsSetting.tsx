@@ -16,6 +16,7 @@ import { Input } from '../ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { FieldLabel, FieldLegend, FieldSet } from '../ui/field'
 import { SettingsRow } from './SettingsFields'
+import { failureMessage } from '../../lib/ipc-error'
 
 function reference(model: SessionModelInfo): string {
   return `${model.provider}/${model.id}`
@@ -75,7 +76,7 @@ export function ScopedModelsSetting() {
       await api.setScopedModels(next)
       await scope.load()
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
+      setError(failureMessage(error))
     } finally {
       setSaving(false)
     }

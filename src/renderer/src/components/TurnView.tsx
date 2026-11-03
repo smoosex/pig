@@ -17,6 +17,7 @@ import { BranchSummaryNotice } from './turn/BranchSummaryNotice'
 import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkBlockMs } from './turn/useWorkBlockMs'
 import { TurnFileChanges } from './turn/TurnFileChanges'
+import { failureMessage } from '../lib/ipc-error'
 
 /**
  * A mid-turn compaction splits the process: the work either side of it is rendered as its own block,
@@ -218,7 +219,7 @@ function AgentTurnView({
         if (request.current !== token) return
       } catch (error) {
         // UI boundary for lazy-history IPC/read failures: keep the block closed and show the error.
-        if (request.current === token) setLoadError(error instanceof Error ? error.message : String(error))
+        if (request.current === token) setLoadError(failureMessage(error))
         return
       } finally {
         if (request.current === token) setLoading(false)

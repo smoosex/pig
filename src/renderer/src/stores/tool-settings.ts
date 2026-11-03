@@ -5,6 +5,7 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import { api, type McpSettingsState } from '../ipc/api'
+import { failureMessage } from '../lib/ipc-error'
 
 interface Store {
   state: McpSettingsState
@@ -38,7 +39,7 @@ export const useToolSettingsStore = create<Store>((set) => {
           set({ state, loaded: true, error: null })
         }
       } catch (error) {
-        set({ error: error instanceof Error ? error.message : String(error) })
+        set({ error: failureMessage(error) })
       } finally {
         reading = undefined
         set({ loading: false })
@@ -63,7 +64,7 @@ export const useToolSettingsStore = create<Store>((set) => {
         await load()
         return result
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = failureMessage(error)
         set({ error: message })
         toast.error(message)
         return undefined

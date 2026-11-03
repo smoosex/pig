@@ -26,6 +26,7 @@ import { Switch } from '../ui/switch'
 import { Textarea } from '../ui/textarea'
 import { AddSearchEngineDialog, EMPTY_ENGINE_DRAFT, engineStatusKey, type EngineDraft } from './AddSearchEngineDialog'
 import { SettingsCard, SettingsRow } from './SettingsFields'
+import { failureMessage } from '../../lib/ipc-error'
 
 const FETCH_MODES: WebSearchFetchMode[] = ['readable', 'raw', 'answer']
 const TOOL_KEYS: Array<keyof WebSearchToolFlags> = ['webSearch', 'sourceCheck', 'fetchContent', 'getSearchContent']
@@ -41,10 +42,6 @@ interface Draft {
   trustEnvProxy: boolean
   sameOriginRedirects: boolean
   values: Record<string, EngineDraft>
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function sameList(left: string[], right: string[]): boolean {
@@ -95,7 +92,7 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
       setState(next)
       setDraft(draftFrom(next))
       setError(null)
-    }, (failure) => { if (!cancelled) setError(errorText(failure)) })
+    }, (failure) => { if (!cancelled) setError(failureMessage(failure)) })
     return () => { cancelled = true }
   }, [])
 
@@ -210,7 +207,7 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
       await persist()
       setTestResult(null)
       onClose()
-    } catch (failure) { setError(errorText(failure)) }
+    } catch (failure) { setError(failureMessage(failure)) }
     finally { setSaving(false) }
   }
 
@@ -223,7 +220,7 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
       // The extension reads web-search.json, so the draft has to be stored before it can be tested.
       await persist()
       setTestResult(await api.testWebSearch(draft.provider || null))
-    } catch (failure) { setTestResult({ ok: false, message: errorText(failure) }) }
+    } catch (failure) { setTestResult({ ok: false, message: failureMessage(failure) }) }
     finally { setTesting(false) }
   }
 

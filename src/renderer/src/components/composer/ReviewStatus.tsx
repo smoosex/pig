@@ -9,6 +9,7 @@ import { useSystemUIStore } from '../../stores/system-ui'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { cn } from '../../lib/utils'
+import { failureMessage } from '../../lib/ipc-error'
 
 export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   const t = useT()
@@ -32,7 +33,7 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
     } catch (error) {
       // Report IPC rejection (including a duplicate return) here; only the host can release its lock.
       toast.error(t('reviewUI.endFailed'), {
-        description: error instanceof Error ? error.message : String(error)
+        description: failureMessage(error)
       })
     } finally {
       setPending(false)

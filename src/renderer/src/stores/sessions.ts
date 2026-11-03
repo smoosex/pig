@@ -7,6 +7,7 @@ import { api } from '../ipc/api'
 import type { SessionsStore } from './sessions/types'
 import { toolTabMemberships } from './sessions/tab-order'
 import { useSplitLayoutStore } from './split-layout'
+import { failureMessage } from '../lib/ipc-error'
 
 export type { ProjectGroup, SessionMeta, WorktreeGroup } from '../ipc/api'
 export type { RuntimeState, OpenTab, SessionsStore } from './sessions/types'
@@ -38,7 +39,7 @@ useSessionsStore.subscribe((state, previous) => {
   for (const tab of previous.openTabs) {
     if (tab.kind !== 'browser' || remaining.has(tab.id)) continue
     void api.browser.close(tab.id).catch((error: unknown) => {
-      useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+      useSessionsStore.setState({ workspaceError: failureMessage(error) })
     })
   }
 })
@@ -54,7 +55,7 @@ useSessionsStore.subscribe((state, previous) => {
   if (signature === savedToolTabs) return
   savedToolTabs = signature
   void api.saveOpenToolTabs(tabs).catch((error: unknown) => {
-    useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+    useSessionsStore.setState({ workspaceError: failureMessage(error) })
   })
 })
 
@@ -68,7 +69,7 @@ function saveSplitLayout(): void {
   if (signature === savedSplit) return
   savedSplit = signature
   void api.saveOpenSplitLayouts(layouts).catch((error: unknown) => {
-    useSessionsStore.setState({ workspaceError: error instanceof Error ? error.message : String(error) })
+    useSessionsStore.setState({ workspaceError: failureMessage(error) })
   })
 }
 useSplitLayoutStore.subscribe((state, previous) => {

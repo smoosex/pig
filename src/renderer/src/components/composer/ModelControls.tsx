@@ -18,6 +18,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import { useScopedModels } from '../../hooks/useScopedModels'
 import { ModelBrandIcon } from './ModelBrandIcon'
 import type { ModelControlActions } from './useModelControls'
+import { failureMessage } from '../../lib/ipc-error'
 
 const thinkingBarHeights: Record<3 | 4 | 5, string[]> = {
   3: ['h-1.5', 'h-2.5', 'h-3'],
@@ -124,7 +125,7 @@ export function ModelPicker({
     try {
       await api.refreshModelCatalog()
     } catch (error) {
-      setRefreshError(error instanceof Error ? error.message : String(error))
+      setRefreshError(failureMessage(error))
     }
   }
 

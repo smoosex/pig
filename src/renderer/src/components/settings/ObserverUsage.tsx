@@ -12,9 +12,9 @@ import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { SettingsRow } from './SettingsFields'
+import { failureMessage } from '../../lib/ipc-error'
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
-const message = (failure: unknown) => failure instanceof Error ? failure.message : String(failure)
 const prompt = (totals: PersonaObserverUsageTotals) => totals.input + totals.cacheRead + totals.cacheWrite
 
 const formatUsage = {
@@ -63,13 +63,13 @@ function UsageDialog({ onCleared }: { onCleared(): void }) {
     void api.persona.observerUsage(next).then((value) => {
       if (request === latest.current) setSummary(value)
     }, (failure) => {
-      if (request === latest.current) setError(message(failure))
+      if (request === latest.current) setError(failureMessage(failure))
     }).finally(() => {
       if (request === latest.current) setLoading(false)
     })
   }, [])
   useEffect(() => { load(range) }, [load, range])
-  const clear = () => void api.persona.clearObserverUsage().then(() => { onCleared(); load(range) }, (failure) => setError(message(failure)))
+  const clear = () => void api.persona.clearObserverUsage().then(() => { onCleared(); load(range) }, (failure) => setError(failureMessage(failure)))
 
   return <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
     <DialogHeader>
@@ -139,7 +139,7 @@ export function ObserverUsageRow() {
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const load = useCallback(() => {
-    void api.persona.observerUsage(7).then((next) => { setSummary(next); setError(null) }, (failure) => setError(message(failure)))
+    void api.persona.observerUsage(7).then((next) => { setSummary(next); setError(null) }, (failure) => setError(failureMessage(failure)))
   }, [])
   // Closing the dialog rereads, so a clear or newer records reach the summary row.
   useEffect(() => { if (!open) load() }, [open, load])
