@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef, useState } from 'react'
 import { Activity, ChevronDown, FoldVertical, LoaderCircle, ScrollText } from 'lucide-react'
 import { Button } from '../ui/button'
@@ -69,7 +70,7 @@ export function ContextUsageButton({
     void api.getMemoryDetail(sessionId, detail, detail === 'view' && full).then((value) => {
       if (active) setText(value)
     }, (failure) => {
-      if (active) setDetailError(failure instanceof Error ? failure.message : String(failure))
+      if (active) setDetailError(failureMessage(failure))
     })
     return () => { active = false }
   }, [detail, full, sessionId])
@@ -96,7 +97,7 @@ export function ContextUsageButton({
       setInstructionsOpen(false)
       setInstructions('')
     }, (failure: unknown) => {
-      setCompactError({ sessionId: target, message: failure instanceof Error ? failure.message : String(failure) })
+      setCompactError({ sessionId: target, message: failureMessage(failure) })
     }).finally(() => setCompacting((current) => {
       const next = new Set(current)
       next.delete(target)

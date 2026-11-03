@@ -1,3 +1,4 @@
+import { failureMessage } from '../lib/ipc-error'
 import { useMemo, useState, type ComponentProps } from 'react'
 import { History } from 'lucide-react'
 import { useT } from '../hooks/useT'
@@ -55,7 +56,7 @@ export function SessionHistoryPopover({
         await deleteSession(session)
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(failureMessage(cause))
     } finally {
       setPending(null)
     }

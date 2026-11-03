@@ -1,4 +1,5 @@
 /** SDK dialogs live outside settings and session panes so OAuth can complete while navigation changes. */
+import { failureMessage } from '../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '../ipc/api'
@@ -125,7 +126,7 @@ export function ExtensionUI() {
       key={prompt.id}
       prompt={prompt}
       reply={(value) => {
-        void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(String(error)))
+        void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(failureMessage(error)))
       }}
     />
   ) : null

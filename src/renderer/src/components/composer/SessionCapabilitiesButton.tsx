@@ -1,4 +1,5 @@
 /** Per-session resource switches; the main process owns defaults, persistence and runtime reloads. */
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Ban, CheckCheck, ChevronRight, Cog, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -30,7 +31,7 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
     const load = () => {
       void api.getSessionCapabilities(sessionId).then((next) => {
         if (alive) { setState(next); setError(null) }
-      }, (failure) => { if (alive) setError(String(failure)) })
+      }, (failure) => { if (alive) setError(failureMessage(failure)) })
     }
     load()
     const offMcp = api.onMcpChanged(load)
@@ -42,7 +43,7 @@ export function SessionCapabilitiesButton({ sessionId, busy }: { sessionId: stri
     if (!sessionId) return
     setPending(true)
     try { setState(await api.setSessionCapability(sessionId, group, id, enabled)) }
-    catch (failure) { toast.error(String(failure)) }
+    catch (failure) { toast.error(failureMessage(failure)) }
     finally { setPending(false) }
   }
   const disabled = pending || busy || state?.busy

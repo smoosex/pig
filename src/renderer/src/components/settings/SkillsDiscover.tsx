@@ -1,4 +1,5 @@
 /** Discovery is mounted only on demand; a search response must never replace a newer query. */
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import { BookOpen, Download, LoaderCircle, Search } from 'lucide-react'
 import { api, type SkillInfo, type SkillMarketResult } from '../../ipc/api'
@@ -25,7 +26,7 @@ export function SkillsDiscover({ installed, onAdd }: { installed: SkillInfo[]; o
     const timer = window.setTimeout(() => {
       void api.searchSkillMarket(query).then(
         (result) => { if (current) setMarket(result) },
-        (error) => { if (current) setMarket({ skills: [], error: String(error) }) }
+        (error) => { if (current) setMarket({ skills: [], error: failureMessage(error) }) }
       ).finally(() => { if (current) setLoading(false) })
     }, query.trim() ? 350 : 0)
     return () => { current = false; window.clearTimeout(timer) }

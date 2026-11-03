@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef } from 'react'
 import { t } from '../../lib/i18n'
 import { stripPastedTextAttachments } from '../../../../shared/pasted-text'
@@ -37,7 +38,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
   }
 
   function report(target: string, cause: unknown): void {
-    setErrors((current) => ({ ...current, [target]: cause instanceof Error ? cause.message : String(cause) }))
+    setErrors((current) => ({ ...current, [target]: failureMessage(cause) }))
   }
 
   function restore(): void {

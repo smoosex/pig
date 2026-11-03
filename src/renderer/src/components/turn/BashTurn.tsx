@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import {
   Ban,
@@ -67,7 +68,7 @@ export function BashTurn({
     try {
       await onAbortBash?.()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(failureMessage(cause))
       setOpen(true)
     }
   }
@@ -80,7 +81,7 @@ export function BashTurn({
       try {
         await onNeedProcess(turn.id)
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
+        setError(failureMessage(cause))
       } finally {
         setLoading(false)
       }

@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import { Copy, FolderOpen, LoaderCircle } from 'lucide-react'
 import { api, type SkillInfo } from '../../ipc/api'
@@ -13,11 +14,11 @@ export function SkillDetailsDialog({ skill, onClose }: { skill: SkillInfo; onClo
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let current = true
-    void api.readSkill(skill.id).then((value) => { if (current) setText(value) }, (failure) => { if (current) setError(String(failure)) })
+    void api.readSkill(skill.id).then((value) => { if (current) setText(value) }, (failure) => { if (current) setError(failureMessage(failure)) })
     return () => { current = false }
   }, [skill.id])
   const action = (run: () => Promise<unknown>) => {
-    void run().catch((failure) => setError(failure instanceof Error ? failure.message : String(failure)))
+    void run().catch((failure) => setError(failureMessage(failure)))
   }
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>

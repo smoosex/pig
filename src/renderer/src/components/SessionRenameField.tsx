@@ -3,6 +3,7 @@
  * The row that hosts it decides where it sits; this module owns the editing state, the keys that end
  * it, and the store call that writes the name.
  */
+import { failureMessage } from '../lib/ipc-error'
 import { useRef, useState } from 'react'
 import { useSessionsStore } from '../stores/sessions'
 import { Input } from './ui/input'
@@ -27,7 +28,7 @@ export function useSessionRename(sessionId: string, path?: string) {
     commit: (name: string) => {
       setEditing(false)
       void renameSession(sessionId, name, path).catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause))
+        setError(failureMessage(cause))
       })
     }
   }

@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import { ArrowUp, SquareTerminal } from 'lucide-react'
 import { toast } from 'sonner'
@@ -37,7 +38,7 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
     }, (failure) => {
       // Report IPC/config failures at this read-only UI boundary, not as a disabled plugin.
       if (active) toast.error(t('context.memoryFailed', {
-        error: failure instanceof Error ? failure.message : String(failure)
+        error: failureMessage(failure)
       }))
     }) }
     load()

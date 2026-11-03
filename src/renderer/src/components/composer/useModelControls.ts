@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import type { SessionControls } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
 
@@ -29,7 +30,7 @@ export function useModelControls(sessionId: string | null) {
       useSessionsStore.getState().applyControls(target, controls)
       return true
     } catch (cause) {
-      failure = cause instanceof Error ? cause.message : String(cause)
+      failure = failureMessage(cause)
       return false
     } finally {
       write({ controlsPending: false, controlsError: failure })

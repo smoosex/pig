@@ -1,4 +1,5 @@
 /** Added server rows and discovery share one pane; management details open without expanding rows. */
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef, useState } from 'react'
 import {
   LoaderCircle,
@@ -159,7 +160,7 @@ export function McpPane() {
             if (current) setMarket(result)
           })
           .catch((error) => {
-            if (current) setMarket({ servers: [], error: String(error) })
+            if (current) setMarket({ servers: [], error: failureMessage(error) })
           })
           .finally(() => {
             if (current) setSearching(false)

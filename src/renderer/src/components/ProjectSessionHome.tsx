@@ -1,3 +1,4 @@
+import { failureMessage } from '../lib/ipc-error'
 import { useMemo, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
@@ -38,7 +39,7 @@ export function ProjectSessionHome({ cwd }: { cwd: string }) {
     try {
       await openExisting(session, 'project')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(failureMessage(cause))
     } finally {
       setPending(null)
     }

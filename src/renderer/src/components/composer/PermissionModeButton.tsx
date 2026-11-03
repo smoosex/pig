@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef, useState } from 'react'
 import { CircleHelp, Eye, ShieldCheck, ShieldOff, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,7 +39,7 @@ export function PermissionModeButton({ sessionId }: { sessionId: string | null }
       setSandboxError(null)
       const failed = (failure: unknown, kind: 'permission' | 'sandbox') => {
         if (!current || request !== revision.current) return
-        const message = failure instanceof Error ? failure.message : String(failure)
+        const message = failureMessage(failure)
         if (kind === 'permission') setPermissionError(message)
         else setSandboxError(message)
         toast.error(message)
@@ -60,7 +61,7 @@ export function PermissionModeButton({ sessionId }: { sessionId: string | null }
     // The main process broadcasts after saving. Reread that state rather than accepting this reply:
     // another window or a newer selection may already have changed the mode.
     void api.permissions.setSessionPermission(sessionId, mode).catch(
-      (failure: unknown) => toast.error(failure instanceof Error ? failure.message : String(failure)))
+      (failure: unknown) => toast.error(failureMessage(failure)))
   }
 
   const mode = permission?.mode

@@ -6,6 +6,7 @@
  * Keys are ignored briefly after the card takes focus: it replaces the prompt box, so a digit or
  * Enter the user was still typing into a draft must not become an answer.
  */
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Questionnaire } from '@shadcn/react/questionnaire'
 import { ArrowDown, ShieldAlert } from 'lucide-react'
@@ -46,7 +47,7 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
   const answer = (value: string) => {
     if (answered.current) return
     answered.current = true
-    void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(String(error)))
+    void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(failureMessage(error)))
   }
 
   useLayoutEffect(() => {

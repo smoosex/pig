@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 /* Drafts own their original revisions independently of mood snapshots and other file saves. */
 import { useEffect, useRef, useState } from 'react'
 import { History, Info } from 'lucide-react'
@@ -69,7 +70,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
       if (mounted.current) accept(next, replace)
     } catch (failure) {
       if (mounted.current) {
-        setError(failure instanceof Error ? failure.message : String(failure))
+        setError(failureMessage(failure))
         if (snapshot) setValues({ pleasantness: snapshot.mood.pleasantness, activation: snapshot.mood.activation, energy: snapshot.mood.energy })
       }
     } finally {
@@ -87,7 +88,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
     void api.persona.get().then((next) => {
       if (current) accept(next, 'all')
     }, (failure) => {
-      if (current) setError(failure instanceof Error ? failure.message : String(failure))
+      if (current) setError(failureMessage(failure))
     }).finally(() => {
       if (current) { locked.current = false; setBusy(false) }
     })
@@ -103,7 +104,7 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
       void api.persona.get().then((next) => {
         if (request === latest && mounted.current && !locked.current) accept(next)
       }, (failure) => {
-        if (request === latest && mounted.current) setError(failure instanceof Error ? failure.message : String(failure))
+        if (request === latest && mounted.current) setError(failureMessage(failure))
       })
     })
   }, [])

@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { PERMISSION_MODES, type PermissionMode, type PermissionsSnapshot } from '../../../../shared/permissions'
@@ -32,7 +33,7 @@ export function PermissionsPane() {
       const request = ++revision.current
       void api.permissions.getPermissions().then(
         (next) => { if (mounted.current && request === revision.current) setSnapshot(next) },
-        (failure: unknown) => { if (mounted.current && request === revision.current) setError(failure instanceof Error ? failure.message : String(failure)) }
+        (failure: unknown) => { if (mounted.current && request === revision.current) setError(failureMessage(failure)) }
       )
     }
     load()
@@ -48,7 +49,7 @@ export function PermissionsPane() {
     const request = ++revision.current
     void operation().then(
       (next) => { if (mounted.current && request === revision.current) setSnapshot(next) },
-      (failure: unknown) => { if (mounted.current) setError(failure instanceof Error ? failure.message : String(failure)) }
+      (failure: unknown) => { if (mounted.current) setError(failureMessage(failure)) }
     ).finally(() => {
       locked.current = false
       if (mounted.current) setBusy(false)

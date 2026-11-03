@@ -1,3 +1,4 @@
+import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useState } from 'react'
 import { useT } from '../../hooks/useT'
 import { api, type SubagentSettings as Settings } from '../../ipc/api'
@@ -29,7 +30,7 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
         setDraft(settings)
         setNumbers(Object.fromEntries(LIMITS.map(({ key }) => [key, String(settings[key])])))
       },
-      (reason: unknown) => { if (current) setError(reason instanceof Error ? reason.message : String(reason)) }
+      (reason: unknown) => { if (current) setError(failureMessage(reason)) }
     )
     return () => { current = false }
   }, [])
@@ -60,7 +61,7 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
       })
       onClose()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setError(failureMessage(reason))
     } finally {
       setSaving(false)
     }

@@ -1,3 +1,4 @@
+import { failureMessage } from '../lib/ipc-error'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CornerDownRight, ListCollapse, ListTree, LoaderCircle, MessageSquareText, PenLine } from 'lucide-react'
 import type { MessageKey } from '../../../shared/i18n'
@@ -154,7 +155,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       }
     } catch (reason: unknown) {
       if (sessionRef.current === target.sessionId && selectionRef.current === target) {
-        setBranchError(reason instanceof Error ? reason.message : String(reason))
+        setBranchError(failureMessage(reason))
       }
     } finally {
       pendingRef.current = false
@@ -211,7 +212,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       })
       .catch((reason: unknown) => {
         if (!cancelled && readGen.current === gen) {
-          setError(reason instanceof Error ? reason.message : String(reason))
+          setError(failureMessage(reason))
         }
       })
     return () => {
@@ -230,7 +231,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       })
       .catch((reason: unknown) => {
         if (readGen.current === gen) {
-          setError(reason instanceof Error ? reason.message : String(reason))
+          setError(failureMessage(reason))
         }
       })
   }
@@ -299,7 +300,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
       })
       .catch((reason: unknown) => {
         if (readGen.current === gen) {
-          setError(reason instanceof Error ? reason.message : String(reason))
+          setError(failureMessage(reason))
         }
       })
   }
@@ -529,7 +530,7 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
               <Button variant="outline" size="sm" disabled={stopping} onClick={() => {
                 setStopping(true)
                 void api.abortBranchSummary(selection.sessionId).catch((reason: unknown) => {
-                  setBranchError(reason instanceof Error ? reason.message : String(reason))
+                  setBranchError(failureMessage(reason))
                 })
               }}>{t('tree.stopSummary')}</Button>
             ) : null}
