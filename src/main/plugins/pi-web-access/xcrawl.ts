@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -166,7 +165,6 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 		);
 	}
 	const body = { engine: "google_search", q: query };
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	// Distinguishing caller cancellation from a provider-side timeout lets the
 	// timeout surface as a retriable failure instead of looking like an abort.
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
@@ -187,7 +185,6 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 	} catch (err) {
 		const message = errorMessage(err);
 		if (options.signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			throw new Error("Aborted");
 		}
 		// AbortSignal.timeout rejects with a TimeoutError; treat either that
@@ -202,12 +199,10 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 			outgoing = redactedMessage === message && err instanceof Error ? err : new Error(redactedMessage);
 			if (err instanceof Error && outgoing.name === "Error") outgoing.name = err.name;
 		}
-		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
 		throw outgoing;
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		let detail = errorText.slice(0, 300);
 		try {
@@ -219,7 +214,6 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 		}
 		throw new Error(`XCrawl API error (${response.status}): ${detail}`);
 	}
-	activityMonitor.logComplete(activityId, response.status);
 
 	let payload: unknown;
 	try {

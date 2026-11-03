@@ -439,28 +439,6 @@ export function getResult(id: string): StoredSearchData | null {
 	return loaded;
 }
 
-export function getAllResults(): StoredSearchData[] {
-	return Array.from(storedResults.values());
-}
-
-export function deleteResult(id: string): boolean {
-	const data = storedResults.get(id);
-	if (data?.fetchCache) {
-		try {
-			const dir = safeFetchCacheDir(false);
-			const path = fetchCachePath(data.fetchCache.key);
-			if (dir && path) {
-				const info = lstatSync(path);
-				if (!info.isSymbolicLink() && info.isFile()) {
-					unlinkCacheFile(dir, { name: data.fetchCache.key, size: info.size, mtimeMs: info.mtimeMs, dev: info.dev, ino: info.ino });
-				}
-			}
-		} catch {}
-	}
-	resultHolders.delete(id);
-	return storedResults.delete(id);
-}
-
 export function clearResults(): void {
 	storedResults.clear();
 	resultHolders.clear();
@@ -472,8 +450,8 @@ export function holdResults(ids: Iterable<string>): void {
 }
 
 /** Release one session's hold on each result, and drop a result from memory once no live
- * session holds it. Unlike deleteResult, the fetch cache files stay: the session journal
- * still references them, and a later restore reads them back. */
+ * session holds it. Fetch cache files stay: the session journal still references them,
+ * and a later restore reads them back. */
 export function releaseResults(ids: Iterable<string>): void {
 	for (const id of ids) {
 		const holders = (resultHolders.get(id) ?? 0) - 1;
@@ -484,13 +462,6 @@ export function releaseResults(ids: Iterable<string>): void {
 		resultHolders.delete(id);
 		storedResults.delete(id);
 	}
-}
-
-/** Delete a result for one session that holds it. Other live sessions holding the same
- * result keep it and its fetch cache file; the last holder deletes both. */
-export function deleteHeldResult(id: string): void {
-	if ((resultHolders.get(id) ?? 0) > 1) releaseResults([id]);
-	else deleteResult(id);
 }
 
 function isValidStoredData(data: unknown): data is StoredSearchData {
@@ -507,11 +478,6 @@ function isValidStoredData(data: unknown): data is StoredSearchData {
 	}
 	if (d.type === "research" && (!d.artifact || typeof d.artifact !== "object")) return false;
 	return true;
-}
-
-export function restoreFromSession(ctx: ExtensionContext): void {
-	storedResults.clear();
-	loadSessionResults(ctx);
 }
 
 /** Add one session's stored results to memory, leaving other sessions' results in place,

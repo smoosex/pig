@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -228,7 +227,6 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 		...(model === "krill" ? {} : { answer: true }),
 	};
 
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(SERPDIVE_API_URL, {
@@ -243,8 +241,6 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -252,7 +248,6 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`SERPdive API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -261,11 +256,9 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	try {
 		data = await response.json() as SerpdiveResponse;
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`SERPdive API returned invalid JSON: ${errorMessage(err)}`);
 	}
 
-	activityMonitor.logComplete(activityId, response.status);
 	const results = mapResults(data.results, numResults, filters);
 	const result: SearchResponse = {
 		answer: buildAnswer(data.answer, results),

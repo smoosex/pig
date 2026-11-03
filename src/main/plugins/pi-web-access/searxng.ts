@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
@@ -184,52 +183,42 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 	url.searchParams.set("format", "json");
 	const timeRange = mapTimeRange(options.recencyFilter);
 	if (timeRange) url.searchParams.set("time_range", timeRange);
-	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 
+	const headers = mergeDefaultHeaders(getConfiguredHeaders());
+	const response = await fetchRemoteUrl(url, {
+		method: "GET",
+		headers,
+		signal: options.signal
+			? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+			: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+	}, {
+		...loadSsrfConfig(),
+		onRedirect: ({ from, to, init }) => from.origin === to.origin ? init : { ...init, headers: { Accept: "application/json" } },
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(`SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`);
+	}
+
+	let data: SearXNGResponse;
 	try {
-		const headers = mergeDefaultHeaders(getConfiguredHeaders());
-		const response = await fetchRemoteUrl(url, {
-			method: "GET",
-			headers,
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, {
-			...loadSsrfConfig(),
-			onRedirect: ({ from, to, init }) => from.origin === to.origin ? init : { ...init, headers: { Accept: "application/json" } },
-		});
-
-		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
-			const errorText = await response.text();
-			throw new Error(`SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`);
-		}
-
-		let data: SearXNGResponse;
-		try {
-			data = await response.json() as SearXNGResponse;
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`SearXNG returned invalid JSON: ${message}`);
-		}
-
-		activityMonitor.logComplete(activityId, response.status);
-		const results: SearchResult[] = [];
-		for (const item of data.results ?? []) {
-			if (!item.url || !matchesDomainFilters(item.url, filters)) continue;
-			results.push({ title: item.title || item.url, url: item.url, snippet: item.content || "" });
-			if (results.length >= numResults) break;
-		}
-
-		const answerParts = (data.answers ?? []).filter((answer): answer is string => typeof answer === "string" && answer.trim().length > 0).map(answer => answer.trim());
-		answerParts.push(...results.map(result => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`));
-		return { answer: answerParts.join("\n\n"), results };
+		data = await response.json() as SearXNGResponse;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw err;
+		throw new Error(`SearXNG returned invalid JSON: ${message}`);
 	}
+
+	const results: SearchResult[] = [];
+	for (const item of data.results ?? []) {
+		if (!item.url || !matchesDomainFilters(item.url, filters)) continue;
+		results.push({ title: item.title || item.url, url: item.url, snippet: item.content || "" });
+		if (results.length >= numResults) break;
+	}
+
+	const answerParts = (data.answers ?? []).filter((answer): answer is string => typeof answer === "string" && answer.trim().length > 0).map(answer => answer.trim());
+	answerParts.push(...results.map(result => result.snippet
+		? `${result.snippet}\nSource: ${result.title} (${result.url})`
+		: `Source: ${result.title} (${result.url})`));
+	return { answer: answerParts.join("\n\n"), results };
 }

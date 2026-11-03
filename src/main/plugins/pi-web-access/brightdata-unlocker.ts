@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
@@ -140,10 +139,6 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
-}
-
 function ssrfOptions(options?: BrightDataExtractOptions): { lookup?: Lookup; allowRanges: string[]; trustEnvProxy: boolean } {
 	return {
 		allowRanges: options?.ssrf?.allowRanges ?? [],
@@ -213,7 +208,6 @@ async function brightDataRequest(
 		"Content-Type": "application/json",
 		Authorization: `Bearer ${apiKey}`,
 	};
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const response = await fetchBrightDataApi(BRIGHTDATA_REQUEST_URL, {
 			method: "POST",
@@ -226,13 +220,10 @@ async function brightDataRequest(
 			throw new Error(`Bright Data Web Unlocker error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);
 		}
 		const text = await response.text();
-		activityMonitor.logComplete(activityId, response.status);
 		return text;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

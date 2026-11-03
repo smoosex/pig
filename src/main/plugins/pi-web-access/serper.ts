@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -133,7 +132,6 @@ export async function searchWithSerper(query: string, options: SearchOptions = {
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const requestCount = options.domainFilter?.length ? Math.min(20, numResults + 5) : numResults;
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(SERPER_SEARCH_URL, {
@@ -145,15 +143,12 @@ export async function searchWithSerper(query: string, options: SearchOptions = {
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Serper API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -161,17 +156,9 @@ export async function searchWithSerper(query: string, options: SearchOptions = {
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Serper API returned invalid JSON: ${errorMessage(err)}`);
 	}
-	let entries: SerperResult[];
-	try {
-		entries = parseResponse(rawData);
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw err;
-	}
-	activityMonitor.logComplete(activityId, response.status);
+	const entries = parseResponse(rawData);
 	const results: SearchResponse["results"] = [];
 	for (const entry of entries) {
 		if (!entry || typeof entry !== "object") continue;

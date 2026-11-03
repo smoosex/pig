@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type TurndownService from "turndown";
 import pLimit from "p-limit";
-import { activityMonitor } from "./activity.ts";
 import { extractRSCContent } from "./rsc-extract.ts";
 import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
 import { extractGitHub, parseGitHubUrl } from "./github-extract.ts";
@@ -306,7 +305,6 @@ function notFoundGuidance(result: ExtractedContent, toolNames?: RegisteredToolNa
 	return lines.join("\n");
 }
 
-
 /** Fallback-list hint for the keyless Jina Reader. Returns null when Jina
  * already ran for this fetch, and otherwise names only the config change still
  * missing, so users keep their existing or default provider order. */
@@ -402,8 +400,6 @@ async function extractWithJinaReader(
 ): Promise<ExtractedContent | null> {
 	const jinaUrl = JINA_READER_BASE + url;
 
-	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
-
 	try {
 		const ssrf = loadSsrfConfig();
 		const domainPolicy = loadFetchContentDomainPolicy();
@@ -425,12 +421,10 @@ async function extractWithJinaReader(
 		});
 
 		if (!res.ok) {
-			activityMonitor.logComplete(activityId, res.status);
 			return null;
 		}
 
 		const content = await res.text();
-		activityMonitor.logComplete(activityId, res.status);
 
 		const contentStart = content.indexOf("Markdown Content:");
 		if (contentStart < 0) {
@@ -448,13 +442,7 @@ async function extractWithJinaReader(
 
 		const title = extractHeadingTitle(markdownPart) ?? (new URL(url).pathname.split("/").pop() || url);
 		return { url, title, content: markdownPart, error: null };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
+	} catch {
 		return null;
 	}
 }
@@ -1233,7 +1221,6 @@ async function extractViaHttp(
 	options?: ExtractOptions,
 	preferMarkdown = options?.mode !== "raw",
 ): Promise<HttpExtractedContent> {
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
 
 	const controller = new AbortController();
 	const startedAt = Date.now();
@@ -1278,7 +1265,6 @@ async function extractViaHttp(
 			);
 
 		if (!response.ok && options?.mode !== "raw") {
-			activityMonitor.logComplete(activityId, response.status);
 			return {
 				url,
 				title: "",
@@ -1294,14 +1280,12 @@ async function extractViaHttp(
 		const isPDFContent = isPDF(url, contentType);
 		const pdfConfig = isPDFContent ? loadPDFConfig() : null;
 		if (isPDFContent && pdfConfig && !pdfConfig.enabled) {
-			activityMonitor.logComplete(activityId, response.status);
 			return { url, title: "", content: "", error: "PDF extraction is disabled by pdf.enabled", mimeType, status: response.status };
 		}
 		const maxResponseSize = (pdfConfig?.maxSizeMB ?? 5) * 1024 * 1024;
 		if (contentLengthHeader) {
 			const contentLength = Number.parseInt(contentLengthHeader, 10);
 			if (Number.isFinite(contentLength) && contentLength > maxResponseSize) {
-				activityMonitor.logComplete(activityId, response.status);
 				return {
 					url,
 					title: "",
@@ -1315,30 +1299,25 @@ async function extractViaHttp(
 
 		if (options?.mode === "raw") {
 			if (!isTextContentType(contentType)) {
-				activityMonitor.logComplete(activityId, response.status);
 				const hint = isPDFContent ? "; retry without mode for Markdown, or with mode \"answer\" and a prompt" : "";
 				return { url, title: "", content: "", error: `Unsupported content type in raw mode: ${mimeType || "missing"}${hint}`, mimeType, status: response.status };
 			}
 			const text = await readTextResponseWithLimit(response, maxResponseSize);
-			activityMonitor.logComplete(activityId, response.status);
 			return { url, title: extractTextTitle(text, url), content: text, error: null, mimeType, status: response.status };
 		}
 
 		if (SUPPORTED_IMAGE_TYPES.has(mimeType)) {
 			const disabled = imageGateError();
 			if (disabled) {
-				activityMonitor.logComplete(activityId, response.status);
 				return { url, title: "", content: "", error: disabled, mimeType, status: response.status };
 			}
 			if (options?.rejectDirectImages) {
-				activityMonitor.logComplete(activityId, response.status);
 				return { url, title: "", content: "", error: options.rejectDirectImages, mimeType, status: response.status };
 			}
 			try {
 				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () => responseSizeLimitError(maxResponseSize));
 				const { resizeImage } = await import("@earendil-works/pi-coding-agent");
 				const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
-				activityMonitor.logComplete(activityId, response.status);
 				if (!resized) return { url, title: "", content: "", error: `Could not decode image: ${mimeType}`, mimeType, status: response.status };
 				const title = new URL(response.url || url).pathname.split("/").pop() || url;
 				return {
@@ -1352,7 +1331,6 @@ async function extractViaHttp(
 				};
 			} catch (err) {
 				const message = errorMessage(err);
-				activityMonitor.logError(activityId, message);
 				return { url, title: "", content: "", error: message, mimeType, status: response.status };
 			}
 		}
@@ -1362,7 +1340,6 @@ async function extractViaHttp(
 				const buffer = await readPDFResponseBuffer(response, pdfConfig.maxSizeMB);
 				if (signal?.aborted) return abortedResult(url);
 				const result = await extractPDFToMarkdown(buffer, url, { signal });
-				activityMonitor.logComplete(activityId, response.status);
 				return {
 					url,
 					title: result.title,
@@ -1373,7 +1350,6 @@ async function extractViaHttp(
 				};
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				activityMonitor.logError(activityId, message);
 				if (message.startsWith("PDF exceeds configured pdf.maxSizeMB limit")) {
 					return { url, title: "", content: "", error: message };
 				}
@@ -1389,7 +1365,6 @@ async function extractViaHttp(
 			contentType.includes("audio/") ||
 			contentType.includes("video/") ||
 			contentType.includes("application/zip")) {
-			activityMonitor.logComplete(activityId, response.status);
 			return {
 				url,
 				title: "",
@@ -1402,12 +1377,10 @@ async function extractViaHttp(
 		const isHTML = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
 
 		if (isCloudflareChallenge(response, text, isHTML)) {
-			activityMonitor.logComplete(activityId, response.status);
 			return { url, title: "", content: "", error: `HTTP ${response.status}: Blocked by Cloudflare challenge page`, status: response.status };
 		}
 
 		if (!isHTML) {
-			activityMonitor.logComplete(activityId, response.status);
 			const title = extractTextTitle(text, url);
 			if (mimeType !== "text/markdown" && mimeType !== "text/x-markdown") return { url, title, content: text, error: null };
 			const declaredLinks = discoverDeclaredWebLinks(null, response.headers.get("link"), response.url || url);
@@ -1444,7 +1417,6 @@ async function extractViaHttp(
 		if (!article) {
 			const rscResult = extractRSCContent(text);
 			if (rscResult && rscResult.content.length >= MIN_USEFUL_CONTENT) {
-				activityMonitor.logComplete(activityId, response.status);
 				return {
 					url,
 					title: rscResult.title,
@@ -1457,7 +1429,6 @@ async function extractViaHttp(
 			const defuddleResult = await extractWithDefuddle(text, response.url || url);
 			controller.signal.throwIfAborted();
 			if (defuddleResult && defuddleResult.content.length >= MIN_USEFUL_CONTENT) {
-				activityMonitor.logComplete(activityId, response.status);
 				return {
 					url,
 					title: documentTitle || defuddleResult.title,
@@ -1467,7 +1438,6 @@ async function extractViaHttp(
 				};
 			}
 
-			activityMonitor.logComplete(activityId, response.status);
 			const jsRendered = isLikelyJSRendered(text);
 			const errorMsg = jsRendered
 				? "Page appears to be JavaScript-rendered (content loads dynamically)"
@@ -1486,7 +1456,6 @@ async function extractViaHttp(
 			throw new Error("Readability returned invalid article content");
 		}
 		const markdown = (await getTurndown()).turndown(article.content);
-		activityMonitor.logComplete(activityId, response.status);
 
 		if (markdown.length < MIN_USEFUL_CONTENT) {
 			const rscResult = extractRSCContent(text);
@@ -1531,11 +1500,6 @@ async function extractViaHttp(
 		};
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
 		return { url, title: "", content: "", error: message };
 	} finally {
 		clearTimeout(timeoutId);

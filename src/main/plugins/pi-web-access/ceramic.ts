@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { parseDomainFilter, passesDomainFilters, type DomainFilters } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -122,7 +121,6 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 		maxResults: hasDomainFilters ? Math.min(MAX_REQUEST_RESULTS, numResults + 5) : numResults,
 		maxDescriptionLength: REQUEST_DESCRIPTION_CHARS,
 	};
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
 	let entries: CeramicResult[];
@@ -151,7 +149,6 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 		entries = parseResponse(rawData);
 	} catch (err) {
 		if (options.signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			throw new Error("Aborted");
 		}
 		const message = errorMessage(err);
@@ -165,10 +162,8 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 				if (err instanceof Error) redactedError.name = err.name;
 				return redactedError;
 			})();
-		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
 		throw outgoing;
 	}
-	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResponse["results"] = [];
 	const seen = new Set<string>();
 	for (const entry of entries) {

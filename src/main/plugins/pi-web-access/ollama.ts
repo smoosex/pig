@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -130,7 +129,6 @@ export function isOllamaAvailable(): boolean {
 export async function searchWithOllama(query: string, options: OllamaSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(OLLAMA_SEARCH_URL, {
@@ -142,8 +140,6 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -151,7 +147,6 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Ollama API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -160,12 +155,10 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Ollama API returned invalid JSON: ${errorMessage(err)}`);
 	}
 
 	const data = parseSearchResponse(rawData);
-	activityMonitor.logComplete(activityId, response.status);
 	const results = data.results.slice(0, numResults).map((result) => ({ title: result.title, url: result.url, snippet: result.content }));
 	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
@@ -191,7 +184,6 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 		...(options.lookup ? { lookup: options.lookup } : {}),
 	});
 	const apiKey = await requireApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "api", query: `ollama fetch: ${url}` });
 	let response: Response;
 	try {
 		response = await fetchRemoteUrl(OLLAMA_FETCH_URL, {
@@ -208,8 +200,6 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -217,7 +207,6 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Ollama Web Fetch error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -225,11 +214,9 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Ollama Web Fetch returned invalid JSON: ${errorMessage(err)}`);
 	}
 	const data = parseFetchResponse(rawData);
-	activityMonitor.logComplete(activityId, response.status);
 	const content = data.content.trim();
 	if (!content) return null;
 	return { url, title: data.title, content, error: null };

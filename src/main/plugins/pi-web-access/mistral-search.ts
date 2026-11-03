@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -219,7 +218,6 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 	const requestSignal = options.signal
 		? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 		: AbortSignal.timeout(SEARCH_TIMEOUT_MS);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
 		const response = await fetch(MISTRAL_CONVERSATIONS_URL, {
@@ -249,16 +247,10 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 			throw new Error(`Mistral API returned invalid JSON: ${errorMessage(err)}`);
 		}
 		const result = parseConversationResponse(parsed, options, numResults);
-		activityMonitor.logComplete(activityId, response.status);
 		return result;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

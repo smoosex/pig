@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -144,27 +143,6 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
-}
-
-function activityContext(
-	url: string,
-	body: Record<string, unknown>,
-): { type: "api" | "fetch"; query?: string; url?: string } {
-	if (typeof body.objective === "string" && body.objective.trim().length > 0) {
-		return { type: "api", query: body.objective };
-	}
-
-	const searchQueries = body.search_queries;
-	if (Array.isArray(searchQueries) && typeof searchQueries[0] === "string") {
-		return { type: "api", query: searchQueries[0] };
-	}
-
-	const urls = body.urls;
-	if (Array.isArray(urls) && typeof urls[0] === "string") {
-		return { type: "fetch", url: urls[0] };
-	}
-
-	return url.includes("/search") ? { type: "api", query: "Parallel search" } : { type: "fetch", url };
 }
 
 function recencyToAfterDate(filter: string): string {
@@ -332,7 +310,6 @@ async function parallelFetch(
 	signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
 	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart(activityContext(url, body));
 	let response: Response;
 	try {
 		response = await fetch(url, {
@@ -347,8 +324,6 @@ async function parallelFetch(
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -356,17 +331,14 @@ async function parallelFetch(
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Parallel API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
 	try {
 		const data = await response.json() as Record<string, unknown>;
-		activityMonitor.logComplete(activityId, response.status);
 		return data;
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Parallel API returned invalid JSON: ${errorMessage(err)}`);
 	}
 }

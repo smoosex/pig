@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
@@ -155,7 +154,6 @@ export async function searchWithKimi(
 		throw new Error("Kimi Code web search unavailable. Run /login kimi-coding to authenticate a Kimi Code Plan account.");
 	}
 
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	const requestSignal = options.signal
 		? AbortSignal.any([timeoutSignal, options.signal])
@@ -169,7 +167,6 @@ export async function searchWithKimi(
 		});
 
 		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
 			const errorText = redactCredential(await response.text(), auth.apiKey);
 			throw new Error(`Kimi Code search API error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
@@ -186,20 +183,12 @@ export async function searchWithKimi(
 			throw new Error("Kimi Code search API returned no results");
 		}
 
-		activityMonitor.logComplete(activityId, response.status);
 		return { answer: formatSearchResultsAsAnswer(results), results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, auth.apiKey);
-		if (options.signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
-		} else if (timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError")) {
-			activityMonitor.logError(activityId, "Kimi Code search API timed out");
+		if (!options.signal?.aborted && (timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError"))) {
 			throw new Error("Kimi Code search API timed out");
-		} else if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
 		}
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);

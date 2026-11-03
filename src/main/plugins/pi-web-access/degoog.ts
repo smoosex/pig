@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
@@ -235,7 +234,6 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 	if (engines.length > 0) body.engines = engines;
 
 	const url = new URL(`${baseUrl}/api/search`);
-	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
 	let entries: DegoogResult[];
@@ -273,7 +271,6 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 		entries = parseResponse(rawData);
 	} catch (err) {
 		if (options.signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			throw new Error("Aborted");
 		}
 		const message = errorMessage(err);
@@ -289,11 +286,9 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 				if (err instanceof Error) redactedError.name = err.name;
 				return redactedError;
 			})();
-		activityMonitor.logError(activityId, redactSecrets(errorMessage(outgoing), secrets));
 		throw outgoing;
 	}
 
-	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResult[] = [];
 	const seen = new Set<string>();
 	for (const item of entries) {

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -157,7 +156,6 @@ export function isKagiAvailable(): boolean {
 export async function searchWithKagi(query: string, options: KagiSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(KAGI_SEARCH_URL, {
@@ -169,15 +167,12 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Kagi API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -185,11 +180,9 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Kagi API returned invalid JSON: ${errorMessage(err)}`);
 	}
 	const parsed = parseSearchResponse(rawData);
-	activityMonitor.logComplete(activityId, response.status);
 	const results = parsed.results.slice(0, numResults);
 	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
@@ -214,7 +207,6 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 		...(options.lookup ? { lookup: options.lookup } : {}),
 	});
 	const apiKey = await requireApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "api", query: `kagi extract: ${url}` });
 	let response: Response;
 	try {
 		response = await fetchRemoteUrl(KAGI_EXTRACT_URL, {
@@ -231,15 +223,12 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Kagi Extract API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -247,10 +236,8 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Kagi Extract API returned invalid JSON: ${errorMessage(err)}`);
 	}
 	const parsed = parseExtractResponse(rawData, url);
-	activityMonitor.logComplete(activityId, response.status);
 	return parsed;
 }

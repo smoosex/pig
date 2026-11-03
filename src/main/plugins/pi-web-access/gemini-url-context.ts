@@ -1,4 +1,3 @@
-import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.ts";
 import { isGeminiAdcAvailable } from "./gemini-adc.ts";
@@ -27,8 +26,6 @@ export async function extractWithUrlContext(
 	const apiKey = isGeminiAdcAvailable() ? null : await getApiKey(requestSignal);
 	if (!apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) return null;
 
-	const activityId = activityMonitor.logStart({ type: "api", query: `url_context: ${url}` });
-
 	try {
 		const model = DEFAULT_MODEL;
 		const body = {
@@ -44,12 +41,10 @@ export async function extractWithUrlContext(
 		}, apiKey);
 
 		if (!res.ok) {
-			activityMonitor.logComplete(activityId, res.status);
 			return null;
 		}
 
 		const data = await res.json() as UrlContextResponse;
-		activityMonitor.logComplete(activityId, res.status);
 
 		const metadata = data.candidates?.[0]?.url_context_metadata;
 		if (metadata?.url_metadata?.length) {
@@ -68,12 +63,6 @@ export async function extractWithUrlContext(
 		return { url, title, content, error: null };
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
 		return null;
 	}
 }
@@ -85,15 +74,11 @@ export async function extractWithGeminiWeb(
 	const cookies = await isGeminiWebAvailable();
 	if (!cookies) return null;
 
-	const activityId = activityMonitor.logStart({ type: "api", query: `gemini_web: ${url}` });
-
 	try {
 		const text = await queryWithCookies(EXTRACTION_PROMPT + url, cookies, {
 			signal,
 			timeoutMs: 60000,
 		});
-
-		activityMonitor.logComplete(activityId, 200);
 
 		if (!text || text.length < 50) return null;
 
@@ -101,12 +86,6 @@ export async function extractWithGeminiWeb(
 		return { url, title, content: text, error: null };
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
 		return null;
 	}
 }

@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isIP } from "node:net";
-import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -82,7 +81,6 @@ export async function searchWithBaizhi(query: string, options: SearchOptions = {
 		reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1_000, maxReconnectionDelay: 1_000, reconnectionDelayGrowFactor: 1 },
 	});
 	const client = new Client({ name: "pi-web-access-baizhi", version: "1.0.0" });
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		await client.connect(transport, { signal, timeout: SEARCH_TIMEOUT_MS });
 		const result = await client.callTool({ name: "websearch_search", arguments: args }, undefined, { signal, timeout: SEARCH_TIMEOUT_MS });
@@ -96,7 +94,6 @@ export async function searchWithBaizhi(query: string, options: SearchOptions = {
 		}
 		if (!parts.length) throw new Error("Baizhi returned invalid response: no search text or structured content");
 		const answer = redactCredential(redactCredential(parts.join("\n\n"), apiKey), JSON.stringify(apiKey).slice(1, -1));
-		activityMonitor.logComplete(activityId, 200);
 		return { answer, results: [] };
 	} catch (err) {
 		let message: string;
@@ -113,7 +110,6 @@ export async function searchWithBaizhi(query: string, options: SearchOptions = {
 				: err instanceof Error && /^Baizhi (search tool returned an error|returned invalid response:)/.test(err.message) ? err.message
 				: "Baizhi MCP request failed; check your connection, API key and account status";
 		}
-		activityMonitor.logError(activityId, message);
 		throw new Error(message);
 	} finally {
 		cleaningUp = true;

@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -341,7 +340,6 @@ export async function searchWithXai(
 		);
 	}
 
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const response = await fetch(XAI_RESPONSES_URL, {
 			method: "POST",
@@ -361,7 +359,6 @@ export async function searchWithXai(
 		});
 
 		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
 			const errorText = redactCredential(await response.text(), auth.apiKey);
 			throw new Error(`xAI API error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
@@ -381,16 +378,10 @@ export async function searchWithXai(
 			throw new Error(`xAI ${tools.join("+")} returned no answer or sources`);
 		}
 
-		activityMonitor.logComplete(activityId, response.status);
 		return { answer, results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, auth.apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

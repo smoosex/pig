@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -416,25 +415,13 @@ async function searchWithFilteredExaMcp(
 }
 
 async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse | null> {
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const basicArgs = { query: buildMcpQuery(query, options), numResults: options.numResults ?? 5 };
 	const filtered = !!options.includeContent || !!options.recencyFilter || !!options.domainFilter?.length || !!options.category;
 
-	try {
-		const response = filtered
-			? await searchWithFilteredExaMcp(query, options, basicArgs)
-			: await searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
-		activityMonitor.logComplete(activityId, 200);
-		return response;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (isAbortMessage(message)) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
-	}
+	const response = filtered
+		? await searchWithFilteredExaMcp(query, options, basicArgs)
+		: await searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
+	return response;
 }
 
 export function isExaAvailable(): boolean {
@@ -456,7 +443,6 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 	}
 
 	const apiBaseUrl = getApiBaseUrl();
-	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
 		const response = await fetchWithCredentialRedirects(`${apiBaseUrl}/search`, {
@@ -477,7 +463,6 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 		}
 
 		const data = await response.json() as ExaSearchResponse;
-		activityMonitor.logComplete(activityId, response.status);
 
 		return toSearchResponse(
 			buildAnswerFromSearchResults(data.results),
@@ -487,11 +472,6 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (isAbortMessage(redactedMessage)) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		throw new Error(redactedMessage);
 	}

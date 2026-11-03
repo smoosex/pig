@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -741,7 +740,6 @@ async function runOpenAISearch(
 		tool_choice: "required" as const,
 		parallel_tool_calls: true,
 	};
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const headers: Record<string, string> = {
 		...toRequestHeaders(auth.headers),
 		Authorization: `Bearer ${auth.apiKey}`,
@@ -770,7 +768,6 @@ async function runOpenAISearch(
 		}, ["Authorization", "x-opencode-session", "x-opencode-client", "chatgpt-account-id", ...Object.keys(auth.headers)]);
 
 		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
 			const errorText = redactCredential(await response.text(), auth.apiKey);
 			const ErrorType = useAlphaSearch && [404, 405, 501].includes(response.status)
 				? OpenAIAlphaSearchUnsupportedError
@@ -780,7 +777,6 @@ async function runOpenAISearch(
 
 		if (useAlphaSearch) {
 			const result = await parseAlphaSearchResponse(response, options.numResults);
-			activityMonitor.logComplete(activityId, response.status);
 			return result;
 		}
 		const parsed = await parseOpenAIResponse(response);
@@ -793,16 +789,10 @@ async function runOpenAISearch(
 			throw new Error("OpenAI web_search returned no answer or sources");
 		}
 
-		activityMonitor.logComplete(activityId, response.status);
 		return { answer, results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, auth.apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		// Redact provider-echoed credentials without losing the identifiers used by routing.
 		const redactedError = err instanceof OpenAIStreamError

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -329,7 +328,6 @@ export async function searchWithQuerit(
 	options: QueritSearchOptions = {},
 ): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await queritJsonRequest<QueritSearchResponse>(
 			"Search",
@@ -346,13 +344,10 @@ export async function searchWithQuerit(
 			const inlineContent = await fetchInlineContent(results.map((result) => result.url), apiKey, options.signal);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (options.signal?.aborted) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -366,25 +361,20 @@ export async function extractWithQuerit(
 	options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
 	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const data = await fetchContentsBatch([url], apiKey, signal, options);
 		const result = findContentResult(data, url, 0, 1);
 		const mapped = mapContentResult(result, url);
 		if (mapped) {
-			activityMonitor.logComplete(activityId, 200);
 			return mapped;
 		}
 		if (failedContentStatus(data, result, 0)) {
 			throw new Error(`Querit Contents API failed to crawl ${url}`);
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return null;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (signal?.aborted) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

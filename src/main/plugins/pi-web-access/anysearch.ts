@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
@@ -118,7 +117,6 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	const apiKey = await getApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const body = { query, max_results: numResults };
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 
 	try {
@@ -136,8 +134,6 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -145,7 +141,6 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	}
 
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`AnySearch API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -154,19 +149,11 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`AnySearch API returned invalid JSON: ${errorMessage(err)}`);
 	}
 
-	let data: AnySearchResponse;
-	try {
-		data = parseResponse(rawData);
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw err;
-	}
+	const data = parseResponse(rawData);
 
-	activityMonitor.logComplete(activityId, response.status);
 	const results = data.data.results.slice(0, numResults).map((result) => ({
 		title: result.title,
 		url: result.url,

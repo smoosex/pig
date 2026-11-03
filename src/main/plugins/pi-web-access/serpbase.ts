@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -163,7 +162,6 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	url.searchParams.set("api_key", apiKey);
 	url.searchParams.set("num", String(numResults));
 	if (options.recencyFilter && RECENCY_TBS[options.recencyFilter]) url.searchParams.set("tbs", RECENCY_TBS[options.recencyFilter]);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(url, {
@@ -173,15 +171,12 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`SerpBase API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -189,11 +184,9 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`SerpBase API returned invalid JSON: ${errorMessage(err)}`);
 	}
 	const data = parseResponse(rawData);
-	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResponse["results"] = [];
 	for (const item of data.organic_results ?? []) {
 		const url = typeof item.link === "string" ? item.link : typeof item.url === "string" ? item.url : "";

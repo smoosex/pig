@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { canAttachImages } from "./feature-config.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { isGeminiApiAvailableWithVideo, queryGeminiApiWithVideo } from "./gemini-api.ts";
@@ -108,7 +107,6 @@ export async function extractYouTube(
 	const effectivePrompt = prompt ?? YOUTUBE_PROMPT;
 	const effectiveModel = model ?? config.preferredModel;
 
-	const activityId = activityMonitor.logStart({ type: "fetch", url: `youtube.com/${videoId ?? "video"}` });
 	const attemptErrors: string[] = [];
 
 	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
@@ -121,19 +119,16 @@ export async function extractYouTube(
 			const thumb = await fetchYouTubeThumbnail(videoId);
 			if (thumb) result.thumbnail = thumb;
 		}
-		activityMonitor.logComplete(activityId, result.error ? 0 : 200);
 		return result;
 	}
 
 	if (signal?.aborted) {
-		activityMonitor.logComplete(activityId, 0);
 		return null;
 	}
 
 	const error = attemptErrors.length > 0
 		? ["Could not extract YouTube video content.", "", ...attemptErrors.map(message => `- ${message}`)].join("\n")
 		: "Could not extract YouTube video content. Sign into Google in a supported Chromium browser for automatic access, or set GEMINI_API_KEY.";
-	activityMonitor.logError(activityId, error);
 	return { url, title: "", content: "", error };
 }
 

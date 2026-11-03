@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { BraveRateLimitCoordinator } from "./brave-rate-limit.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
@@ -156,7 +155,6 @@ export async function searchWithBrave(
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const domainFilters = normalizeDomainFilters(options.domainFilter);
 	const searchQuery = buildBraveQuery(query, options.domainFilter);
-	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 	const params = new URLSearchParams({
 		q: searchQuery,
 		count: String(options.domainFilter?.length ? 20 : numResults),
@@ -202,7 +200,6 @@ export async function searchWithBrave(
 		}, searchSignal);
 
 		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
 			const errorText = redactCredential(await response.text(), apiKey);
 			throw new Error(`Brave Search API error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
@@ -210,7 +207,6 @@ export async function searchWithBrave(
 		const data = await response.json() as {
 			web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
 		};
-		activityMonitor.logComplete(activityId, response.status);
 
 		const results: SearchResult[] = [];
 		for (const item of data.web?.results ?? []) {
@@ -234,11 +230,6 @@ export async function searchWithBrave(
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
@@ -463,7 +462,6 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 		data_format: "parsed_light",
 	};
 
-	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 	let response: Response;
 	try {
 		response = await fetch(BRIGHTDATA_API_URL, {
@@ -478,8 +476,6 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -490,7 +486,6 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	// Bright Data zone types in play, "which zone did I pay on" is the first thing
 	// a paid failure has to answer.
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = untrustedText(redactCredential(await response.text(), apiKey));
 		throw new Error(`Bright Data API error ${response.status} for zone ${zone}: ${errorText}`);
 	}
@@ -501,7 +496,6 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	// Quoting the body is the only way the user learns what they paid for.
 	const raw = await response.text();
 	if (!raw.trim()) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Bright Data API returned empty response for zone ${zone}`);
 	}
 
@@ -509,7 +503,6 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	try {
 		rawData = JSON.parse(raw);
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		// The parser's own message is deliberately NOT quoted here. V8 embeds a short
 		// window of the offending input in it (`Unexpected token 'x', "xxxxxxxx-x"...`),
 		// and that window is a *prefix* of the body — so when the body starts with the
@@ -523,15 +516,8 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 		throw new Error(`Bright Data API returned invalid JSON for zone ${zone}: ${body}`);
 	}
 
-	let data: BrightDataSerpResponse;
-	try {
-		data = parseSerpResponse(rawData, zone, apiKey);
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw err;
-	}
+	const data = parseSerpResponse(rawData, zone, apiKey);
 
-	activityMonitor.logComplete(activityId, response.status);
 	const results = mapResults(data.organic, numResults, filters);
 	return { answer: formatSearchResultsAsAnswer(results), results };
 }

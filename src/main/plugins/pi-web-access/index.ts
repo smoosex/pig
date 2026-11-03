@@ -15,7 +15,6 @@ import {
 	storeFetchedContentResult,
 	type StoredSearchData,
 } from "./storage.ts";
-import { activityMonitor } from "./activity.ts";
 import { answerFromPage } from "./page-query.ts";
 import { parseStringifiedArrays } from "./tool-arguments.ts";
 import { runWithProxy } from "./utils.ts";
@@ -213,7 +212,6 @@ export default function (pi: ExtensionAPI) {
 		for (const data of restored) own(data.id);
 		// Restored results may point at clone paths; they are in use for as long as this session is.
 		touchClones(restored.flatMap((data) => (data.type === "fetch" ? (data.urls ?? data.urlMetadata ?? []).map((u) => u.url) : [])));
-		activityMonitor.clear();
 	}
 
 	function startBackgroundFetch(urls: string[], proxy?: string, provided?: ExtractedContent[]): string | null {
@@ -292,7 +290,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		nestedSearchCallIds.clear();
 		endSession();
-		activityMonitor.clear();
 	});
 
 	if (webSearchEnabled) pi.registerTool({

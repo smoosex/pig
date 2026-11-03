@@ -3,7 +3,6 @@ import { lstat as lstatAsync, open as openAsync, opendir as opendirAsync, readFi
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
-import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -934,19 +933,15 @@ export async function extractGitHub(
 		return fetchViaApi(url, owner, repo, info, sizeNote);
 	}
 
-	const activityId = activityMonitor.logStart({ type: "fetch", url: `github.com/${owner}/${repo}` });
-
 	if (!forceClone) {
 		const sizeKB = await checkRepoSize(owner, repo);
 		if (signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			return null;
 		}
 		if (sizeKB !== null) {
 			const sizeMB = sizeKB / 1024;
 			if (sizeMB > config.maxRepoSizeMB) {
 				if (signal?.aborted) {
-					activityMonitor.logComplete(activityId, 0);
 					return null;
 				}
 				const sizeNote =
@@ -955,17 +950,14 @@ export async function extractGitHub(
 					`if yes, call fetch_content again with the same URL and add forceClone: true to the params.`;
 				const apiView = await fetchViaApi(url, owner, repo, info, sizeNote);
 				if (apiView) {
-					activityMonitor.logComplete(activityId, 200);
 					return apiView;
 				}
-				activityMonitor.logError(activityId, "api fallback unavailable for oversized repository");
 				return null;
 			}
 		}
 	}
 
 	if (signal?.aborted) {
-		activityMonitor.logComplete(activityId, 0);
 		return null;
 	}
 
@@ -974,21 +966,12 @@ export async function extractGitHub(
 	if (cachedAfterSizeCheck) {
 		cachedAfterSizeCheck.lastUsedAt = Date.now();
 		const cachedResult = await awaitCachedClone(cachedAfterSizeCheck, url, owner, repo, info, signal);
-		if (signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
-		} else if (cachedResult) {
-			activityMonitor.logComplete(activityId, 200);
-		} else {
-			activityMonitor.logError(activityId, "clone failed");
-		}
 		return cachedResult;
 	}
 
 	const destination = cloneDestination(config, owner, repo, info.ref);
 	if (!destination) {
 		const apiFallback = await fetchViaApi(url, owner, repo, info);
-		if (apiFallback) activityMonitor.logComplete(activityId, 200);
-		else activityMonitor.logError(activityId, "invalid clone destination");
 		return apiFallback;
 	}
 	const clonePromise = cloneRepo(owner, repo, info.ref, config, destination, signal);
@@ -999,28 +982,23 @@ export async function extractGitHub(
 	const result = await clonePromise;
 	if (signal?.aborted) {
 		if (!result) cloneCache.delete(key);
-		activityMonitor.logComplete(activityId, 0);
 		return null;
 	}
 
 	if (!result) {
 		cloneCache.delete(key);
 		if (signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			return null;
 		}
 
 		const apiFallback = await fetchViaApi(url, owner, repo, info);
 		if (apiFallback) {
-			activityMonitor.logComplete(activityId, 200);
 			return apiFallback;
 		}
 
-		activityMonitor.logError(activityId, "clone and API fallback failed");
 		return null;
 	}
 
-	activityMonitor.logComplete(activityId, 200);
 	const content = generateContent(result, info);
 	const title = info.path ? `${owner}/${repo} - ${info.path}` : `${owner}/${repo}`;
 	return { url, title, content, error: null };

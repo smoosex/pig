@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, isGeminiApiAvailable, redactGeminiApiResponse } from "./gemini-api.ts";
 import { isGeminiAdcAvailable } from "./gemini-adc.ts";
@@ -757,47 +756,34 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 	const apiKey = isGeminiAdcAvailable() ? null : await getApiKey(requestSignal);
 	if (!apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) return null;
 
-	const activityId = activityMonitor.logStart({ type: "api", query });
+	const model = getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
+	const body = {
+		contents: [{ role: "user", parts: [{ text: query }] }],
+		tools: [{ google_search: {} }],
+	};
 
-	try {
-		const model = getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
-		const body = {
-			contents: [{ role: "user", parts: [{ text: query }] }],
-			tools: [{ google_search: {} }],
-		};
+	const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+		signal: requestSignal,
+	}, apiKey);
 
-		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-			signal: requestSignal,
-		}, apiKey);
-
-		if (!res.ok) {
-			const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
-			throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
-		}
-
-		const data = await res.json() as GeminiSearchResponse;
-		activityMonitor.logComplete(activityId, res.status);
-
-		const answer = data.candidates?.[0]?.content?.parts
-			?.map(p => p.text).filter(Boolean).join("\n") ?? "";
-
-		const metadata = data.candidates?.[0]?.groundingMetadata;
-		const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
-
-		if (!answer && results.length === 0) return null;
-		return { answer, results };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
+	if (!res.ok) {
+		const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
+		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
+
+	const data = await res.json() as GeminiSearchResponse;
+
+	const answer = data.candidates?.[0]?.content?.parts
+		?.map(p => p.text).filter(Boolean).join("\n") ?? "";
+
+	const metadata = data.candidates?.[0]?.groundingMetadata;
+	const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
+
+	if (!answer && results.length === 0) return null;
+	return { answer, results };
 }
 
 async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
@@ -805,27 +791,14 @@ async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): 
 	if (!cookies) return null;
 
 	const prompt = buildSearchPrompt(query, options);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 
-	try {
-		const text = await queryWithCookies(prompt, cookies, {
-			signal: options.signal,
-			timeoutMs: 120000,
-		});
+	const text = await queryWithCookies(prompt, cookies, {
+		signal: options.signal,
+		timeoutMs: 120000,
+	});
 
-		activityMonitor.logComplete(activityId, 200);
-
-		const results = extractSourceUrls(text);
-		return { answer: text, results };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
-		throw err;
-	}
+	const results = extractSourceUrls(text);
+	return { answer: text, results };
 }
 
 function buildSearchPrompt(query: string, options: SearchOptions): string {

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -297,7 +296,6 @@ async function fetchInlineContent(
 export async function searchWithTinyFish(query: string, options: TinyFishSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const combined: SearchResponse["results"] = [];
 		const pages = numResults > 10 ? 2 : 1;
@@ -321,13 +319,10 @@ export async function searchWithTinyFish(query: string, options: TinyFishSearchO
 			const inlineContent = await fetchInlineContent(results.map(result => result.url), apiKey, options.signal);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -341,7 +336,6 @@ export async function extractWithTinyFish(
 	options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
 	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const data = await fetchBatch([url], apiKey, signal, options);
 		if (!Array.isArray(data.results) || !Array.isArray(data.errors)) {
@@ -350,7 +344,6 @@ export async function extractWithTinyFish(
 		const result = data.results.find(item => item?.url === url || item?.final_url === url) ?? data.results[0];
 		const mapped = mapFetchResult(result, url);
 		if (mapped) {
-			activityMonitor.logComplete(activityId, 200);
 			return mapped;
 		}
 		const fetchError = findFetchError(data.errors, url);
@@ -358,13 +351,10 @@ export async function extractWithTinyFish(
 			const status = typeof fetchError.status === "number" ? ` (HTTP ${fetchError.status})` : "";
 			throw new Error(`TinyFish Fetch failed for ${url}: ${fetchError.error || "unknown error"}${status}`);
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return null;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

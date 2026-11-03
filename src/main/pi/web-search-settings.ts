@@ -1,10 +1,10 @@
 /**
  * Pig-side settings for the bundled pi-web-access extension.
  *
- * The extension reads web-search.json on every call, so this module is the single writer: it
- * preserves unknown keys, validates the fields the settings page owns, and keeps the file at
- * mode 0600 because it stores API keys. Saving does not reload sessions; the caller does that
- * because the extension caches provider routing at load time.
+ * This module is the single writer of web-search.json: it preserves unknown keys, validates the
+ * fields the settings page owns, and keeps the file at mode 0600 because it stores API keys.
+ * Saving does not reload sessions; the caller does that because providers cache configuration
+ * and the extension caches provider routing at load time.
  */
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'

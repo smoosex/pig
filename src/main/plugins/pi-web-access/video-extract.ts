@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
-import { activityMonitor } from "./activity.ts";
 import { canAttachImages } from "./feature-config.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, getVersionedApiBase, getUploadBase, redactGeminiApiResponse, rewriteUploadUrlOrigin } from "./gemini-api.ts";
@@ -176,7 +175,6 @@ export async function extractVideo(
 		const error = `Local video ${displayName} is ${sizeMB} MiB, above configured video.maxSizeMB (${maxSizeMB} MiB) for Gemini analysis. Use timestamp/frames for ffmpeg frame extraction, increase video.maxSizeMB, or compress the file.`;
 		return { url: info.absolutePath, title: displayName, content: error, error };
 	}
-	const activityId = activityMonitor.logStart({ type: "fetch", url: `video:${displayName}` });
 
 	const result = await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal)
 		?? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal);
@@ -188,16 +186,13 @@ export async function extractVideo(
 				result.thumbnail = thumbnail;
 			}
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return result;
 	}
 
 	if (signal?.aborted) {
-		activityMonitor.logComplete(activityId, 0);
 		return null;
 	}
 
-	activityMonitor.logError(activityId, "all video extraction paths failed");
 	return null;
 }
 

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -109,7 +108,6 @@ export function isPerplexityAvailable(): boolean {
 }
 
 interface PerplexityRequestOptions {
-	activityQuery: string;
 	signal?: AbortSignal;
 }
 
@@ -119,15 +117,6 @@ async function postPerplexity(
 	options: PerplexityRequestOptions,
 ): Promise<Record<string, unknown>> {
 	checkRateLimit();
-
-	const activityId = activityMonitor.logStart({ type: "api", query: options.activityQuery });
-
-	activityMonitor.updateRateLimit({
-		used: requestTimestamps.length,
-		max: RATE_LIMIT.maxRequests,
-		oldestTimestamp: requestTimestamps[0] ?? null,
-		windowMs: RATE_LIMIT.windowMs,
-	});
 
 	const apiKey = await getApiKey(options.signal);
 
@@ -149,23 +138,15 @@ async function postPerplexity(
 		});
 	} catch (err) {
 		if (timedOut()) {
-			activityMonitor.logError(activityId, "request timed out");
 			throw timeoutError();
 		}
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, redactedMessage);
-		}
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
-
-	activityMonitor.logComplete(activityId, response.status);
 
 	if (!response.ok) {
 		let errorText: string;
@@ -210,7 +191,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		}
 	}
 
-	const data = await postPerplexity(PERPLEXITY_SEARCH_URL, requestBody, { activityQuery: query, signal: options.signal });
+	const data = await postPerplexity(PERPLEXITY_SEARCH_URL, requestBody, { signal: options.signal });
 
 	const results: SearchResult[] = [];
 	for (const entry of Array.isArray(data.results) ? data.results : []) {
@@ -233,7 +214,7 @@ export async function askPerplexity(prompt: string, options: { signal?: AbortSig
 		messages: [{ role: "user", content: prompt }],
 		max_tokens: 1024,
 		return_related_questions: false,
-	}, { activityQuery: prompt, signal: options.signal });
+	}, { signal: options.signal });
 
 	const content = (data.choices as Array<{ message?: { content?: unknown } }> | undefined)?.[0]?.message?.content;
 	return typeof content === "string" ? content : "";

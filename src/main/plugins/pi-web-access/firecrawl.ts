@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -202,10 +201,6 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
-}
-
 function ssrfOptions(options?: FirecrawlExtractOptions | FirecrawlSearchOptions): { lookup?: Lookup; allowRanges: string[]; trustEnvProxy: boolean } {
 	const config = loadSsrfConfig();
 	return {
@@ -360,7 +355,6 @@ async function firecrawlFetch(
 	signal: AbortSignal | undefined,
 	options: FirecrawlExtractOptions | FirecrawlSearchOptions | undefined,
 	label = endpoint,
-	activity: { type: "api"; query: string } | { type: "fetch"; url: string } | undefined = undefined,
 ): Promise<Record<string, unknown>> {
 	const baseUrl = requireBaseUrl();
 	const version = getApiVersion();
@@ -368,42 +362,34 @@ async function firecrawlFetch(
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 	const requestUrl = `${baseUrl}/${version}/${endpoint}`;
-	const activityId = activityMonitor.logStart(activity ?? { type: "fetch", url: requestUrl });
-	try {
-		const response = await fetchFirecrawlApi(requestUrl, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-			signal: requestSignal(options?.timeoutMs ?? EXTRACT_TIMEOUT_MS, signal),
-		}, options);
-		if (!response.ok) {
-			const text = await response.text().catch(() => "");
-			throw new Error(`Firecrawl ${label} error ${response.status}: ${redactCredential(text.slice(0, 300), apiKey)}`);
-		}
-		let data: unknown;
-		try {
-			data = await response.json();
-		} catch (err) {
-			throw new Error(`Firecrawl ${label} returned invalid JSON: ${errorMessage(err)}`);
-		}
-		if (!data || typeof data !== "object" || Array.isArray(data)) {
-			throw new Error(`Firecrawl ${label} returned an unexpected response shape`);
-		}
-		const envelope = data as Record<string, unknown>;
-		if (envelope.success === false) {
-			const reason = typeof envelope.error === "string" && envelope.error.trim() ? envelope.error : "unknown error";
-			throw new Error(`Firecrawl ${label} unsuccessful: ${redactCredential(reason, apiKey)}`);
-		}
-		if (envelope.success !== true) {
-			throw new Error(`Firecrawl ${label} returned an unexpected response shape`);
-		}
-		activityMonitor.logComplete(activityId, response.status);
-		return envelope;
-	} catch (err) {
-		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, errorMessage(err));
-		throw err;
+	const response = await fetchFirecrawlApi(requestUrl, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(body),
+		signal: requestSignal(options?.timeoutMs ?? EXTRACT_TIMEOUT_MS, signal),
+	}, options);
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(`Firecrawl ${label} error ${response.status}: ${redactCredential(text.slice(0, 300), apiKey)}`);
 	}
+	let data: unknown;
+	try {
+		data = await response.json();
+	} catch (err) {
+		throw new Error(`Firecrawl ${label} returned invalid JSON: ${errorMessage(err)}`);
+	}
+	if (!data || typeof data !== "object" || Array.isArray(data)) {
+		throw new Error(`Firecrawl ${label} returned an unexpected response shape`);
+	}
+	const envelope = data as Record<string, unknown>;
+	if (envelope.success === false) {
+		const reason = typeof envelope.error === "string" && envelope.error.trim() ? envelope.error : "unknown error";
+		throw new Error(`Firecrawl ${label} unsuccessful: ${redactCredential(reason, apiKey)}`);
+	}
+	if (envelope.success !== true) {
+		throw new Error(`Firecrawl ${label} returned an unexpected response shape`);
+	}
+	return envelope;
 }
 
 export function isFirecrawlAvailable(): boolean {
@@ -420,7 +406,6 @@ export async function searchWithFirecrawl(query: string, options: FirecrawlSearc
 		options.signal,
 		{ ...options, timeoutMs: options.timeoutMs ?? SEARCH_TIMEOUT_MS },
 		"search",
-		{ type: "api", query },
 	);
 	const mapped = mapSearchResults(envelope.data, numResults, filters);
 	const response: SearchResponse = { answer: formatSearchResultsAsAnswer(mapped.results), results: mapped.results };

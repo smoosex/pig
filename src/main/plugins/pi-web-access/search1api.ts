@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -203,7 +202,6 @@ export async function searchWithSearch1API(
 	options: Search1APISearchOptions = {},
 ): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await search1APIJsonRequest<Search1APISearchResponse>(
 			"Search",
@@ -219,13 +217,10 @@ export async function searchWithSearch1API(
 			const inlineContent = mapInlineContent(data.results);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
@@ -239,7 +234,6 @@ export async function extractWithSearch1API(
 	options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
 	const apiKey = await getApiKey(signal);
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const data = await search1APIJsonRequest<Search1APICrawlResponse>(
 			"Crawl",
@@ -257,10 +251,8 @@ export async function extractWithSearch1API(
 		}
 		const content = typeof result.content === "string" ? result.content.trim() : "";
 		if (!content) {
-			activityMonitor.logComplete(activityId, 200);
 			return null;
 		}
-		activityMonitor.logComplete(activityId, 200);
 		return {
 			url,
 			title: typeof result.title === "string" ? result.title.trim() : "",
@@ -270,8 +262,6 @@ export async function extractWithSearch1API(
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

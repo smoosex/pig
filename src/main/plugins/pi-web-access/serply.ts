@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { parseDomainFilter, passesDomainFilters, type DomainFilters } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -109,7 +108,6 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 	url.searchParams.set("q", buildQuery(query, filters));
 	url.searchParams.set("num", String(requestCount));
 	if (options.recencyFilter) url.searchParams.set("tbs", RECENCY_TBS[options.recencyFilter]);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
 	let entries: SerplyOrganicResult[];
@@ -132,7 +130,6 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 		entries = parseResponse(rawData);
 	} catch (err) {
 		if (options.signal?.aborted) {
-			activityMonitor.logComplete(activityId, 0);
 			throw new Error("Aborted");
 		}
 		const message = errorMessage(err);
@@ -146,10 +143,8 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 				if (err instanceof Error) redactedError.name = err.name;
 				return redactedError;
 			})();
-		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
 		throw outgoing;
 	}
-	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResponse["results"] = [];
 	for (const entry of entries) {
 		if (!entry || typeof entry !== "object") continue;

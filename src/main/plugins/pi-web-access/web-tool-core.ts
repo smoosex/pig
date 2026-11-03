@@ -80,13 +80,6 @@ export interface WebSearchConfig {
 	xaiApiKey?: unknown;
 	provider?: unknown;
 	searchProvider?: unknown;
-	workflow?: string;
-	curatorTimeoutSeconds?: unknown;
-	autoOpenBrowser?: unknown;
-	curatorRemote?: unknown;
-	summaryModel?: string;
-	summaryGenerationDeadlineMs?: unknown;
-	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
@@ -196,7 +189,7 @@ export function resolveRequestedProvider(requested: unknown): SearchProviderSele
 	return provider;
 }
 
-export function toCuratorProvider(provider: SearchProviderSelection): SearchProvider | undefined {
+export function toSearchProvider(provider: SearchProviderSelection): SearchProvider | undefined {
 	if (Array.isArray(provider)) return "all";
 	return provider === "auto" ? undefined : provider;
 }
@@ -552,7 +545,7 @@ export interface WebToolCoreInstance extends WebToolCore {
 	fetchContent(params: FetchContentToolParams, signal?: AbortSignal, call?: WebToolCallOptions): Promise<WebToolResult>;
 	getSearchContent(params: RawGetSearchContentParams, signal?: AbortSignal): Promise<WebToolResult>;
 	sourceCheck(params: SourceCheckParams, signal?: AbortSignal, call?: WebToolCallOptions): Promise<WebToolResult>;
-	/** Formats and stores search results; the Pi curator reuses it for curated returns. */
+	/** Formats and stores search results. */
 	buildSearchReturn(opts: SearchReturnOptions): WebToolResult;
 }
 
@@ -797,7 +790,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				} catch (err) {
 					if (signal?.aborted || isAbortError(err)) throw err;
 					const message = err instanceof Error ? err.message : String(err);
-					const requestedProvider = toCuratorProvider(resolvedProvider);
+					const requestedProvider = toSearchProvider(resolvedProvider);
 					return {
 						result: { query, answer: "", results: [], error: message, provider: requestedProvider } satisfies QueryResultData,
 						inlineContent: undefined,

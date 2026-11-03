@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
-import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { hasCredentialSource, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
@@ -120,7 +119,6 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 		reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1_000, maxReconnectionDelay: 1_000, reconnectionDelayGrowFactor: 1 },
 	});
 	const client = new Client({ name: "pi-web-access-zai", version: "1.0.0" });
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		await client.connect(transport, { signal, timeout: SEARCH_TIMEOUT_MS });
 		// The live China server lists `web_search_prime` while both sites document
@@ -133,7 +131,6 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 		const text = (Array.isArray(result.content) ? result.content : []).find((item) => item.type === "text" && typeof item.text === "string");
 		if (!text) throw new Error("Z.ai returned invalid response: no search text");
 		const results = parseResults(text.text as string, limit, args.search_domain_filter as string | undefined);
-		activityMonitor.logComplete(activityId, 200);
 		return { answer: formatSearchResultsAsAnswer(results), results };
 	} catch (err) {
 		let message: string;
@@ -150,7 +147,6 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 				: err instanceof Error && /^Z\.ai (search tool returned an error|returned invalid response:)/.test(err.message) ? err.message
 				: "Z.ai MCP request failed; check your connection and GLM Coding Plan key";
 		}
-		activityMonitor.logError(activityId, redactCredential(message, apiKey));
 		throw new Error(message);
 	} finally {
 		cleaningUp = true;

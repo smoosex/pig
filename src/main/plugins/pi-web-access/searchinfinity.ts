@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -225,18 +224,14 @@ export async function searchWithSearchinfinity(
 	options: SearchinfinitySearchOptions = {},
 ): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), options.signal);
 		const results = mapSearchResults(data.Result?.WebResults);
 		const response: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
-		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;

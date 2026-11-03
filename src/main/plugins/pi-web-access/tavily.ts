@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -171,21 +170,8 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 	};
 
 	const signal = requestSignal(options.signal);
-	const activityId = activityMonitor.logStart({ type: "api", query });
-	let data: TavilyResponse;
-	try {
-		data = await requestWithKeyFailover(apiUrl, body, signal);
-	} catch (err) {
-		if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) activityMonitor.logComplete(activityId, 0);
-		else {
-			const status = tavilyErrorStatus(err);
-			if (status > 0) activityMonitor.logComplete(activityId, status);
-			else activityMonitor.logError(activityId, errorMessage(err));
-		}
-		throw err;
-	}
+	const data = await requestWithKeyFailover(apiUrl, body, signal);
 
-	activityMonitor.logComplete(activityId, 200);
 	const result: SearchResponse = {
 		answer: typeof data.answer === "string" ? data.answer : "",
 		results: mapResults(data.results, numResults),

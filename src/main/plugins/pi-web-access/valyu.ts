@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -120,7 +119,6 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const startDate = recencyToStartDate(options.recencyFilter);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(VALYU_SEARCH_URL, {
@@ -132,15 +130,12 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Valyu API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -148,17 +143,9 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Valyu API returned invalid JSON: ${errorMessage(err)}`);
 	}
-	let entries: ValyuResult[];
-	try {
-		entries = parseResponse(rawData);
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw err;
-	}
-	activityMonitor.logComplete(activityId, response.status);
+	const entries = parseResponse(rawData);
 	const results: SearchResponse["results"] = [];
 	const inlineContent: ExtractedContent[] = [];
 	for (const entry of entries) {

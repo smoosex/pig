@@ -1,4 +1,3 @@
-import { activityMonitor } from "./activity.ts";
 import { redactCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { resolveParallelApiKey } from "./parallel.ts";
@@ -186,38 +185,29 @@ export function isParallelMcpAvailable(): boolean {
 }
 
 export async function searchWithParallelMcp(query: string, options: ParallelMcpSearchOptions = {}): Promise<SearchResponse> {
-	const activityId = activityMonitor.logStart({ type: "api", query });
-	try {
-		const searchQuery = buildSearchQuery(query, options);
-		const payload = await callParallelMcp("web_search", { objective: query, search_queries: [searchQuery] }, options.signal);
-		const maxResults = Math.max(1, Math.min(Math.floor(options.numResults ?? 5), 20));
-		const results = filterResults(getResults(payload), options.domainFilter).slice(0, maxResults);
-		activityMonitor.logComplete(activityId, 200);
-		const response: SearchResponse = {
-			answer: results.flatMap((result, index) => {
-				const content = excerpts(result).join(" ").trim();
-				return content ? [`${content}\nSource: ${result.title || `Source ${index + 1}`} (${result.url})`] : [];
-			}).join("\n\n"),
-			results: results.map((result, index) => ({
-				title: result.title || `Source ${index + 1}`,
-				url: result.url,
-				snippet: excerpts(result)[0]?.replace(/\s+/g, " ").trim().slice(0, 200) ?? "",
-			})),
-		};
-		if (options.includeContent) {
-			const inlineContent = results.flatMap(result => {
-				const content = excerpts(result).join("\n\n");
-				return content ? [{ url: result.url, title: result.title || "", content, error: null }] : [];
-			});
-			if (inlineContent.length) response.inlineContent = inlineContent;
-		}
-		return response;
-	} catch (err) {
-		const message = errorMessage(err);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw err;
+	const searchQuery = buildSearchQuery(query, options);
+	const payload = await callParallelMcp("web_search", { objective: query, search_queries: [searchQuery] }, options.signal);
+	const maxResults = Math.max(1, Math.min(Math.floor(options.numResults ?? 5), 20));
+	const results = filterResults(getResults(payload), options.domainFilter).slice(0, maxResults);
+	const response: SearchResponse = {
+		answer: results.flatMap((result, index) => {
+			const content = excerpts(result).join(" ").trim();
+			return content ? [`${content}\nSource: ${result.title || `Source ${index + 1}`} (${result.url})`] : [];
+		}).join("\n\n"),
+		results: results.map((result, index) => ({
+			title: result.title || `Source ${index + 1}`,
+			url: result.url,
+			snippet: excerpts(result)[0]?.replace(/\s+/g, " ").trim().slice(0, 200) ?? "",
+		})),
+	};
+	if (options.includeContent) {
+		const inlineContent = results.flatMap(result => {
+			const content = excerpts(result).join("\n\n");
+			return content ? [{ url: result.url, title: result.title || "", content, error: null }] : [];
+		});
+		if (inlineContent.length) response.inlineContent = inlineContent;
 	}
+	return response;
 }
 
 export async function extractWithParallelMcp(
@@ -225,27 +215,17 @@ export async function extractWithParallelMcp(
 	signal?: AbortSignal,
 	options: ExtractOptions = {},
 ): Promise<ExtractedContent | null> {
-	const activityId = activityMonitor.logStart({ type: "fetch", url });
-	try {
-		const objective = options.prompt?.trim();
-		const payload = await callParallelMcp("web_fetch", {
-			urls: [url],
-			...(objective ? { objective: objective.slice(0, 200) } : {}),
-			full_content: true,
-		}, signal);
-		const result = getResults(payload).find(item => item.url === url) as ParallelMcpExtractResult | undefined ?? getResults(payload)[0] as ParallelMcpExtractResult | undefined;
-		if (!result) {
-			activityMonitor.logComplete(activityId, 200);
-			return null;
-		}
-		const fullContent = typeof result.full_content === "string" ? result.full_content.trim() : "";
-		const content = fullContent || excerpts(result).join("\n\n");
-		activityMonitor.logComplete(activityId, 200);
-		return content ? { url: result.url, title: result.title || "", content, error: null } : null;
-	} catch (err) {
-		const message = errorMessage(err);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw err;
+	const objective = options.prompt?.trim();
+	const payload = await callParallelMcp("web_fetch", {
+		urls: [url],
+		...(objective ? { objective: objective.slice(0, 200) } : {}),
+		full_content: true,
+	}, signal);
+	const result = getResults(payload).find(item => item.url === url) as ParallelMcpExtractResult | undefined ?? getResults(payload)[0] as ParallelMcpExtractResult | undefined;
+	if (!result) {
+		return null;
 	}
+	const fullContent = typeof result.full_content === "string" ? result.full_content.trim() : "";
+	const content = fullContent || excerpts(result).join("\n\n");
+	return content ? { url: result.url, title: result.title || "", content, error: null } : null;
 }

@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -181,18 +180,14 @@ function mapItems(items: JinaSearchItem[], numResults: number, filters: ReturnTy
 function rethrowRequestError(
 	err: unknown,
 	apiKey: string,
-	activityId: string,
 	request: ReturnType<typeof requestSignal>,
 	callerSignal?: AbortSignal,
 ): never {
 	if (request.timeout.aborted && !callerSignal?.aborted) {
-		activityMonitor.logComplete(activityId, 408);
 		throw new Error("Jina Search API error 408: request timed out");
 	}
 	const message = errorMessage(err);
 	const redactedMessage = redactCredential(message, apiKey);
-	if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-	else activityMonitor.logError(activityId, redactedMessage);
 	if (redactedMessage === message) throw err;
 	const redactedError = new Error(redactedMessage);
 	if (err instanceof Error) redactedError.name = err.name;
@@ -211,7 +206,6 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const { url, filters } = buildSearchRequest(query, options, numResults);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	const request = requestSignal(options.signal);
 	let response: Response;
 	try {
@@ -226,7 +220,7 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 			signal: request.signal,
 		});
 	} catch (err) {
-		rethrowRequestError(err, apiKey, activityId, request, options.signal);
+		rethrowRequestError(err, apiKey, request, options.signal);
 	}
 
 	if (!response.ok) {
@@ -234,9 +228,8 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 		try {
 			body = redactCredential(await response.text(), apiKey);
 		} catch (err) {
-			rethrowRequestError(err, apiKey, activityId, request, options.signal);
+			rethrowRequestError(err, apiKey, request, options.signal);
 		}
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Jina Search API error ${response.status}: ${body.slice(0, 300)}`);
 	}
 
@@ -245,9 +238,8 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 		raw = await response.json();
 	} catch (err) {
 		if (!(err instanceof SyntaxError)) {
-			rethrowRequestError(err, apiKey, activityId, request, options.signal);
+			rethrowRequestError(err, apiKey, request, options.signal);
 		}
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error("Jina Search API returned invalid JSON");
 	}
 
@@ -257,13 +249,11 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
-	activityMonitor.logComplete(activityId, response.status);
 	const result: SearchResponse = {
 		answer: formatSearchResultsAsAnswer(mapped.results),
 		results: mapped.results,

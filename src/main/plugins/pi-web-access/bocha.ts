@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -153,7 +152,6 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
-	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
 		response = await fetch(BOCHA_SEARCH_URL, {
@@ -165,15 +163,12 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
 	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Bocha API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
@@ -181,7 +176,6 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	try {
 		rawData = await response.json();
 	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Bocha API returned invalid JSON: ${errorMessage(err)}`);
 	}
 	let parsed: { results: SearchResponse["results"] };
@@ -190,13 +184,11 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
-		activityMonitor.logError(activityId, redactedMessage);
 		if (redactedMessage === message) throw err;
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
 		throw redactedError;
 	}
-	activityMonitor.logComplete(activityId, response.status);
 	const results = parsed.results.filter((result) => passesDomainFilters(result.url, filters)).slice(0, numResults);
 	return { answer: formatSearchResultsAsAnswer(results), results };
 }
