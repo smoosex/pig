@@ -17,7 +17,7 @@ import {
 } from "./storage.ts";
 import { answerFromPage } from "./page-query.ts";
 import { parseStringifiedArrays } from "./tool-arguments.ts";
-import { runWithProxy } from "./utils.ts";
+import { runWithProxy, webSearchConfigPath } from "./utils.ts";
 import {
 	createWebToolCore,
 	DEFAULT_TOOL_NAMES,
@@ -30,7 +30,6 @@ import {
 	resolveFetchModeConfig,
 	storedContentSourceNames,
 	stripThumbnails,
-	webSearchConfigPath,
 	withRegisteredFetchOptions,
 	type FetchedContentData,
 	type FetchMode,

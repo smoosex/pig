@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const XCRAWL_API_URL = "https://run.xcrawl.com/v1/serp";
-const CONFIG_PATH = getWebSearchConfigPath();
 // The SERP API is usually fast (a few seconds, cached responses are quicker),
 // but leave generous headroom before treating a slow job as a provider failure.
 const SEARCH_TIMEOUT_MS = 60_000;
@@ -27,29 +26,7 @@ interface XCrawlSerpResponse {
 	organic_results?: unknown;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
@@ -160,7 +137,7 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 	const numResults = normalizeSearchResultCount(options.numResults);
 	if (!apiKey) {
 		throw new Error(
-			"XCrawl search requires an API key. Set xcrawlApiKey in " + CONFIG_PATH +
+			"XCrawl search requires an API key. Set xcrawlApiKey in " + webSearchConfigPath() +
 			" or export XCRAWL_API_KEY. Get one at https://dash.xcrawl.com/",
 		);
 	}

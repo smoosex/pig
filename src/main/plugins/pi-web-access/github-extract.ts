@@ -5,9 +5,7 @@ import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
 import type { ExtractedContent } from "./extract.ts";
 import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
-
-const CONFIG_PATH = getWebSearchConfigPath();
+import { createConfigFileReader } from "./config-file.ts";
 
 const BINARY_EXTENSIONS = new Set([
 	".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg", ".tiff", ".tif",
@@ -73,7 +71,6 @@ interface GitHubCloneConfig {
 const cloneCache = new Map<string, CachedClone>();
 const startedCloneRuntimeCleanups = new Set<string>();
 
-let cachedConfig: GitHubCloneConfig | null = null;
 let cloneRuntime: { parentPath: string; rootPath: string } | null = null;
 
 function normalizeEnabled(value: unknown, fallback: boolean): boolean {
@@ -105,38 +102,23 @@ function normalizeClonePath(value: unknown, fallback: string): string {
 	return expandPath(normalized);
 }
 
-function loadGitHubConfig(): GitHubCloneConfig {
-	if (cachedConfig) return cachedConfig;
+const readConfig = createConfigFileReader<Record<string, unknown>>();
 
+function loadGitHubConfig(): GitHubCloneConfig {
 	const defaults: GitHubCloneConfig = {
 		enabled: true,
 		maxRepoSizeMB: 350,
 		cloneTimeoutSeconds: 30,
 		clonePath: "/tmp/pi-github-repos",
 	};
-
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = defaults;
-		return cachedConfig;
-	}
-
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
-	let raw: { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };
-	try {
-		raw = JSON.parse(rawText) as { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-
-	const gc = raw.githubClone ?? {};
-	cachedConfig = {
+	const section = readConfig().githubClone;
+	const gc = section && typeof section === "object" ? section as Record<string, unknown> : {};
+	return {
 		enabled: normalizeEnabled(gc.enabled, defaults.enabled),
 		maxRepoSizeMB: normalizePositiveNumber(gc.maxRepoSizeMB, defaults.maxRepoSizeMB),
 		cloneTimeoutSeconds: normalizePositiveNumber(gc.cloneTimeoutSeconds, defaults.cloneTimeoutSeconds),
 		clonePath: normalizeClonePath(gc.clonePath, defaults.clonePath),
 	};
-	return cachedConfig;
 }
 
 const NON_CODE_SEGMENTS = new Set([
@@ -1037,5 +1019,4 @@ export function clearCloneCache(): void {
 		removeCloneRuntime(cloneRuntime.parentPath, cloneRuntime.rootPath);
 	}
 	cloneRuntime = null;
-	cachedConfig = null;
 }

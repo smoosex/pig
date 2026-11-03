@@ -1,41 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	youApiKey?: unknown;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	const apiKey = await resolveCredential({
@@ -47,7 +25,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"You.com API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "youApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "youApiKey": "your-key" }\n` +
 			"  2. Set YDC_API_KEY environment variable\n" +
 			"Get a key at https://you.com/platform/api-keys",
 		);

@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
 // degoog is a self-hosted metasearch front end. The public instance keeps the
 // provider usable without configuration; DEGOOG_URL or degoogBaseUrl point it at
 // a private deployment, which is what SSRF-guarded internal hosts require.
@@ -33,28 +32,7 @@ interface DegoogResult {
 	content?: unknown;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 function normalizeBaseUrl(value: unknown): string | null {
 	if (typeof value !== "string") return null;
@@ -134,7 +112,7 @@ function requireBaseUrl(): string {
 	if (!baseUrl) {
 		throw new Error(
 			"degoog base URL is invalid or missing. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "degoogBaseUrl": "https://degoog.example.com" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "degoogBaseUrl": "https://degoog.example.com" }\n` +
 			"  2. Set DEGOOG_URL to an HTTP(S) URL\n" +
 			"  3. Remove the override to use the public instance at https://degoog.org",
 		);
@@ -255,7 +233,7 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 			const errorText = redactSecrets(await response.text(), secrets).slice(0, 300);
 			if (response.status === 401) {
 				throw new Error(
-					`degoog search error 401: this instance protects search routes. Set degoogApiKey in ${CONFIG_PATH} or DEGOOG_API_KEY. ${errorText.slice(0, 200)}`,
+					`degoog search error 401: this instance protects search routes. Set degoogApiKey in ${webSearchConfigPath()} or DEGOOG_API_KEY. ${errorText.slice(0, 200)}`,
 				);
 			}
 			throw new Error(`degoog search error ${response.status}: ${errorText}`);

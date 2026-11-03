@@ -37,7 +37,11 @@ export function getWebSearchConfigDir(): string {
 	return cachedWebSearchConfigDir = agentDir;
 }
 
-export function getWebSearchConfigPath(): string {
+/**
+ * Resolved per call: the host exports PIG_DIR from its own process and may set it after this module
+ * was first imported, so a module-level constant would freeze the wrong path.
+ */
+export function webSearchConfigPath(): string {
 	return join(getWebSearchConfigDir(), "web-search.json");
 }
 
@@ -47,6 +51,17 @@ interface ApiBaseUrlOptions {
 	defaultValue: string;
 	environmentKey: string;
 	environmentValue: string | undefined;
+}
+
+/**
+ * V8 names the offending token and quotes up to about twenty characters of the file around it, so a
+ * raw `JSON.parse` message must never be repeated: `web-search.json` holds API keys, and an
+ * unquoted one would be echoed into a tool result. Only the position is safe.
+ */
+export function parseFailure(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	const position = message.match(/at position \d+(?: \(line \d+ column \d+\))?/i);
+	return position ? `invalid JSON ${position[0]}` : "invalid JSON";
 }
 
 export function isLoopbackHostname(hostnameValue: string): boolean {
@@ -63,7 +78,7 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 
 	const source = fromEnvironment
 		? options.environmentKey
-		: `${options.configKey} in ${getWebSearchConfigPath()}`;
+		: `${options.configKey} in ${webSearchConfigPath()}`;
 	if (typeof value !== "string" || value.trim().length === 0) {
 		throw new Error(`${source} must be an absolute HTTP(S) URL`);
 	}
@@ -223,19 +238,18 @@ function redactProxyUrl(value: string): string {
 
 export function loadConfiguredProxy(): string | null {
 	let configured: unknown;
-	const path = getWebSearchConfigPath();
+	const path = webSearchConfigPath();
 	if (existsSync(path)) {
 		let raw: unknown;
 		try {
 			raw = JSON.parse(readFileSync(path, "utf-8"));
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`Failed to load proxy config from ${path}: ${message}`);
+			throw new Error(`Failed to load proxy config from ${path}: ${parseFailure(err)}`);
 		}
 		if (raw && typeof raw === "object" && !Array.isArray(raw)) configured = (raw as { proxy?: unknown }).proxy;
 	}
 	if (configured === undefined) return null;
-	return normalizeProxyUrl(configured, `proxy in ${getWebSearchConfigPath()}`);
+	return normalizeProxyUrl(configured, `proxy in ${webSearchConfigPath()}`);
 }
 
 export function runWithProxy<T>(proxy: string | undefined, fn: () => T): T {

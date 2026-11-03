@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fetchRemoteUrl, loadSsrfConfig, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, isLoopbackHostname } from "./utils.ts";
+import { isLoopbackHostname } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_POLL_INTERVAL_MS = 3_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 300;
-const CONFIG_PATH = getWebSearchConfigPath();
 
 export interface EndpointPDFExtractOptions {
 	maxPages: number;
@@ -21,16 +20,10 @@ export interface EndpointPDFExtractResult {
 	pages?: number;
 }
 
+const readPdfConfig = createConfigFileReader<{ pdf?: unknown }>();
+
 function pdfSection(): Record<string, unknown> {
-	if (!existsSync(CONFIG_PATH)) return {};
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	const pdf = (parsed as { pdf?: unknown } | null)?.pdf;
+	const pdf = readPdfConfig().pdf;
 	return pdf && typeof pdf === "object" ? (pdf as Record<string, unknown>) : {};
 }
 

@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // Retrieval depth. The default is deliberately the free tier: this provider
@@ -44,24 +43,7 @@ interface SerpdiveSearchOptions extends SearchOptions {
 	includeContent?: boolean;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
@@ -77,7 +59,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"SERPdive API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "serpdiveApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "serpdiveApiKey": "your-key" }\n` +
 			"  2. Set SERPDIVE_API_KEY environment variable\n" +
 			"Get a key at https://serpdive.com/dashboard/keys",
 		);

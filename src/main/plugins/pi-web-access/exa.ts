@@ -1,12 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, webSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const EXA_API_BASE_URL = "https://api.exa.ai";
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
-const CONFIG_PATH = getWebSearchConfigPath();
 const EXA_MCP_ADVANCED_TOOL = "web_search_advanced_exa";
 const EXA_MCP_BASIC_TOOL = "web_search_exa";
 
@@ -48,24 +47,7 @@ export interface ExaSearchOptions extends SearchOptions {
 
 type McpParsedResult = { title: string; url: string; content: string };
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
@@ -230,7 +212,7 @@ export async function callExaMcp(
 		const errorText = await response.text();
 		if (response.status === 429) {
 			throw new Error(
-				`Exa MCP rate limit reached (429). Add "exaApiKey" to ${CONFIG_PATH} for unthrottled Exa search: ${errorText.slice(0, 200)}`,
+				`Exa MCP rate limit reached (429). Add "exaApiKey" to ${webSearchConfigPath()} for unthrottled Exa search: ${errorText.slice(0, 200)}`,
 			);
 		}
 		throw new Error(`Exa MCP error ${response.status}: ${errorText.slice(0, 300)}`);

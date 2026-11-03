@@ -1,11 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const MISTRAL_CONVERSATIONS_URL = "https://api.mistral.ai/v1/conversations";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 const DEFAULT_SEARCH_MODEL = "mistral-small-latest";
 const DEFAULT_SEARCH_TOOL = "web_search";
@@ -24,34 +23,12 @@ interface DomainFilters {
 	exclude: string[];
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 function resolveSearchModel(value: unknown): string {
 	if (value === undefined) return DEFAULT_SEARCH_MODEL;
 	if (typeof value !== "string" || value.trim().length === 0) {
-		throw new Error(`mistralSearchModel in ${CONFIG_PATH} must be a non-empty string`);
+		throw new Error(`mistralSearchModel in ${webSearchConfigPath()} must be a non-empty string`);
 	}
 	return value.trim();
 }
@@ -59,7 +36,7 @@ function resolveSearchModel(value: unknown): string {
 function resolveSearchTool(value: unknown): MistralSearchTool {
 	if (value === undefined) return DEFAULT_SEARCH_TOOL;
 	if (value !== "web_search" && value !== "web_search_premium") {
-		throw new Error(`mistralSearchTool in ${CONFIG_PATH} must be either web_search or web_search_premium`);
+		throw new Error(`mistralSearchTool in ${webSearchConfigPath()} must be either web_search or web_search_premium`);
 	}
 	return value;
 }
@@ -186,7 +163,7 @@ async function getApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Mistral API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "mistralApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "mistralApiKey": "your-key" }\n` +
 			"  2. Set MISTRAL_API_KEY environment variable\n" +
 			"Get a key at https://console.mistral.ai/api-keys",
 		);

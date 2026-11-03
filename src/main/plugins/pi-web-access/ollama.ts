@@ -1,14 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const OLLAMA_SEARCH_URL = "https://ollama.com/api/web_search";
 const OLLAMA_FETCH_URL = "https://ollama.com/api/web_fetch";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
@@ -39,29 +38,7 @@ export interface OllamaExtractOptions extends Pick<ExtractOptions, "timeoutMs" |
 	ssrf?: SsrfConfig;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
@@ -77,7 +54,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Ollama API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "ollamaApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "ollamaApiKey": "your-key" }\n` +
 			"  2. Set OLLAMA_API_KEY environment variable\n" +
 			"Create a key at https://ollama.com/settings/keys",
 		);

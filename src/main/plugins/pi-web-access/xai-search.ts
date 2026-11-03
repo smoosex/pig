@@ -1,9 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 // xAI's Agent Tools API: hosted `web_search` and opt-in `x_search` tools on an
 // OpenAI-compatible Responses endpoint. The search runs inside xAI's own inference, so — unlike
@@ -23,7 +23,6 @@ import { getWebSearchConfigPath } from "./utils.ts";
 // default; sources may also come back in a search call's `action.sources`.
 
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // Ordered best-first. pi's builtin xai catalog is small and xAI retires models
@@ -51,29 +50,12 @@ interface XaiAuth {
 	headers: ProviderHeaders;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 function resolveConfiguredSearchModel(value: unknown): string | undefined {
 	if (value == null) return undefined;
 	if (typeof value !== "string" || value.trim().length === 0) {
-		throw new Error(`xaiSearchModel in ${CONFIG_PATH} must be a non-empty string`);
+		throw new Error(`xaiSearchModel in ${webSearchConfigPath()} must be a non-empty string`);
 	}
 	return value.trim();
 }
@@ -81,16 +63,16 @@ function resolveConfiguredSearchModel(value: unknown): string | undefined {
 function resolveConfiguredSearchTools(value: unknown): XaiSearchTool[] {
 	if (value === undefined) return [...DEFAULT_XAI_SEARCH_TOOLS];
 	if (!Array.isArray(value) || value.length === 0) {
-		throw new Error(`xaiSearchTools in ${CONFIG_PATH} must be a non-empty array containing only web_search or x_search`);
+		throw new Error(`xaiSearchTools in ${webSearchConfigPath()} must be a non-empty array containing only web_search or x_search`);
 	}
 
 	const tools: XaiSearchTool[] = [];
 	for (const tool of value) {
 		if (tool !== "web_search" && tool !== "x_search") {
-			throw new Error(`xaiSearchTools in ${CONFIG_PATH} may only contain web_search or x_search`);
+			throw new Error(`xaiSearchTools in ${webSearchConfigPath()} may only contain web_search or x_search`);
 		}
 		if (tools.includes(tool)) {
-			throw new Error(`xaiSearchTools in ${CONFIG_PATH} must not contain duplicates: ${tool}`);
+			throw new Error(`xaiSearchTools in ${webSearchConfigPath()} must not contain duplicates: ${tool}`);
 		}
 		tools.push(tool);
 	}
@@ -335,7 +317,7 @@ export async function searchWithXai(
 		throw new Error(
 			"xAI search unavailable. Either:\n" +
 			"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
-			`  2. Create ${CONFIG_PATH} with { "xaiApiKey": "your-key" }\n` +
+			`  2. Create ${webSearchConfigPath()} with { "xaiApiKey": "your-key" }\n` +
 			"  3. Set XAI_API_KEY environment variable",
 		);
 	}

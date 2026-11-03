@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { parseDomainFilter, passesDomainFilters, type DomainFilters } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, webSearchConfigPath } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const CERAMIC_SEARCH_URL = "https://api.ceramic.ai/search";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_RESULTS = 20;
 // Descriptions default to 3,000 characters; 1,000 is the smallest the API accepts. Results
@@ -25,28 +24,7 @@ interface CeramicResult {
 	description?: unknown;
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as WebSearchConfig;
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	const apiKey = await resolveCredential({
@@ -58,7 +36,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	if (!apiKey) {
 		throw new Error(
 			"Ceramic API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "ceramicApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "ceramicApiKey": "your-key" }\n` +
 			"  2. Set CERAMIC_API_KEY environment variable\n" +
 			"Get a key at https://platform.ceramic.ai/keys",
 		);

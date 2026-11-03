@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -6,9 +5,9 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { loadSsrfConfig, validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, isLoopbackHostname } from "./utils.ts";
+import { webSearchConfigPath, isLoopbackHostname } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_API_VERSION = "v2";
 const EXTRACT_TIMEOUT_MS = 60_000;
 const SEARCH_TIMEOUT_MS = 60_000;
@@ -69,32 +68,7 @@ interface DomainFilters {
 	exclude: string[];
 }
 
-let cachedConfig: FirecrawlConfig | null = null;
-
-function loadConfig(): FirecrawlConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readFileSync(CONFIG_PATH, "utf8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
-	}
-	cachedConfig = parsed as FirecrawlConfig;
-	return cachedConfig;
-}
-
-export function clearFirecrawlConfigCache(): void {
-	cachedConfig = null;
-}
+const loadConfig = createConfigFileReader<FirecrawlConfig>();
 
 function normalizeBaseUrl(value: unknown): string | null {
 	if (typeof value !== "string") return null;
@@ -104,13 +78,13 @@ function normalizeBaseUrl(value: unknown): string | null {
 	try {
 		parsed = new URL(trimmed);
 	} catch {
-		throw new Error(`Invalid Firecrawl base URL in ${CONFIG_PATH}: expected an HTTP or HTTPS URL`);
+		throw new Error(`Invalid Firecrawl base URL in ${webSearchConfigPath()}: expected an HTTP or HTTPS URL`);
 	}
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-		throw new Error(`Invalid Firecrawl base URL in ${CONFIG_PATH}: expected an HTTP or HTTPS URL`);
+		throw new Error(`Invalid Firecrawl base URL in ${webSearchConfigPath()}: expected an HTTP or HTTPS URL`);
 	}
 	if (parsed.username || parsed.password) {
-		throw new Error(`Invalid Firecrawl base URL in ${CONFIG_PATH}: URL credentials are not allowed`);
+		throw new Error(`Invalid Firecrawl base URL in ${webSearchConfigPath()}: URL credentials are not allowed`);
 	}
 	parsed.pathname = parsed.pathname.replace(/\/+$/, "");
 	parsed.search = "";
@@ -127,7 +101,7 @@ function requireBaseUrl(): string {
 	if (!baseUrl) {
 		throw new Error(
 			"Firecrawl base URL not configured. Either:\n" +
-			`  1. Set firecrawlBaseUrl in ${CONFIG_PATH}\n` +
+			`  1. Set firecrawlBaseUrl in ${webSearchConfigPath()}\n` +
 			"  2. Set FIRECRAWL_BASE_URL environment variable",
 		);
 	}
@@ -141,7 +115,7 @@ function getApiVersion(): FirecrawlApiVersion {
 	const raw = environmentValue || loadConfig().firecrawlApiVersion;
 	if (raw === undefined || raw === null) return DEFAULT_API_VERSION;
 	if (typeof raw !== "string") {
-		throw new Error(`firecrawlApiVersion in ${CONFIG_PATH} must be a string ("v1" or "v2")`);
+		throw new Error(`firecrawlApiVersion in ${webSearchConfigPath()} must be a string ("v1" or "v2")`);
 	}
 	const normalized = raw.trim().toLowerCase();
 	if (!normalized) return DEFAULT_API_VERSION;
@@ -156,7 +130,7 @@ function allowFreshScrape(): boolean {
 	if (environmentValue !== undefined) return environmentValue === "1" || environmentValue.toLowerCase() === "true";
 	const configured = loadConfig().firecrawlFreshScrape;
 	if (configured === undefined || configured === null) return false;
-	if (typeof configured !== "boolean") throw new Error(`firecrawlFreshScrape in ${CONFIG_PATH} must be a boolean`);
+	if (typeof configured !== "boolean") throw new Error(`firecrawlFreshScrape in ${webSearchConfigPath()} must be a boolean`);
 	return configured;
 }
 
@@ -164,11 +138,11 @@ function pdfParserOptions(): { parsers?: Array<{ type: "pdf"; maxPages: number }
 	const configured = loadConfig().firecrawlPdfMaxPages;
 	if (configured === undefined || configured === null) return {};
 	if (typeof configured !== "number" || !Number.isInteger(configured) || configured < 1) {
-		throw new Error(`firecrawlPdfMaxPages in ${CONFIG_PATH} must be a positive integer`);
+		throw new Error(`firecrawlPdfMaxPages in ${webSearchConfigPath()} must be a positive integer`);
 	}
 	if (getApiVersion() === "v1") {
 		throw new Error(
-			`firecrawlPdfMaxPages in ${CONFIG_PATH} requires Firecrawl API v2; v1 has no PDF page cap. ` +
+			`firecrawlPdfMaxPages in ${webSearchConfigPath()} requires Firecrawl API v2; v1 has no PDF page cap. ` +
 			"Use firecrawlApiVersion \"v2\" or remove firecrawlPdfMaxPages",
 		);
 	}

@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { createSign } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getWebSearchConfigPath } from "./utils.ts";
 import { redactCredential, CredentialResolutionError } from "./credential-source.ts";
+import { createConfigFileReader } from "./config-file.ts";
+import { parseFailure } from "./utils.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_ADC_PATH = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const VERTEX_HOST = "https://aiplatform.googleapis.com";
@@ -20,27 +20,7 @@ interface GeminiAdcConfig {
 	geminiBaseUrl?: unknown;
 }
 
-let cachedConfig: GeminiAdcConfig | null = null;
-
-function loadConfig(): GeminiAdcConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		const parsed = JSON.parse(raw);
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			throw new Error("config root must be an object");
-		}
-		cachedConfig = parsed as GeminiAdcConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-	return cachedConfig;
-}
+const loadConfig = createConfigFileReader<GeminiAdcConfig>();
 
 function normalizeIdentifier(value: unknown, envName: string): string | null {
 	if (typeof value === "string") {
@@ -106,7 +86,13 @@ function requiredString(record: Record<string, unknown>, name: string, context: 
 }
 
 function parseAdcFile(raw: string): AdcFile {
-	const parsed = objectRecord(JSON.parse(raw));
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(parseFailure(error));
+	}
+	const parsed = objectRecord(value);
 	if (!parsed) throw new Error("credential root must be an object");
 	const type = stringField(parsed, "type") ?? "authorized_user";
 	if (type === "authorized_user") {

@@ -2,10 +2,9 @@ import { redactCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { resolveParallelApiKey } from "./parallel.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
 
 const PARALLEL_MCP_URL = "https://search.parallel.ai/mcp";
-const CONFIG_PATH = getWebSearchConfigPath();
 const REQUEST_TIMEOUT_MS = 60_000;
 
 interface ParallelMcpResult {
@@ -120,7 +119,7 @@ async function callParallelMcp(
 	const safeBody = apiKey ? redactCredential(body, apiKey) : body;
 	if (!response.ok) {
 		if (response.status === 429) {
-			throw new Error(`Parallel MCP rate limit reached (429). Add parallelApiKey to ${CONFIG_PATH} or set PARALLEL_API_KEY for higher limits: ${safeBody.slice(0, 200)}`);
+			throw new Error(`Parallel MCP rate limit reached (429). Add parallelApiKey to ${webSearchConfigPath()} or set PARALLEL_API_KEY for higher limits: ${safeBody.slice(0, 200)}`);
 		}
 		throw new Error(`Parallel MCP error ${response.status}: ${safeBody.slice(0, 300)}`);
 	}

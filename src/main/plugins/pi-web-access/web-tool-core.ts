@@ -3,7 +3,6 @@
 // that differs per host (session persistence, background notifications, Pi model
 // access) is a WebToolCoreHost hook. This module must stay free of runtime imports
 // from index.ts and @earendil-works/* packages.
-import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import pLimit from "p-limit";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -18,7 +17,7 @@ import {
 	type SearchProviderSelection,
 } from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
+import { runWithProxy, webSearchConfigPath } from "./utils.ts";
 import { generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -39,10 +38,7 @@ import type {
 	WebToolCore,
 	WebToolResult,
 } from "./web-tool-contract.ts";
-
-// Resolved per call: the host exports PIG_DIR from its own process, and may set it after this
-// module was first imported. A module-level constant would freeze the wrong path.
-export const webSearchConfigPath = (): string => getWebSearchConfigPath();
+import { createConfigFileReader } from "./config-file.ts";
 
 /** Summary metadata a host reports alongside an approved summary. */
 export interface SummaryMeta {
@@ -99,24 +95,7 @@ export interface WebSearchConfig {
 	};
 }
 
-export function parseConfigRoot(raw: string): Record<string, unknown> {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${webSearchConfigPath()}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${webSearchConfigPath()}: expected a JSON object`);
-	}
-	return parsed as Record<string, unknown>;
-}
-
-export function loadConfig(): WebSearchConfig {
-	if (!existsSync(webSearchConfigPath())) return {};
-	return parseConfigRoot(readFileSync(webSearchConfigPath(), "utf-8")) as WebSearchConfig;
-}
+export const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 export type ToolNames = {
 	webSearch: string;

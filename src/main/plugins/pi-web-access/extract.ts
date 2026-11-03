@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import type TurndownService from "turndown";
 import pLimit from "p-limit";
 import { extractRSCContent } from "./rsc-extract.ts";
@@ -21,45 +20,35 @@ import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
-import { formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
+import { formatSeconds, webSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
 import { getBrowserCookiesForHosts, getLastBrowserCookieDiagnostic } from "./chrome-cookies.ts";
 import { sanitizeInlineDataUris } from "./data-uri-sanitize.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_CONFIGURED_TIMEOUT_MS = 2_147_483_647;
 const CONCURRENT_LIMIT = 3;
-const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
+
+const readFetchConfig = createConfigFileReader<Record<string, unknown>>();
 
 function loadFetchTimeoutMs(): number {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return DEFAULT_TIMEOUT_MS;
-
-	let raw: unknown;
-	try {
-		raw = JSON.parse(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8"));
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-		throw new Error(`Invalid config in ${WEB_SEARCH_CONFIG_PATH}: expected a JSON object`);
-	}
-
-	const fetchConfig = (raw as Record<string, unknown>).fetch;
+	const raw = readFetchConfig();
+	const fetchConfig = raw.fetch;
 	if (fetchConfig === undefined) return DEFAULT_TIMEOUT_MS;
 	if (!fetchConfig || typeof fetchConfig !== "object" || Array.isArray(fetchConfig)) {
-		throw new Error(`fetch in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+		throw new Error(`fetch in ${webSearchConfigPath()} must be an object`);
 	}
 
 	const value = (fetchConfig as Record<string, unknown>).timeout;
 	if (value === undefined) return DEFAULT_TIMEOUT_MS;
 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-		throw new Error(`Invalid fetch.timeout in ${WEB_SEARCH_CONFIG_PATH}: expected a positive finite number of seconds, got ${JSON.stringify(value)}`);
+		throw new Error(`Invalid fetch.timeout in ${webSearchConfigPath()}: expected a positive finite number of seconds, got ${JSON.stringify(value)}`);
 	}
 	const timeoutMs = Math.ceil(value * 1000);
 	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_CONFIGURED_TIMEOUT_MS) {
-		throw new Error(`Invalid fetch.timeout in ${WEB_SEARCH_CONFIG_PATH}: converted timeout must be a finite safe integer from 1 through ${MAX_CONFIGURED_TIMEOUT_MS} milliseconds`);
+		throw new Error(`Invalid fetch.timeout in ${webSearchConfigPath()}: converted timeout must be a finite safe integer from 1 through ${MAX_CONFIGURED_TIMEOUT_MS} milliseconds`);
 	}
 	return Math.max(1, timeoutMs);
 }
@@ -225,28 +214,13 @@ async function fetchAuthenticatedRemoteUrl(
 }
 
 function loadFetchRouting(): FetchRouting {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) {
-		return { providers: DEFAULT_FETCH_PROVIDER_ORDER, allowRemoteHostedProviders: false };
-	}
-
-	let raw: Record<string, unknown>;
-	try {
-		const parsed: unknown = JSON.parse(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8"));
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			throw new Error("expected a JSON object");
-		}
-		raw = parsed as Record<string, unknown>;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
-
+	const raw = readFetchConfig();
 	if (!Object.hasOwn(raw, "fetchRouting")) {
 		return { providers: DEFAULT_FETCH_PROVIDER_ORDER, allowRemoteHostedProviders: false };
 	}
 	const routing = raw.fetchRouting;
 	if (!routing || typeof routing !== "object" || Array.isArray(routing)) {
-		throw new Error(`fetchRouting in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+		throw new Error(`fetchRouting in ${webSearchConfigPath()} must be an object`);
 	}
 
 	const routingConfig = routing as Record<string, unknown>;
@@ -254,17 +228,17 @@ function loadFetchRouting(): FetchRouting {
 	let providers = DEFAULT_FETCH_PROVIDER_ORDER;
 	if (providersValue !== undefined) {
 		if (!Array.isArray(providersValue) || providersValue.length === 0) {
-			throw new Error(`fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array`);
+			throw new Error(`fetchRouting.providers in ${webSearchConfigPath()} must be a non-empty array`);
 		}
 
 		providers = [];
 		for (const provider of providersValue) {
 			const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : "";
 			if (!FETCH_PROVIDERS.includes(normalized as FetchProvider)) {
-				throw new Error(`fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} contains an invalid provider: ${String(provider)}`);
+				throw new Error(`fetchRouting.providers in ${webSearchConfigPath()} contains an invalid provider: ${String(provider)}`);
 			}
 			if (providers.includes(normalized as FetchProvider)) {
-				throw new Error(`fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: ${normalized}`);
+				throw new Error(`fetchRouting.providers in ${webSearchConfigPath()} must not contain duplicates: ${normalized}`);
 			}
 			providers.push(normalized as FetchProvider);
 		}
@@ -272,7 +246,7 @@ function loadFetchRouting(): FetchRouting {
 
 	const allowRemoteHostedProvidersValue = routingConfig.allowRemoteHostedProviders;
 	if (allowRemoteHostedProvidersValue !== undefined && typeof allowRemoteHostedProvidersValue !== "boolean") {
-		throw new Error(`fetchRouting.allowRemoteHostedProviders in ${WEB_SEARCH_CONFIG_PATH} must be a boolean`);
+		throw new Error(`fetchRouting.allowRemoteHostedProviders in ${webSearchConfigPath()} must be a boolean`);
 	}
 
 	return { providers, allowRemoteHostedProviders: allowRemoteHostedProvidersValue === true };
@@ -313,11 +287,11 @@ function jinaReaderGuidance(routing: FetchRouting, providerOrder: FetchProvider[
 	const privacy = "target URLs are fetched through Jina's infrastructure";
 	const optInCaveat = "this also allows the other hosted providers in your fetch provider order";
 	if (routing.providers.includes("jina")) {
-		return `  • Enable the keyless Jina Reader fallback: set fetchRouting.allowRemoteHostedProviders to true in ${WEB_SEARCH_CONFIG_PATH} (Jina is already in your fetch provider order; ${optInCaveat}; ${privacy})`;
+		return `  • Enable the keyless Jina Reader fallback: set fetchRouting.allowRemoteHostedProviders to true in ${webSearchConfigPath()} (Jina is already in your fetch provider order; ${optInCaveat}; ${privacy})`;
 	}
 	return needsRemoteOptIn
-		? `  • Enable the keyless Jina Reader fallback: add "jina" to your existing fetchRouting.providers and set fetchRouting.allowRemoteHostedProviders to true in ${WEB_SEARCH_CONFIG_PATH} (${optInCaveat}; ${privacy})`
-		: `  • Enable the keyless Jina Reader fallback: add "jina" to your existing fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} (${privacy})`;
+		? `  • Enable the keyless Jina Reader fallback: add "jina" to your existing fetchRouting.providers and set fetchRouting.allowRemoteHostedProviders to true in ${webSearchConfigPath()} (${optInCaveat}; ${privacy})`
+		: `  • Enable the keyless Jina Reader fallback: add "jina" to your existing fetchRouting.providers in ${webSearchConfigPath()} (${privacy})`;
 }
 function abortedResult(url: string): ExtractedContent {
 	return { url, title: "", content: "", error: "Aborted" };
@@ -732,7 +706,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
+			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${webSearchConfigPath()}` };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -1086,16 +1060,16 @@ export async function extractContent(
 		"",
 		"Fallback options:",
 		...(jinaHint ? [jinaHint] : []),
-		`  • Set firecrawlBaseUrl in ${WEB_SEARCH_CONFIG_PATH} to a self-hosted Firecrawl instance`,
-		`  • Set crawl4aiBaseUrl in ${WEB_SEARCH_CONFIG_PATH} to a self-hosted Crawl4AI instance`,
-		`  • Set tinyfishApiKey in ${WEB_SEARCH_CONFIG_PATH} or TINYFISH_API_KEY`,
-		`  • Set search1apiApiKey in ${WEB_SEARCH_CONFIG_PATH} or SEARCH1API_KEY`,
-		`  • Set queritApiKey in ${WEB_SEARCH_CONFIG_PATH} or QUERIT_API_KEY`,
-		`  • Set kagiApiKey in ${WEB_SEARCH_CONFIG_PATH} or KAGI_API_KEY`,
-		`  • Set ollamaApiKey in ${WEB_SEARCH_CONFIG_PATH} or OLLAMA_API_KEY`,
-		`  • Set parallelApiKey in ${WEB_SEARCH_CONFIG_PATH} or PARALLEL_API_KEY`,
-		`  • Set brightdataApiKey and brightdataUnlockerZone in ${WEB_SEARCH_CONFIG_PATH} or BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE`,
-		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
+		`  • Set firecrawlBaseUrl in ${webSearchConfigPath()} to a self-hosted Firecrawl instance`,
+		`  • Set crawl4aiBaseUrl in ${webSearchConfigPath()} to a self-hosted Crawl4AI instance`,
+		`  • Set tinyfishApiKey in ${webSearchConfigPath()} or TINYFISH_API_KEY`,
+		`  • Set search1apiApiKey in ${webSearchConfigPath()} or SEARCH1API_KEY`,
+		`  • Set queritApiKey in ${webSearchConfigPath()} or QUERIT_API_KEY`,
+		`  • Set kagiApiKey in ${webSearchConfigPath()} or KAGI_API_KEY`,
+		`  • Set ollamaApiKey in ${webSearchConfigPath()} or OLLAMA_API_KEY`,
+		`  • Set parallelApiKey in ${webSearchConfigPath()} or PARALLEL_API_KEY`,
+		`  • Set brightdataApiKey and brightdataUnlockerZone in ${webSearchConfigPath()} or BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE`,
+		`  • Set GEMINI_API_KEY in ${webSearchConfigPath()}`,
 		"  • Sign into gemini.google.com in Chrome",
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
 	].join("\n");

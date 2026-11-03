@@ -1,9 +1,9 @@
 import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync } from "node:fs";
 import { findModelWithProviderRouting, isModelInScope } from "./summary-model-scope.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
 import { awaitWithAbort } from "./abortable.ts";
+import { createConfigFileReader } from "./config-file.ts";
+import { webSearchConfigPath } from "./utils.ts";
 
 const OUTPUT_TOKENS = 2_000;
 const INPUT_CONTEXT_FRACTION = 0.6;
@@ -24,22 +24,10 @@ interface AnswerModelSelector {
 	id: string;
 }
 
+const readConfig = createConfigFileReader<Record<string, unknown>>();
+
 function loadConfiguredAnswerModel(): AnswerModelSelector | undefined {
-	const configPath = getWebSearchConfigPath();
-	if (!existsSync(configPath)) return undefined;
-
-	let raw: unknown;
-	try {
-		raw = JSON.parse(readFileSync(configPath, "utf8"));
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${configPath}: ${message}`);
-	}
-
-	const root = raw && typeof raw === "object" && !Array.isArray(raw)
-		? raw as Record<string, unknown>
-		: undefined;
-	const fetchConfig = root?.fetch;
+	const fetchConfig = readConfig().fetch;
 	if (!fetchConfig || typeof fetchConfig !== "object" || Array.isArray(fetchConfig)) return undefined;
 	const values = fetchConfig as Record<string, unknown>;
 	const hasProvider = Object.hasOwn(values, "answerProvider");
@@ -49,13 +37,13 @@ function loadConfiguredAnswerModel(): AnswerModelSelector | undefined {
 	const provider = values.answerProvider;
 	const model = values.answerModel;
 	if (hasProvider && (typeof provider !== "string" || provider.trim().length === 0)) {
-		throw new Error(`fetch.answerProvider in ${configPath} must be a non-empty string`);
+		throw new Error(`fetch.answerProvider in ${webSearchConfigPath()} must be a non-empty string`);
 	}
 	if (hasModel && (typeof model !== "string" || model.trim().length === 0)) {
-		throw new Error(`fetch.answerModel in ${configPath} must be a non-empty string`);
+		throw new Error(`fetch.answerModel in ${webSearchConfigPath()} must be a non-empty string`);
 	}
 	if (!hasProvider || !hasModel) {
-		throw new Error(`fetch.answerProvider and fetch.answerModel must be configured together in ${configPath}`);
+		throw new Error(`fetch.answerProvider and fetch.answerModel must be configured together in ${webSearchConfigPath()}`);
 	}
 	return { provider: (provider as string).trim(), id: (model as string).trim() };
 }
@@ -78,7 +66,7 @@ function resolveModel(ctx: ExtensionContext, override?: string, configured?: Ans
 	if (!model) {
 		if (override) throw new Error(`Answer model not found: ${override}`);
 		if (configured) {
-			throw new Error(`Answer model not found: ${configured.provider}/${configured.id} (from fetch.answerProvider/fetch.answerModel in ${getWebSearchConfigPath()})`);
+			throw new Error(`Answer model not found: ${configured.provider}/${configured.id} (from fetch.answerProvider/fetch.answerModel in ${webSearchConfigPath()})`);
 		}
 		throw new Error("No current model available for page answering");
 	}

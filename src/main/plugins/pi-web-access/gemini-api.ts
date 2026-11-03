@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { webSearchConfigPath } from "./utils.ts";
 import {
 	isGeminiAdcAvailable,
 	getAdcAccessToken,
@@ -9,11 +8,11 @@ import {
 	getVertexApiBase,
 	isVertexHost,
 } from "./gemini-adc.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
-const CONFIG_PATH = getWebSearchConfigPath();
 export const DEFAULT_MODEL = "gemini-3.6-flash";
 
 interface GeminiApiConfig {
@@ -22,24 +21,7 @@ interface GeminiApiConfig {
 	cloudflareApiKey?: unknown;
 }
 
-let cachedConfig: GeminiApiConfig | null = null;
-
-function loadConfig(): GeminiApiConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as GeminiApiConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
+const loadConfig = createConfigFileReader<GeminiApiConfig>();
 
 function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
 	const timeout = AbortSignal.timeout(timeoutMs);
@@ -254,7 +236,7 @@ export async function queryGeminiApiWithInlineData(
 	if (!apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) {
 		throw new Error(
 			"Gemini API not configured. Either:\n" +
-			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+			`  1. Configure geminiApiKey in ${webSearchConfigPath()} or set GEMINI_API_KEY\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 			"  3. Set geminiAuth to \"adc\" with a Google Cloud ADC (GOOGLE_APPLICATION_CREDENTIALS) + project/location"
 		);
@@ -310,7 +292,7 @@ export async function queryGeminiApiWithVideo(
 	if (!apiKey && !isGatewayConfigured()) {
 		throw new Error(
 			"Gemini API not configured. Either:\n" +
-			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
+			`  1. Configure geminiApiKey in ${webSearchConfigPath()} or set GEMINI_API_KEY\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing"
 		);
 	}

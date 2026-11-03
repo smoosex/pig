@@ -1,13 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { BraveRateLimitCoordinator } from "./brave-rate-limit.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, webSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { createConfigFileReader } from "./config-file.ts";
 
 const BRAVE_API_BASE_URL = "https://api.search.brave.com/res/v1";
-const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
 const braveRateLimit = new BraveRateLimitCoordinator();
 
@@ -21,24 +20,7 @@ interface NormalizedDomainFilters {
 	blocked: string[];
 }
 
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
+const loadConfig = createConfigFileReader<WebSearchConfig>();
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	return resolveCredential({
@@ -146,7 +128,7 @@ export async function searchWithBrave(
 	if (!apiKey) {
 		throw new Error(
 			"Brave Search API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "braveApiKey": "your-key" }\n` +
+			`  1. Create ${webSearchConfigPath()} with { "braveApiKey": "your-key" }\n` +
 			"  2. Set BRAVE_API_KEY environment variable\n" +
 			"Get a key at https://brave.com/search/api/",
 		);
