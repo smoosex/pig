@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import type { Entry, Observation, Reflection } from '../src/main/plugins/observational-memory/session-ledger/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(scenario: string): Promise<void> {
   const entered = Promise.withResolvers<void>()
@@ -175,17 +176,8 @@ if (process.argv[2] === '--memory-fixture') {
 } else {
   for (const scenario of ['observer', 'observer-error', 'reflector', 'dropper', 'auth', 'failure', 'success', 'idle-observer', 'idle-auth', 'idle-reflector', 'idle-dropper']) {
     test(`memory lifecycle: ${scenario}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--memory-fixture', scenario], { stdout: 'pipe', stderr: 'pipe' })
-      const timer = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([
-          child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()
-        ])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timer)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--memory-fixture', scenario], { timeoutMs: 10_000 })
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 }

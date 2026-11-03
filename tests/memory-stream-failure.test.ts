@@ -89,6 +89,20 @@ test('runDropper keeps safely selected drops when a later stream turn fails', as
   assert.deepEqual(await runDropper({ ...dropperArgs, agentLoop: loop }), ['aaaaaaaaaaaa'])
 })
 
+test('runDropper filters unknown ids and deduplicates within and across tool calls', async () => {
+  let call = 0
+  const loop = loopFrom([messageEnd('toolUse'), messageEnd('endTurn')], async (context) => {
+    call++
+    const result = await context.tools[0].execute(`tool-${call}`, {
+      ids: ['unknown', observation.id, observation.id],
+    })
+    assert.equal(result.details.added, call === 1 ? 1 : 0)
+    assert.equal(result.details.totalCandidates, 1)
+  })
+  assert.deepEqual(await runDropper({ ...dropperArgs, agentLoop: loop }), [observation.id])
+  assert.equal(call, 2)
+})
+
 test('a clean empty stream reports nothing instead of failing', async () => {
   assert.equal(await runReflector({ ...reflectorArgs, agentLoop: loopFrom(cleanEnd) }), undefined)
   assert.equal(await runDropper({ ...dropperArgs, agentLoop: loopFrom(cleanEnd) }), undefined)

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import type { runDropper } from '../src/main/plugins/observational-memory/agents/dropper/agent'
 import type { Entry, Observation, Reflection } from '../src/main/plugins/observational-memory/session-ledger/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 type DropperArgs = Parameters<typeof runDropper>[0]
 type DropperLoop = NonNullable<DropperArgs['agentLoop']>
@@ -87,14 +88,7 @@ if (process.argv.includes('--dropper-budget-fixture')) {
   await fixture()
 } else {
   test('bounded dropper candidates use full-pool eligibility and never drop an unsupplied id', async () => {
-    const child = Bun.spawn([process.execPath, import.meta.path, '--dropper-budget-fixture'], { stdout: 'pipe', stderr: 'pipe' })
-    const timer = setTimeout(() => child.kill(), 10_000)
-    try {
-      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-      assert.equal(code, 0, stderr || stdout)
-    } finally {
-      clearTimeout(timer)
-      child.kill()
-    }
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--dropper-budget-fixture'], { timeoutMs: 10_000 })
+    assert.equal(code, 0, stderr || stdout)
   }, 15_000)
 }

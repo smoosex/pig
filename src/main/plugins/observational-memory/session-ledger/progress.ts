@@ -1,6 +1,5 @@
 import { estimateEntryTokens } from "../tokens.js";
 import {
-	OM_OBSERVATIONS_DROPPED,
 	OM_OBSERVATIONS_RECORDED,
 	OM_REFLECTIONS_RECORDED,
 	type Entry,
@@ -123,10 +122,6 @@ export function observedTokensSinceReflectionCoverage(entries: Entry[]): number 
 		if (isSourceEntry(entries[i])) total += estimateEntryTokens(entries[i]);
 	}
 	return total;
-}
-
-export function rawTokensSinceDropCoverage(entries: Entry[]): number {
-	return rawTokensSinceCoverage(entries, OM_OBSERVATIONS_DROPPED);
 }
 
 export function findLastCompactionIndex(entries: Entry[]): number {

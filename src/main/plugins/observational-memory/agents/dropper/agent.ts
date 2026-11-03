@@ -16,25 +16,6 @@ import {
 	observationToDropperLine,
 } from "./coverage.js";
 import { observationPoolMetrics, type ObservationPoolMetrics } from "./pool.js";
-export {
-	maxDropCountForPool,
-	observationPoolFullness,
-	observationPoolMetrics,
-} from "./pool.js";
-export type { ObservationPoolMetrics } from "./pool.js";
-export {
-	REFLECTION_COVERAGE_TIERS,
-	coverageTierForObservation,
-	emptyCoverageSummaryByRelevance,
-	observationToDropperLine,
-	reflectionCoverageMap,
-	reflectionCoverageTierForCount,
-	reflectionSupportCounts,
-	summarizeCoverageByRelevance,
-	summarizeCoverageByRelevanceForIds,
-	summarizeCoverageTransitionsByRelevance,
-} from "./coverage.js";
-export type { CoverageSummaryByRelevance, CoverageTransitionSummaryByRelevance, ReflectionCoverageTier } from "./coverage.js";
 
 export class DropperStreamError extends Error {
 	readonly stopReason: string;
@@ -88,24 +69,6 @@ function relevanceCounts(observations: readonly Observation[]): Record<Observati
 		counts[observation.relevance]++;
 		return counts;
 	}, { low: 0, medium: 0, high: 0, critical: 0 });
-}
-
-export function normalizeDropObservationIds(
-	ids: readonly string[] | undefined,
-	observations: readonly Observation[],
-): string[] | undefined {
-	if (!ids || ids.length === 0) return undefined;
-	const allowed = new Map(observations.map((observation) => [observation.id, observation]));
-	const result: string[] = [];
-	const seen = new Set<string>();
-	for (const id of ids) {
-		const observation = allowed.get(id);
-		if (!observation) continue;
-		if (seen.has(id)) continue;
-		seen.add(id);
-		result.push(id);
-	}
-	return result.length > 0 ? result : undefined;
 }
 
 function timestampRank(timestamp: string): number {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { Runtime } from '../src/main/plugins/observational-memory/runtime'
 import type { Entry, Observation } from '../src/main/plugins/observational-memory/session-ledger/types'
+import { runSelf } from './helpers/subprocess.ts'
 
 async function idleFixture(cancel: boolean): Promise<void> {
   const { mock } = await import('bun:test')
@@ -96,15 +97,12 @@ if (process.argv.includes('--idle-fixture')) {
 } else {
   for (const cancel of [false, true]) {
     test(`idle consolidation ${cancel ? 'pauses on agent_start without scheduling compaction' : 'finishes before native compaction starts'}`, async () => {
-      const child = Bun.spawn([process.execPath, import.meta.path, '--idle-fixture', ...(cancel ? ['--cancel'] : [])], { stdout: 'pipe', stderr: 'pipe' })
-      const timer = setTimeout(() => child.kill(), 10_000)
-      try {
-        const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
-        assert.equal(code, 0, stderr || stdout)
-      } finally {
-        clearTimeout(timer)
-        child.kill()
-      }
+      const { exitCode: code, stdout, stderr } = await runSelf(
+        import.meta.path,
+        ['--idle-fixture', ...(cancel ? ['--cancel'] : [])],
+        { timeoutMs: 10_000 }
+      )
+      assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
 

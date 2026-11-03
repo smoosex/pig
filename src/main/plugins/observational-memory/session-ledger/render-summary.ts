@@ -103,7 +103,3 @@ export function renderSummaryWithBudget(
 		omittedObservations,
 	};
 }
-
-export function renderSummary(reflections: Reflection[], observations: Observation[], options: RenderSummaryOptions = {}): string {
-	return renderSummaryWithBudget(reflections, observations, options).text;
-}
