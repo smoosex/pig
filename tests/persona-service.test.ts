@@ -2,7 +2,6 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PERSONA_FILES } from '../src/shared/persona'
 import { getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver } from '../src/main/plugins/pi-persona/service'
 import { personaTransaction, setActivity } from '../src/main/plugins/pi-persona/kernel'
 import { withPersonaLock } from '../src/main/plugins/pi-persona/storage'
@@ -28,7 +27,7 @@ async function activate() {
 test('defaults and reads never create state or acquire locks; file revisions and permissions remain private', async () => {
   const initial = await getPersona()
   expect(initial.active).toBe(false)
-  expect(initial.files.map(file => file.name)).toEqual([...PERSONA_FILES])
+  expect(initial.files.map(file => file.name)).toEqual(['SOUL.md', 'USER.md'])
   expect(initial.mood).toMatchObject({ pleasantness: 0.15, activation: 0.35, automatic: true, observer: { enabled: true } })
   // Energy recovers while idle, so the default may already have moved by a few milliseconds.
   expect(initial.mood.energy).toBeCloseTo(0.75, 5)
@@ -45,9 +44,9 @@ test('defaults and reads never create state or acquire locks; file revisions and
   await expect(savePersonaFile({ ...soul, content: 'stale' })).rejects.toThrow('conflict')
 })
 
-test('strict document validation rejects malformed YAML, executable engines, invalid traits and size', async () => {
-  for (const content of ['---\nname: [broken\n---', '---\nname: test', '---\nname: 42\n---', '---\nsarcasm: 2\n---', '\uFEFF---javascript\n({name: "x"})\n---']) {
-    await expect(savePersonaFile({ name: 'IDENTIFY.md', content, revision: null })).rejects.toThrow()
+test('strict document validation rejects malformed YAML, executable engines and size', async () => {
+  for (const content of ['---\nname: [broken\n---', '---\nname: test', '\uFEFF---javascript\n({name: "x"})\n---']) {
+    await expect(savePersonaFile({ name: 'SOUL.md', content, revision: null })).rejects.toThrow()
   }
   await expect(savePersonaFile({ name: '../SOUL.md', content: 'x', revision: null } as never)).rejects.toThrow('Invalid')
   await expect(savePersonaFile({ name: 'USER.md', content: 'a'.repeat(256 * 1024 + 1), revision: null })).rejects.toThrow('256 KiB')

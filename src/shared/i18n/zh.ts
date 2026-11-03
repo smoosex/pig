@@ -28,7 +28,6 @@ export const zh = {
     history: '最近心情记录', noHistory: '暂无心情记录',
     fileInfo: '{file} 说明',
     soulHint: '人格正文：性格、语气和行为方式，作为系统提示词注入所有会话；Agent 会在末尾的「## Evolved Traits」中追加演化特质。正文为空时改用 Pig 的默认身份。',
-    identifyHint: '在开头的 --- 之间填写 YAML：name（默认身份使用的名字，默认 Susan）、emoji；description 仅作记录；旧 0–1 性格参数仅保留兼容校验，不再驱动心情；性格请写在 SOUL.md 中。',
     userHint: '关于你的信息，例如称呼、偏好和习惯，作为用户上下文注入。可留空。',
     unsaved: '有未保存的更改', saved: '当前文件无更改', working: '处理中…', save: '保存 {file}',
     discardTitle: '放弃未保存的人格更改？', discardHint: '三个文件中尚未保存的草稿将丢失。', keepEditing: '继续编辑', discard: '放弃更改',

@@ -26,7 +26,6 @@ export const en: Messages = {
     history: 'Recent mood history', noHistory: 'No mood history yet',
     fileInfo: 'About {file}',
     soulHint: 'The persona body: personality, tone and behaviour, injected into every conversation as the system prompt; the Agent appends evolved traits under a trailing "## Evolved Traits" section. An empty body falls back to Pig\'s default identity.',
-    identifyHint: 'Use YAML between the opening --- lines: name (used by the default identity, Susan if unset), emoji; description is kept for reference only; legacy 0–1 trait parameters are validated for compatibility but no longer drive mood. Describe personality in SOUL.md.',
     userHint: 'Information about you, such as how to address you, preferences and habits, injected as user context. Optional.',
     unsaved: 'Unsaved changes', saved: 'No changes in this file', working: 'Working…', save: 'Save {file}',
     discardTitle: 'Discard unsaved persona changes?', discardHint: 'Unsaved drafts in all three files will be lost.', keepEditing: 'Keep editing', discard: 'Discard changes',

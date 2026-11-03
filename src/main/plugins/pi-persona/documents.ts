@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import matter from 'gray-matter'
 import { PERSONA_FILES, type PersonaDocument } from '../../../shared/persona'
-import { DEFAULT_TRAITS, type SoulDefinition } from './types'
+import type { SoulDefinition } from './types'
 import { readOptional } from './storage'
 
 export const MAX_DOCUMENT_BYTES = 256 * 1024
@@ -19,9 +19,7 @@ export async function readDocuments(dir: string): Promise<PersonaDocument[]> {
   }))
 }
 
-const DEFAULT_EMOJI = '󰊠'
-
-/** An empty `systemPrompt` means no SOUL; IDENTIFY and USER still apply to the default identity. */
+/** An empty `systemPrompt` means no SOUL; USER still applies to the default identity. */
 export function parseDocuments(files: PersonaDocument[]): SoulDefinition {
   const parsed = new Map(files.map(file => {
     if (typeof file.content !== 'string' || Buffer.byteLength(file.content, 'utf8') > MAX_DOCUMENT_BYTES) {
@@ -44,27 +42,9 @@ export function parseDocuments(files: PersonaDocument[]): SoulDefinition {
     }
     return [file.name, result] as const
   }))
-  const metadata = parsed.get('IDENTIFY.md')!.data as Record<string, unknown>
-  const traits = { ...DEFAULT_TRAITS }
-  for (const key of Object.keys(traits) as (keyof typeof traits)[]) {
-    const value = metadata[key]
-    if (value === undefined) continue
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(`IDENTIFY.md trait ${key} must be a number between 0 and 1`)
-    }
-    traits[key] = value
-  }
-  for (const key of ['name', 'emoji', 'description']) {
-    const value = metadata[key]
-    if (value !== undefined && (typeof value !== 'string' || (key !== 'description' && !value.trim()))) {
-      throw new Error(`IDENTIFY.md metadata ${key} must be ${key === 'description' ? 'a string' : 'a nonempty string'}`)
-    }
-  }
   const systemPrompt = parsed.get('SOUL.md')!.content.trim()
   const userProfile = parsed.get('USER.md')!.content.trim()
   return {
-    ...(metadata.name !== undefined ? { name: (metadata.name as string).trim() } : {}),
-    emoji: metadata.emoji as string ?? DEFAULT_EMOJI,
-    traits, systemPrompt, ...(userProfile ? { userProfile } : {}),
+    systemPrompt, ...(userProfile ? { userProfile } : {}),
   }
 }

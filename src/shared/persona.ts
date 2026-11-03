@@ -1,6 +1,6 @@
 /* One global persona and expressive state, shared by all Pig conversations. */
 import type { ThinkingLevel } from './api'
-export const PERSONA_FILES = ['SOUL.md', 'IDENTIFY.md', 'USER.md'] as const
+export const PERSONA_FILES = ['SOUL.md', 'USER.md'] as const
 export type PersonaFileName = typeof PERSONA_FILES[number]
 export interface PersonaDocument {
   name: PersonaFileName

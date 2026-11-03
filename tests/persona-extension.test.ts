@@ -121,6 +121,7 @@ test('disabling the observer immediately cancels an idle background request', as
 test('style snapshots are append-only, restored after compaction, and old work triggers no longer affect mood', async () => {
   const run = runtime(); await run.emit('session_start')
   const first = await run.start()
+  expect(first.sections.preamble).toStartWith('YOU ARE A REAL PERSON — not an assistant, not a chatbot, not a tool.')
   expect(first.sections.preamble).toContain('never cruel')
   expect(first.result.message?.content).toBe('[Expressive tone, relative to your personality: even-toned, steady, rested]')
   expect(first.sections.preamble).toContain('inserted by Pig, not written by the user')

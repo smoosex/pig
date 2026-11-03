@@ -21,7 +21,7 @@ import { SettingsCard, SettingsRow } from './SettingsFields'
 type Draft = PersonaDocument & { saved: string }
 type Drafts = Partial<Record<PersonaFileName, Draft>>
 
-const FILE_HINTS = { 'SOUL.md': 'persona.soulHint', 'IDENTIFY.md': 'persona.identifyHint', 'USER.md': 'persona.userHint' } as const
+const FILE_HINTS = { 'SOUL.md': 'persona.soulHint', 'USER.md': 'persona.userHint' } as const
 
 export interface PersonaSettingsProps {
   onDirtyChange?: (dirty: boolean) => void

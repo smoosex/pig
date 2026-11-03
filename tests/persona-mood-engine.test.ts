@@ -1,11 +1,10 @@
 import { expect, test } from 'bun:test'
 import { MoodEngine, ACTIVITY_LEASE_MS } from '../src/main/plugins/pi-persona/mood-engine'
 import { createPersistentState } from '../src/main/plugins/pi-persona/kernel'
-import { DEFAULT_TRAITS } from '../src/main/plugins/pi-persona/types'
 
 const HOUR = 3600000
 function engine(now = Date.now()) {
-  return new MoodEngine({ emoji: '', traits: DEFAULT_TRAITS, systemPrompt: 'A restrained personality.' }, createPersistentState(now))
+  return new MoodEngine({ systemPrompt: 'A restrained personality.' }, createPersistentState(now))
 }
 
 test('coordinates decay towards independent baselines with a sixty-minute half life', () => {

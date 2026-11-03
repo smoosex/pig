@@ -29,24 +29,7 @@ export interface PersistentState extends PersonaMoodValues {
   nextHistorySequence: number
   history: PersistentEmotionSnapshot[]
 }
-export interface SoulTraits {
-  openness: number
-  conscientiousness: number
-  extraversion: number
-  agreeableness: number
-  neuroticism: number
-  formality: number
-  tsundere: number
-  sarcasm: number
-}
-export const DEFAULT_TRAITS: SoulTraits = {
-  openness: 0.5, conscientiousness: 0.5, extraversion: 0.5, agreeableness: 0.5,
-  neuroticism: 0.5, formality: 0.5, tsundere: 0, sarcasm: 0,
-}
 export interface SoulDefinition {
-  name?: string
-  emoji: string
-  traits: SoulTraits
   systemPrompt: string
   userProfile?: string
 }
