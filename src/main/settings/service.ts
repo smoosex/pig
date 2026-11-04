@@ -17,7 +17,7 @@ import { loadPigSettings, updatePigSettings, type PigSettings } from '../pig-set
 import { supportsGlass } from '../surface-support'
 import { systemLocale } from '../i18n'
 import {
-  availableModels, pickerThinkingLevels, readDefaultSettings, startModelRuntime, updateDefaultSettings,
+  availableModels, readDefaultSettings, startModelRuntime, updateDefaultSettings,
   type DefaultSettingsSnapshot
 } from '../pi/model-settings'
 import { listPlugins, pluginScopes, updatePluginScopes } from '../pi/plugins'
@@ -70,7 +70,7 @@ const fields: SettingsCatalog['groups'] = [
   ] },
   { id: 'defaults', description: 'Default model and thinking for new sessions. Shared with Pi CLI; does not switch an existing session. An explicit thinking choice also updates the chosen model\'s remembered level, like the settings page.', scope: 'pi-shared', applies: 'new-sessions', fields: [
     { key: 'model', type: 'model', description: 'An available model, identified by provider and id. Use settings_list with group defaults to find candidates.' },
-    { key: 'thinkingLevel', type: 'enum', values: ['low', 'medium', 'high', 'xhigh', 'max'], description: 'Must be supported by the selected/default model. off and minimal are not offered for general defaults.' }
+    { key: 'thinkingLevel', type: 'enum', values: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'], description: 'Must be supported by the selected/default model.' }
   ] },
   { id: 'plugins', description: 'Which session types load each installed plugin. Installing, updating and removing plugins are not available here. Idle sessions reload immediately; running sessions, including this one, reload after their current run.', scope: 'application', applies: 'sessions-reload', fields: [
     { key: 'scopes', type: 'scope-map', values: ['project', 'chat'], description: `Patch plugin IDs to the session types that load them; [] disables. Use settings_list with group plugins for IDs. ${SELF_PLUGIN} cannot be changed from a conversation.` }
@@ -210,7 +210,7 @@ export class SettingsService {
         await startModelRuntime()
         const query = options.query?.trim().toLowerCase() ?? ''
         const models = availableModels().filter((model) => `${model.provider} ${model.providerName} ${model.id} ${model.name}`.toLowerCase().includes(query))
-        catalog.models = { items: models.slice(offset, offset + limit).map((model) => ({ ...model, thinkingLevels: pickerThinkingLevels(model.thinkingLevels) })), total: models.length, offset, hasMore: offset + limit < models.length }
+        catalog.models = { items: models.slice(offset, offset + limit), total: models.length, offset, hasMore: offset + limit < models.length }
       }
       if (options.group === 'plugins') {
         catalog.plugins = (await listPlugins()).map(({ id, name, kind, scopes, available, error }) => ({

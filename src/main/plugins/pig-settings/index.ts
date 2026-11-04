@@ -73,7 +73,7 @@ const updateParameters = union([
     group: lit('defaults'), expectedRevision: revision,
     patch: obj({
       model: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
-      thinkingLevel: opt(oneOf(['low', 'medium', 'high', 'xhigh', 'max'] as const))
+      thinkingLevel: opt(oneOf(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const))
     })
   }),
   obj({

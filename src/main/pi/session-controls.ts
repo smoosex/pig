@@ -125,7 +125,7 @@ function pendingControls(session: MemorySession): SessionControls {
     model,
     thinkingLevel: clampThinking(
       session.thinkingLevel ?? recorded ?? defaultThinkingFromSettings(model),
-      picker.length > 0 ? picker : supported
+      supported
     ),
     modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
@@ -253,7 +253,7 @@ function fileControls(
     model,
     thinkingLevel: clampThinking(
       session.thinkingLevel ?? settings.thinkingLevel ?? defaultThinkingFromSettings(model),
-      picker.length > 0 ? picker : supported
+      supported
     ),
     modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
@@ -349,12 +349,11 @@ export async function setSessionModel(
 
   const current = await controlsFor(session)
   const supported = thinkingLevelsFor(model)
-  const picker = pickerThinkingLevels(supported)
   // SDK sessions have their own settings snapshots. Resolve from shared preferences for both
   // live and unbuilt sessions, so another tab's explicit save is visible without recreating a session.
   const level = clampThinking(
     clampThinkingLevel(model, defaultThinkingFromSettings(model) ?? current.thinkingLevel ?? 'medium'),
-    picker.length > 0 ? picker : supported
+    supported
   )
   if ('agentSession' in session) {
     await session.agentSession.setModel(model)

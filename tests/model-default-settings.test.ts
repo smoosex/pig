@@ -97,7 +97,7 @@ async function fixture(name: string) {
     assert.deepEqual(first.stored, { model: { provider: 'test', id: 'a' }, thinkingLevel: 'medium' })
     assert.equal(first.effective.model?.id, 'a')
     assert.equal(first.effective.thinkingLevel, 'medium')
-    assert.deepEqual(first.effective.thinkingLevels, ['low', 'medium', 'high'])
+    assert.deepEqual(first.effective.thinkingLevels, ['off', 'minimal', 'low', 'medium', 'high'])
     assert.equal(first.modelThinkingLevel, null)
     assert.match(first.revision, /^[a-f0-9]{64}$/)
     assert.deepEqual(await api.getDefaultSessionSettings(), first.effective)
@@ -115,7 +115,7 @@ async function fixture(name: string) {
     assert.deepEqual(layered.stored, first.stored, 'stored reports personal defaults, not project overrides')
     assert.equal(layered.effective.model?.id, 'b')
     assert.equal(layered.modelThinkingLevel, 'off', 'the raw model preference is not hidden by the default picker')
-    assert.equal(layered.effective.thinkingLevel, 'medium', 'unsupported/hidden preferences fall back to the first visible level')
+    assert.equal(layered.effective.thinkingLevel, 'off', 'supported off preferences are shown without filtering')
     assert.notEqual(layered.revision, first.revision, 'persisted project overrides also affect the revision')
     project = undefined
     stored = '{}'
@@ -133,9 +133,7 @@ async function fixture(name: string) {
 
   if (name === 'validation') {
     const before = stored
-    for (const level of ['off', 'minimal', 'invalid'] as ThinkingLevel[]) {
-      await assert.rejects(api.updateDefaultSettings({ model: { provider: 'test', id: 'b' }, thinkingLevel: level }), /Invalid thinking level/)
-    }
+    await assert.rejects(api.updateDefaultSettings({ model: { provider: 'test', id: 'b' }, thinkingLevel: 'invalid' as ThinkingLevel }), /Invalid thinking level/)
     for (const level of ['low', 'high'] as const) {
       await assert.rejects(api.updateDefaultSettings({ model: { provider: 'test', id: 'b' }, thinkingLevel: level }), /not supported/)
     }
@@ -146,7 +144,6 @@ async function fixture(name: string) {
     await assert.rejects(api.updateDefaultSettings({ model: { provider: 'test', id: 'missing' }, thinkingLevel: 'high' }), /Model not found/)
     await assert.rejects(api.updateDefaultSettings({ model: { provider: 'test', id: 'locked' }, thinkingLevel: 'high' }), /Model not available/)
     await assert.rejects(setDefaultModel('missing', 'a'), /Model not found/)
-    await assert.rejects(setDefaultThinking('off'), /Invalid thinking level/)
     assert.equal(stored, before)
     assert.equal(writes, 0, 'every field is validated before any SDK setter runs')
     available = []
@@ -168,7 +165,7 @@ async function fixture(name: string) {
     assert.deepEqual(combined.stored, { model: { provider: 'test', id: 'b' }, thinkingLevel: 'max' })
     assert.equal(combined.effective.thinkingLevel, 'max')
     assert.equal(combined.modelThinkingLevel, 'max')
-    assert.deepEqual(combined.effective.thinkingLevels, ['medium', 'xhigh', 'max'])
+    assert.deepEqual(combined.effective.thinkingLevels, ['off', 'minimal', 'medium', 'xhigh', 'max'])
     assert.notEqual(combined.revision, initial.revision)
     assert.deepEqual(await api.readDefaultSettings(), combined, 'the update returns a fresh persisted snapshot')
     const a = await setDefaultModel('test', 'a')
@@ -182,10 +179,17 @@ async function fixture(name: string) {
     const b = await setDefaultModel('test', 'b')
     assert.equal(b.thinkingLevel, 'max', 'the target model preference wins over the global level')
     assert.equal(disk().defaultThinkingLevel, 'max', 'model-only changes persist the selected level globally too')
+    for (const level of ['off', 'minimal'] as const) {
+      const saved = await setDefaultThinking(level)
+      assert.equal(saved.thinkingLevel, level)
+      assert.equal(disk().defaultThinkingLevel, level)
+      assert.equal(disk().modelThinkingLevels['test/b'], level)
+      assert.equal((await api.readDefaultSettings()).effective.thinkingLevel, level)
+    }
     const plain = await setDefaultModel('test', 'plain')
     assert.equal(plain.thinkingLevel, null)
     assert.deepEqual(plain.thinkingLevels, [])
-    assert.equal(disk().defaultThinkingLevel, 'max', 'models without visible thinking levels leave thinking preferences untouched')
+    assert.equal(disk().defaultThinkingLevel, 'minimal', 'models without thinking levels leave thinking preferences untouched')
     assert.equal(disk().modelThinkingLevels['test/plain'], undefined)
     assert.equal(disk().unrelated, 'private-value')
     return

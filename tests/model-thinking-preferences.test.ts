@@ -112,6 +112,24 @@ async function fixture() {
   await setSessionModelThinkingPreference(live, true)
   await assert.rejects(setSessionThinking(live, 'xhigh'), /not supported/)
   assert.equal(settings.getModelThinkingLevel('test', 'a'), 'medium', 'invalid choices cannot overwrite a saved preference')
+
+  const { updateDefaultSettings } = await import('../src/main/pi/model-settings')
+  for (const level of ['off', 'minimal'] as const) {
+    await updateDefaultSettings({ model: { provider: 'test', id: 'b' }, thinkingLevel: level })
+    for (const session of [pending, live]) {
+      await setSessionModel(session, 'test', 'a')
+      const controls = await setSessionModel(session, 'test', 'b')
+      assert.equal(controls.thinkingLevel, level, 'model switches preserve the saved default, including hidden picker levels')
+      assert.equal(controls.modelThinkingLevel, level)
+      assert.deepEqual(controls.thinkingLevels, ['low', 'medium', 'high'], 'only the menu options are filtered')
+      assert.equal((await controlsFor(session)).thinkingLevel, level)
+      assert.equal(JSON.parse(stored).modelThinkingLevels['test/b'], level)
+    }
+    assert.equal(agent.thinkingLevel, level, 'the live SDK receives the saved level')
+    agent.thinkingLevel = 'high'
+    await applyPendingControls(pending, agent as unknown as LiveSession['agentSession'])
+    assert.equal(agent.thinkingLevel, level, 'materialization preserves the pending level')
+  }
 }
 
 if (process.argv.includes('--fixture')) await fixture()

@@ -22,7 +22,6 @@ async function fixture(name: string) {
   }
   mock.module(fileURLToPath(new URL('../src/main/pi/model-settings.ts', import.meta.url)), () => ({
     startModelRuntime: async () => {},
-    pickerThinkingLevels: (levels: string[]) => levels.filter((level) => level !== 'off' && level !== 'minimal'),
     availableModels: () => [
       { id: 'alpha', name: 'Alpha', provider: 'test', providerName: 'Test', contextWindow: 1, reasoning: true, thinkingLevels: ['off', 'low', 'high'] },
       { id: 'beta', name: 'Beta', provider: 'other', providerName: 'Other', contextWindow: 1, reasoning: false, thinkingLevels: [] }
@@ -155,7 +154,7 @@ async function fixture(name: string) {
         { group: 'general', expectedRevision: (await service.get('general')).revision, patch: { locale: 'fr' } },
         { group: 'shortcuts', expectedRevision: (await service.get('shortcuts')).revision, patch: { bindings: { 'tab.nope': null } } },
         { group: 'shortcuts', expectedRevision: (await service.get('shortcuts')).revision, patch: { bindings: { 'tab.new': 'Mod+KeyW' } } },
-        { group: 'defaults', expectedRevision: defaultsRevision, patch: { thinkingLevel: 'off' } },
+        { group: 'defaults', expectedRevision: defaultsRevision, patch: { thinkingLevel: 'invalid' } },
         { group: 'defaults', expectedRevision: defaultsRevision, patch: { model: { provider: 'test' } } }
       ]
       for (const request of invalid) await assert.rejects(service.update(request as never), JSON.stringify(request))
@@ -227,7 +226,7 @@ async function fixture(name: string) {
       })
 
       const catalog = await service.list({ group: 'defaults', query: 'alp' })
-      assert.deepEqual(catalog.models?.items.map((model) => [model.id, model.thinkingLevels]), [['alpha', ['low', 'high']]])
+      assert.deepEqual(catalog.models?.items.map((model) => [model.id, model.thinkingLevels]), [['alpha', ['off', 'low', 'high']]])
       assert.equal(catalog.models?.total, 1)
       const keys = await service.list({ group: 'shortcuts' })
       assert.ok(keys.shortcuts?.some((entry) => entry.id === 'tab.new' && entry.binding === entry.default))

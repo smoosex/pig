@@ -253,10 +253,10 @@ function defaultSessionSettings(
   model: SessionModelInfo | null,
   settings: SettingsManager
 ): DefaultSessionSettings {
-  const picker = pickerThinkingLevels(thinkingLevelsFor(model))
+  const picker = model?.thinkingLevels ?? []
   const stored = (model && settings.getModelThinkingLevel(model.provider, model.id)) ?? settings.getDefaultThinkingLevel()
   const thinkingLevel =
-    stored && picker.includes(stored) ? stored : (picker[0] ?? null)
+    stored && picker.includes(stored) ? stored : (pickerThinkingLevels(picker)[0] ?? picker[0] ?? null)
   return { model, thinkingLevel, thinkingLevels: picker }
 }
 
@@ -334,7 +334,7 @@ export async function updateDefaultSettings(
     const next = defaultSessionSettings(model, settings)
     if (patch.thinkingLevel !== undefined) {
       const level = patch.thinkingLevel
-      if (!THINKING_LEVELS.includes(level) || HIDDEN_THINKING_LEVELS.has(level)) {
+      if (!THINKING_LEVELS.includes(level)) {
         throw new Error(`Invalid thinking level: ${level}`)
       }
       if (!next.thinkingLevels.includes(level)) throw new Error(`Thinking level not supported: ${level}`)
