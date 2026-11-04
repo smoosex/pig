@@ -25,7 +25,8 @@ import { SteerHint } from './composer/SteerHint'
 import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
 import { TAB_REFERENCE_DROP } from './composer/tab-reference'
-import type { TabMention } from './composer/tab-mentions'
+import { tabMentions, type TabMention } from './composer/tab-mentions'
+import { useSessionsStore } from '../stores/sessions'
 
 /** Composes the input surface; session commands and editor lifecycle live in hooks. */
 export function Composer({
@@ -58,13 +59,15 @@ export function Composer({
     const onDrop = (event: Event) => {
       if (!editor || inputDisabled || bashMode || approval !== undefined) return
       const { reference, x, y } = (event as CustomEvent<{ reference: TabMention; x: number; y: number }>).detail
-      if (reference.kind === 'session' && reference.id === sessionId) return
+      const { openTabs, chatDraft } = useSessionsStore.getState()
+      if (!tabMentions(openTabs, sessionId, mentions.cwd, chatDraft?.sessionId)
+        .some((item) => item.kind === reference.kind && item.id === reference.id)) return
       const position = editor.view.posAtCoords({ left: x, top: y })?.pos ?? editor.state.selection.from
       editor.chain().focus().insertContentAt(position, [{ type: 'tabMention', attrs: reference }, { type: 'text', text: ' ' }]).run()
     }
     box.addEventListener(TAB_REFERENCE_DROP, onDrop)
     return () => box.removeEventListener(TAB_REFERENCE_DROP, onDrop)
-  }, [editor, inputDisabled, bashMode, approval, sessionId])
+  }, [editor, inputDisabled, bashMode, approval, sessionId, mentions.cwd])
   // Answering hands the keyboard back to the prompt it replaced.
   const hadApproval = useRef(false)
   useEffect(() => {

@@ -102,8 +102,9 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
   const removed: unknown[] = []
   const commits: [string, string][] = []
   const win = Object.assign(new EventEmitter(), {
-    webContents: new FakeContents(), dead: false,
+    webContents: new FakeContents(), dead: false, focused: true,
     isDestroyed() { return this.dead },
+    isFocused() { return this.focused },
     getContentSize: () => [600, 400],
     contentView: {
       children: [] as unknown[],
@@ -496,6 +497,36 @@ describe('browser host', () => {
     host.close(owner, 'a')
     expect(win.webContents.focusCalls).toBe(0)
     expect(views[2].webContents.dead).toBe(false)
+  })
+
+  test('background windows never restore native focus or consume a delayed request later', async () => {
+    for (const target of ['page', 'devtools'] as const) {
+      const { host, owner, win, views } = fixture()
+      await host.navigate(owner, 'a', 'https://example.com')
+      if (target === 'devtools') host.inspect(owner, 'a')
+      views[target === 'page' ? 0 : 1].webContents.focus()
+      win.focused = false
+      host.close(owner, 'a')
+      expect(win.webContents.focusCalls).toBe(0)
+    }
+    const { host, owner, win, views } = fixture()
+    await host.navigate(owner, 'a', 'https://example.com')
+    host.focusPage(owner, 'a')
+    win.focused = false
+    host.setBounds(owner, 'a', bounds)
+    expect(views[0].webContents.focusCalls).toBe(0)
+    host.focusPage(owner, 'a')
+    win.webContents.sent.length = 0
+    views[0].webContents.emit('focus')
+    expect(win.webContents.sent.at(-1)?.[1]).not.toHaveProperty('focused')
+    win.focused = true
+    host.setBounds(owner, 'a', { ...bounds, width: 280 })
+    expect(views[0].webContents.focusCalls).toBe(0)
+    host.setBounds(owner, 'a', null)
+    host.focusPage(owner, 'a')
+    win.emit('blur')
+    host.setBounds(owner, 'a', bounds)
+    expect(views[0].webContents.focusCalls).toBe(0)
   })
 
   test('a page opened from a control that disappears takes focus once it is visible', async () => {

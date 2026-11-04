@@ -138,6 +138,10 @@ export class BrowserHost {
       if (!this.watched.has(win)) {
         this.watched.add(win)
         win.once('closed', () => this.closeWindow(win))
+        win.on('blur', () => {
+          const current = this.windows.get(win)
+          if (current) for (const page of current.pages.values()) page.focusOnShow = false
+        })
         win.on('resize', () => {
           const current = this.windows.get(win)
           if (current && !current.disposed) for (const page of current.pages.values()) this.layout(current, page)
@@ -256,7 +260,7 @@ export class BrowserHost {
     page.view.setVisible(bounds.width > 0 && pageHeight > 0)
     if (page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
       page.focusOnShow = false
-      page.view.webContents.focus()
+      if (owner.win.isFocused()) page.view.webContents.focus()
     }
     if (page.devtools) {
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
@@ -295,7 +299,7 @@ export class BrowserHost {
   }
 
   private restoreHostFocus(owner: WindowPages, contents: Electron.WebContents | null): void {
-    if (!owner.win.isDestroyed() && !owner.win.webContents.isDestroyed() && contents?.isFocused()) {
+    if (!owner.win.isDestroyed() && owner.win.isFocused() && !owner.win.webContents.isDestroyed() && contents?.isFocused()) {
       owner.win.webContents.focus()
     }
   }
@@ -445,7 +449,7 @@ export class BrowserHost {
     const wc = page.view.webContents
     this.bindHostShortcuts(owner, page, wc)
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
-    wc.on('focus', () => this.push(owner, page, true))
+    wc.on('focus', () => this.push(owner, page, owner.win.isFocused()))
     // Also fires when the user closes DevTools from their own toolbar.
     wc.on('devtools-closed', () => {
       if (!page.devtools) return
@@ -646,7 +650,7 @@ export class BrowserHost {
    */
   focusPage(win: BrowserWindow, id: string): void {
     const { owner, page } = this.page(win, id, false)
-    if (!page) return
+    if (!page || !win.isFocused()) return
     page.focusOnShow = true
     this.layout(owner, page)
   }

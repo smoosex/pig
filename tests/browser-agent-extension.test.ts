@@ -91,6 +91,9 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       expect(definition.promptSnippet).toBeUndefined()
     }
     expect(tool('browser_tabs').namespace?.instructions).toContain('untrusted')
+    expect(tool('browser_tabs').namespace?.instructions).toContain('browserId browser:abc')
+    expect(tool('browser_tabs').namespace?.instructions).toContain('Never substitute a new tab')
+    expect(tool('browser_open').description).toContain('NEW background tab')
     expect(tool('browser_snapshot').description).toContain('untrusted')
     registerBrowserAgentHost(undefined)
   } finally {

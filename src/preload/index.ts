@@ -13,9 +13,9 @@ const api: SessionApi = {
     answer: (requestId, answer) => ipcRenderer.invoke('session:agent-answer', requestId, answer)
   },
   browser: {
-    create: (browserId, url) => url === undefined
-      ? ipcRenderer.invoke('browser:create', browserId)
-      : ipcRenderer.invoke('browser:create', browserId, url),
+    create: (browserId, cwd, url) => url === undefined
+      ? ipcRenderer.invoke('browser:create', browserId, cwd)
+      : ipcRenderer.invoke('browser:create', browserId, cwd, url),
     getState: (browserId) => ipcRenderer.invoke('browser:get-state', browserId),
     navigate: (browserId, url, typed) => typed
       ? ipcRenderer.invoke('browser:navigate', browserId, url, true)

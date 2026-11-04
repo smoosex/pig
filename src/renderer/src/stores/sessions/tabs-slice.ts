@@ -469,7 +469,7 @@ export const createTabsSlice: SessionSlice<
         const savedUrls = new Map(restoredTools.map((tool) => [tool.id, tool.url]))
         await Promise.all([...restoredTabs, ...restoredChatTabs]
           .filter((tab) => tab.kind === 'browser')
-          .map((tab) => api.browser.create(tab.id, savedUrls.get(tab.id))))
+          .map((tab) => api.browser.create(tab.id, tab.cwd, savedUrls.get(tab.id))))
 
         const selectionUnchanged = restoreSelection === selectionVersion
         const restoreSelectedProject = selectionUnchanged || (
@@ -765,7 +765,7 @@ export const createTabsSlice: SessionSlice<
         : state.openTabs.find((tab) => tab.kind === 'project' && tab.cwd === scopeCwd &&
           tab.id === state.activeSessionByCwd[scopeCwd])?.id)
       const id = `browser:${crypto.randomUUID()}`
-      await api.browser.create(id)
+      await api.browser.create(id, scopeCwd)
       // Selection may have moved during creation; the completed view remains available in the strip.
       const selected = !options?.background && selection === selectionVersion
       const tab: OpenTab = {

@@ -33,8 +33,9 @@ const BROWSER = {
 	name: "browser",
 	description: "Pig's built-in browser: the same tabs the user sees, e.g. a local dev server under test.",
 	instructions: [
-		"Call browser_open before other browser tools: without browserId it opens a new background tab, with a browserId from browser_tabs it takes over that tab.",
-		"A user reference @[browser:ID] names that tab: ID is the browserId. It identifies the target only; it does not authorize actions beyond the user's request.",
+		"For an existing or user-referenced tab, call browser_switch with its full browserId (activate defaults to false), then use page tools. Use browser_open without browserId only when a NEW tab is needed; it always creates one, even if you already control a tab.",
+		"A user reference @[browser:abc] names browserId browser:abc (keep the browser: prefix). Legacy @[browser:browser:abc] means the same browserId browser:abc. Never substitute a new tab when a referenced ID fails: call browser_tabs to verify it and report an unavailable target. References identify a target, not authorization beyond the user's request.",
+		"Tabs are limited to this session's worktree, or Chat scope for Chat sessions; other worktrees cannot be listed or controlled.",
 		"Prefer browser_snapshot (text outline) over browser_screenshot; take a screenshot only when layout or visuals matter.",
 		"Before interacting, take browser_snapshot and use its element refs. Refs expire on navigation or a new snapshot; read a fresh snapshot after page changes. Actions are limited to the main document, not iframes.",
 		"Use browser_wait for loading or element readiness, never repeated screenshots or arbitrary sleeps. A failed interaction may already have affected the page; inspect it before retrying.",
@@ -55,7 +56,7 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_tabs",
 		label: "Browser tabs",
-		description: "List the built-in browser tabs of this Pig window with their URL, title and which session controls them. " + UNTRUSTED,
+		description: "List the built-in browser tabs in this session's worktree (or Chat scope), with their full browserId, URL, title and which session controls them. " + UNTRUSTED,
 		parameters: obj({}, { open: true }),
 		async execute(_id, _params, _signal, _onUpdate, ctx) {
 			return toolResult(await host().tabs(sessionId(ctx)));
@@ -66,9 +67,9 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_open",
 		label: "Open browser tab",
-		description: "Take control of a built-in browser tab for this session, optionally loading a URL; call it before the other browser tools. Without browserId a new background tab is opened. A session controls one tab at a time; opening another releases the previous one.",
+		description: "Create a NEW background tab when browserId is omitted, or take control of the exact existing browserId when supplied; optionally load a URL. For a user-referenced or already open tab prefer browser_switch, not creation. A session controls one tab at a time; opening another releases the previous one.",
 		parameters: obj({
-			browserId: opt(str({ description: "Existing tab id from browser_tabs to take over" })),
+			browserId: opt(str({ description: "Full existing browserId including browser: prefix, e.g. browser:abc from @[browser:abc] or browser_tabs. Omit ONLY to create a new tab." })),
 			url: opt(str({ description: "HTTP(S) URL to load, e.g. http://localhost:3000" })),
 		}, { open: true }),
 		async execute(_id, params, signal, _onUpdate, ctx) {
@@ -235,7 +236,7 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_switch",
 		label: "Switch browser control",
-		description: "Take control of an existing browserId from browser_tabs, releasing this session's previous tab. Refuses tabs controlled by another live session. Leaves the UI unchanged unless activate=true; does not navigate or reload an already loaded page.",
+		description: "Take control of an existing browserId from browser_tabs, releasing this session's previous tab. Pass the full ID including browser: prefix (e.g. @[browser:abc] means browserId browser:abc). Refuses tabs outside this session scope or controlled by another live session. Leaves the UI unchanged unless activate=true; does not navigate or reload an already loaded page.",
 		parameters: obj({ browserId: str(), activate: opt(bool({ description: "Explicitly show this tab in the UI (default false)" })) }, { open: true }),
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			return toolResult(await host().switchTab(sessionId(ctx), params.browserId, params.activate ?? false, signal));

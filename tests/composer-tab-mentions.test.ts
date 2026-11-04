@@ -29,15 +29,35 @@ describe('open tab mentions', () => {
     expect(tabMentionLabel(item)).toBe('Shell: def')
     expect(tabMentionLabel({ kind: 'browser', id: 'browser:0123456789ab', title: '浏览器' })).toBe('浏览器: 01234567')
     const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'tabMention', attrs: item }, { type: 'text', text: ' hello' }] }] }
-    expect(serializeComposerDocument(doc).text).toBe('@[terminal:terminal:def] hello')
+    expect(serializeComposerDocument(doc).text).toBe('@[terminal:def] hello')
     expect(JSON.parse(JSON.stringify(doc)).content[0].content[0].attrs).toEqual(item)
+  })
+
+  test('browser candidates follow the composer worktree, including drafts and Chat scratch directories', () => {
+    const scopedTabs: OpenTab[] = [...tabs,
+      { id: 'browser:project', kind: 'browser', title: 'Project', cwd: '/project', loadState: 'ready' },
+      { id: 'browser:other', kind: 'browser', title: 'Other', cwd: '/other', loadState: 'ready' },
+      { id: 'chat:scratch', kind: 'chat', title: 'Scratch', cwd: '/pig/chats/private', loadState: 'ready' }
+    ]
+    const browsers = (sessionId: string | null, cwd?: string | null) => tabMentions(scopedTabs, sessionId, cwd)
+      .filter((item) => item.kind === 'browser').map((item) => item.id)
+    expect(browsers('session-123')).toEqual(['browser:project'])
+    expect(browsers(null, '/other')).toEqual(['browser:other'])
+    expect(browsers(null, null)).toEqual(['browser:abc'])
+    expect(browsers('chat:scratch', '/pig/chats/private')).toEqual(['browser:abc'])
+    expect(tabMentions(scopedTabs, 'session-123').some((item) => item.id === 'chat-456')).toBe(true)
+  })
+
+  test('legacy textual references remain intact when restoring history', () => {
+    const text = '@[browser:browser:abc] @[terminal:terminal:def]'
+    expect(serializeComposerDocument(restoredPromptToComposerDocument(text)).text).toBe(text)
   })
 
   test('stable textual references survive draft restoration and title changes', () => {
     const items = tabMentions(tabs)
     const text = items.map(tabMentionText).join(' ')
-    expect(text).toBe('@[session:session-123] @[session:chat-456] @[browser:browser:abc] @[terminal:terminal:def]')
+    expect(text).toBe('@[session:session-123] @[session:chat-456] @[browser:abc] @[terminal:def]')
     expect(serializeComposerDocument(restoredPromptToComposerDocument(text)).text).toBe(text)
-    expect(tabMentionText({ ...items.find((item) => item.kind === 'browser')!, title: 'Renamed' })).toBe('@[browser:browser:abc]')
+    expect(tabMentionText({ ...items.find((item) => item.kind === 'browser')!, title: 'Renamed' })).toBe('@[browser:abc]')
   })
 })

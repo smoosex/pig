@@ -98,6 +98,7 @@ export function useFileMentions({
   const [target, setTarget] = useState<MentionTarget | null>(null)
   const [files, setItems] = useState<FileSuggestion[]>([])
   const tabs = useSessionsStore((state) => state.openTabs)
+  const chatDraftSessionId = useSessionsStore((state) => state.chatDraft?.sessionId)
   const [browserUrls, setBrowserUrls] = useState<Record<string, string>>({})
   const [itemsFor, setItemsFor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
@@ -198,15 +199,15 @@ export function useFileMentions({
       if (active) setBrowserUrls((current) => current[state.browserId] === state.url ? current : { ...current, [state.browserId]: state.url })
     }
     const off = api.browser.onState(accept)
-    for (const tab of tabs) if (tab.kind === 'browser') void api.browser.getState(tab.id).then(accept, (error: unknown) => {
+    for (const tab of tabMentions(tabs, resetKey, cwd, chatDraftSessionId)) if (tab.kind === 'browser') void api.browser.getState(tab.id).then(accept, (error: unknown) => {
       console.error(`Failed to read browser ${tab.id} for @ mentions`, error)
     })
     return () => { active = false; off() }
-  }, [tabs, query === null, disabled])
+  }, [tabs, resetKey, cwd, chatDraftSessionId, query === null, disabled])
 
   // Stale rows stay up while the fresh fetch is in flight: closing per keystroke is what flickers.
   // itemsFor only marks the loading state now, so Enter can queue behind it instead of misfiring.
-  const tabItems: MentionItem[] = query === null ? [] : tabMentions(tabs, resetKey)
+  const tabItems: MentionItem[] = query === null ? [] : tabMentions(tabs, resetKey, cwd, chatDraftSessionId)
     .map((tab) => tab.kind === 'browser' && browserUrls[tab.id] ? { ...tab, detail: [browserUrls[tab.id], tab.detail].filter(Boolean).join(' · ') } : tab)
     .filter((tab) => tabMentionMatches(tab, query))
     .map((tab) => ({ kind: 'tab', tab }))

@@ -19,6 +19,8 @@ import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAg
 export interface BrowserSessions {
   sessionWindow(sessionId: string): BrowserWindow | undefined
   isSessionLive(sessionId: string): boolean
+  /** Exact worktree path, empty for Chat, undefined if no longer live. */
+  sessionScope(sessionId: string): string | undefined
 }
 
 interface PendingOpen {
@@ -33,6 +35,7 @@ interface PendingOpen {
 export function registerBrowserIpc(sessions?: BrowserSessions): void {
   const visits = new BrowserHistoryRecorder(history, fetchFavicon)
   const owners = new Map<string, BrowserWindow>()
+  const scopes = new Map<string, string>()
   const pendingOpens = new Map<string, PendingOpen>()
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
@@ -84,12 +87,17 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
         // while the renderer round-trip is pending. A late UI close remains idempotent.
         host.close(win, browserId)
         owners.delete(browserId)
+        scopes.delete(browserId)
         visits.forget(browserId)
         await requestTab(win, sessionId, signal, { action: 'close', browserId })
       },
       sessionWindow: sessions.sessionWindow,
       isSessionLive: sessions.isSessionLive,
-      browsers: (win) => [...owners].filter(([, owner]) => owner === win).map(([id]) => id)
+      browsers: (win, sessionId) => {
+        const scope = sessions.sessionScope(sessionId)
+        return scope === undefined ? [] : [...owners]
+          .filter(([id, owner]) => owner === win && scopes.get(id) === scope).map(([id]) => id)
+      }
     }))
   }
   function ui(event: IpcMainInvokeEvent, id: string): BrowserWindow {
@@ -104,11 +112,14 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (owners.get(id) !== win) throw new Error('Browser pane does not belong to this window')
     return win
   }
-  ipcMain.handle('browser:create', (event, id: string, url?: unknown) => {
+  ipcMain.handle('browser:create', (event, id: string, cwd: unknown, url?: unknown) => {
     const win = ui(event, id)
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
+    if (typeof cwd !== 'string') throw new Error('Invalid browser worktree scope')
+    if (scopes.has(id) && scopes.get(id) !== cwd) throw new Error('Browser pane belongs to another worktree scope')
     const restored = url === undefined ? undefined : normalizeBrowserUrl(url)
     owners.set(id, win)
+    scopes.set(id, cwd)
     if (restored) host.retainUrl(win, id, restored)
     if (!watched.has(win)) {
       watched.add(win)
@@ -116,6 +127,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
         for (const [id, owner] of owners) {
           if (owner !== win) continue
           owners.delete(id)
+          scopes.delete(id)
           visits.forget(id)
         }
         for (const pending of [...pendingOpens.values()]) if (pending.win === win) pending.fail(new Error('Browser UI was reloaded or closed'))
@@ -192,6 +204,8 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
       && (owners.get(result.browserId) === win || (pending.action === 'close' && !owners.has(result.browserId)))) {
       if (!sessions?.isSessionLive(pending.sessionId) || sessions.sessionWindow(pending.sessionId) !== win) {
         pending.fail(new Error('The requesting session is no longer open'))
+      } else if (pending.action !== 'close' && scopes.get(result.browserId) !== sessions.sessionScope(pending.sessionId)) {
+        pending.fail(new Error('Browser tab belongs to another worktree or Chat scope'))
       } else if (pending.action === 'activate' && host.agentOf(win, result.browserId) !== pending.sessionId) {
         pending.fail(new Error('Browser control was released or transferred'))
       } else {
@@ -209,6 +223,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
     host.close(win, id)
     owners.delete(id)
+    scopes.delete(id)
     visits.forget(id)
   })
   ipcMain.handle('browser:history-query', (event, text: unknown, limit: unknown) => {

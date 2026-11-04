@@ -71,7 +71,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.renameEntry('/repo', 'src/thing.ts', 'entry.ts')
   await api.trashEntry('/repo', 'src/entry.ts')
   await api.copyPath('/repo', 'src/entry.ts')
-  await api.browser.create('browser:one')
+  await api.browser.create('browser:one', '/repo')
+  await api.browser.create('browser:restored', '', 'https://example.test/saved')
   await api.browser.getState('session-1')
   await api.browser.navigate('session-1', 'http://localhost:3000')
   await api.browser.navigate('session-1', 'example.com', true)
@@ -177,7 +178,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'files:rename', args: ['/repo', 'src/thing.ts', 'entry.ts'] },
     { channel: 'files:trash', args: ['/repo', 'src/entry.ts'] },
     { channel: 'files:copy-path', args: ['/repo', 'src/entry.ts'] },
-    { channel: 'browser:create', args: ['browser:one'] },
+    { channel: 'browser:create', args: ['browser:one', '/repo'] },
+    { channel: 'browser:create', args: ['browser:restored', '', 'https://example.test/saved'] },
     { channel: 'browser:get-state', args: ['session-1'] },
     { channel: 'browser:navigate', args: ['session-1', 'http://localhost:3000'] },
     { channel: 'browser:navigate', args: ['session-1', 'example.com', true] },

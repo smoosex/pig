@@ -27,8 +27,8 @@ export interface BrowserAgentDeps {
   /** The window of a live Pi session; undefined for closed sessions and subagents. */
   sessionWindow(sessionId: string): BrowserWindow | undefined
   isSessionLive(sessionId: string): boolean
-  /** Browser tabs the window's UI has registered, in creation order. */
-  browsers(win: BrowserWindow): string[]
+  /** Registered browser tabs in this session's worktree (or Chat scope), in creation order. */
+  browsers(win: BrowserWindow, sessionId: string): string[]
   /** Asks the window's UI to open a background browser tab for the session; resolves its id. */
   requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal): Promise<string>
   activateTab(win: BrowserWindow, sessionId: string, browserId: string, signal?: AbortSignal): Promise<void>
@@ -52,8 +52,8 @@ export class BrowserAgentController implements BrowserAgentHost {
 
   private controlled(sessionId: string): { win: BrowserWindow; id: string } {
     const win = this.window(sessionId)
-    const id = this.deps.browsers(win).find((item) => this.deps.host.agentOf(win, item) === sessionId)
-    if (!id) throw new Error('This session controls no browser tab. Call browser_open first (control may have been released by the user).')
+    const id = this.deps.browsers(win, sessionId).find((item) => this.deps.host.agentOf(win, item) === sessionId)
+    if (!id) throw new Error('This session controls no browser tab (control may have been released by the user). Use browser_switch with the full ID for an existing or referenced tab; use browser_open only if a new tab is needed.')
     return { win, id }
   }
 
@@ -96,7 +96,7 @@ export class BrowserAgentController implements BrowserAgentHost {
 
   async tabs(sessionId: string): Promise<BrowserToolResult> {
     const win = this.window(sessionId)
-    const ids = this.deps.browsers(win)
+    const ids = this.deps.browsers(win, sessionId)
     if (!ids.length) return { text: 'No browser tabs are open. browser_open creates one.' }
     return {
       text: ids.map((id) => {
@@ -113,13 +113,15 @@ export class BrowserAgentController implements BrowserAgentHost {
     const win = this.window(sessionId)
     let id = options.browserId
     if (id !== undefined) {
-      if (!this.deps.browsers(win).includes(id)) throw new Error(`No browser tab ${id} in this window. Call browser_tabs to list them.`)
+      if (!this.deps.browsers(win, sessionId).includes(id)) throw new Error(`No browser tab ${id} in this session's worktree or Chat scope. Call browser_tabs; pass the full browser:ID, not a shortened ID. Do not create a replacement for a user-referenced tab.`)
       const holder = this.deps.host.agentOf(win, id)
       if (holder && holder !== sessionId && this.deps.isSessionLive(holder)) throw new Error('That tab is controlled by another session')
     } else {
       id = await this.deps.requestTab(win, sessionId, signal)
     }
-    for (const other of this.deps.browsers(win)) {
+    signal?.throwIfAborted()
+    if (this.window(sessionId) !== win || !this.deps.browsers(win, sessionId).includes(id)) throw new Error('The requested browser tab is no longer available in this session scope')
+    for (const other of this.deps.browsers(win, sessionId)) {
       if (other !== id && this.deps.host.agentOf(win, other) === sessionId) this.deps.host.setAgent(win, other, null)
     }
     this.deps.host.setAgent(win, id, sessionId)

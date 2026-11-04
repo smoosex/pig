@@ -62,11 +62,14 @@ async function fixture(): Promise<void> {
   assert.equal(viewOptions.webPreferences.contextIsolation, true)
   assert.equal(viewOptions.webPreferences.webSecurity, true)
   const get = handlers.get('browser:get-state')!
-  const create = handlers.get('browser:create')!
+  const createBrowser = handlers.get('browser:create')!
+  const create = (event: unknown, id: string, url?: string) => createBrowser(event, id, '/repo', url)
   const event = { sender: ui, senderFrame: ui.mainFrame }
   const foreign = { sender: other.webContents, senderFrame: other.webContents.mainFrame }
   assert.throws(() => get(event, 'browser:owned'), /does not belong/)
   assert.deepEqual(create(event, 'browser:owned'), { browserId: 'browser:owned' })
+  assert.throws(() => createBrowser(event, 'browser:invalid-scope'), /Invalid browser worktree scope/)
+  assert.throws(() => createBrowser(event, 'browser:owned', '/other'), /another worktree scope/)
   assert.deepEqual(get(event, 'browser:owned'), { browserId: 'browser:owned' })
   assert.throws(() => create({ sender: {}, senderFrame: ui.mainFrame }, 'browser:owned'), /UI main frame/)
   assert.throws(() => get({ sender: ui, senderFrame: {} }, 'browser:owned'), /UI main frame/)

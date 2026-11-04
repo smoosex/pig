@@ -34,6 +34,7 @@ if (!process.argv.includes('--browser-tabs-fixture')) test('browser and terminal
 
 async function fixture() {
   const browserCreates: string[] = []
+  const browserScopes: string[] = []
   const browserCloses: string[] = []
   const writes: unknown[] = []
   const toolWrites: unknown[] = []
@@ -42,7 +43,7 @@ async function fixture() {
   let create: (id: string) => Promise<unknown> = async () => ({})
   const api = new Proxy({
     browser: {
-      create: async (id: string) => { browserCreates.push(id); return create(id) },
+      create: async (id: string, cwd: string) => { browserCreates.push(id); browserScopes.push(cwd); return create(id) },
       close: async (id: string) => { browserCloses.push(id) },
       answerAgentOpen: async (...args: unknown[]) => { answers.push(args) }
     },
@@ -67,6 +68,7 @@ async function fixture() {
   await state().openBrowserTab('/project')
   const first = state().openTabs[0]
   assert.equal(first.kind, 'browser')
+  assert.equal(browserScopes.at(-1), '/project')
   assert.match(first.id, /^browser:/)
   assert.equal(state().activeTabId, first.id)
   assert.equal(selectActiveSessionId(state()), null)

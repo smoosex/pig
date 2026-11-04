@@ -42,7 +42,11 @@ async function fixture(): Promise<void> {
   }))
   const { registerBrowserIpc } = await import('../src/main/ipc/browser')
   const { browserAgentHost, closeSessionBrowserControl } = await import('../src/main/plugins/pig-browser-host')
-  registerBrowserIpc({ sessionWindow: (id) => id === 's1' ? win as never : undefined, isSessionLive: (id) => id === 's1' })
+  registerBrowserIpc({
+    sessionWindow: (id) => ['s1', 's2', 'chat'].includes(id) ? win as never : undefined,
+    isSessionLive: (id) => ['s1', 's2', 'chat'].includes(id),
+    sessionScope: (id) => id === 's1' ? '/repo' : id === 's2' ? '/other' : id === 'chat' ? '' : undefined
+  })
   const agent = browserAgentHost()!
   const event = { sender: win.webContents, senderFrame: win.webContents.mainFrame }
   const foreign = { sender: other.webContents, senderFrame: other.webContents.mainFrame }
@@ -55,12 +59,25 @@ async function fixture(): Promise<void> {
   assert.equal(win.sent.at(-1)![0], 'browser:agent-open-request')
   assert.throws(() => answer(event, 'unknown', { browserId: 'browser:x' }), /Unknown browser open request/)
   assert.throws(() => answer(foreign, requestId, { browserId: 'browser:x' }), /Unknown browser open request/, 'another window cannot answer')
-  handlers.get('browser:create')!(foreign, 'browser:foreign')
+  handlers.get('browser:create')!(foreign, 'browser:foreign', '/repo')
   assert.throws(() => answer(event, requestId, { browserId: 'browser:foreign' }), /Invalid browser open answer/, 'only tabs of the requesting window')
   await assert.rejects(opening, /Invalid browser open answer/)
 
+  handlers.get('browser:create')!(event, 'browser:other-worktree', '/other')
+  handlers.get('browser:create')!(event, 'browser:chat', '')
+  assert.doesNotMatch((await agent.tabs('s1')).text, /other-worktree|browser:chat/)
+  assert.match((await agent.tabs('s2')).text, /browser:other-worktree/)
+  assert.doesNotMatch((await agent.tabs('s2')).text, /browser:chat/)
+  assert.match((await agent.tabs('chat')).text, /browser:chat/)
+  assert.doesNotMatch((await agent.tabs('chat')).text, /other-worktree/)
+  await assert.rejects(agent.open('s1', { browserId: 'browser:other-worktree' }), /No browser tab/)
+  await assert.rejects(agent.switchTab('s1', 'browser:chat', false), /No browser tab/)
+  const wrongScope = agent.open('s1', {})
+  answer(event, lastRequest().requestId, { browserId: 'browser:other-worktree' })
+  await assert.rejects(wrongScope, /another worktree or Chat scope/)
+
   const second = agent.open('s1', {})
-  handlers.get('browser:create')!(event, 'browser:agent')
+  handlers.get('browser:create')!(event, 'browser:agent', '/repo')
   answer(event, lastRequest().requestId, { browserId: 'browser:agent' })
   assert.match((await second).text, /Tab: browser:agent/)
   assert.equal(agents.get('browser:agent'), 's1')
@@ -70,7 +87,7 @@ async function fixture(): Promise<void> {
   handlers.get('browser:release-agent')!(event, 'browser:agent', 's1')
   assert.equal(agents.get('browser:agent'), null)
 
-  handlers.get('browser:create')!(event, 'browser:second')
+  handlers.get('browser:create')!(event, 'browser:second', '/repo')
   const activating = agent.switchTab('s1', 'browser:second', true)
   await Promise.resolve()
   const activatingRequest = lastRequest() as ReturnType<typeof lastRequest> & { action: string; browserId: string }

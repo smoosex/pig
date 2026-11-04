@@ -639,7 +639,7 @@ async function runFixture(name: string): Promise<void> {
     assert.deepEqual(state().openTabs.map((tab) => tab.id), ['browser:c', 'chat', 'browser:b', 'one', 'terminal:t'])
     assert.equal(state().activeTabId, 'terminal:t', 'the worktree returns to the terminal it was left on')
     assert.equal(openCalls, 0, 'showing a terminal opens no session')
-    assert.deepEqual(creates, [['browser:b', 'https://a.test/'], ['browser:c', undefined]], 'browsers are owned before they mount and reopen their page')
+    assert.deepEqual(creates, [['browser:b', '/project', 'https://a.test/'], ['browser:c', '', undefined]], 'browsers are owned before they mount and reopen their page')
     const browser = (id: string) => state().openTabs.find((tab) => tab.id === id)
     assert.equal(browser('browser:b')?.browserTargetSessionId, 'one')
     assert.equal(browser('browser:c')?.browserTargetSessionId, undefined, 'a target that did not come back is dropped')

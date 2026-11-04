@@ -23,10 +23,16 @@ export function tabMentionMatches(item: TabMention, query: string): boolean {
   return [item.title, item.id, item.detail ?? '', ...KIND_KEYWORDS[item.kind]].some((value) => value.toLocaleLowerCase().includes(needle))
 }
 
-export function tabMentions(tabs: OpenTab[], currentSessionId?: string | null): TabMention[] {
+export function tabMentions(tabs: OpenTab[], currentSessionId?: string | null, cwd?: string | null, chatDraftSessionId?: string): TabMention[] {
+  const current = tabs.find((tab) => tab.id === currentSessionId)
+  // Chat home drafts have a private file directory but no open tab yet.
+  const isChatDraft = currentSessionId != null && currentSessionId === chatDraftSessionId
+  const scope = current?.kind === 'chat' || isChatDraft ? '' : current?.cwd ?? cwd ?? ''
+  const scoped = currentSessionId != null || cwd !== undefined
   const items = tabs.flatMap((tab): TabMention[] => {
     const kind = tab.kind === 'project' || tab.kind === 'chat' ? 'session' : tab.kind
     if ((kind !== 'browser' && kind !== 'terminal' && kind !== 'session') || (kind === 'session' && tab.id === currentSessionId)) return []
+    if (kind === 'browser' && scoped && tab.cwd !== scope) return []
     // A Chat's cwd is its private scratch folder under Pig's data directory, which says nothing to the user.
     const item: TabMention = { kind, id: tab.id, title: tab.title, detail: tab.kind === 'chat' ? '' : tab.cwd }
     return [item]
@@ -41,7 +47,7 @@ export function tabMentionLabel({ kind, id, title }: Pick<TabMention, 'kind' | '
 }
 
 export function tabMentionText(item: TabMention): string {
-  return `@[${item.kind}:${item.id}]`
+  return item.kind === 'session' ? `@[session:${item.id}]` : `@[${item.id}]`
 }
 
 export function hasTabMention(doc: ProseMirrorNode): boolean {
