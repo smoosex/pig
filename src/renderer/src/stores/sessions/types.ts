@@ -10,6 +10,7 @@ import type {
   PromptStreamingBehavior,
   ProjectGroup,
   SessionControls,
+  SessionRef,
   SessionBranchOptions,
   SessionMeta,
   SessionNameUpdate,
@@ -180,7 +181,9 @@ export interface SessionsStore {
   projectPickerOpen: boolean
   setProjectPickerOpen: (open: boolean) => void
   openProject: (path?: string) => Promise<void>
+  mergeAgentProject: (project: ProjectGroup) => void
   unpinProject: (cwd: string) => Promise<void>
+  forgetAgentProject: (cwd: string, cwds: string[]) => void
   reorderProjects: (cwds: string[]) => Promise<void>
   refreshProject: (cwd: string) => Promise<void>
   refreshCwd: (cwd: string) => Promise<void>
@@ -218,6 +221,8 @@ export interface SessionsStore {
   selectProjectCwd: (cwd: string) => Promise<void>
   activateTab: (tabId: string) => Promise<void>
   openExisting: (meta: SessionMeta, kind?: 'project' | 'chat') => Promise<void>
+  /** Attaches a main-created project session without changing selection or draft membership. */
+  attachAgentSession: (ref: SessionRef, title: string) => Promise<void>
   /**
    * Brings a worktree's changes tab to the front, opening it when the strip does not hold it. A `path`
    * asks the tab to reveal that file, and a `scope` switches it to that group — which is how the

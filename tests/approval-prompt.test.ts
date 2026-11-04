@@ -161,6 +161,24 @@ async function fixture() {
   await key(details, 'Escape')
   assert.deepEqual(replies.at(-1), ['long', 'Deny'])
   assert.equal(GeometryResizeObserver.instances.size, 0)
+  await act(() => useExtensionPrompts.getState().add({
+    kind: 'prompt', id: 'mirrored', owner: 'controlled', approvalController: 'one',
+    method: 'select', title: 'Shared approval', message: 'write: /tmp/shared', options, approval: true
+  }))
+  await act(async () => root.render(h('div', {},
+    h(ApprovalPrompt, { sessionId: 'one', autoFocus: false }),
+    h(ApprovalPrompt, { sessionId: 'controlled', autoFocus: false })
+  )))
+  assert.equal(container.querySelectorAll('[data-approval-prompt]').length, 2)
+  assert.ok(container.querySelector('[data-approval-session]')?.textContent?.includes('controlled'))
+  const cards = container.querySelectorAll('[data-approval-prompt]')
+  const replyCount = replies.length
+  await act(() => {
+    cards[1]!.querySelector('label')!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    cards[0]!.querySelector('label')!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  })
+  assert.equal(replies.length, replyCount + 1, 'two simultaneous pane clicks submit just once')
+  assert.equal(container.querySelectorAll('[data-approval-prompt]').length, 0)
   await act(async () => root.unmount())
 }
 

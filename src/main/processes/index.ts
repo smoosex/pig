@@ -18,6 +18,10 @@ export function closeSessionProcesses(sessionId: string): Promise<void> {
   return controller ? controller.sessionClosed(sessionId) : Promise.resolve()
 }
 
+export function hasRunningSessionProcesses(sessionId: string): boolean {
+  return controller?.snapshot(sessionId).some(process => process.status === 'running') ?? false
+}
+
 export function runningProcessCount(): number {
   return controller?.runningCount() ?? 0
 }

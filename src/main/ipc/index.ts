@@ -15,11 +15,13 @@ import { getLive } from '../pi/session-registry'
 import { registerProcessIpc } from './processes'
 import { registerPermissionsIpc } from './permissions'
 import { registerSessionReader } from '../pi/session-read'
+import { registerSessionAgentIpc } from './session-agent'
 
 export function registerIpc(): void {
   registerProjectIpc()
   registerSessionIpc()
   registerSessionReader()
+  registerSessionAgentIpc()
   registerSystemIpc()
   registerDiffIpc()
   registerFilesIpc()

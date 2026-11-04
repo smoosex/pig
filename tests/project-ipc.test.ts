@@ -59,7 +59,8 @@ async function runFixture(): Promise<void> {
     requireOpenedProject: async () => '/project',
     worktrees: {
       discover: async () => { throw discoveryError },
-      exclusive: async () => {}
+      exclusive: async (_cwd: string, fn: () => Promise<unknown>) => fn(),
+      withBlockedCwds: async (_cwds: string[], fn: () => Promise<unknown>) => fn()
     }
   }))
   mock.module(modulePath('../src/main/chats.ts'), () => ({

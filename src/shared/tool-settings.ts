@@ -73,6 +73,8 @@ export type ExtensionUIEvent =
       approval?: true
       /** A child requesting this approval in the parent session. */
       approvalSource?: { kind: 'subagent'; id: string; title: string }
+      /** Same approval ID is visible in both the owner and this controlling session. */
+      approvalController?: string
     }
   | { kind: 'dismiss'; id: string }
   | { kind: 'notify'; owner: string; message: string; level: 'info' | 'warning' | 'error' }

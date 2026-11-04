@@ -65,6 +65,7 @@ export const createTabsSlice: SessionSlice<
   | 'selectProjectCwd'
   | 'activateTab'
   | 'openExisting'
+  | 'attachAgentSession'
   | 'openChangesTab'
   | 'openFileTab'
   | 'openTurnDiffTab'
@@ -803,6 +804,28 @@ export const createTabsSlice: SessionSlice<
       openTabs: current.openTabs.map((tab) => tab.id === browserId && tab.kind === 'browser'
         ? { ...tab, browserTargetSessionId: sessionId } : tab)
     })),
+
+    attachAgentSession: async (ref, title) => {
+      if (!ref.cwd) throw new Error('Agent-created Chat sessions are not supported')
+      const state = get()
+      const existing = state.openTabs.find((tab) => tab.id === ref.sessionId)
+      if (existing && (existing.kind !== 'project' || existing.cwd !== ref.cwd)) {
+        throw new Error('Session tab identity does not match')
+      }
+      if (Object.values(state.draftSessionByCwd).includes(ref.sessionId) || state.chatDraft?.sessionId === ref.sessionId) {
+        throw new Error('Cannot attach a draft session')
+      }
+      // Membership is already persisted by main. Do not use addReadyTab: it also selects tabs.
+      set((current) => ({
+        openTabs: existing ? current.openTabs : [...current.openTabs, {
+          id: ref.sessionId, cwd: ref.cwd, title, kind: 'project', loadState: 'ready'
+        }],
+        runtime: current.runtime[ref.sessionId] ? current.runtime : {
+          ...current.runtime, [ref.sessionId]: emptyRuntime()
+        }
+      }))
+      await get().loadControls(ref.sessionId)
+    },
 
     openExisting: async (meta, kind: 'project' | 'chat' = 'project') => {
       const existing = get().openTabs.find((tab) => tab.meta?.path === meta.path || tab.id === meta.id)

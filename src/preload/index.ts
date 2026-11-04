@@ -4,6 +4,14 @@ import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, Wo
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
+  sessionAgent: {
+    onRequest: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/session-agent').SessionAgentUiRequest) => listener(request)
+      ipcRenderer.on('session:agent-request', handler)
+      return () => ipcRenderer.off('session:agent-request', handler)
+    },
+    answer: (requestId, answer) => ipcRenderer.invoke('session:agent-answer', requestId, answer)
+  },
   browser: {
     create: (browserId, url) => url === undefined
       ? ipcRenderer.invoke('browser:create', browserId)

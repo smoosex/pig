@@ -84,6 +84,21 @@ async function fixture(): Promise<void> {
   } finally {
     detachSystemUI('session')
   }
+  let checked = 0
+  await promptSession('session', { text: '/end-review', streamingBehavior: 'followUp' }, {
+    literal: true, beforeSubmit: () => { checked++ }
+  })
+  assert.equal(checked, 1)
+  assert.equal(accepted.at(-1)?.expandPromptTemplates, false)
+  assert.equal(accepted.at(-1)?.source, 'extension')
+  assert.equal(typeof accepted.at(-1)?.beforeStart, 'function')
+  accepted.at(-1)?.beforeStart?.()
+  assert.equal(checked, 2, 'the same host gate is available after SDK preflight')
+  const before = accepted.length
+  await assert.rejects(promptSession('session', { text: 'must not send' }, {
+    literal: true, beforeSubmit: () => { throw new Error('Permission mode changed') }
+  }), /Permission mode changed/)
+  assert.equal(accepted.length, before)
 }
 
 async function metadataFixture(action: 'dismiss' | 'steer' | 'handled'): Promise<void> {

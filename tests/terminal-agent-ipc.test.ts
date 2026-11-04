@@ -167,6 +167,39 @@ async function fixture() {
   await agent.press('s1', 'Enter')
   expect(asks).toHaveLength(afterGrant)
   await saveSessionPermission('s1', 'default')
+  // Borrowed grants must retain the source lease through the asynchronous snapshot and final write.
+  const { delegateApprovals } = await import('../src/main/permissions/delegation')
+  const { forgetSessionGrants } = await import('../src/main/permissions/grants')
+  const { sessionPermission } = await import('../src/main/permissions/store')
+  forgetSessionGrants('s1')
+  await saveSessionPermission('controller', 'full-access')
+  for (const revocation of ['route-ended', 'source-mode'] as const) {
+    const detach = delegateApprovals('s1', {
+      controllerId: 'controller',
+      check() { if (sessionPermission('controller').mode !== 'full-access') throw new Error('Controller permissions changed') },
+      allows: () => true
+    })
+    try {
+      await agent.type('s1', 'borrowed input', false)
+      expect(asks).toHaveLength(afterGrant)
+      expect(writes.at(-1)).toBe('borrowed input')
+      const pendingSnapshot = new Promise<{ worker: Worker; message: Extract<PtyHostRequest, { type: 'snapshot' }> }>(resolve => { snapshotReady = resolve })
+      holdSnapshot = (worker, message) => snapshotReady({ worker, message })
+      const pendingBorrowed = agent.type('s1', 'revoked input', false).then(() => null, (error: Error) => error)
+      const delayed = await pendingSnapshot
+      const beforeRevocation = writes.length
+      if (revocation === 'route-ended') detach()
+      else {
+        await saveSessionPermission('controller', 'read-only')
+        await saveSessionPermission('controller', 'full-access')
+      }
+      expect((await pendingBorrowed)?.message).toContain(revocation === 'route-ended' ? 'delegation expired' : 'Controller permissions changed')
+      holdSnapshot = undefined
+      replySnapshot(delayed.worker, delayed.message)
+      expect(writes).toHaveLength(beforeRevocation)
+      expect(asks).toHaveLength(afterGrant)
+    } finally { holdSnapshot = undefined; detach() }
+  }
   expect(() => handlers.get('terminal:release-agent')!(other, 'terminal:agent', 's1')).toThrow('Unknown terminal')
   expect(() => handlers.get('terminal:release-agent')!(event, 'terminal:agent', 's2')).toThrow('control changed')
   handlers.get('terminal:release-agent')!(event, 'terminal:agent', 's1')

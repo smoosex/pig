@@ -34,6 +34,7 @@ import { removeSession } from '../pi/session-removal'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { forgetOpenProjectSession, rememberOpenProjectSession } from '../open-project-sessions'
 import { promptSession } from '../pi/session-prompt'
+import { assertSessionControlAvailable } from '../pi/session-control-lock'
 import { windowForEvent } from './window'
 
 /** One window request never reads more than this, however the caller phrases it. */
@@ -145,8 +146,10 @@ export function registerSessionIpc(): void {
     if (!sessionId || typeof command !== 'string' || !command.trim() || typeof id !== 'string' || !id) {
       throw new Error('Session id, command and execution id are required')
     }
+    assertSessionControlAvailable(sessionId)
     if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
     const { agentSession } = (await activateSession(sessionId)).session
+    assertSessionControlAvailable(sessionId)
     if (isNavigatingSessionBranch(sessionId) || agentSession.isStreaming || agentSession.isBashRunning) throw new Error('Session is busy')
     return agentSession.executeBash(command, undefined, { id })
   })
@@ -170,8 +173,10 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle('session:compact', async (_event, sessionId: string, instructions?: unknown) => {
     if (!sessionId) throw new Error('Session id is required')
+    assertSessionControlAvailable(sessionId)
     if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
     const { agentSession } = await prepareSession(sessionId)
+    assertSessionControlAvailable(sessionId)
     const customInstructions = typeof instructions === 'string' ? instructions.trim() : ''
     // `compaction_end` carries the message the user needs, and the CLI drops this rejection the same way.
     await agentSession.compact(customInstructions || undefined).catch(() => {})

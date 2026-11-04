@@ -2,6 +2,12 @@
 import { app } from 'electron'
 import { join } from 'node:path'
 
+export function sessionToolPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'system-plugins', 'pig-session', 'index.ts')
+    : join(app.getAppPath(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
+}
+
 export function settingsToolPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'system-plugins', 'pig-settings', 'index.ts')

@@ -9,6 +9,7 @@ import { t } from '../i18n'
 import { createExtensionUI } from '../extension-ui'
 import { approve } from '../permissions/approval'
 import { hasSessionGrant } from '../permissions/grants'
+import { approvalDelegation, onApprovalDelegationEnded } from '../permissions/delegation'
 import { onPermissionsChanged, sessionPermission } from '../permissions/store'
 import { TerminalHost, type PtyHostProcess } from '../terminal/host'
 import { terminalHistoryPath } from '../terminal/history'
@@ -92,7 +93,9 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
     authorizeInput: async (win, sessionId, terminalId, input, signal) => {
       signal.throwIfAborted()
       const { mode } = sessionPermission(sessionId)
+      const delegated = approvalDelegation(sessionId)
       const assertPolicy = () => {
+        delegated?.check()
         if (sessionPermission(sessionId).mode !== mode) throw new Error('Permission mode changed; request terminal input again')
       }
       if (mode === 'read-only') throw new Error('Read-only mode does not allow input to an unsandboxed terminal. Do not retry it using another tool.')
@@ -102,6 +105,10 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
         // A changed mode or a failed strict permission read must cancel the pending operation.
         try { assertPolicy() } catch (error) { changed.abort(error) }
       })
+      const unwatchDelegation = onApprovalDelegationEnded(owner => {
+        if (delegated && owner === sessionId) changed.abort(new Error('Session approval delegation expired'))
+      })
+      const dispose = () => { unsubscribe(); unwatchDelegation() }
       let authorized = false
       try {
         assertPolicy()
@@ -117,8 +124,8 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
         assertPolicy()
         authorized = true
         // The controller holds this subscription through the snapshot and final write.
-        return { signal: cancel, check: assertPolicy, dispose: unsubscribe }
-      } finally { if (!authorized) unsubscribe() }
+        return { signal: cancel, check: assertPolicy, dispose }
+      } finally { if (!authorized) dispose() }
     },
     closeTab: async (win, sessionId, terminalId, signal) => {
       signal?.throwIfAborted()

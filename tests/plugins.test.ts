@@ -16,13 +16,28 @@ async function fixture(): Promise<void> {
   process.env.PIG_DIR = join(root, 'pig')
   process.env.PI_CODING_AGENT_DIR = join(root, 'agent')
   const { mock } = await import('bun:test')
-  mock.module('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
+  const app = { isPackaged: false, getAppPath: () => process.cwd() }
+  mock.module('electron', () => ({ app }))
   const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
   const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-persona', 'index.js')
   const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   const sessionPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
   try {
     const module = await import('../src/main/pi/plugins')
+    const { sessionToolPath } = await import('../src/main/pi/system-plugin-paths')
+    assert.equal(sessionToolPath(), sessionPath)
+    const originalResources = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    try {
+      app.isPackaged = true
+      Object.defineProperty(process, 'resourcesPath', { value: join(root, 'resources'), configurable: true })
+      const packagedSession = join(process.resourcesPath, 'system-plugins', 'pig-session', 'index.ts')
+      assert.equal(sessionToolPath(), packagedSession)
+      assert.deepEqual(module.subagentPluginPaths([packagedSession, '/unrelated.ts']), ['/unrelated.ts'], 'packaged exclusion and permission identity share the same path')
+    } finally {
+      app.isPackaged = false
+      if (originalResources) Object.defineProperty(process, 'resourcesPath', originalResources)
+      else Reflect.deleteProperty(process, 'resourcesPath')
+    }
     const ui = await import('../src/main/pi/system-plugin-ui')
     const { reviewUI } = await import('../src/main/plugins/pig-ui')
     const sdk = await import('@earendil-works/pi-coding-agent')

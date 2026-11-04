@@ -15,7 +15,7 @@ import { pigPath } from '../pig-dir'
 import { reviewSettingsSchema } from '../plugins/pi-review/settings'
 import { DEFAULTS } from '../plugins/observational-memory/config'
 import { memorySettingsPath } from '../plugins/observational-memory/paths'
-import { settingsToolPath } from './system-plugin-paths'
+import { sessionToolPath as sessionPath, settingsToolPath } from './system-plugin-paths'
 
 interface InstalledPlugin {
   id: string
@@ -60,9 +60,6 @@ const terminalPath = () => app.isPackaged
 const processPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-process', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-process', 'index.ts')
-const sessionPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'pig-session', 'index.ts')
-  : join(appPath(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
 const personaPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
@@ -272,7 +269,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
-    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Session Reader' }],
+    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }],
     [resolve(personaPath()), { kind: 'pig', id: 'pi-persona', name: 'Persona' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
@@ -348,7 +345,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.settingsScopes, available: existsSync(settingsToolPath()),
     ...(!existsSync(settingsToolPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pig-session', name: 'Session Reader', source: 'Pig built-in',
+    id: 'pig-session', name: 'Sessions', source: 'Pig built-in',
     kind: 'system', scopes: registry.sessionScopes, available: existsSync(sessionPath()),
     ...(!existsSync(sessionPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {

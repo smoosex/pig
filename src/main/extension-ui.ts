@@ -4,13 +4,22 @@ import type { BrowserWindow, WebContents, Event, WebContentsDidStartNavigationEv
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import type { ExtensionUIEvent } from '../shared/api'
 import { mcpSdk } from './mcp/sdk'
+import { approvalDelegation, onApprovalDelegationEnded } from './permissions/delegation'
 
 type Scope = 'extension' | 'process' | 'subagent'
 type ApprovalSource = Extract<ExtensionUIEvent, { kind: 'prompt' }>['approvalSource']
 const requests = new Map<
   string,
-  { owner: string; scope: Scope; sender: WebContents; finish(value: string | null): void }
+  { owner: string; controller?: string; approval: boolean; scope: Scope; sender: WebContents; finish(value: string | null): void }
 >()
+
+onApprovalDelegationEnded(owner => {
+  for (const request of requests.values()) if (request.owner === owner && request.controller) request.finish(null)
+})
+
+export function hasPendingApproval(owner: string): boolean {
+  return [...requests.values()].some(request => request.owner === owner && request.approval)
+}
 
 // One set of listeners per window, installed before the asynchronous SDK load. A context
 // cannot miss a navigation that finishes before that load resolves.
@@ -60,7 +69,7 @@ export function replyExtensionUI(sender: WebContents, id: string, value: string 
 }
 export function cancelExtensionUI(owner: string, scope?: Scope): void {
   for (const request of requests.values())
-    if (request.owner === owner && (scope === undefined || request.scope === scope)) request.finish(null)
+    if ((request.owner === owner && (scope === undefined || request.scope === scope)) || (scope === undefined && request.controller === owner)) request.finish(null)
 }
 export function openMcpUrl(value: string): Promise<void> {
   const url = new URL(value)
@@ -90,27 +99,35 @@ export async function createExtensionUI(
   ): Promise<string | undefined> => {
     if (!available() || opts?.signal?.aborted)
       return Promise.resolve(undefined)
+    const delegated = fields.approval ? approvalDelegation(owner) : undefined
+    const noticeOwner = delegated?.controllerId ?? owner
     const id = randomUUID()
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const cancel = () => finish(null)
       const finish = (value: string | null) => {
+        // Invalid/forged choices must not consume a valid request. Both visible cards and native
+        // notification actions resolve this single record; delete claims it before any callbacks.
+        if (value !== null && fields.options && !fields.options.includes(value)) return
+        if (value !== null && delegated) {
+          try { delegated.check() } catch { value = null }
+        }
         if (!requests.delete(id)) return
         if (timer) clearTimeout(timer)
         opts?.signal?.removeEventListener('abort', cancel)
         send({ kind: 'dismiss', id })
-        if (fields.approval) approvalNotifications((module) => module.retireApproval(owner, id))
+        if (fields.approval) approvalNotifications((module) => module.retireApproval(noticeOwner, id))
         resolve(
           value !== null && (!fields.options || fields.options.includes(value)) ? value : undefined
         )
       }
-      requests.set(id, { owner, scope, sender, finish })
+      requests.set(id, { owner, controller: delegated?.controllerId, approval: !!fields.approval, scope, sender, finish })
       opts?.signal?.addEventListener('abort', cancel, { once: true })
       if (opts?.timeout !== undefined) timer = setTimeout(cancel, opts.timeout)
-      send({ kind: 'prompt', id, owner, ...fields })
+      send({ kind: 'prompt', id, owner, ...fields, ...(delegated ? { approvalController: delegated.controllerId } : {}) })
       if (fields.approval && fields.options) {
-        const notice = { id, title: fields.title, options: fields.options, sourceTitle: fields.approvalSource?.title, reply: finish }
-        approvalNotifications((module) => module.trackApproval(owner, win, notice))
+        const notice = { id, title: fields.title, options: fields.options, sourceTitle: delegated ? `Session ${owner}${fields.approvalSource ? ` / ${fields.approvalSource.title}` : ''}` : fields.approvalSource?.title, reply: finish }
+        approvalNotifications((module) => module.trackApproval(noticeOwner, win, notice))
       }
     })
   }

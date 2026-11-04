@@ -33,9 +33,11 @@ export const createCatalogSlice: SessionSlice<
   | 'loadWorktreeSessions'
   | 'loadChats'
   | 'openProject'
+  | 'mergeAgentProject'
   | 'projectPickerOpen'
   | 'setProjectPickerOpen'
   | 'unpinProject'
+  | 'forgetAgentProject'
   | 'reorderProjects'
   | 'refreshProject'
   | 'refreshCwd'
@@ -204,6 +206,11 @@ export const createCatalogSlice: SessionSlice<
       return operation
     },
 
+    mergeAgentProject: (project) => {
+      projectMembershipVersion++
+      set((s) => ({ projects: upsertGroup(s.projects, project.cwd, project, true) }))
+    },
+
     openProject: async (path) => {
       if (path === undefined) {
         set({ projectPickerOpen: true })
@@ -221,14 +228,19 @@ export const createCatalogSlice: SessionSlice<
     },
 
     unpinProject: async (cwd) => {
-      const project = get().projects.find((item) => item.cwd === cwd)
       await api.unpinProject(cwd)
+      get().forgetAgentProject(cwd, [])
+    },
+
+    forgetAgentProject: (cwd, removedCwds) => {
+      const project = get().projects.find((item) => item.cwd === cwd)
       projectMembershipVersion++
       // The worktrees this drops may be what a restore or a switch is still heading for.
       get().invalidateSelection()
       set((s) => {
         const cwds = new Set([
           cwd,
+          ...removedCwds,
           ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
         ])
         const expandedProjects = { ...s.expandedProjects }

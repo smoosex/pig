@@ -18,7 +18,7 @@ interface FakeRun {
   aborted: boolean
 }
 
-function harness(settings: Partial<SubagentSettings> = {}) {
+function harness(settings: Partial<SubagentSettings> = {}, choose?: ConstructorParameters<typeof SubagentManager>[0]['chooseModel']) {
   const runs: FakeRun[] = []
   const saved = new Map<string, SubagentInfo[]>()
   const deliveries: SubagentDelivery[] = []
@@ -49,7 +49,7 @@ function harness(settings: Partial<SubagentSettings> = {}) {
     runner,
     store,
     settings: async () => ({ maxConcurrent: 2, timeoutMinutes: 0, maxTurns: 0, ...settings }),
-    chooseModel: async (_settings, parent) => ({ model: parent.model }),
+    chooseModel: choose ?? (async (_settings, parent) => ({ model: parent.model })),
     onChange: () => {},
     onError: (_id, error) => { throw error },
     coalesceMs: 5
@@ -70,6 +70,60 @@ function status(manager: Manager): Record<string, string> {
 }
 
 describe('subagent manager', () => {
+  test('stop invalidates a spawn still resolving its model even after draining completes', async () => {
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    const { manager, runs } = harness({}, async () => { await blocked; return {} })
+    const spawning = manager.spawn(request('late', true))
+    await tick()
+    await manager.abortAllAndWait('parent')
+    release()
+    await expect(spawning).rejects.toThrow('stopping')
+    expect(runs).toHaveLength(0)
+    await manager.closeParent('parent')
+  })
+
+  test('pending work covers the final index write and background report coalescing', async () => {
+    const { manager, runs, store, deliveries } = harness()
+    await manager.spawn(request('pending', true))
+    await tick()
+    const originalSave = store.save
+    let release!: () => void
+    const blocked = new Promise<void>(resolve => { release = resolve })
+    store.save = async (id, items) => {
+      if (items.some(item => item.status === 'completed')) await blocked
+      await originalSave(id, items)
+    }
+    runs[0].finish()
+    await tick()
+    expect(manager.snapshot('parent')[0].status).toBe('completed')
+    expect(manager.hasPendingWork('parent')).toBe(true)
+    release()
+    await tick()
+    expect(manager.hasPendingWork('parent')).toBe(true)
+    await wait(15)
+    expect(deliveries).toHaveLength(1)
+    expect(manager.hasPendingWork('parent')).toBe(false)
+    await manager.closeParent('parent')
+  })
+
+  test('explicit stop drains children without delivering new parent turns and allows later tasks', async () => {
+    const { manager, runs, deliveries } = harness()
+    await manager.spawn(request('stop', true))
+    await tick()
+    await manager.abortAllAndWait('parent')
+    await wait(15)
+    expect(runs[0].aborted).toBe(true)
+    expect(deliveries).toHaveLength(0)
+    expect(manager.hasPendingWork('parent')).toBe(false)
+    await manager.spawn(request('next', true))
+    await tick()
+    runs[1].finish()
+    await wait(15)
+    expect(deliveries).toHaveLength(1)
+    await manager.closeParent('parent')
+  })
+
   test('explicit restart preserves identity and resumes only an unfinished transcript', async () => {
     const { manager, runs, deliveries } = harness({ maxTurns: 1 })
     const spawned = await manager.spawn(request('resume', true))

@@ -112,6 +112,42 @@ async function fixture(): Promise<void> {
   assert.equal(await allProcess, undefined)
   assert.equal(await allChild, undefined)
 
+  const { delegateApprovals } = await import('../src/main/permissions/delegation')
+  const { hasPendingApproval } = await import('../src/main/extension-ui')
+  const releaseRoute = delegateApprovals('session', { controllerId: 'controller', check() {}, allows: () => false })
+  const mirrored = childUI.select('Mirrored child', ['once', 'deny'], { approval: { message: 'write: /mirrored' } } as never)
+  const shared = events.at(-1)!
+  assert.ok(shared.kind === 'prompt')
+  assert.equal(shared.owner, 'session')
+  assert.equal(shared.approvalController, 'controller')
+  assert.deepEqual(shared.approvalSource, source)
+  replyExtensionUI(sender, shared.id, 'invalid choice')
+  assert.equal(hasPendingApproval('session'), true, 'invalid replies cannot consume a valid request')
+  const beforeShared = events.length
+  replyExtensionUI(sender, shared.id, 'once')
+  replyExtensionUI(sender, shared.id, 'deny')
+  assert.equal(await mirrored, 'once', 'first decision wins in either visible card')
+  assert.equal(events.length, beforeShared + 1, 'only one dismiss is emitted')
+  assert.equal(hasPendingApproval('session'), false)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const staleNotice = tracked.find(item => item.id === shared.id)!
+  assert.equal(staleNotice.owner, 'controller')
+  staleNotice.reply('deny')
+  assert.equal(events.length, beforeShared + 1, 'a late native notification cannot decide twice')
+  const cancelledRoute = childUI.select('Route ends', ['once', 'deny'], { approval: { message: 'x' } } as never)
+  const staleRoute = events.at(-1)!
+  assert.ok(staleRoute.kind === 'prompt')
+  releaseRoute()
+  assert.equal(await cancelledRoute, undefined)
+  replyExtensionUI(sender, staleRoute.id, 'once')
+  const releaseNext = delegateApprovals('session', { controllerId: 'controller', check() {}, allows: () => false })
+  const controllerClosed = childUI.select('Controller closes', ['once', 'deny'], { approval: { message: 'x' } } as never)
+  cancelExtensionUI('controller', 'extension')
+  assert.equal(hasPendingApproval('session'), true, 'controller extension reload does not cancel target child approvals')
+  cancelExtensionUI('controller')
+  assert.equal(await controllerClosed, undefined)
+  releaseNext()
+
   // Electron 44 exposes navigation properties on its typed event object (the positional
   // arguments are deprecated). Child frames and same-document history must leave prompts alone.
   const navigate = (isMainFrame: boolean, isSameDocument: boolean) =>

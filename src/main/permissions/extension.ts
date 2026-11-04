@@ -6,6 +6,8 @@
 import { constants as fsConstants } from 'node:fs'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
+import { sessionToolPath } from '../pi/system-plugin-paths'
 import { bool, str, type Schema, type Static } from '@earendil-works/pi-schema'
 import {
   createBashToolDefinition, createPowerShellToolDefinition, getPowerShellConfig, getShellConfig,
@@ -22,6 +24,7 @@ import { executeFileTool } from '../sandbox/file-tool'
 import { sandboxEnvironment } from '../sandbox/environment'
 import { guardedShellOperations } from '../sandbox/shell'
 import { approve, offerHosts } from './approval'
+import { approvalDelegation } from './delegation'
 import { SESSION_TOOLS_PATH, mcpArguments, mcpDecision } from './mcp'
 import { onPermissionsChanged, readPermissionSettings } from './store'
 import { isSettingsToolPath, settingsApproval } from './settings'
@@ -78,11 +81,13 @@ function confirm(ctx: ExtensionContext, options: PermissionOptions, keys: readon
 
 /** Invalidate a pending operation even if the mode is subsequently switched back. */
 function watchMode(options: PermissionOptions, upstream?: AbortSignal) {
+  const delegated = approvalDelegation(options.sessionId)
   const mode = options.mode()
   const changed = new AbortController()
   const signals = [upstream, options.signal, changed.signal].filter((signal): signal is AbortSignal => signal !== undefined)
   const signal = AbortSignal.any(signals)
   const verify = () => {
+    delegated?.check()
     if (options.mode() !== mode) throw new Error('Permission mode changed; request the operation again')
   }
   const unsubscribe = onPermissionsChanged(() => {
@@ -332,6 +337,7 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         mode === 'full-access' ? 'Built-in settings updates, browser uploads and terminal input run without approval.' :
           mode === 'read-only' ? 'Built-in settings updates, browser uploads and terminal input are refused in read-only mode.' :
             'Every built-in settings update and browser upload requires separate user approval; terminal input asks unless this terminal was allowed for the session. If refused, stop; do not reach the same goal through another tool.',
+        'Cross-session project registration, session creation/configuration, task sending and stopping require approval in default mode, are refused in read-only mode, and cannot raise target permissions above the caller. Session tools never authorize bypassing a refused operation.',
         'MCP server processes, the browser, the interactive terminal and trusted plugin code are not sandboxed. Other browser actions and terminal creation and reading are not covered by these approvals. This is not authorization to use them to bypass a refused operation.'
       ].join('\n')
     })
@@ -345,6 +351,11 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         return { block: true, reason: `Another extension replaced the ${event.toolName} tool. Disable that extension or explicitly choose full access.` }
       }
       const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName)
+      if (['session_open_project', 'session_remove_project', 'session_create', 'session_configure', 'session_send', 'session_stop'].includes(event.toolName)) {
+        if (!tool?.sourceInfo.path || resolve(tool.sourceInfo.path) !== resolve(sessionToolPath())) return { block: true, reason: 'Another extension replaced a session-control tool. Disable it or explicitly choose full access.' }
+        if (mode === 'read-only') return { block: true, reason: 'Read-only mode does not allow session-control mutations' }
+        // Main authorizes the actual operation at execution time, not merely batch preflight.
+      }
       if (event.toolName === 'settings_update') {
         // A first-registration-wins replacement must not inherit or bypass the built-in gate.
         if (!isSettingsToolPath(tool?.sourceInfo.path)) return { block: true, reason: 'Another extension replaced settings_update. Disable that extension or explicitly choose full access.' }

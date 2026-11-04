@@ -88,8 +88,11 @@ assert.equal(state.text, 'currentnext\\n\\n\\n', 'local clear and following PTY 
 assert.equal(state.cursorY, 0)
 assert.equal(state.cursorX, 11)
 assert.equal(state.version, beforeClear.version + 2)
-const clearIndex = messages.findIndex(message => message.type === 'clear')
-assert(clearIndex > 0 && messages[clearIndex - 1].type === 'output', 'renderer clear marker follows flushed pre-clear output')
+// Snapshot replies may follow an earlier timer flush; only output/clear messages order the renderer stream.
+const rendererMessages = messages.filter(message => message.type === 'output' || message.type === 'clear')
+const clearIndex = rendererMessages.findIndex(message => message.type === 'clear')
+assert(clearIndex > 0 && rendererMessages[clearIndex - 1].type === 'output', 'renderer clear marker follows flushed pre-clear output')
+assert(rendererMessages.slice(0, clearIndex).map(message => message.data).join('').endsWith('\\r\\nold1\\r\\nold2\\r\\ncurrent'), 'all pre-clear output precedes the renderer clear marker')
 output('\\x1b[2J\\x1b[H' + Array.from({ length: 5100 }, (_, i) => 'line' + i).join('\\r\\n'))
 state = await snapshot(500)
 assert.equal(state.text.split('\\n').length, 500)

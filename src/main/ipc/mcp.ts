@@ -112,7 +112,8 @@ export function registerMcpIpc(): void {
     return changed()
   })
   ipcMain.handle('mcp:cancel-login', () => cancelMcpLogin())
-  ipcMain.handle('extensions:reply', (event, id: string, value: string | null) =>
+  ipcMain.handle('extensions:reply', (event, id: string, value: string | null) => {
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error('Only the UI main frame may answer an approval')
     replyExtensionUI(event.sender, id, value)
-  )
+  })
 }

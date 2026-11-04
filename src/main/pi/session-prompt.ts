@@ -10,12 +10,13 @@ import { isReviewReturning } from '../plugins/pig-ui'
  * Submit a prompt and attach display metadata when Pi accepts its user message.
  * Queued follow-ups must not persist metadata or rename a worktree before delivery.
  */
-export async function promptSession(sessionId: string, input: SessionPromptInput): Promise<void> {
+export async function promptSession(sessionId: string, input: SessionPromptInput, options: { controlToken?: symbol; literal?: boolean; beforeSubmit?: () => void } = {}): Promise<void> {
   const {
     session: { cwd, agentSession },
     releaseInput
-  } = await activateSessionInput(sessionId)
+  } = await activateSessionInput(sessionId, options.controlToken)
   try {
+    options.beforeSubmit?.()
     if (isReviewReturning(sessionId)) throw new Error('Cannot submit a prompt while returning from review. Wait for the return to finish and retry.')
     const prompt = normalizeSessionPrompt(input)
     worktrees.assertAvailable(cwd)
@@ -27,7 +28,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
         : undefined
     // Extension commands execute directly in Pi; this input never becomes a queued user message.
     const isExtensionCommand =
-      prompt.modelText.startsWith('/') &&
+      !options.literal && prompt.modelText.startsWith('/') &&
       agentSession.extensionRunner.getCommand(prompt.modelText.slice(1).split(' ', 1)[0]) !==
         undefined
     const pending = isExtensionCommand
@@ -52,8 +53,10 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
         )
     try {
       const submit = () => agentSession.prompt(prompt.modelText, {
+        ...(options.literal ? { expandPromptTemplates: false, source: 'extension' as const } : {}),
         ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
         ...(streamingBehavior ? { streamingBehavior } : {}),
+        beforeStart: options.beforeSubmit,
         preflightResult: (disposition) => {
           if (disposition === 'handled') pending?.cancel()
         }

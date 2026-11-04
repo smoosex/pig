@@ -43,6 +43,8 @@ interface Parent {
   pending: SubagentInfo[]
   flushTimer?: ReturnType<typeof setTimeout>
   closed: boolean
+  stopping?: boolean
+  stopRevision?: number
 }
 
 export interface ManagerDeps {
@@ -137,6 +139,7 @@ export function describeTool(name: string, args: Record<string, unknown>): strin
 export class SubagentManager implements SubagentHost {
   private readonly parents = new Map<string, Parent>()
   private readonly loading = new Map<string, Promise<Parent>>()
+  private readonly finalizing = new Set<Entry>()
   private maxConcurrent = 4
   private readonly coalesceMs: number
   private readonly now: () => number
@@ -151,12 +154,13 @@ export class SubagentManager implements SubagentHost {
     const prompt = request.prompt.trim()
     if (!prompt) throw new Error('spawn requires a non-empty prompt')
     const parent = await this.parent(request.parentSessionId)
-    if (parent.closed) throw new Error('The parent session is closing')
+    const stopRevision = parent.stopRevision ?? 0
+    if (parent.closed || parent.stopping) throw new Error('The parent session is closing or stopping')
     const settings = await this.deps.settings()
     this.maxConcurrent = settings.maxConcurrent
     const choice = await this.deps.chooseModel(settings, { model: request.parentModel, thinkingLevel: request.parentThinkingLevel })
 
-    if (parent.closed) throw new Error('The parent session is closing')
+    if (parent.closed || parent.stopping || (parent.stopRevision ?? 0) !== stopRevision) throw new Error('The parent session is closing or stopping')
     const id = randomUUID().replace(/-/g, '').slice(0, 8)
     let resolve!: () => void
     const finished = new Promise<void>((done) => { resolve = done })
@@ -234,8 +238,9 @@ export class SubagentManager implements SubagentHost {
   async restart(request: RestartRequest): Promise<SpawnOutcome> {
     request.signal?.throwIfAborted()
     const parent = await duringPreparation(this.parent(request.parentSessionId), request.signal)
+    const stopRevision = parent.stopRevision ?? 0
     request.signal?.throwIfAborted()
-    if (parent.closed) throw new Error('The parent session is closing')
+    if (parent.closed || parent.stopping) throw new Error('The parent session is closing or stopping')
     const old = parent.entries.get(request.id)
     if (!old) throw new Error(`Subagent not found in this session: ${request.id}`)
     if (old.restarting || !isFinished(old.info.status)) throw new Error('Subagent is already running or restarting')
@@ -248,7 +253,7 @@ export class SubagentManager implements SubagentHost {
       request.signal?.throwIfAborted()
       const choice = await duringPreparation(this.deps.chooseModel(settings, { model: request.parentModel, thinkingLevel: request.parentThinkingLevel }), request.signal)
       request.signal?.throwIfAborted()
-      if (parent.closed) throw new Error('The parent session is closing')
+      if (parent.closed || parent.stopping || (parent.stopRevision ?? 0) !== stopRevision) throw new Error('The parent session is closing or stopping')
       const lifetime = new AbortController()
       let resolve!: () => void
       const finished = new Promise<void>((done) => { resolve = done })
@@ -318,6 +323,12 @@ export class SubagentManager implements SubagentHost {
     return [...(this.parents.get(parentSessionId)?.entries.values() ?? [])].map((entry) => entry.info)
   }
 
+  hasPendingWork(parentSessionId: string): boolean {
+    const parent = this.parents.get(parentSessionId)
+    return !!parent && (parent.pending.length > 0 || !!parent.flushTimer ||
+      [...parent.entries.values()].some(entry => !isFinished(entry.info.status) || !!entry.preparing || this.finalizing.has(entry)))
+  }
+
   abort(parentSessionId: string, id: string): void {
     const entry = this.parents.get(parentSessionId)?.entries.get(id)
     if (entry) this.abortEntry(parentSessionId, entry, 'aborted')
@@ -326,6 +337,22 @@ export class SubagentManager implements SubagentHost {
   abortAll(parentSessionId: string): void {
     for (const entry of this.parents.get(parentSessionId)?.entries.values() ?? []) {
       this.abortEntry(parentSessionId, entry, 'aborted')
+    }
+  }
+
+  async abortAllAndWait(parentSessionId: string): Promise<void> {
+    const parent = this.parents.get(parentSessionId) ?? await this.loading.get(parentSessionId)
+    if (!parent) return
+    parent.stopping = true
+    parent.stopRevision = (parent.stopRevision ?? 0) + 1
+    parent.pending = []
+    clearTimeout(parent.flushTimer)
+    parent.flushTimer = undefined
+    try {
+      this.abortAll(parentSessionId)
+      await Promise.all([...parent.entries.values()].map(entry => entry.finished))
+    } finally {
+      parent.stopping = false
     }
   }
 
@@ -428,7 +455,7 @@ export class SubagentManager implements SubagentHost {
 
   private pump(parentSessionId: string): void {
     const parent = this.parents.get(parentSessionId)
-    if (!parent || parent.closed) return
+    if (!parent || parent.closed || parent.stopping) return
     let running = [...parent.entries.values()]
       .filter((entry) => entry.info.background && entry.info.status === 'running').length
     for (const entry of this.queuedBackground(parent)) {
@@ -552,22 +579,27 @@ export class SubagentManager implements SubagentHost {
     entry.lifetime.abort(new Error('Subagent finished'))
     entry.onProgress = undefined
     const status: SubagentStatus = entry.abortReason ?? (error ? 'failed' : 'completed')
-    this.update(parentSessionId, entry, {
-      status,
-      endedAt: this.now(),
-      activity: undefined,
-      ...(error && status === 'failed' ? { error } : {}),
-      ...(status === 'timeout' ? { error: `Stopped after ${entry.timeoutMinutes} minutes` } : {}),
-      ...(status === 'turn_limit' ? { error: `Stopped after ${entry.info.maxTurns} turns` } : {})
-    })
-    await this.persist(parentSessionId)
-    entry.resolve()
-    const parent = this.parents.get(parentSessionId)
-    if (parent && !parent.closed && entry.info.background && status !== 'interrupted') {
-      parent.pending.push(entry.info)
-      parent.flushTimer ??= setTimeout(() => this.flush(parentSessionId), this.coalesceMs)
+    this.finalizing.add(entry)
+    try {
+      this.update(parentSessionId, entry, {
+        status,
+        endedAt: this.now(),
+        activity: undefined,
+        ...(error && status === 'failed' ? { error } : {}),
+        ...(status === 'timeout' ? { error: `Stopped after ${entry.timeoutMinutes} minutes` } : {}),
+        ...(status === 'turn_limit' ? { error: `Stopped after ${entry.info.maxTurns} turns` } : {})
+      })
+      await this.persist(parentSessionId)
+      entry.resolve()
+      const parent = this.parents.get(parentSessionId)
+      if (parent && !parent.closed && !parent.stopping && entry.info.background && status !== 'interrupted') {
+        parent.pending.push(entry.info)
+        parent.flushTimer ??= setTimeout(() => this.flush(parentSessionId), this.coalesceMs)
+      }
+      this.pump(parentSessionId)
+    } finally {
+      this.finalizing.delete(entry)
     }
-    this.pump(parentSessionId)
   }
 
   private flush(parentSessionId: string): void {

@@ -1,3 +1,33 @@
+diff --git a/node_modules/@earendil-works/pi-coding-agent/.bun-tag-af68c3d906e3f44a b/.bun-tag-af68c3d906e3f44a
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
+index 2d847a8852537c78076b3b895c3b1a2a167bbd75..26b1b4a8734e39646030ab673bbcccc5e19545a3 100644
+--- a/dist/core/agent-session.d.ts
++++ b/dist/core/agent-session.d.ts
+@@ -187,6 +187,8 @@ export interface PromptOptions {
+     source?: InputSource;
+     /** Internal hook used by RPC mode to observe how an accepted prompt was dispatched. Not called if the prompt is rejected. */
+     preflightResult?: (disposition: PromptDisposition) => void;
++    /** Pig host gate after input/auth preflight, immediately before starting a new run (including compaction). Throw to reject the submission. */
++    beforeStart?: () => void;
+ }
+ /** Options for model/thinking mutations. */
+ export interface ModelMutationOptions {
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index ccbb5a96b093a95499f1caa4a30371c3ebd4102a..7f0f2d0539146561b50006eaa53d800d68c94dd9 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -1708,6 +1708,9 @@ export class AgentSession {
+             }
+             throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+         }
++        // Pig host gate: input hooks and authentication may have outlived the submission.
++        // Keep this synchronous with _startRun, before compaction or any other run work starts.
++        options?.beforeStart?.();
+         await this._startRun({ messageType: "user", prompt: expandedText, images: currentImages }, () => preflightResult?.("started"));
+     }
+     /**
 diff --git a/dist/core/extensions/loader.js b/dist/core/extensions/loader.js
 index 4bf25d50ea728ef1307c166e9f038643b474f101..4e89643547fde05129e55bb2f7bf1bd41b9f5485 100644
 --- a/dist/core/extensions/loader.js

@@ -10,6 +10,7 @@ import { useSessionNames } from './hooks/useSessionNames'
 import { useWorktreeDeletions } from './hooks/useWorktreeDeletions'
 import { useBrowserAgentRequests } from './hooks/useBrowserAgentRequests'
 import { useTerminalAgentRequests } from './hooks/useTerminalAgentRequests'
+import { useSessionAgentRequests } from './hooks/useSessionAgentRequests'
 import { api } from './ipc/api'
 import { openNotifiedSession } from './chat/notification-navigation'
 import { visibleNotificationSessions } from './chat/notification-visibility'
@@ -309,6 +310,7 @@ export default function App() {
   useWorktreeDeletions()
   useBrowserAgentRequests()
   useTerminalAgentRequests()
+  useSessionAgentRequests()
   useModelCatalog()
   const modelCatalogError = useModelCatalogStore((s) => s.error)
   const modelCatalogLoading = useModelCatalogStore((s) => s.loading)

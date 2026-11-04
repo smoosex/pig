@@ -1,20 +1,20 @@
 import { ipcMain } from 'electron'
-import { browseProjectDirectories, resolveProjectDirectory, searchProjectDirectories } from '../project-directory-browser'
+import { browseProjectDirectories, searchProjectDirectories } from '../project-directory-browser'
+import { openProjectDirectory } from '../project-open'
+import { unpinProjectDirectory } from '../project-unpin'
 import { closeSessionsForCwd, createPendingSession } from '../pi/session-registry'
 import { removeProjectSessions } from '../pi/session-removal'
-import { addOpenedProject, removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
-import { canonicalProject } from '../worktrees'
+import { removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
 import {
   discoverOpenedWorktrees,
   forgetProjectBranches,
   loadOpenedWorktreeProjects,
   loadProjectForCwd,
-  loadWorktreeProject,
   loadWorktreeSessions,
   requireOpenedProject,
   worktrees
 } from '../project-worktrees'
-import { createChatDir, isChatCwd, isChatsRoot, listChats, removeChatWorkDir } from '../chats'
+import { createChatDir, isChatCwd, listChats, removeChatWorkDir } from '../chats'
 import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 import { registerWorktreeIpc } from './worktrees'
 import { windowForEvent } from './window'
@@ -52,12 +52,7 @@ export function registerProjectIpc(): void {
     searches.get(event.sender.id)?.abort()
   })
 
-  ipcMain.handle('session:open-project', async (_event, path: string) => {
-    const picked = await resolveProjectDirectory(path)
-    if (isChatCwd(picked) || isChatsRoot(picked)) throw new Error('Chat directories cannot be opened as projects')
-    const cwd = await addOpenedProject(await canonicalProject(picked))
-    return loadWorktreeProject(cwd)
-  })
+  ipcMain.handle('session:open-project', async (_event, path: string) => openProjectDirectory(path))
 
   ipcMain.handle('session:list-chats', async () => listChats())
   ipcMain.handle('session:is-chat-cwd', async (_event, cwd: string) => isChatCwd(cwd))
@@ -77,13 +72,7 @@ export function registerProjectIpc(): void {
   })
 
   ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {
-    if (!cwd) throw new Error('Project cwd is required')
-    const project = await requireOpenedProject(cwd)
-    const cwds = new Set([project, ...(await worktrees.discover(project)).map((item) => item.cwd)])
-    await Promise.all([...cwds].map(closeSessionsForCwd))
-    await removeOpenProjectWorkspaces(cwds)
-    await removeOpenedProject(project)
-    forgetProjectBranches(project)
+    await unpinProjectDirectory(cwd)
   })
 
   ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {

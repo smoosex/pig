@@ -11,6 +11,7 @@ import type { SavedSplitLayout } from './split-layout'
 import type { ShortcutOverrides, ShortcutPatch } from './shortcuts'
 import type { SettingsEventsApi, SettingsReply } from './settings'
 import type { QuitApi } from './quit'
+import type { SessionAgentUiApi } from './session-agent'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -918,6 +919,7 @@ export type * from './terminal'
 export type * from './processes'
 
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
+  sessionAgent: SessionAgentUiApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
   permissions: import('./permissions').PermissionsApi

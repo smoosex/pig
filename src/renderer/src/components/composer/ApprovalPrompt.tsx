@@ -19,7 +19,7 @@ const ARM_MS = 600
 
 export function useApprovalPrompt(sessionId: string | null): ExtensionPrompt | undefined {
   return useExtensionPrompts((state) =>
-    sessionId ? state.prompts.find((item) => item.approval && item.owner === sessionId) : undefined
+    sessionId ? state.prompts.find((item) => item.approval && (item.owner === sessionId || item.approvalController === sessionId)) : undefined
   )
 }
 
@@ -115,6 +115,11 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
           <ShieldAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
           {prompt.title}
         </Questionnaire.Title>
+        {prompt.approvalController ? (
+          <p className="mt-1 px-1 text-xs text-muted-foreground" data-approval-session>
+            {t('permissions.approvalControlledSession', { id: prompt.owner })}
+          </p>
+        ) : null}
         {prompt.approvalSource?.kind === 'subagent' ? (
           <p className="mt-1 px-1 text-xs text-muted-foreground" data-approval-source>
             {t('permissions.approvalSubagent', { title: prompt.approvalSource.title, id: prompt.approvalSource.id })}

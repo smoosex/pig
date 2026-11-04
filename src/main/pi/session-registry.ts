@@ -4,6 +4,7 @@
  * Publish sessions only after extensions and pending controls are ready.
  * Closing a directory waits for its builds before the caller removes it.
  */
+import { assertSessionControlAvailable, withSessionControl } from './session-control-lock'
 import { existsSync, statSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
@@ -138,7 +139,8 @@ export function abortSessionBranchSummary(sessionId: string): void {
   navigatingBranches.get(sessionId)?.abort()
 }
 
-function assertSessionBranchAvailable(sessionId: string): void {
+function assertSessionBranchAvailable(sessionId: string, token?: symbol): void {
+  assertSessionControlAvailable(sessionId, token)
   if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
 }
 async function reloadSessionResources(session: LiveSession): Promise<void> {
@@ -449,15 +451,15 @@ export async function activateSession(
   }
 }
 
-export async function activateSessionInput(sessionId: string) {
-  assertSessionBranchAvailable(sessionId)
+export async function activateSessionInput(sessionId: string, token?: symbol) {
+  assertSessionBranchAvailable(sessionId, token)
   const activated = await activateSession(sessionId)
   while (resourceReloads.has(sessionId)) await prepareSession(sessionId)
   if (closing.has(sessionId) || live.get(sessionId) !== activated.session) throw new Error(`Session is closing: ${sessionId}`)
   const failure = resourceFailures.get(sessionId)
   if (failure) throw failure
   // No await between this check and the input lease: navigation must see preflight inputs as busy.
-  assertSessionBranchAvailable(sessionId)
+  assertSessionBranchAvailable(sessionId, token)
   return { ...activated, releaseInput: beginSessionInput(activated.session.agentSession) }
 }
 
@@ -672,6 +674,10 @@ export function getLive(sessionId: string): LiveSession | undefined {
   return live.get(sessionId)
 }
 
+export function openSessions(): SessionState[] {
+  return [...pending.values(), ...live.values()]
+}
+
 export function sessionCwd(sessionId: string): string {
   return sessionState(sessionId).cwd
 }
@@ -701,11 +707,14 @@ export async function getSessionCapabilities(sessionId: string): Promise<Session
   }
 }
 
-export async function setSessionCapability(sessionId: string, group: CapabilityGroup, id: string | null, enabled: boolean | null): Promise<SessionCapabilities> {
+export async function setSessionCapability(sessionId: string, group: CapabilityGroup, id: string | null, enabled: boolean | null, token?: symbol): Promise<SessionCapabilities> {
+  if (token === undefined) return withSessionControl(sessionId, token => setSessionCapability(sessionId, group, id, enabled, token))
+  assertSessionControlAvailable(sessionId, token)
   if (!['tools', 'mcp', 'skills'].includes(group) || (id !== null && typeof id !== 'string') || (enabled !== null && typeof enabled !== 'boolean'))
     throw new Error('Invalid session capability')
   const state = await getSessionCapabilities(sessionId)
   const session = live.get(sessionId)!
+  assertSessionControlAvailable(sessionId, token)
   if (state.busy || !canReloadResources(session) || refreshingPlugins.has(sessionId) || resourceReloads.has(sessionId)) throw new Error('Session is busy')
   const item = id === null ? undefined : state[group].find((candidate) => candidate.id === id)
   if (id !== null && !item) throw new Error('Unknown session capability')
@@ -882,7 +891,9 @@ export async function forkSessionFromMessage(
   position: ForkPosition,
   win: BrowserWindow
 ): Promise<ForkedSessionRef | null> {
+  assertSessionControlAvailable(sessionId)
   const source = await prepareSession(sessionId)
+  assertSessionControlAvailable(sessionId)
   const agentSession = source.agentSession
   if (!agentSession.isIdle || agentSession.isBashRunning) throw new Error('Session is busy')
   if (agentSession.extensionRunner.hasHandlers('session_before_fork')) {
@@ -1039,22 +1050,31 @@ export function getSessionTokenStats(sessionId: string): Promise<SessionTokenSta
   return retryAfterIndexFallback(sessionId, () => tokenStatsFor(sessionState(sessionId)))
 }
 
-export async function setSessionModel(sessionId: string, provider: string, id: string) {
+export async function setSessionModel(sessionId: string, provider: string, id: string, token?: symbol): Promise<SessionControls> {
+  if (token === undefined) return withSessionControl(sessionId, token => setSessionModel(sessionId, provider, id, token))
+  assertSessionControlAvailable(sessionId, token)
   // Once materialization starts, choices must target the session it publishes.
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
+  assertSessionControlAvailable(sessionId, token)
   return retryAfterIndexFallback(sessionId, () => applyModel(sessionState(sessionId), provider, id))
 }
 
-export async function setSessionThinking(sessionId: string, level: ThinkingLevel) {
+export async function setSessionThinking(sessionId: string, level: ThinkingLevel, token?: symbol): Promise<SessionControls> {
+  if (token === undefined) return withSessionControl(sessionId, token => setSessionThinking(sessionId, level, token))
+  assertSessionControlAvailable(sessionId, token)
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
+  assertSessionControlAvailable(sessionId, token)
   return retryAfterIndexFallback(sessionId, () => applyThinking(sessionState(sessionId), level))
 }
 
-export async function setSessionModelThinkingPreference(sessionId: string, remember: boolean) {
+export async function setSessionModelThinkingPreference(sessionId: string, remember: boolean, token?: symbol): Promise<SessionControls> {
+  if (token === undefined) return withSessionControl(sessionId, token => setSessionModelThinkingPreference(sessionId, remember, token))
+  assertSessionControlAvailable(sessionId, token)
   const preparation = preparing.get(sessionId)
   if (preparation) await preparation.promise
+  assertSessionControlAvailable(sessionId, token)
   return retryAfterIndexFallback(sessionId, () => applyModelThinkingPreference(sessionState(sessionId), remember))
 }
 
