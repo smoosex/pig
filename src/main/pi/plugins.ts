@@ -64,8 +64,8 @@ const personaPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
 const webAccessPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'pi-web-access', 'index.js')
-  : join(appPath(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
+  ? join(process.resourcesPath, 'system-plugins', 'pig-web', 'index.js')
+  : join(appPath(), 'out', 'system-plugins', 'pig-web', 'index.js')
 
 let mutation: Promise<void> = Promise.resolve()
 function serialize<T>(action: () => Promise<T>): Promise<T> {
@@ -263,7 +263,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
   const providers = new Map<string, SessionToolProvider>([
     [resolve(memoryPath()), { kind: 'pig', id: 'observational-memory', name: 'Observational Memory' }],
     [resolve(reviewPath()), { kind: 'pig', id: 'pi-review', name: 'Review' }],
-    [resolve(webAccessPath()), { kind: 'pig', id: 'pi-web-access', name: 'Web Access' }],
+    [resolve(webAccessPath()), { kind: 'pig', id: 'pig-web', name: 'Web' }],
     [resolve(subagentPath()), { kind: 'pig', id: 'pig-subagent', name: 'Subagents' }],
     [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }],
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
@@ -321,7 +321,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     settings: reviewSettingsSchema,
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pi-web-access', name: 'Web Access', source: 'Pig built-in',
+    id: 'pig-web', name: 'Web', source: 'Pig built-in',
     kind: 'system', scopes: registry.webAccessScopes, available: existsSync(webAccessPath()),
     ...(!existsSync(webAccessPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
@@ -391,7 +391,7 @@ export function installPlugin(source: string): Promise<void> {
 }
 
 const BUNDLED_SCOPES = {
-  'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pi-web-access': 'webAccessScopes',
+  'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
   'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pi-persona': 'personaScopes'
 } as const satisfies Record<string, keyof Registry>
@@ -411,7 +411,7 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   } else if (id === 'pi-review') {
     if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
     registry.reviewScopes = next
-  } else if (id === 'pi-web-access') {
+  } else if (id === 'pig-web') {
     if (addsScope(registry.webAccessScopes) && !existsSync(webAccessPath())) throw new Error('Bundled extension is missing')
     registry.webAccessScopes = next
   } else if (id === 'pig-subagent') {

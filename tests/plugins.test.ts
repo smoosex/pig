@@ -18,7 +18,7 @@ async function fixture(): Promise<void> {
   const { mock } = await import('bun:test')
   const app = { isPackaged: false, getAppPath: () => process.cwd() }
   mock.module('electron', () => ({ app }))
-  const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-web-access', 'index.js')
+  const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pig-web', 'index.js')
   const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-persona', 'index.js')
   const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   const sessionPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
@@ -98,7 +98,7 @@ async function fixture(): Promise<void> {
     }
     await assert.rejects(module.getPluginSettings('pig-settings'), /Plugin not found/, 'the settings tools do not declare a plugin configuration pane')
     assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, sessionPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
-    assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))), existsSync(webAccessBundle))
+    assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pig-web', 'index.js'))), existsSync(webAccessBundle))
     assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, ['project', 'chat'])
     assert.equal(bundledPaths.includes(personaBundle), existsSync(personaBundle))
     const registryFile = join(root, 'pig', 'plugins.json')
@@ -156,6 +156,10 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.memoryScopes, ['project'])
     assert.deepEqual(migrated.reviewScopes, [])
     assert.deepEqual(migrated.webAccessScopes, ['project'])
+    const webPlugin = (await module.listPlugins()).find((item) => item.id === 'pig-web')!
+    assert.equal(webPlugin.name, 'Web')
+    assert.deepEqual(webPlugin.scopes, ['project'], 'the renamed plugin retains saved web scopes')
+    assert.deepEqual((await module.pluginScopes())['pig-web'], ['project'])
     assert.deepEqual(migrated.terminalScopes, ['project'])
     assert.deepEqual(migrated.settingsScopes, ['project', 'chat'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
@@ -163,7 +167,7 @@ async function fixture(): Promise<void> {
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pi-review', 'pi-web-access', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pi-persona']) await module.setPluginScopes(id, [])
+    for (const id of ['observational-memory', 'pi-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pi-persona']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, [])
     if (existsSync(personaBundle)) {
@@ -180,9 +184,9 @@ async function fixture(): Promise<void> {
     await module.setPluginScopes('pi-review', ['project'])
     assert.deepEqual(await module.enabledPluginPaths('chat'), [])
     if (existsSync(webAccessBundle)) {
-      await module.setPluginScopes('pi-web-access', ['project'])
-      assert.ok((await module.enabledPluginPaths('project')).some((path) => path.endsWith(join('system-plugins', 'pi-web-access', 'index.js'))))
-      await module.setPluginScopes('pi-web-access', [])
+      await module.setPluginScopes('pig-web', ['project'])
+      assert.ok((await module.enabledPluginPaths('project')).some((path) => path.endsWith(join('system-plugins', 'pig-web', 'index.js'))))
+      await module.setPluginScopes('pig-web', [])
     }
     await module.setPluginScopes('pi-review', [])
     await assert.rejects(module.setPluginScopes('pi-review', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)

@@ -15,7 +15,7 @@ env -u PIG_DIR bun run dev
 
 ```bash
 bun run typecheck
-bun run plugins:build   # 重新打包内置 pi-web-access 插件（dev / build 已自动调用）
+bun run plugins:build   # 重新打包内置 pig-web 插件（dev / build 已自动调用）
 bun run build:mac       # 或 build:win / build:linux
 ```
 
@@ -48,12 +48,12 @@ src/
 
 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 
-内置系统插件默认范围：观测记忆全部关闭，pi-review 与 pig-subagent 仅项目启用，pi-web-access、pi-persona、pig-settings 与 pig-session 项目和 Chat 都启用；已保存的选择不受默认值变化影响。插件范围为 `project` / `chat`，可多选，空数组表示停用；旧版布尔配置迁移为仅项目。`enabledPluginPaths(scope)` 按会话类型过滤，并跳过缺失的内置文件，在设置页标出不可用。pi-web-access 已重写为 Pig 自有的轻量网页插件（保留注册 ID 和配置路径），不再同步上游整包。源码在 `src/main/plugins/pi-web-access/`，经 `plugins:build` 打成单文件，`@earendil-works/*` 由 SDK jiti alias 提供。只注册 `web_search`（1–3 条查询、至多 10 个去重来源）、`web_fetch`（单个 HTML/文本页面）和 `web_read`（按字符位置分页或字面查找）；没有模型二次总结、专用 PDF／视频解析、GitHub clone、source_check 或搜索供应商自动降级。搜索供应商固定 Exa、DeepSeek、Brave、Tavily、DuckDuckGo，默认免费 DuckDuckGo；网页读取跟随搜索供应商，DeepSeek `/fetch`、Exa `/contents`、Tavily `/extract` 优先使用相同 Key，不支持的 Brave／DuckDuckGo 直接使用本机 HTTP。远程请求／响应失败仅回退本机 HTTP，不尝试其他收费供应商；取消、配置错误、域名策略／重定向拒绝和 HTTP 403 不回退，双重失败保留两边错误。返回并持久化实际读取方式与回退原因。DeepSeek 使用直接 `/v1/tools/search` 与 `/v1/tools/fetch`，不走 Messages 模型代理。完整配置与限制见 `docs/web-access.md`。
+内置系统插件默认范围：观测记忆全部关闭，pi-review 与 pig-subagent 仅项目启用，pig-web、pi-persona、pig-settings 与 pig-session 项目和 Chat 都启用；已保存的选择不受默认值变化影响。插件范围为 `project` / `chat`，可多选，空数组表示停用；旧版布尔配置迁移为仅项目。`enabledPluginPaths(scope)` 按会话类型过滤，并跳过缺失的内置文件，在设置页标出不可用。pig-web 是 Pig 自有的轻量网页插件，配置写入 `$PIG_DIR/web-search.json`，启用范围沿用注册表的 `webAccessScopes` 字段。源码在 `src/main/plugins/pig-web/`，经 `plugins:build` 打成单文件，`@earendil-works/*` 由 SDK jiti alias 提供。只注册 `web_search`（1–3 条查询、至多 10 个去重来源）、`web_fetch`（单个 HTML/文本页面）和 `web_read`（按字符位置分页或字面查找）；没有模型二次总结、专用 PDF／视频解析、GitHub clone、source_check 或搜索供应商自动降级。搜索供应商固定 Exa、DeepSeek、Brave、Tavily、DuckDuckGo，默认免费 DuckDuckGo；网页读取跟随搜索供应商，DeepSeek `/fetch`、Exa `/contents`、Tavily `/extract` 优先使用相同 Key，不支持的 Brave／DuckDuckGo 直接使用本机 HTTP。远程请求／响应失败仅回退本机 HTTP，不尝试其他收费供应商；取消、配置错误、域名策略／重定向拒绝和 HTTP 403 不回退，双重失败保留两边错误。返回并持久化实际读取方式与回退原因。DeepSeek 使用直接 `/v1/tools/search` 与 `/v1/tools/fetch`，不走 Messages 模型代理。完整配置与限制见 `docs/pig-web.md`。
 
 维护边界：
 - `config.ts` 统一声明供应商、凭据与固定官方端点，不支持自定义 API 地址，旧端点配置／环境变量和独立 fetchProvider 已不生效；`web-search-settings.ts` 是 `$PIG_DIR/web-search.json` 的唯一写入者，保留旧键与未修改的凭据，但旧供应商（包括 auto/all）必须在设置页明确重新选择，不静默迁移。坏 JSON 或 IO 错误禁止覆盖。API key 只接受字面值或指定环境变量，不执行 shell。界面只检测环境变量是否存在，不传递其值；`<id>ApiKeySource` 显式选择 env/config，仅旧配置缺省时按自定义 Key → 环境变量推导，选定来源缺失不借用另一来源。
-- 配置路径每次延迟解析；`config-file.ts` 按路径、mtime、size 缓存，解析错误只报告位置，绝不转发可能含 key 的 V8 错误原文。Node 子进程回归在 `tests/pi-web-access-config-errors.test.ts`。代理作用域仍用 `Symbol.for("pi-web-access.proxy-storage")` 跨扩展重载共享。
-- `transport.ts` 只校验 HTTP(S) URL、禁止 URL 内嵌凭据并执行域名与重定向策略，不做 DNS 预检、连接期 IP 校验或 CIDR 例外，域名解析交给网络栈与代理。Web Access 不再读取旧 ssrf 配置；其 HTTP 访问不保证仅公网可达，其他模块的网络防护保持不变。远程读取发送目标 URL 前仍检查 URL 与域名策略，拒绝后不能换方式绕过。带凭据的供应商请求不跟随任何重定向；网页请求仅跟随同源跳转。传输限 30 秒、响应限 2 MiB。
+- 配置路径每次延迟解析；`config-file.ts` 按路径、mtime、size 缓存，解析错误只报告位置，绝不转发可能含 key 的 V8 错误原文。Node 子进程回归在 `tests/pig-web-config-errors.test.ts`。代理作用域仍用 `Symbol.for("pig-web.proxy-storage")` 跨扩展重载共享。
+- `transport.ts` 只校验 HTTP(S) URL、禁止 URL 内嵌凭据并执行域名与重定向策略，不做 DNS 预检、连接期 IP 校验或 CIDR 例外，域名解析交给网络栈与代理。Web 不再读取旧 ssrf 配置；其 HTTP 访问不保证仅公网可达，其他模块的网络防护保持不变。远程读取发送目标 URL 前仍检查 URL 与域名策略，拒绝后不能换方式绕过。带凭据的供应商请求不跟随任何重定向；网页请求仅跟随同源跳转。传输限 30 秒、响应限 2 MiB。
 - `pages.ts` 每会话内存保留最近 8 页，每页最多 100 万字符；完整内容以 `pig-web-page-v1` custom entry 写入会话 JSONL，启动和切分支时仅重建当前分支，关闭会话清空内存。输出按 UTF-8 字节限制并用自适应 fence 标为不可信数据，不共享其他会话的页面 ID。
 - 设置页保留「添加供应商」弹窗，仅列已添加项，可编辑 Key、移除和选择搜索供应商；不提供读取供应商或 API 地址配置。成员存 addedProviders，旧配置按选定供应商与已有 Key 推导，移除成员不删除其历史 Key。测试先保存草稿再复用相同搜索适配器，不创建辅助模型会话。高级设置只保留正文读取长度。回归覆盖配置重载、凭据泄漏、真实 Node socket 的供应商协议／代理传输、fake-IP 不再拦截、重定向、会话页面隔离和设置 UI。
 
@@ -158,7 +158,7 @@ Pi SDK 当前固定为 1.5.0，直接依赖 `pi-ai` 同步固定为 1.5.0。`pat
 | `src/main/pi/session-jsonl.ts`       | 按行索引 JSONL，只解析要用的行；担保不了就报错让 SDK 接手               |
 | `src/main/pi/session-source.ts`      | pending / live 会话统一的只读条目视图                                   |
 | `src/main/pi/plugins.ts`             | 内置 / 第三方插件注册表、启用状态与打包路径                             |
-| `src/main/pi/web-search-settings.ts` | 内置 pi-web-access 的配置读写（`$PIG_DIR/web-search.json`，权限 0600）  |
+| `src/main/pi/web-search-settings.ts` | 内置 pig-web 的配置读写（`$PIG_DIR/web-search.json`，权限 0600）  |
 | `src/main/skills/`                  | 个人 Skills 清单、本地引用、远程副本与手动更新、启停偏好及 skills.sh 搜索 |
 | `src/main/subagents/`               | 子 agent 的排队、上限、生命周期、结果投递与落盘；执行器接口与同进程 SDK 实现 |
 | `scripts/build-system-plugins.ts`    | 用 esbuild 把 vendored 插件打成单文件到 `out/system-plugins/`           |

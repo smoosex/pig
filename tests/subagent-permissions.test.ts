@@ -21,7 +21,7 @@ async function fixture() {
   const { createSdkRunner } = await import('../src/main/subagents/sdk-runner')
   const { setPluginScopes } = await import('../src/main/pi/plugins')
   await setPluginScopes('pi-review', [])
-  await setPluginScopes('pi-web-access', [])
+  await setPluginScopes('pig-web', [])
   for (const ceiling of ['read-only', 'default', 'full-access'] as const) {
     for (const parent of ['read-only', 'default', 'full-access'] as const) {
       const expected = ['read-only', 'default', 'full-access'][Math.min(['read-only', 'default', 'full-access'].indexOf(ceiling), ['read-only', 'default', 'full-access'].indexOf(parent))]

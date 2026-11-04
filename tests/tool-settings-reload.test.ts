@@ -132,7 +132,7 @@ async function fixture(): Promise<void> {
   >[1]
   try {
     const plugins = await import('../src/main/pi/plugins')
-    await plugins.setPluginScopes('pi-web-access', [])
+    await plugins.setPluginScopes('pig-web', [])
     await plugins.setPluginScopes('pi-persona', [])
     await plugins.setPluginScopes('pig-settings', [])
     await plugins.setPluginScopes('pig-session', [])

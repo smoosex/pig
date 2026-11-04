@@ -6,8 +6,8 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { fetchRemoteUrl } from '../src/main/plugins/pi-web-access/transport.ts'
-import { runWithProxy } from '../src/main/plugins/pi-web-access/utils.ts'
+import { fetchRemoteUrl } from '../src/main/plugins/pig-web/transport.ts'
+import { runWithProxy } from '../src/main/plugins/pig-web/utils.ts'
 import { runChild } from './helpers/subprocess.ts'
 
 async function adaptersFixture() {
@@ -51,13 +51,13 @@ async function adaptersFixture() {
   const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
   // Official endpoints stay fixed in production. Only this subprocess substitutes loopback fixtures.
   const { mock } = await import('node:test')
-  const actual = await import('../src/main/plugins/pi-web-access/config.ts')
-  mock.module(new URL('../src/main/plugins/pi-web-access/config.ts', import.meta.url).href, {
+  const actual = await import('../src/main/plugins/pig-web/config.ts')
+  mock.module(new URL('../src/main/plugins/pig-web/config.ts', import.meta.url).href, {
     namedExports: { ...actual, providerConnection: (id: Parameters<typeof actual.providerConnection>[0], config: Record<string, unknown>) =>
       ({ ...actual.providerConnection(id, config), baseUrl: base + '/' + id }) }
   })
-  const { searchWeb } = await import('../src/main/plugins/pi-web-access/search.ts')
-  const { fetchPage } = await import('../src/main/plugins/pi-web-access/fetch.ts')
+  const { searchWeb } = await import('../src/main/plugins/pig-web/search.ts')
+  const { fetchPage } = await import('../src/main/plugins/pig-web/fetch.ts')
   const configPath = join(process.env.PIG_DIR!, 'web-search.json')
   const config: Record<string, unknown> = { ssrf: 'obsolete settings must not affect web requests' }
   for (const id of ['exa', 'deepseek', 'brave', 'tavily']) { config[id + 'ApiKey'] = 'sk-SECRET'; config[id + 'BaseUrl'] = base + '/' + id }
@@ -214,7 +214,7 @@ async function proxyFailureFixture() {
   const proxyUrl = 'http://127.0.0.1:' + (proxy.address() as AddressInfo).port
   await writeFile(join(process.env.PIG_DIR!, 'web-search.json'), JSON.stringify({ proxy: proxyUrl }))
   try {
-    const { fetchPage } = await import('../src/main/plugins/pi-web-access/fetch.ts')
+    const { fetchPage } = await import('../src/main/plugins/pig-web/fetch.ts')
     assert.equal((await fetchPage('http://provider.test/ok')).content, 'complete page')
     for (const [path, exitCode] of [['/chunked', 63], ['/known-size', 63], ['/partial', 18]] as const) {
       await assert.rejects(runWithProxy(undefined, () => fetchRemoteUrl('http://provider.test' + path, {

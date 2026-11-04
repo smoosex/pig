@@ -33,7 +33,7 @@ export function parseFailure(error: unknown): string {
  * per-instance AsyncLocalStorage would leave the already-installed global fetch wrapper reading the
  * old instance's storage and silently bypassing the proxy configured after a reload.
  */
-const PROXY_STORAGE_KEY = Symbol.for("pi-web-access.proxy-storage");
+const PROXY_STORAGE_KEY = Symbol.for("pig-web.proxy-storage");
 
 function proxyStorage(): AsyncLocalStorage<string | null> {
 	const holder = globalThis as typeof globalThis & { [PROXY_STORAGE_KEY]?: AsyncLocalStorage<string | null> };
@@ -247,7 +247,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 	const method = (init.method ?? "GET").toUpperCase();
 	const headers = new Headers(init.headers);
 
-	const dir = await mkdtemp(join(tmpdir(), "pi-web-access-proxy-"));
+	const dir = await mkdtemp(join(tmpdir(), "pig-web-proxy-"));
 	const headerFile = join(dir, "headers");
 	const bodyFile = join(dir, "body");
 	const requestBodyFile = join(dir, "request-body");

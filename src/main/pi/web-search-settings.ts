@@ -1,8 +1,8 @@
 /** Sole writer of web-search.json; saves preserve unrelated legacy keys and never replace unreadable files. */
 import { mkdir, readFile } from 'node:fs/promises'
 import type { WebSearchSettingsState, WebSearchSettingsPatch, WebSearchProviderState } from '../../shared/api'
-import { PROVIDERS, addedProviders, inlineLimit, searchProvider, providerKeySource } from '../plugins/pi-web-access/config'
-import { parseFailure } from '../plugins/pi-web-access/utils'
+import { PROVIDERS, addedProviders, inlineLimit, searchProvider, providerKeySource } from '../plugins/pig-web/config'
+import { parseFailure } from '../plugins/pig-web/utils'
 import { pigPath } from '../pig-dir'
 import { writeFileAtomic } from '../atomic-write'
 

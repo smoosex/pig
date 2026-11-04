@@ -1,7 +1,7 @@
 /** One bounded search through the same adapters as the Agent, without creating a model session. */
 import type { WebSearchTestResult } from '../../shared/api'
-import { searchProvider } from '../plugins/pi-web-access/config'
-import { searchWeb } from '../plugins/pi-web-access/search'
+import { searchProvider } from '../plugins/pig-web/config'
+import { searchWeb } from '../plugins/pig-web/search'
 
 export async function testWebSearchProvider(provider: string | null): Promise<WebSearchTestResult> {
   try {

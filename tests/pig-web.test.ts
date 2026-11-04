@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import plugin from '../src/main/plugins/pi-web-access/index'
-import { htmlToMarkdown } from '../src/main/plugins/pi-web-access/fetch'
-import { parseDuckDuckGo } from '../src/main/plugins/pi-web-access/search'
-import { externalText, PageStore, PAGE_ENTRY } from '../src/main/plugins/pi-web-access/pages'
+import plugin from '../src/main/plugins/pig-web/index'
+import { htmlToMarkdown } from '../src/main/plugins/pig-web/fetch'
+import { parseDuckDuckGo } from '../src/main/plugins/pig-web/search'
+import { externalText, PageStore, PAGE_ENTRY } from '../src/main/plugins/pig-web/pages'
 
 let root: string
 const previousPigDir = process.env.PIG_DIR
@@ -91,7 +91,7 @@ test('page output respects byte limits even for Unicode and adversarial code fen
 })
 
 test('the built plugin loads through SDK aliases without a model session', async () => {
-  const bundle = join(process.cwd(), 'out/system-plugins/pi-web-access/index.js')
+  const bundle = join(process.cwd(), 'out/system-plugins/pig-web/index.js')
   if (!existsSync(bundle)) return
   const loader = new DefaultResourceLoader({
     cwd: root, agentDir: root, settingsManager: SettingsManager.inMemory(),

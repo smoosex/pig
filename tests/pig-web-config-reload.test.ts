@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readConfig, selectedSearchProvider, providerConnection } from '../src/main/plugins/pi-web-access/config'
+import { readConfig, selectedSearchProvider, providerConnection } from '../src/main/plugins/pig-web/config'
 
 test('configuration follows PIG_DIR and file replacement without stale provider state', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pig-web-reload-'))

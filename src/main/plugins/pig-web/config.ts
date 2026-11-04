@@ -22,7 +22,7 @@ export const readConfig = createConfigFileReader<Record<string, unknown>>();
 export function searchProvider(value: unknown): SearchProvider {
   if (value === undefined || value === null || value === '') return 'duckduckgo';
   if (typeof value === 'string' && SEARCH_PROVIDERS.includes(value as SearchProvider)) return value as SearchProvider;
-  throw new Error('Select a supported search provider in Web Access settings; auto/all and legacy providers are no longer supported.');
+  throw new Error('Select a supported search provider in Web settings.');
 }
 
 export function selectedSearchProvider(config = readConfig()): SearchProvider {
@@ -66,6 +66,6 @@ export function providerConnection(id: Exclude<SearchProvider, 'duckduckgo'>, co
   if (source === 'config' && configured !== undefined && typeof configured !== 'string') throw new Error(`${id} API key must be a string`);
   // Literal keys only: never execute a config value as a shell command.
   const apiKey = source === 'env' ? process.env[option.apiKeyEnv!]?.trim() : typeof configured === 'string' ? configured.trim() : '';
-  if (!apiKey) throw new Error(`${option.name} API key is missing; configure it in Web Access settings or ${option.apiKeyEnv}.`);
+  if (!apiKey) throw new Error(`${option.name} API key is missing; configure it in Web settings or ${option.apiKeyEnv}.`);
   return { baseUrl: BASE_URLS[id], apiKey };
 }

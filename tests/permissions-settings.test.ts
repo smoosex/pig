@@ -116,11 +116,11 @@ test('plugin approval shows the display name, ID and exact scopes', async () => 
   const slot = globalThis as Record<symbol, SettingsAgentHost | undefined>
   const key = Symbol.for('pig:settings-agent-host')
   const previous = slot[key]
-  registerSettingsAgentHost({ list: async () => ({ plugins: [{ id: 'web', name: 'Web Access' }] }) } as unknown as SettingsAgentHost)
+  registerSettingsAgentHost({ list: async () => ({ plugins: [{ id: 'web', name: 'Web' }] }) } as unknown as SettingsAgentHost)
   try {
     const gate = await setup()
     await gate.call(update('plugins', { scopes: { web: ['project', 'chat'] } }))
-    expect(gate.asked[0]!.message).toContain('"web": "Web Access"')
+    expect(gate.asked[0]!.message).toContain('"web": "Web"')
     expect(gate.asked[0]!.message).toContain('"project"')
     expect(gate.asked[0]!.message).toContain('"chat"')
     await gate.call(update('plugins', { scopes: { web: [] } }))
@@ -262,7 +262,7 @@ test('a mode change during the async plugin catalog lookup cannot create a stale
     await store.saveSessionPermission(sessionId, 'read-only')
     expect(await outcome).toMatchObject({ message: 'Permission mode changed; request the settings update again' })
     await store.saveSessionPermission(sessionId, 'default')
-    catalog.resolve({ plugins: [{ id: 'web', name: 'Web Access' }] })
+    catalog.resolve({ plugins: [{ id: 'web', name: 'Web' }] })
     await Promise.resolve()
     await Promise.resolve()
     expect(gate.asked).toHaveLength(0)

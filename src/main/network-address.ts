@@ -73,7 +73,7 @@ export function parseAllowedRanges(values: unknown, source: string): string[] {
   })
 }
 
-/** Ranges the user declared as proxy fake-IP space; the same knob the bundled web-access plugin reads. */
+/** Ranges the user declared as proxy fake-IP space. */
 export function loadAllowedRanges(path: string): string[] {
   let raw: unknown
   try {

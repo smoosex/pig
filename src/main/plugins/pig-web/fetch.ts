@@ -92,7 +92,7 @@ async function fetchRemotePage(url: URL, provider: RemoteFetchProvider, { baseUr
 }
 
 async function fetchHttpPage(url: URL, signal?: AbortSignal): Promise<WebPage> {
-  const { text, response, url: finalUrl } = await requestText(url, { headers: { Accept: 'text/html,text/plain,application/json,application/xml;q=0.9', 'User-Agent': 'Pig Web Access' } }, { signal });
+  const { text, response, url: finalUrl } = await requestText(url, { headers: { Accept: 'text/html,text/plain,application/json,application/xml;q=0.9', 'User-Agent': 'Pig Web' } }, { signal });
   const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
   let page: WebPage;
   if (mime === 'text/html' || mime === 'application/xhtml+xml') page = { url: finalUrl, ...htmlToMarkdown(text, finalUrl) };

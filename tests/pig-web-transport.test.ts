@@ -1,7 +1,7 @@
 /** URL policy no longer resolves DNS or rejects proxy fake-IP/private address ranges. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { fetchRemoteUrl, validateRemoteUrl, WebPolicyError } from '../src/main/plugins/pi-web-access/transport'
+import { fetchRemoteUrl, validateRemoteUrl, WebPolicyError } from '../src/main/plugins/pig-web/transport'
 
 const responseFetch = (handler: (url: URL, init?: RequestInit) => Response | Promise<Response>) =>
   ((input: string | URL | Request, init?: RequestInit) => Promise.resolve(handler(new URL(input instanceof Request ? input.url : input), init))) as typeof fetch

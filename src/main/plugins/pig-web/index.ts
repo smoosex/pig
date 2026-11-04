@@ -6,7 +6,7 @@ import { fetchPage } from './fetch.ts';
 import { externalText, PAGE_ENTRY, PageStore } from './pages.ts';
 import { searchWeb } from './search.ts';
 
-export default function webAccess(pi: ExtensionAPI): void {
+export default function pigWeb(pi: ExtensionAPI): void {
   const pages = new PageStore();
   let lifecycle = new AbortController();
   const restore = (ctx: ExtensionContext) => {

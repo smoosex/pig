@@ -68,8 +68,8 @@ extraResources:
     filter:
       - '**/*.ts'
       - LICENSE
-  - from: out/system-plugins/pi-web-access
-    to: system-plugins/pi-web-access
+  - from: out/system-plugins/pig-web
+    to: system-plugins/pig-web
     filter:
       - index.js
       - LICENSE

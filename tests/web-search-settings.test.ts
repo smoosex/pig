@@ -50,7 +50,7 @@ test('small web settings preserve credentials and legacy keys, validate writes, 
     const merged = JSON.parse(await readFile(path, 'utf8'))
     assert.equal(merged.searchProvider, 'brave')
     assert.equal(merged.tavilyApiKey, 'tavily-secret')
-    const { providerConnection } = await import('../src/main/plugins/pi-web-access/config')
+    const { providerConnection } = await import('../src/main/plugins/pig-web/config')
     process.env.EXA_API_KEY = 'fixture-environment-value'
     let provider = (await webSearchSettingsState()).providers.find(provider => provider.id === 'exa')!
     assert.equal(provider.envAvailable, true)

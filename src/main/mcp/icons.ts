@@ -42,7 +42,7 @@ export interface McpIconDeps {
   negativeTtlMs?: number
 }
 
-/** The declared proxy fake-IP ranges, the same knob the bundled web-access plugin reads. */
+/** The declared proxy fake-IP ranges used for MCP icon requests. */
 function declaredRanges(): string[] {
   return loadAllowedRanges(webSearchConfigPath())
 }

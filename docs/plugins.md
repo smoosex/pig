@@ -16,7 +16,7 @@ The built-in plugins use Pig-owned surfaces instead:
 
 - **pi-review** uses a dedicated command panel with searchable, keyboard-selectable rows, separate descriptions, a recommended option, and in-panel PR/path/instruction inputs. The current session has its own review indicator. Selection responses use option IDs rather than displayed text.
 - **Observational Memory** sends session-scoped, non-blocking notifications through Pig's private system-plugin channel. Memory status and history keep their existing context-popover entry points. Worker cancellation remains tied to session shutdown.
-- **pi-web-access** has no terminal UI to migrate. Its tool results and background-fetch messages remain in the conversation; no extra activity widget or generic plugin dialog is installed.
+- **pig-web** provides `web_search`, `web_fetch`, and `web_read` for search and plain page retrieval. Its Web settings panel manages providers and credentials; tool results stay in the conversation. See [Web](pig-web.md).
 
 System notifications are shown only for the active session and expire eight seconds after receipt, including while a session is inactive. Pig retains at most five notifications per session and twenty across the window, dropping older notices first. Switching sessions does not renew their lifetime. Long messages never open a modal automatically; their notification has an explicit details action that consumes the notice while keeping its full text open. `src/main/plugins/pig-ui.ts` shares the system-plugin host registry across the SDK's jiti loader and Pig main, while `src/main/pi/system-plugin-ui.ts` owns pending review requests and window-bound replies. These are Pig implementation APIs, not a third-party `ctx.ui` compatibility layer.
 

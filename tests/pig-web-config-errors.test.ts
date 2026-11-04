@@ -9,9 +9,9 @@ if (process.argv.includes('--web-parse-fixture')) {
   const root = await mkdtemp(join(tmpdir(), 'pig-web-parse-'))
   process.env.PIG_DIR = root
   try {
-    const { readConfig } = await import('../src/main/plugins/pi-web-access/config.ts')
-    const { loadFetchContentDomainPolicy } = await import('../src/main/plugins/pi-web-access/transport.ts')
-    const { loadConfiguredProxy } = await import('../src/main/plugins/pi-web-access/utils.ts')
+    const { readConfig } = await import('../src/main/plugins/pig-web/config.ts')
+    const { loadFetchContentDomainPolicy } = await import('../src/main/plugins/pig-web/transport.ts')
+    const { loadConfiguredProxy } = await import('../src/main/plugins/pig-web/utils.ts')
     await writeFile(join(root, 'web-search.json'), '{"exaApiKey": sk-SECRET-SENTINEL}')
     for (const read of [readConfig, loadFetchContentDomainPolicy, loadConfiguredProxy]) {
       assert.throws(read, (error: Error) => /invalid JSON/.test(error.message) && !error.message.includes('SECRET'))
