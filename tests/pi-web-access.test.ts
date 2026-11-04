@@ -1,138 +1,120 @@
-import { test } from 'bun:test'
-import assert from 'node:assert/strict'
-import { mkdtemp } from 'node:fs/promises'
+import { test, beforeAll, afterAll } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
+import assert from 'node:assert/strict'
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
+import plugin from '../src/main/plugins/pi-web-access/index'
+import { htmlToMarkdown } from '../src/main/plugins/pi-web-access/fetch'
+import { parseDuckDuckGo } from '../src/main/plugins/pi-web-access/search'
+import { externalText, PageStore, PAGE_ENTRY } from '../src/main/plugins/pi-web-access/pages'
 
-interface FakeExtension {
-  tools: string[]
-  commands: string[]
-  shortcuts: string[]
-  events: string[]
-}
-
-async function loadPlugin(): Promise<FakeExtension> {
-  const root = await mkdtemp(join(tmpdir(), 'pig-web-access-plugin-'))
-  process.env.PIG_DIR = root
-  const plugin = await import('../src/main/plugins/pi-web-access/index.ts')
-  const fake: FakeExtension = { tools: [], commands: [], shortcuts: [], events: [] }
-  const api = {
-    registerTool: (tool: { name: string }) => { fake.tools.push(tool.name) },
-    registerCommand: (name: string) => { fake.commands.push(name) },
-    registerShortcut: (_key: string, options: { description: string }) => { fake.shortcuts.push(options.description) },
-    on: (event: string) => { fake.events.push(event) },
-    appendEntry: () => undefined,
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
-    getCommands: () => [],
-    getAllTools: () => [],
-    getActiveTools: () => [],
-    setActiveTools: () => undefined
-  } as unknown as ExtensionAPI
-  plugin.default(api)
-  return fake
-}
-
-test('the vendored plugin registers the four tools and no command surface', async () => {
-  const fake = await loadPlugin()
-  assert.deepEqual(fake.tools.sort(), ['fetch_content', 'get_search_content', 'source_check', 'web_search'])
-  assert.deepEqual(fake.commands, [])
-  assert.deepEqual(fake.shortcuts, [])
-  assert.deepEqual(fake.events.sort(), ['session_shutdown', 'session_start', 'session_tree', 'tool_call'])
+let root: string
+const previousPigDir = process.env.PIG_DIR
+beforeAll(async () => { root = await mkdtemp(join(tmpdir(), 'pig-web-tools-')); process.env.PIG_DIR = root })
+afterAll(async () => {
+  if (previousPigDir === undefined) delete process.env.PIG_DIR
+  else process.env.PIG_DIR = previousPigDir
+  await rm(root, { recursive: true, force: true })
 })
 
-type ToolExecute = (callId: string, params: Record<string, unknown>) => Promise<{ content?: Array<{ type: string; text?: string }> }>
-
-interface FakeSession {
-  tools: Map<string, ToolExecute>
-  start: () => Promise<void>
-  end: () => Promise<void>
+function instance() {
+  const tools: Parameters<ExtensionAPI['registerTool']>[0][] = []
+  const hooks = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>()
+  plugin({ registerTool: tool => { tools.push(tool as unknown as Parameters<ExtensionAPI['registerTool']>[0]) }, on: (name, fn) => { hooks.set(name, fn as never) } } as ExtensionAPI)
+  return { tools, hooks }
 }
 
-function createSession(plugin: { default: (api: ExtensionAPI) => void }, branch: unknown[]): FakeSession {
-  const tools: FakeSession['tools'] = new Map()
-  const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>()
-  const api = {
-    registerTool: (tool: { name: string; execute: ToolExecute }) => { tools.set(tool.name, tool.execute) },
-    registerCommand: () => undefined,
-    registerShortcut: () => undefined,
-    on: (event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
-      handlers.set(event, [...(handlers.get(event) ?? []), handler])
-    },
-    appendEntry: () => undefined,
-    sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
-    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
-    getCommands: () => [],
-    getAllTools: () => [],
-    getActiveTools: () => [],
-    setActiveTools: () => undefined
-  }
-  plugin.default(api as unknown as ExtensionAPI)
-  const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => 'session' } }
-  const emit = async (event: string) => {
-    for (const handler of handlers.get(event) ?? []) await handler({ type: event }, ctx)
-  }
-  return {
-    tools,
-    start: () => emit('session_start'),
-    end: () => emit('session_shutdown')
-  }
-}
-
-// The SDK caches the extension factory per cwd but runs it once per session, so tabs in the same
-// worktree get separate factory closures. Results are held by reference count: one tab's session
-// starting or ending must not drop or abort another tab's results.
-test('one session starting or ending leaves another session\'s stored results in place', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'pig-web-access-plugin-'))
-  process.env.PIG_DIR = root
-  const plugin = await import('../src/main/plugins/pi-web-access/index.ts')
-  const data = {
-    id: 'res-a',
-    type: 'fetch',
-    timestamp: Date.now(),
-    urls: [{ url: 'https://example.org', title: 'Example', content: 'hello from session A', error: null }]
-  }
-  const sessionA = createSession(plugin, [{ type: 'custom', customType: 'web-search-results', data }])
-  const sessionB = createSession(plugin, [])
-  await sessionA.start()
-  await sessionB.start()
-  const readA = sessionA.tools.get('get_search_content')
-  assert.ok(readA)
-  const kept = await readA('call', { responseId: 'res-a', urlIndex: 0 })
-  assert.match(kept.content?.[0]?.text ?? '', /hello from session A/)
-
-  // Session B ends while A is mid-turn; A still holds the result.
-  await sessionB.end()
-  const afterB = await readA('call', { responseId: 'res-a', urlIndex: 0 })
-  assert.match(afterB.content?.[0]?.text ?? '', /hello from session A/)
-
-  // A session forked from A's history shares the id and keeps it alive after A ends.
-  const sessionC = createSession(plugin, [{ type: 'custom', customType: 'web-search-results', data }])
-  await sessionC.start()
-  await sessionA.end()
-  const readC = sessionC.tools.get('get_search_content')
-  assert.ok(readC)
-  const shared = await readC('call', { responseId: 'res-a', urlIndex: 0 })
-  assert.match(shared.content?.[0]?.text ?? '', /hello from session A/)
-  await sessionC.end()
+test('web plugin exposes three small tools, with providers outside model arguments', () => {
+  const { tools } = instance()
+  assert.deepEqual(tools.map(tool => tool.name), ['web_search', 'web_fetch', 'web_read'])
+  assert.deepEqual(Object.keys((tools[0].parameters as { properties: object }).properties), ['queries', 'count'])
 })
 
-// A reload evaluates the module again; the installed global fetch wrapper must still see the proxy
-// scope of the new instance, or requests after a reload silently bypass the configured proxy.
-test('a reloaded module instance shares the proxy scope with the installed wrapper', async () => {
-  const first = await import('../src/main/plugins/pi-web-access/utils.ts')
-  // The query string is what forces a second evaluation of the module; TypeScript cannot resolve it.
-  const reloadSpecifier = '../src/main/plugins/pi-web-access/utils.ts?reload=1'
-  const reloaded = (await import(reloadSpecifier)) as typeof first
-  assert.notEqual(reloaded.getActiveProxy, first.getActiveProxy, 'the query creates a second module instance')
-  const nativeFetch = globalThis.fetch
-  try {
-    const seen = reloaded.runWithProxy('http://proxy.example:8080', () => first.getActiveProxy())
-    assert.equal(seen, 'http://proxy.example:8080/')
-  } finally {
-    globalThis.fetch = nativeFetch
+test('pages paginate, search, evict, and cannot escape their untrusted fences', () => {
+  const store = new PageStore()
+  const saved = store.add({ url: 'https://example.com', title: 'Test', content: 'a'.repeat(1200) + 'Needle\n````injection' })
+  const first = store.read(saved.id, 0, 1000)
+  assert.equal(first.nextOffset, 1000)
+  assert.equal(store.read(saved.id, 1000, 1000).nextOffset, null)
+  assert.match(store.read(saved.id, 0, 200, 'needle').text, /Needle/)
+  assert.match(store.read(saved.id, 0, 20, 'absent').text, /No match/)
+  assert.match(externalText('````hello'), /\n`````\n/)
+  for (let i = 0; i < 8; i++) store.add({ url: 'https://example.com', title: '', content: String(i) })
+  assert.throws(() => store.read(saved.id, 0, 1), /unavailable/)
+  assert.throws(() => store.add({ url: '', title: '', content: 'a'.repeat(1_000_001) }), /storage limit/)
+})
+
+test('fetch provenance survives restore without unbounded extra metadata in tool output', () => {
+  const store = new PageStore()
+  const page = store.add({ url: 'https://example.com', title: '', content: 'page', retrieval: { provider: 'http', fallbackFrom: 'exa', reason: 'Exa returned HTTP 500.' } })
+  const restored = new PageStore()
+  restored.restore({ ...page, retrieval: { ...page.retrieval, ignored: 'x'.repeat(60_000) } })
+  const result = restored.read(page.id, 0, 100)
+  assert.match(result.text, /"provider":"http"/)
+  assert.match(result.text, /"fallbackFrom":"exa"/)
+  assert.match(result.text, /Exa returned HTTP 500/)
+  assert.ok(Buffer.byteLength(result.text) <= 48_000)
+  assert.throws(() => restored.restore({ ...page, retrieval: { provider: 'unknown' } }), /retrieval metadata/)
+})
+
+test('restoring a branch keeps pages session-local, and shutdown removes them', async () => {
+  const a = instance(), b = instance()
+  const saved = { id: 'saved', url: 'https://example.com', title: '', content: 'branch text' }
+  let branch: unknown[] = [{ type: 'custom', customType: PAGE_ENTRY, data: saved }]
+  const ctx = { sessionManager: { getBranch: () => branch } } as unknown as ExtensionContext
+  a.hooks.get('session_start')!({}, ctx)
+  b.hooks.get('session_start')!({}, { sessionManager: { getBranch: () => [] } } as unknown as ExtensionContext)
+  const read = (owner: ReturnType<typeof instance>) => owner.tools[2].execute('read', { id: saved.id }, undefined, undefined, ctx as never)
+  assert.match(JSON.stringify(await read(a)), /branch text/)
+  await assert.rejects(read(b), /unavailable/)
+  branch = []
+  a.hooks.get('session_tree')!({}, ctx)
+  await assert.rejects(read(a), /unavailable/)
+  branch = [{ type: 'custom', customType: PAGE_ENTRY, data: saved }]
+  a.hooks.get('session_tree')!({}, ctx)
+  a.hooks.get('session_shutdown')!({}, ctx)
+  await assert.rejects(read(a), /unavailable/)
+})
+
+test('page output respects byte limits even for Unicode and adversarial code fences', () => {
+  for (const content of ['汉'.repeat(50_000), '`'.repeat(50_000)]) {
+    const store = new PageStore()
+    const saved = store.add({ url: 'https://example.com', title: '', content })
+    const first = store.read(saved.id, 0, 50_000)
+    assert.ok(Buffer.byteLength(first.text) <= 48_000)
+    assert.ok(first.nextOffset !== null && first.nextOffset > 0 && first.nextOffset < content.length)
+    assert.equal(store.read(saved.id, first.nextOffset, 100).offset, first.nextOffset)
   }
+})
+
+test('the built plugin loads through SDK aliases without a model session', async () => {
+  const bundle = join(process.cwd(), 'out/system-plugins/pi-web-access/index.js')
+  if (!existsSync(bundle)) return
+  const loader = new DefaultResourceLoader({
+    cwd: root, agentDir: root, settingsManager: SettingsManager.inMemory(),
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    additionalExtensionPaths: [bundle],
+  })
+  await loader.reload()
+  assert.deepEqual(loader.getExtensions().errors, [])
+  const extension = loader.getExtensions().extensions.find(extension => extension.path === bundle)!
+  assert.deepEqual([...extension.tools.keys()], ['web_search', 'web_fetch', 'web_read'])
+})
+
+test('plain HTML becomes Markdown without executable/hidden content and with absolute links', () => {
+  const page = htmlToMarkdown('<html><head><title>Title</title></head><body><article><h1>Hello</h1><p>A <a href="/path">link</a>.</p><script>SECRET</script><p hidden>HIDDEN</p></article></body></html>', 'https://example.com/start')
+  assert.match(page.content, /Hello/)
+  assert.match(page.content, /https:\/\/example.com\/path/)
+  assert.doesNotMatch(page.content, /SECRET|HIDDEN/)
+})
+
+test('DuckDuckGo decodes result links and distinguishes bot challenges from no results', () => {
+  const html = '<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com">Example</a><div class="result__snippet">Snippet</div></div>'
+  assert.deepEqual(parseDuckDuckGo(html), [{ title: 'Example', url: 'https://example.com/', snippet: 'Snippet' }])
+  assert.deepEqual(parseDuckDuckGo('<div class="no-results__message">None</div>'), [])
+  assert.throws(() => parseDuckDuckGo('<form id="challenge-form"></form>'), /bot challenge/)
+  assert.throws(() => parseDuckDuckGo('<html>unexpected</html>'), /unrecognized/)
 })

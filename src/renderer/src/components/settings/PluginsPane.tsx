@@ -313,9 +313,9 @@ export function PluginsPane() {
         setPersonaBusy(false)
         setPersonaDirty(false)
       }}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl" showCloseButton={!(selectedPluginId === 'pi-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
+        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pi-web-access]:max-w-xl data-[plugin=pi-web-access]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pi-web-access]:[&>[data-slot=dialog-close]]:right-4" showCloseButton={!(selectedPluginId === 'pi-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
+          <DialogHeader className={selectedPluginId === 'pi-web-access' ? 'min-h-7 min-w-0 justify-center pr-44' : undefined}>
+            <DialogTitle className={selectedPluginId === 'pi-web-access' ? 'truncate' : undefined}>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
           </DialogHeader>
       {selectedPlugin?.settings ? (
         <div className="flex flex-col gap-3">

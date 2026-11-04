@@ -1,24 +1,4 @@
-/**
- * One reader for the plugin's `web-search.json`.
- *
- * Every provider used to carry its own copy of "read the file, parse it, remember the result", so a
- * caching rule could only be changed in forty files at once, and forty files had drifted into three
- * different rules. There is one rule now: the parsed document is remembered per file signature —
- * path, mtime and size — so a host that re-points PIG_DIR after the plugin was imported, and any edit
- * to the file, both take effect on the next read. Pig's settings save also reloads the extension
- * (`src/main/ipc/plugins.ts`), and this does not replace that; it just stops freshness from depending
- * on the caller remembering.
- *
- * An absent file reads as `{}` rather than a provider-specific default: callers normalize missing
- * fields themselves, and a fallback here would hide the difference between "no config at all" and
- * "config that lacks one section".
- *
- * Both failures keep the `Failed to parse ` prefix, because the extract paths classify config errors
- * with it (`isConfigParseError` in extract.ts, pdf-extract.ts, video-extract.ts, gemini-url-context.ts
- * and others), and neither quotes the parser's own message: `JSON.parse` echoes up to about twenty
- * characters of source text around the failure, and this file holds API keys, so a key pasted without
- * quotes would otherwise be handed straight into a tool result.
- */
+/** Signature-cached configuration with lazy PIG_DIR resolution and credential-safe parse errors. */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { parseFailure, webSearchConfigPath } from "./utils.ts";
 

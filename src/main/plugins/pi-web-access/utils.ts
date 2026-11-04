@@ -2,39 +2,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { isIP } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-let cachedWebSearchConfigDir: string | undefined;
-
 export function getWebSearchConfigDir(): string {
-	// Pig exports PIG_DIR so bundled extensions keep their config beside Pig's own data; it wins
-	// over the cache because the host may set it after the module was first imported.
-	const pigDir = process.env.PIG_DIR;
-	if (pigDir) return pigDir;
-
-	if (cachedWebSearchConfigDir) return cachedWebSearchConfigDir;
-
-	const explicitDir = process.env.PI_CODING_AGENT_DIR;
-	if (explicitDir) return cachedWebSearchConfigDir = explicitDir;
-
-	const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-	if (xdgConfigHome) {
-		const xdgDir = join(xdgConfigHome, "pi");
-		if (existsSync(join(xdgDir, "web-search.json"))) return cachedWebSearchConfigDir = xdgDir;
-
-		const legacyDir = join(homedir(), ".pi");
-		if (existsSync(join(legacyDir, "web-search.json"))) return cachedWebSearchConfigDir = legacyDir;
-		return cachedWebSearchConfigDir = xdgDir;
-	}
-	const agentDir = join(homedir(), ".pi", "agent");
-	if (existsSync(join(agentDir, "web-search.json"))) return cachedWebSearchConfigDir = agentDir;
-
-	const legacyDir = join(homedir(), ".pi");
-	if (existsSync(join(legacyDir, "web-search.json"))) return cachedWebSearchConfigDir = legacyDir;
-
-	return cachedWebSearchConfigDir = agentDir;
+  return process.env.PIG_DIR || join(homedir(), ".pig");
 }
 
 /**
@@ -43,14 +15,6 @@ export function getWebSearchConfigDir(): string {
  */
 export function webSearchConfigPath(): string {
 	return join(getWebSearchConfigDir(), "web-search.json");
-}
-
-interface ApiBaseUrlOptions {
-	configKey: string;
-	configuredValue: unknown;
-	defaultValue: string;
-	environmentKey: string;
-	environmentValue: string | undefined;
 }
 
 /**
@@ -62,137 +26,6 @@ export function parseFailure(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
 	const position = message.match(/at position \d+(?: \(line \d+ column \d+\))?/i);
 	return position ? `invalid JSON ${position[0]}` : "invalid JSON";
-}
-
-export function isLoopbackHostname(hostnameValue: string): boolean {
-	const normalized = hostnameValue.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
-	return normalized === "localhost"
-		|| normalized === "::1"
-		|| (isIP(normalized) === 4 && normalized.split(".", 1)[0] === "127");
-}
-
-export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
-	const fromEnvironment = options.environmentValue !== undefined;
-	const value = fromEnvironment ? options.environmentValue : options.configuredValue;
-	if (value === undefined) return options.defaultValue;
-
-	const source = fromEnvironment
-		? options.environmentKey
-		: `${options.configKey} in ${webSearchConfigPath()}`;
-	if (typeof value !== "string" || value.trim().length === 0) {
-		throw new Error(`${source} must be an absolute HTTP(S) URL`);
-	}
-
-	let url: URL;
-	try {
-		url = new URL(value.trim());
-	} catch {
-		throw new Error(`${source} must be an absolute HTTP(S) URL`);
-	}
-	if (url.protocol !== "https:" && (url.protocol !== "http:" || !isLoopbackHostname(url.hostname))) {
-		throw new Error(`${source} must be an absolute HTTPS URL`);
-	}
-	if (url.username || url.password) {
-		throw new Error(`${source} must not include credentials`);
-	}
-	if (url.search || url.hash) {
-		throw new Error(`${source} must not include query parameters or fragments`);
-	}
-
-	url.search = "";
-	url.hash = "";
-	url.pathname = url.pathname.replace(/\/+$/, "");
-	return url.toString().replace(/\/+$/, "");
-}
-
-const API_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const API_REQUEST_BODY_HEADERS = ["Content-Encoding", "Content-Language", "Content-Location", "Content-Type"];
-const MAX_API_REDIRECTS = 5;
-
-export async function fetchWithCredentialRedirects(
-	url: string,
-	init: RequestInit,
-	credentialHeaders: readonly string[],
-): Promise<Response> {
-	let current = new URL(url);
-	let requestInit = init;
-
-	for (let redirects = 0; ; redirects++) {
-		const response = await fetch(current, { ...requestInit, redirect: "manual" });
-		if (!API_REDIRECT_STATUSES.has(response.status)) return response;
-
-		const location = response.headers.get("location");
-		if (!location) return response;
-		if (redirects === MAX_API_REDIRECTS) {
-			throw new Error(`Too many API redirects from ${url}`);
-		}
-
-		const next = new URL(location, current);
-		if (next.protocol !== "http:" && next.protocol !== "https:") {
-			throw new Error(`API redirect from ${current.origin} must use HTTP(S)`);
-		}
-		const method = requestInit.method?.toUpperCase() ?? "GET";
-		if (
-			((response.status === 301 || response.status === 302) && method === "POST")
-			|| (response.status === 303 && method !== "GET" && method !== "HEAD")
-		) {
-			const headers = new Headers(requestInit.headers);
-			for (const name of API_REQUEST_BODY_HEADERS) headers.delete(name);
-			const { body: _body, ...withoutBody } = requestInit;
-			requestInit = { ...withoutBody, method: "GET", headers };
-		}
-		if (next.origin !== current.origin) {
-			const headers = new Headers(requestInit.headers);
-			for (const name of credentialHeaders) headers.delete(name);
-			requestInit = { ...requestInit, headers };
-		}
-		current = next;
-	}
-}
-
-export function formatSeconds(s: number): string {
-	const h = Math.floor(s / 3600);
-	const m = Math.floor((s % 3600) / 60);
-	const sec = s % 60;
-	if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-	return `${m}:${String(sec).padStart(2, "0")}`;
-}
-
-export function readExecError(err: unknown): { code?: string; stderr: string; message: string } {
-	if (!err || typeof err !== "object") {
-		return { stderr: "", message: String(err) };
-	}
-	const code = (err as { code?: string }).code;
-	const message = (err as { message?: string }).message ?? "";
-	const stderrRaw = (err as { stderr?: Buffer | string }).stderr;
-	const stderr = Buffer.isBuffer(stderrRaw)
-		? stderrRaw.toString("utf-8")
-		: typeof stderrRaw === "string"
-			? stderrRaw
-			: "";
-	return { code, stderr, message };
-}
-
-export function isTimeoutError(err: unknown): boolean {
-	if (!err || typeof err !== "object") return false;
-	if ((err as { killed?: boolean }).killed) return true;
-	const name = (err as { name?: string }).name;
-	const code = (err as { code?: string }).code;
-	const message = (err as { message?: string }).message ?? "";
-	return name === "AbortError" || code === "ETIMEDOUT" || message.toLowerCase().includes("timed out");
-}
-
-export function trimErrorText(text: string): string {
-	return text.replace(/\s+/g, " ").trim().slice(0, 200);
-}
-
-export function mapFfmpegError(err: unknown): string {
-	const { code, stderr, message } = readExecError(err);
-	if (code === "ENOENT") return "ffmpeg is not installed. Install with: brew install ffmpeg";
-	if (isTimeoutError(err)) return "ffmpeg timed out extracting frame";
-	if (stderr.includes("403")) return "Stream URL returned 403 — may have expired, try again";
-	const snippet = trimErrorText(stderr || message);
-	return snippet ? `ffmpeg failed: ${snippet}` : "ffmpeg failed";
 }
 
 /**
@@ -216,14 +49,14 @@ export function normalizeProxyUrl(value: unknown, source: string): string | null
 	try {
 		parsed = new URL(trimmed);
 	} catch {
-		throw new Error(`${source} must be a valid proxy URL: ${JSON.stringify(trimmed)}`);
+		throw new Error(`${source} must be a valid proxy URL`);
 	}
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:" &&
 		parsed.protocol !== "socks4:" && parsed.protocol !== "socks4a:" &&
 		parsed.protocol !== "socks5:" && parsed.protocol !== "socks5h:") {
-		throw new Error(`${source} must use the http://, https://, or socks scheme: ${trimmed}`);
+		throw new Error(`${source} must use the http://, https://, or socks scheme`);
 	}
-	if (!parsed.hostname) throw new Error(`${source} must include a proxy host: ${trimmed}`);
+	if (!parsed.hostname) throw new Error(`${source} must include a proxy host`);
 	parsed.hash = "";
 	parsed.search = "";
 	return parsed.toString();
@@ -266,10 +99,6 @@ export function runWithProxy<T>(proxy: string | undefined, fn: () => T): T {
 
 export function getActiveProxy(): string | null {
 	return proxyStorage().getStore() ?? null;
-}
-
-export function hasScopedProxyDecision(): boolean {
-	return proxyStorage().getStore() !== undefined;
 }
 
 function noProxyEntryMatches(hostname: string, entry: string): boolean {
@@ -368,7 +197,14 @@ function parseHeaderDump(dump: string, keepLengthHeaders: boolean): { status: nu
 	return { status, statusText, headers };
 }
 
-class CurlTransportError extends Error {}
+class CurlTransportError extends Error {
+	readonly exitCode: number | null | undefined;
+
+	constructor(message: string, exitCode?: number | null) {
+		super(message);
+		this.exitCode = exitCode;
+	}
+}
 
 async function fetchViaCurl(url: URL, init: RequestInit, proxyUrl: string): Promise<Response> {
 	let current = url;
@@ -421,6 +257,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		"--show-error",
 		"--compressed",
 		"--connect-timeout", "20",
+		"--max-filesize", "2097152",
 		"-x", proxyUrl,
 		"-D", headerFile,
 		"--output", bodyFile,
@@ -479,15 +316,14 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 			child.once("close", (code) => {
 				signal?.removeEventListener("abort", onAbort);
 				if (signal?.aborted) return reject(new DOMException("The operation was aborted.", "AbortError"));
-				if (code !== 0 && !out.trim()) {
-					return reject(new CurlTransportError(`curl exited with code ${code ?? "unknown"} via ${redactProxyUrl(proxyUrl)}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+				if (code !== 0) {
+					return reject(new CurlTransportError(`curl exited with code ${code ?? "unknown"} via ${redactProxyUrl(proxyUrl)}${stderr.trim() ? `: ${stderr.trim()}` : ""}`, code));
 				}
 				resolve(out);
 			});
 		});
 	} catch (err) {
 		await rm(dir, { recursive: true, force: true }).catch(() => {});
-		if (err instanceof CurlTransportError) throw new Error(err.message);
 		throw err;
 	}
 
