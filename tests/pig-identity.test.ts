@@ -4,7 +4,7 @@ import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { pigIdentityExtension } from '../src/main/pi/pig-identity'
-import { savePersonaFile } from '../src/main/plugins/pi-persona/service'
+import { savePersonaFile } from '../src/main/plugins/pig-persona/service'
 
 let root = ''
 const oldPig = process.env.PIG_DIR

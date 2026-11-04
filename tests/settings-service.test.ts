@@ -306,7 +306,7 @@ async function fixture(name: string) {
       ])
 
       const persona = await service.get('persona')
-      const { setActivity } = await import('../src/main/plugins/pi-persona/kernel')
+      const { setActivity } = await import('../src/main/plugins/pig-persona/kernel')
       await setActivity('other-session', true, Date.now() + 60_000)
       await setActivity('other-session', false, Date.now() + 120_000)
       assert.equal((await service.get('persona')).revision, persona.revision, 'activity leases persist decay without conflicting')

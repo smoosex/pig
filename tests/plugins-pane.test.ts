@@ -26,7 +26,7 @@ async function fixture(): Promise<void> {
   let plugins: PluginInfo[] = [
     { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
     { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
-    { id: 'pi-persona', kind: 'system', name: 'Persona', source: 'Pig built-in', scopes: ['project', 'chat'], available: true },
+    { id: 'pig-persona', kind: 'system', name: 'Persona', source: 'Pig built-in', scopes: ['project', 'chat'], available: true },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
   let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }

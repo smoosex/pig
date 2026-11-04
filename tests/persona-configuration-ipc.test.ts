@@ -19,7 +19,7 @@ async function fixture(): Promise<void> {
     assert.equal(force, true)
     reloads++
   } }))
-  mock.module('../src/main/plugins/pi-persona/service', () => ({
+  mock.module('../src/main/plugins/pig-persona/service', () => ({
     getPersona: async () => { calls.push(['get']); return { active: false } },
     savePersonaFile: async (...args: unknown[]) => {
       if (failSave) throw new Error('revision conflict')

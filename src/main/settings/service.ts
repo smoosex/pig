@@ -22,7 +22,7 @@ import {
 } from '../pi/model-settings'
 import { listPlugins, pluginScopes, updatePluginScopes } from '../pi/plugins'
 import { configuredServers, mcpEnabled, updateMcpEnabled } from '../mcp/settings'
-import { getPersonaControls, updatePersonaControls, type PersonaControls } from '../plugins/pi-persona/service'
+import { getPersonaControls, updatePersonaControls, type PersonaControls } from '../plugins/pig-persona/service'
 
 export interface SurfaceHandoff { finish(style: SurfaceStyle): void }
 export interface SettingsServiceDeps {

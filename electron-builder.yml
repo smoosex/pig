@@ -73,8 +73,8 @@ extraResources:
     filter:
       - index.js
       - LICENSE
-  - from: out/system-plugins/pi-persona
-    to: system-plugins/pi-persona
+  - from: out/system-plugins/pig-persona
+    to: system-plugins/pig-persona
     filter:
       - index.js
       - LICENSE

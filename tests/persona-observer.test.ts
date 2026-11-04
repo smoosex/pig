@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { createAssistantMessageEventStream, type AssistantMessage, type Context, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { cleanObserverText, MoodObserver, parseMoodObservation, runMoodObserver, type MoodObserverArgs, type MoodObserverUsage } from '../src/main/plugins/pi-persona/observer'
+import { cleanObserverText, MoodObserver, parseMoodObservation, runMoodObserver, type MoodObserverArgs, type MoodObserverUsage } from '../src/main/plugins/pig-persona/observer'
 
 const model: Model<'openai-responses'> = {
   id: 'fixture', provider: 'fixture', name: 'Fixture', api: 'openai-responses', baseUrl: 'https://unused.invalid',

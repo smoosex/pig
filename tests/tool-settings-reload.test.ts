@@ -133,7 +133,7 @@ async function fixture(): Promise<void> {
   try {
     const plugins = await import('../src/main/pi/plugins')
     await plugins.setPluginScopes('pig-web', [])
-    await plugins.setPluginScopes('pi-persona', [])
+    await plugins.setPluginScopes('pig-persona', [])
     await plugins.setPluginScopes('pig-settings', [])
     await plugins.setPluginScopes('pig-session', [])
     const cwds = [

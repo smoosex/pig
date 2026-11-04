@@ -61,8 +61,8 @@ const processPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-process', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-process', 'index.ts')
 const personaPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'pi-persona', 'index.js')
-  : join(appPath(), 'out', 'system-plugins', 'pi-persona', 'index.js')
+  ? join(process.resourcesPath, 'system-plugins', 'pig-persona', 'index.js')
+  : join(appPath(), 'out', 'system-plugins', 'pig-persona', 'index.js')
 const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-web', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pig-web', 'index.js')
@@ -270,7 +270,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
     [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }],
-    [resolve(personaPath()), { kind: 'pig', id: 'pi-persona', name: 'Persona' }]
+    [resolve(personaPath()), { kind: 'pig', id: 'pig-persona', name: 'Persona' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
   for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
@@ -349,7 +349,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.sessionScopes, available: existsSync(sessionPath()),
     ...(!existsSync(sessionPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pi-persona', name: 'Persona', source: 'Pig built-in',
+    id: 'pig-persona', name: 'Persona', source: 'Pig built-in',
     kind: 'system', scopes: registry.personaScopes, available: existsSync(personaPath()),
     ...(!existsSync(personaPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
@@ -393,7 +393,7 @@ export function installPlugin(source: string): Promise<void> {
 const BUNDLED_SCOPES = {
   'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
-  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pi-persona': 'personaScopes'
+  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pig-persona': 'personaScopes'
 } as const satisfies Record<string, keyof Registry>
 
 function registryScopes(registry: Registry): Record<string, PluginScope[]> {
@@ -432,7 +432,7 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   } else if (id === 'pig-session') {
     if (addsScope(registry.sessionScopes) && !existsSync(sessionPath())) throw new Error('Bundled extension is missing')
     registry.sessionScopes = next
-  } else if (id === 'pi-persona') {
+  } else if (id === 'pig-persona') {
     if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
     registry.personaScopes = next
   } else {

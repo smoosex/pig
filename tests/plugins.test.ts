@@ -19,7 +19,7 @@ async function fixture(): Promise<void> {
   const app = { isPackaged: false, getAppPath: () => process.cwd() }
   mock.module('electron', () => ({ app }))
   const webAccessBundle = join(process.cwd(), 'out', 'system-plugins', 'pig-web', 'index.js')
-  const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pi-persona', 'index.js')
+  const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pig-persona', 'index.js')
   const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   const sessionPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
   try {
@@ -99,7 +99,7 @@ async function fixture(): Promise<void> {
     await assert.rejects(module.getPluginSettings('pig-settings'), /Plugin not found/, 'the settings tools do not declare a plugin configuration pane')
     assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, sessionPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pig-web', 'index.js'))), existsSync(webAccessBundle))
-    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, ['project', 'chat'])
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-persona')?.scopes, ['project', 'chat'])
     assert.equal(bundledPaths.includes(personaBundle), existsSync(personaBundle))
     const registryFile = join(root, 'pig', 'plugins.json')
     await mkdir(join(root, 'pig'), { recursive: true })
@@ -167,15 +167,15 @@ async function fixture(): Promise<void> {
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pi-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pi-persona']) await module.setPluginScopes(id, [])
+    for (const id of ['observational-memory', 'pi-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pig-persona']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
-    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pi-persona')?.scopes, [])
+    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-persona')?.scopes, [])
     if (existsSync(personaBundle)) {
-      await module.setPluginScopes('pi-persona', ['chat', 'project', 'chat'])
+      await module.setPluginScopes('pig-persona', ['chat', 'project', 'chat'])
       assert.equal((await module.enabledPluginPaths('chat')).includes(personaBundle), true)
-      await module.setPluginScopes('pi-persona', [])
+      await module.setPluginScopes('pig-persona', [])
     }
-    await assert.rejects(module.setPluginScopes('pi-persona', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
+    await assert.rejects(module.setPluginScopes('pig-persona', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
     await module.setPluginScopes('pi-review', ['chat'])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     assert.ok((await module.enabledPluginPaths('chat')).some((path) => path.endsWith(join('plugins', 'pi-review', 'index.ts'))))
@@ -364,10 +364,10 @@ async function fixture(): Promise<void> {
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal\s+to: system-plugins\/pig-terminal\s+filter:\s+- '\*\*\/\*\.ts'/)
     const packagedPaths = [join(packagedPlugins, 'observational-memory', 'index.ts'), join(packagedPlugins, 'pi-review', 'index.ts')]
     if (existsSync(personaBundle)) {
-      await cp(join(process.cwd(), 'out', 'system-plugins', 'pi-persona'), join(packagedPlugins, 'pi-persona'), { recursive: true })
-      packagedPaths.push(join(packagedPlugins, 'pi-persona', 'index.js'))
+      await cp(join(process.cwd(), 'out', 'system-plugins', 'pig-persona'), join(packagedPlugins, 'pig-persona'), { recursive: true })
+      packagedPaths.push(join(packagedPlugins, 'pig-persona', 'index.js'))
     }
-    assert.match(builderConfig, /from: out\/system-plugins\/pi-persona\s+to: system-plugins\/pi-persona/)
+    assert.match(builderConfig, /from: out\/system-plugins\/pig-persona\s+to: system-plugins\/pig-persona/)
     const memoryLoader = await createNoExtensionsResourceLoader(root, packagedPaths)
     assert.deepEqual(memoryLoader.getExtensions().errors, [])
     const { session } = await sdk.createAgentSession({

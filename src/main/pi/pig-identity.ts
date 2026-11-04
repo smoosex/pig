@@ -8,9 +8,9 @@
  */
 import type { ExtensionFactory } from '@earendil-works/pi-coding-agent'
 import { userInfo } from 'node:os'
-import { parseDocuments, readDocuments } from '../plugins/pi-persona/documents'
-import { defaultPreamble } from '../plugins/pi-persona/preamble'
-import { personaDir } from '../plugins/pi-persona/storage'
+import { parseDocuments, readDocuments } from '../plugins/pig-persona/documents'
+import { defaultPreamble } from '../plugins/pig-persona/preamble'
+import { personaDir } from '../plugins/pig-persona/storage'
 
 const OS_NAMES: Partial<Record<NodeJS.Platform, string>> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
 

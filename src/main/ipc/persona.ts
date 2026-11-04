@@ -5,9 +5,9 @@ import { windowForEvent } from './window'
 import { refreshPluginSessions } from '../pi/session-registry'
 import {
   getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
-} from '../plugins/pi-persona/service'
-import { onPersonaControlsChanged } from '../plugins/pi-persona/controls'
-import { clearObserverUsage, summarizeObserverUsage } from '../plugins/pi-persona/usage'
+} from '../plugins/pig-persona/service'
+import { onPersonaControlsChanged } from '../plugins/pig-persona/controls'
+import { clearObserverUsage, summarizeObserverUsage } from '../plugins/pig-persona/usage'
 import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings, PersonaObserverUsageRange } from '../../shared/persona'
 
 function assertUi(event: IpcMainInvokeEvent): void {

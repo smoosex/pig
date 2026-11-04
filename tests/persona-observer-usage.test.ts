@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { appendFile, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { appendObserverUsage, clearObserverUsage, summarizeObserverUsage, type ObserverUsageRecord } from '../src/main/plugins/pi-persona/usage'
+import { appendObserverUsage, clearObserverUsage, summarizeObserverUsage, type ObserverUsageRecord } from '../src/main/plugins/pig-persona/usage'
 
 let root: string
 let oldPig: string | undefined

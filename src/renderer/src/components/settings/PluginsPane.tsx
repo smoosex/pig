@@ -250,7 +250,7 @@ export function PluginsPane() {
             </DropdownMenuGroup></DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        {plugin.id === 'observational-memory' || plugin.id === 'pig-web' || plugin.id === 'pig-subagent' || plugin.id === 'pi-persona' || plugin.settings ? (
+        {plugin.id === 'observational-memory' || plugin.id === 'pig-web' || plugin.id === 'pig-subagent' || plugin.id === 'pig-persona' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
@@ -304,8 +304,8 @@ export function PluginsPane() {
         </div>
       </div>
       <Dialog open={!!selectedPluginId} onOpenChange={(open) => {
-        if (open || (selectedPluginId === 'pi-persona' && personaBusy)) return
-        if (selectedPluginId === 'pi-persona' && personaDirty) {
+        if (open || (selectedPluginId === 'pig-persona' && personaBusy)) return
+        if (selectedPluginId === 'pig-persona' && personaDirty) {
           setDiscardPersona(true)
           return
         }
@@ -313,7 +313,7 @@ export function PluginsPane() {
         setPersonaBusy(false)
         setPersonaDirty(false)
       }}>
-        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" showCloseButton={!(selectedPluginId === 'pi-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
+        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" showCloseButton={!(selectedPluginId === 'pig-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
           <DialogHeader className={selectedPluginId === 'pig-web' ? 'min-h-7 min-w-0 justify-center pr-44' : undefined}>
             <DialogTitle className={selectedPluginId === 'pig-web' ? 'truncate' : undefined}>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
           </DialogHeader>
@@ -425,7 +425,7 @@ export function PluginsPane() {
       </div> : null}
       {selectedPluginId === 'pig-web' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
       {selectedPluginId === 'pig-subagent' ? <SubagentSettings onClose={() => setSelectedPluginId(null)} /> : null}
-      {selectedPluginId === 'pi-persona' ? <PersonaSettings onBusyChange={setPersonaBusy} onDirtyChange={setPersonaDirty} /> : null}
+      {selectedPluginId === 'pig-persona' ? <PersonaSettings onBusyChange={setPersonaBusy} onDirtyChange={setPersonaDirty} /> : null}
         </DialogContent>
       </Dialog>
       {pickingPath ? <PathPickerDialog includeFiles

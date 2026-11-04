@@ -2,9 +2,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver } from '../src/main/plugins/pi-persona/service'
-import { personaTransaction, setActivity } from '../src/main/plugins/pi-persona/kernel'
-import { withPersonaLock } from '../src/main/plugins/pi-persona/storage'
+import { getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver } from '../src/main/plugins/pig-persona/service'
+import { personaTransaction, setActivity } from '../src/main/plugins/pig-persona/kernel'
+import { withPersonaLock } from '../src/main/plugins/pig-persona/storage'
 import { runChild } from './helpers/subprocess.ts'
 
 let root: string
@@ -87,7 +87,7 @@ test('observer persists globally, omitted model inherits, paired model IDs are r
 })
 
 test('independent processes serialize global history under the disk lock', async () => {
-  const service = new URL('../src/main/plugins/pi-persona/service.ts', import.meta.url).pathname
+  const service = new URL('../src/main/plugins/pig-persona/service.ts', import.meta.url).pathname
   const script = `import { setPersonaMood } from ${JSON.stringify(service)}; for (let i = 0; i < 4; i++) await setPersonaMood(${JSON.stringify(values)});`
   const children = [0, 1].map(() => runChild([process.execPath, '-e', script], { env: { PIG_DIR: process.env.PIG_DIR! } }))
   for (const child of children) {
