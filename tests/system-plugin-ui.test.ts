@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { SystemUIEvent } from '../src/shared/api'
 import { runSelf } from './helpers/subprocess.ts'
 
-type Scenario = 'base' | 'bounds' | 'expiry' | 'theme' | 'returning' | 'returning-race'
+type Scenario = 'base' | 'bounds' | 'expiry' | 'theme' | 'returning' | 'returning-race' | 'review-feedback'
 
 async function fixture(scenario: Scenario): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
@@ -48,7 +48,9 @@ async function fixture(scenario: Scenario): Promise<void> {
   const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
   useSettingsStore.setState({ locale: 'en', appearance: 'light' })
   const { SystemPluginUI } = await import('../src/renderer/src/components/SystemPluginUI')
+  const { ReviewFeedback } = await import('../src/renderer/src/components/composer/ReviewFeedback')
   const { ReviewStatus } = await import('../src/renderer/src/components/composer/ReviewStatus')
+  const { ReviewReturnProgress } = await import('../src/renderer/src/components/chat/ReviewReturnProgress')
   const { useSystemUIStore } = await import('../src/renderer/src/stores/system-ui')
   const Composer = scenario === 'returning-race' ? (await import('../src/renderer/src/components/Composer')).Composer : null
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
@@ -73,12 +75,41 @@ async function fixture(scenario: Scenario): Promise<void> {
       React.createElement(SystemPluginUI, { activeSessionId: session }),
       Composer ? React.createElement(TooltipProvider, null,
         React.createElement<NonNullable<Parameters<typeof Composer>[0]>>(Composer, { explicitSessionId: session }))
-        : React.createElement(TooltipProvider, null, React.createElement(ReviewStatus, { key: session, sessionId: session }))
+        : React.createElement(TooltipProvider, null,
+          React.createElement(ReviewReturnProgress, { sessionId: session }),
+          React.createElement(ReviewFeedback, { sessionId: session }),
+          React.createElement(ReviewStatus, { key: session, sessionId: session }))
     )))
   }
   const emit = async (event: SystemUIEvent) => { await act(async () => listener!(event)) }
   try {
     await render('one')
+    if (scenario === 'review-feedback') {
+      await emit({ kind: 'review-feedback', sessionId: 'one', feedback: {
+        level: 'warning', message: 'Using session/original instead of review/configured', detail: 'Configured model was not found'
+      } })
+      assert.ok(document.querySelector('[data-review-feedback]')?.textContent?.includes('review/configured'))
+      assert.equal(document.querySelector('[data-review-feedback]')?.getAttribute('role'), 'status')
+      const details = document.querySelector<HTMLDetailsElement>('[data-review-feedback] details')!
+      assert.equal(details.open, false)
+      await act(async () => details.querySelector('summary')!.click())
+      assert.equal(details.open, true)
+      await render('two')
+      assert.equal(document.querySelector('[data-review-feedback]'), null)
+      await render('one')
+      assert.ok(document.querySelector('[data-review-feedback]'))
+      await act(async () => document.querySelector<HTMLButtonElement>('[data-review-feedback] button')!.click())
+      assert.equal(document.querySelector('[data-review-feedback]'), null)
+      await emit({ kind: 'review-feedback', sessionId: 'one', feedback: { level: 'error', message: 'Summary failed' } })
+      assert.equal(document.querySelector('[data-review-feedback]')?.getAttribute('role'), 'alert')
+      await emit({ kind: 'reset', sessionId: 'one' })
+      assert.equal(document.querySelector('[data-review-feedback]'), null)
+      await emit({ kind: 'review-prompt', id: 'pr-error', sessionId: 'one', method: 'edit', step: 'pr', prefill: '42', error: 'Run gh auth login' })
+      assert.equal(document.querySelector<HTMLInputElement>('input[aria-invalid]')?.value, '42')
+      assert.ok(document.querySelector('[data-review-panel-error]')?.textContent?.includes('gh auth login'))
+      assert.equal(shown.length, 0, 'review diagnostics never create a toast')
+      return
+    }
     if (scenario === 'returning-race') {
       let finishOriginal!: () => void
       let rejectDuplicate!: (error: Error) => void
@@ -114,8 +145,8 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.equal(sendButton().disabled, true)
       const rejection = Object.assign(new Error('Duplicate return request'), { code: 'ERR_REVIEW_RETURNING' })
       await act(async () => { rejectDuplicate(rejection) })
-      assert.equal(shown.length, 1, 'the rejected duplicate is reported at the UI boundary')
-      assert.equal(shown[0].options.description, rejection.message)
+      assert.equal(shown.length, 0, 'review rejection must not produce a toast')
+      assert.ok(document.querySelector('[data-review-feedback]')?.textContent?.includes(rejection.message), 'IPC failures are visible above the composer')
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true, 'a duplicate rejection cannot release the original return lock')
       assert.equal(returnButton().getAttribute('aria-disabled'), 'true')
       assert.equal(editor().getAttribute('contenteditable'), 'false')
@@ -158,7 +189,18 @@ async function fixture(scenario: Scenario): Promise<void> {
       assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'done')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'returning')
+      assert.equal(document.querySelector('[data-review-return-progress]'), null, 'choosing an end action is not navigation work')
+      await emit({ kind: 'review-returning', sessionId: 'one', returning: true, phase: 'returning' })
+      assert.equal(document.querySelector('[data-review-return-progress]')?.getAttribute('role'), 'status')
+      assert.match(document.querySelector('[data-review-return-progress]')?.textContent ?? '', /Returning to the original conversation/)
+      await emit({ kind: 'review-returning', sessionId: 'one', returning: true, phase: 'summarizing' })
+      assert.match(document.querySelector('[data-review-return-progress]')?.textContent ?? '', /Summarizing the review/)
+      await render('two')
+      assert.equal(document.querySelector('[data-review-return-progress]'), null, 'progress belongs only to its session')
+      await render('one')
+      assert.equal(document.querySelector('[data-review-return-progress]')?.getAttribute('data-review-return-progress'), 'summarizing')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: false })
+      assert.equal(document.querySelector('[data-review-return-progress]'), null)
       assert.equal(document.querySelector('[data-review-status]')?.getAttribute('data-review-phase'), 'done', 'an unfinished return makes the review returnable again')
       await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, true)
@@ -174,9 +216,12 @@ async function fixture(scenario: Scenario): Promise<void> {
       await emit({ kind: 'review-returning', sessionId: 'one', returning: false })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, undefined)
       assert.equal(document.querySelector('[data-review-status]'), null)
-      await emit({ kind: 'review-returning', sessionId: 'one', returning: true })
+      await emit({ kind: 'review-returning', sessionId: 'one', returning: true, phase: 'summarizing' })
+      assert.ok(document.querySelector('[data-review-return-progress]'))
       await emit({ kind: 'reset', sessionId: 'one' })
       assert.equal(useSystemUIStore.getState().returningReviewSessions.one, undefined)
+      assert.equal(useSystemUIStore.getState().reviewReturnPhases.one, undefined)
+      assert.equal(document.querySelector('[data-review-return-progress]'), null)
       return
     }
     if (scenario === 'bounds') {
@@ -374,6 +419,7 @@ if (process.argv[2] === '--system-ui-fixture') {
 } else {
   const cases: Array<[Scenario, string]> = [
     ['base', 'system UI uses searchable review choices and consumes notification details'],
+    ['review-feedback', 'review failures and model fallback are session-scoped, persistent and never toast'],
     ['returning', 'review return state follows its session and resets only when the return finishes'],
     ['returning-race', 'a rejected duplicate return cannot unlock the composer while the original return is active'],
     ['bounds', 'system UI bounds inactive notices per session and across sessions'],

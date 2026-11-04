@@ -44,8 +44,8 @@ import { closeSubagents } from '../subagents/service'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
 import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
-import { enabledPluginPaths, toolProvidersByPath } from './plugins'
-import { attachSystemUI, detachSystemUI, resetSystemUI } from './system-plugin-ui'
+import { enabledPluginPaths, reviewPath, toolProvidersByPath } from './plugins'
+import { attachSystemUI, detachSystemUI, reportReviewError, resetSystemUI } from './system-plugin-ui'
 import { synchronizeModelCatalog } from './model-catalog'
 import {
   applyPendingControls,
@@ -241,7 +241,11 @@ async function build(
           await reloadSessionResources(created)
         }
       },
-      onError: (error) => notifications.notify(`${error.extensionPath}: ${error.error}`, 'error')
+      onError: (error) => {
+        if (!reportReviewError(session.sessionId, error.extensionPath, error.error, reviewPath())) {
+          notifications.notify(`${error.extensionPath}: ${error.error}`, 'error')
+        }
+      }
     })
     synchronizeModelCatalog()
     worktrees.assertAvailable(cwd)

@@ -267,6 +267,11 @@ async function runFixture(name: string): Promise<void> {
       }, 'fold'))
     }
   }))
+  if (name === 'review-return-progress') {
+    mock.module('thinking-orbs', () => ({
+      ThinkingOrb: ({ state, theme }: { state: string; theme: string }) => h('span', { 'data-test-orb': state, 'data-theme': theme })
+    }))
+  }
   const { ChatView } = await import('../src/renderer/src/components/ChatView')
   const container = document.createElement('div')
   document.body.append(container)
@@ -380,7 +385,30 @@ async function runFixture(name: string): Promise<void> {
   }
 
   try {
-    if (name === 'fold-pauses') {
+    if (name === 'review-return-progress') {
+      const { useSystemUIStore } = await import('../src/renderer/src/stores/system-ui')
+      await render()
+      atEnd()
+      await act(async () => useSystemUIStore.getState().setReviewReturning('s1', true, 'summarizing'))
+      await settle()
+      const progress = viewport().querySelector('[data-review-return-progress]')
+      assert.ok(progress, 'Review progress is inside the real conversation viewport')
+      assert.match(progress.textContent ?? '', /正在生成 Review 摘要并返回/)
+      assert.equal(progress.querySelector('[data-test-orb]')?.getAttribute('data-test-orb'), 'solving')
+      atEnd()
+      const paused = await leaveEnd()
+      await act(async () => useSystemUIStore.getState().setReviewReturning('s1', false))
+      await settle()
+      assert.equal(viewport().querySelector('[data-review-return-progress]'), null)
+      near(viewport().scrollTop, paused, 'clearing progress must not move a paused reader')
+      await act(async () => useSystemUIStore.getState().setReviewReturning('s1', true, 'returning'))
+      change({ turns: [], turnSummary: [], liveMessages: [], isStreaming: false })
+      await render()
+      assert.match(viewport().querySelector('[data-review-return-progress]')?.textContent ?? '', /正在返回原对话/)
+      await act(async () => useSystemUIStore.getState().setReviewReturning('s1', false))
+      await settle()
+      assert.equal(container.querySelector('[data-review-return-progress]'), null)
+    } else if (name === 'fold-pauses') {
       await render()
       atEnd()
       await foldFirstVisibleHistory()
@@ -756,6 +784,7 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
   await runFixture(process.argv[3])
 } else {
   const fixtures = {
+    'review-return-progress': 'Review return progress uses a solving orb inside the conversation, including empty handoffs',
     'fold-pauses': 'folding pauses following before later history growth',
     'restore-branch': 'paused offsets are restored when a branch view returns',
     'restore-missing-anchor': 'a snapshot whose turn vanished falls back to its saved offset',

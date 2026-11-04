@@ -5,6 +5,7 @@ import { groupTurns } from '../chat/turns'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../stores/sessions'
 import { isSessionEmpty } from '../chat/session-empty'
+import { useSystemUIStore } from '../stores/system-ui'
 import type { RuntimeState } from '../stores/sessions/types'
 import { ConversationViewport } from './chat/ConversationViewport'
 import { SessionGreeting } from './SessionGreeting'
@@ -88,6 +89,7 @@ const SessionChatPane = memo(function SessionChatPane({
   const isStreaming = useSessionsStore((s) => s.runtime[sessionId]?.isStreaming ?? false)
   const liveCompactions = useSessionsStore((s) => s.runtime[sessionId]?.liveCompactions ?? emptyCompactions)
   const empty = useSessionsStore((s) => isSessionEmpty(s.runtime[sessionId]))
+  const reviewReturning = useSystemUIStore((s) => !!s.reviewReturnPhases[sessionId])
 
   const historical = useMemo(
     () => turns.map((turn) => toTurn(
@@ -134,7 +136,7 @@ const SessionChatPane = memo(function SessionChatPane({
 
   return (
     <div className="absolute inset-0 flex min-h-0 flex-col">
-      {empty ? (
+      {empty && !reviewReturning ? (
         <SessionGreeting />
       ) : (
         <MessageScrollerProvider

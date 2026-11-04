@@ -1050,6 +1050,8 @@ export const zh = {
     actionFailed: '操作后台进程失败'
   },
   reviewUI: {
+    returningProgress: '正在返回原对话…', summarizingProgress: '正在生成 Review 摘要并返回…',
+    failed: 'Review 操作失败', modelFallback: 'Review 模型已回退', details: '查看原因', dismiss: '关闭提示',
     preset: '审查代码', branch: '选择基准分支', commit: '选择提交',
     instructions: '自定义审查指令', folders: '审查文件或目录', pr: '审查 Pull Request',
     start: '在哪里执行审查？', finish: '结束审查',

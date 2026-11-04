@@ -1,16 +1,17 @@
-import type { ReviewOption, ReviewStep, SystemUIEvent } from '../../shared/api'
+import type { ReviewFeedback, ReviewOption, ReviewReturnPhase, ReviewStep, SystemUIEvent } from '../../shared/api'
 
 type SessionIdentity = { sessionManager: { getSessionId(): string } }
 export interface SystemNotifier {
   notify(message: string, level?: 'info' | 'warning' | 'error'): void
 }
-export interface ReviewUI extends SystemNotifier {
+export interface ReviewUI {
   readonly available: boolean
   readonly returning: boolean
   choose(step: ReviewStep, options: ReviewOption[]): Promise<string | undefined>
-  edit(step: ReviewStep, prefill?: string): Promise<string | undefined>
+  edit(step: ReviewStep, prefill?: string, error?: string): Promise<string | undefined>
+  setFeedback(feedback: ReviewFeedback | null): void
   setActive(active: boolean): void
-  setReturning(returning: boolean): void
+  setReturning(returning: boolean, phase?: ReviewReturnPhase): void
 }
 export interface SystemUIHost {
   review: ReviewUI
@@ -38,10 +39,10 @@ export function reviewUI(ctx: SessionIdentity): ReviewUI {
     get available() { return hosts.has(sessionId) },
     get returning() { return isReviewReturning(sessionId) },
     choose: (step, options) => hosts.get(sessionId)?.review.choose(step, options) ?? Promise.resolve(undefined),
-    edit: (step, prefill) => hosts.get(sessionId)?.review.edit(step, prefill) ?? Promise.resolve(undefined),
-    notify: (message, level) => hosts.get(sessionId)?.review.notify(message, level),
+    edit: (step, prefill, error) => hosts.get(sessionId)?.review.edit(step, prefill, error) ?? Promise.resolve(undefined),
+    setFeedback: (feedback) => hosts.get(sessionId)?.review.setFeedback(feedback),
     setActive: (active) => hosts.get(sessionId)?.review.setActive(active),
-    setReturning: (returning) => hosts.get(sessionId)?.review.setReturning(returning)
+    setReturning: (returning, phase) => hosts.get(sessionId)?.review.setReturning(returning, phase)
   }
 }
 

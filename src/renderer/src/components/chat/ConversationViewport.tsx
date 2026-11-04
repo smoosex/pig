@@ -18,6 +18,7 @@ import {
   useMessageScroller
 } from '../ui/message-scroller'
 import { TurnMinimap } from './TurnMinimap'
+import { ReviewReturnProgress } from './ReviewReturnProgress'
 import { useConversationScroll } from './useConversationScroll'
 
 const measuredItem = '[content-visibility:visible] [contain-intrinsic-size:none]'
@@ -243,6 +244,7 @@ export function ConversationViewport({
               {t('conversation.scrollDown')}
             </div>
           ) : null}
+          <ReviewReturnProgress sessionId={sessionId} />
         </MessageScrollerContent>
       </MessageScrollerViewport>
       <MessageScrollerButton behavior="smooth" onClick={unpin} />

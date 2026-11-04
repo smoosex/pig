@@ -18,6 +18,7 @@ import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
 import { FileMentionContext } from './FileMentionChip'
+import { ReviewFeedback } from './composer/ReviewFeedback'
 import { RetryNotice } from './composer/RetryNotice'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
@@ -90,6 +91,7 @@ export function Composer({
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
       <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />
+      <ReviewFeedback sessionId={sessionId} />
       <ApprovalPrompt sessionId={sessionId} autoFocus={isActive} />
       {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
       <Popover open={!approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>

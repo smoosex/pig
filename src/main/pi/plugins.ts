@@ -45,7 +45,7 @@ const appPath = () => typeof app.getAppPath === 'function' ? app.getAppPath() : 
 const memoryPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'observational-memory', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
-const reviewPath = () => app.isPackaged
+export const reviewPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pi-review', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
 const subagentPath = () => app.isPackaged

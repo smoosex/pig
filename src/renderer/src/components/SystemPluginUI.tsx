@@ -10,6 +10,7 @@ import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command'
+import { Alert, AlertDescription } from './ui/alert'
 import { InputGroup, InputGroupInput, InputGroupTextarea } from './ui/input-group'
 
 type Prompt = Extract<SystemUIEvent, { kind: 'review-prompt' }>
@@ -56,6 +57,11 @@ function ReviewPanel({ prompt, reply }: { prompt: Prompt; reply: (value: string 
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t('reviewUI.panelDescription')}</DialogDescription>
         </DialogHeader>
+        {prompt.error ? (
+          <Alert variant="destructive" data-review-panel-error>
+            <AlertDescription className="max-h-40 overflow-y-auto whitespace-pre-wrap wrap-anywhere [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{prompt.error}</AlertDescription>
+          </Alert>
+        ) : null}
         {prompt.method === 'choose' ? (
           <Command value={selected} onValueChange={setSelected} onKeyDownCapture={(event) => {
             if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) event.stopPropagation()
@@ -84,7 +90,7 @@ function ReviewPanel({ prompt, reply }: { prompt: Prompt; reply: (value: string 
         ) : (
           <InputGroup>
             {prompt.step === 'pr' ? (
-              <InputGroupInput autoFocus aria-label={title} placeholder={t('reviewUI.prPlaceholder')} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => {
+              <InputGroupInput autoFocus aria-invalid={!!prompt.error} aria-label={title} placeholder={t('reviewUI.prPlaceholder')} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) reply(value)
               }} />
             ) : (
@@ -125,11 +131,13 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
         return [...fresh.filter((item) => item.sessionId !== event.sessionId || retained.has(item.id)), notice].slice(-MAX_NOTICES)
       })
     }
+    if (event.kind === 'review-feedback') useSystemUIStore.getState().setReviewFeedback(event.sessionId, event.feedback)
     if (event.kind === 'review-state') useSystemUIStore.getState().setReviewActive(event.sessionId, event.active)
-    if (event.kind === 'review-returning') useSystemUIStore.getState().setReviewReturning(event.sessionId, event.returning)
+    if (event.kind === 'review-returning') useSystemUIStore.getState().setReviewReturning(event.sessionId, event.returning, event.phase)
     if (event.kind === 'reset') {
       setPrompts((items) => items.filter((item) => item.sessionId !== event.sessionId))
       setNotices((items) => items.filter((item) => item.sessionId !== event.sessionId))
+      useSystemUIStore.getState().setReviewFeedback(event.sessionId, null)
       useSystemUIStore.getState().setReviewActive(event.sessionId, false)
       useSystemUIStore.getState().setReviewReturning(event.sessionId, false)
       setDetail((item) => item?.sessionId === event.sessionId ? null : item)

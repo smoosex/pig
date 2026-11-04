@@ -694,12 +694,21 @@ export interface ReviewOption {
   recommended?: boolean
 }
 
+export type ReviewReturnPhase = 'returning' | 'summarizing'
+
+export interface ReviewFeedback {
+  level: 'warning' | 'error'
+  message: string
+  detail?: string
+}
+
 export type SystemUIEvent =
-  | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string }
+  | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string; error?: string }
   | { kind: 'dismiss'; id: string; sessionId: string }
   | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
   | { kind: 'review-state'; sessionId: string; active: boolean }
-  | { kind: 'review-returning'; sessionId: string; returning: boolean }
+  | { kind: 'review-returning'; sessionId: string; returning: boolean; phase?: ReviewReturnPhase }
+  | { kind: 'review-feedback'; sessionId: string; feedback: ReviewFeedback | null }
   | { kind: 'reset'; sessionId: string }
 
 export interface MemoryPluginSettings {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow, WebContents } from 'electron'
 import type { ReviewOption, ReviewStep, SystemUIEvent } from '../../shared/api'
-import { registerSystemUI, type SystemNotifier } from '../plugins/pig-ui'
+import { registerSystemUI, reviewUI, type SystemNotifier } from '../plugins/pig-ui'
 
 interface ReviewWaiter {
   sessionId: string
@@ -10,6 +10,13 @@ interface ReviewWaiter {
 }
 const waiters = new Map<string, ReviewWaiter>()
 const resetters = new Map<string, () => void>()
+
+/** Pi emits command and hook errors through the host; keep Review failures out of global toasts. */
+export function reportReviewError(sessionId: string, extensionPath: string, message: string, reviewPath?: string): boolean {
+  if (extensionPath !== 'command:review' && extensionPath !== 'command:end-review' && extensionPath !== reviewPath) return false
+  reviewUI({ sessionManager: { getSessionId: () => sessionId } }).setFeedback({ level: 'error', message })
+  return true
+}
 
 export function replyReviewUI(sender: WebContents, id: string, value: string | null): void {
   const waiter = waiters.get(id)
@@ -35,10 +42,10 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
     if (hasState) send({ kind: 'reset', sessionId })
     hasState = false
   })
-  const notifier = (plugin: 'review' | 'memory' | 'host'): SystemNotifier => ({
+  const notifier = (plugin: 'memory' | 'host'): SystemNotifier => ({
     notify: (message, level = 'info') => send({ kind: 'notify', sessionId, plugin, message, level })
   })
-  const prompt = (step: ReviewStep, options?: ReviewOption[], prefill?: string): Promise<string | undefined> => {
+  const prompt = (step: ReviewStep, options?: ReviewOption[], prefill?: string, error?: string): Promise<string | undefined> => {
     if (win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve(undefined)
     const id = randomUUID()
     return new Promise((resolve) => {
@@ -48,21 +55,22 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
         resolve(value !== null && (!options || options.some((option) => option.value === value)) ? value : undefined)
       }
       waiters.set(id, { sessionId, sender: win.webContents, finish })
-      send({ kind: 'review-prompt', id, sessionId, method: options ? 'choose' : 'edit', step, options, prefill })
+      send({ kind: 'review-prompt', id, sessionId, method: options ? 'choose' : 'edit', step, options, prefill, error })
     })
   }
   registerSystemUI(sessionId, {
     send,
     memory: notifier('memory'),
     review: {
-      ...notifier('review'), available: true,
+      available: true,
       get returning() { return returning },
       choose: (step, options) => prompt(step, options),
-      edit: (step, prefill) => prompt(step, undefined, prefill),
+      edit: (step, prefill, error) => prompt(step, undefined, prefill, error),
+      setFeedback: (feedback) => send({ kind: 'review-feedback', sessionId, feedback }),
       setActive: (active) => send({ kind: 'review-state', sessionId, active }),
-      setReturning: (value) => {
+      setReturning: (value, phase) => {
         returning = value
-        send({ kind: 'review-returning', sessionId, returning })
+        send({ kind: 'review-returning', sessionId, returning, ...(returning && phase ? { phase } : {}) })
       }
     }
   })

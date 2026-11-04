@@ -5,28 +5,30 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import reviewExtension from '../src/main/plugins/pi-review/index'
-import { isReviewReturning, registerSystemUI } from '../src/main/plugins/pig-ui'
-
-type Notification = { message: string; level?: string }
+import type { ReviewFeedback, ReviewReturnPhase } from '../src/shared/api'
+import { isReviewReturning, registerSystemUI, type ReviewUI } from '../src/main/plugins/pig-ui'
 
 interface Session {
   api: unknown
   ctx: unknown
   commands: Map<string, (args: string, ctx: unknown) => Promise<void>>
   handlers: Map<string, ((event: unknown, ctx: unknown) => unknown)[]>
-  notifications: Notification[]
   reviewStates: boolean[]
   returningStates: boolean[]
+  returningPhases: (ReviewReturnPhase | undefined)[]
   appended: unknown[]
   sent: string[]
+  feedback: (ReviewFeedback | null)[]
+  reviewUI: ReviewUI
 }
 
 // Pi caches extension modules per cwd, so one module instance backs every session in a worktree.
 // Calling the factory twice models two Pig sessions sharing that instance.
 function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-pig-review-workspace', finishAction?: string): Session {
-  const notifications: Notification[] = []
+  const feedback: (ReviewFeedback | null)[] = []
   const reviewStates: boolean[] = []
   const returningStates: boolean[] = []
+  const returningPhases: (ReviewReturnPhase | undefined)[] = []
   const appended: unknown[] = []
   const sent: string[] = []
   const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>()
@@ -57,17 +59,15 @@ function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-p
     exec: async () => ({ stdout: '', stderr: '', code: 0 }),
     sendUserMessage: (content: string) => sent.push(content)
   }
-  registerSystemUI(id, {
-    send: () => {}, memory: { notify: () => {} },
-    review: {
+  const reviewUI: ReviewUI = {
       available: true, get returning() { return returningStates.at(-1) ?? false },
       choose: async (step) => step === 'finish' ? finishAction : undefined, edit: async () => undefined,
-      notify: (message, level) => notifications.push({ message, level }),
       setActive: (active) => reviewStates.push(active),
-      setReturning: (returning) => returningStates.push(returning)
-    }
-  })
-  return { api, ctx, commands, handlers, notifications, reviewStates, returningStates, appended, sent }
+      setReturning: (returning, phase) => { returningStates.push(returning); returningPhases.push(phase) },
+      setFeedback: (value) => feedback.push(value)
+  }
+  registerSystemUI(id, { send: () => {}, memory: { notify: () => {} }, review: reviewUI })
+  return { api, ctx, commands, handlers, reviewStates, returningStates, returningPhases, appended, sent, feedback, reviewUI }
 }
 
 function loadExtension(session: Session): void {
@@ -119,7 +119,6 @@ test('pi-review: configured models borrow only the review turn and fall back onc
       if (scenario === 'auth-error' || scenario === 'switch-error') {
         await assert.rejects(runReview(session, 'uncommitted'), (error) => error === unexpected)
         assert.equal(session.sent.length, 0)
-        assert.equal(session.notifications.some((item) => item.message.includes('using session model')), false)
         continue
       }
       await runReview(session, 'uncommitted')
@@ -128,7 +127,13 @@ test('pi-review: configured models borrow only the review turn and fall back onc
         assert.equal(ctx.model, original)
         assert.equal(thinking, 'medium')
         assert.equal(selected.length, scenario === 'switch-failed' ? 1 : 0)
-        assert.equal(session.notifications.some((item) => item.message.includes('using session model')), !['inherit', 'thinking-only'].includes(scenario))
+        const fallback = session.feedback.at(-1)
+        if (['missing', 'no-auth', 'switch-failed'].includes(scenario)) {
+          assert.equal(fallback?.level, 'warning')
+          assert.ok(fallback?.message.includes('review/configured'))
+          assert.ok(fallback?.message.includes('session/original'))
+          assert.ok(fallback?.detail)
+        } else assert.equal(fallback, null)
         continue
       }
       assert.equal(ctx.model, scenario === 'thinking-only' ? original : review)
@@ -143,6 +148,10 @@ test('pi-review: configured models borrow only the review turn and fall back onc
       assert.equal(ctx.model.provider, scenario === 'manual-change' ? 'manual' : original.provider)
       assert.equal(thinking, scenario === 'manual-change' ? 'high' : 'medium')
       assert.equal(session.sent.length, scenario === 'request-failed' ? 2 : 1)
+      if (scenario === 'request-failed') {
+        assert.equal(session.feedback.at(-1)?.level, 'warning')
+        assert.ok(session.feedback.at(-1)?.detail?.includes('once'))
+      }
       await emit(session, 'agent_end', { messages: [{ role: 'assistant', stopReason: 'error' }] })
       assert.equal(session.sent.length, scenario === 'request-failed' ? 2 : 1, 'fallback must not loop')
     }
@@ -243,7 +252,6 @@ test('pi-review: configuration parse, validation and IO errors abort before revi
       assert.deepEqual(session.sent, [])
       assert.deepEqual(session.appended, [])
       assert.deepEqual(session.reviewStates, [])
-      assert.deepEqual(session.notifications, [], 'configuration failures must not masquerade as model fallback')
     }
     await rm(settingsPath)
     await mkdir(settingsPath)
@@ -252,7 +260,6 @@ test('pi-review: configuration parse, validation and IO errors abort before revi
     await assert.rejects(runReview(session, 'uncommitted'), { code: 'EISDIR' })
     assert.deepEqual(session.sent, [])
     assert.deepEqual(session.appended, [])
-    assert.deepEqual(session.notifications, [])
   } finally {
     if (previous === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previous
@@ -290,12 +297,10 @@ test('pi-review: an active review in one session does not block or leak into ano
   assert.deepEqual(second.reviewStates, [false])
 
   // The second session's own (empty) review state must not erase the first session's review.
-  await runReview(first, 'uncommitted')
-  assert.ok(first.notifications.some((item) => item.message === 'Already in a review. Use /end-review to finish first.'))
+  await assert.rejects(runReview(first, 'uncommitted'), /Already in a review/)
   assert.equal(first.sent.length, 0)
 
   await runReview(second, 'uncommitted')
-  assert.ok(!second.notifications.some((item) => item.message.includes('Already in a review')))
   assert.equal(second.sent.length, 1)
 })
 
@@ -374,18 +379,163 @@ for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
     await Promise.resolve()
     assert.equal(isReviewReturning(id), true)
     assert.equal(isReviewReturning(`${id}-other`), false)
-    assert.deepEqual(session.returningStates, [true])
+    assert.deepEqual(session.returningStates, [true, true])
+    assert.deepEqual(session.returningPhases, [undefined, action === 'returnOnly' ? 'returning' : 'summarizing'])
     await end('', session.ctx)
-    assert.deepEqual(session.returningStates, [true], 'a duplicate command must not unlock the active return')
+    assert.deepEqual(session.returningStates, [true, true], 'a duplicate command must not unlock the active return')
     assert.equal(session.sent.length, 0)
     finish({ cancelled: false })
     await ending
-    assert.deepEqual(session.returningStates, [true, false])
+    assert.deepEqual(session.returningStates, [true, true, false])
+    assert.equal(session.returningPhases.at(-1), undefined)
     assert.equal(isReviewReturning(id), false)
     assert.equal(session.reviewStates.at(-1), false)
     assert.equal(session.sent.length, action === 'returnAndFix' ? 1 : 0)
   })
 }
+
+test('pi-review: host forwards panel errors and feedback without notification events', async () => {
+  const { attachSystemUI, detachSystemUI, replyReviewUI, reportReviewError } = await import('../src/main/pi/system-plugin-ui')
+  const { reviewUI } = await import('../src/main/plugins/pig-ui')
+  const events: import('../src/shared/api').SystemUIEvent[] = []
+  const sender = { isDestroyed: () => false, send: (_channel: string, event: import('../src/shared/api').SystemUIEvent) => events.push(event) }
+  attachSystemUI('review-host-errors', { isDestroyed: () => false, webContents: sender } as unknown as Parameters<typeof attachSystemUI>[1])
+  try {
+    const ui = reviewUI({ sessionManager: { getSessionId: () => 'review-host-errors' } })
+    ui.setReturning(true, 'summarizing')
+    assert.deepEqual(events.at(-1), { kind: 'review-returning', sessionId: 'review-host-errors', returning: true, phase: 'summarizing' })
+    ui.setReturning(false)
+    assert.deepEqual(events.at(-1), { kind: 'review-returning', sessionId: 'review-host-errors', returning: false })
+    const editing = ui.edit('pr', '42', 'Sign in to GitHub')
+    const prompt = events.at(-1)!
+    assert.equal(prompt.kind, 'review-prompt')
+    if (prompt.kind !== 'review-prompt') throw new Error('Expected review prompt')
+    assert.equal(prompt.prefill, '42')
+    assert.equal(prompt.error, 'Sign in to GitHub')
+    replyReviewUI(sender as unknown as Parameters<typeof replyReviewUI>[0], prompt.id, null)
+    assert.equal(await editing, undefined)
+    reportReviewError('review-host-errors', 'command:end-review', 'Summary failed')
+    assert.deepEqual(events.at(-1), { kind: 'review-feedback', sessionId: 'review-host-errors', feedback: { level: 'error', message: 'Summary failed' } })
+    assert.equal(reportReviewError('review-host-errors', '/builtin/pi-review/index.ts', 'Model restoration failed', '/builtin/pi-review/index.ts'), true)
+    assert.deepEqual(events.at(-1), { kind: 'review-feedback', sessionId: 'review-host-errors', feedback: { level: 'error', message: 'Model restoration failed' } })
+    assert.equal(events.some((event) => event.kind === 'notify'), false)
+  } finally {
+    detachSystemUI('review-host-errors')
+  }
+})
+
+for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
+  test(`pi-review: ${action} failures reach inline feedback through Pi command error dispatch`, async () => {
+    const { AgentSession } = await import('@earendil-works/pi-coding-agent')
+    const { reportReviewError } = await import('../src/main/pi/system-plugin-ui')
+    const id = `failed-${action}`
+    const session = createSession(id, [reviewState('origin')], undefined, action)
+    loadExtension(session)
+    await emit(session, 'session_start')
+    const failure = new Error(`Navigation failed for ${action}`)
+    ;(session.ctx as Pick<ExtensionCommandContext, 'navigateTree'>).navigateTree = async () => { throw failure }
+    const dispatch = (AgentSession.prototype as unknown as {
+      _tryExecuteExtensionCommand(text: string): Promise<boolean>
+    })._tryExecuteExtensionCommand
+    const emitted: string[] = []
+    const handled = await dispatch.call({
+      _extensionRunner: {
+        getCommand: () => ({ handler: session.commands.get('end-review')! }),
+        createCommandContext: () => session.ctx,
+        emitError: (error: { extensionPath: string; error: string }) => {
+          emitted.push(error.extensionPath)
+          assert.equal(reportReviewError(id, error.extensionPath, error.error), true)
+        }
+      }
+    }, '/end-review')
+    assert.equal(handled, true, 'Pi consumes command errors instead of rejecting prompt()')
+    assert.deepEqual(emitted, ['command:end-review'])
+    assert.deepEqual(session.feedback.at(-1), { level: 'error', message: failure.message })
+    assert.equal(reportReviewError(id, '/other/plugin.ts', 'Unrelated failure'), false)
+    assert.deepEqual(session.returningStates, [true, true, false])
+    assert.equal(session.returningPhases.at(-1), undefined)
+    assert.equal(session.reviewStates.at(-1), true)
+    assert.equal(session.sent.length, 0, 'failed returns never enqueue fixes')
+    assert.equal(session.appended.length, 0, 'failed returns preserve review state')
+  })
+}
+
+for (const scenario of ['missing-cli', 'no-auth', 'pending-changes', 'invalid-ref', 'fetch-failed', 'checkout-failed']) {
+  test(`pi-review: PR ${scenario} stays in the input panel with the failed reference`, async () => {
+    const session = createSession(`pr-${scenario}`)
+    const edits: Array<{ prefill?: string; error?: string }> = []
+    let checkoutCount = 0
+    Object.assign(session.api as object, {
+      exec: async (command: string, args: string[]) => {
+        const result = { stdout: '', stderr: '', code: 0 }
+        if (command === 'gh' && args[0] === '--version' && scenario === 'missing-cli') return { ...result, code: 1 }
+        if (command === 'gh' && args[0] === 'auth' && scenario === 'no-auth') return { ...result, code: 1 }
+        if (command === 'git' && args[0] === 'status' && scenario === 'pending-changes') return { ...result, stdout: ' M index.ts' }
+        if (command === 'gh' && args[1] === 'view') {
+          if (scenario === 'fetch-failed') return { ...result, code: 1, stderr: 'PR not found' }
+          return { ...result, stdout: JSON.stringify({ baseRefName: 'main', headRefName: 'feature', title: 'Test PR' }) }
+        }
+        if (command === 'gh' && args[1] === 'checkout') {
+          checkoutCount++
+          return { ...result, code: 1, stderr: 'Checkout rejected' }
+        }
+        return result
+      }
+    })
+    session.reviewUI.edit = async (_step, prefill, error) => {
+      edits.push({ prefill, error })
+      return undefined // Explicit cancellation after seeing the failure.
+    }
+    loadExtension(session)
+    const ref = scenario === 'invalid-ref' ? 'invalid' : '42'
+    await runReview(session, `pr ${ref}`)
+    assert.equal(edits.length, 1)
+    assert.equal(edits[0].prefill, ref)
+    assert.ok(edits[0].error, 'preparation failure must be visible in the PR panel')
+    assert.equal(checkoutCount, scenario === 'checkout-failed' ? 1 : 0)
+    assert.deepEqual(session.sent, [])
+    assert.deepEqual(session.appended, [])
+    assert.deepEqual(session.feedback, [null], 'cancellation adds no error banner or toast')
+  })
+}
+
+test('pi-review: PR retry uses the edited reference and unexpected execution errors propagate', async () => {
+  const session = createSession('pr-retry')
+  const viewed: string[] = []
+  const checkedOut: string[] = []
+  Object.assign(session.api as object, {
+    exec: async (command: string, args: string[]) => {
+      const result = { stdout: '', stderr: '', code: 0 }
+      if (command === 'gh' && args[1] === 'view') {
+        viewed.push(args[2])
+        if (args[2] === '42') return { ...result, code: 1, stderr: 'PR not found' }
+        return { ...result, stdout: JSON.stringify({ baseRefName: 'main', headRefName: 'feature', title: 'Test PR' }) }
+      }
+      if (command === 'gh' && args[1] === 'checkout') checkedOut.push(args[2])
+      return result
+    }
+  })
+  session.reviewUI.edit = async (_step, prefill, error) => {
+    assert.equal(prefill, '42')
+    assert.ok(error?.includes('PR not found'))
+    return '43'
+  }
+  loadExtension(session)
+  await runReview(session, 'pr 42')
+  assert.deepEqual(viewed, ['42', '43'])
+  assert.deepEqual(checkedOut, ['43'])
+  assert.equal(session.sent.length, 1)
+
+  const broken = createSession('pr-exec-error')
+  const failure = new Error('Process spawn failed')
+  Object.assign(broken.api as object, { exec: async (command: string) => {
+    if (command === 'gh') throw failure
+    return { stdout: '', stderr: '', code: 0 }
+  } })
+  broken.reviewUI.edit = async () => { throw new Error('Unexpected failure must not reopen the PR input') }
+  loadExtension(broken)
+  await assert.rejects(runReview(broken, 'pr 42'), (error) => error === failure)
+})
 
 for (const outcome of ['cancelled', 'failed', 'menu-cancelled']) {
   test(`pi-review: ${outcome} return unlocks the composer without clearing review mode`, async () => {
@@ -398,8 +548,11 @@ for (const outcome of ['cancelled', 'failed', 'menu-cancelled']) {
       if (outcome === 'failed') throw new Error('Summary failed')
       return { cancelled: true }
     }
-    await session.commands.get('end-review')!('', session.ctx)
-    assert.deepEqual(session.returningStates, [true, false])
+    const ending = session.commands.get('end-review')!('', session.ctx)
+    if (outcome === 'failed') await assert.rejects(ending, /Summary failed/)
+    else await ending
+    assert.deepEqual(session.returningStates, outcome === 'menu-cancelled' ? [true, false] : [true, true, false])
+    assert.equal(session.returningPhases.at(-1), undefined)
     assert.equal(session.reviewStates.at(-1), true)
     assert.equal(session.sent.length, 0)
   })

@@ -1,7 +1,6 @@
 /** Composer toolbar badge for review mode; clicking it returns to the conversation the review branched from. */
 import { useState } from 'react'
 import { ScanEye } from 'lucide-react'
-import { toast } from 'sonner'
 import { useT } from '../../hooks/useT'
 import { api } from '../../ipc/api'
 import { useSessionsStore } from '../../stores/sessions'
@@ -28,12 +27,13 @@ export function ReviewStatus({ sessionId }: { sessionId: string | null }) {
   const endReview = async () => {
     if (phase !== 'done' || useSystemUIStore.getState().returningReviewSessions[sessionId]) return
     setPending(true)
+    useSystemUIStore.getState().setReviewFeedback(sessionId, null)
     try {
       await api.prompt(sessionId, '/end-review')
     } catch (error) {
-      // Report IPC rejection (including a duplicate return) here; only the host can release its lock.
-      toast.error(t('reviewUI.endFailed'), {
-        description: failureMessage(error)
+      // IPC rejections do not pass through Pi's command error handler. Never release the host's lock here.
+      useSystemUIStore.getState().setReviewFeedback(sessionId, {
+        level: 'error', message: `${t('reviewUI.endFailed')}: ${failureMessage(error)}`
       })
     } finally {
       setPending(false)

@@ -1053,6 +1053,8 @@ export const en: Messages = {
     actionFailed: 'Background process action failed'
   },
   reviewUI: {
+    returningProgress: 'Returning to the original conversation…', summarizingProgress: 'Summarizing the review and returning…',
+    failed: 'Review failed', modelFallback: 'Review model fallback', details: 'Details', dismiss: 'Dismiss',
     preset: 'Review code', branch: 'Select a base branch', commit: 'Select a commit',
     instructions: 'Custom review instructions', folders: 'Review files or folders', pr: 'Review a pull request',
     start: 'Where should the review run?', finish: 'Finish review',

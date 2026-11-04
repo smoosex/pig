@@ -26,7 +26,7 @@
  *
  * Note: PR review requires a clean working tree (no uncommitted changes to tracked files).
  *
- * Pig owns the review command panel, notifications, and session review indicator.
+ * Pig owns the review command panel and session review indicator.
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -71,10 +71,6 @@ function setCustomReviewInstructions(ctx: ExtensionContext, instructions: string
 const REVIEW_STATE_TYPE = "review-session";
 const REVIEW_ANCHOR_TYPE = "review-anchor";
 const REVIEW_SETTINGS_TYPE = "review-settings";
-const GH_SETUP_INSTRUCTIONS =
-	"Install GitHub CLI (`gh`) from https://cli.github.com/ (macOS: `brew install gh`), then sign in with `gh auth login` and verify with `gh auth status`.";
-const PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE =
-	"Cannot checkout PR: you have uncommitted changes. Please commit or stash them first.";
 
 type ReviewSessionState = {
 	active: boolean;
@@ -558,32 +554,6 @@ async function buildReviewPrompt(
 	}
 }
 
-/**
- * Get user-facing hint for the review target
- */
-function getUserFacingHint(target: ReviewTarget): string {
-	switch (target.type) {
-		case "uncommitted":
-			return "current changes";
-		case "baseBranch":
-			return `changes against '${target.branch}'`;
-		case "commit": {
-			const shortSha = target.sha.slice(0, 7);
-			return target.title ? `commit ${shortSha}: ${target.title}` : `commit ${shortSha}`;
-		}
-
-		case "pullRequest": {
-			const shortTitle = target.title.length > 30 ? target.title.slice(0, 27) + "..." : target.title;
-			return `PR #${target.prNumber}: ${shortTitle}`;
-		}
-
-		case "folder": {
-			const joined = target.paths.join(", ");
-			return joined.length > 40 ? `folders: ${joined.slice(0, 37)}...` : `folders: ${joined}`;
-		}
-	}
-}
-
 // Review preset options for the selector (keep this order stable)
 const REVIEW_PRESETS = [
 	{ value: "uncommitted", label: "Review uncommitted changes", description: "" },
@@ -609,6 +579,14 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		switched: boolean;
 	}>();
 
+	function reportModelFallback(ctx: ExtensionContext, configured: { provider: string; id: string }, detail: string) {
+		reviewUI(ctx).setFeedback({
+			level: "warning",
+			message: `Review model ${configured.provider}/${configured.id} was not used; continuing with session model ${ctx.model?.provider}/${ctx.model?.id}.`,
+			detail,
+		});
+	}
+
 	async function selectReviewModel(ctx: ExtensionContext, settings: Awaited<ReturnType<typeof readReviewSettings>>) {
 		const original = ctx.model;
 		if (!original) return;
@@ -620,16 +598,16 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		if (switched && configured) {
 			const selected = ctx.modelRegistry.find(configured.provider, configured.id);
 			if (!selected) {
-				reviewUI(ctx).notify(`Review model unavailable; using session model: model not found (${configured.provider}/${configured.id}).`, "warning");
+				reportModelFallback(ctx, configured, "The configured model was not found.");
 				return;
 			}
 			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(selected);
 			if (!auth.ok) {
-				reviewUI(ctx).notify(`Review model unavailable; using session model: ${auth.error}`, "warning");
+				reportModelFallback(ctx, configured, "Authentication for the configured model is unavailable. Check its provider sign-in.");
 				return;
 			}
 			if (!await pi.setModel(selected)) {
-				reviewUI(ctx).notify("Review model unavailable; using session model: could not select review model.", "warning");
+				reportModelFallback(ctx, configured, "Could not select the configured model.");
 				return;
 			}
 			model = selected;
@@ -649,12 +627,12 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		if (ctx.model?.provider !== borrowed.review.provider || ctx.model.id !== borrowed.review.id) return;
 		const currentThinking = pi.getThinkingLevel();
 		if (borrowed.switched && !await pi.setModel(borrowed.original)) {
-			reviewUI(ctx).notify("Could not restore the session model after review.", "error");
+			reviewUI(ctx).setFeedback({ level: "error", message: "Could not restore the session model after review. Select the desired model before continuing." });
 			return;
 		}
 		pi.setThinkingLevel(currentThinking === borrowed.reviewThinking ? borrowed.originalThinking : currentThinking);
 		if (borrowed.switched && message?.role === "assistant" && message.stopReason === "error") {
-			reviewUI(ctx).notify("Review model request failed; continuing once with the session model.", "warning");
+			reportModelFallback(ctx, borrowed.review, "The review request failed. Continuing once with the original session model.");
 			pi.sendUserMessage("Continue the code review requested above using the current model. Preserve completed inspection work and provide the remaining findings.", { deliverAs: "followUp" });
 		}
 	}
@@ -688,78 +666,42 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		applyReviewState(ctx);
 	}
 
-	async function ensureGithubCliReady(ctx: ExtensionContext): Promise<boolean> {
+	// Only expected PR preparation failures return to the input panel; unexpected failures propagate.
+	class ReviewPreparationError extends Error {}
+
+	async function ensureGithubCliReady(): Promise<void> {
 		const ghVersion = await pi.exec("gh", ["--version"]);
 		if (ghVersion.code !== 0) {
-			reviewUI(ctx).notify(`PR review requires GitHub CLI (\`gh\`). ${GH_SETUP_INSTRUCTIONS}`, "error");
-			return false;
+			throw new ReviewPreparationError("Install GitHub CLI (gh) from https://cli.github.com/ before reviewing a PR.");
 		}
-
 		const ghAuthStatus = await pi.exec("gh", ["auth", "status"]);
 		if (ghAuthStatus.code !== 0) {
-			reviewUI(ctx).notify(
-				"GitHub CLI is installed, but you're not signed in. Run `gh auth login`, then verify with `gh auth status`.",
-				"error",
-			);
-			return false;
+			throw new ReviewPreparationError("GitHub CLI is not signed in. Run gh auth login, then retry.");
 		}
-
-		return true;
 	}
 
-	async function resolvePullRequestTarget(
-		ctx: ExtensionContext,
-		ref: string,
-		options: { skipInitialPendingChangesCheck?: boolean } = {},
-	): Promise<ReviewTarget | null> {
-		if (!(await ensureGithubCliReady(ctx))) {
-			return null;
+	async function resolvePullRequestTarget(ref: string): Promise<ReviewTarget> {
+		await ensureGithubCliReady();
+		if (await hasPendingChanges(pi)) {
+			throw new ReviewPreparationError("Cannot checkout PR: commit or stash your uncommitted changes first.");
 		}
-
-		if (!options.skipInitialPendingChangesCheck && (await hasPendingChanges(pi))) {
-			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
-			return null;
-		}
-
 		const prNumber = parsePrReference(ref);
 		if (!prNumber) {
-			reviewUI(ctx).notify("Invalid PR reference. Enter a number or GitHub PR URL.", "error");
-			return null;
+			throw new ReviewPreparationError("Invalid PR reference. Enter a number or GitHub PR URL.");
 		}
-
-		reviewUI(ctx).notify(`Fetching PR #${prNumber} info...`, "info");
 		const prInfo = await getPrInfo(pi, prNumber);
-
 		if ("error" in prInfo) {
-			reviewUI(ctx).notify(
-				`Could not fetch PR #${prNumber}: ${prInfo.error}. Make sure it exists and your GitHub auth has access (check with \`gh auth status\`).`,
-				"error",
-			);
-			return null;
+			throw new ReviewPreparationError(`Could not fetch PR #${prNumber}: ${prInfo.error}`);
 		}
-
-		// Re-check right before checkout to avoid switching branches with newly introduced changes.
+		// Re-check immediately before checkout; fetching PR info can take time.
 		if (await hasPendingChanges(pi)) {
-			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
-			return null;
+			throw new ReviewPreparationError("Cannot checkout PR: commit or stash your uncommitted changes first.");
 		}
-
-		reviewUI(ctx).notify(`Checking out PR #${prNumber}...`, "info");
 		const checkoutResult = await checkoutPr(pi, prNumber);
-
 		if (!checkoutResult.success) {
-			reviewUI(ctx).notify(`Failed to checkout PR: ${checkoutResult.error}`, "error");
-			return null;
+			throw new ReviewPreparationError(`Failed to checkout PR #${prNumber}: ${checkoutResult.error}`);
 		}
-
-		reviewUI(ctx).notify(`Checked out PR #${prNumber} (${prInfo.headBranch})`, "info");
-
-		return {
-			type: "pullRequest",
-			prNumber,
-			baseBranch: prInfo.baseBranch,
-			title: prInfo.title,
-		};
+		return { type: "pullRequest", prNumber, baseBranch: prInfo.baseBranch, title: prInfo.title };
 	}
 
 	pi.on("session_start", (_event, ctx) => {
@@ -829,19 +771,16 @@ export default function reviewExtension(pi: ExtensionAPI) {
 			if (result === TOGGLE_CUSTOM_INSTRUCTIONS_VALUE || result === "removeInstructions") {
 				if (getCustomReviewInstructions(ctx)) {
 					updateReviewCustomInstructions(ctx, undefined);
-					reviewUI(ctx).notify("Custom review instructions removed", "info");
 					continue;
 				}
 
 				const customInstructions = await reviewUI(ctx).edit("instructions", "");
 
 				if (!customInstructions?.trim()) {
-					reviewUI(ctx).notify("Custom review instructions not changed", "info");
 					continue;
 				}
 
 				updateReviewCustomInstructions(ctx, customInstructions);
-				reviewUI(ctx).notify("Custom review instructions saved", "info");
 				continue;
 			}
 
@@ -892,11 +831,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		const candidateBranches = currentBranch ? branches.filter((b) => b !== currentBranch) : branches;
 
 		if (candidateBranches.length === 0) {
-			reviewUI(ctx).notify(
-				currentBranch ? `No other branches found (current branch: ${currentBranch})` : "No branches found",
-				"error",
-			);
-			return null;
+			throw new Error(currentBranch ? `No other branches found (current branch: ${currentBranch}).` : "No branches found.");
 		}
 
 		// Sort branches with default branch first
@@ -921,10 +856,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	async function showCommitSelector(ctx: ExtensionContext): Promise<ReviewTarget | null> {
 		const commits = await getRecentCommits(pi, 20);
 
-		if (commits.length === 0) {
-			reviewUI(ctx).notify("No commits found", "error");
-			return null;
-		}
+		if (commits.length === 0) throw new Error("No commits found.");
 
 		const choice = await reviewUI(ctx).choose("commit", commits.map((commit) => ({
 			value: commit.sha, label: commit.title, description: commit.sha.slice(0, 7),
@@ -958,19 +890,24 @@ export default function reviewExtension(pi: ExtensionAPI) {
 	/**
 	 * Show PR input and handle checkout
 	 */
-	async function showPrInput(ctx: ExtensionContext): Promise<ReviewTarget | null> {
-		// First check for pending changes that would prevent branch switching
-		if (await hasPendingChanges(pi)) {
-			reviewUI(ctx).notify(PR_CHECKOUT_BLOCKED_BY_PENDING_CHANGES_MESSAGE, "error");
-			return null;
+	async function showPrInput(ctx: ExtensionContext, initialRef?: string): Promise<ReviewTarget | null> {
+		let ref = initialRef;
+		let error: string | undefined;
+		if (ref === undefined) {
+			ref = await reviewUI(ctx).edit("pr", "");
+			if (!ref?.trim()) return null;
 		}
-
-		// Get PR reference from user
-		const prRef = await reviewUI(ctx).edit("pr", "");
-
-		if (!prRef?.trim()) return null;
-
-		return await resolvePullRequestTarget(ctx, prRef, { skipInitialPendingChangesCheck: true });
+		while (true) {
+			try {
+				return await resolvePullRequestTarget(ref);
+			} catch (failure) {
+				if (!(failure instanceof ReviewPreparationError)) throw failure;
+				error = failure.message;
+			}
+			// Keep the failed reference editable and distinguish retry from cancellation.
+			ref = await reviewUI(ctx).edit("pr", ref, error);
+			if (!ref?.trim()) return null;
+		}
 	}
 
 	/**
@@ -983,15 +920,11 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		options?: { extraInstruction?: string },
 	): Promise<boolean> {
 		// Check if we're already in a review
-		if (getReviewOriginId(ctx)) {
-			reviewUI(ctx).notify("Already in a review. Use /end-review to finish first.", "warning");
-			return false;
-		}
+		if (getReviewOriginId(ctx)) throw new Error("Already in a review. Finish the current review first.");
 
 		// Prepare everything that can fail before touching review state, so a failure leaves the
 		// session (branch, anchor entry, review indicator) exactly as it was.
 		const prompt = await buildReviewPrompt(pi, target);
-		const hint = getUserFacingHint(target);
 		const projectGuidelines = await loadProjectReviewGuidelines(ctx.cwd);
 		const modelSettings = await readReviewSettings();
 
@@ -1004,10 +937,7 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				pi.appendEntry(REVIEW_ANCHOR_TYPE, { createdAt: new Date().toISOString() });
 				originId = ctx.sessionManager.getLeafId() ?? undefined;
 			}
-			if (!originId) {
-				reviewUI(ctx).notify("Failed to determine review origin.", "error");
-				return false;
-			}
+			if (!originId) throw new Error("Failed to determine review origin.");
 			setReviewOriginId(ctx, originId);
 
 			// Keep a local copy so session_tree events during navigation don't wipe it
@@ -1030,10 +960,9 @@ export default function reviewExtension(pi: ExtensionAPI) {
 						return false;
 					}
 				} catch (error) {
-					// Clean up state if navigation fails
+					// Navigation failed before review state was committed; remove the tentative origin.
 					setReviewOriginId(ctx, undefined);
-					reviewUI(ctx).notify(`Failed to start review: ${error instanceof Error ? error.message : String(error)}`, "error");
-					return false;
+					throw error;
 				}
 			}
 
@@ -1060,9 +989,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		if (projectGuidelines) {
 			fullPrompt += `\n\nThis project has additional instructions for code reviews:\n\n${projectGuidelines}`;
 		}
-
-		const modeHint = useFreshSession ? " (fresh session)" : "";
-		reviewUI(ctx).notify(`Starting review: ${hint}${modeHint}`, "info");
 
 		await selectReviewModel(ctx, modelSettings);
 		// Send as a user message that triggers a turn
@@ -1198,38 +1124,28 @@ export default function reviewExtension(pi: ExtensionAPI) {
 		description: "Review code changes (PR, uncommitted, branch, commit, or folder)",
 		handler: async (args, ctx) => {
 			if (!reviewUI(ctx).available) return;
+			reviewUI(ctx).setFeedback(null);
 
 			// Check if we're already in a review
-			if (getReviewOriginId(ctx)) {
-				reviewUI(ctx).notify("Already in a review. Use /end-review to finish first.", "warning");
-				return;
-			}
+			if (getReviewOriginId(ctx)) throw new Error("Already in a review. Finish the current review first.");
 
 			// Check if we're in a git repository
 			const { code } = await pi.exec("git", ["rev-parse", "--git-dir"]);
-			if (code !== 0) {
-				reviewUI(ctx).notify("Not a git repository", "error");
-				return;
-			}
+			if (code !== 0) throw new Error("Not a git repository.");
 
 			// Try to parse direct arguments
 			let target: ReviewTarget | null = null;
 			let fromSelector = false;
 			let extraInstruction: string | undefined;
 			const parsed = parseArgs(args);
-			if (parsed.error) {
-				reviewUI(ctx).notify(parsed.error, "error");
-				return;
-			}
+			if (parsed.error) throw new Error(parsed.error);
 			extraInstruction = parsed.extraInstruction?.trim() || undefined;
 
 			if (parsed.target) {
 				if (parsed.target.type === "pr") {
 					// Handle PR checkout (async operation)
-					target = await resolvePullRequestTarget(ctx, parsed.target.ref);
-					if (!target) {
-						reviewUI(ctx).notify("PR review failed. Returning to review menu.", "warning");
-					}
+					target = await showPrInput(ctx, parsed.target.ref);
+					if (!target) return;
 				} else {
 					target = parsed.target;
 				}
@@ -1246,7 +1162,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 				}
 
 				if (!target) {
-					reviewUI(ctx).notify("Review cancelled", "info");
 					return;
 				}
 
@@ -1270,7 +1185,6 @@ export default function reviewExtension(pi: ExtensionAPI) {
 							target = null;
 							continue;
 						}
-						reviewUI(ctx).notify("Review cancelled", "info");
 						return;
 					}
 
@@ -1341,10 +1255,6 @@ Instructions:
 9. End with: fixed items, deferred/skipped items (with reasons), and verification results.`;
 
 	type EndReviewAction = "returnOnly" | "returnAndFix" | "returnAndSummarize";
-	type EndReviewActionResult = "ok" | "cancelled" | "error";
-	type EndReviewActionOptions = {
-		notifySuccess?: boolean;
-	};
 
 	function getActiveReviewOrigin(ctx: ExtensionContext): string | undefined {
 		const originId = getReviewOriginId(ctx);
@@ -1361,7 +1271,6 @@ Instructions:
 		if (state?.active) {
 			setReviewIndicator(ctx, false);
 			pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
-			reviewUI(ctx).notify("Review state was missing origin info; cleared review status.", "warning");
 		}
 
 		return undefined;
@@ -1373,87 +1282,23 @@ Instructions:
 		pi.appendEntry(REVIEW_STATE_TYPE, { active: false });
 	}
 
-	async function navigateWithSummary(
-		ctx: ExtensionCommandContext,
-		originId: string,
-	): Promise<{ cancelled: boolean; error?: string } | null> {
-		reviewUI(ctx).notify("Returning and summarizing review branch...", "info");
-
-		try {
-			return await ctx.navigateTree(originId, {
-				summarize: true,
-				customInstructions: REVIEW_SUMMARY_PROMPT,
-				replaceInstructions: true,
-			});
-		} catch (error) {
-			return { cancelled: false, error: error instanceof Error ? error.message : String(error) };
-		}
-	}
-
 	async function executeEndReviewAction(
 		ctx: ExtensionCommandContext,
 		action: EndReviewAction,
-		options: EndReviewActionOptions = {},
-	): Promise<EndReviewActionResult> {
+	): Promise<void> {
 		const originId = getActiveReviewOrigin(ctx);
-		if (!originId) {
-			if (!getReviewState(ctx)?.active) {
-				reviewUI(ctx).notify("Not in a review branch (use /review first, or review was started in current session mode)", "info");
-			}
-			return "error";
-		}
-
-		const notifySuccess = options.notifySuccess ?? true;
-
-		if (action === "returnOnly") {
-			try {
-				const result = await ctx.navigateTree(originId, { summarize: false });
-				if (result.cancelled) {
-					reviewUI(ctx).notify("Navigation cancelled. Use /end-review to try again.", "info");
-					return "cancelled";
-				}
-			} catch (error) {
-				reviewUI(ctx).notify(`Failed to return: ${error instanceof Error ? error.message : String(error)}`, "error");
-				return "error";
-			}
-
-			clearReviewState(ctx);
-			if (notifySuccess) {
-				reviewUI(ctx).notify("Review complete! Returned to original position.", "info");
-			}
-			return "ok";
-		}
-
-		const summaryResult = await navigateWithSummary(ctx, originId);
-		if (summaryResult === null) {
-			reviewUI(ctx).notify("Summarization cancelled. Use /end-review to try again.", "info");
-			return "cancelled";
-		}
-
-		if (summaryResult.error) {
-			reviewUI(ctx).notify(`Summarization failed: ${summaryResult.error}`, "error");
-			return "error";
-		}
-
-		if (summaryResult.cancelled) {
-			reviewUI(ctx).notify("Navigation cancelled. Use /end-review to try again.", "info");
-			return "cancelled";
-		}
-
+		if (!originId) throw new Error("Review origin is unavailable; cannot return to the original conversation.");
+		reviewUI(ctx).setReturning(true, action === "returnOnly" ? "returning" : "summarizing");
+		const result = await ctx.navigateTree(originId, action === "returnOnly" ? { summarize: false } : {
+			summarize: true,
+			customInstructions: REVIEW_SUMMARY_PROMPT,
+			replaceInstructions: true,
+		});
+		if (result.cancelled) return;
 		clearReviewState(ctx);
-
-		if (action === "returnAndSummarize") {
-			if (notifySuccess) {
-				reviewUI(ctx).notify("Review complete! Returned and summarized.", "info");
-			}
-			return "ok";
+		if (action === "returnAndFix") {
+			pi.sendUserMessage(REVIEW_FIX_FINDINGS_PROMPT, { deliverAs: "followUp" });
 		}
-
-		pi.sendUserMessage(REVIEW_FIX_FINDINGS_PROMPT, { deliverAs: "followUp" });
-		if (notifySuccess) {
-			reviewUI(ctx).notify("Review complete! Returned and queued a follow-up to fix findings.", "info");
-		}
-		return "ok";
 	}
 
 	async function runEndReview(ctx: ExtensionCommandContext): Promise<void> {
@@ -1461,13 +1306,13 @@ Instructions:
 
 
 		if (endReviewInProgress.has(ctx.sessionManager.getSessionId())) {
-			reviewUI(ctx).notify("/end-review is already running", "info");
 			return;
 		}
 
 		const sessionId = ctx.sessionManager.getSessionId();
 		endReviewInProgress.add(sessionId);
 		try {
+			reviewUI(ctx).setFeedback(null);
 			reviewUI(ctx).setReturning(true);
 			const choice = await reviewUI(ctx).choose("finish", [
 				{ value: "returnOnly", label: "Return only" },
@@ -1476,7 +1321,6 @@ Instructions:
 			]);
 
 			if (choice === undefined) {
-				reviewUI(ctx).notify("Cancelled. Use /end-review to try again.", "info");
 				return;
 			}
 
@@ -1487,9 +1331,7 @@ Instructions:
 						? "returnAndSummarize"
 						: "returnOnly";
 
-			await executeEndReviewAction(ctx, action, {
-				notifySuccess: true,
-			});
+			await executeEndReviewAction(ctx, action);
 		} finally {
 			endReviewInProgress.delete(sessionId);
 			reviewUI(ctx).setReturning(false);
