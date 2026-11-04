@@ -581,7 +581,7 @@ export default function App() {
             className={cn('flex shrink-0', leftCollapsed && 'absolute inset-y-0 left-0 z-30',
               leftCollapsed && hoverSidebar === 'left' && !settingsOpen && 'p-2',
               leftCollapsed && hoverSidebar !== 'left' && 'pointer-events-none')}
-            onMouseLeave={() => floatingSidebar.leave('left')}
+            onMouseMoveCapture={(event) => floatingSidebar.trackPointer('left', event)}
           >
             <div
               data-sidebar-overlay={leftCollapsed && hoverSidebar === 'left' && !settingsOpen ? '' : undefined}
@@ -707,7 +707,7 @@ export default function App() {
                   className={cn('flex shrink-0', rightCollapsed && 'absolute inset-y-0 right-0 z-30',
                     rightCollapsed && hoverSidebar === 'right' && 'p-2',
                     rightCollapsed && hoverSidebar !== 'right' && 'pointer-events-none')}
-                  onMouseLeave={() => floatingSidebar.leave('right')}
+                  onMouseMoveCapture={(event) => floatingSidebar.trackPointer('right', event)}
                 >
                   <div
                     data-sidebar-overlay={rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
