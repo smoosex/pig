@@ -26,7 +26,7 @@ async function fixture(): Promise<void> {
   }`)
   await installPlugin(plugin)
   await setPluginScopes((await listPlugins()).find((item) => item.source === plugin)!.id, ['project'])
-  await setPluginScopes('pi-review', [])
+  await setPluginScopes('pig-review', [])
   await setPluginScopes('pig-web', [])
   saveSessionCapability('parent', 'tools', 'read', false)
   saveSessionCapability('parent', 'tools', 'codemode', false)

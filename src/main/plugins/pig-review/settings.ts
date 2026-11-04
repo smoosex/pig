@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { PluginSettingsSchema, ThinkingLevel } from '../../../shared/api'
 
 export const reviewSettingsSchema: PluginSettingsSchema = {
-  namespace: 'pi-review',
+  namespace: 'pig-review',
   fields: [
     { key: 'provider', label: 'Provider', type: 'string' },
     { key: 'modelId', label: 'Model ID', type: 'string' },
@@ -12,22 +12,40 @@ export const reviewSettingsSchema: PluginSettingsSchema = {
   ]
 }
 
-export async function readReviewSettings(): Promise<{ model?: { provider: string; id: string }; thinking?: ThinkingLevel }> {
-  const root = process.env.PIG_DIR || join(process.cwd(), '.pig')
+/** New files take precedence, including empty preferences; only a missing file reads the old name. */
+export async function readReviewSettingsFile(root: string): Promise<Record<string, unknown>> {
   let text: string
+  let namespace = reviewSettingsSchema.namespace
   try {
-    text = await readFile(join(root, 'plugin-settings', 'pi-review.json'), 'utf8')
+    text = await readFile(join(root, 'plugin-settings', `${namespace}.json`), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw error
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    namespace = 'pi-review'
+    try {
+      text = await readFile(join(root, 'plugin-settings', `${namespace}.json`), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+      throw error
+    }
   }
   const value: unknown = JSON.parse(text)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid review settings file')
-  const namespace = (value as Record<string, unknown>)['pi-review']
-  if (namespace !== undefined && (!namespace || typeof namespace !== 'object' || Array.isArray(namespace))) {
-    throw new Error('Invalid pi-review settings namespace')
+  const result = value as Record<string, unknown>
+  const settings = result[namespace]
+  if (settings !== undefined && (!settings || typeof settings !== 'object' || Array.isArray(settings))) {
+    throw new Error('Invalid review settings namespace')
   }
-  const settings = namespace as Record<string, unknown> | undefined
+  if (namespace !== reviewSettingsSchema.namespace) {
+    delete result[namespace]
+    result[reviewSettingsSchema.namespace] = settings
+  }
+  return result
+}
+
+export async function readReviewSettings(): Promise<{ model?: { provider: string; id: string }; thinking?: ThinkingLevel }> {
+  const root = process.env.PIG_DIR || join(process.cwd(), '.pig')
+  const value = await readReviewSettingsFile(root)
+  const settings = value[reviewSettingsSchema.namespace] as Record<string, unknown> | undefined
   const provider = settings?.provider
   const id = settings?.modelId
   const thinking = settings?.thinking

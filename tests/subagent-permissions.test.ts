@@ -20,7 +20,7 @@ async function fixture() {
   const { restrictPermissionMode } = await import('../src/main/permissions/mode')
   const { createSdkRunner } = await import('../src/main/subagents/sdk-runner')
   const { setPluginScopes } = await import('../src/main/pi/plugins')
-  await setPluginScopes('pi-review', [])
+  await setPluginScopes('pig-review', [])
   await setPluginScopes('pig-web', [])
   for (const ceiling of ['read-only', 'default', 'full-access'] as const) {
     for (const parent of ['read-only', 'default', 'full-access'] as const) {

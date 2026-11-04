@@ -40,7 +40,7 @@ async function fixture(name: string) {
       return defaults
     }
   }))
-  let scopes: Record<string, string[]> = { 'pi-review': ['project'], 'pig-settings': ['project', 'chat'] }
+  let scopes: Record<string, string[]> = { 'pig-review': ['project'], 'pig-settings': ['project', 'chat'] }
   let servers: Record<string, boolean> = { docs: false, files: true }
   const guarded = <T extends Record<string, unknown>>(current: () => T, apply: (patch: T) => void) =>
     async (patch: T, check?: (value: T) => void) => {
@@ -267,27 +267,27 @@ async function fixture(name: string) {
     if (name === 'external') {
       const plugins = await service.get('plugins')
       assert.deepEqual(plugins.values, { scopes })
-      const enabled = await service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pi-review': ['project', 'chat'] } } })
+      const enabled = await service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pig-review': ['project', 'chat'] } } })
       assert.equal(enabled.ok, true)
       assert.equal(enabled.application, 'sessions-reload')
-      assert.deepEqual(scopes['pi-review'], ['project', 'chat'])
+      assert.deepEqual(scopes['pig-review'], ['project', 'chat'])
       assert.deepEqual(log.splice(0).filter((entry) => typeof entry === 'string'), ['plugins-changed'])
       assert.equal((await service.get('plugins')).revision, enabled.after.revision)
-      await assert.rejects(service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pi-review': [] } } }), /revision conflict/)
-      for (const patch of [{ scopes: { 'pig-settings': [] } }, { scopes: { 'pi-review': ['web'] } }, { scopes: { 'pi-review': ['chat', 'chat'] } }, { scopes: { missing: [] } }]) {
+      await assert.rejects(service.update({ group: 'plugins', expectedRevision: plugins.revision, patch: { scopes: { 'pig-review': [] } } }), /revision conflict/)
+      for (const patch of [{ scopes: { 'pig-settings': [] } }, { scopes: { 'pig-review': ['web'] } }, { scopes: { 'pig-review': ['chat', 'chat'] } }, { scopes: { missing: [] } }]) {
         await assert.rejects(service.update({ group: 'plugins', expectedRevision: enabled.after.revision, patch } as never), JSON.stringify(patch))
       }
       assert.deepEqual(scopes['pig-settings'], ['project', 'chat'], 'a conversation cannot unload its own settings tools')
       await service.updateUi('plugins', { scopes: { 'pig-settings': ['project'] } })
       assert.deepEqual(scopes['pig-settings'], ['project'], 'the settings page still can')
-      const same = await service.update({ group: 'plugins', expectedRevision: (await service.get('plugins')).revision, patch: { scopes: { 'pi-review': ['project', 'chat'] } } })
+      const same = await service.update({ group: 'plugins', expectedRevision: (await service.get('plugins')).revision, patch: { scopes: { 'pig-review': ['project', 'chat'] } } })
       assert.equal(same.changed, false)
       log.length = 0
       reloadFails = true
-      const failed = await service.update({ group: 'plugins', expectedRevision: same.after.revision, patch: { scopes: { 'pi-review': [] } } })
+      const failed = await service.update({ group: 'plugins', expectedRevision: same.after.revision, patch: { scopes: { 'pig-review': [] } } })
       assert.equal(failed.ok, false)
       assert.match(failed.error!, /saved but sessions could not reload: reload failed/)
-      assert.deepEqual(scopes['pi-review'], [], 'a reload failure does not pretend to roll back')
+      assert.deepEqual(scopes['pig-review'], [], 'a reload failure does not pretend to roll back')
       assert.deepEqual(log.filter((entry) => typeof entry === 'string'), ['plugins-changed'])
       const catalog = await service.list({ group: 'plugins' })
       assert.ok(catalog.plugins?.find((plugin) => plugin.id === 'pig-settings')?.locked)

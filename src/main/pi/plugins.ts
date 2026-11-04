@@ -12,7 +12,7 @@ import {
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope, PluginSettingsSchema } from '../../shared/api'
 import type { SessionToolProvider } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
-import { reviewSettingsSchema } from '../plugins/pi-review/settings'
+import { readReviewSettingsFile, reviewSettingsSchema } from '../plugins/pig-review/settings'
 import { DEFAULTS } from '../plugins/observational-memory/config'
 import { memorySettingsPath } from '../plugins/observational-memory/paths'
 import { sessionToolPath as sessionPath, settingsToolPath } from './system-plugin-paths'
@@ -46,8 +46,8 @@ const memoryPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'observational-memory', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
 export const reviewPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'pi-review', 'index.ts')
-  : join(appPath(), 'src', 'main', 'plugins', 'pi-review', 'index.ts')
+  ? join(process.resourcesPath, 'system-plugins', 'pig-review', 'index.ts')
+  : join(appPath(), 'src', 'main', 'plugins', 'pig-review', 'index.ts')
 const subagentPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-subagent', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-subagent', 'index.ts')
@@ -262,7 +262,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
   const registry = await readRegistry()
   const providers = new Map<string, SessionToolProvider>([
     [resolve(memoryPath()), { kind: 'pig', id: 'observational-memory', name: 'Observational Memory' }],
-    [resolve(reviewPath()), { kind: 'pig', id: 'pi-review', name: 'Review' }],
+    [resolve(reviewPath()), { kind: 'pig', id: 'pig-review', name: 'Review' }],
     [resolve(webAccessPath()), { kind: 'pig', id: 'pig-web', name: 'Web' }],
     [resolve(subagentPath()), { kind: 'pig', id: 'pig-subagent', name: 'Subagents' }],
     [resolve(browserPath()), { kind: 'pig', id: 'pig-browser', name: 'Browser' }],
@@ -316,7 +316,7 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     kind: 'system', scopes: registry.memoryScopes, available: existsSync(memoryPath()),
     ...(!existsSync(memoryPath()) ? { error: 'Bundled extension is missing' } : {})
   }, {
-    id: 'pi-review', name: 'Review', source: 'Pig built-in',
+    id: 'pig-review', name: 'Review', source: 'Pig built-in',
     kind: 'system', scopes: registry.reviewScopes, available: existsSync(reviewPath()),
     settings: reviewSettingsSchema,
     ...(!existsSync(reviewPath()) ? { error: 'Bundled extension is missing' } : {})
@@ -391,7 +391,7 @@ export function installPlugin(source: string): Promise<void> {
 }
 
 const BUNDLED_SCOPES = {
-  'observational-memory': 'memoryScopes', 'pi-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
+  'observational-memory': 'memoryScopes', 'pig-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
   'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pig-persona': 'personaScopes'
 } as const satisfies Record<string, keyof Registry>
@@ -408,7 +408,7 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   if (id === 'observational-memory') {
     if (addsScope(registry.memoryScopes) && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
     registry.memoryScopes = next
-  } else if (id === 'pi-review') {
+  } else if (id === 'pig-review') {
     if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
     registry.reviewScopes = next
   } else if (id === 'pig-web') {
@@ -587,7 +587,7 @@ export function setMemoryPluginSettings(patch: MemoryPluginSettingsPatch): Promi
 }
 
 async function pluginSchema(id: string): Promise<PluginSettingsSchema> {
-  if (id === 'pi-review') return reviewSettingsSchema
+  if (id === 'pig-review') return reviewSettingsSchema
   const plugin = (await readRegistry()).installed.find((item) => item.id === id)
   if (!plugin) throw new Error('Plugin not found')
   const schema = settingsSchema(plugin.source)
@@ -609,7 +609,10 @@ function configValues(settings: Record<string, unknown>, schema: PluginSettingsS
 export async function getPluginSettings(id: string): Promise<Record<string, string | number | boolean>> {
   await mutation
   const schema = await pluginSchema(id)
-  return configValues(await readSettingsObject(pigPath('plugin-settings', `${schema.namespace}.json`)), schema)
+  const settings = id === 'pig-review'
+    ? await readReviewSettingsFile(pigPath())
+    : await readSettingsObject(pigPath('plugin-settings', `${schema.namespace}.json`))
+  return configValues(settings, schema)
 }
 
 export function setPluginSettings(id: string, patch: Record<string, string | number | boolean | null>): Promise<Record<string, string | number | boolean>> {
@@ -628,7 +631,7 @@ export function setPluginSettings(id: string, patch: Record<string, string | num
           (field.max !== undefined && (value as number) > field.max))) throw new Error(`Invalid integer: ${key}`)
     }
     const path = pigPath('plugin-settings', `${schema.namespace}.json`)
-    const settings = await readSettingsObject(path)
+    const settings = id === 'pig-review' ? await readReviewSettingsFile(pigPath()) : await readSettingsObject(path)
     const previous = settings[schema.namespace]
     if (previous !== undefined && (!previous || typeof previous !== 'object' || Array.isArray(previous))) throw new Error('Invalid plugin config namespace')
     const next: Record<string, unknown> = { ...(previous as Record<string, unknown> | undefined) }
@@ -636,7 +639,7 @@ export function setPluginSettings(id: string, patch: Record<string, string | num
       if (value === null) delete next[key]
       else next[key] = value
     }
-    if (id === 'pi-review') {
+    if (id === 'pig-review') {
       for (const key of ['provider', 'modelId']) {
         if (typeof next[key] === 'string') {
           const value = (next[key] as string).trim()

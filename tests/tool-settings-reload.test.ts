@@ -198,17 +198,17 @@ async function fixture(): Promise<void> {
       sessions.map((session) => session.reloads),
       [3, 3, 3]
     )
-    const hasReview = (index: number) => sessions[index].paths.some((path) => path.endsWith(join('pi-review', 'index.ts')))
-    await plugins.setPluginScopes('pi-review', ['chat'])
+    const hasReview = (index: number) => sessions[index].paths.some((path) => path.endsWith(join('pig-review', 'index.ts')))
+    await plugins.setPluginScopes('pig-review', ['chat'])
     await registry.refreshPluginSessions()
     assert.deepEqual(sessions.map((session) => session.reloads), [4, 4, 4])
     assert.deepEqual(sessions.map((_, index) => hasReview(index)), [false, false, true])
-    await plugins.setPluginScopes('pi-review', ['project', 'chat'])
+    await plugins.setPluginScopes('pig-review', ['project', 'chat'])
     await registry.refreshPluginSessions()
     assert.deepEqual(sessions.map((session) => session.reloads), [5, 5, 4], 'unchanged Chat resources are not reloaded')
     assert.deepEqual(sessions.map((_, index) => hasReview(index)), [true, true, true])
     sessions[2].isIdle = false
-    await plugins.setPluginScopes('pi-review', [])
+    await plugins.setPluginScopes('pig-review', [])
     await registry.refreshPluginSessions()
     assert.deepEqual(sessions.map((session) => session.reloads), [6, 6, 4])
     assert.equal(hasReview(2), true, 'a busy Chat retains its runtime until idle')

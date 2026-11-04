@@ -148,7 +148,7 @@ async function fixture() {
       { group: 'shortcuts', expectedRevision: before.revision, patch: { sendShortcut: 'shift-enter', bindings: { 'tab.close': null, 'tab.new': 'default', 'file.save': 'Mod+Shift+KeyS' } } },
       { group: 'defaults', expectedRevision: before.revision, patch: { model: { provider: 'test', id: 'real-model' } } },
       ...(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map(thinkingLevel => ({ group: 'defaults' as const, expectedRevision: before.revision, patch: { thinkingLevel } })),
-      { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pi-review': ['project', 'chat'], 'npm-plugin': [] } } },
+      { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pig-review': ['project', 'chat'], 'npm-plugin': [] } } },
       { group: 'mcp', expectedRevision: before.revision, patch: { enabled: { docs: true, files: false } } },
       { group: 'persona', expectedRevision: before.revision, patch: { automatic: false, mood: { pleasantness: -1, energy: 0.4 } } },
       ...SETTINGS_GROUPS.map(group => ({ group, expectedRevision: before.revision, patch: {} }))
@@ -172,8 +172,8 @@ async function fixture() {
         ['defaults', { thinkingLevel: 'invalid' }],
         ['defaults', { model: { provider: 'test' } }], ['defaults', { model: { provider: 'test', id: 'model', apiKey: 'secret' } }],
         ['defaults', { model: null }], ['defaults', { thinkingLevel: null }], ['defaults', { defaultModel: 'model' }],
-        ['plugins', { scopes: { 'pi-review': ['web'] } }], ['plugins', { scopes: { 'pi-review': ['chat', 'chat'] } }],
-        ['plugins', { scopes: { 'pi-review': 'project' } }], ['plugins', { install: 'npm:evil' }],
+        ['plugins', { scopes: { 'pig-review': ['web'] } }], ['plugins', { scopes: { 'pig-review': ['chat', 'chat'] } }],
+        ['plugins', { scopes: { 'pig-review': 'project' } }], ['plugins', { install: 'npm:evil' }],
         ['mcp', { enabled: { docs: 'yes' } }], ['mcp', { servers: { docs: true } }], ['mcp', { enabled: { docs: { command: 'sh' } } }],
         ['persona', { mood: { energy: 2 } }], ['persona', { mood: { pleasantness: -1.5 } }], ['persona', { mood: { joy: 1 } }],
         ['persona', { automatic: 'yes' }], ['persona', { files: { 'SOUL.md': '' } }]
@@ -183,11 +183,11 @@ async function fixture() {
       expect(updateSchema.check(params), JSON.stringify(params)).toBe(false)
       expect(() => tool('settings_update').prepareArguments(params)).toThrow('Invalid settings update')
     }
-    const coercible = { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pi-review': 'project' } } }
+    const coercible = { group: 'plugins', expectedRevision: before.revision, patch: { scopes: { 'pig-review': 'project' } } }
     expect(validateToolArguments(tool('settings_update'), { type: 'toolCall', id: 'coerce', name: 'settings_update', arguments: coercible })).toEqual({
-      ...coercible, patch: { scopes: { 'pi-review': ['project'] } }
+      ...coercible, patch: { scopes: { 'pig-review': ['project'] } }
     })
-    expect(coercible.patch.scopes['pi-review']).toBe('project')
+    expect(coercible.patch.scopes['pig-review']).toBe('project')
 
     // Exercise the real SDK ordering: strict preparation must stop malformed writes before approval or host execution.
     const { Agent } = await import('@earendil-works/pi-agent-core')

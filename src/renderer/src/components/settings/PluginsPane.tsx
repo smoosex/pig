@@ -320,7 +320,7 @@ export function PluginsPane() {
       {selectedPlugin?.settings ? (
         <div className="flex flex-col gap-3">
           {pluginConfigError ? <p role="alert" className="text-sm text-destructive">{pluginConfigError}</p> : null}
-          {selectedPluginId === 'pi-review' ? <SettingsCard>
+          {selectedPluginId === 'pig-review' ? <SettingsCard>
             <SettingsRow title={t('plugins.reviewModel')} description={t('plugins.reviewModelHint')}>
               <ModelThinkingPicker model={reviewModel} models={models}
                 label={hasReviewModel ? `${reviewProvider}/${reviewId}` : undefined}

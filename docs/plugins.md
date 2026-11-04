@@ -14,7 +14,7 @@ Pig does not adapt Pi extension UI or terminal TUI. Extensions run with `ctx.mod
 
 The built-in plugins use Pig-owned surfaces instead:
 
-- **pi-review** uses a dedicated command panel with searchable, keyboard-selectable rows, separate descriptions, a recommended option, and in-panel PR/path/instruction inputs. The current session has its own review indicator. Selection responses use option IDs rather than displayed text.
+- **pig-review** uses a dedicated command panel with searchable, keyboard-selectable rows, separate descriptions, a recommended option, and in-panel PR/path/instruction inputs. The current session has its own review indicator. Selection responses use option IDs rather than displayed text. Model preferences use `plugin-settings/pig-review.json` and the `pig-review` namespace. If that file is absent, the old `pi-review.json` namespace is read; the next save writes the new file. Invalid files fail without fallback or overwrite. Saved enablement scopes remain unchanged.
 - **Observational Memory** sends session-scoped, non-blocking notifications through Pig's private system-plugin channel. Memory status and history keep their existing context-popover entry points. Worker cancellation remains tied to session shutdown.
 - **pig-web** provides `web_search`, `web_fetch`, and `web_read` for search and plain page retrieval. Its Web settings panel manages providers and credentials; tool results stay in the conversation. See [Web](pig-web.md).
 

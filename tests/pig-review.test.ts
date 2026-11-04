@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
-import reviewExtension from '../src/main/plugins/pi-review/index'
+import reviewExtension from '../src/main/plugins/pig-review/index'
 import type { ReviewFeedback, ReviewReturnPhase } from '../src/shared/api'
 import { isReviewReturning, registerSystemUI, type ReviewUI } from '../src/main/plugins/pig-ui'
 
@@ -78,17 +78,17 @@ async function emit(session: Session, event: string, data = {}): Promise<void> {
   for (const handler of session.handlers.get(event) ?? []) await handler({ type: event, ...data }, session.ctx)
 }
 
-test('pi-review: configured models borrow only the review turn and fall back once on failure', async () => {
+test('pig-review: configured models borrow only the review turn and fall back once on failure', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pig-review-model-'))
   const previous = process.env.PIG_DIR
   process.env.PIG_DIR = root
   try {
     await mkdir(join(root, 'plugin-settings'))
-    const settingsPath = join(root, 'plugin-settings', 'pi-review.json')
+    const settingsPath = join(root, 'plugin-settings', 'pig-review.json')
     const original = { provider: 'session', id: 'original' }
     const review = { provider: 'review', id: 'configured' }
     for (const scenario of ['inherit', 'thinking-only', 'success', 'missing', 'no-auth', 'switch-failed', 'auth-error', 'switch-error', 'request-failed', 'aborted', 'manual-change']) {
-      await writeFile(settingsPath, JSON.stringify({ 'pi-review': scenario === 'inherit' ? {} : scenario === 'thinking-only' ? { thinking: 'high' } : { provider: review.provider, modelId: review.id, thinking: 'high' } }))
+      await writeFile(settingsPath, JSON.stringify({ 'pig-review': scenario === 'inherit' ? {} : scenario === 'thinking-only' ? { thinking: 'high' } : { provider: review.provider, modelId: review.id, thinking: 'high' } }))
       let thinking = 'medium'
       const unexpected = new Error('Unexpected model selection failure')
       const session = createSession(`model-${scenario}`)
@@ -162,7 +162,7 @@ test('pi-review: configured models borrow only the review turn and fall back onc
   }
 })
 
-test('pi-review: real agent follow-up queue uses restored session settings before agent_end', async () => {
+test('pig-review: real agent follow-up queue uses restored session settings before agent_end', async () => {
   const { Agent } = await import('@earendil-works/pi-agent-core')
   const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai')
   const root = await mkdtemp(join(tmpdir(), 'pig-review-queue-'))
@@ -178,7 +178,7 @@ test('pi-review: real agent follow-up queue uses restored session settings befor
     }
     const review = { ...original, id: 'review-model' }
     for (const thinkingOnly of [false, true]) {
-      await writeFile(join(root, 'plugin-settings', 'pi-review.json'), JSON.stringify({ 'pi-review': {
+      await writeFile(join(root, 'plugin-settings', 'pig-review.json'), JSON.stringify({ 'pig-review': {
         ...(thinkingOnly ? {} : { provider: review.provider, modelId: review.id }), thinking: 'high'
       } }))
       const session = createSession(`queue-${thinkingOnly}`)
@@ -231,18 +231,18 @@ test('pi-review: real agent follow-up queue uses restored session settings befor
   }
 })
 
-test('pi-review: configuration parse, validation and IO errors abort before review state changes', async () => {
+test('pig-review: configuration parse, validation and IO errors abort before review state changes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pig-review-invalid-settings-'))
   const previous = process.env.PIG_DIR
   process.env.PIG_DIR = root
   try {
     await mkdir(join(root, 'plugin-settings'))
-    const settingsPath = join(root, 'plugin-settings', 'pi-review.json')
+    const settingsPath = join(root, 'plugin-settings', 'pig-review.json')
     const invalid = [
       '{broken', 'null', '[]',
-      JSON.stringify({ 'pi-review': [] }),
-      JSON.stringify({ 'pi-review': { provider: 'only-provider' } }),
-      JSON.stringify({ 'pi-review': { thinking: 'invalid' } })
+      JSON.stringify({ 'pig-review': [] }),
+      JSON.stringify({ 'pig-review': { provider: 'only-provider' } }),
+      JSON.stringify({ 'pig-review': { thinking: 'invalid' } })
     ]
     for (const [index, text] of invalid.entries()) {
       await writeFile(settingsPath, text)
@@ -285,7 +285,7 @@ const reviewSettings = (customInstructions: string) => ({
   data: { customInstructions }
 })
 
-test('pi-review: an active review in one session does not block or leak into another', async () => {
+test('pig-review: an active review in one session does not block or leak into another', async () => {
   const first = createSession('session-a', [reviewState('origin-a')])
   const second = createSession('session-b')
   loadExtension(first)
@@ -304,8 +304,8 @@ test('pi-review: an active review in one session does not block or leak into ano
   assert.equal(second.sent.length, 1)
 })
 
-test('pi-review: unreadable guidelines abort the review before any state is written', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'pig-pi-review-'))
+test('pig-review: unreadable guidelines abort the review before any state is written', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'pig-review-'))
   await mkdir(join(workspace, '.pi'))
   await writeFile(join(workspace, 'REVIEW_GUIDELINES.md'), 'Use tabs.\n')
   await chmod(join(workspace, 'REVIEW_GUIDELINES.md'), 0o000)
@@ -325,8 +325,8 @@ test('pi-review: unreadable guidelines abort the review before any state is writ
   assert.deepEqual(session.appended, [])
 })
 
-test('pi-review: guidelines that are not a regular file are ignored instead of failing the review', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'pig-pi-review-'))
+test('pig-review: guidelines that are not a regular file are ignored instead of failing the review', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'pig-review-'))
   await mkdir(join(workspace, '.pi'))
   await mkdir(join(workspace, 'REVIEW_GUIDELINES.md'))
 
@@ -340,7 +340,7 @@ test('pi-review: guidelines that are not a regular file are ignored instead of f
   assert.equal(session.reviewStates.at(-1), true)
 })
 
-test('pi-review: custom review instructions are read from the asking session only', async () => {
+test('pig-review: custom review instructions are read from the asking session only', async () => {
   const first = createSession('session-a', [reviewSettings('A-only rules')])
   const second = createSession('session-b')
   loadExtension(first)
@@ -359,7 +359,7 @@ test('pi-review: custom review instructions are read from the asking session onl
 })
 
 for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
-  test(`pi-review: ${action} locks only its session until navigation finishes`, async () => {
+  test(`pig-review: ${action} locks only its session until navigation finishes`, async () => {
     const id = `return-${action}`
     const session = createSession(id, [reviewState('origin')], undefined, action)
     const other = createSession(`${id}-other`)
@@ -394,7 +394,7 @@ for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
   })
 }
 
-test('pi-review: host forwards panel errors and feedback without notification events', async () => {
+test('pig-review: host forwards panel errors and feedback without notification events', async () => {
   const { attachSystemUI, detachSystemUI, replyReviewUI, reportReviewError } = await import('../src/main/pi/system-plugin-ui')
   const { reviewUI } = await import('../src/main/plugins/pig-ui')
   const events: import('../src/shared/api').SystemUIEvent[] = []
@@ -416,7 +416,7 @@ test('pi-review: host forwards panel errors and feedback without notification ev
     assert.equal(await editing, undefined)
     reportReviewError('review-host-errors', 'command:end-review', 'Summary failed')
     assert.deepEqual(events.at(-1), { kind: 'review-feedback', sessionId: 'review-host-errors', feedback: { level: 'error', message: 'Summary failed' } })
-    assert.equal(reportReviewError('review-host-errors', '/builtin/pi-review/index.ts', 'Model restoration failed', '/builtin/pi-review/index.ts'), true)
+    assert.equal(reportReviewError('review-host-errors', '/builtin/pig-review/index.ts', 'Model restoration failed', '/builtin/pig-review/index.ts'), true)
     assert.deepEqual(events.at(-1), { kind: 'review-feedback', sessionId: 'review-host-errors', feedback: { level: 'error', message: 'Model restoration failed' } })
     assert.equal(events.some((event) => event.kind === 'notify'), false)
   } finally {
@@ -425,7 +425,7 @@ test('pi-review: host forwards panel errors and feedback without notification ev
 })
 
 for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
-  test(`pi-review: ${action} failures reach inline feedback through Pi command error dispatch`, async () => {
+  test(`pig-review: ${action} failures reach inline feedback through Pi command error dispatch`, async () => {
     const { AgentSession } = await import('@earendil-works/pi-coding-agent')
     const { reportReviewError } = await import('../src/main/pi/system-plugin-ui')
     const id = `failed-${action}`
@@ -461,7 +461,7 @@ for (const action of ['returnOnly', 'returnAndSummarize', 'returnAndFix']) {
 }
 
 for (const scenario of ['missing-cli', 'no-auth', 'pending-changes', 'invalid-ref', 'fetch-failed', 'checkout-failed']) {
-  test(`pi-review: PR ${scenario} stays in the input panel with the failed reference`, async () => {
+  test(`pig-review: PR ${scenario} stays in the input panel with the failed reference`, async () => {
     const session = createSession(`pr-${scenario}`)
     const edits: Array<{ prefill?: string; error?: string }> = []
     let checkoutCount = 0
@@ -499,7 +499,7 @@ for (const scenario of ['missing-cli', 'no-auth', 'pending-changes', 'invalid-re
   })
 }
 
-test('pi-review: PR retry uses the edited reference and unexpected execution errors propagate', async () => {
+test('pig-review: PR retry uses the edited reference and unexpected execution errors propagate', async () => {
   const session = createSession('pr-retry')
   const viewed: string[] = []
   const checkedOut: string[] = []
@@ -538,7 +538,7 @@ test('pi-review: PR retry uses the edited reference and unexpected execution err
 })
 
 for (const outcome of ['cancelled', 'failed', 'menu-cancelled']) {
-  test(`pi-review: ${outcome} return unlocks the composer without clearing review mode`, async () => {
+  test(`pig-review: ${outcome} return unlocks the composer without clearing review mode`, async () => {
     const session = createSession(`return-${outcome}`, [reviewState('origin')], undefined,
       outcome === 'menu-cancelled' ? undefined : 'returnAndSummarize')
     loadExtension(session)

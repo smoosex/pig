@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
-import { reviewSettingsSchema } from '../src/main/plugins/pi-review/settings'
+import { reviewSettingsSchema } from '../src/main/plugins/pig-review/settings'
 import { PERSONA_FILES, type PersonaSnapshot } from '../src/shared/persona'
 import { runSelf } from './helpers/subprocess.ts'
 
@@ -25,7 +25,7 @@ async function fixture(): Promise<void> {
   let rejectScopeChange = false
   let plugins: PluginInfo[] = [
     { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
-    { id: 'pi-review', kind: 'system', name: 'Pi Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
+    { id: 'pig-review', kind: 'system', name: 'Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
     { id: 'pig-persona', kind: 'system', name: 'Persona', source: 'Pig built-in', scopes: ['project', 'chat'], available: true },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
@@ -128,12 +128,12 @@ async function fixture(): Promise<void> {
       assert.equal(install.textContent, '安装')
       assert.equal(sourceInput.disabled, false)
     }
-    const otherGroup = document.querySelector('[aria-label="Pi Review 启用范围"]')!
+    const otherGroup = document.querySelector('[aria-label="Review 启用范围"]')!
     const [, otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
     const first = deferred()
     const second = deferred()
     scopeWaits.set('observational-memory', first.promise)
-    scopeWaits.set('pi-review', second.promise)
+    scopeWaits.set('pig-review', second.promise)
     await act(async () => { chat.click() })
     assert.equal(project.disabled, true)
     assert.equal(chat.disabled, true)
@@ -259,7 +259,7 @@ async function fixture(): Promise<void> {
     await flush()
     assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
 
-    const openReview = document.querySelector<HTMLButtonElement>('[aria-label="配置 Pi Review"]')!
+    const openReview = document.querySelector<HTMLButtonElement>('[aria-label="配置 Review"]')!
     await act(async () => { openReview.click() })
     await flush()
     assert.equal(document.querySelector('[aria-label="Provider"]'), null, 'provider must not be a text input')

@@ -63,8 +63,8 @@ extraResources:
     filter:
       - '**/*.ts'
       - LICENSE
-  - from: src/main/plugins/pi-review
-    to: system-plugins/pi-review
+  - from: src/main/plugins/pig-review
+    to: system-plugins/pig-review
     filter:
       - '**/*.ts'
       - LICENSE
