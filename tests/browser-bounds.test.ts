@@ -1,7 +1,7 @@
 /** Isolated Happy DOM + real React hook; native IPC and the paint clock are the only stand-ins. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { BrowserBounds } from '../src/shared/browser'
+import type { BrowserBounds, BrowserFrame } from '../src/shared/browser'
 import { runSelf } from './helpers/subprocess.ts'
 
 function deferred<T>() {
@@ -27,16 +27,16 @@ async function fixture(scenario: string) {
     observe() {} unobserve() {} disconnect() {}
   } })
 
-  const image = 'data:image/jpeg;base64,YWJj'
+  const image: BrowserFrame = { page: 'data:image/jpeg;base64,YWJj', devtools: 'data:image/jpeg;base64,ZGV2dG9vbHM=' }
   const calls: (BrowserBounds | null)[] = []
-  const freezes: { frame: string | null; signal: AbortSignal }[] = []
+  const freezes: { frame: BrowserFrame | null; signal: AbortSignal }[] = []
   const errors: unknown[] = []
   let native: BrowserBounds | null = null
-  let still: string | null = null
+  let still: BrowserFrame | null = null
   let snapshots = 0
-  let snapshot: () => Promise<string> = async () => image
+  let snapshot: () => Promise<BrowserFrame> = async () => image
   let write: (bounds: BrowserBounds | null) => Promise<void> = async () => {}
-  let freeze: (frame: string | null, signal: AbortSignal) => Promise<void> = async () => {}
+  let freeze: (frame: BrowserFrame | null, signal: AbortSignal) => Promise<void> = async () => {}
   Object.defineProperty(window, 'api', { configurable: true, value: { browser: {
     snapshot: async () => { snapshots++; return snapshot() },
     setBounds: async (_id: string, bounds: BrowserBounds | null) => {
@@ -49,7 +49,7 @@ async function fixture(scenario: string) {
   const { createRoot } = await import('react-dom/client')
   const { useBrowserBounds } = await import('../src/renderer/src/components/browser/useBrowserBounds')
   const report = (error: unknown) => { errors.push(error) }
-  const onFreeze = async (frame: string | null, signal: AbortSignal) => {
+  const onFreeze = async (frame: BrowserFrame | null, signal: AbortSignal) => {
     freezes.push({ frame, signal })
     await freeze(frame, signal)
     if (!signal.aborted) still = frame
@@ -260,7 +260,7 @@ async function fixture(scenario: string) {
       assert.equal(hideCount(), 1, 'hide follows the fulfilled onFreeze paint barrier')
       assert.equal(native, null)
     } else if (scenario === 'stale-snapshot') {
-      const capture = deferred<string>()
+      const capture = deferred<BrowserFrame>()
       snapshot = () => capture.promise
       const content = overlay()
       await settle()
@@ -311,7 +311,7 @@ async function fixture(scenario: string) {
       } })
       try {
         let ready = false
-        const decoding = decodeBrowserFrame(image, new AbortController().signal).then(() => { ready = true })
+        const decoding = decodeBrowserFrame(image.page, new AbortController().signal).then(() => { ready = true })
         await drain()
         assert.equal(ready, false, 'a frame cannot be committed before image decoding finishes')
         decoded.resolve()
@@ -319,14 +319,14 @@ async function fixture(scenario: string) {
         assert.equal(ready, true)
         decoded = deferred<void>()
         const cancelled = new AbortController()
-        const pending = decodeBrowserFrame(image, cancelled.signal)
+        const pending = decodeBrowserFrame(image.page, cancelled.signal)
         cancelled.abort()
         await pending
         decoded.reject(new Error('late discarded decode failure'))
         await drain()
         decoded = deferred<void>()
         const decodeError = new Error('invalid snapshot image')
-        const invalid = decodeBrowserFrame(image, new AbortController().signal)
+        const invalid = decodeBrowserFrame(image.page, new AbortController().signal)
         const rejection = assert.rejects(invalid, error => error === decodeError)
         decoded.reject(decodeError)
         await rejection

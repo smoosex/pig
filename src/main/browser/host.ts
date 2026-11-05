@@ -5,7 +5,7 @@ import { BrowserFocusGuard } from './focus-guard'
 import type { Debugger, View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
   BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
-  type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
+  type BrowserBounds, type BrowserState, type BrowserFrame, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
 import { captureHiddenFrame, captureHiddenPage } from './hidden-screenshot'
 import { hostShortcutBindings } from '../shortcuts'
@@ -768,12 +768,20 @@ export class BrowserHost {
     return { mimeType: 'image/png', data }
   }
 
-  async snapshot(win: BrowserWindow, id: string): Promise<string | null> {
+  async snapshot(win: BrowserWindow, id: string): Promise<BrowserFrame | null> {
     const { owner, page } = this.page(win, id, false)
     if (!page || !page.view.getVisible() || page.state.error || !isBrowserUrl(page.state.url)) return null
-    const image = await page.view.webContents.capturePage()
-    if (!this.alive(owner, page) || image.isEmpty()) return null
-    return `data:image/jpeg;base64,${image.toJPEG(85).toString('base64')}`
+    const tools = page.devtools?.getVisible() ? page.devtools : undefined
+    const [image, toolsImage] = await Promise.all([
+      page.view.webContents.capturePage(),
+      tools?.webContents.capturePage()
+    ])
+    if (!this.alive(owner, page) || (tools && page.devtools !== tools) || image.isEmpty()) return null
+    if (toolsImage?.isEmpty()) throw new Error('Browser DevTools snapshot is empty')
+    return {
+      page: `data:image/jpeg;base64,${image.toJPEG(85).toString('base64')}`,
+      devtools: toolsImage ? `data:image/jpeg;base64,${toolsImage.toJPEG(85).toString('base64')}` : null
+    }
   }
 
   /** Trusts the certificate the page just rejected, for its host only, and loads the page again. */

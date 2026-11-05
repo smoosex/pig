@@ -1059,6 +1059,33 @@ describe('browser host', () => {
     host.closeWindow(owner)
   })
 
+  test('overlay snapshots include visible DevTools and discard a closed DevTools capture', async () => {
+    const { host, owner, views } = fixture()
+    await host.navigate(owner, 'a', 'https://example.com')
+    host.setBounds(owner, 'a', bounds)
+    const pageImage = `data:image/jpeg;base64,${Buffer.from('jpg').toString('base64')}`
+    expect(await host.snapshot(owner, 'a')).toEqual({ page: pageImage, devtools: null })
+    host.inspect(owner, 'a')
+    host.setBounds(owner, 'a', { ...bounds, devtools: { height: 80 } })
+    const tools = views[1]!.webContents
+    const image = await tools.capturePage()
+    tools.capturePage = async () => ({ ...image, toJPEG: () => Buffer.from('tools') })
+    expect(await host.snapshot(owner, 'a')).toEqual({
+      page: pageImage, devtools: `data:image/jpeg;base64,${Buffer.from('tools').toString('base64')}`
+    })
+    tools.capturePage = async () => { throw new Error('tools capture failed') }
+    await expect(host.snapshot(owner, 'a')).rejects.toThrow('tools capture failed')
+    tools.capturePage = async () => ({ ...image, isEmpty: () => true })
+    await expect(host.snapshot(owner, 'a')).rejects.toThrow('DevTools snapshot is empty')
+    let finish!: (value: typeof image) => void
+    tools.capturePage = () => new Promise(resolve => { finish = resolve })
+    const pending = host.snapshot(owner, 'a')
+    host.inspect(owner, 'a')
+    finish(image)
+    expect(await pending).toBeNull()
+    host.closeWindow(owner)
+  })
+
   test('capture rejects blank/loading pages and returns PNG; capture race rejects', async () => {
     const { host, owner, views } = fixture()
     await expect(host.capture(owner, 'a')).rejects.toThrow()

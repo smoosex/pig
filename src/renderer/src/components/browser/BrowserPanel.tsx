@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, History, LoaderCircle, MessageSquareShare, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
-import type { BrowserScreenshot, BrowserState } from '../../../../shared/browser'
+import type { BrowserFrame, BrowserScreenshot, BrowserState } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -77,7 +77,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   const browserCwd = tabs.find((tab) => tab.id === browserId)?.cwd || null
   // Inside a project only the browser's own worktree is a sensible target; chat-home browsers keep every session.
   const destinations = tabs.filter((tab) => browserCwd ? tab.kind === 'project' && tab.cwd === browserCwd : tab.kind === 'project' || tab.kind === 'chat')
-  const [frozen, setFrozen] = useState<string | null>(null)
+  const [frozen, setFrozen] = useState<BrowserFrame | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -144,8 +144,11 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   useEffect(() => {
     if (!active) invalidateCapture()
   }, [active, invalidateCapture])
-  const freeze = useCallback(async (frame: string | null, signal: AbortSignal) => {
-    if (frame !== null) await decodeBrowserFrame(frame, signal)
+  const freeze = useCallback(async (frame: BrowserFrame | null, signal: AbortSignal) => {
+    if (frame !== null) await Promise.all([
+      decodeBrowserFrame(frame.page, signal),
+      ...(frame.devtools ? [decodeBrowserFrame(frame.devtools, signal)] : [])
+    ])
     if (!alive.current || signal.aborted) return
     // Commit the decoded placeholder before its paint barrier; setState alone is not a DOM handoff.
     flushSync(() => setFrozen(frame))
@@ -376,8 +379,12 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
       <CookieImportDialog browserId={browserId} url={state?.url ?? ''} open={cookieOpen} onOpenChange={setCookieOpen} onChanged={reloadCookies} />
       {(error || state?.error) && !certificate ? <Alert variant="destructive" className="mx-2 mt-2 w-auto text-xs"><AlertDescription>{error || state?.error}</AlertDescription></Alert> : null}
       <div ref={viewport} data-browser-viewport className="relative min-h-0 flex-1 overflow-hidden">
-        {frozen && state?.url && !certificate ? <img src={frozen} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
-          style={{ '--devtools-ratio': ratio, height: state.devtools ? `calc(100% - ${DOCK_BOTTOM})` : '100%' } as CSSProperties} /> : null}
+        {frozen && state?.url && !certificate ? <>
+          <img src={frozen.page} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 top-0 w-full object-contain object-top select-none"
+            style={{ '--devtools-ratio': ratio, height: state.devtools ? `calc(100% - ${DOCK_BOTTOM})` : '100%' } as CSSProperties} />
+          {frozen.devtools && state.devtools ? <img src={frozen.devtools} alt="" draggable={false} className="pointer-events-none absolute inset-x-0 bottom-0 w-full object-contain object-top select-none"
+            style={{ '--devtools-ratio': ratio, height: DOCK_BOTTOM } as CSSProperties} /> : null}
+        </> : null}
         {!state?.url && !certificate ? <BrowserTopSites onOpenUrl={(url) => openUrl(url, { focus: true })} /> : null}
         {/* Like Chrome's interstitial; the native page is hidden while it shows, so this replaces it. */}
         {certificate ? <div className="flex size-full items-center justify-center overflow-auto p-6">

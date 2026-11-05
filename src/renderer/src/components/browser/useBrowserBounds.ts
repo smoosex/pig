@@ -1,6 +1,6 @@
 /** Native views sit above DOM overlays. One ordered queue owns all renderer visibility transitions. */
 import { useLayoutEffect, type RefObject } from 'react'
-import type { BrowserBounds } from '../../../../shared/browser'
+import type { BrowserBounds, BrowserFrame } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
 import { waitForBrowserPaint } from './browser-frame'
 
@@ -19,7 +19,7 @@ export function useBrowserBounds(
   visible: boolean,
   viewport: RefObject<HTMLDivElement | null>,
   onError: (error: unknown) => void,
-  onFreeze: (frame: string | null, signal: AbortSignal) => void | Promise<void>
+  onFreeze: (frame: BrowserFrame | null, signal: AbortSignal) => void | Promise<void>
 ): void {
   useLayoutEffect(() => {
     const token = {}

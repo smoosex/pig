@@ -50,7 +50,7 @@ async function fixture() {
     capture: async () => { captures++; return new Promise((resolve) => { capture = resolve }) },
     snapshot: async (browserId) => {
       if (browserId === 'two' && snapshotFailure) throw new Error('snapshot failed')
-      return 'data:image/jpeg;base64,YWJj'
+      return { page: 'data:image/jpeg;base64,YWJj', devtools: 'data:image/jpeg;base64,ZGV2dG9vbHM=' }
     },
     copyUrl: async (id) => { pageActions.push(['copyUrl', id]) },
     openExternal: async (id) => { pageActions.push(['openExternal', id]) },
@@ -146,6 +146,23 @@ async function fixture() {
   assert.equal(ratio(), '0.45', 'another pane\'s drag is ignored')
   await act(async () => { resizeDevtools('a', 200) })
   assert.equal(ratio(), '0.83', 'dragging the native DevTools edge follows the pointer')
+  const sidebar = document.createElement('div')
+  sidebar.setAttribute('data-sidebar-overlay', '')
+  sidebar.getBoundingClientRect = () => new DOMRect(800, 0, 200, 800)
+  document.body.append(sidebar)
+  await flush()
+  await flush()
+  const stills = [...container.querySelectorAll<HTMLImageElement>('[data-browser-viewport] img')]
+  assert.equal(stills.length, 2, 'sidebar occlusion preserves both native views')
+  assert.equal(stills[0]!.src, 'data:image/jpeg;base64,YWJj')
+  assert.equal(stills[1]!.src, 'data:image/jpeg;base64,ZGV2dG9vbHM=')
+  assert.ok(stills[1]!.classList.contains('bottom-0'), 'DevTools placeholder stays at the bottom')
+  assert.equal(stills[1]!.style.getPropertyValue('--devtools-ratio'), divider.style.getPropertyValue('--devtools-ratio'))
+  assert.equal(appliedBounds.get('a'), null, 'both placeholders mount before native views are hidden')
+  sidebar.remove()
+  await flush()
+  await flush()
+  assert.equal(container.querySelectorAll('[data-browser-viewport] img').length, 0, 'restoring native views clears both placeholders')
   await act(async () => { pushState(state('a', 'fresh')) })
   assert.equal(container.querySelector('[data-devtools-divider]'), null)
   const certificate = { url: 'https://intranet.test/sso', host: 'intranet.test', error: 'net::ERR_CERT_AUTHORITY_INVALID', issuer: 'Intranet CA', subject: 'intranet.test', validExpiry: 1_900_000_000, fingerprint: 'sha256/A' }

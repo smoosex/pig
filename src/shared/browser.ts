@@ -75,6 +75,12 @@ export interface BrowserHistoryPage {
   next: BrowserHistoryCursor | null
 }
 
+/** Decoded together before hiding the two independent native views. */
+export interface BrowserFrame {
+  page: string
+  devtools: string | null
+}
+
 export interface BrowserScreenshot {
   mimeType: 'image/png'
   data: string
@@ -175,7 +181,7 @@ export interface BrowserApi {
   removeAnnotations(browserId: string, ids: string[]): Promise<void>
   capture(browserId: string): Promise<BrowserScreenshot>
   /** Best-effort still frame shown while DOM overlays force the native view hidden; null when not ready. */
-  snapshot(browserId: string): Promise<string | null>
+  snapshot(browserId: string): Promise<BrowserFrame | null>
   copyUrl(browserId: string): Promise<void>
   openExternal(browserId: string): Promise<void>
   inspect(browserId: string): Promise<void>
