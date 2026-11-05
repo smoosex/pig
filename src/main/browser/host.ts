@@ -1,21 +1,23 @@
 /** Native previews belong to a window, not the agent runtime. Hidden views are LRU cached;
  * document tokens invalidate delayed guest selections on every main-frame navigation. */
 import { randomUUID } from 'node:crypto'
-import type { View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
+import type { Debugger, View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
   BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
   type BrowserBounds, type BrowserState, type BrowserScreenshot, type BrowserAnnotation, type BrowserPickerOptions
 } from '../../shared/browser'
-import { captureHiddenPage } from './hidden-screenshot'
+import { captureHiddenFrame, captureHiddenPage } from './hidden-screenshot'
 import { hostShortcutBindings } from '../shortcuts'
 import { findShortcut, HOST_SHORTCUT_ACTIONS, strokeToAccelerator } from '../../shared/shortcuts'
 import { executeBrowserScript } from './browser-script'
 import { attachBrowserNetwork, type BrowserNetworkLog, type BrowserNetworkEntry } from './network-log'
 import { uploadBrowserFiles, type BrowserUploadFile } from './agent-upload'
-import { waitForBrowserOperation } from './browser-debugger'
+import { waitForBrowserOperation, withBrowserDebugger } from './browser-debugger'
 import { attachBrowserNetworkCapture, type BrowserNetworkCapture } from './network-capture'
 import type { BrowserNetworkCaptureAction, BrowserNetworkCaptureOptions } from '../plugins/pig-browser-host'
-import { interactWithPage, type BrowserInteraction } from './agent-interaction'
+import { AGENT_WORLD_ID } from './agent-snapshot'
+import { waitForBrowserMotion } from './browser-motion'
+import { interactWithPage, pinBrowserScreenshot, type BrowserInteraction } from './agent-interaction'
 import { browserDipBounds, isBrowserElement, isBrowserUrl, normalizeBrowserUrl, validateBounds, validatePickerOptions } from './validation'
 
 /** Page lifecycle the host reports outward; browser history listens here. */
@@ -53,6 +55,9 @@ interface Page {
   pendingUploads: Set<AbortController>
   /** Keyboard focus goes to the page once it is next laid out visibly (dialogs hide it meanwhile). */
   focusOnShow?: boolean
+  agentScreenshotId?: string
+  agentRevision?: number
+  inputReadyDocument?: string
 }
 
 export interface BrowserUploadOptions {
@@ -477,6 +482,7 @@ export class BrowserHost {
     })
     wc.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
       if (!isMainFrame) return
+      page.agentScreenshotId = undefined
       cancelUploads(page, 'Browser page changed; upload approval cancelled')
       if (!inPlace) {
         page.devtoolsDragging = false
@@ -521,6 +527,7 @@ export class BrowserHost {
     })
     wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (isMainFrame) {
+        page.agentScreenshotId = undefined
         cancelUploads(page, 'Browser page changed; upload approval cancelled')
         page.state.url = url
         owner.urls.set(page.state.browserId, url)
@@ -711,10 +718,23 @@ export class BrowserHost {
     }
   }
 
-  async capture(win: BrowserWindow, id: string): Promise<BrowserScreenshot> {
+  async capture(win: BrowserWindow, id: string, sessionId?: string): Promise<BrowserScreenshot & { screenshotId?: string; viewport?: { width: number; height: number } }> {
     const { owner, page } = this.page(win, id, false)
     if (!page || page.state.loading || page.view.webContents.isLoading() || page.state.error || !isBrowserUrl(page.state.url)) throw new Error('Browser page is not ready')
     const documentId = page.state.documentId
+    const screenshotId = sessionId ? randomUUID() : undefined
+    const assertCurrent = sessionId ? this.agentPage(win, id, sessionId).assertCurrent : () => {}
+    const check = () => {
+      assertCurrent()
+      if (screenshotId !== page.agentScreenshotId) throw new Error('Screenshot invalidated during capture; take a new browser_screenshot')
+    }
+    if (screenshotId) {
+      page.agentScreenshotId = screenshotId
+      await withBrowserDebugger(page.view.webContents, api => this.prepareAgentPage(page, api, check))
+      check()
+      await executeBrowserScript(page.view.webContents, AGENT_WORLD_ID, `(${pinBrowserScreenshot.toString()})(${JSON.stringify(screenshotId)})`)
+      check()
+    }
     let data: string
     if (page.view.getVisible()) {
       const image = await page.view.webContents.capturePage()
@@ -724,6 +744,12 @@ export class BrowserHost {
       data = await captureHiddenPage(page.view.webContents)
     }
     if (!this.alive(owner, page) || documentId !== page.state.documentId || page.state.loading) throw new Error('Browser page changed during capture')
+    if (screenshotId) {
+      const viewport = await executeBrowserScript<{ width: number; height: number }>(page.view.webContents, AGENT_WORLD_ID,
+        `(${pinBrowserScreenshot.toString()})(${JSON.stringify(screenshotId)}, true)`)
+      check()
+      return { mimeType: 'image/png', data, screenshotId, viewport }
+    }
     return { mimeType: 'image/png', data }
   }
 
@@ -794,6 +820,8 @@ export class BrowserHost {
     const restoreUrl = !retained.page && sessionId !== null ? retained.owner.urls.get(id) : undefined
     const { owner, page } = sessionId === null ? retained : this.page(win, id)
     if (page && owner.agents.get(id) !== (sessionId ?? undefined)) {
+      page.agentScreenshotId = undefined
+      page.agentRevision = (page.agentRevision ?? 0) + 1
       cancelUploads(page, 'Browser control was released or transferred; upload approval cancelled')
       page.networkCapture?.dispose()
       page.networkCapture = undefined
@@ -811,23 +839,42 @@ export class BrowserHost {
     const { owner, page } = this.page(win, id, false)
     if (!page) throw new Error('Browser page is not open')
     const documentId = page.state.documentId
+    const revision = page.agentRevision
     const assertCurrent = () => {
       signal?.throwIfAborted()
       if (!this.alive(owner, page) || documentId !== page.state.documentId) throw new Error('Browser page changed during interaction')
-      if (owner.agents.get(id) !== sessionId) throw new Error('Browser control was released or transferred')
+      if (owner.agents.get(id) !== sessionId || page.agentRevision !== revision) throw new Error('Browser control was released or transferred')
       if (!isBrowserUrl(page.state.url) || page.state.error) throw new Error('Browser page is not ready')
     }
     assertCurrent()
     return { page, assertCurrent }
   }
 
+  private async prepareAgentPage(page: Page, api: Debugger, check: () => void): Promise<void> {
+    check()
+    const documentId = page.state.documentId
+    if (page.inputReadyDocument === documentId) return
+    // View visibility does not guarantee a compositor frame (e.g. a minimized owner window).
+    await captureHiddenFrame(api)
+    check()
+    await waitForBrowserMotion(page.view.webContents, check)
+    check()
+    page.inputReadyDocument = documentId
+  }
+
   async interact(win: BrowserWindow, id: string, sessionId: string, request: BrowserInteraction, signal?: AbortSignal): Promise<void> {
     const { page, assertCurrent } = this.agentPage(win, id, sessionId, signal)
-    await interactWithPage(page.view.webContents, request, signal, assertCurrent)
+    const coordinate = (request.action === 'click' || request.action === 'hover') && request.ref === undefined
+    if (coordinate && (!request.screenshotId || request.screenshotId !== page.agentScreenshotId)) throw new Error('Missing or stale screenshot; take a new browser_screenshot')
+    // Consume on any interaction: a click, key or scroll can change the screenshot's target.
+    page.agentScreenshotId = undefined
+    await interactWithPage(page.view.webContents, request, signal, assertCurrent,
+      api => this.prepareAgentPage(page, api, assertCurrent))
   }
 
   async upload(win: BrowserWindow, id: string, sessionId: string, ref: string, files: readonly string[], options: BrowserUploadOptions): Promise<void> {
     const { page, assertCurrent } = this.agentPage(win, id, sessionId, options.signal)
+    page.agentScreenshotId = undefined
     const cancellation = new AbortController()
     page.pendingUploads.add(cancellation)
     const signal = options.signal ? AbortSignal.any([options.signal, cancellation.signal]) : cancellation.signal

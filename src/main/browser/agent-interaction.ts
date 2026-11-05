@@ -1,19 +1,68 @@
 /** Main-frame input uses snapshot refs in world 1207; no native view/window focus is requested.
  * DOM preparation is serialized without closures. CDP input shares ownership with screenshots. */
-import type { WebContents } from 'electron'
+import type { Debugger, WebContents } from 'electron'
 import { AGENT_WORLD_ID } from './agent-snapshot'
 import { withBrowserDebugger } from './browser-debugger'
 import { executeBrowserScript } from './browser-script'
+import { readBrowserMotion, waitForBrowserMotion } from './browser-motion'
+
+export type BrowserPointerTarget = { ref: string; x?: never; y?: never; screenshotId?: never }
+  | { ref?: never; x: number; y: number; screenshotId: string }
 
 export type BrowserInteraction =
-  | { action: 'click'; ref: string }
+  | ({ action: 'click'; button?: 'left' | 'right' | 'middle' } & BrowserPointerTarget)
+  | ({ action: 'hover' } & BrowserPointerTarget)
   | { action: 'type'; ref: string; text: string; replace?: boolean }
   | { action: 'press'; key: string; ref?: string }
   | { action: 'scroll'; ref?: string; deltaX?: number; deltaY: number }
   | { action: 'select'; ref: string; values: string[] }
 
+/** Pins CSS viewport coordinates, not image pixels. Scroll/resize invalidates even if later undone. */
+export function pinBrowserScreenshot(id: string, validate = false): { width: number; height: number } {
+  const scope = globalThis as unknown as { __pigAgentScreenshot?: { id: string; valid(): boolean; dispose(): void } }
+  const geometry = () => JSON.stringify([innerWidth, innerHeight, scrollX, scrollY, devicePixelRatio,
+    window.visualViewport?.offsetLeft, window.visualViewport?.offsetTop, window.visualViewport?.scale])
+  if (validate) {
+    if (scope.__pigAgentScreenshot?.id !== id) throw new Error('Missing or stale screenshot; take a new browser_screenshot')
+    if (!scope.__pigAgentScreenshot.valid()) throw new Error('Screenshot viewport changed; take a new browser_screenshot')
+  } else {
+    scope.__pigAgentScreenshot?.dispose()
+    const initial = geometry()
+    let changed = false
+    const cancel = new AbortController()
+    const invalidate = () => { changed = true }
+    addEventListener('scroll', invalidate, { capture: true, signal: cancel.signal })
+    addEventListener('resize', invalidate, { signal: cancel.signal })
+    window.visualViewport?.addEventListener('resize', invalidate, { signal: cancel.signal })
+    window.visualViewport?.addEventListener('scroll', invalidate, { signal: cancel.signal })
+    const shadowOffsets: Array<[Element, number, number]> = []
+    const watchRoots = (parent: Document | ShadowRoot) => {
+      for (const element of parent.querySelectorAll('*')) {
+        if (parent instanceof ShadowRoot) shadowOffsets.push([element, element.scrollLeft, element.scrollTop])
+        if (!element.shadowRoot) continue
+        // Scroll is not composed; capture on each open root. Offsets also catch pending events.
+        element.shadowRoot.addEventListener('scroll', invalidate, { capture: true, signal: cancel.signal })
+        watchRoots(element.shadowRoot)
+      }
+    }
+    watchRoots(document)
+    scope.__pigAgentScreenshot = {
+      id,
+      valid: () => {
+        if (initial !== geometry() || shadowOffsets.some(([element, x, y]) => element.scrollLeft !== x || element.scrollTop !== y)) changed = true
+        return !changed
+      },
+      dispose: () => cancel.abort()
+    }
+  }
+  return { width: innerWidth, height: innerHeight }
+}
+
 /** Self-contained: evaluated in the same isolated world as snapshotPage. Never returns field values. */
 function prepareInteraction(request: BrowserInteraction, validateFocusOnly = false): { x: number; y: number } {
+  if (request.action === 'click' || request.action === 'hover') {
+    if (request.ref !== undefined && (request.x !== undefined || request.y !== undefined || request.screenshotId !== undefined)) throw new Error('Use a ref or screenshot coordinates, not both')
+  }
   const refs = (globalThis as unknown as { __pigAgentRefs?: Map<string, Element> }).__pigAgentRefs
   let element: Element | undefined
   if ('ref' in request && request.ref !== undefined) {
@@ -22,6 +71,18 @@ function prepareInteraction(request: BrowserInteraction, validateFocusOnly = fal
   }
   const enabled = (el: Element) => {
     if (el.matches(':disabled') || el.closest('[aria-disabled="true"],[inert]')) throw new Error('Browser element is disabled')
+  }
+  const checkFileActivation = (target: Element) => {
+    if (request.action !== 'click') return
+    let node: Element | null = target
+    while (node) {
+      const control = node instanceof HTMLLabelElement ? node.control : node
+      if (control instanceof HTMLInputElement && control.type === 'file') {
+        throw new Error('Clicking a file input or its label opens the native file dialog; use browser_upload instead')
+      }
+      const root = node.getRootNode()
+      node = node.assignedSlot ?? node.parentElement ?? (root instanceof ShadowRoot ? root.host : null)
+    }
   }
   const activeElement = () => {
     let active = document.activeElement
@@ -41,10 +102,24 @@ function prepareInteraction(request: BrowserInteraction, validateFocusOnly = fal
     checkFocus()
     return { x: 0, y: 0 }
   }
-  if (!element && ['click', 'type', 'select'].includes(request.action)) throw new Error('Browser ref is required')
-  if (request.action === 'click' && element instanceof HTMLInputElement && element.type === 'file') {
-    throw new Error('Clicking a file input opens the native file dialog; use browser_upload instead')
+  if ((request.action === 'click' || request.action === 'hover') && request.ref === undefined) {
+    const pin = (globalThis as unknown as { __pigAgentScreenshot?: { id: string; valid(): boolean } }).__pigAgentScreenshot
+    if (!pin || pin.id !== request.screenshotId) throw new Error('Missing or stale screenshot; take a new browser_screenshot')
+    if (!pin.valid()) throw new Error('Screenshot viewport changed; take a new browser_screenshot')
+    if (!Number.isFinite(request.x) || !Number.isFinite(request.y) || request.x < 0 || request.y < 0 || request.x >= innerWidth || request.y >= innerHeight) throw new Error('Browser coordinates are outside the CSS viewport')
+    let hit = document.elementFromPoint(request.x, request.y)
+    while (hit?.shadowRoot) {
+      const next = hit.shadowRoot.elementFromPoint(request.x, request.y)
+      if (!next || next === hit) break
+      hit = next
+    }
+    if (!hit || ['IFRAME', 'FRAME'].includes(hit.tagName)) throw new Error('Coordinate target is missing or inside an unsupported frame')
+    enabled(hit)
+    checkFileActivation(hit)
+    return { x: request.x, y: request.y }
   }
+  if (!element && ['click', 'hover', 'type', 'select'].includes(request.action)) throw new Error('Browser ref is required')
+  if (element) checkFileActivation(element)
   if (element) element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
   let x = innerWidth / 2
   let y = innerHeight / 2
@@ -62,6 +137,7 @@ function prepareInteraction(request: BrowserInteraction, validateFocusOnly = fal
       if (!next || next === hit) break
       hit = next
     }
+    if (hit) checkFileActivation(hit)
     while (hit && hit !== element) {
       const root = hit.getRootNode()
       hit = hit.assignedSlot ?? hit.parentElement ?? (root instanceof ShadowRoot ? root.host : null)
@@ -165,7 +241,8 @@ export function browserKeyEvent(value: string, platform: NodeJS.Platform = proce
 }
 
 export async function interactWithPage(
-  contents: WebContents, request: BrowserInteraction, signal: AbortSignal | undefined, assertCurrent: () => void
+  contents: WebContents, request: BrowserInteraction, signal: AbortSignal | undefined, assertCurrent: () => void,
+  preparePage?: (api: Debugger) => Promise<void>
 ): Promise<void> {
   const check = () => { signal?.throwIfAborted(); assertCurrent() }
   const checked = async <T>(start: () => Promise<T>): Promise<T> => {
@@ -178,8 +255,10 @@ export async function interactWithPage(
   }
   check()
   const key = request.action === 'press' ? browserKeyEvent(request.key) : undefined
+  if (request.action === 'click' && request.button !== undefined && !['left', 'right', 'middle'].includes(request.button)) throw new Error('Unsupported mouse button')
   if (request.action === 'scroll' && (!Number.isFinite(request.deltaY) || !Number.isFinite(request.deltaX ?? 0))) throw new Error('Scroll deltas must be finite')
   await checked(() => withBrowserDebugger(contents, async api => {
+    if (preparePage) await checked(() => preparePage(api))
     const point = await checked(() => executeBrowserScript<{ x: number; y: number }>(contents, AGENT_WORLD_ID,
       `(${prepareInteraction.toString()})(${JSON.stringify(request)})`))
     if (request.action === 'type' || request.action === 'press') {
@@ -189,15 +268,22 @@ export async function interactWithPage(
         `(${prepareInteraction.toString()})(${JSON.stringify(request)}, true)`))
     }
     const command = (method: string, params: Record<string, unknown>) => checked(() => api.sendCommand(method, params))
-    if (request.action === 'click') {
+    if (request.action === 'click' || request.action === 'hover') {
       await command('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
       check()
+      if (request.action === 'hover') return
+      const button = request.button ?? 'left'
+      if (request.ref === undefined) {
+        // Hover handlers can scroll or resize before the press reaches Chromium.
+        await checked(() => executeBrowserScript(contents, AGENT_WORLD_ID,
+          `(${prepareInteraction.toString()})(${JSON.stringify(request)})`))
+      }
       // Release even when cancellation/navigation wins after press. Cleanup must not be gated by
       // assertCurrent: it clears Chromium's held input state, not another document's DOM refs.
       try {
-        await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
+        await command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button, clickCount: 1 })
       } finally {
-        await api.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 })
+        await api.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button, clickCount: 1 })
       }
       check()
     } else if (request.action === 'type') {
@@ -210,7 +296,9 @@ export async function interactWithPage(
       }
       check()
     } else if (request.action === 'scroll') {
+      await checked(() => readBrowserMotion(contents, point))
       await command('Input.dispatchMouseEvent', { type: 'mouseWheel', ...point, deltaX: request.deltaX ?? 0, deltaY: request.deltaY })
+      await waitForBrowserMotion(contents, check)
     }
   }, signal))
 }

@@ -315,6 +315,21 @@ describe('browser agent control', () => {
     await expect(f.controller.wait('s1', {})).rejects.toThrow('timed out')
   })
 
+  test('screenshots report the single-use ID and CSS dimensions and pass the owner to capture', async () => {
+    const f = fixture()
+    f.add('browser:a', { url: 'https://example.test/' })
+    await f.controller.open('s1', { browserId: 'browser:a' })
+    f.host.capture = async (_win, id, owner) => {
+      expect(id).toBe('browser:a')
+      expect(owner).toBe('s1')
+      return { mimeType: 'image/png', data: 'PNG', screenshotId: 'shot', viewport: { width: 1280, height: 800 } }
+    }
+    const shot = await f.controller.screenshot('s1')
+    expect(shot.text).toContain('Screenshot ID: shot')
+    expect(shot.text).toContain('1280 × 800')
+    expect(shot.text).toContain('CSS pixels, not image pixels')
+  })
+
   for (const operation of ['snapshot', 'screenshot'] as const) {
     test(`${operation} cancellation stops waiting for a blocked page operation`, async () => {
       const f = fixture()

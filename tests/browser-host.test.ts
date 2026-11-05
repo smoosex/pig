@@ -801,17 +801,20 @@ describe('browser host', () => {
       return { x: 10, y: 10 }
     }
     await expect(host.interact(owner, 'browser:a', 'session-1', click)).rejects.toThrow('released')
-    expect(contents.debuggerCommands).toHaveLength(0)
+    expect(contents.debuggerCommands).toEqual([['Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }]])
+    contents.debuggerCommands = []
     host.setAgent(owner, 'browser:a', 'session-1')
     contents.evaluation = async () => {
       contents.emit('did-start-navigation', {}, 'https://example.test/next', false, true)
       return { x: 10, y: 10 }
     }
     await expect(host.interact(owner, 'browser:a', 'session-1', click)).rejects.toThrow('page changed')
-    expect(contents.debuggerCommands).toHaveLength(0)
-    contents.evaluation = async () => ({ x: 10, y: 10 })
+    expect(contents.debuggerCommands).toEqual([['Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }]])
+    contents.debuggerCommands = []
+    contents.evaluation = async () => contents.evaluated.at(-1)?.[1].includes('browserMotionState') ? 'stable' : { x: 10, y: 10 }
     await host.interact(owner, 'browser:a', 'session-1', click)
     expect(contents.debuggerCommands).toEqual([
+      ['Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }],
       ['Input.dispatchMouseEvent', { type: 'mouseMoved', x: 10, y: 10 }],
       ['Input.dispatchMouseEvent', { type: 'mousePressed', x: 10, y: 10, button: 'left', clickCount: 1 }],
       ['Input.dispatchMouseEvent', { type: 'mouseReleased', x: 10, y: 10, button: 'left', clickCount: 1 }]
@@ -907,6 +910,89 @@ describe('browser host', () => {
     expect(view.visible).toBe(false)
     expect(view.webContents.debuggerAttached).toBe(false)
     expect(view.webContents.debuggerCommands).toEqual([['Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }]])
+  })
+
+  test('hidden input produces a frame once per document, retries failures and never activates the view', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'hidden', 's1')
+    await host.navigate(owner, 'hidden', 'https://example.test/')
+    const contents = views[0]!.webContents
+    contents.evaluation = async () => contents.evaluated.at(-1)?.[1].includes('browserMotionState') ? 'stable' : { x: 10, y: 20 }
+    const click = { action: 'click' as const, ref: 'e1' }
+    const send = contents.debugger.sendCommand
+    contents.debugger.sendCommand = async () => { throw new Error('frame failed') }
+    await expect(host.interact(owner, 'hidden', 's1', click)).rejects.toThrow('frame failed')
+    expect(contents.debuggerCommands).toEqual([])
+    contents.debugger.sendCommand = send
+    await host.interact(owner, 'hidden', 's1', click)
+    await host.interact(owner, 'hidden', 's1', { action: 'hover', ref: 'e1' })
+    const methods = () => contents.debuggerCommands.map(command => (command as unknown[])[0])
+    expect(methods()).toEqual(['Page.captureScreenshot', ...Array(4).fill('Input.dispatchMouseEvent')])
+    await host.navigate(owner, 'hidden', 'https://example.test/next')
+    await host.interact(owner, 'hidden', 's1', click)
+    expect(methods().filter(method => method === 'Page.captureScreenshot')).toHaveLength(2)
+    expect(views[0]!.visible).toBe(false)
+    expect(contents.focusCalls).toBe(0)
+    host.closeWindow(owner)
+  })
+
+  test('visible views also produce a frame once per document before agent input', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'visible', 's1')
+    host.setBounds(owner, 'visible', bounds)
+    await host.navigate(owner, 'visible', 'https://example.test/')
+    const contents = views[0]!.webContents
+    contents.evaluation = async () => contents.evaluated.at(-1)?.[1].includes('browserMotionState') ? 'stable' : { x: 10, y: 20 }
+    expect(views[0]!.visible).toBe(true)
+    await host.interact(owner, 'visible', 's1', { action: 'click', ref: 'e1' })
+    await host.interact(owner, 'visible', 's1', { action: 'hover', ref: 'e1' })
+    const methods = contents.debuggerCommands.map(command => (command as unknown[])[0])
+    expect(methods).toEqual(['Page.captureScreenshot', ...Array(4).fill('Input.dispatchMouseEvent')])
+    expect(contents.focusCalls).toBe(0)
+    host.closeWindow(owner)
+  })
+
+  test('agent screenshots bind coordinates to one interaction, document and control lease', async () => {
+    const { host, owner, views } = fixture()
+    host.setAgent(owner, 'a', 's1')
+    await host.navigate(owner, 'a', 'https://example.test/')
+    const contents = views[0]!.webContents
+    contents.evaluation = async () => {
+      const code = contents.evaluated.at(-1)?.[1] ?? ''
+      return code.includes('browserMotionState') ? 'stable' : code.includes('pinBrowserScreenshot')
+        ? { width: 1280, height: 800 } : { x: 10, y: 20 }
+    }
+    const shot = await host.capture(owner, 'a', 's1')
+    const scripts = contents.evaluated.map(([, code]) => code)
+    expect(scripts.findIndex(code => code.includes('browserMotionState'))).toBeLessThan(scripts.findIndex(code => code.includes('pinBrowserScreenshot')))
+    expect(shot.viewport).toEqual({ width: 1280, height: 800 })
+    expect(shot.screenshotId).toBeString()
+    const point = { x: 10, y: 20, screenshotId: shot.screenshotId! }
+    await host.interact(owner, 'a', 's1', { action: 'hover', ...point })
+    await expect(host.interact(owner, 'a', 's1', { action: 'click', ...point })).rejects.toThrow('stale screenshot')
+    const released = await host.capture(owner, 'a', 's1')
+    host.setAgent(owner, 'a', null)
+    host.setAgent(owner, 'a', 's1')
+    await expect(host.interact(owner, 'a', 's1', { action: 'click', ...point, screenshotId: released.screenshotId! })).rejects.toThrow('stale screenshot')
+    const navigated = await host.capture(owner, 'a', 's1')
+    contents.emit('did-navigate-in-page', {}, 'https://example.test/#next', true)
+    await expect(host.interact(owner, 'a', 's1', { action: 'click', ...point, screenshotId: navigated.screenshotId! })).rejects.toThrow('stale screenshot')
+    let finish!: () => void
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    contents.capturePage = async () => {
+      entered()
+      await new Promise<void>(resolve => { finish = resolve })
+      return { isEmpty: () => false, toPNG: () => Buffer.from('png'), toJPEG: () => Buffer.from('jpg') }
+    }
+    host.setBounds(owner, 'a', bounds)
+    const pending = host.capture(owner, 'a', 's1')
+    await started
+    host.setAgent(owner, 'a', null)
+    host.setAgent(owner, 'a', 's1')
+    finish()
+    await expect(pending).rejects.toThrow('released or transferred')
+    host.closeWindow(owner)
   })
 
   test('capture rejects blank/loading pages and returns PNG; capture race rejects', async () => {

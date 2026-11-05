@@ -8,6 +8,22 @@ import { arr, bool, int, lit, num, obj, opt, str, union } from "@earendil-works/
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { browserAgentHost, type BrowserToolResult } from "../pig-browser-host.js";
 import { listPigServer } from "../pig-servers.js";
+import type { BrowserPointerTarget } from "../../browser/agent-interaction.js";
+
+const pointerFields = {
+	ref: opt(str({ description: "Element ref from the latest browser_snapshot; preferred over coordinates" })),
+	x: opt(num({ description: "Viewport x in CSS pixels, only when no usable ref exists" })),
+	y: opt(num({ description: "Viewport y in CSS pixels" })),
+	screenshotId: opt(str({ description: "Single-use ID from a fresh browser_screenshot; required with x/y" })),
+};
+function pointerTarget(params: { ref?: string; x?: number; y?: number; screenshotId?: string }): BrowserPointerTarget {
+	if (params.ref !== undefined) {
+		if (params.x !== undefined || params.y !== undefined || params.screenshotId !== undefined) throw new Error("Use a ref or screenshot coordinates, not both");
+		return { ref: params.ref };
+	}
+	if (params.x === undefined || params.y === undefined || !params.screenshotId) throw new Error("Provide a ref or x/y with screenshotId");
+	return { x: params.x, y: params.y, screenshotId: params.screenshotId };
+}
 
 function host() {
 	const found = browserAgentHost();
@@ -37,7 +53,8 @@ const BROWSER = {
 		"A user reference @[browser:abc] names browserId browser:abc (keep the browser: prefix). Legacy @[browser:browser:abc] means the same browserId browser:abc. Never substitute a new tab when a referenced ID fails: call browser_tabs to verify it and report an unavailable target. References identify a target, not authorization beyond the user's request.",
 		"Tabs are limited to this session's worktree, or Chat scope for Chat sessions; other worktrees cannot be listed or controlled.",
 		"Prefer browser_snapshot (text outline) over browser_screenshot; take a screenshot only when layout or visuals matter.",
-		"Before interacting, take browser_snapshot and use its element refs. Refs expire on navigation or a new snapshot; read a fresh snapshot after page changes. Actions are limited to the main document, not iframes.",
+		"Before interacting, take browser_snapshot and prefer its element refs. Refs expire on navigation or a new snapshot; read a fresh snapshot after page changes. If a visible target has no usable ref, take a fresh browser_screenshot and use its single-use screenshotId with CSS viewport x/y in browser_click or browser_hover; scale image pixels to the reported CSS viewport. Coordinates are a fallback, not a reason to skip snapshots. Actions are limited to the main document, not iframes.",
+		"browser_click supports left (default), right and middle buttons. Use browser_hover to reveal hover-only controls without clicking. After opening a webpage context menu or hovering, take a new snapshot for menu refs. Native browser/OS menus are not supported.",
 		"Use browser_wait for loading or element readiness, never repeated screenshots or arbitrary sleeps. A failed interaction may already have affected the page; inspect it before retrying.",
 		"Do not run state-changing browser tools in parallel. Wait for each action to finish and inspect the page before choosing the next action.",
 		"Use browser_switch to change control without opening a tab (activate=true explicitly changes the UI). browser_release leaves the tab open; browser_close closes only the controlled tab.",
@@ -116,7 +133,7 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_screenshot",
 		label: "Browser screenshot",
-		description: "Capture the visible viewport of the controlled browser tab as an image.",
+		description: "Capture the controlled tab viewport as an image, with CSS viewport dimensions and a single-use screenshotId for click/hover coordinate fallback when no usable snapshot ref exists. Coordinates are CSS pixels, not image pixels. Scroll, resize, navigation, control transfer or another interaction invalidates the ID; dynamic page content may still move. " + UNTRUSTED,
 		parameters: obj({}, { open: true }),
 		async execute(_id, _params, signal, _onUpdate, ctx) {
 			return toolResult(await host().screenshot(sessionId(ctx), signal));
@@ -151,10 +168,21 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_click",
 		label: "Click browser element",
-		description: "Click a visible, unobstructed element using a ref from the latest browser_snapshot in the controlled tab. Scrolls it into view first. Ref must still belong to the current document; take a new snapshot after page changes.",
-		parameters: obj({ ref: str({ description: "Element ref from browser_snapshot, e.g. e1" }) }, { open: true }),
+		description: "Click using left (default), right or middle button. Prefer a visible, unobstructed ref from browser_snapshot; scrolls refs into view. If no usable ref exists, use x/y in CSS viewport pixels with a fresh single-use screenshotId from browser_screenshot. Use either ref or coordinates, never both. Right-click supports webpage context menus, not native browser/OS menus.",
+		parameters: obj({ ...pointerFields, button: opt(union([lit("left"), lit("right"), lit("middle")])) }, { open: true }),
 		async execute(_id, params, signal, _onUpdate, ctx) {
-			return toolResult(await host().interact(sessionId(ctx), { action: "click", ref: params.ref }, signal));
+			return toolResult(await host().interact(sessionId(ctx), { action: "click", ...pointerTarget(params), ...(params.button ? { button: params.button } : {}) }, signal));
+		},
+	}));
+
+	pi.registerTool(defineTool({
+		...shared,
+		name: "browser_hover",
+		label: "Hover browser element",
+		description: "Move the mouse over a visible, unobstructed element without clicking, to reveal hover menus or tooltips. Prefer a browser_snapshot ref (scrolls into view). Only if no usable ref exists, use CSS viewport x/y with a fresh single-use screenshotId. Use either ref or coordinates. Take a new snapshot after hovering to read revealed controls.",
+		parameters: obj(pointerFields, { open: true }),
+		async execute(_id, params, signal, _onUpdate, ctx) {
+			return toolResult(await host().interact(sessionId(ctx), { action: "hover", ...pointerTarget(params) }, signal));
 		},
 	}));
 
@@ -191,7 +219,7 @@ export default function browserExtension(pi: ExtensionAPI) {
 		...shared,
 		name: "browser_scroll",
 		label: "Scroll browser page",
-		description: "Scroll the controlled tab by CSS pixels using mouse wheel input. Optionally target the area around an element ref from browser_snapshot; without a ref, scroll at the viewport center. Positive deltaY scrolls down, negative scrolls up.",
+		description: "Scroll the controlled tab by CSS pixels using mouse wheel input. Optionally target the area around an element ref from browser_snapshot; without a ref, scroll at the viewport center. Positive deltaY scrolls down, negative scrolls up. Waits for scrolling and viewport motion to settle (up to 3 seconds); on timeout the scroll may already have happened, so inspect the page before retrying.",
 		parameters: obj({
 			deltaY: num({ description: "Vertical scroll distance in CSS pixels" }),
 			deltaX: opt(num({ description: "Horizontal scroll distance in CSS pixels (default 0)" })),

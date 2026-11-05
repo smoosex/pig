@@ -2,7 +2,7 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { WebContents } from 'electron'
-import { browserKeyEvent, interactWithPage, type BrowserInteraction } from '../src/main/browser/agent-interaction'
+import { browserKeyEvent, interactWithPage, pinBrowserScreenshot, type BrowserInteraction } from '../src/main/browser/agent-interaction'
 import { snapshotPage } from '../src/main/browser/agent-snapshot'
 import { captureHiddenPage } from '../src/main/browser/hidden-screenshot'
 import { withBrowserDebugger } from '../src/main/browser/browser-debugger'
@@ -55,6 +55,77 @@ async function fixture() {
   await run({ action: 'click', ref: ref('button') })
   assert.deepEqual(calls.map(call => call.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased'])
   assert.equal(checks > 6, true)
+  for (const mouseButton of ['right', 'middle'] as const) {
+    const start = calls.length
+    await run({ action: 'click', ref: ref('button'), button: mouseButton })
+    assert.deepEqual(calls.slice(start).map(call => call.params.button), [undefined, mouseButton, mouseButton])
+  }
+  const beforeHover = calls.length
+  await run({ action: 'hover', ref: ref('button') })
+  assert.deepEqual(calls.slice(beforeHover).map(call => call.params.type), ['mouseMoved'])
+  const pin = (id: string, validate = false) => new Function(`return (${pinBrowserScreenshot.toString()})(${JSON.stringify(id)}, ${validate})`)()
+  pin('shot')
+  await run({ action: 'click', x: 10, y: 20, screenshotId: 'shot', button: 'right' })
+  assert.deepEqual(calls.at(-2)!.params, { type: 'mousePressed', x: 10, y: 20, button: 'right', clickCount: 1 })
+  await assert.rejects(run({ action: 'hover', x: -1, y: 20, screenshotId: 'shot' }), /outside/)
+  await assert.rejects(run({ action: 'hover', x: NaN, y: 20, screenshotId: 'shot' }), /outside/)
+  await assert.rejects(run({ action: 'hover', x: 10, y: 20, screenshotId: 'old' }), /stale/)
+  dispatchEvent(new Event('resize'))
+  await assert.rejects(run({ action: 'hover', x: 10, y: 20, screenshotId: 'shot' }), /viewport changed/)
+  assert.throws(() => pin('old', true), /stale/)
+  pin('scrolled')
+  document.dispatchEvent(new Event('scroll', { bubbles: true }))
+  assert.throws(() => pin('scrolled', true), /viewport changed/)
+  const scrollHost = document.createElement('div')
+  document.body.append(scrollHost)
+  const scrollRoot = scrollHost.attachShadow({ mode: 'open' })
+  const nestedScrollHost = document.createElement('div')
+  scrollRoot.append(nestedScrollHost)
+  const nestedScrollRoot = nestedScrollHost.attachShadow({ mode: 'open' })
+  const scroller = document.createElement('div')
+  nestedScrollRoot.append(scroller)
+  pin('shadow-scroll')
+  scroller.dispatchEvent(new Event('scroll', { bubbles: false, composed: false }))
+  assert.throws(() => pin('shadow-scroll', true), /viewport changed/)
+  pin('shadow-offset')
+  scroller.scrollTop = 40
+  await assert.rejects(run({ action: 'click', x: 10, y: 20, screenshotId: 'shadow-offset' }), /viewport changed/)
+  scroller.scrollTop = 0
+  assert.throws(() => pin('shadow-offset', true), /viewport changed/, 'observed motion stays invalid even if undone')
+  // Replacing a pin removes the old root listener rather than invalidating a fresh screenshot.
+  pin('discarded')
+  nestedScrollRoot.removeChild(scroller)
+  pin('fresh')
+  scroller.dispatchEvent(new Event('scroll'))
+  assert.doesNotThrow(() => pin('fresh', true))
+  hit = document.getElementById('file')
+  await assert.rejects(run({ action: 'click', x: 10, y: 20, screenshotId: 'fresh' }), /browser_upload/)
+  const labelArea = document.createElement('div')
+  labelArea.innerHTML = '<label for="file"><span>Upload</span></label><label><input type="file"><span>Nested upload</span></label><label for="input"><span>Normal input</span></label>'
+  document.body.append(labelArea)
+  const fileLabels = Array.from(labelArea.querySelectorAll('label')).slice(0, 2)
+  for (const label of fileLabels) {
+    for (const target of [label, label.querySelector('span')!]) {
+      hit = target
+      const before = calls.length
+      await assert.rejects(run({ action: 'click', x: 10, y: 20, screenshotId: 'fresh' }), /browser_upload/)
+      refs.set('file-label', target)
+      await assert.rejects(run({ action: 'click', ref: 'file-label' }), /browser_upload/)
+      assert.equal(calls.length, before, 'labels and nested icons never receive mouse input')
+      await run({ action: 'hover', x: 10, y: 20, screenshotId: 'fresh' })
+    }
+  }
+  // A ref to a larger ancestor can still hit a file label at its click point.
+  labelArea.style.visibility = 'visible'
+  labelArea.scrollIntoView = () => { hit = fileLabels[0]!.querySelector('span')! }
+  labelArea.getBoundingClientRect = () => ({ x: 10, y: 20, left: 10, top: 20, right: 110, bottom: 60, width: 100, height: 40, toJSON() {} })
+  refs.set('label-area', labelArea)
+  await assert.rejects(run({ action: 'click', ref: 'label-area' }), /browser_upload/)
+  hit = labelArea.querySelector('label[for="input"] span')!
+  await run({ action: 'click', x: 10, y: 20, screenshotId: 'fresh' })
+  hit = document.createElement('iframe')
+  await assert.rejects(run({ action: 'hover', x: 10, y: 20, screenshotId: 'fresh' }), /unsupported frame/)
+  await assert.rejects(run({ action: 'hover', ref: ref('button'), x: 10, y: 20, screenshotId: 'fresh' } as unknown as BrowserInteraction), /not both/)
   covered = true
   await assert.rejects(run({ action: 'click', ref: ref('button') }), /covered/)
   covered = false
@@ -62,7 +133,7 @@ async function fixture() {
   const beforeFile = calls.length
   await assert.rejects(run({ action: 'click', ref: ref('file') }), /use browser_upload/)
   assert.equal(calls.length, beforeFile, 'file inputs never receive a click that would open the native dialog')
-  await assert.rejects(run({ action: 'click' } as BrowserInteraction), /Browser ref is required/)
+  await assert.rejects(run({ action: 'click' } as BrowserInteraction), /Missing or stale screenshot/)
   const button = document.getElementById('button')!
   button.remove()
   await assert.rejects(run({ action: 'click', ref: ref('button') }), /stale/)
@@ -103,8 +174,20 @@ async function fixture() {
   assert.equal('commands' in calls.at(-1)!.params, false, 'keyup must not execute the editing command again')
   await run({ action: 'press', key: 'Enter' })
   assert.equal(calls.at(-2)!.params.text, '\r')
+  let lastScroll = 0
+  onCommand = async (_method, params) => {
+    if (params.type === 'mouseWheel') {
+      for (const delay of [20, 90, 180]) setTimeout(() => {
+        input.dispatchEvent(new Event('scroll'))
+        lastScroll = performance.now()
+      }, delay)
+    }
+    return {}
+  }
   await run({ action: 'scroll', deltaY: 300 })
   assert.equal(calls.at(-1)!.params.type, 'mouseWheel')
+  assert.ok(lastScroll > 0 && performance.now() - lastScroll >= 140, 'scroll waits for nested container motion to finish')
+  onCommand = undefined
   await assert.rejects(run({ action: 'scroll', deltaY: NaN }), /finite/)
 
   // Focus can be redirected by page handlers, including inside open shadow roots.
@@ -189,13 +272,14 @@ async function fixture() {
     if (params.type === 'mousePressed') { pressed(); return new Promise((_resolve, reject) => { rejectPressed = reject }) }
     return { data: 'PNG' }
   }
-  const pending = run({ action: 'click', ref: ref('input') }, controller.signal)
+  const beforeCancelled = calls.length
+  const pending = run({ action: 'click', ref: ref('input'), button: 'right' }, controller.signal)
   await started
   controller.abort(new Error('cancelled'))
   await assert.rejects(pending, /cancelled/)
   rejectPressed(new Error('late command rejection'))
   await captureHiddenPage(contents)
-  assert.equal(calls.some(call => call.params.type === 'mouseReleased'), true)
+  assert.equal(calls.slice(beforeCancelled).some(call => call.params.type === 'mouseReleased' && call.params.button === 'right'), true)
   assert.equal(attaches, detaches)
   assert.equal(attached, false)
   await GlobalRegistrator.unregister()

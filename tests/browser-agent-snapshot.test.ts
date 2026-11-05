@@ -75,6 +75,16 @@ async function fixture() {
   const uploadRefs = (globalThis as unknown as { __pigAgentRefs: Map<string, Element> }).__pigAgentRefs
   assert.ok([...uploadRefs.values()].includes(shadow.querySelector('input')!))
 
+  document.body.innerHTML = '<div tabindex="0">Focusable menu</div><span onclick="void 0">Inline action</span><div id="handler">Assigned action</div><div role="menuitem">Menu item</div><div role="button">Parent<span>label</span><button>Nested action</button></div><div hidden tabindex="0">Hidden action</div>'
+  ;(document.getElementById('handler') as HTMLElement).onclick = () => {}
+  const custom = run()
+  assert.match(custom.text, /interactive "Focusable menu" \[ref=e1\]/)
+  assert.match(custom.text, /interactive "Inline action" \[ref=e2\]/)
+  assert.match(custom.text, /interactive "Assigned action" \[ref=e3\]/)
+  assert.match(custom.text, /menuitem "Menu item" \[ref=e4\]/)
+  assert.match(custom.text, /button "Nested action" \[ref=e6\]/)
+  assert.ok(!custom.text.includes('text: label') && !custom.text.includes('Hidden action'))
+
   document.body.innerHTML = '<p>' + 'visible text '.repeat(100) + '</p>'
   const small = snapshotPage(120)
   assert.equal(small.truncated, true)

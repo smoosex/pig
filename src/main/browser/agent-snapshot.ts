@@ -32,7 +32,7 @@ export function snapshotPage(limit: number): PageSnapshot {
     size += line.length + depth * 2 + 3
   }
   const interactive = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox',
-    'menuitemradio', 'option', 'combobox', 'listbox', 'textbox', 'searchbox', 'slider', 'spinbutton', 'treeitem'])
+    'menuitemradio', 'option', 'combobox', 'listbox', 'textbox', 'searchbox', 'slider', 'spinbutton', 'treeitem', 'interactive'])
   const containers = new Set(['main', 'navigation', 'banner', 'contentinfo', 'form', 'dialog', 'alertdialog', 'list',
     'listitem', 'table', 'row', 'region', 'complementary', 'menu', 'menubar', 'tablist', 'tabpanel', 'tree', 'grid', 'group'])
   const inputRoles: Record<string, string> = {
@@ -122,7 +122,7 @@ export function snapshotPage(limit: number): PageSnapshot {
     }
     return line
   }
-  const walk = (parent: ParentNode, depth: number, pending?: { text: string }) => {
+  const walk = (parent: ParentNode, depth: number, pending?: { text: string }, controlsOnly = false) => {
     const buffer = pending ?? { text: '' }
     const flush = () => {
       const value = clean(buffer.text, 400)
@@ -131,7 +131,7 @@ export function snapshotPage(limit: number): PageSnapshot {
     }
     for (const node of Array.from(parent.childNodes)) {
       if (truncated) return
-      if (node.nodeType === Node.TEXT_NODE) { buffer.text += ` ${node.textContent ?? ''}`; continue }
+      if (node.nodeType === Node.TEXT_NODE) { if (!controlsOnly) buffer.text += ` ${node.textContent ?? ''}`; continue }
       if (!(node instanceof Element)) continue
       const tag = node.tagName.toLowerCase()
       if (['script', 'style', 'noscript', 'template', 'svg', 'head', 'meta', 'link'].includes(tag)) continue
@@ -140,10 +140,19 @@ export function snapshotPage(limit: number): PageSnapshot {
       let role = roleOf(node)
       if (!role && (node as HTMLElement).isContentEditable && !node.parentElement?.isContentEditable) role = 'textbox'
       if (role === 'presentation' || role === 'none') role = ''
-      if (!role && node.getAttribute('tabindex') !== null && Number(node.getAttribute('tabindex')) >= 0 && node.hasAttribute('onclick')) role = 'button'
+      if (!interactive.has(role) && ((node instanceof HTMLElement && node.tabIndex >= 0) ||
+          node.hasAttribute('onclick') || typeof (node as HTMLElement).onclick === 'function')) role = 'interactive'
+      if (controlsOnly && !interactive.has(role)) {
+        walk(node, depth, undefined, true)
+        if (node.shadowRoot) walk(node.shadowRoot, depth, undefined, true)
+        continue
+      }
       if (interactive.has(role) || role === 'heading' || role === 'img') {
         flush()
         emit(depth, describe(node, role))
+        // Keep independently actionable descendants, including controls in open shadow roots.
+        if (node.children.length) walk(node, depth + 1, undefined, true)
+        if (node.shadowRoot) walk(node.shadowRoot, depth + 1, undefined, true)
         continue
       }
       if (containers.has(role)) {

@@ -19,7 +19,7 @@ test('the jiti-loaded browser tools forward the session to the host registered b
     expect(loader.getExtensions().errors).toEqual([])
     const extension = loader.getExtensions().extensions.find((item) => item.path === path)!
     expect([...extension.tools.keys()].sort()).toEqual([
-      'browser_annotations', 'browser_click', 'browser_close', 'browser_console', 'browser_history', 'browser_navigate', 'browser_network', 'browser_network_capture', 'browser_network_detail', 'browser_network_requests', 'browser_open', 'browser_press', 'browser_release', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload', 'browser_wait'
+      'browser_annotations', 'browser_click', 'browser_close', 'browser_console', 'browser_history', 'browser_hover', 'browser_navigate', 'browser_network', 'browser_network_capture', 'browser_network_detail', 'browser_network_requests', 'browser_open', 'browser_press', 'browser_release', 'browser_screenshot', 'browser_scroll', 'browser_select', 'browser_snapshot', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload', 'browser_wait'
     ])
     const tool = (name: string) => extension.tools.get(name)!.definition
     const ui = { select: async () => undefined }
@@ -62,6 +62,15 @@ test('the jiti-loaded browser tools forward the session to the host registered b
       ['interact', 'session-1', { action: 'select', ref: 'e3', values: ['pro'] }, controller.signal],
       ['wait', 'session-1', { selector: '#ready', state: 'visible' }, controller.signal]
     ])
+    calls.length = 0
+    await tool('browser_hover').execute('h1', { ref: 'e1' }, controller.signal, undefined, ctx as never)
+    await tool('browser_click').execute('h2', { x: 10, y: 20, screenshotId: 'shot', button: 'right' }, controller.signal, undefined, ctx as never)
+    expect(calls).toEqual([
+      ['interact', 'session-1', { action: 'hover', ref: 'e1' }, controller.signal],
+      ['interact', 'session-1', { action: 'click', x: 10, y: 20, screenshotId: 'shot', button: 'right' }, controller.signal]
+    ])
+    await expect(tool('browser_hover').execute('h3', { ref: 'e1', x: 10, y: 20, screenshotId: 'shot' }, controller.signal, undefined, ctx as never)).rejects.toThrow('not both')
+    await expect(tool('browser_click').execute('h4', { x: 10 }, controller.signal, undefined, ctx as never)).rejects.toThrow('Provide a ref')
     calls.length = 0
     await tool('browser_switch').execute('c11', { browserId: 'browser:other' }, controller.signal, undefined, ctx as never)
     await tool('browser_release').execute('c12', {}, controller.signal, undefined, ctx as never)
