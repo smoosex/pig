@@ -33,6 +33,7 @@ async function fixture(): Promise<void> {
   mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {} }))
   mock.module('../src/main/browser/host', () => ({
     BrowserHost: class {
+      allowFocus() {}
       getState(_win: unknown, id: string) { return { browserId: id, url: '', title: '', agentSessionId: agents.get(id) ?? null } }
       agentOf(_win: unknown, id: string) { return agents.get(id) ?? null }
       setAgent(_win: unknown, id: string, sessionId: string | null) { agents.set(id, sessionId) }

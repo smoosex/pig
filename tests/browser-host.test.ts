@@ -472,6 +472,70 @@ describe('browser host', () => {
     expect(host.getState(owner, 'a').url).toBe('')
   })
 
+  test('background creation and late navigation focus restore native ownership without publishing activation', async () => {
+    const { host, owner, win, views } = fixture()
+    win.webContents.focus()
+    const attach = win.contentView.addChildView.bind(win.contentView)
+    win.contentView.addChildView = view => {
+      attach(view)
+      const page = view as FakeView
+      page.webContents.focus()
+    }
+    await host.navigate(owner, 'a', 'https://example.test', true)
+    expect(win.webContents.focusCalls).toBe(2)
+    const page = views[0].webContents
+    await host.navigate(owner, 'a', 'https://example.test', true)
+    page.focus()
+    expect(win.webContents.focusCalls).toBe(3)
+    Object.assign(page, { reload: () => { page.focus() } })
+    host.history(owner, 'a', 'reload', true)
+    expect(win.webContents.focusCalls).toBe(4)
+    expect(win.webContents.sent.filter(([channel, state]) => channel === 'browser:state' && (state as { focused?: boolean }).focused)).toEqual([])
+  })
+
+  test('overlay hide and bounds restoration cannot authorize delayed navigation focus', async () => {
+    const { host, owner, win, views } = fixture()
+    win.webContents.focus()
+    host.setBounds(owner, 'a', bounds)
+    const page = views[0].webContents
+    const pageFocus = page.focus.bind(page)
+    page.focus = () => { win.webContents.focused = false; pageFocus() }
+    const hostFocus = win.webContents.focus.bind(win.webContents)
+    win.webContents.focus = () => { page.focused = false; hostFocus() }
+    let complete!: () => void
+    page.loadURL = async () => {
+      await new Promise<void>(resolve => { complete = resolve })
+      page.focus()
+    }
+    const navigation = host.navigate(owner, 'a', 'https://example.test', true)
+    host.setBounds(owner, 'a', null)
+    host.setBounds(owner, 'a', bounds)
+    expect(views[0].visible).toBe(true)
+    complete()
+    await navigation
+    expect(win.webContents.isFocused()).toBe(true)
+    expect(page.isFocused()).toBe(false)
+    expect(win.webContents.focusCalls).toBe(2)
+    page.focus()
+    expect(win.webContents.isFocused()).toBe(true)
+    expect(page.isFocused()).toBe(false)
+    expect(win.webContents.focusCalls).toBe(3)
+    expect(win.webContents.sent.filter(([channel, state]) => channel === 'browser:state' && (state as { focused?: boolean }).focused)).toEqual([])
+  })
+
+  test('visible background navigation is guarded until user activation', async () => {
+    const { host, owner, win, views } = fixture()
+    win.webContents.focus()
+    host.setBounds(owner, 'a', bounds)
+    await host.navigate(owner, 'a', 'https://example.test', true)
+    views[0].webContents.focus()
+    expect(win.webContents.focusCalls).toBe(2)
+    host.allowFocus(owner, 'a')
+    views[0].webContents.focus()
+    expect(win.webContents.focusCalls).toBe(2)
+    expect(win.webContents.sent.at(-1)).toEqual(['browser:state', expect.objectContaining({ browserId: 'a', focused: true })])
+  })
+
   test('closing a focused page or DevTools returns keyboard focus to the host before disposal', async () => {
     for (const target of ['page', 'devtools'] as const) {
       const { host, owner, win, views } = fixture()
@@ -685,9 +749,9 @@ describe('browser host', () => {
     expect(() => { (tools as { webContents?: unknown }).webContents = undefined; page.webContents.emit('devtools-closed') }, 'Electron drops webContents after destruction').not.toThrow()
     expect(host.getState(owner, 'a').devtools, 'the DevTools close button destroys their WebContents').toBe(false)
     expect(pageEdges().at(-1), 'closing DevTools removes the page cursor edge').toEqual(['browser:devtools-page-edge', 0])
-    expect(page.webContents.listenerCount('before-mouse-event')).toBe(0)
-    host.inspect(owner, 'a')
     expect(page.webContents.listenerCount('before-mouse-event')).toBe(1)
+    host.inspect(owner, 'a')
+    expect(page.webContents.listenerCount('before-mouse-event')).toBe(2)
     page.webContents.closeDevTools()
     expect(views[2].webContents.dead, 'closing from DevTools releases the docked view').toBe(true)
     expect(host.getState(owner, 'a').devtools).toBe(false)

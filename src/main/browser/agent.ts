@@ -20,7 +20,7 @@ import { AGENT_WORLD_ID, snapshotPage, type PageSnapshot } from './agent-snapsho
 import type { BrowserHost } from './host'
 import { isBrowserUrl } from './validation'
 
-type Host = Pick<BrowserHost, 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact' | 'networkEntries' | 'upload' | 'networkCaptureAction' | 'networkCaptureEntries' | 'networkCaptureDetail'>
+type Host = Pick<BrowserHost, 'allowFocus' | 'getState' | 'navigate' | 'history' | 'capture' | 'agentOf' | 'setAgent' | 'waitForLoad' | 'evaluate' | 'consoleEntries' | 'interact' | 'networkEntries' | 'upload' | 'networkCaptureAction' | 'networkCaptureEntries' | 'networkCaptureDetail'>
 
 export interface BrowserAgentDeps {
   host: Host
@@ -69,7 +69,7 @@ export class BrowserAgentController implements BrowserAgentHost {
   }
 
   private async load(win: BrowserWindow, id: string, url: string, signal?: AbortSignal): Promise<void> {
-    const loading = this.deps.host.navigate(win, id, url)
+    const loading = this.deps.host.navigate(win, id, url, true)
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), this.deps.navigationTimeout ?? 30_000) })
     let outcome: 'done' | 'timeout'
@@ -135,6 +135,9 @@ export class BrowserAgentController implements BrowserAgentHost {
       const { win, id } = this.controlled(sessionId)
       if (id !== browserId) throw new Error('Browser control was released or transferred')
       await this.deps.activateTab(win, sessionId, id, signal)
+      signal?.throwIfAborted()
+      if (this.deps.host.agentOf(win, id) !== sessionId) throw new Error('Browser control was released or transferred')
+      this.deps.host.allowFocus(win, id)
     }
     return { text: `${result.text}${activate ? '\nThe tab was activated in the UI.' : '\nThe UI selection was not changed.'}` }
   }
@@ -229,7 +232,7 @@ export class BrowserAgentController implements BrowserAgentHost {
 
   async history(sessionId: string, action: BrowserHistoryAction, signal?: AbortSignal): Promise<BrowserToolResult> {
     const { win, id } = this.controlled(sessionId)
-    this.deps.host.history(win, id, action)
+    this.deps.host.history(win, id, action, true)
     // History navigation starts asynchronously; give it a turn before waiting for the load to stop.
     await abortable(new Promise((resolve) => setTimeout(resolve, 50)), signal)
     await abortable(this.deps.host.waitForLoad(win, id, this.deps.loadTimeout ?? 10_000), signal)

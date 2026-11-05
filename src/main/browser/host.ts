@@ -1,6 +1,7 @@
 /** Native previews belong to a window, not the agent runtime. Hidden views are LRU cached;
  * document tokens invalidate delayed guest selections on every main-frame navigation. */
 import { randomUUID } from 'node:crypto'
+import { BrowserFocusGuard } from './focus-guard'
 import type { Debugger, View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
   BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
@@ -83,6 +84,7 @@ function cancelUploads(page: Page, reason: string): void {
   page.pendingUploads.clear()
 }
 interface WindowPages {
+  focus: BrowserFocusGuard
   win: BrowserWindow
   pages: Map<string, Page>
   urls: Map<string, string>
@@ -138,7 +140,7 @@ export class BrowserHost {
     if (win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser window is closed')
     let owner = this.windows.get(win)
     if (!owner) {
-      owner = { win, pages: new Map(), urls: new Map(), annotations: new Map(), ordinals: new Map(), agents: new Map(), disposed: false }
+      owner = { focus: new BrowserFocusGuard(win), win, pages: new Map(), urls: new Map(), annotations: new Map(), ordinals: new Map(), agents: new Map(), disposed: false }
       this.windows.set(win, owner)
       if (!this.watched.has(win)) {
         this.watched.add(win)
@@ -161,6 +163,7 @@ export class BrowserHost {
     const owner = this.windows.get(win)
     if (!owner) return
     owner.disposed = true
+    owner.focus.dispose()
     this.windows.delete(win)
     for (const page of owner.pages.values()) this.dispose(owner, page)
     owner.pages.clear()
@@ -265,7 +268,9 @@ export class BrowserHost {
     page.view.setVisible(bounds.width > 0 && pageHeight > 0)
     if (page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
       page.focusOnShow = false
-      if (owner.win.isFocused()) page.view.webContents.focus()
+      if (owner.win.isFocused()) {
+        page.view.webContents.focus()
+      }
     }
     if (page.devtools) {
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
@@ -362,8 +367,8 @@ export class BrowserHost {
       view.setBounds(AGENT_VIEWPORT)
       view.setVisible(false)
       if (agentSessionId) view.webContents.setBackgroundThrottling(false)
-      win.contentView.addChildView(view)
       this.bind(owner, page)
+      win.contentView.addChildView(view)
     }
     if (page) page.used = ++this.clock
     return { owner, page }
@@ -454,7 +459,9 @@ export class BrowserHost {
     const wc = page.view.webContents
     this.bindHostShortcuts(owner, page, wc)
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
-    wc.on('focus', () => this.push(owner, page, owner.win.isFocused()))
+    owner.focus.register(wc, () => this.alive(owner, page) && page.view.getVisible(), () => {
+      this.push(owner, page, owner.win.isFocused())
+    })
     // Also fires when the user closes DevTools from their own toolbar.
     wc.on('devtools-closed', () => {
       if (!page.devtools) return
@@ -636,12 +643,13 @@ export class BrowserHost {
     return { ...(page?.state ?? { ...emptyBrowserState(id), url: owner.urls.get(id) ?? '', agentSessionId: owner.agents.get(id) ?? null }), annotations: [...(owner.annotations.get(id) ?? [])] }
   }
 
-  async navigate(win: BrowserWindow, id: string, input: unknown): Promise<void> {
+  async navigate(win: BrowserWindow, id: string, input: unknown, background = false): Promise<void> {
     const url = normalizeBrowserUrl(input)
     const { owner, page } = this.page(win, id)
     if (!page) return
     owner.urls.set(id, url)
     page.state.error = null
+    if (background) owner.focus.protect(page.view.webContents)
     try { await page.view.webContents.loadURL(url) } catch (error) {
       if (!this.alive(owner, page)) return
       if ((error as { code?: string }).code === 'ERR_ABORTED') return
@@ -658,13 +666,20 @@ export class BrowserHost {
   focusPage(win: BrowserWindow, id: string): void {
     const { owner, page } = this.page(win, id, false)
     if (!page || !win.isFocused()) return
+    owner.focus.userIntent(page.view.webContents)
     page.focusOnShow = true
     this.layout(owner, page)
   }
 
-  history(win: BrowserWindow, id: string, action: 'back' | 'forward' | 'reload'): void {
-    const { page } = this.page(win, id, false)
+  allowFocus(win: BrowserWindow, id: string): void {
+    const { owner, page } = this.page(win, id, false)
+    if (page) owner.focus.userIntent(page.view.webContents)
+  }
+
+  history(win: BrowserWindow, id: string, action: 'back' | 'forward' | 'reload', background = false): void {
+    const { owner, page } = this.page(win, id, false)
     if (!page) return
+    if (background) owner.focus.protect(page.view.webContents)
     const wc = page.view.webContents
     if (action === 'reload') { if (isBrowserUrl(wc.getURL())) wc.reload() }
     else if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack()
@@ -782,6 +797,7 @@ export class BrowserHost {
       this.detachDevTools(owner, page)
     } else {
       const devtools = this.createView('devtools')
+      owner.focus.register(devtools.webContents, () => this.alive(owner, page) && devtools.getVisible())
       devtools.setVisible(false)
       owner.win.contentView.addChildView(devtools)
       page.devtools = devtools

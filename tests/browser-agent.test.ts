@@ -27,6 +27,7 @@ function fixture() {
     states.set(id, { ...emptyBrowserState(id), ...patch })
   }
   const host: BrowserAgentDeps['host'] = {
+    allowFocus: () => {},
     getState: (_win, id) => ({ ...states.get(id)!, agentSessionId: agents.get(id) ?? null }),
     navigate: async (_win, id, url) => {
       navigations.push(`${id} ${url}`)
@@ -73,12 +74,16 @@ describe('browser agent control', () => {
     const f = fixture()
     f.add('browser:a')
     f.add('browser:b')
+    const allowedFocus: string[] = []
+    f.host.allowFocus = (_win, id) => { allowedFocus.push(id) }
     const activations: string[] = []
     f.deps.activateTab = async (_win, _session, id) => { activations.push(id) }
     await f.controller.switchTab('s1', 'browser:a', false)
     expect(activations).toEqual([])
+    expect(allowedFocus).toEqual([])
     await f.controller.switchTab('s1', 'browser:b', true)
     expect(activations).toEqual(['browser:b'])
+    expect(allowedFocus).toEqual(['browser:b'])
     expect(f.agents.has('browser:a')).toBe(false)
     await f.controller.open('s2', { browserId: 'browser:a' })
     await expect(f.controller.switchTab('s1', 'browser:a', true)).rejects.toThrow('another session')
