@@ -324,7 +324,7 @@ async function fixture(): Promise<void> {
     await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '取消')!.click() })
     await flush()
     assert.equal(document.querySelector('[role="dialog"]'), null)
-    await switchFeature('记忆')
+    await switchFeature('会话记忆')
     assert.ok(configure.closest('[hidden]'), 'persona actions are hidden on the memory tab')
     const threshold = host.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')!
     await act(async () => {
@@ -335,7 +335,7 @@ async function fixture(): Promise<void> {
     await switchFeature('人格')
     assert.equal(dirty, true, 'switching feature tabs preserves memory settings drafts')
     assert.equal(configure.closest('[hidden]'), null)
-    await switchFeature('记忆')
+    await switchFeature('会话记忆')
     assert.equal(threshold.value, '950')
     assert.equal(document.querySelector('[aria-label="人格 默认启用范围"]'), null)
     assert.equal(document.querySelector('[aria-label="记忆 默认启用范围"]'), null)

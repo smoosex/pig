@@ -55,6 +55,8 @@ export const createConversationSlice: SessionSlice<
   | 'replaceLiveMessage'
   | 'setToolUpdates'
   | 'setRetryNotice'
+  | 'setMemoryRetrieval'
+  | 'clearMemoryRetrievals'
   | 'startCompaction'
   | 'updateCompaction'
   | 'dropCompaction'
@@ -576,6 +578,13 @@ export const createConversationSlice: SessionSlice<
       toolUpdates: { ...rt.toolUpdates, ...updates }
     })),
 
+    setMemoryRetrieval: (sessionId, trace) => update(sessionId, rt => {
+      const previous = rt.memoryRetrievals[trace.turnId]
+      if (trace.status !== 'running' && (!previous || previous.id !== trace.id || previous.status !== 'running')) return null
+      const entries = Object.entries(rt.memoryRetrievals).filter(([id]) => id !== trace.turnId).slice(-31)
+      return { memoryRetrievals: { ...Object.fromEntries(entries), [trace.turnId]: trace } }
+    }),
+    clearMemoryRetrievals: sessionId => update(sessionId, { memoryRetrievals: {} }),
     setRetryNotice: (sessionId, retryNotice) => update(sessionId, { retryNotice }),
 
     startCompaction: (sessionId, mark) => update(sessionId, (rt) => ({

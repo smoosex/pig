@@ -47,6 +47,15 @@ async function fixture(): Promise<void> {
     }
     await invoke('memory:set', { observeAfterTokens: 900 })
     assert.equal(refreshes, 1, 'memory settings still reload idle sessions')
+    await invoke('memory:set', { longTerm: { enabled: true, model: { provider: 'fixture', id: 'model', thinking: 'off' } } })
+    assert.equal(refreshes, 2)
+    assert.deepEqual((await invoke('memory:get') as { longTerm: unknown }).longTerm,
+      { enabled: true, model: { provider: 'fixture', id: 'model', thinking: 'off' } })
+    assert.deepEqual(await invoke('memory:long-term:list', 'memories'), { memories: [], candidates: [], nextOffset: null })
+    await assert.rejects(invoke('memory:long-term:list', 'arbitrary'), /Invalid.*kind/)
+    await assert.rejects(invoke('memory:long-term:list', 'memories', -1), /offset/)
+    await assert.rejects(invoke('memory:long-term:evidence', '../secret'), /Invalid.*id/)
+    await assert.rejects(invoke('memory:long-term:forget', 'memories', '../secret'), /Invalid.*id/)
     await assert.rejects(invoke('memory:enabled'), /Session id is required/)
     await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {

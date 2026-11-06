@@ -4,6 +4,7 @@ import { useT } from '../../hooks/useT'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { PersonaSettings } from './PersonaSettings'
 import { MemorySettings } from './MemorySettings'
+import { LongTermMemorySettings } from './LongTermMemorySettings'
 
 export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
   onDirtyChange?: (dirty: boolean) => void
@@ -16,15 +17,17 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
   const [memoryDirty, setMemoryDirty] = useState(false)
   const [personaBusy, setPersonaBusy] = useState(false)
   const [memoryBusy, setMemoryBusy] = useState(false)
+  const [longTermBusy, setLongTermBusy] = useState(false)
 
   useEffect(() => { onDirtyChange?.(personaDirty || memoryDirty) }, [personaDirty, memoryDirty, onDirtyChange])
-  useEffect(() => { onBusyChange?.(personaBusy || memoryBusy) }, [personaBusy, memoryBusy, onBusyChange])
+  useEffect(() => { onBusyChange?.(personaBusy || memoryBusy || longTermBusy) }, [personaBusy, memoryBusy, longTermBusy, onBusyChange])
 
   return <Tabs value={tab} onValueChange={setTab} className="gap-6">
     <div className="flex items-center justify-between gap-4">
       <TabsList>
         <TabsTrigger value="persona">{t('features.persona')}</TabsTrigger>
-        <TabsTrigger value="memory">{t('features.memory')}</TabsTrigger>
+        <TabsTrigger value="memory">{t('longTerm.observational')}</TabsTrigger>
+        <TabsTrigger value="long-term">{t('longTerm.title')}</TabsTrigger>
       </TabsList>
       <div ref={setActionsContainer} hidden={tab !== 'persona'} className="flex items-center gap-2" />
     </div>
@@ -33,6 +36,9 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
     </TabsContent>
     <TabsContent value="memory" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
       <MemorySettings onDirtyChange={setMemoryDirty} onBusyChange={setMemoryBusy} />
+    </TabsContent>
+    <TabsContent value="long-term" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
+      <LongTermMemorySettings onBusyChange={setLongTermBusy} />
     </TabsContent>
   </Tabs>
 }

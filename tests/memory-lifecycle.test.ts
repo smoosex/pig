@@ -45,6 +45,7 @@ async function fixture(scenario: string): Promise<void> {
     return result
   }
   const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
+  mock.module(path('../src/main/features/memory-settings.ts'), () => ({ getMemorySettings: async () => ({}) }))
   mock.module(path('../src/main/features/memory/agents/observer/agent.ts'), () => ({
     ObserverStreamError,
     runObserver: (args: { signal?: AbortSignal }) => run('observer', args, observations)

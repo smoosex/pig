@@ -3,6 +3,7 @@ import { readSettingsObject, saveNamespacedSettings } from '../settings/json-fil
 import type { MemorySettings, MemorySettingsPatch } from '../../shared/api'
 import { DEFAULTS } from './memory/config'
 import { memorySettingsPath } from './memory/paths'
+import { validateLongTermSettings } from './memory/long-term/settings'
 
 let mutation: Promise<unknown> = Promise.resolve()
 function serialize<T>(action: () => Promise<T>): Promise<T> {
@@ -38,6 +39,7 @@ export async function getMemorySettings(): Promise<MemorySettings> {
   const value = (await readSettingsObject(memorySettingsPath()))['observational-memory']
   if (value === undefined) return {}
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid observational-memory namespace')
+  if ('longTerm' in value) validateLongTermSettings((value as MemorySettings).longTerm)
   return value as MemorySettings
 }
 
@@ -46,11 +48,12 @@ export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySet
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
     const allowed = new Set<string>([
       ...integerKeys, ...nonNegativeIntegerKeys, ...booleanKeys,
-      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio'
+      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio', 'longTerm'
     ])
     for (const [key, value] of Object.entries(patch)) {
       if (!allowed.has(key)) throw new Error(`Unknown memory setting: ${key}`)
       if (value === undefined || value === null) continue
+      if (key === 'longTerm') validateLongTermSettings(value)
       const nonNegative = (nonNegativeIntegerKeys as readonly string[]).includes(key)
       const integer = (integerKeys as readonly string[]).includes(key) || nonNegative
       if (integer && (!Number.isSafeInteger(value) || (value as number) < (nonNegative ? 0 : 1))) {
@@ -59,11 +62,10 @@ export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySet
       if ((booleanKeys as readonly string[]).includes(key) && typeof value !== 'boolean') throw new Error(`Invalid boolean: ${key}`)
       if (key === 'compactAfterTokensMode' && value !== 'calibrated' && value !== 'ratio') throw new Error('Invalid compaction mode')
       if (key === 'compactAfterTokensRatio' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value >= 1)) throw new Error('Ratio must be between 0 and 1')
-      if ((key === 'model' || key === 'fallbackModel') && value !== null && (
-        typeof value !== 'object' || !value || typeof value.provider !== 'string' || !value.provider ||
-        typeof value.id !== 'string' || !value.id ||
-        (value.thinking !== undefined && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value.thinking))
-      )) throw new Error('Invalid memory model')
+      if (key === 'model' || key === 'fallbackModel') {
+        try { validateLongTermSettings({ enabled: false, model: value }) }
+        catch { throw new Error('Invalid memory model') }
+      }
     }
     const path = memorySettingsPath()
     const settings = await readSettingsObject(path)

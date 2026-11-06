@@ -83,6 +83,11 @@ const api: SessionApi = {
       return () => ipcRenderer.off('browser:selection', handler)
     }
   },
+  longTermMemory: {
+    list: (kind, offset) => ipcRenderer.invoke('memory:long-term:list', kind, offset),
+    evidence: (id) => ipcRenderer.invoke('memory:long-term:evidence', id),
+    forget: (kind, id) => ipcRenderer.invoke('memory:long-term:forget', kind, id),
+  },
   conversationFeatures: {
     onChanged: (listener) => {
       const handler = () => listener()

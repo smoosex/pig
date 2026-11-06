@@ -702,6 +702,7 @@ export interface ReviewFeedback {
 }
 
 export type SystemUIEvent =
+  | { kind: 'memory-retrieval'; sessionId: string; trace: import('./long-term-memory').LongTermRetrievalTrace }
   | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string; error?: string }
   | { kind: 'dismiss'; id: string; sessionId: string }
   | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
@@ -711,6 +712,7 @@ export type SystemUIEvent =
   | { kind: 'reset'; sessionId: string }
 
 export interface MemorySettings {
+  longTerm?: import('./long-term-memory').LongTermSettings
   observeAfterTokens?: number
   reflectAfterTokens?: number
   observerChunkMaxTokens?: number
@@ -887,6 +889,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   sessionAgent: SessionAgentUiApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
+  longTermMemory: import('./long-term-memory').LongTermMemoryApi
   conversationFeatures: import('./features').ConversationFeaturesApi
   permissions: import('./permissions').PermissionsApi
   processes: import('./processes').ProcessApi

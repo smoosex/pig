@@ -69,15 +69,25 @@ async function fixture(): Promise<void> {
   Object.assign(runtime.config, { observeAfterTokens: 100_000, reflectAfterTokens: 1, workerMemoryMaxTokens: budget, observationsPoolTargetTokens: targetTokens, showWorkerNotifications: false })
   const notifications: string[] = []
   runtime.notifications = { notify: (message) => notifications.push(message) }
+  let candidateNotifications = 0
+  const candidateFailure = process.argv.includes('--candidate-failure')
   await runConsolidationPipeline(pi, runtime, {
     signal: new AbortController().signal, cwd: '/project',
     model: { provider: 'test', contextWindow: 65_536, maxTokens: 1000 },
     modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: 'key' }) },
     sessionManager: { getBranch: () => entries, getSessionId: () => 'dropper-budget' }
+  }, {
+    afterReflectionsRecorded: ctx => {
+      candidateNotifications++
+      assert.equal(ctx.sessionManager.getBranch(), entries)
+      assert.equal(writes.at(-1)?.customType, 'om.reflections.recorded', 'candidate collection follows the ledger append, before dropping')
+      if (candidateFailure) throw new Error('Inbox is unavailable')
+    }
   })
   assert.equal(calls, 1)
   assert.equal(toolCalls, 1, 'the real dropper must execute even though bounded candidates fit under the target')
-  assert.deepEqual(notifications, [])
+  assert.equal(candidateNotifications, 1)
+  assert.deepEqual(notifications, candidateFailure ? ['Long-term memory: candidate collection failed; will retry on session reload'] : [])
   assert.deepEqual(writes.map((item) => item.customType), ['om.reflections.recorded', 'om.observations.dropped'])
   const dropped = writes[1].data as { observationIds: string[] }
   assert.equal(dropped.observationIds.length, metrics.maxDropsAllowed)
@@ -90,5 +100,9 @@ if (process.argv.includes('--dropper-budget-fixture')) {
   test('bounded dropper candidates use full-pool eligibility and never drop an unsupplied id', async () => {
     const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--dropper-budget-fixture'], { timeoutMs: 10_000 })
     assert.equal(code, 0, stderr || stdout)
+  }, 15_000)
+  test('candidate inbox failure does not roll back reflections or stop the OM dropper', async () => {
+    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--dropper-budget-fixture', '--candidate-failure'], { timeoutMs: 10_000 })
+    assert.equal(exitCode, 0, stderr || stdout)
   }, 15_000)
 }

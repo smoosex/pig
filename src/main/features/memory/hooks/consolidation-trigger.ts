@@ -262,6 +262,8 @@ export type ConsolidationTriggerHooks = {
 	 * evaluated on the same settled event that memory work deferred.
 	 */
 	afterIdleConsolidation?: (ctx: ConsolidationEventCtx) => void;
+	/** Synchronous notification after the reflector ledger entry has been persisted. */
+	afterReflectionsRecorded?: (ctx: ConsolidationEventCtx) => void;
 };
 
 export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime, hooks: ConsolidationTriggerHooks = {}): void {
@@ -272,7 +274,7 @@ export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime,
 
 	pi.on("agent_start", (_event: unknown, ctx: ConsolidationEventCtx) => {
 		if (!idleMode(ctx)) {
-			maybeLaunchConsolidation(pi, runtime, ctx);
+			maybeLaunchConsolidation(pi, runtime, ctx, undefined, hooks);
 			return;
 		}
 		// The session model is about to be called: get memory workers off the
@@ -288,11 +290,11 @@ export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime,
 	});
 	pi.on("turn_end", (_event: unknown, ctx: ConsolidationEventCtx) => {
 		if (idleMode(ctx)) return;
-		maybeLaunchConsolidation(pi, runtime, ctx);
+		maybeLaunchConsolidation(pi, runtime, ctx, undefined, hooks);
 	});
 	pi.on("agent_settled", (_event: unknown, ctx: ConsolidationEventCtx) => {
 		if (!idleMode(ctx)) return;
-		const launched = maybeLaunchConsolidation(pi, runtime, ctx, () => hooks.afterIdleConsolidation?.(ctx));
+		const launched = maybeLaunchConsolidation(pi, runtime, ctx, () => hooks.afterIdleConsolidation?.(ctx), hooks);
 		if (!launched) hooks.afterIdleConsolidation?.(ctx);
 	});
 }
@@ -308,7 +310,7 @@ function debugSessionMetadata(ctx: ConsolidationEventCtx): { sessionId?: string;
 	}
 }
 
-function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: ConsolidationEventCtx, onComplete?: () => void): Promise<void> | undefined {
+function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: ConsolidationEventCtx, onComplete?: () => void, hooks: ConsolidationTriggerHooks = {}): Promise<void> | undefined {
 	runtime.ensureConfig(ctx.cwd);
 	if (runtime.config.passive === true) return undefined;
 	if (runtime.consolidationInFlight) return undefined;
@@ -332,7 +334,7 @@ function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: Conso
 		...sessionMetadata,
 		runId,
 	}, async () => {
-		await runConsolidationPipeline(pi, runtime, { ...consolidationCtx, signal });
+		await runConsolidationPipeline(pi, runtime, { ...consolidationCtx, signal }, hooks);
 	}), onComplete);
 }
 
@@ -340,6 +342,7 @@ export async function runConsolidationPipeline(
 	pi: ExtensionAPI,
 	runtime: Runtime,
 	ctx: ConsolidationCtx,
+	hooks: ConsolidationTriggerHooks = {},
 ): Promise<void> {
 	const resolver = makeModelResolver(runtime, ctx);
 	runtime.consolidationPhase = "observer";
@@ -361,6 +364,16 @@ export async function runConsolidationPipeline(
 		if (ctx.signal.aborted) return;
 		debugLog("reflector.error", { errorMessage: runtime.recordConsolidationStageError("reflector", error) });
 		return;
+	}
+
+	if (reflectorResult.sameRunReflections.length > 0) {
+		// Inbox failures must be visible but cannot invalidate the already-persisted reflection
+		// or prevent normal OM maintenance. Session replay will retry the inbox write.
+		try {
+			hooks.afterReflectionsRecorded?.(ctx);
+		} catch {
+			runtime.notify("Long-term memory: candidate collection failed; will retry on session reload", "warning");
+		}
 	}
 
 	runtime.consolidationPhase = "dropper";

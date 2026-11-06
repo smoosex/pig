@@ -21,6 +21,7 @@ import type {
   TurnSummary
 } from '../../ipc/api'
 import type { LiveCompaction } from '../../chat/compactions'
+import type { LongTermRetrievalTrace } from '../../../../shared/long-term-memory'
 import type { ProcessItem, ThinkingDurations, ToolUpdates } from '../../chat/turns'
 import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
@@ -85,6 +86,8 @@ export interface RuntimeState extends SessionControls {
   /** A tree navigation/summary is in flight, including hydration of the destination branch. */
   isNavigatingBranch: boolean
   liveMessages: PiMessage[]
+  /** Bounded, tab-lifetime diagnostics keyed by the real source user entry; never chat messages. */
+  memoryRetrievals: Record<string, LongTermRetrievalTrace>
   toolUpdates: ToolUpdates
   bashExecution: { id: string; message: BashExecutionMessage } | null
   pendingUserMessage: boolean
@@ -303,6 +306,8 @@ export interface SessionsStore {
   appendLiveMessage: (sessionId: string, message: PiMessage) => void
   replaceLiveMessage: (sessionId: string, message: PiMessage) => void
   setToolUpdates: (sessionId: string, updates: ToolUpdates) => void
+  setMemoryRetrieval: (sessionId: string, trace: LongTermRetrievalTrace) => void
+  clearMemoryRetrievals: (sessionId: string) => void
   setRetryNotice: (sessionId: string, notice: RetryNotice | null) => void
   startCompaction: (sessionId: string, mark: LiveCompaction) => void
   updateCompaction: (sessionId: string, id: string, patch: Partial<LiveCompaction>) => void

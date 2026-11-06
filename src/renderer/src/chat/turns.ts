@@ -1,6 +1,9 @@
 import type { DisplayCompaction, DisplayTurn, GenerationStats, TurnUsage } from '../../../shared/api'
 import { addUsage } from '../../../shared/turn-usage'
 import { turnTiming } from '../../../shared/turn-timing'
+export { userTurnRenderKey as renderKeyForUser } from '../../../shared/turn-identity'
+import { userTurnRenderKey as renderKeyForUser } from '../../../shared/turn-identity'
+import type { LongTermRetrievalTrace } from '../../../shared/long-term-memory'
 import type { Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -38,6 +41,7 @@ export type ProcessItem =
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
+  | { kind: 'memory'; retrieval: LongTermRetrievalTrace }
   | CompactionItem
 
 /**
@@ -72,6 +76,7 @@ export interface Turn {
   bash?: { command: string; exitCode?: number; cancelled: boolean }
   bashRunning?: boolean
   process: ProcessItem[]
+  memoryRetrieval?: LongTermRetrievalTrace
   /**
    * Landmarks from the projection, used until the process is read: Pi writes a compaction into the
    * same stream as the work, so a loaded process carries its own copies and outranks these.
@@ -119,25 +124,6 @@ function mergeGenerationModels(
     if (!merged.includes(model)) merged.push(model)
   }
   return merged
-}
-
-function hashText(value: string): string {
-  let hash = 2166136261
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0).toString(36)
-}
-
-export function renderKeyForUser(user: Pick<PigUserMessage, 'timestamp' | 'content'>): string {
-  const text = typeof user.content === 'string'
-    ? user.content
-    : user.content.filter((block) => block.type === 'text').map((block) => block.text).join('')
-  const imageCount = typeof user.content === 'string'
-    ? 0
-    : user.content.filter((block) => block.type === 'image').length
-  return `user:${user.timestamp}:${hashText(JSON.stringify([text.slice(0, 256), imageCount]))}`
 }
 
 export function renderKeyForMessages(messages: PiMessage[], fallback: number): string {
