@@ -81,7 +81,10 @@ async function fixture(): Promise<void> {
 
   const { listSessionCommands } = await import('../src/main/pi/session-actions')
   const session = {
-    extensionRunner: { getRegisteredCommands: () => [{ invocationName: 'review', description: 'Review changes' }] },
+    extensionRunner: { getRegisteredCommands: () => [
+      { invocationName: 'review', description: 'Review changes' },
+      { invocationName: 'mcp', description: 'Manage MCP servers' }
+    ] },
     promptTemplates: [{ name: 'explain', description: 'Explain code' }],
     resourceLoader: { getSkills: () => ({ skills: [{ name: 'test', description: 'Write tests' }] }) }
   } as unknown as AgentSession

@@ -39,7 +39,7 @@ export async function updateFollowUpMessage(
 }
 
 export async function listSessionCommands(session: AgentSession): Promise<SessionSlashCommand[]> {
-  const extensionCommands = session.extensionRunner.getRegisteredCommands().map((command) => ({
+  const extensionCommands = session.extensionRunner.getRegisteredCommands().filter((command) => command.invocationName !== 'mcp').map((command) => ({
     name: command.invocationName,
     description: command.description,
     source: 'extension' as const

@@ -56,6 +56,12 @@ async function fixture(): Promise<void> {
   assert.equal(accepted.length, 2)
   assert.equal(cancelled, 2)
   assert.equal(released, 4)
+  for (const text of ['/mcp', '/mcp reconnect server']) {
+    await assert.rejects(promptSession('session', { text }), /Manage MCP servers in Settings/)
+  }
+  assert.equal(accepted.length, 2)
+  assert.equal(pendingModes.length, 4)
+  assert.equal(released, 6, 'disabled commands release the input lease')
 
   const { attachSystemUI, detachSystemUI, resetSystemUI } = await import('../src/main/pi/system-plugin-ui')
   const { reviewUI } = await import('../src/main/plugins/pig-ui')
@@ -73,7 +79,7 @@ async function fixture(): Promise<void> {
     }
     assert.equal(accepted.length, 2)
     assert.equal(pendingModes.length, 4, 'blocked prompts never enter the delivery queue')
-    assert.equal(released, 6, 'rejected prompts release the input lease')
+    assert.equal(released, 8, 'rejected prompts release the input lease')
     await promptSession('other-session', { text: 'Another session', streamingBehavior: 'followUp' })
     assert.equal(accepted.length, 3)
     resetSystemUI('session')

@@ -19,6 +19,9 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
     options.beforeSubmit?.()
     if (isReviewReturning(sessionId)) throw new Error('Cannot submit a prompt while returning from review. Wait for the return to finish and retry.')
     const prompt = normalizeSessionPrompt(input)
+    if (!options.literal && /^\/mcp(?:\s|$)/.test(prompt.modelText)) {
+      throw new Error('Manage MCP servers in Settings instead of using /mcp.')
+    }
     worktrees.assertAvailable(cwd)
     if (agentSession.isBashRunning) throw new Error('Session is running a bash command')
     // Pi decides whether to start or queue after its input hooks; a preflight busy snapshot can be stale.
