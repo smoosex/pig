@@ -295,7 +295,6 @@ export const zh = {
     expandAll: '展开全部',
     scopeAria: '变更范围',
     changeCount: '{count} 个更改',
-    total: '合计',
     countFailed: '部分行数统计失败：{error}',
     layout: 'diff 布局',
     unified: '统一视图',

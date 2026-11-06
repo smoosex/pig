@@ -221,12 +221,6 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         <SidebarHoverHighlight className="flex flex-col gap-0.5">{list()}</SidebarHoverHighlight>
       </div>
 
-      {diff?.git && flatEntries.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-2 pt-1.5 text-xs text-muted-foreground">
-          <span>{t('diff.total')}</span>
-          <DiffCounts entries={flatEntries} />
-        </div>
-      )}
       {state?.countError && <Notice>{t('diff.countFailed', { error: state.countError })}</Notice>}
       <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">
         <ToggleGroup
