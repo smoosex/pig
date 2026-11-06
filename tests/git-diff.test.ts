@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   countLines,
+  countUntrackedFiles,
   parseNumstat,
   parseStatus,
   readUntrackedFile,
@@ -444,6 +445,67 @@ describe('readWorktreePatch', () => {
 describe('untracked line counts', () => {
   const MIB = 1024 * 1024
 
+  test('counts all U files without opening cards and publishes cached counts on refresh', async () => {
+    const root = await fixture()
+    await writeFile(join(root, 'first.txt'), 'one\ntwo')
+    await writeFile(join(root, 'empty.txt'), '')
+    await writeFile(join(root, 'chunked.txt'), 'x'.repeat(65535) + '\nlast\n')
+    const paths = (await readWorktreeDiff(root)).all.map((file) => file.path)
+    expect(await countUntrackedFiles(root, paths)).toEqual({
+      'first.txt': 2, 'empty.txt': 0, 'chunked.txt': 2
+    })
+    const diff = await readWorktreeDiff(root)
+    expect(diff.all.every((file) => file.additions !== null && file.deletions === 0)).toBe(true)
+    expect(diff.unstaged.find((file) => file.path === 'first.txt')?.additions).toBe(2)
+  })
+
+  test('keeps binary, oversized, missing and escaped files unknown without losing other counts', async () => {
+    const root = await fixture()
+    await writeFile(join(root, 'good.txt'), 'ok\n')
+    await writeFile(join(root, 'fresh.dat'), Buffer.from([0, 10, 10]))
+    await writeFile(join(root, 'at-cap.txt'), 'x'.repeat(MIB))
+    await writeFile(join(root, 'past-cap.txt'), 'x'.repeat(MIB + 1))
+    await symlink('/etc/passwd', join(root, 'link'))
+    await symlink('/etc', join(root, 'escaped'))
+    expect(await countUntrackedFiles(root, [
+      'good.txt', 'fresh.dat', 'at-cap.txt', 'past-cap.txt', 'missing.txt', '../outside', 'link', 'escaped/passwd'
+    ])).toEqual({
+      'good.txt': 1, 'fresh.dat': null, 'at-cap.txt': 1, 'past-cap.txt': null,
+      'missing.txt': null, '../outside': null, link: 1, 'escaped/passwd': null
+    })
+  })
+
+  test('caches uncountable results and recounts after the file changes', async () => {
+    const root = await fixture()
+    const path = join(root, 'cached.dat')
+    await writeFile(path, Buffer.from([0, 10, 98, 10]))
+    const time = Math.floor(Date.now() / 1000) - 10
+    await utimes(path, time, time)
+    expect(await countUntrackedFiles(root, ['cached.dat'])).toEqual({ 'cached.dat': null })
+    await writeFile(path, 'a\nb\n')
+    await utimes(path, time, time)
+    expect(await countUntrackedFiles(root, ['cached.dat'])).toEqual({ 'cached.dat': null })
+    await appendFile(path, 'c\n')
+    expect(await countUntrackedFiles(root, ['cached.dat'])).toEqual({ 'cached.dat': 3 })
+  })
+
+  test('an unreadable file does not reject counting and is retried when permissions change', async () => {
+    const root = await fixture()
+    const path = join(root, 'denied.txt')
+    await writeFile(path, 'one\ntwo\n')
+    await writeFile(join(root, 'good.txt'), 'ok\n')
+    await chmod(path, 0)
+    try {
+      const result = await countUntrackedFiles(root, ['denied.txt', 'good.txt'])
+      expect(result['good.txt']).toBe(1)
+      if (process.getuid?.() !== 0) expect(result['denied.txt']).toBeNull()
+      expect((await readWorktreeDiff(root)).git).toBe(true)
+    } finally {
+      await chmod(path, 0o600)
+    }
+    expect(await countUntrackedFiles(root, ['denied.txt'])).toEqual({ 'denied.txt': 2 })
+  })
+
   /** Files of exactly one line, so 1 is the only correct count for each of them. */
   const writeBulk = async (root: string, count: number) => {
     const body = 'x'.repeat(MIB - 1) + '\n'
@@ -454,10 +516,8 @@ describe('untracked line counts', () => {
     )
   }
 
-  // Counting lines means reading the file, so a refresh never reads one the reader has not opened:
-  // an untracked row carries a number only once its card has been read, and that read is where it comes
-  // from. A worktree of generated files costs a refresh nothing until somebody looks at one of them.
-  test('leaves the counts unknown until the file has been read', async () => {
+  // The initial Git snapshot does no cold content reads; the renderer requests counting separately.
+  test('leaves the initial counts unknown until a background or card read', async () => {
     const root = await fixture()
     await writeBulk(root, 12)
 

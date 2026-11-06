@@ -53,6 +53,7 @@ async function runFixture(name: string): Promise<void> {
   }))
   const api: Partial<SessionApi> = {
     readWorktreeDiff: async () => full,
+    countUntrackedFiles: async () => ({}),
     readWorktreePatch: async () => ({ git: true, patch: '', truncated: false }),
     watchWorktreeDiff: async () => 'lease',
     unwatchWorktreeDiff: async () => {},
@@ -325,21 +326,35 @@ async function runFixture(name: string): Promise<void> {
     await render('/clean')
     assert.match(container.textContent ?? '', /工作区没有未提交的变更/)
 
-    // A count that nobody has read is unknown, and a group that holds one says its file count only:
-    // adding up the half it happens to know would read as a total.
+    // An unknown file must not hide known totals, either for its group, its directory, or the worktree.
     api.readWorktreeDiff = async () =>
       worktree({
         staged: [{ path: 'src/staged.ts', status: 'added', additions: 3, deletions: 0 }],
-        unstaged: [{ path: 'src/new.ts', status: 'untracked', additions: null, deletions: null }],
+        unstaged: [
+          { path: 'src/new.ts', status: 'untracked', additions: null, deletions: null },
+          { path: 'src/work.ts', status: 'modified', additions: 2, deletions: 1 }
+        ],
         all: [
           { path: 'src/new.ts', status: 'untracked', additions: null, deletions: null },
+          { path: 'src/work.ts', status: 'modified', additions: 2, deletions: 1 },
           { path: 'src/staged.ts', status: 'added', additions: 3, deletions: 0 }
         ]
       })
     await render('/unread')
     const [stagedHeader, unstagedHeader] = [...container.querySelectorAll('button[aria-expanded]')]
     assert.match(stagedHeader!.textContent ?? '', /已暂存\(1\)\+3-0/, 'a group whose counts are all known keeps them')
-    assert.match(unstagedHeader!.textContent ?? '', /未提交\(1\)$/)
+    assert.match(unstagedHeader!.textContent ?? '', /未提交\(2\)\+2-1$/)
+    assert.match(container.textContent ?? '', /合计\+5-1/)
+    assert.doesNotMatch(container.textContent ?? '', /未计入/)
+    await click(container.querySelector('button[aria-label="以树状显示"]'))
+    const directories = [...container.querySelectorAll('button[title="src"]')]
+    assert.ok(directories.some((directory) => /\+2-1$/.test(directory.textContent ?? '')))
+
+    api.countUntrackedFiles = async () => { throw new Error('EIO: count read failed') }
+    await render('/count-failed')
+    assert.match(container.textContent ?? '', /部分行数统计失败：EIO: count read failed/)
+    assert.match(container.textContent ?? '', /合计\+5-1/)
+    assert.match(container.textContent ?? '', /src\/new\.ts|new\.ts/)
   } else if (name === 'refresh') {
     await render(CWD)
     assert.equal(rowTexts().length, 3)

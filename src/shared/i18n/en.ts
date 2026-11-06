@@ -273,6 +273,8 @@ export const en: Messages = {
     expandAll: 'Expand all',
     scopeAria: 'Change scope',
     changeCount: '{count} changes',
+    total: 'Total',
+    countFailed: 'Some line counts failed: {error}',
     layout: 'Diff layout',
     unified: 'Unified view',
     sideBySide: 'Side-by-side view',

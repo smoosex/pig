@@ -296,6 +296,7 @@ const api: SessionApi = {
   trashEntry: (cwd: string, path: string) => ipcRenderer.invoke('files:trash', cwd, path),
   copyPath: (cwd: string, path: string) => ipcRenderer.invoke('files:copy-path', cwd, path),
   readWorktreeDiff: (cwd: string) => ipcRenderer.invoke('diff:read-worktree', cwd),
+  countUntrackedFiles: (cwd: string, paths: string[]) => ipcRenderer.invoke('diff:count-untracked', cwd, paths),
   readWorktreePatch: (cwd: string, scope: DiffScope) =>
     ipcRenderer.invoke('diff:read-patch', cwd, scope),
   readUntrackedFile: (cwd: string, path: string) =>

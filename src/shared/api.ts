@@ -301,10 +301,9 @@ export interface DiffWatchError {
 }
 
 /**
- * One untracked file, read on demand: an untracked file has no diff to ask git for, and reading the
- * whole set on every refresh is what turns a worktree full of generated files into a stalled app. The
- * changes tab reads one of these when its card is opened, so the cost follows what is on screen — and
- * the line count comes back with the bytes, because nothing else can know it without reading the file.
+ * One untracked file, read on demand: Git does not produce a patch for it, so the
+ * changes tab reads the contents only when its card is opened. Background line counting is separate,
+ * bounded, and returns no contents; opening a card also refreshes its cached count.
  */
 export type UntrackedFileResult =
   | { kind: 'text'; contents: string; lines: number }
@@ -333,7 +332,7 @@ export interface DiffFileEntry {
   /** Where a rename or copy came from. */
   origPath?: string
   status: DiffFileStatus
-  /** Null when git reports a binary file or nobody has read the file to count it. */
+  /** Null while counting, or for binary, oversized, or unreadable files. */
   additions: number | null
   deletions: number | null
 }
@@ -1006,6 +1005,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   /** Puts the row's absolute path on the clipboard, resolved in main. */
   copyPath: (cwd: string, path: string) => Promise<void>
   readWorktreeDiff: (cwd: string) => Promise<WorktreeDiff>
+  countUntrackedFiles: (cwd: string, paths: string[]) => Promise<Record<string, number | null>>
   readWorktreePatch: (cwd: string, scope: DiffScope) => Promise<WorktreePatch>
   readUntrackedFile: (cwd: string, path: string) => Promise<UntrackedFileResult>
   watchWorktreeDiff: (cwd: string) => Promise<string>

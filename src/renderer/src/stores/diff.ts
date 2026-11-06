@@ -21,6 +21,7 @@ export interface WorktreeDiffState {
   diff?: WorktreeDiff
   error?: string
   watchError?: string
+  countError?: string
 }
 
 export interface WorktreePatchState {
@@ -128,20 +129,18 @@ function dropUntrackedClaims(cwd: string): void {
 }
 
 /**
- * The untracked row's line count arrives with the read of its card, not with a refresh — main counted it
- * from the bytes it just handed over. The number is written into every list that holds the path so the
- * card header and the panel row agree with what main will report for the same file until it changes.
+ * Background counts and card reads update every scope in one pass. Neither operation retains contents
+ * here, and its caller must reject results overtaken by a newer worktree scan.
  */
 function countUntracked(
   state: WorktreeDiffState | undefined,
-  path: string,
-  lines: number | null
+  counts: Record<string, number | null>
 ): WorktreeDiffState | undefined {
   if (state?.status !== 'ready' || !state.diff) return state
   const count = (entries: DiffFileEntry[]): DiffFileEntry[] =>
     entries.map((entry) =>
-      entry.status === 'untracked' && entry.path === path && entry.additions !== lines
-        ? { ...entry, additions: lines, deletions: lines === null ? null : 0 }
+      entry.status === 'untracked' && Object.hasOwn(counts, entry.path) && entry.additions !== counts[entry.path]
+        ? { ...entry, additions: counts[entry.path]!, deletions: counts[entry.path] === null ? null : 0 }
         : entry
     )
   const diff = state.diff
@@ -211,7 +210,7 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
       return
     }
     set((state) => {
-      const counted = countUntracked(state.worktrees[cwd], path, result.kind === 'text' ? result.lines : null)
+      const counted = countUntracked(state.worktrees[cwd], { [path]: result.kind === 'text' ? result.lines : null })
       return {
         untracked: { ...state.untracked, [cwd]: { ...state.untracked[cwd], [path]: result } },
         worktrees: counted ? { ...state.worktrees, [cwd]: counted } : state.worktrees
@@ -267,6 +266,23 @@ export const useDiffStore = create<DiffStore>((set, get) => ({
           [cwd]: { status: 'ready', diff, watchError: state.worktrees[cwd]?.watchError }
         }
       }))
+      // Publish the Git list before any cold U reads. A newer refresh or closing the worktree revokes
+      // this scan's right to publish, including a late failure of the background count request.
+      const paths = diff.all.filter((entry) => entry.status === 'untracked').map((entry) => entry.path)
+      if (paths.length) {
+        try {
+          const counts = await api.countUntrackedFiles(cwd, paths)
+          if (scans.get(cwd) !== read) return
+          set((state) => ({
+            worktrees: { ...state.worktrees, [cwd]: countUntracked(state.worktrees[cwd], counts)! }
+          }))
+        } catch (error) {
+          if (scans.get(cwd) !== read) return
+          set((state) => ({
+            worktrees: { ...state.worktrees, [cwd]: { ...state.worktrees[cwd]!, countError: failureMessage(error) } }
+          }))
+        }
+      }
     } catch (error) {
       if (scans.get(cwd) !== read) return
       set((state) => ({

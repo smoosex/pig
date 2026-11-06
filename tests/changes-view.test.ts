@@ -107,6 +107,7 @@ async function runFixture(): Promise<void> {
   }
   const api: Partial<SessionApi> = {
     readWorktreeDiff: async () => diff,
+    countUntrackedFiles: async () => ({}),
     readWorktreePatch: async (_cwd, scope) => {
       readScopes.push(scope)
       return {

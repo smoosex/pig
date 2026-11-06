@@ -60,6 +60,46 @@ test('renderer shares one worktree watch and refreshes every active scope once',
   useDiffStore.getState().forgetWorktree(cwd)
 })
 
+test('background counts publish after the list, and stale results cannot overwrite a newer refresh or closed worktree', async () => {
+  const held: { resolve: (counts: Record<string, number | null>) => void; reject: (error: Error) => void }[] = []
+  api.readWorktreeDiff = async () => {
+    const entry = { path: 'new.txt', status: 'untracked' as const, additions: null, deletions: null }
+    return { git: true, staged: [], unstaged: [entry], all: [entry] }
+  }
+  api.countUntrackedFiles = async (_cwd, paths) => {
+    assert.deepEqual(paths, ['new.txt'])
+    return new Promise((resolve, reject) => held.push({ resolve, reject }))
+  }
+  const { useDiffStore } = await import('../src/renderer/src/stores/diff')
+  const cwd = '/count-race'
+  const first = useDiffStore.getState().loadWorktree(cwd)
+  await sleep(0)
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.status, 'ready', 'a cold count must not hold the list')
+  const second = useDiffStore.getState().loadWorktree(cwd)
+  await sleep(0)
+  held[1]!.resolve({ 'new.txt': 7 })
+  await second
+  held[0]!.resolve({ 'new.txt': 2 })
+  await first
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.diff?.all[0]?.additions, 7)
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.diff?.unstaged[0]?.additions, 7)
+
+  const failed = useDiffStore.getState().loadWorktree(cwd)
+  await sleep(0)
+  held[2]!.reject(new Error('count transport failed'))
+  await failed
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.status, 'ready')
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.diff?.all.length, 1)
+  assert.equal(useDiffStore.getState().worktrees[cwd]?.countError, 'count transport failed')
+
+  const closed = useDiffStore.getState().loadWorktree(cwd)
+  await sleep(0)
+  useDiffStore.getState().forgetWorktree(cwd)
+  held[3]!.resolve({ 'new.txt': 99 })
+  await closed
+  assert.equal(useDiffStore.getState().worktrees[cwd], undefined)
+})
+
 test('a released acquisition returns its late lease and a retry success repairs the snapshot', async () => {
   let resolveLease: ((lease: string) => void) | undefined
   let calls = 0

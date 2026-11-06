@@ -1,11 +1,8 @@
 /**
  * How much of the git layer's file work may be in flight at once. Reading an untracked file holds a
- * ~1 MiB buffer for as long as the read takes, so only a few may run however many cards ask; validating
- * the counts a refresh already knows only stats, but one refresh can queue thousands of those.
- *
- * Two pools rather than one shared queue: a refresh's backlog must never stand in front of a card's read.
- * A linter cannot see the difference — both are limiter objects — so `tests/git-limit.test.ts` checks it
- * by queueing slow work in one and reading from the other.
+ * ~1 MiB buffer for as long as the read takes, so only a few may run however many cards ask. Background
+ * counts use 64 KiB buffers. Foreground reads, metadata validation, and background counts have separate
+ * pools: neither listing nor opening a card may queue behind cold background reads.
  */
 export interface Limiter {
   /** Runs `task` once a lane is free. The lane comes back whatever the task does. */
@@ -38,5 +35,7 @@ export function createLimiter(lanes: number): Limiter {
  * through the same pool — their buffer is a couple of MiB, and a change event asks for every open one at
  * once — so the pool bounds what content is in memory at a time, not what asked for it. */
 export const readLanes = createLimiter(4)
-/** Count validation: stats only, but a refresh can hand this pool thousands of them. */
-export const countLanes = createLimiter(8)
+/** Metadata-only validation for list refreshes, independent of cold content reads. */
+export const countLanes = createLimiter(4)
+/** Background line counting never queues in front of list validation or foreground reads. */
+export const backgroundCountLanes = createLimiter(4)

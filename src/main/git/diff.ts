@@ -20,7 +20,7 @@ import { resolveWorktreePath } from '../files/paths'
 import { isMissingError, readCapped, BINARY_PROBE_BYTES } from '../files/read'
 import { GitExecError, isNotARepoError } from './exec'
 import { runGit } from './run'
-import { countLanes, readLanes } from './limit'
+import { backgroundCountLanes, countLanes, readLanes } from './limit'
 
 const MAX_PATCH_CHARS = 8 * 1024 * 1024
 const MAX_UNTRACKED_BYTES = 1024 * 1024
@@ -53,15 +53,11 @@ export type UntrackedFile =
 interface CountEntry {
   size: number
   mtimeMs: number
-  lines: number
+  mode: number
+  lines: number | null
 }
 
-/**
- * Line counts per worktree and path for the untracked files somebody has opened. A count costs a read,
- * so it is only ever learned from the bytes a card already asked for, and the size and mtime it was read
- * at are kept with it: a refresh compares those against one lstat and drops a count whose file moved
- * rather than showing a stale number. No cache entry means no number and no work.
- */
+/** Counts and uncountable results share a metadata cache; contents are never retained here. */
 const countCache = new Map<string, Map<string, CountEntry>>()
 
 function statusFor(letter: string): DiffFileStatus {
@@ -163,9 +159,7 @@ function byPath(entries: NumstatEntry[]): Map<string, NumstatEntry> {
  * by the read instead — it asks for one byte past the cap and knows the difference between "that was all
  * of it" and "there was more". Nothing past that byte is ever brought into memory.
  *
- * The bytes read here are also the only place an untracked file's line count can come from, so the one
- * is recorded for the other as they pass — but only when the file's size and mtime still read the same
- * after the read as before it, so a number never outlives the bytes it was counted from.
+ * A card read also seeds the count cache, but only when size and mtime stay stable during the read.
  */
 async function readUntracked(cwd: string, path: string): Promise<UntrackedFile> {
   const absolute = join(cwd, path)
@@ -202,10 +196,10 @@ async function readUntracked(cwd: string, path: string): Promise<UntrackedFile> 
   }
 }
 
-function rememberCount(cwd: string, path: string, info: Stats, lines: number): void {
+function rememberCount(cwd: string, path: string, info: Stats, lines: number | null): void {
   const cache = countCache.get(cwd) ?? new Map<string, CountEntry>()
   countCache.set(cwd, cache)
-  cache.set(path, { size: info.size, mtimeMs: info.mtimeMs, lines })
+  cache.set(path, { size: info.size, mtimeMs: info.mtimeMs, mode: info.mode, lines })
 }
 
 /**
@@ -233,10 +227,8 @@ export async function readUntrackedFile(cwd: string, path: string): Promise<Untr
 }
 
 /**
- * The line counts already known for the untracked rows of a refresh. Each count was learned from the bytes
- * of a card that got opened, so a refresh validates what it has with one lstat per counted file and does
- * nothing at all for the rest — a worktree with nothing opened in it pays nothing, however many untracked
- * files it holds. A count whose file changed size or mtime is dropped: no number beats a wrong one.
+ * Validate cached counts without reading contents. The renderer displays this snapshot first, then
+ * requests background counting for all U files; changed metadata drops the old number immediately.
  */
 async function untrackedCounts(cwd: string, paths: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>()
@@ -259,23 +251,88 @@ async function untrackedCounts(cwd: string, paths: string[]): Promise<Map<string
         const cached = cache.get(path)
         if (!cached) return
 
-        const info = await lstat(join(cwd, path)).catch((error) => {
-          // A path that is gone just stops being counted. A permission or an I/O error is not something to
-          // hide behind a missing number: it goes up, and the refresh reports what is wrong with the tree.
-          if (isMissingError(error)) return null
-          throw error
-        })
+        let info: Stats | null = null
+        try {
+          const target = await resolveWorktreePath(cwd, path, 'file')
+          if (target) info = await lstat(target.absolute)
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          if (!isMissingError(error) && code !== 'EACCES' && code !== 'EPERM') throw error
+        }
         if (cache.get(path) !== cached) return
 
-        if (!info || info.size !== cached.size || info.mtimeMs !== cached.mtimeMs) {
+        if (!info || !sameCountVersion(info, cached)) {
           cache.delete(path)
           return
         }
-        counts.set(path, cached.lines)
+        if (cached.lines !== null) counts.set(path, cached.lines)
       })
     )
   )
   return counts
+}
+
+function sameCountVersion(info: Stats, cached: Pick<Stats, 'size' | 'mtimeMs' | 'mode'>): boolean {
+  return info.size === cached.size && info.mtimeMs === cached.mtimeMs && info.mode === cached.mode
+}
+
+/**
+ * Count independently of card contents. The dedicated pool keeps large refreshes out of the foreground
+ * read queue. Each task rechecks the cache after queueing, so overlapping refreshes reuse completed work.
+ * Missing or inaccessible files contribute null; unexpected I/O failures reject the count request.
+ */
+export async function countUntrackedFiles(cwd: string, paths: string[]): Promise<Record<string, number | null>> {
+  return Object.fromEntries(await Promise.all([...new Set(paths)].map((path) => backgroundCountLanes.run(async () => {
+    let info: Stats | undefined
+    try {
+      const target = await resolveWorktreePath(cwd, path, 'file')
+      if (!target) return [path, null] as const
+      info = await lstat(target.absolute)
+      const cached = countCache.get(cwd)?.get(path)
+      if (cached && sameCountVersion(info, cached)) return [path, cached.lines] as const
+
+      let lines: number | null = null
+      if (info.isSymbolicLink()) {
+        lines = countLines(await readlink(target.absolute))
+      } else if (info.isFile() && info.size <= MAX_UNTRACKED_BYTES) {
+        const handle = await open(target.absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+        try {
+          // Count bytes, not decoded strings. Stop after the cap even if a writer grows the file.
+          const buffer = Buffer.allocUnsafe(64 * 1024)
+          let bytes = 0
+          let feeds = 0
+          let last = -1
+          while (true) {
+            const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, MAX_UNTRACKED_BYTES + 1 - bytes), bytes)
+            if (!bytesRead) {
+              lines = feeds + (last !== -1 && last !== 10 ? 1 : 0)
+              break
+            }
+            const chunk = buffer.subarray(0, bytesRead)
+            if (bytes + bytesRead > MAX_UNTRACKED_BYTES ||
+              (bytes < BINARY_PROBE_BYTES && chunk.subarray(0, BINARY_PROBE_BYTES - bytes).includes(0))) break
+            for (let index = chunk.indexOf(10); index !== -1; index = chunk.indexOf(10, index + 1)) feeds++
+            last = chunk[bytesRead - 1]!
+            bytes += bytesRead
+          }
+          const after = await handle.stat()
+          if (!sameCountVersion(after, info)) return [path, null] as const
+        } finally {
+          await handle.close()
+        }
+      }
+      const after = await lstat(target.absolute)
+      if (!sameCountVersion(after, info)) return [path, null] as const
+      rememberCount(cwd, path, after, lines)
+      return [path, lines] as const
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!isMissingError(error) && code !== 'EACCES' && code !== 'EPERM') throw error
+      // Permission failures can be cached until metadata changes; missing paths are retried.
+      if (info && (code === 'EACCES' || code === 'EPERM')) rememberCount(cwd, path, info, null)
+      return [path, null] as const
+    }
+  }))))
 }
 
 async function isWorktree(cwd: string): Promise<boolean> {

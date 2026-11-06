@@ -41,6 +41,7 @@ import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { cn } from '../../lib/utils'
 import type { Translate } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
+import { DiffCounts } from './DiffCounts'
 import { FileTypeIcon } from '../files/FileTypeIcon'
 import { STATUS_META, splitPath } from './file-entry'
 import {
@@ -331,6 +332,7 @@ export function ChangesView({ cwd }: { cwd: string }) {
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="text-xs tabular-nums text-muted-foreground">{t('diff.changeCount', { count: entries.length })}</span>
+        {entries.length > 0 && <DiffCounts entries={entries} />}
         <span className="flex-1" />
         <Button
           type="button"

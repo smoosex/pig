@@ -18,7 +18,8 @@ import { changeTreeRows, type ChangeTreeRow } from './change-tree'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { cn } from '../../lib/utils'
 import { FileTypeIcon } from '../files/FileTypeIcon'
-import { STATUS_META, splitPath, sumCounts } from './file-entry'
+import { STATUS_META, splitPath } from './file-entry'
+import { DiffCounts } from './DiffCounts'
 import { fileDragProps } from '../composer/file-drag'
 
 type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
@@ -94,7 +95,6 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     const indent = { paddingInlineStart: `${(indented ? 24 : 4) + item.depth * 12}px` }
     if (item.kind === 'file') return row(item.entry, scope, indented, indent)
     const key = `${scope}\u0000${item.path}`
-    const counts = item.entries.every((entry) => entry.additions !== null) ? sumCounts(item.entries) : null
     return (
       <button
         key={`directory\u0000${item.path}`}
@@ -116,12 +116,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           <Folder className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <span className="min-w-0 flex-1 truncate">{item.name}</span>
-        {counts ? (
-          <>
-            <span className="shrink-0 tabular-nums text-success">+{counts.additions}</span>
-            <span className="shrink-0 tabular-nums text-destructive">-{counts.deletions}</span>
-          </>
-        ) : null}
+        <DiffCounts entries={item.entries} />
       </button>
     )
   }
@@ -190,9 +185,6 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     if (flat) return rows(flatEntries, 'all', false)
     return groups.map((group) => {
       if (!group.entries.length) return null
-      // Counts are only known for what has been read: a group with an unknown file says its size and
-      // nothing else, rather than adding up the half it happens to know.
-      const counts = group.entries.every((entry) => entry.additions !== null) ? sumCounts(group.entries) : null
       const open = !collapsed[group.key]
       return (
         <div key={group.key} data-change-group={group.key}>
@@ -211,12 +203,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
               <span>{scopeLabel(t, group.key)}</span>
               <span className="tabular-nums text-muted-foreground">({group.entries.length})</span>
               <span className="flex-1" />
-              {counts ? (
-                <>
-                  <span className="tabular-nums text-success">+{counts.additions}</span>
-                  <span className="tabular-nums text-destructive">-{counts.deletions}</span>
-                </>
-              ) : null}
+              <DiffCounts entries={group.entries} />
             </button>
           </div>
           {open ? rows(group.entries, group.key, true) : null}
@@ -234,6 +221,13 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
         <SidebarHoverHighlight className="flex flex-col gap-0.5">{list()}</SidebarHoverHighlight>
       </div>
 
+      {diff?.git && flatEntries.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-2 pt-1.5 text-xs text-muted-foreground">
+          <span>{t('diff.total')}</span>
+          <DiffCounts entries={flatEntries} />
+        </div>
+      )}
+      {state?.countError && <Notice>{t('diff.countFailed', { error: state.countError })}</Notice>}
       <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">
         <ToggleGroup
           type="single"

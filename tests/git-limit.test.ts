@@ -1,7 +1,7 @@
 /**
  * The limiter is what keeps a burst of card reads from turning into a burst of MiB-sized buffers, and what
  * keeps a refresh's thousands of stats from queueing in one go. It is pure, so it is checked here rather
- * than through the app; `diff.ts` builds the two pools it uses from this.
+ * than through the app; `diff.ts` builds its independent pools from this.
  */
 import { describe, expect, test } from 'bun:test'
 import { countLanes, createLimiter, readLanes } from '../src/main/git/limit'

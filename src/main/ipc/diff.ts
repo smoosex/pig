@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { DiffScope } from '../../shared/api'
-import { readUntrackedFile, readWorktreeDiff, readWorktreePatch } from '../git/diff'
+import { countUntrackedFiles, readUntrackedFile, readWorktreeDiff, readWorktreePatch } from '../git/diff'
 import { unwatchWorktree, watchWorktree } from '../git/watch'
 import { requireWorktree } from '../worktree-access'
 
@@ -12,6 +12,9 @@ import { requireWorktree } from '../worktree-access'
 export function registerDiffIpc(): void {
   ipcMain.handle('diff:read-worktree', async (_event, cwd: string) =>
     readWorktreeDiff(await requireWorktree(cwd))
+  )
+  ipcMain.handle('diff:count-untracked', async (_event, cwd: string, paths: string[]) =>
+    countUntrackedFiles(await requireWorktree(cwd), paths)
   )
   ipcMain.handle('diff:read-patch', async (_event, cwd: string, scope: DiffScope) =>
     readWorktreePatch(await requireWorktree(cwd), scope)
