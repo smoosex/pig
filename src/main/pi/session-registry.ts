@@ -828,6 +828,11 @@ export async function refreshPluginSessions(force = false, cwd?: string): Promis
   }))
 }
 
+/** Feature factories reread their own preferences on the SDK's shared idle-resource reload path. */
+export function refreshConversationFeatures(): Promise<void> {
+  return refreshPluginSessions(true)
+}
+
 /** Live sessions whose turn, bash command or input is still in flight; quitting would abort them. */
 export function runningSessionCount(): number {
   return [...live.values()].filter((session) => !canReloadResources(session)).length

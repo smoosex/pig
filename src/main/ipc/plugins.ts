@@ -1,26 +1,18 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import type { MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch } from '../../shared/api'
+import type { PluginScope, WebSearchSettingsPatch } from '../../shared/api'
 import {
-  getMemoryPluginDefaults,
-  getMemoryPluginSettings,
   getPluginSettings,
   installPlugin,
-  isMemoryPluginEnabled,
   listPlugins,
   removePlugin,
-  setMemoryPluginSettings,
   setPluginScopes,
   setPluginSettings,
   updatePlugin
 } from '../pi/plugins'
-import { getLive, hasBusyPluginSessions, refreshPluginSessions, sessionCwd, sessionSourceFor } from '../pi/session-registry'
-import { isChatCwd } from '../chats'
+import { hasBusyPluginSessions, refreshPluginSessions } from '../pi/session-registry'
 import { assertProviderSelection, patchWebSearchSettings, webSearchSettingsState } from '../pi/web-search-settings'
 import { testWebSearchProvider } from '../pi/web-search-test'
-import { memoryStatus, memoryView } from '../plugins/observational-memory/details'
-import type { Entry } from '../plugins/observational-memory/session-ledger'
 import { replyReviewUI } from '../pi/system-plugin-ui'
-import { registerPersonaIpc } from './persona'
 
 function changed(): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -29,7 +21,6 @@ function changed(): void {
 }
 
 export function registerPluginIpc(): void {
-  registerPersonaIpc()
   ipcMain.handle('plugins:list', () => listPlugins())
   ipcMain.handle('plugins:install', async (_event, source: string) => {
     if (typeof source !== 'string' || !source.trim()) throw new Error('Plugin source is required')
@@ -58,29 +49,6 @@ export function registerPluginIpc(): void {
     await removePlugin(id)
     changed()
     return listPlugins()
-  })
-  ipcMain.handle('plugins:memory-enabled', (_event, sessionId: string) => {
-    if (typeof sessionId !== 'string') throw new Error('Session id is required')
-    return isMemoryPluginEnabled(isChatCwd(sessionCwd(sessionId)) ? 'chat' : 'project')
-  })
-  ipcMain.handle('plugins:memory-defaults', () => getMemoryPluginDefaults())
-  ipcMain.handle('plugins:memory-get', () => getMemoryPluginSettings())
-  ipcMain.handle('plugins:memory-set', async (_event, patch: MemoryPluginSettingsPatch) => {
-    const settings = await setMemoryPluginSettings(patch)
-    await refreshPluginSessions(true)
-    changed()
-    return settings
-  })
-  ipcMain.handle('plugins:memory-detail', async (_event, sessionId: string, kind: 'status' | 'view', full?: boolean) => {
-    if (typeof sessionId !== 'string' || !['status', 'view'].includes(kind) || (full !== undefined && typeof full !== 'boolean')) {
-      throw new Error('Invalid memory detail request')
-    }
-    if (!(await isMemoryPluginEnabled(isChatCwd(sessionCwd(sessionId)) ? 'chat' : 'project'))) {
-      throw new Error('Observational memory is not enabled for this session')
-    }
-    const entries = (await sessionSourceFor(sessionId)).branch() as Entry[]
-    if (kind === 'view') return memoryView(entries, full)
-    return memoryStatus(sessionId, entries, getLive(sessionId)?.agentSession.model?.contextWindow, sessionCwd(sessionId))
   })
   ipcMain.handle('plugins:config-get', async (_event, id: string) => {
     if (typeof id !== 'string') throw new Error('Plugin id is required')

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
-import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemoryPluginSettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemorySettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -81,6 +81,13 @@ const api: SessionApi = {
       const handler = (_event: Electron.IpcRendererEvent, selection: import('../shared/browser').BrowserSelection) => listener(selection)
       ipcRenderer.on('browser:selection', handler)
       return () => ipcRenderer.off('browser:selection', handler)
+    }
+  },
+  conversationFeatures: {
+    onChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('conversation-features:changed', handler)
+      return () => ipcRenderer.off('conversation-features:changed', handler)
     }
   },
   persona: {
@@ -386,11 +393,11 @@ const api: SessionApi = {
   setPluginScopes: (id: string, scopes: PluginScope[]) => ipcRenderer.invoke('plugins:scopes', id, scopes),
   updatePlugin: (id: string) => ipcRenderer.invoke('plugins:update', id),
   removePlugin: (id: string) => ipcRenderer.invoke('plugins:remove', id),
-  isMemoryPluginEnabled: (sessionId: string) => ipcRenderer.invoke('plugins:memory-enabled', sessionId),
-  getMemoryPluginDefaults: () => ipcRenderer.invoke('plugins:memory-defaults'),
-  getMemoryPluginSettings: () => ipcRenderer.invoke('plugins:memory-get'),
-  setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => ipcRenderer.invoke('plugins:memory-set', patch),
-  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => ipcRenderer.invoke('plugins:memory-detail', sessionId, kind, full),
+  isMemoryEnabled: (sessionId: string) => ipcRenderer.invoke('memory:enabled', sessionId),
+  getMemoryDefaults: () => ipcRenderer.invoke('memory:defaults'),
+  getMemorySettings: () => ipcRenderer.invoke('memory:get'),
+  setMemorySettings: (patch: MemorySettingsPatch) => ipcRenderer.invoke('memory:set', patch),
+  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => ipcRenderer.invoke('memory:detail', sessionId, kind, full),
   getPluginSettings: (id: string) => ipcRenderer.invoke('plugins:config-get', id),
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => ipcRenderer.invoke('plugins:config-set', id, patch),
   getWebSearchSettings: () => ipcRenderer.invoke('plugins:web-search-get'),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
+import { BookOpen, Brain, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
@@ -13,6 +13,8 @@ import { ThemePane } from './ThemePane'
 import { ShortcutsPane, ShortcutsResetAll } from './ShortcutsPane'
 import { ProvidersPane } from './ProvidersPane'
 import { PluginsPane } from './PluginsPane'
+import { PersonaMemoryPane } from './PersonaMemoryPane'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { McpPane } from './McpPane'
 import { SkillsPane } from './SkillsPane'
 import { PermissionsPane } from './PermissionsPane'
@@ -24,6 +26,13 @@ const sections = [
     description: 'settings.sectionGeneralDescription',
     icon: Snowflake,
     component: GeneralPane
+  },
+  {
+    id: 'persona-memory',
+    title: 'features.title',
+    description: 'features.description',
+    icon: Brain,
+    component: PersonaMemoryPane
   },
   {
     id: 'shortcuts',
@@ -82,6 +91,14 @@ type SettingsSection = (typeof sections)[number]['id']
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const t = useT()
   const [section, setSection] = useState<SettingsSection>('general')
+  const [featureDirty, setFeatureDirty] = useState(false)
+  const [featureBusy, setFeatureBusy] = useState(false)
+  const [discardFeatures, setDiscardFeatures] = useState(false)
+  const requestClose = () => {
+    if (featureBusy) return
+    if (featureDirty) setDiscardFeatures(true)
+    else onClose()
+  }
   const load = useSettingsStore((s) => s.load)
   const error = useSettingsStore((s) => s.error)
   const currentSection = sections.find((item) => item.id === section)!
@@ -100,11 +117,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       )
         return
       event.preventDefault()
-      onClose()
+      requestClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, featureBusy, featureDirty])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -150,7 +167,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             variant="ghost"
             size="sm"
             className={cn('w-full justify-start text-muted-foreground hover:text-sidebar-accent-foreground', sidebarSurfaceHover)}
-            onClick={onClose}
+            disabled={featureBusy}
+            onClick={requestClose}
           >
             <ChevronLeft data-icon="inline-start" />
             {t('settings.back')}
@@ -178,12 +196,26 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             ) : null}
             {sections.map(({ id, component: Pane }) => (
               <div key={id} className={section === id ? 'contents' : 'hidden'}>
-                <Pane />
+                {id === 'persona-memory'
+                  ? <PersonaMemoryPane onDirtyChange={setFeatureDirty} onBusyChange={setFeatureBusy} />
+                  : <Pane /> }
               </div>
             ))}
           </div>
         </ScrollArea>
       </div>
+      <AlertDialog open={discardFeatures} onOpenChange={setDiscardFeatures}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('features.discardTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('features.discardHint')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('persona.keepEditing')}</AlertDialogCancel>
+            <AlertDialogAction onClick={onClose}>{t('persona.discard')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

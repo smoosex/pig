@@ -2,12 +2,12 @@
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
-import { refreshPluginSessions } from '../pi/session-registry'
+import { refreshConversationFeatures } from '../pi/session-registry'
 import {
   getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
-} from '../plugins/pig-persona/service'
-import { onPersonaControlsChanged } from '../plugins/pig-persona/controls'
-import { clearObserverUsage, summarizeObserverUsage } from '../plugins/pig-persona/usage'
+} from '../features/persona/service'
+import { onPersonaControlsChanged } from '../features/persona/controls'
+import { clearObserverUsage, summarizeObserverUsage } from '../features/persona/usage'
 import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings, PersonaObserverUsageRange } from '../../shared/persona'
 
 function assertUi(event: IpcMainInvokeEvent): void {
@@ -28,7 +28,7 @@ export function registerPersonaIpc(): void {
   ipcMain.handle('persona:save-file', async (event, document: PersonaDocument) => {
     assertUi(event)
     const result = await savePersonaFile(document)
-    await refreshPluginSessions(true)
+    await refreshConversationFeatures()
     return result
   })
   ipcMain.handle('persona:set-mood', (event, values: PersonaMoodValues) => {

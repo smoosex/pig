@@ -7,11 +7,11 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { Observation, Reflection } from '../src/main/plugins/observational-memory/session-ledger/types'
-import { hashId } from '../src/main/plugins/observational-memory/ids'
-import { estimateStringTokens } from '../src/main/plugins/observational-memory/tokens'
-import { ReflectorStreamError, runReflector } from '../src/main/plugins/observational-memory/agents/reflector/agent'
-import { DropperStreamError, runDropper } from '../src/main/plugins/observational-memory/agents/dropper/agent'
+import type { Observation, Reflection } from '../src/main/features/memory/session-ledger/types'
+import { hashId } from '../src/main/features/memory/ids'
+import { estimateStringTokens } from '../src/main/features/memory/tokens'
+import { ReflectorStreamError, runReflector } from '../src/main/features/memory/agents/reflector/agent'
+import { DropperStreamError, runDropper } from '../src/main/features/memory/agents/dropper/agent'
 
 const observation: Observation = {
   id: 'aaaaaaaaaaaa', content: 'Remember the lifecycle requirements.', timestamp: '2026-01-01T00:00:00.000Z',

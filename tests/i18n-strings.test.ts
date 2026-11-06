@@ -15,7 +15,7 @@ const CJK = /[\u4e00-\u9fff]/
 /** Explicit CJK input vocabulary and model prompts, not translated UI copy. */
 const allowed = new Map<string, string[]>([
   ['src/renderer/src/components/turn/ProcessText.tsx', ["return text.replace(/^(Thought for \\d+s|已?思考了?\\s*\\d+\\s*(秒|s)?)\\s*\\n+/i, '').trim()"]],
-  ['src/main/plugins/pig-persona/preamble.ts', ['When user says "today/昨天/明天/this year/今年"']]
+  ['src/main/features/persona/preamble.ts', ['When user says "today/昨天/明天/this year/今年"']]
 ])
 
 // Search aliases stay bilingual regardless of locale; only these exact declarations are exempt.

@@ -1,8 +1,8 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import type { runDropper } from '../src/main/plugins/observational-memory/agents/dropper/agent'
-import type { Entry, Observation, Reflection } from '../src/main/plugins/observational-memory/session-ledger/types'
+import type { runDropper } from '../src/main/features/memory/agents/dropper/agent'
+import type { Entry, Observation, Reflection } from '../src/main/features/memory/session-ledger/types'
 import { runSelf } from './helpers/subprocess.ts'
 
 type DropperArgs = Parameters<typeof runDropper>[0]
@@ -11,10 +11,10 @@ type LoopArgs = Parameters<DropperLoop>
 
 async function fixture(): Promise<void> {
   const { mock } = await import('bun:test')
-  const { observationPoolMetrics, observationTokenSum } = await import('../src/main/plugins/observational-memory/agents/dropper/pool')
-  const { boundWorkerMemory } = await import('../src/main/plugins/observational-memory/session-ledger')
-  const actualRunDropper = (await import('../src/main/plugins/observational-memory/agents/dropper/agent')).runDropper
-  const { Runtime } = await import('../src/main/plugins/observational-memory/runtime')
+  const { observationPoolMetrics, observationTokenSum } = await import('../src/main/features/memory/agents/dropper/pool')
+  const { boundWorkerMemory } = await import('../src/main/features/memory/session-ledger')
+  const actualRunDropper = (await import('../src/main/features/memory/agents/dropper/agent')).runDropper
+  const { Runtime } = await import('../src/main/features/memory/runtime')
   const observations: Observation[] = Array.from({ length: 30 }, (_, i) => ({
     id: i.toString(16).padStart(12, '0'), content: 'x'.repeat(1960),
     timestamp: '2026-01-01T00:00:00.000Z', relevance: 'medium', sourceEntryIds: ['source'], tokenCount: 490
@@ -31,8 +31,8 @@ async function fixture(): Promise<void> {
   assert.ok(candidates.length < observations.length)
   let calls = 0
   let toolCalls = 0
-  mock.module('../src/main/plugins/observational-memory/agents/reflector/agent.ts', () => ({ runReflector: async () => [reflection] }))
-  mock.module('../src/main/plugins/observational-memory/agents/dropper/agent.ts', () => ({
+  mock.module('../src/main/features/memory/agents/reflector/agent.ts', () => ({ runReflector: async () => [reflection] }))
+  mock.module('../src/main/features/memory/agents/dropper/agent.ts', () => ({
     runDropper: async (args: DropperArgs) => {
       calls++
       assert.deepEqual(args.observations, candidates)
@@ -53,7 +53,7 @@ async function fixture(): Promise<void> {
       return actualRunDropper({ ...args, agentLoop: loop })
     }
   }))
-  const { runConsolidationPipeline } = await import('../src/main/plugins/observational-memory/hooks/consolidation-trigger')
+  const { runConsolidationPipeline } = await import('../src/main/features/memory/hooks/consolidation-trigger')
   const entries: Entry[] = [
     { type: 'message', id: 'source', message: { role: 'user', content: 'Already observed content', timestamp: 1 } },
     { type: 'custom', id: 'om-source', customType: 'om.observations.recorded', data: { observations, coversUpToId: 'source' } }

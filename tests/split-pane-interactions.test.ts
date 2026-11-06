@@ -19,6 +19,7 @@ async function fixture(scenario: string): Promise<void> {
     api: {
       getCommands: async () => [],
       onPluginsChanged: () => () => {},
+    conversationFeatures: { onChanged: () => () => {} },
       listSubagents: async () => [],
       onSubagentsChanged: () => () => {},
       processes: { list: async () => [], onChanged: () => () => {} },
@@ -190,7 +191,7 @@ async function fixture(scenario: string): Promise<void> {
           model: null, thinkingLevel: 'off', thinkingLevels: ['off'], contextUsage: null,
           followUpMessages: [], steeringMessages: []
         }),
-        isMemoryPluginEnabled: async (sessionId: string) => {
+        isMemoryEnabled: async (sessionId: string) => {
           memoryQueries.push(sessionId)
           if (sessionId === 'B' && !registered) {
             throw Object.assign(new Error('Session is not registered'), { code: 'ERR_SESSION_NOT_FOUND' })
@@ -200,10 +201,10 @@ async function fixture(scenario: string): Promise<void> {
         },
         getMemoryDetail: async (sessionId: string) => { memoryDetails.push(sessionId); return 'Visible memory for B' },
         getTokenStats: async () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }),
-        onPluginsChanged: (listener: () => void) => {
+        conversationFeatures: { onChanged: (listener: () => void) => {
           pluginListeners.add(listener)
           return () => { pluginListeners.delete(listener) }
-        }
+        } }
       })
       sessions.setState({
         openTabs: [tabs[0], { ...tabs[1], loadState: 'cold', meta }],

@@ -3,7 +3,7 @@ import { ChevronDown, FolderOpen, Plus, Settings } from 'lucide-react'
 import type { MessageKey } from '../../../../shared/i18n'
 import { useT } from '../../hooks/useT'
 import { useModelCatalogStore } from '../../stores/model-catalog'
-import { api, type MemoryPluginSettings, type MemoryPluginSettingsPatch, type PluginInfo, type PluginScope, type ThinkingLevel } from '../../ipc/api'
+import { api, type PluginInfo, type PluginScope, type ThinkingLevel } from '../../ipc/api'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
@@ -11,26 +11,13 @@ import { Switch } from '../ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { WebSearchSettings } from './WebSearchSettings'
 import { SubagentSettings } from './SubagentSettings'
-import { PersonaSettings } from './PersonaSettings'
 import { PathPickerDialog } from '../projects/PathPickerDialog'
 import { failureMessage } from '../../lib/ipc-error'
-
-const numericKeys = [
-  'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
-  'compactAfterTokensRatio', 'workerMemoryMaxTokens', 'compactionMaxRetainedTokens',
-  'compactionSummaryMaxTokens', 'observationsPoolMaxTokens', 'observationsPoolTargetTokens',
-  'agentMaxTurns', 'agentMaxTokens'
-] as const
-// Rendered alongside the numeric keys; 0 is a meaningful value (disables catch-up).
-const nonNegativeKeys = ['compactionCatchUpMaxChunks'] as const
-const numberSettingKeys = [...numericKeys, ...nonNegativeKeys] as const
-const booleanKeys = ['consolidateWhenIdle', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
 
 const SCOPE_CHOICES: { label: MessageKey; scopes: PluginScope[] }[] = [
   { label: 'plugins.scopeAll', scopes: ['project', 'chat'] },
@@ -59,25 +46,10 @@ export function PluginsPane() {
   const [error, setError] = useState<string | null>(null)
   const [toRemove, setToRemove] = useState<PluginInfo | null>(null)
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
-  const [personaBusy, setPersonaBusy] = useState(false)
-  const [personaDirty, setPersonaDirty] = useState(false)
-  const [discardPersona, setDiscardPersona] = useState(false)
   const [pluginConfig, setPluginConfig] = useState<Record<string, string | number | boolean>>({})
   const [pluginDraft, setPluginDraft] = useState<Record<string, string>>({})
   const [pluginConfigError, setPluginConfigError] = useState<string | null>(null)
   const [configSaving, setConfigSaving] = useState(false)
-  const [saved, setSaved] = useState<MemoryPluginSettings>({})
-  const [draft, setDraft] = useState<MemoryPluginSettings>({})
-  const [numbers, setNumbers] = useState<Record<string, string>>({})
-  const [defaults, setDefaults] = useState<Record<string, number>>({})
-  const [modelProvider, setModelProvider] = useState('')
-  const [modelId, setModelId] = useState('')
-  const [modelThinking, setModelThinking] = useState('default')
-  const [fallbackProvider, setFallbackProvider] = useState('')
-  const [fallbackId, setFallbackId] = useState('')
-  const [fallbackThinking, setFallbackThinking] = useState('default')
-  const [settingsError, setSettingsError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
   const models = useModelCatalogStore((s) => s.models)
   const selectedPlugin = plugins.find((item) => item.id === selectedPluginId)
   const reviewProvider = pluginDraft.provider ?? '__pig_default__'
@@ -85,13 +57,6 @@ export function PluginsPane() {
   const hasReviewModel = reviewProvider !== '__pig_default__' && reviewId !== '__pig_default__'
   const reviewThinking = thinkingOf(pluginDraft.thinking)
   const reviewModel = hasReviewModel ? models.find((item) => item.provider === reviewProvider && item.id === reviewId) ?? null : null
-  const memoryModel = modelProvider.trim() && modelId.trim()
-    ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null
-    : null
-  const memoryFallbackModel = fallbackProvider.trim() && fallbackId.trim()
-    ? models.find((item) => item.provider === fallbackProvider.trim() && item.id === fallbackId.trim()) ?? null
-    : null
-
   const loadPlugins = useCallback(async () => {
     const request = ++loadRequest.current
     try {
@@ -108,28 +73,6 @@ export function PluginsPane() {
     const off = api.onPluginsChanged(load)
     return () => { loadRequest.current++; off() }
   }, [loadPlugins])
-
-  useEffect(() => {
-    if (selectedPluginId !== 'observational-memory') return
-    let cancelled = false
-    void api.getMemoryPluginDefaults().then((items) => {
-      if (!cancelled) setDefaults(items)
-    }, () => { if (!cancelled) setDefaults({}) })
-    void api.getMemoryPluginSettings().then((config) => {
-      if (cancelled) return
-      setSaved(config)
-      setDraft(config)
-      setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, config[key] == null ? '' : String(config[key])])))
-      setModelProvider(config.model?.provider ?? '')
-      setModelId(config.model?.id ?? '')
-      setModelThinking(config.model?.thinking ?? 'default')
-      setFallbackProvider(config.fallbackModel?.provider ?? '')
-      setFallbackId(config.fallbackModel?.id ?? '')
-      setFallbackThinking(config.fallbackModel?.thinking ?? 'default')
-      setSettingsError(null)
-    }, (failure) => { if (!cancelled) setSettingsError(failureMessage(failure)) })
-    return () => { cancelled = true }
-  }, [selectedPluginId])
 
   useEffect(() => {
     if (!selectedPlugin?.settings) return
@@ -175,47 +118,6 @@ export function PluginsPane() {
     } finally { setInstalling(false) }
   }
 
-  const saveMemory = async () => {
-    const patch: MemoryPluginSettingsPatch = {}
-    for (const key of numberSettingKeys) {
-      const oldValue = saved[key] == null ? '' : String(saved[key])
-      const current = (numbers[key] ?? '').trim()
-      if (current !== oldValue) patch[key] = current ? Number(current) : null
-    }
-    for (const key of booleanKeys) {
-      if (draft[key] !== saved[key]) patch[key] = draft[key] ?? null
-    }
-    if (draft.compactAfterTokensMode !== saved.compactAfterTokensMode) {
-      patch.compactAfterTokensMode = draft.compactAfterTokensMode ?? null
-    }
-    const model = modelProvider.trim() && modelId.trim()
-      ? { provider: modelProvider.trim(), id: modelId.trim(), ...(modelThinking === 'default' ? {} : { thinking: modelThinking as NonNullable<MemoryPluginSettings['model']>['thinking'] }) }
-      : null
-    if ((modelProvider.trim() || modelId.trim()) && !model) {
-      setSettingsError('Provider and model ID are both required')
-      return
-    }
-    if (JSON.stringify(model) !== JSON.stringify(saved.model ?? null)) patch.model = model
-    const fallback = fallbackProvider.trim() && fallbackId.trim()
-      ? { provider: fallbackProvider.trim(), id: fallbackId.trim(), ...(fallbackThinking === 'default' ? {} : { thinking: fallbackThinking as NonNullable<MemoryPluginSettings['fallbackModel']>['thinking'] }) }
-      : null
-    if ((fallbackProvider.trim() || fallbackId.trim()) && !fallback) {
-      setSettingsError('Provider and model ID are both required')
-      return
-    }
-    if (JSON.stringify(fallback) !== JSON.stringify(saved.fallbackModel ?? null)) patch.fallbackModel = fallback
-    setSaving(true)
-    setSettingsError(null)
-    try {
-      const next = await api.setMemoryPluginSettings(patch)
-      setSaved(next)
-      setDraft(next)
-      setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, next[key] == null ? '' : String(next[key])])))
-      setSelectedPluginId(null)
-    } catch (failure) { setSettingsError(failureMessage(failure)) }
-    finally { setSaving(false) }
-  }
-
   const saveConfig = async () => {
     if (!selectedPlugin?.settings) return
     const patch: Record<string, string | number | boolean | null> = {}
@@ -250,7 +152,7 @@ export function PluginsPane() {
             </DropdownMenuGroup></DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        {plugin.id === 'observational-memory' || plugin.id === 'pig-web' || plugin.id === 'pig-subagent' || plugin.id === 'pig-persona' || plugin.settings ? (
+        {plugin.id === 'pig-web' || plugin.id === 'pig-subagent' || plugin.settings ? (
           <Button size="icon-sm" variant="ghost" disabled={pendingPluginIds.has(plugin.id)} aria-label={`${t('plugins.configure')} ${plugin.name}`}
             onClick={() => setSelectedPluginId(plugin.id)}><Settings /></Button>
         ) : null}
@@ -303,17 +205,8 @@ export function PluginsPane() {
           <Button size="sm" disabled={installing || !source.trim()} onClick={() => void installPlugin()}><Plus data-icon="inline-start" />{installing ? t('plugins.working') : t('plugins.install')}</Button>
         </div>
       </div>
-      <Dialog open={!!selectedPluginId} onOpenChange={(open) => {
-        if (open || (selectedPluginId === 'pig-persona' && personaBusy)) return
-        if (selectedPluginId === 'pig-persona' && personaDirty) {
-          setDiscardPersona(true)
-          return
-        }
-        setSelectedPluginId(null)
-        setPersonaBusy(false)
-        setPersonaDirty(false)
-      }}>
-        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" showCloseButton={!(selectedPluginId === 'pig-persona' && personaBusy)} onOpenAutoFocus={(event) => event.preventDefault()}>
+      <Dialog open={!!selectedPluginId} onOpenChange={(open) => { if (!open) setSelectedPluginId(null) }}>
+        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" onOpenAutoFocus={(event) => event.preventDefault()}>
           <DialogHeader className={selectedPluginId === 'pig-web' ? 'min-h-7 min-w-0 justify-center pr-44' : undefined}>
             <DialogTitle className={selectedPluginId === 'pig-web' ? 'truncate' : undefined}>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
           </DialogHeader>
@@ -360,72 +253,8 @@ export function PluginsPane() {
           <Button size="sm" className="self-end" disabled={configSaving} onClick={() => void saveConfig()}>{configSaving ? t('plugins.working') : t('plugins.save')}</Button>
         </div>
       ) : null}
-      {selectedPluginId === 'observational-memory' ? <div className="flex flex-col gap-3">
-        {settingsError ? <p role="alert" className="text-sm text-destructive">{settingsError}</p> : null}
-        <SettingsCard>
-          {numericKeys.map((key) => (
-            <SettingsRow key={key} title={t(`plugins.${key}`)} description={key === 'observerChunkMaxTokens' ? t('plugins.observerChunkAutoHint') : t(`plugins.${key}Hint`)}>
-              <Input className="w-30" aria-label={t(`plugins.${key}`)} type="number" min={key === 'compactAfterTokensRatio' ? '0.0001' : '1'} max={key === 'compactAfterTokensRatio' ? '0.9999' : undefined} step={key === 'compactAfterTokensRatio' ? 'any' : '1'} value={numbers[key] ?? ''} placeholder={key === 'observerChunkMaxTokens' || key === 'workerMemoryMaxTokens' || key === 'compactionMaxRetainedTokens' || key === 'compactionSummaryMaxTokens' ? t('plugins.autoDefault') : (defaults[key] === undefined ? '—' : String(defaults[key]))} onChange={(event) => setNumbers((items) => ({ ...items, [key]: event.target.value }))} />
-            </SettingsRow>
-          ))}
-          {nonNegativeKeys.map((key) => (
-            <SettingsRow key={key} title={t(`plugins.${key}`)} description={t(`plugins.${key}Hint`)}>
-              <Input className="w-30" aria-label={t(`plugins.${key}`)} type="number" min="0" step="1" value={numbers[key] ?? ''} placeholder={String(defaults[key] ?? '')} onChange={(event) => setNumbers((items) => ({ ...items, [key]: event.target.value }))} />
-            </SettingsRow>
-          ))}
-          <SettingsRow title={t('plugins.compactAfterTokensMode')} description={t('plugins.compactAfterTokensModeHint')}>
-            <Select value={draft.compactAfterTokensMode ?? 'default'} onValueChange={(value) => setDraft((item) => ({ ...item, compactAfterTokensMode: value === 'default' ? undefined : value as 'ratio' | 'calibrated' }))}>
-              <SelectTrigger size="sm" aria-label={t('plugins.compactAfterTokensMode')}><SelectValue /></SelectTrigger><SelectContent><SelectGroup>
-                <SelectItem value="default">{t('plugins.defaultValue')}</SelectItem>
-                <SelectItem value="calibrated">{t('plugins.calibrated')}</SelectItem>
-                <SelectItem value="ratio">{t('plugins.ratio')}</SelectItem>
-              </SelectGroup></SelectContent>
-            </Select>
-          </SettingsRow>
-          {booleanKeys.map((key) => (
-            <SettingsRow key={key} title={t(`plugins.${key}`)} description={t(`plugins.${key}Hint`)}>
-              <Switch aria-label={t(`plugins.${key}`)} checked={draft[key] ?? (key === 'showWorkerNotifications' || key === 'showCompactionNotifications')}
-                onCheckedChange={(checked) => setDraft((item) => ({ ...item, [key]: checked }))} />
-            </SettingsRow>
-          ))}
-          <SettingsRow title={t('plugins.memoryModel')} description={t('plugins.memoryModelHint')}>
-            <ModelThinkingPicker model={memoryModel} models={models}
-              label={modelProvider.trim() && modelId.trim() ? `${modelProvider.trim()}/${modelId.trim()}` : undefined}
-              thinking={thinkingOf(modelThinking)}
-              defaultOption={{
-                active: !(modelProvider.trim() && modelId.trim()),
-                description: t('plugins.memoryModelDefault'),
-                onSelect: () => { setModelProvider(''); setModelId(''); setModelThinking('default') }
-              }}
-              onModelChange={(item) => {
-                setModelProvider(item.provider)
-                setModelId(item.id)
-                setModelThinking(supportedThinking(item, thinkingOf(modelThinking)) ?? 'default')
-              }}
-              onThinkingChange={setModelThinking} />
-          </SettingsRow>
-          <SettingsRow title={t('plugins.fallbackModel')} description={t('plugins.fallbackModelHint')}>
-            <ModelThinkingPicker model={memoryFallbackModel} models={models}
-              label={fallbackProvider.trim() && fallbackId.trim() ? `${fallbackProvider.trim()}/${fallbackId.trim()}` : undefined}
-              thinking={thinkingOf(fallbackThinking)}
-              defaultOption={{
-                active: !(fallbackProvider.trim() && fallbackId.trim()),
-                description: t('plugins.fallbackModelDefault'),
-                onSelect: () => { setFallbackProvider(''); setFallbackId(''); setFallbackThinking('default') }
-              }}
-              onModelChange={(item) => {
-                setFallbackProvider(item.provider)
-                setFallbackId(item.id)
-                setFallbackThinking(supportedThinking(item, thinkingOf(fallbackThinking)) ?? 'default')
-              }}
-              onThinkingChange={setFallbackThinking} />
-          </SettingsRow>
-        </SettingsCard>
-        <Button size="sm" className="self-end" disabled={saving} onClick={() => void saveMemory()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>
-      </div> : null}
       {selectedPluginId === 'pig-web' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
       {selectedPluginId === 'pig-subagent' ? <SubagentSettings onClose={() => setSelectedPluginId(null)} /> : null}
-      {selectedPluginId === 'pig-persona' ? <PersonaSettings onBusyChange={setPersonaBusy} onDirtyChange={setPersonaDirty} /> : null}
         </DialogContent>
       </Dialog>
       {pickingPath ? <PathPickerDialog includeFiles
@@ -435,22 +264,6 @@ export function PluginsPane() {
         onClose={() => setPickingPath(false)}
         onSelect={(path) => { setSource(path); setPickingPath(false) }}
       /> : null}
-      <AlertDialog open={discardPersona} onOpenChange={setDiscardPersona}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('persona.discardTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('persona.discardHint')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('persona.keepEditing')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setSelectedPluginId(null)
-              setPersonaDirty(false)
-              setPersonaBusy(false)
-            }}>{t('persona.discard')}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <Dialog open={!!toRemove} onOpenChange={(open) => { if (!open) setToRemove(null) }}>
         <DialogContent><DialogHeader><DialogTitle>{t('plugins.remove')} {toRemove?.name}</DialogTitle><DialogDescription>{toRemove?.source}</DialogDescription></DialogHeader>
           <DialogFooter>

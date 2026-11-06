@@ -510,7 +510,7 @@ async function fixture(name: string): Promise<void> {
       startModelRuntime: async () => {}
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
-      refreshPluginSessions: async () => {}, refreshToolSessions: async () => {}
+      refreshPluginSessions: async () => {}, refreshConversationFeatures: async () => {}, refreshToolSessions: async () => {}
     }))
     try {
       process.env.PIG_DIR = join(root, 'settings')
@@ -653,7 +653,7 @@ async function fixture(name: string): Promise<void> {
       startModelRuntime: async () => {}
     }))
     mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
-      refreshPluginSessions: async () => {}, refreshToolSessions: async () => {}
+      refreshPluginSessions: async () => {}, refreshConversationFeatures: async () => {}, refreshToolSessions: async () => {}
     }))
     try {
       process.env.PIG_DIR = join(root, 'settings')

@@ -5,6 +5,7 @@ import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionReso
 import { startModelRuntime } from './model-settings'
 import { pigDocsExtension } from './pig-docs'
 import { pigIdentityExtension } from './pig-identity'
+import { conversationFeatureFactories } from '../features/runtime'
 import { permissionsExtension, type PermissionOptions } from '../permissions/extension'
 import { sessionPermission } from '../permissions/store'
 import { restrictPermissionMode } from '../permissions/mode'
@@ -26,7 +27,7 @@ export async function createSessionRuntime(
   appendSystemPrompt?: string[],
   options: Pick<NonNullable<Parameters<typeof createChatResourceLoader>[2]>, 'onSkillBase'> & {
     toolPreferences?: Parameters<typeof sessionToolFactory>[2]
-    /** Subagents keep Pi's plain identity, like they skip the persona plugin. */
+    /** Subagents exclude human-conversation identity, persona and observational memory. */
     identity?: boolean
     /** Subagents share the parent's grants, but may never exceed their launch mode. */
     permissions?: { sessionId: string; mode: PermissionMode; approvalUI?: Pick<ExtensionUIContext, 'select'>; signal?: AbortSignal }
@@ -51,7 +52,10 @@ export async function createSessionRuntime(
     extensionFactories: [
       pigDocsExtension,
       permissions,
-      ...(options.identity === false ? [] : [pigIdentityExtension]),
+      ...(options.identity === false ? [] : [
+        ...conversationFeatureFactories(),
+        pigIdentityExtension
+      ]),
       { name: SESSION_TOOLS_EXTENSION, factory: sessionToolFactory(cwd, sessionId, options.toolPreferences, permissionOptions) }
     ], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)

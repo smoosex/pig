@@ -11,9 +11,9 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import type { runObserver } from '../src/main/plugins/observational-memory/agents/observer/agent'
-import { fullProjection, visibleProjection } from '../src/main/plugins/observational-memory/session-ledger'
-import type { Entry, Observation } from '../src/main/plugins/observational-memory/session-ledger/types'
+import type { runObserver } from '../src/main/features/memory/agents/observer/agent'
+import { fullProjection, visibleProjection } from '../src/main/features/memory/session-ledger'
+import type { Entry, Observation } from '../src/main/features/memory/session-ledger/types'
 
 const timestamp = '2026-05-02T10:00:00.000Z'
 
@@ -24,7 +24,7 @@ const observer = { result: async (): Promise<Observation[]> => [], error: undefi
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
 const OM_OBSERVATIONS_RECORDED = 'om.observations.recorded'
 
-mock.module(path('../src/main/plugins/observational-memory/agents/observer/agent.ts'), () => ({
+mock.module(path('../src/main/features/memory/agents/observer/agent.ts'), () => ({
   ObserverStreamError: class ObserverStreamError extends Error {},
   runObserver: async (args: ObserverArgs) => {
     observerCalls.push(args)
@@ -33,8 +33,8 @@ mock.module(path('../src/main/plugins/observational-memory/agents/observer/agent
   }
 }))
 
-import { registerCompactionHook } from '../src/main/plugins/observational-memory/hooks/compaction-hook'
-import type { Runtime } from '../src/main/plugins/observational-memory/runtime'
+import { registerCompactionHook } from '../src/main/features/memory/hooks/compaction-hook'
+import type { Runtime } from '../src/main/features/memory/runtime'
 
 function userMessage(id: string, text = `user ${id}`): Entry {
   return { type: 'message', id, timestamp, message: { role: 'user', content: text, timestamp: 1 } } as Entry
@@ -86,7 +86,7 @@ function setup(args: {
   observerChunkMaxTokens?: number
   consolidationInFlight?: boolean
   resolveOk?: boolean
-  resolved?: Extract<import('../src/main/plugins/observational-memory/runtime').ResolveResult, { ok: true }>
+  resolved?: Extract<import('../src/main/features/memory/runtime').ResolveResult, { ok: true }>
   signal?: AbortSignal
   passive?: boolean
   summaryMaxTokens?: number

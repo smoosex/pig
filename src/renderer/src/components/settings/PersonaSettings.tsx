@@ -1,6 +1,7 @@
 import { failureMessage } from '../../lib/ipc-error'
 /* Drafts own their original revisions independently of mood snapshots and other file saves. */
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { History, Info } from 'lucide-react'
 import { PERSONA_FILES, type PersonaDocument, type PersonaMoodValues, type PersonaFileName, type PersonaSnapshot } from '../../../../shared/persona'
 import { useT } from '../../hooks/useT'
@@ -14,7 +15,8 @@ import { Field, FieldGroup, FieldLabel } from '../ui/field'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Slider } from '../ui/slider'
 import { Switch } from '../ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog'
 import { Textarea } from '../ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { SettingsCard, SettingsRow } from './SettingsFields'
@@ -23,17 +25,22 @@ type Draft = PersonaDocument & { saved: string }
 type Drafts = Partial<Record<PersonaFileName, Draft>>
 
 const FILE_HINTS = { 'SOUL.md': 'persona.soulHint', 'USER.md': 'persona.userHint' } as const
+const FILE_TITLES = { 'SOUL.md': 'persona.soulTitle', 'USER.md': 'persona.userTitle' } as const
 
 export interface PersonaSettingsProps {
+  actionsContainer?: HTMLElement | null
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
 }
 
-export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettingsProps) {
+export function PersonaSettings({ actionsContainer, onDirtyChange, onBusyChange }: PersonaSettingsProps) {
   const t = useT()
   const [snapshot, setSnapshot] = useState<PersonaSnapshot | null>(null)
   const [drafts, setDrafts] = useState<Drafts>({})
   const [file, setFile] = useState<PersonaFileName>('SOUL.md')
+  const [editing, setEditing] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const configureButton = useRef<HTMLButtonElement | null>(null)
   const models = useModelCatalogStore((state) => state.models)
   const [values, setValues] = useState<PersonaMoodValues>({ pleasantness: 0, activation: 0.5, energy: 0.5 })
   const [busy, setBusy] = useState(false)
@@ -61,18 +68,20 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
   }
 
   async function run(operation: () => Promise<PersonaSnapshot>, replace: 'all' | PersonaFileName | null = null) {
-    if (locked.current) return
+    if (locked.current) return false
     locked.current = true
     setBusy(true)
     setError(null)
     try {
       const next = await operation()
       if (mounted.current) accept(next, replace)
+      return true
     } catch (failure) {
       if (mounted.current) {
         setError(failureMessage(failure))
         if (snapshot) setValues({ pleasantness: snapshot.mood.pleasantness, activation: snapshot.mood.activation, energy: snapshot.mood.energy })
       }
+      return false
     } finally {
       locked.current = false
       if (mounted.current) setBusy(false)
@@ -111,18 +120,37 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
 
   const observer = snapshot?.mood.observer
   const observerModel = models.find((item) => item.provider === observer?.provider && item.id === observer?.modelId) ?? null
-  const save = () => {
+  const save = async () => {
     const draft = drafts[file]
     if (!draft || draft.content === draft.saved) return
-    void run(() => api.persona.saveFile({ name: file, content: draft.content, revision: draft.revision }), file)
+    if (await run(() => api.persona.saveFile({ name: file, content: draft.content, revision: draft.revision }), file)) {
+      setEditing(false)
+    }
   }
+  const closeEditor = () => {
+    if (locked.current) return
+    if (drafts[file]?.content !== drafts[file]?.saved) setConfirmDiscard(true)
+    else setEditing(false)
+  }
+  // Keep editor state here while placing its triggers beside the parent tabs.
+  const actions = <div className="flex items-center gap-2">
+    {PERSONA_FILES.map(name => <Button key={name} size="sm" variant="outline" disabled={busy}
+      aria-label={t('persona.configureFile', { file: t(FILE_TITLES[name]) })}
+      onClick={event => {
+        configureButton.current = event.currentTarget
+        setFile(name)
+        setError(null)
+        setEditing(true)
+      }}>{t(FILE_TITLES[name])}</Button>)}
+  </div>
+  const failure = error && <Alert variant="destructive"><AlertTitle>{t('persona.error')}</AlertTitle><AlertDescription><p>{error}</p><p>{t('persona.errorHint')}</p></AlertDescription></Alert>
 
   return (
     <div className="flex w-full flex-col gap-4" aria-busy={busy}>
-      {dirty && <p className="text-xs text-muted-foreground">{t('persona.dirtyHint')}</p>}
-      {error && <Alert variant="destructive"><AlertTitle>{t('persona.error')}</AlertTitle><AlertDescription><p>{error}</p><p>{t('persona.errorHint')}</p></AlertDescription></Alert>}
+      {!editing && failure}
       {!snapshot && busy && <p role="status">{t('persona.loading')}</p>}
       {snapshot && <>
+        {actionsContainer === undefined ? actions : actionsContainer && createPortal(actions, actionsContainer)}
         <SettingsCard>
           <SettingsRow title={t('persona.mood')} description={snapshot.mood.feeling}>
             <Popover>
@@ -191,34 +219,56 @@ export function PersonaSettings({ onDirtyChange, onBusyChange }: PersonaSettings
             </fieldset>
           </SettingsRow>
           <ObserverUsageRow />
+
         </SettingsCard>
-        <Tabs value={file} onValueChange={(value) => setFile(value as PersonaFileName)}>
-          <TabsList>{PERSONA_FILES.map((name) => <TabsTrigger key={name} value={name}>{name}{drafts[name]?.content !== drafts[name]?.saved ? ' *' : ''}</TabsTrigger>)}</TabsList>
-          {PERSONA_FILES.map((name) => <TabsContent key={name} value={name}>
-            <FieldGroup className="gap-2"><Field data-disabled={busy}>
-              <div className="flex items-center gap-1">
-                <FieldLabel htmlFor={`persona-${name}`}>{name}</FieldLabel>
-                <Popover>
-                  <Tooltip><TooltipTrigger asChild><PopoverTrigger asChild>
-                    <Button size="icon-xs" variant="ghost" aria-label={t('persona.fileInfo', { file: name })}><Info /></Button>
-                  </PopoverTrigger></TooltipTrigger><TooltipContent>{t('persona.fileInfo', { file: name })}</TooltipContent></Tooltip>
-                  <PopoverContent align="start" className="w-80 text-xs">{t(FILE_HINTS[name])}</PopoverContent>
-                </Popover>
-              </div>
-              <Textarea id={`persona-${name}`} className="min-h-56" value={drafts[name]?.content ?? ''} disabled={busy} spellCheck={false} onChange={(event) => {
-                const content = event.target.value
-                setDrafts((previous) => {
-                  const old = previous[name]
-                  return old ? { ...previous, [name]: { ...old, content } } : previous
-                })
-              }} />
-            </Field></FieldGroup>
-          </TabsContent>)}
-        </Tabs>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">{drafts[file]?.content !== drafts[file]?.saved ? t('persona.unsaved') : t('persona.saved')}</span>
-          <Button size="sm" disabled={busy || !drafts[file] || drafts[file]?.content === drafts[file]?.saved} onClick={save}>{busy ? t('persona.working') : t('persona.save', { file })}</Button>
-        </div>
+
+        <Dialog open={editing} onOpenChange={open => { if (!open) closeEditor() }}>
+          <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl" showCloseButton={!busy}
+            onEscapeKeyDown={event => { if (busy || confirmDiscard) event.preventDefault() }}
+            onInteractOutside={event => event.preventDefault()}
+            onCloseAutoFocus={event => { event.preventDefault(); configureButton.current?.focus() }}>
+            <DialogHeader>
+              <DialogTitle>{t(FILE_TITLES[file])}</DialogTitle>
+              <DialogDescription>{t(FILE_HINTS[file])}</DialogDescription>
+            </DialogHeader>
+            {failure}
+            <FieldGroup className="min-h-0 overflow-y-auto">
+              <Field data-disabled={busy}>
+                <FieldLabel htmlFor={`persona-${file}`}>{file}</FieldLabel>
+                <Textarea id={`persona-${file}`} className="min-h-72" value={drafts[file]?.content ?? ''} disabled={busy} spellCheck={false}
+                  onChange={event => {
+                    const content = event.target.value
+                    setDrafts(previous => {
+                      const old = previous[file]
+                      return old ? { ...previous, [file]: { ...old, content } } : previous
+                    })
+                  }} />
+              </Field>
+            </FieldGroup>
+            <DialogFooter className="items-center">
+              <span className="mr-auto text-xs text-muted-foreground">{drafts[file]?.content !== drafts[file]?.saved ? t('persona.unsaved') : t('persona.saved')}</span>
+              <Button variant="outline" disabled={busy} onClick={closeEditor}>{t('persona.usageCancel')}</Button>
+              <Button disabled={busy || !drafts[file] || drafts[file]?.content === drafts[file]?.saved} onClick={() => void save()}>{busy ? t('persona.working') : t('persona.save', { file })}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('persona.discardTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('persona.discardHint')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('persona.keepEditing')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                accept(snapshot, file)
+                setError(null)
+                setConfirmDiscard(false)
+                setEditing(false)
+              }}>{t('persona.discard')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </>}
     </div>
   )

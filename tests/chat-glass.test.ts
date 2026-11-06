@@ -18,12 +18,13 @@ async function fixture(scenario: string): Promise<void> {
     onNotificationClick: () => noop,
     setVisibleNotificationSessions: async () => {},
     getCommands: async () => [],
-    isMemoryPluginEnabled: async () => false,
+    isMemoryEnabled: async () => false,
     listSubagents: async () => [],
     onSubagentsChanged: () => noop,
     processes: { list: async () => [], onChanged: () => () => {} },
     permissions: { getSessionPermission: async () => ({ mode: 'default', overridden: false }), getPermissions: async () => ({ defaultMode: 'default', domains: [], projects: [], sandbox: { state: 'ready' } }), onPermissionsChanged: () => () => {} },
     onPluginsChanged: () => noop,
+    conversationFeatures: { onChanged: () => () => {} },
     setSidebarPrefs: async ({ reviewOpen }: { reviewOpen?: boolean }) => ({ sidebarTab: 'projects', split: 0.5, reviewOpen: reviewOpen ?? false })
   } })
   const { act, createElement: h } = await import('react')

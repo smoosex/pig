@@ -1,8 +1,8 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import { Runtime } from '../src/main/plugins/observational-memory/runtime'
-import type { Entry, Observation } from '../src/main/plugins/observational-memory/session-ledger/types'
+import { Runtime } from '../src/main/features/memory/runtime'
+import type { Entry, Observation } from '../src/main/features/memory/session-ledger/types'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function idleFixture(cancel: boolean): Promise<void> {
@@ -14,7 +14,7 @@ async function idleFixture(cancel: boolean): Promise<void> {
     relevance: 'medium', sourceEntryIds: ['observed'], tokenCount: 10
   }]
   let workerSignal: AbortSignal | undefined
-  mock.module('../src/main/plugins/observational-memory/agents/observer/agent.ts', () => ({
+  mock.module('../src/main/features/memory/agents/observer/agent.ts', () => ({
     ObserverStreamError: class extends Error {},
     runObserver: async (args: { signal?: AbortSignal }) => {
       workerSignal = args.signal
@@ -23,8 +23,8 @@ async function idleFixture(cancel: boolean): Promise<void> {
       return [{ ...observations[0], id: 'bbbbbbbbbbbb', sourceEntryIds: ['unobserved'] }]
     }
   }))
-  const { registerConsolidationTrigger } = await import('../src/main/plugins/observational-memory/hooks/consolidation-trigger')
-  const { maybeTriggerCompaction, registerCompactionTrigger } = await import('../src/main/plugins/observational-memory/hooks/compaction-trigger')
+  const { registerConsolidationTrigger } = await import('../src/main/features/memory/hooks/consolidation-trigger')
+  const { maybeTriggerCompaction, registerCompactionTrigger } = await import('../src/main/features/memory/hooks/compaction-trigger')
   const runtime = new Runtime()
   runtime.configLoaded = true
   Object.assign(runtime.config, {
@@ -107,7 +107,7 @@ if (process.argv.includes('--idle-fixture')) {
   }
 
   test('deferred compaction rechecks idle consolidation before touching the native compactor', async () => {
-    const { maybeTriggerCompaction } = await import('../src/main/plugins/observational-memory/hooks/compaction-trigger')
+    const { maybeTriggerCompaction } = await import('../src/main/features/memory/hooks/compaction-trigger')
     const runtime = new Runtime()
     runtime.configLoaded = true
     Object.assign(runtime.config, { consolidateWhenIdle: true, compactAfterTokens: 1, showCompactionNotifications: false })

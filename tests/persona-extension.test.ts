@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionManager, type ExtensionAPI, type BeforeAgentStartEventResult } from '@earendil-works/pi-coding-agent'
 import { createAssistantMessageEventStream, type AssistantMessage, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai'
-import personaExtension from '../src/main/plugins/pig-persona'
-import { completedMoodRounds } from '../src/main/plugins/pig-persona/conversation'
-import { getPersona, savePersonaFile, setPersonaMood, setPersonaAutomatic, setPersonaObserver } from '../src/main/plugins/pig-persona/service'
+import personaExtension from '../src/main/features/persona'
+import { completedMoodRounds } from '../src/main/features/persona/conversation'
+import { getPersona, savePersonaFile, setPersonaMood, setPersonaAutomatic, setPersonaObserver } from '../src/main/features/persona/service'
 import { createPastedTextMetadata, PASTED_TEXT_CUSTOM_TYPE } from '../src/shared/pasted-text'
 
 const model: Model<'openai-responses'> = { id: 'fixture', name: 'Fixture', provider: 'fixture', api: 'openai-responses',

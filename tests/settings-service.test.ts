@@ -137,7 +137,7 @@ async function fixture(name: string) {
         log.push('plugins-changed')
         if (reloadFails) throw new Error('reload failed')
       },
-      mcpChanged: async () => { log.push('mcp-changed') }
+      mcpChanged: async () => { log.push('mcp-changed') },
     })
 
     if (name === 'validation') {
@@ -305,8 +305,13 @@ async function fixture(name: string) {
         { name: 'files', transport: 'stdio', enabled: false }
       ])
 
+      await assert.rejects(service.get('features' as never), /Unknown settings group/)
+      const pluginScopes = (await service.get('plugins')).values as { scopes: Record<string, unknown> }
+      assert.equal('pig-persona' in pluginScopes.scopes, false)
+      assert.equal('observational-memory' in pluginScopes.scopes, false)
+
       const persona = await service.get('persona')
-      const { setActivity } = await import('../src/main/plugins/pig-persona/kernel')
+      const { setActivity } = await import('../src/main/features/persona/kernel')
       await setActivity('other-session', true, Date.now() + 60_000)
       await setActivity('other-session', false, Date.now() + 120_000)
       assert.equal((await service.get('persona')).revision, persona.revision, 'activity leases persist decay without conflicting')

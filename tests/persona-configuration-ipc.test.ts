@@ -15,11 +15,10 @@ async function fixture(): Promise<void> {
   let reloads = 0
   let failSave = false
   const calls: unknown[][] = []
-  mock.module('../src/main/pi/session-registry', () => ({ refreshPluginSessions: async (force: boolean) => {
-    assert.equal(force, true)
+  mock.module('../src/main/pi/session-registry', () => ({ refreshConversationFeatures: async () => {
     reloads++
   } }))
-  mock.module('../src/main/plugins/pig-persona/service', () => ({
+  mock.module('../src/main/features/persona/service', () => ({
     getPersona: async () => { calls.push(['get']); return { active: false } },
     savePersonaFile: async (...args: unknown[]) => {
       if (failSave) throw new Error('revision conflict')

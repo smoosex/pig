@@ -10,8 +10,10 @@ async function fixture(): Promise<void> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   Object.assign(window, { api: { supportsGlass: false } })
   const { act, createElement: h } = await import('react')
+  let featureCallbacks: { onDirtyChange?(value: boolean): void; onBusyChange?(value: boolean): void } = {}
   const panes = [
     ['GeneralPane', 'settings.sectionGeneral', 'settings.sectionGeneralDescription'],
+    ['PersonaMemoryPane', 'features.title', 'features.description'],
     ['ShortcutsPane', 'shortcuts.title', 'shortcuts.description'],
     ['ThemePane', 'settings.sectionTheme', 'settings.sectionThemeDescription'],
     ['ProvidersPane', 'settings.sectionProviders', 'settings.sectionProvidersDescription'],
@@ -22,7 +24,10 @@ async function fixture(): Promise<void> {
   ] as const
   for (const [name] of panes) {
     mock.module(`../src/renderer/src/components/settings/${name}`, () => ({
-      [name]: () => h('span', { 'data-settings-pane': name }, name),
+      [name]: (props: typeof featureCallbacks) => {
+        if (name === 'PersonaMemoryPane') featureCallbacks = props
+        return h('span', { 'data-settings-pane': name }, name)
+      },
       ...(name === 'ShortcutsPane' ? { ShortcutsResetAll: () => null } : {})
     }))
   }
@@ -43,9 +48,10 @@ async function fixture(): Promise<void> {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
+  let closes = 0
   try {
     await act(async () => {
-      root.render(h(SettingsPage, { onClose: () => {} }))
+      root.render(h(SettingsPage, { onClose: () => { closes++ } }))
     })
     const surface = host.querySelector<HTMLElement>('[data-settings-surface]')!
     assert.ok(surface.hasAttribute('data-app-surface'), 'settings participate in the surface transition handoff')
@@ -82,6 +88,21 @@ async function fixture(): Promise<void> {
         assert.equal(node.parentElement!.classList.contains('hidden'), pane !== name)
       }
     }
+    const back = buttons.at(-1)!
+    await act(async () => { featureCallbacks.onBusyChange?.(true) })
+    assert.equal(back.disabled, true, 'in-flight saves cannot be interrupted by closing settings')
+    await act(async () => { back.click() })
+    assert.equal(closes, 0)
+    await act(async () => { featureCallbacks.onBusyChange?.(false); featureCallbacks.onDirtyChange?.(true) })
+    await act(async () => { back.click() })
+    assert.equal(closes, 0)
+    assert.ok(document.querySelector('[role="alertdialog"]'))
+    const action = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === text)!
+    await act(async () => { action(translate('en', 'persona.keepEditing')).click() })
+    assert.equal(closes, 0)
+    await act(async () => { back.click() })
+    await act(async () => { action(translate('en', 'persona.discard')).click() })
+    assert.equal(closes, 1)
   } finally {
     await act(async () => {
       root.unmount()

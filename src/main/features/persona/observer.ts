@@ -3,7 +3,7 @@
 import { clampThinkingLevel, type Context, type Model, type Usage } from '@earendil-works/pi-ai'
 import type { ThinkingLevel } from '../../../shared/api'
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
-import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../observational-memory/agents/worker-stream'
+import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../memory/agents/worker-stream'
 import type { MoodObservation } from './types'
 
 export type { MoodObservation } from './types'

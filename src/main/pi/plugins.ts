@@ -9,12 +9,11 @@ import {
   DefaultPackageManager,
   SettingsManager
 } from '@earendil-works/pi-coding-agent'
-import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope, PluginSettingsSchema } from '../../shared/api'
+import type { PluginInfo, PluginScope, PluginSettingsSchema } from '../../shared/api'
 import type { SessionToolProvider } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
 import { readReviewSettingsFile, reviewSettingsSchema } from '../plugins/pig-review/settings'
-import { DEFAULTS } from '../plugins/observational-memory/config'
-import { memorySettingsPath } from '../plugins/observational-memory/paths'
+import { readSettingsObject, saveNamespacedSettings } from '../settings/json-file'
 import { sessionToolPath as sessionPath, settingsToolPath } from './system-plugin-paths'
 
 interface InstalledPlugin {
@@ -25,7 +24,6 @@ interface InstalledPlugin {
 }
 
 interface Registry {
-  memoryScopes: PluginScope[]
   reviewScopes: PluginScope[]
   webAccessScopes: PluginScope[]
   subagentScopes: PluginScope[]
@@ -34,7 +32,8 @@ interface Registry {
   processScopes: PluginScope[]
   settingsScopes: PluginScope[]
   sessionScopes: PluginScope[]
-  personaScopes: PluginScope[]
+  /** Preserved for compatibility only; persona and memory no longer use enablement scopes. */
+  legacyFeatures: Record<string, unknown>
   installed: InstalledPlugin[]
 }
 
@@ -42,9 +41,6 @@ const registryPath = () => pigPath('plugins.json')
 const packageRoot = () => pigPath('plugin-packages')
 // Tests mock electron with a partial app object, so fall back to the project root.
 const appPath = () => typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd()
-const memoryPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'observational-memory', 'index.ts')
-  : join(appPath(), 'src', 'main', 'plugins', 'observational-memory', 'index.ts')
 export const reviewPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-review', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-review', 'index.ts')
@@ -60,9 +56,6 @@ const terminalPath = () => app.isPackaged
 const processPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-process', 'index.ts')
   : join(appPath(), 'src', 'main', 'plugins', 'pig-process', 'index.ts')
-const personaPath = () => app.isPackaged
-  ? join(process.resourcesPath, 'system-plugins', 'pig-persona', 'index.js')
-  : join(appPath(), 'out', 'system-plugins', 'pig-persona', 'index.js')
 const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-web', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pig-web', 'index.js')
@@ -82,7 +75,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { memoryScopes: [], reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], personaScopes: ['project', 'chat'], installed: [] }
+  const defaults: Registry = { reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], legacyFeatures: {}, installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -108,8 +101,6 @@ async function readRegistry(): Promise<Registry> {
   })
   // Explicit legacy switches only applied to projects; preserve them instead of applying new defaults.
   return {
-    memoryScopes: 'memoryScopes' in value ? parseScopes(value.memoryScopes)
-      : 'memoryEnabled' in value ? (value.memoryEnabled === true ? ['project'] : []) : defaults.memoryScopes,
     reviewScopes: 'reviewScopes' in value ? parseScopes(value.reviewScopes)
       : 'reviewEnabled' in value ? (value.reviewEnabled === true ? ['project'] : []) : defaults.reviewScopes,
     webAccessScopes: 'webAccessScopes' in value ? parseScopes(value.webAccessScopes)
@@ -120,14 +111,15 @@ async function readRegistry(): Promise<Registry> {
     processScopes: 'processScopes' in value ? parseScopes(value.processScopes) : defaults.processScopes,
     settingsScopes: 'settingsScopes' in value ? parseScopes(value.settingsScopes) : defaults.settingsScopes,
     sessionScopes: 'sessionScopes' in value ? parseScopes(value.sessionScopes) : defaults.sessionScopes,
-    personaScopes: 'personaScopes' in value ? parseScopes(value.personaScopes) : defaults.personaScopes,
+    legacyFeatures: Object.fromEntries(['memoryScopes', 'memoryEnabled', 'personaScopes'].filter(key => key in value).map(key => [key, (value as Record<string, unknown>)[key]])),
     installed
   }
 }
 
 async function saveRegistry(value: Registry): Promise<void> {
   await mkdir(pigPath(), { recursive: true })
-  await writeFileAtomic(registryPath(), `${JSON.stringify({ version: 2, ...value }, null, 2)}\n`)
+  const { legacyFeatures, ...plugins } = value
+  await writeFileAtomic(registryPath(), `${JSON.stringify({ version: 2, ...legacyFeatures, ...plugins }, null, 2)}\n`)
 }
 
 function packageManager(source: string): DefaultPackageManager {
@@ -169,11 +161,6 @@ async function resourcesFor(source: string): Promise<string[]> {
   return result.extensions.filter((item) => item.enabled).map((item) => item.path)
 }
 
-export async function isMemoryPluginEnabled(scope: PluginScope): Promise<boolean> {
-  await mutation
-  return (await readRegistry()).memoryScopes.includes(scope)
-}
-
 export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<string[]> {
   await mutation
   const registry = await readRegistry()
@@ -182,7 +169,6 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
   // Older builds may lack an enabled bundle; keep sessions usable while settings reports the
   // missing file and refuses to enable it.
   for (const bundled of [
-    { scopes: registry.memoryScopes, path: memoryPath(), name: 'observational memory' },
     { scopes: registry.reviewScopes, path: reviewPath(), name: 'code review' },
     { scopes: registry.webAccessScopes, path: webAccessPath(), name: 'web access' },
     { scopes: registry.subagentScopes, path: subagentPath(), name: 'subagent' },
@@ -190,8 +176,7 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' },
     { scopes: registry.processScopes, path: processPath(), name: 'background process' },
     { scopes: registry.settingsScopes, path: settingsToolPath(), name: 'settings' },
-    { scopes: registry.sessionScopes, path: sessionPath(), name: 'session' },
-    { scopes: registry.personaScopes, path: personaPath(), name: 'persona' }
+    { scopes: registry.sessionScopes, path: sessionPath(), name: 'session' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
@@ -208,12 +193,12 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
   return [...new Set(paths)]
 }
 
-/** Subagents inherit the parent's plugins, minus memory (not a user conversation), spawn itself (no recursion)
- * persona (user context and global mood are for human conversations), browser/terminal controls and
+/** Subagents inherit the parent's plugins, minus spawn itself (no recursion), browser/terminal controls and
  * background processes (owned by the parent's session, which a subagent cannot manage), and
- * application settings (only the parent handles the user's global preferences). */
+ * application settings (only the parent handles the user's global preferences).
+ * Persona and memory are separately excluded by createSessionRuntime's identity:false. */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([memoryPath(), subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), sessionPath(), personaPath()].map((path) => resolve(path)))
+  const excluded = new Set([subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), sessionPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -261,7 +246,6 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
   await mutation
   const registry = await readRegistry()
   const providers = new Map<string, SessionToolProvider>([
-    [resolve(memoryPath()), { kind: 'pig', id: 'observational-memory', name: 'Observational Memory' }],
     [resolve(reviewPath()), { kind: 'pig', id: 'pig-review', name: 'Review' }],
     [resolve(webAccessPath()), { kind: 'pig', id: 'pig-web', name: 'Web' }],
     [resolve(subagentPath()), { kind: 'pig', id: 'pig-subagent', name: 'Subagents' }],
@@ -269,8 +253,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
-    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }],
-    [resolve(personaPath()), { kind: 'pig', id: 'pig-persona', name: 'Persona' }]
+    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }]
   ])
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
   for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
@@ -312,10 +295,6 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     }
   }))
   return [{
-    id: 'observational-memory', name: 'Observational Memory', source: 'Pig built-in',
-    kind: 'system', scopes: registry.memoryScopes, available: existsSync(memoryPath()),
-    ...(!existsSync(memoryPath()) ? { error: 'Bundled extension is missing' } : {})
-  }, {
     id: 'pig-review', name: 'Review', source: 'Pig built-in',
     kind: 'system', scopes: registry.reviewScopes, available: existsSync(reviewPath()),
     settings: reviewSettingsSchema,
@@ -348,10 +327,6 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pig-session', name: 'Sessions', source: 'Pig built-in',
     kind: 'system', scopes: registry.sessionScopes, available: existsSync(sessionPath()),
     ...(!existsSync(sessionPath()) ? { error: 'Bundled extension is missing' } : {})
-  }, {
-    id: 'pig-persona', name: 'Persona', source: 'Pig built-in',
-    kind: 'system', scopes: registry.personaScopes, available: existsSync(personaPath()),
-    ...(!existsSync(personaPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -391,9 +366,9 @@ export function installPlugin(source: string): Promise<void> {
 }
 
 const BUNDLED_SCOPES = {
-  'observational-memory': 'memoryScopes', 'pig-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
+  'pig-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
-  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes', 'pig-persona': 'personaScopes'
+  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes'
 } as const satisfies Record<string, keyof Registry>
 
 function registryScopes(registry: Registry): Record<string, PluginScope[]> {
@@ -405,10 +380,7 @@ function registryScopes(registry: Registry): Record<string, PluginScope[]> {
 
 async function applyScopes(registry: Registry, id: string, next: PluginScope[]): Promise<void> {
   const addsScope = (current: PluginScope[]) => next.some((scope) => !current.includes(scope))
-  if (id === 'observational-memory') {
-    if (addsScope(registry.memoryScopes) && !existsSync(memoryPath())) throw new Error('Bundled extension is missing')
-    registry.memoryScopes = next
-  } else if (id === 'pig-review') {
+  if (id === 'pig-review') {
     if (addsScope(registry.reviewScopes) && !existsSync(reviewPath())) throw new Error('Bundled extension is missing')
     registry.reviewScopes = next
   } else if (id === 'pig-web') {
@@ -432,9 +404,6 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   } else if (id === 'pig-session') {
     if (addsScope(registry.sessionScopes) && !existsSync(sessionPath())) throw new Error('Bundled extension is missing')
     registry.sessionScopes = next
-  } else if (id === 'pig-persona') {
-    if (addsScope(registry.personaScopes) && !existsSync(personaPath())) throw new Error('Bundled extension is missing')
-    registry.personaScopes = next
   } else {
     const plugin = registry.installed.find((item) => item.id === id)
     if (!plugin) throw new Error('Plugin not found')
@@ -495,94 +464,6 @@ export function updatePlugin(id: string): Promise<void> {
       return
     }
     await packageManager(plugin.source).update(plugin.source)
-  })
-}
-
-const integerKeys = [
-  'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
-  'compactionMaxRetainedTokens', 'compactionSummaryMaxTokens', 'workerMemoryMaxTokens',
-  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens'
-] as const
-// 0 is meaningful here: it disables the synchronous observer catch-up.
-const nonNegativeIntegerKeys = ['compactionCatchUpMaxChunks'] as const
-const booleanKeys = [
-  'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog', 'consolidateWhenIdle'
-] as const
-
-async function readSettingsObject(path: string): Promise<Record<string, unknown>> {
-  try {
-    const value: unknown = JSON.parse(await readFile(path, 'utf8'))
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Pi settings file')
-    return value as Record<string, unknown>
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw error
-  }
-}
-
-const memoryDefaultKeys = [
-  'observeAfterTokens', 'reflectAfterTokens', 'compactAfterTokens', 'compactAfterTokensRatio',
-  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens',
-  'compactionCatchUpMaxChunks'
-] as const
-
-export async function getMemoryPluginDefaults(): Promise<Record<string, number>> {
-  await mutation
-  return Object.fromEntries(memoryDefaultKeys.map((key) => [key, DEFAULTS[key] as number]))
-}
-
-export async function getMemoryPluginSettings(): Promise<MemoryPluginSettings> {
-  await mutation
-  const value = (await readSettingsObject(memorySettingsPath()))['observational-memory']
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as MemoryPluginSettings : {}
-}
-
-async function saveNamespacedSettings(path: string, settings: Record<string, unknown>): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`)
-}
-
-export function setMemoryPluginSettings(patch: MemoryPluginSettingsPatch): Promise<MemoryPluginSettings> {
-  return serialize(async () => {
-    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
-    const allowed = new Set<string>([
-      ...integerKeys, ...nonNegativeIntegerKeys, ...booleanKeys,
-      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio'
-    ])
-    for (const [key, value] of Object.entries(patch)) {
-      if (!allowed.has(key)) throw new Error(`Unknown memory setting: ${key}`)
-      if (value === undefined || value === null) continue
-      const nonNegative = (nonNegativeIntegerKeys as readonly string[]).includes(key)
-      const integer = (integerKeys as readonly string[]).includes(key) || nonNegative
-      if (integer && (!Number.isSafeInteger(value) || (value as number) < (nonNegative ? 0 : 1))) {
-        throw new Error(nonNegative ? `Invalid non-negative integer: ${key}` : `Invalid positive integer: ${key}`)
-      }
-      if ((booleanKeys as readonly string[]).includes(key) && typeof value !== 'boolean') throw new Error(`Invalid boolean: ${key}`)
-      if (key === 'compactAfterTokensMode' && value !== 'calibrated' && value !== 'ratio') throw new Error('Invalid compaction mode')
-      if (key === 'compactAfterTokensRatio' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value >= 1)) throw new Error('Ratio must be between 0 and 1')
-      if ((key === 'model' || key === 'fallbackModel') && value !== null && (
-        typeof value !== 'object' || !value || typeof value.provider !== 'string' || !value.provider ||
-        typeof value.id !== 'string' || !value.id ||
-        (value.thinking !== undefined && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value.thinking))
-      )) throw new Error('Invalid memory model')
-    }
-    const path = memorySettingsPath()
-    const settings = await readSettingsObject(path)
-    const previous = settings['observational-memory']
-    if (previous !== undefined && (!previous || typeof previous !== 'object' || Array.isArray(previous))) {
-      throw new Error('Invalid observational-memory namespace')
-    }
-    const next = { ...(previous as Record<string, unknown> | undefined) }
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null) delete next[key]
-      else if (value !== undefined) next[key] = value
-    }
-    if (typeof next.observationsPoolTargetTokens === 'number' && typeof next.observationsPoolMaxTokens === 'number' && next.observationsPoolTargetTokens >= next.observationsPoolMaxTokens) {
-      throw new Error('Observation pool target must be smaller than its maximum')
-    }
-    settings['observational-memory'] = next
-    await saveNamespacedSettings(path, settings)
-    return next
   })
 }
 

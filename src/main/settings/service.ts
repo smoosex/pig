@@ -22,7 +22,7 @@ import {
 } from '../pi/model-settings'
 import { listPlugins, pluginScopes, updatePluginScopes } from '../pi/plugins'
 import { configuredServers, mcpEnabled, updateMcpEnabled } from '../mcp/settings'
-import { getPersonaControls, updatePersonaControls, type PersonaControls } from '../plugins/pig-persona/service'
+import { getPersonaControls, updatePersonaControls, type PersonaControls } from '../features/persona/service'
 
 export interface SurfaceHandoff { finish(style: SurfaceStyle): void }
 export interface SettingsServiceDeps {
@@ -320,7 +320,7 @@ export class SettingsService {
       })
       return { result: { ok: true, changed: before.revision !== after.revision, before, after, application: 'new-sessions' }, event }
     }
-    if (!isPigGroup(group)) return this.mutateExternal(group, value, before, expectedRevision, authorize)
+    if (!isPigGroup(group)) return this.mutateExternal(group, value, before, expectedRevision, () => { authorize(); signal?.throwIfAborted() })
     const beforePig = await loadPigSettings(true)
     let handoff: SurfaceHandoff | undefined
     let saved = false
@@ -365,9 +365,8 @@ export class SettingsService {
   }
 
   /**
-   * Plugins, MCP and persona keep their own stores and queues; the revision is checked again inside
-   * them. These groups have no renderer settings fields; their windows learn through plugins:changed,
-   * the MCP settings event and persona:changed.
+   * Plugins, MCP and persona keep their own stores and queues; revisions are
+   * checked there again. Their dedicated events refresh the corresponding settings pages.
    */
   private async mutateExternal(
     group: Exclude<SettingsGroup, PigGroup | 'defaults'>, value: ObjectValue, before: SettingsGroupSnapshot,

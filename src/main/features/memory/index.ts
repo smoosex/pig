@@ -4,7 +4,7 @@ import { maybeTriggerCompaction, registerCompactionTrigger } from "./hooks/compa
 import { registerConsolidationTrigger } from "./hooks/consolidation-trigger.js";
 import { Runtime, registerMemoryRuntime } from "./runtime.js";
 import { registerRecallTool } from "./tools/recall-observation.js";
-import { memoryUI } from "../pig-ui.js";
+import { memoryUI } from "../../plugins/pig-ui.js";
 
 export default function observationalMemory(pi: ExtensionAPI) {
 	const runtime = new Runtime();

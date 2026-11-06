@@ -4,6 +4,14 @@
  * Placeholders are `{name}` and are filled by `translate`.
  */
 export const zh = {
+  features: {
+    title: '人格与记忆',
+    description: '设置性格和记忆',
+    persona: '人格',
+    memory: '记忆',
+    discardTitle: '放弃未保存的修改？',
+    discardHint: '人格或记忆配置中还有未保存的修改。返回聊天将丢弃这些修改。',
+  },
   persona: {
     title: '人格',
     dirtyHint: '有未保存的文件草稿，请先逐个保存。关闭前会询问是否放弃草稿。',
@@ -26,11 +34,12 @@ export const zh = {
     usageOutcome: { changed: '有变化', unchanged: '无变化', invalid: '输出无效', error: '请求失败', timeout: '超时', aborted: '已取消' },
     usageClear: '清除记录', usageClearTitle: '清除所有观察员用量记录？', usageClearHint: '删除本机全部用量记录，无法撤销。', usageCancel: '取消',
     history: '最近心情记录', noHistory: '暂无心情记录',
+    soulTitle: '灵魂', userTitle: '关于你', configureFile: '配置{file}',
     fileInfo: '{file} 说明',
-    soulHint: '人格正文：性格、语气和行为方式，作为系统提示词注入所有会话；Agent 会在末尾的「## Evolved Traits」中追加演化特质。正文为空时改用 Pig 的默认身份。',
+    soulHint: '人格正文：性格、语气和行为方式，作为系统提示词注入所有会话。',
     userHint: '关于你的信息，例如称呼、偏好和习惯，作为用户上下文注入。可留空。',
     unsaved: '有未保存的更改', saved: '当前文件无更改', working: '处理中…', save: '保存 {file}',
-    discardTitle: '放弃未保存的人格更改？', discardHint: '三个文件中尚未保存的草稿将丢失。', keepEditing: '继续编辑', discard: '放弃更改',
+    discardTitle: '放弃未保存的人格更改？', discardHint: '当前编辑器中未保存的修改将丢失。', keepEditing: '继续编辑', discard: '放弃更改',
   },
   skills: {
     title: 'Skills', description: '管理 Skills',

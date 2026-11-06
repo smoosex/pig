@@ -1,6 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { MemoryPluginSettings, MemoryPluginSettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
+import type { MemorySettings, MemorySettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
 import { reviewSettingsSchema } from '../src/main/plugins/pig-review/settings'
 import { PERSONA_FILES, type PersonaSnapshot } from '../src/shared/persona'
 import { runSelf } from './helpers/subprocess.ts'
@@ -15,7 +15,7 @@ async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  const patches: MemoryPluginSettingsPatch[] = []
+  const patches: MemorySettingsPatch[] = []
   const scopeChanges: { id: string; scopes: PluginScope[] }[] = []
   let reviewConfig: Record<string, string | number | boolean> = {}
   const reviewPatches: Record<string, string | number | boolean | null>[] = []
@@ -24,12 +24,11 @@ async function fixture(): Promise<void> {
   let installation: ReturnType<typeof deferred> | null = null
   let rejectScopeChange = false
   let plugins: PluginInfo[] = [
-    { id: 'observational-memory', kind: 'system', name: 'Observational Memory', source: 'Pig built-in', scopes: ['project'], available: true },
+    { id: 'example', kind: 'local', name: 'Example', source: '/example', scopes: ['project'], available: true },
     { id: 'pig-review', kind: 'system', name: 'Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
-    { id: 'pig-persona', kind: 'system', name: 'Persona', source: 'Pig built-in', scopes: ['project', 'chat'], available: true },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
-  let memoryConfig: MemoryPluginSettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
+  let memoryConfig: MemorySettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
   const persona: PersonaSnapshot = {
     active: false,
     files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
@@ -68,11 +67,11 @@ async function fixture(): Promise<void> {
       reviewConfig = Object.fromEntries(Object.entries({ ...reviewConfig, ...patch }).filter(([, value]) => value !== null)) as typeof reviewConfig
       return reviewConfig
     },
-    getMemoryPluginDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
-    getMemoryPluginSettings: async () => memoryConfig,
-    setMemoryPluginSettings: async (patch: MemoryPluginSettingsPatch) => {
+    getMemoryDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
+    getMemorySettings: async () => memoryConfig,
+    setMemorySettings: async (patch: MemorySettingsPatch) => {
       patches.push(patch)
-      memoryConfig = Object.fromEntries(Object.entries({ ...memoryConfig, ...patch }).filter(([, value]) => value !== null)) as MemoryPluginSettings
+      memoryConfig = Object.fromEntries(Object.entries({ ...memoryConfig, ...patch }).filter(([, value]) => value !== null)) as MemorySettings
       return memoryConfig
     }
   } })
@@ -85,6 +84,8 @@ async function fixture(): Promise<void> {
     { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['low', 'medium', 'high'] }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
+  const { MemorySettings } = await import('../src/renderer/src/components/settings/MemorySettings')
+  const { PersonaMemoryPane } = await import('../src/renderer/src/components/settings/PersonaMemoryPane')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const host = document.createElement('div')
   document.body.appendChild(host)
@@ -94,12 +95,9 @@ async function fixture(): Promise<void> {
     await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
     await flush()
     assert.equal(document.querySelector('[aria-label="观察阈值（token）"]'), null, 'settings are hidden until configured')
-    const open = document.querySelector<HTMLButtonElement>('[aria-label="配置 Observational Memory"]')
-    assert.ok(open)
-    const group = document.querySelector<HTMLElement>('[aria-label="Observational Memory 启用范围"]')
+    const group = document.querySelector<HTMLElement>('[aria-label="Example 启用范围"]')
     assert.ok(group)
-    assert.equal(group.parentElement?.lastElementChild, group, 'scope selection is the rightmost control')
-    assert.equal(group.previousElementSibling, open, 'configuration sits immediately to the left')
+    assert.equal(group.parentElement?.lastElementChild, group)
     assert.equal(group.dataset.slot, 'toggle-group')
     const [all, project, chat] = [...group.querySelectorAll<HTMLButtonElement>('button')]
     assert.deepEqual([all, project, chat].map((item) => item.textContent), ['全部', '仅项目', '仅对话'])
@@ -132,7 +130,7 @@ async function fixture(): Promise<void> {
     const [, otherProject, otherChat] = [...otherGroup.querySelectorAll<HTMLButtonElement>('button')]
     const first = deferred()
     const second = deferred()
-    scopeWaits.set('observational-memory', first.promise)
+    scopeWaits.set('example', first.promise)
     scopeWaits.set('pig-review', second.promise)
     await act(async () => { chat.click() })
     assert.equal(project.disabled, true)
@@ -152,7 +150,7 @@ async function fixture(): Promise<void> {
     scopeWaits.clear()
 
     const turningOff = deferred()
-    scopeWaits.set('observational-memory', turningOff.promise)
+    scopeWaits.set('example', turningOff.promise)
     await act(async () => { chat.click() })
     assertInstallerIdle()
     await act(async () => { turningOff.resolve() })
@@ -191,9 +189,9 @@ async function fixture(): Promise<void> {
     await act(async () => { missingAll.click() })
     assert.equal(missingAll.disabled, true)
     assert.deepEqual(scopeChanges.at(-1), { id: 'missing', scopes: [] })
-    await act(async () => { open.click() })
+    await act(async () => { root.render(h(TooltipProvider, null, h(MemorySettings))) })
     await flush()
-    assert.ok(document.querySelector('[data-slot="dialog-content"]'))
+    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
     const input = document.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')
     assert.ok(input)
     assert.equal(input.value, '800')
@@ -246,7 +244,7 @@ async function fixture(): Promise<void> {
     await flush()
     assert.deepEqual(patches, [{ observeAfterTokens: 900, compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true, model: { provider: 'test', id: 'm1' } }])
     assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
-    await act(async () => { open.click() })
+    await act(async () => { picker.click() })
     await flush()
     const savedCatchUp = document.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')
     assert.ok(savedCatchUp)
@@ -259,6 +257,8 @@ async function fixture(): Promise<void> {
     await flush()
     assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
 
+    await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
+    await flush()
     const openReview = document.querySelector<HTMLButtonElement>('[aria-label="配置 Review"]')!
     await act(async () => { openReview.click() })
     await flush()
@@ -299,26 +299,50 @@ async function fixture(): Promise<void> {
     await flush()
     assert.deepEqual(reviewPatches[1], { provider: null, modelId: null, thinking: null }, 'the default choice clears both model and thinking')
 
-    await act(async () => { document.querySelector<HTMLButtonElement>('[aria-label="配置 Persona"]')!.click() })
+    let dirty = false
+    await act(async () => { root.render(h(TooltipProvider, null, h(PersonaMemoryPane, { onDirtyChange: value => { dirty = value } }))) })
     await flush()
-    const textarea = document.querySelector('textarea')!
+    assert.equal(document.querySelector('textarea'), null, 'persona files are not shown inline')
+    const configure = host.querySelector<HTMLButtonElement>('[aria-label="配置灵魂"]')!
+    const aboutYou = host.querySelector<HTMLButtonElement>('[aria-label="配置关于你"]')!
+    assert.equal(configure.textContent, '灵魂')
+    assert.equal(aboutYou.textContent, '关于你')
+    const featureTabs = () => [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const switchFeature = async (label: string) => {
+      await act(async () => {
+        featureTabs().find(button => button.textContent === label)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      })
+      await flush()
+    }
+    const header = host.querySelector('[role="tablist"]')!.parentElement!
+    assert.ok(header.contains(configure) && header.contains(aboutYou), 'both buttons share the tab header')
+    assert.equal(host.querySelector('[role="tabpanel"]')!.contains(configure), false, 'old configuration rows are removed')
+    await act(async () => { configure.click() })
+    await flush()
+    assert.equal(document.querySelector('[role="dialog"] h2')?.textContent, '灵魂')
+    assert.ok(document.getElementById('persona-SOUL.md'))
+    await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '取消')!.click() })
+    await flush()
+    assert.equal(document.querySelector('[role="dialog"]'), null)
+    await switchFeature('记忆')
+    assert.ok(configure.closest('[hidden]'), 'persona actions are hidden on the memory tab')
+    const threshold = host.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')!
     await act(async () => {
-      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Keep this persona draft')
-      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      setValue.call(threshold, '950')
+      threshold.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    const closePersona = () => document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!
-    await act(async () => { closePersona().click() })
-    await flush()
-    assert.ok(document.querySelector('[role="alertdialog"]'), 'closing dirty persona files requires confirmation')
-    const action = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === label)!
-    await act(async () => { action('继续编辑').click() })
-    await flush()
-    assert.equal(document.querySelector('textarea')?.value, 'Keep this persona draft')
-    await act(async () => { closePersona().click() })
-    await flush()
-    await act(async () => { action('放弃更改').click() })
-    await flush()
-    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null, 'explicit discard closes the editor')
+    assert.equal(dirty, true)
+    await switchFeature('人格')
+    assert.equal(dirty, true, 'switching feature tabs preserves memory settings drafts')
+    assert.equal(configure.closest('[hidden]'), null)
+    await switchFeature('记忆')
+    assert.equal(threshold.value, '950')
+    assert.equal(document.querySelector('[aria-label="人格 默认启用范围"]'), null)
+    assert.equal(document.querySelector('[aria-label="记忆 默认启用范围"]'), null)
+    assert.equal(host.textContent?.includes('人格与表达状态由所有会话共用'), false)
+    assert.equal(host.textContent?.includes('观测记忆从会话上下文提炼信息'), false)
+    const mood = document.getElementById('persona-pleasantness')!
+    assert.ok(configure.compareDocumentPosition(mood) & Node.DOCUMENT_POSITION_FOLLOWING, 'file buttons are in the header above the mood card')
   } finally {
     await act(async () => { root.unmount() })
     host.remove()

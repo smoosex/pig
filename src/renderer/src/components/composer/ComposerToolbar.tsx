@@ -33,7 +33,7 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     let active = true
     if (!sessionId || !ready) return
-    const load = () => { void api.isMemoryPluginEnabled(sessionId).then((enabled) => {
+    const load = () => { void api.isMemoryEnabled(sessionId).then((enabled) => {
       if (active) setMemorySessionId(enabled ? sessionId : null)
     }, (failure) => {
       // Report IPC/config failures at this read-only UI boundary, not as a disabled plugin.
@@ -42,7 +42,7 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
       }))
     }) }
     load()
-    const off = api.onPluginsChanged(load)
+    const off = api.conversationFeatures.onChanged(load)
     return () => { active = false; off() }
   }, [sessionId, ready, t])
   const usage = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.contextUsage ?? null) : null)

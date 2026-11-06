@@ -1,5 +1,5 @@
 import { type Config, DEFAULTS, loadConfig } from "./config.js";
-import type { SystemNotifier } from "../pig-ui.js";
+import type { SystemNotifier } from "../../plugins/pig-ui.js";
 
 const runtimesKey = Symbol.for('pig:observational-memory:runtimes');
 const runtimes = (globalThis as Record<symbol, Map<string, Runtime> | undefined>)[runtimesKey]

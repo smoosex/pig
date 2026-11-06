@@ -710,7 +710,7 @@ export type SystemUIEvent =
   | { kind: 'review-feedback'; sessionId: string; feedback: ReviewFeedback | null }
   | { kind: 'reset'; sessionId: string }
 
-export interface MemoryPluginSettings {
+export interface MemorySettings {
   observeAfterTokens?: number
   reflectAfterTokens?: number
   observerChunkMaxTokens?: number
@@ -734,7 +734,7 @@ export interface MemoryPluginSettings {
   consolidateWhenIdle?: boolean
 }
 
-export type MemoryPluginSettingsPatch = { [K in keyof MemoryPluginSettings]?: MemoryPluginSettings[K] | null }
+export type MemorySettingsPatch = { [K in keyof MemorySettings]?: MemorySettings[K] | null }
 
 export type SubagentStatus =
   | 'queued' | 'running' | 'completed' | 'failed' | 'timeout' | 'turn_limit' | 'aborted' | 'interrupted'
@@ -887,6 +887,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   sessionAgent: SessionAgentUiApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
+  conversationFeatures: import('./features').ConversationFeaturesApi
   permissions: import('./permissions').PermissionsApi
   processes: import('./processes').ProcessApi
   terminal: import('./terminal').TerminalApi
@@ -1038,10 +1039,10 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setPluginScopes: (id: string, scopes: PluginScope[]) => Promise<PluginInfo[]>
   updatePlugin: (id: string) => Promise<PluginInfo[]>
   removePlugin: (id: string) => Promise<PluginInfo[]>
-  isMemoryPluginEnabled: (sessionId: string) => Promise<boolean>
-  getMemoryPluginDefaults: () => Promise<Record<string, number>>
-  getMemoryPluginSettings: () => Promise<MemoryPluginSettings>
-  setMemoryPluginSettings: (patch: MemoryPluginSettingsPatch) => Promise<MemoryPluginSettings>
+  isMemoryEnabled: (sessionId: string) => Promise<boolean>
+  getMemoryDefaults: () => Promise<Record<string, number>>
+  getMemorySettings: () => Promise<MemorySettings>
+  setMemorySettings: (patch: MemorySettingsPatch) => Promise<MemorySettings>
   getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => Promise<string>
   getPluginSettings: (id: string) => Promise<Record<string, string | number | boolean>>
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => Promise<Record<string, string | number | boolean>>

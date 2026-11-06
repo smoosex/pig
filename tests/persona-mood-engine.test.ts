@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { MoodEngine, ACTIVITY_LEASE_MS } from '../src/main/plugins/pig-persona/mood-engine'
-import { createPersistentState } from '../src/main/plugins/pig-persona/kernel'
+import { MoodEngine, ACTIVITY_LEASE_MS } from '../src/main/features/persona/mood-engine'
+import { createPersistentState } from '../src/main/features/persona/kernel'
 
 const HOUR = 3600000
 function engine(now = Date.now()) {

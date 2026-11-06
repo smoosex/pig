@@ -5,6 +5,8 @@ import { registerSystemIpc } from './system'
 import { registerDiffIpc } from './diff'
 import { registerFilesIpc } from './files'
 import { registerPluginIpc } from './plugins'
+import { registerPersonaIpc } from './persona'
+import { registerConversationFeaturesIpc } from './conversation-features'
 import { registerMcpIpc } from './mcp'
 import { registerModelIpc } from './models'
 import { registerSkillsIpc } from './skills'
@@ -27,6 +29,8 @@ export function registerIpc(): void {
   registerDiffIpc()
   registerFilesIpc()
   registerPluginIpc()
+  registerPersonaIpc()
+  registerConversationFeaturesIpc()
   registerMcpIpc()
   registerModelIpc()
   registerSkillsIpc()

@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 // The SDK aliases the Pi packages (including pi-schema) through jiti, so those stay external; every
 // other dependency is inlined because the packaged app ships no node_modules for plugins.
-for (const name of ['pig-web', 'pig-persona']) {
+for (const name of ['pig-web']) {
   const source = join(root, 'src/main/plugins', name)
   const outDir = join(root, 'out/system-plugins', name)
   await rm(outDir, { recursive: true, force: true })

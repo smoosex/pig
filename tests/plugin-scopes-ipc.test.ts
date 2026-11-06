@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { PluginInfo } from '../src/shared/api'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
@@ -13,16 +12,18 @@ async function fixture(): Promise<void> {
   process.env.PIG_DIR = join(root, 'pig')
   const handlers = new Map<string, (...args: any[]) => unknown>()
   let refreshes = 0
+  const webContents = { mainFrame: {}, isDestroyed: () => false }
+  const win = { webContents, isDestroyed: () => false }
   mock.module('electron', () => ({
     app: { isPackaged: false, getAppPath: () => process.cwd() },
-    BrowserWindow: { getAllWindows: () => [] },
+    BrowserWindow: { getAllWindows: () => [], fromWebContents: (sender: unknown) => sender === webContents ? win : undefined },
     dialog: {},
     ipcMain: { handle: (channel: string, handler: (...args: any[]) => unknown) => handlers.set(channel, handler) }
   }))
   mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
     getLive: () => undefined,
     hasBusyPluginSessions: () => false,
-    refreshPluginSessions: async () => { refreshes++ },
+    refreshConversationFeatures: async () => { refreshes++ },
     sessionCwd: (sessionId: string) => {
       if (sessionId === 'project') return join(root, 'project')
       if (sessionId === 'chat') return join(process.env.PIG_DIR!, 'chats', 'chat')
@@ -30,34 +31,24 @@ async function fixture(): Promise<void> {
     },
     sessionSourceFor: async () => ({ branch: () => [] })
   }))
-  const invoke = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args)
+  const invoke = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({ sender: webContents, senderFrame: webContents.mainFrame }, ...args)
   try {
-    const { registerPluginIpc } = await import('../src/main/ipc/plugins')
-    registerPluginIpc()
-    assert.equal(await invoke('plugins:memory-enabled', 'project'), false)
-    assert.equal(await invoke('plugins:memory-enabled', 'chat'), false)
-    await assert.rejects(invoke('plugins:memory-detail', 'project', 'view'), /not enabled/)
-    await assert.rejects(invoke('plugins:memory-detail', 'chat', 'view'), /not enabled/)
-
-    const plugins = await invoke('plugins:scopes', 'observational-memory', ['chat']) as PluginInfo[]
-    assert.deepEqual(plugins.find((plugin) => plugin.id === 'observational-memory')?.scopes, ['chat'])
-    assert.equal(refreshes, 1)
-    assert.equal(await invoke('plugins:memory-enabled', 'project'), false)
-    assert.equal(await invoke('plugins:memory-enabled', 'chat'), true)
-    await assert.rejects(invoke('plugins:memory-detail', 'project', 'view'), /not enabled/)
-    assert.match(await invoke('plugins:memory-detail', 'chat', 'view') as string, /No visible observations/)
-
-    await invoke('plugins:scopes', 'observational-memory', ['project', 'chat'])
-    assert.equal(await invoke('plugins:memory-enabled', 'project'), true)
-    assert.equal(await invoke('plugins:memory-enabled', 'chat'), true)
-    await invoke('plugins:scopes', 'observational-memory', [])
-    assert.equal(await invoke('plugins:memory-enabled', 'project'), false)
-    assert.equal(await invoke('plugins:memory-enabled', 'chat'), false)
-    await assert.rejects(invoke('plugins:scopes', 'observational-memory', ['unknown']), /Invalid plugin scopes/)
-    await assert.rejects(invoke('plugins:scopes', 'observational-memory', true), /Invalid plugin scopes/)
-    assert.equal(refreshes, 3, 'invalid scope payloads do not trigger a reload')
-    await assert.rejects(invoke('plugins:memory-enabled'), /Session id is required/)
-    await assert.rejects(invoke('plugins:memory-enabled', 'unknown'), /Unknown session/)
+    const { registerConversationFeaturesIpc } = await import('../src/main/ipc/conversation-features')
+    registerConversationFeaturesIpc()
+    assert.equal(handlers.has('conversation-features:get'), false)
+    assert.equal(handlers.has('conversation-features:set-scopes'), false)
+    assert.equal(handlers.has('plugins:memory-enabled'), false)
+    for (const channel of handlers.keys()) {
+      await assert.rejects(Promise.resolve().then(() => handlers.get(channel)!({ sender: webContents, senderFrame: {} })), /owning UI main frame/)
+    }
+    for (const sessionId of ['project', 'chat']) {
+      assert.equal(await invoke('memory:enabled', sessionId), true)
+      assert.match(await invoke('memory:detail', sessionId, 'view') as string, /No visible observations/)
+    }
+    await invoke('memory:set', { observeAfterTokens: 900 })
+    assert.equal(refreshes, 1, 'memory settings still reload idle sessions')
+    await assert.rejects(invoke('memory:enabled'), /Session id is required/)
+    await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {
     if (previousPig === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previousPig
@@ -66,7 +57,7 @@ async function fixture(): Promise<void> {
 }
 
 if (process.argv.includes('--fixture')) await fixture()
-else test('plugin IPC scopes memory availability and details to the requested session', async () => {
+else test('built-in memory IPC is enabled in project and chat sessions and only accepts the owning UI', async () => {
   const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
   assert.equal(code, 0, stderr || stdout)
 }, 12_000)

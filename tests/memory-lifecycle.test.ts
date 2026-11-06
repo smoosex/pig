@@ -2,7 +2,7 @@ import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import type { Entry, Observation, Reflection } from '../src/main/plugins/observational-memory/session-ledger/types'
+import type { Entry, Observation, Reflection } from '../src/main/features/memory/session-ledger/types'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(scenario: string): Promise<void> {
@@ -45,14 +45,14 @@ async function fixture(scenario: string): Promise<void> {
     return result
   }
   const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
-  mock.module(path('../src/main/plugins/observational-memory/agents/observer/agent.ts'), () => ({
+  mock.module(path('../src/main/features/memory/agents/observer/agent.ts'), () => ({
     ObserverStreamError,
     runObserver: (args: { signal?: AbortSignal }) => run('observer', args, observations)
   }))
-  mock.module(path('../src/main/plugins/observational-memory/agents/reflector/agent.ts'), () => ({
+  mock.module(path('../src/main/features/memory/agents/reflector/agent.ts'), () => ({
     runReflector: (args: { signal?: AbortSignal }) => run('reflector', args, reflections)
   }))
-  mock.module(path('../src/main/plugins/observational-memory/agents/dropper/agent.ts'), () => ({
+  mock.module(path('../src/main/features/memory/agents/dropper/agent.ts'), () => ({
     runDropper: (args: { signal?: AbortSignal }) => run('dropper', args, ['aaaaaaaaaaaa'])
   }))
 
@@ -103,8 +103,8 @@ async function fixture(scenario: string): Promise<void> {
     memory: { notify: (message) => notifications.push(message) },
     review: { available: true, returning: false, setFeedback: () => {}, setActive: () => {}, setReturning: () => {}, choose: async () => undefined, edit: async () => undefined }
   })
-  const { default: plugin } = await import('../src/main/plugins/observational-memory/index')
-  const { memoryRuntime } = await import('../src/main/plugins/observational-memory/runtime')
+  const { default: plugin } = await import('../src/main/features/memory/index')
+  const { memoryRuntime } = await import('../src/main/features/memory/runtime')
   const emit = async (event: string) => {
     for (const handler of handlers.get(event) ?? []) await handler({}, ctx)
   }

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { MemoryPluginSettingsPatch, PluginScope } from '../src/shared/api'
+import type { MemorySettingsPatch, PluginScope } from '../src/shared/api'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
@@ -23,7 +23,7 @@ async function fixture(): Promise<void> {
   const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   const sessionPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
   try {
-    const module = await import('../src/main/pi/plugins')
+    const module = { ...await import('../src/main/pi/plugins'), ...await import('../src/main/features/memory-settings') }
     const { sessionToolPath } = await import('../src/main/pi/system-plugin-paths')
     assert.equal(sessionToolPath(), sessionPath)
     const originalResources = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
@@ -92,13 +92,11 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getPluginSettings('pig-review'), { thinking: 'high' })
     await module.setPluginSettings('pig-review', { thinking: null })
     assert.deepEqual(await module.getPluginSettings('pig-review'), {})
-    const defaultScopes = [[], ['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']]
+    const defaultScopes = [['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
-    assert.equal(await module.isMemoryPluginEnabled('project'), false)
-    assert.equal(await module.isMemoryPluginEnabled('chat'), false)
     const bundledPaths = await module.enabledPluginPaths('project')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('plugins', 'observational-memory', 'index.ts'))), false)
-    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, settingsPath, sessionPath, personaBundle].filter(existsSync))
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, settingsPath, sessionPath].filter(existsSync))
     assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'pig-review', 'index.ts'))))
     const subagentPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-subagent', 'index.ts')))
     assert.ok(subagentPath, 'subagents default to projects only')
@@ -126,8 +124,8 @@ async function fixture(): Promise<void> {
     await assert.rejects(module.getPluginSettings('pig-settings'), /Plugin not found/, 'the settings tools do not declare a plugin configuration pane')
     assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, sessionPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pig-web', 'index.js'))), existsSync(webAccessBundle))
-    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-persona')?.scopes, ['project', 'chat'])
-    assert.equal(bundledPaths.includes(personaBundle), existsSync(personaBundle))
+    assert.equal((await module.listPlugins()).some(item => item.id === 'pig-persona' || item.id === 'observational-memory'), false)
+    assert.equal(bundledPaths.includes(personaBundle), false)
     const registryFile = join(root, 'pig', 'plugins.json')
     await mkdir(join(root, 'pig'), { recursive: true })
     await writeFile(registryFile, JSON.stringify({ version: 1, installed: [] }))
@@ -175,12 +173,12 @@ async function fixture(): Promise<void> {
       version: 1, memoryEnabled: true, reviewEnabled: false, webAccessEnabled: true,
       installed: [{ id: 'legacy', source: plugin, kind: 'local', enabled: true }]
     }))
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat'], ['project']])
-    assert.deepEqual(await module.enabledPluginPaths('chat'), [settingsPath, sessionPath, personaBundle].filter(existsSync), 'legacy switches do not change new built-in defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project']])
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [settingsPath, sessionPath].filter(existsSync), 'legacy switches do not change new built-in defaults')
     await module.setPluginScopes('legacy', ['chat', 'project', 'chat'])
     const migrated = JSON.parse(await readFile(registryFile, 'utf8'))
     assert.equal(migrated.version, 2)
-    assert.deepEqual(migrated.memoryScopes, ['project'])
+    assert.equal(migrated.memoryEnabled, true, 'plugin saves preserve legacy feature preferences without interpreting them')
     assert.deepEqual(migrated.reviewScopes, [])
     assert.deepEqual(migrated.webAccessScopes, ['project'])
     const webPlugin = (await module.listPlugins()).find((item) => item.id === 'pig-web')!
@@ -190,19 +188,14 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.terminalScopes, ['project'])
     assert.deepEqual(migrated.settingsScopes, ['project', 'chat'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [['project'], [], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['observational-memory', 'pig-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pig-persona']) await module.setPluginScopes(id, [])
+    for (const id of ['pig-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
-    assert.deepEqual((await module.listPlugins()).find((item) => item.id === 'pig-persona')?.scopes, [])
-    if (existsSync(personaBundle)) {
-      await module.setPluginScopes('pig-persona', ['chat', 'project', 'chat'])
-      assert.equal((await module.enabledPluginPaths('chat')).includes(personaBundle), true)
-      await module.setPluginScopes('pig-persona', [])
-    }
-    await assert.rejects(module.setPluginScopes('pig-persona', ['unknown'] as unknown as PluginScope[]), /Invalid plugin scopes/)
+    await assert.rejects(module.setPluginScopes('pig-persona', []), /Plugin not found/)
+    await assert.rejects(module.setPluginScopes('observational-memory', []), /Plugin not found/)
     await module.setPluginScopes('pig-review', ['chat'])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     assert.ok((await module.enabledPluginPaths('chat')).some((path) => path.endsWith(join('plugins', 'pig-review', 'index.ts'))))
@@ -282,21 +275,21 @@ async function fixture(): Promise<void> {
     const agentSettings = join(root, 'agent', 'settings.json')
     await mkdir(join(root, 'agent'), { recursive: true })
     await writeFile(agentSettings, JSON.stringify({ 'observational-memory': { passive: true, observeAfterTokens: 999 } }))
-    assert.deepEqual(await module.getMemoryPluginDefaults(), {
+    assert.deepEqual(await module.getMemoryDefaults(), {
       observeAfterTokens: 10000, reflectAfterTokens: 20000, compactAfterTokens: 81000,
       compactAfterTokensRatio: 0.68, observationsPoolMaxTokens: 20000,
       observationsPoolTargetTokens: 10000, agentMaxTurns: 16, agentMaxTokens: 32000,
       compactionCatchUpMaxChunks: 2
     })
-    assert.deepEqual(await module.getMemoryPluginSettings(), {})
+    assert.deepEqual(await module.getMemorySettings(), {})
     const settingsFile = join(root, 'pig', 'plugins', 'observational-memory', 'settings.json')
-    await module.setMemoryPluginSettings({ passive: true, debugLog: false })
+    await module.setMemorySettings({ passive: true, debugLog: false })
     const privateSettings = JSON.parse(await readFile(settingsFile, 'utf8'))
     assert.deepEqual(privateSettings['observational-memory'], { passive: true, debugLog: false })
-    await module.setMemoryPluginSettings({ observeAfterTokens: 800, passive: null })
-    assert.deepEqual((await module.getMemoryPluginSettings()), { observeAfterTokens: 800, debugLog: false })
+    await module.setMemorySettings({ observeAfterTokens: 800, passive: null })
+    assert.deepEqual((await module.getMemorySettings()), { observeAfterTokens: 800, debugLog: false })
     assert.deepEqual(JSON.parse(await readFile(agentSettings, 'utf8')), { 'observational-memory': { passive: true, observeAfterTokens: 999 } })
-    const { loadConfig } = await import('../src/main/plugins/observational-memory/config')
+    const { loadConfig } = await import('../src/main/features/memory/config')
     assert.equal(loadConfig().observeAfterTokens, 800)
     assert.equal(loadConfig().passive, false)
     const piConfigProject = join(root, 'compaction-config-project')
@@ -320,12 +313,12 @@ async function fixture(): Promise<void> {
       error instanceof Error && error.message.includes(agentSettings) && error.cause instanceof SyntaxError)
     await writeFile(agentSettings, originalPiSettings)
     assert.equal(loadConfig(piConfigProject).piAutoCompactionEnabled, true)
-    const { runObserver } = await import('../src/main/plugins/observational-memory/agents/observer/agent')
+    const { runObserver } = await import('../src/main/features/memory/agents/observer/agent')
     let observerPrompt = ''
     await runObserver({
       model: { provider: 'test', maxTokens: 1000 } as import('@earendil-works/pi-ai').Model<any>,
       priorReflections: [], priorObservations: [], chunk: '[Source entry id: source] hello', allowedSourceEntryIds: ['source'],
-      streamSimple: (() => { throw new Error('No model call expected') }) as import('../src/main/plugins/observational-memory/agents/worker-stream').WorkerStreamSimple,
+      streamSimple: (() => { throw new Error('No model call expected') }) as import('../src/main/features/memory/agents/worker-stream').WorkerStreamSimple,
       agentLoop: ((_prompts, context) => {
         const system = context.messages.find((message) => message.role === 'system')
         observerPrompt = system?.role === 'system' && typeof system.content === 'string' ? system.content : ''
@@ -333,25 +326,25 @@ async function fixture(): Promise<void> {
       }) as typeof import('@earendil-works/pi-agent-core').agentLoop
     })
     assert.match(observerPrompt, /observation agent/)
-    await assert.rejects(module.setMemoryPluginSettings({ compactAfterTokensRatio: 3 }), /Ratio/)
+    await assert.rejects(module.setMemorySettings({ compactAfterTokensRatio: 3 }), /Ratio/)
     // The fallback model is written by the settings pane, so the allowlist has to accept it
     // and keep it out of the sibling `model` slot.
-    const withFallback = await module.setMemoryPluginSettings({ fallbackModel: { provider: 'test', id: 'small', thinking: 'low' } })
+    const withFallback = await module.setMemorySettings({ fallbackModel: { provider: 'test', id: 'small', thinking: 'low' } })
     assert.deepEqual(withFallback.fallbackModel, { provider: 'test', id: 'small', thinking: 'low' })
     // Malformed payloads must be rejected at runtime, not just by the type contract.
-    const malformed = (value: unknown) => ({ fallbackModel: value }) as MemoryPluginSettingsPatch
-    await assert.rejects(module.setMemoryPluginSettings(malformed({ provider: 'test' })), /Invalid memory model/)
-    await assert.rejects(module.setMemoryPluginSettings(malformed({ provider: 'test', id: 'small', thinking: 'bogus' })), /Invalid memory model/)
-    await module.setMemoryPluginSettings({ fallbackModel: null })
-    assert.equal((await module.getMemoryPluginSettings()).fallbackModel, undefined)
-    const idleSettings = await module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true })
+    const malformed = (value: unknown) => ({ fallbackModel: value }) as MemorySettingsPatch
+    await assert.rejects(module.setMemorySettings(malformed({ provider: 'test' })), /Invalid memory model/)
+    await assert.rejects(module.setMemorySettings(malformed({ provider: 'test', id: 'small', thinking: 'bogus' })), /Invalid memory model/)
+    await module.setMemorySettings({ fallbackModel: null })
+    assert.equal((await module.getMemorySettings()).fallbackModel, undefined)
+    const idleSettings = await module.setMemorySettings({ compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true })
     assert.equal(idleSettings.compactionCatchUpMaxChunks, 0)
     assert.equal(idleSettings.consolidateWhenIdle, true)
     assert.equal(loadConfig().compactionCatchUpMaxChunks, 0)
     assert.equal(loadConfig().consolidateWhenIdle, true)
-    await assert.rejects(module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: -1 }))
-    await assert.rejects(module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: 0.5 }))
-    await module.setMemoryPluginSettings({ compactionCatchUpMaxChunks: null, consolidateWhenIdle: null })
+    await assert.rejects(module.setMemorySettings({ compactionCatchUpMaxChunks: -1 }))
+    await assert.rejects(module.setMemorySettings({ compactionCatchUpMaxChunks: 0.5 }))
+    await module.setMemorySettings({ compactionCatchUpMaxChunks: null, consolidateWhenIdle: null })
     assert.equal(loadConfig().compactionCatchUpMaxChunks, 2)
     assert.equal(loadConfig().consolidateWhenIdle, false)
 
@@ -372,12 +365,9 @@ async function fixture(): Promise<void> {
     ui.detachSystemUI('one')
     assert.equal(context.available, false)
 
-    await module.setPluginScopes('observational-memory', ['chat'])
-    assert.equal(await module.isMemoryPluginEnabled('project'), false)
-    assert.equal(await module.isMemoryPluginEnabled('chat'), true)
     const packagedPlugins = join(root, 'resources', 'system-plugins')
     await mkdir(packagedPlugins, { recursive: true })
-    for (const name of ['observational-memory', 'pig-review', 'pig-ui.ts']) {
+    for (const name of ['pig-review', 'pig-ui.ts']) {
       await cp(join(process.cwd(), 'src', 'main', 'plugins', name), join(packagedPlugins, name), { recursive: true })
     }
     const builderConfig = await readFile(join(process.cwd(), 'electron-builder.yml'), 'utf8')
@@ -389,13 +379,12 @@ async function fixture(): Promise<void> {
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-process\s+to: system-plugins\/pig-process\s+filter:\s+- '\*\*\/\*\.ts'/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-servers\.ts\s+to: system-plugins\/pig-servers\.ts/)
     assert.match(builderConfig, /from: src\/main\/plugins\/pig-terminal\s+to: system-plugins\/pig-terminal\s+filter:\s+- '\*\*\/\*\.ts'/)
-    const packagedPaths = [join(packagedPlugins, 'observational-memory', 'index.ts'), join(packagedPlugins, 'pig-review', 'index.ts')]
-    if (existsSync(personaBundle)) {
-      await cp(join(process.cwd(), 'out', 'system-plugins', 'pig-persona'), join(packagedPlugins, 'pig-persona'), { recursive: true })
-      packagedPaths.push(join(packagedPlugins, 'pig-persona', 'index.js'))
-    }
-    assert.match(builderConfig, /from: out\/system-plugins\/pig-persona\s+to: system-plugins\/pig-persona/)
-    const memoryLoader = await createNoExtensionsResourceLoader(root, packagedPaths)
+    assert.doesNotMatch(builderConfig, /to: system-plugins\/pig-persona/)
+    assert.match(builderConfig, /to: licenses\/observational-memory-LICENSE/)
+    const { conversationFeatureFactories } = await import('../src/main/features/runtime')
+    const memoryLoader = await createNoExtensionsResourceLoader(root, [join(packagedPlugins, 'pig-review', 'index.ts')], {
+      extensionFactories: conversationFeatureFactories()
+    })
     assert.deepEqual(memoryLoader.getExtensions().errors, [])
     const { session } = await sdk.createAgentSession({
       cwd: root, agentDir: join(root, 'agent'), resourceLoader: memoryLoader,
@@ -410,7 +399,7 @@ async function fixture(): Promise<void> {
       assert.equal(commands.includes('persona'), false)
       assert.equal(commands.includes('om:status'), false)
       assert.equal(commands.includes('om:view'), false)
-      const { memoryStatus, memoryView } = await import('../src/main/plugins/observational-memory/details')
+      const { memoryStatus, memoryView } = await import('../src/main/features/memory/details')
       assert.match(memoryStatus(session.sessionId, [], 128_000), /Next observation: ~0 \/ 800 tokens/)
       assert.match(memoryView([]), /No visible observations/)
       assert.match(memoryView([], true), /No recorded observations/)
@@ -421,7 +410,7 @@ async function fixture(): Promise<void> {
       ]
       assert.match(memoryView(branch, true), /Pig remembers context/)
       assert.doesNotMatch(memoryView(branch), /Pig remembers context/)
-      const { memoryRuntime } = await import('../src/main/plugins/observational-memory/runtime')
+      const { memoryRuntime } = await import('../src/main/features/memory/runtime')
       const runtime = memoryRuntime(session.sessionId)
       assert.ok(runtime)
       runtime.notify('Memory host notification')
@@ -478,7 +467,7 @@ async function fixture(): Promise<void> {
     assert.match(String(writeErrors[0]?.error), /read-only in Pig/)
     assert.deepEqual(JSON.parse(await readFile(agentSettings, 'utf8')), { 'observational-memory': { passive: true, observeAfterTokens: 999 } })
 
-    const { DEFAULTS } = await import('../src/main/plugins/observational-memory/config')
+    const { DEFAULTS } = await import('../src/main/features/memory/config')
     await writeFile(settingsFile, '{corrupt')
     const logged: string[] = []
     const previousError = console.error

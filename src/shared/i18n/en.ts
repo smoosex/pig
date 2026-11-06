@@ -2,6 +2,14 @@ import type { Messages } from './zh'
 
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
+  features: {
+    title: 'Persona & Memory',
+    description: 'Configure personality and memory',
+    persona: 'Persona',
+    memory: 'Memory',
+    discardTitle: 'Discard unsaved changes?',
+    discardHint: 'Persona or memory settings have unsaved changes. Returning to chat will discard them.',
+  },
   persona: {
     title: 'Persona',
     dirtyHint: 'Unsaved file drafts: save each file first. Closing asks before discarding drafts.',
@@ -24,11 +32,12 @@ export const en: Messages = {
     usageOutcome: { changed: 'Changed', unchanged: 'Unchanged', invalid: 'Invalid output', error: 'Request failed', timeout: 'Timed out', aborted: 'Cancelled' },
     usageClear: 'Clear records', usageClearTitle: 'Clear all observer usage records?', usageClearHint: 'Deletes every local usage record. This cannot be undone.', usageCancel: 'Cancel',
     history: 'Recent mood history', noHistory: 'No mood history yet',
+    soulTitle: 'Soul', userTitle: 'About you', configureFile: 'Configure {file}',
     fileInfo: 'About {file}',
-    soulHint: 'The persona body: personality, tone and behaviour, injected into every conversation as the system prompt; the Agent appends evolved traits under a trailing "## Evolved Traits" section. An empty body falls back to Pig\'s default identity.',
+    soulHint: 'The persona body: personality, tone and behaviour, injected into every conversation as the system prompt.',
     userHint: 'Information about you, such as how to address you, preferences and habits, injected as user context. Optional.',
     unsaved: 'Unsaved changes', saved: 'No changes in this file', working: 'Working…', save: 'Save {file}',
-    discardTitle: 'Discard unsaved persona changes?', discardHint: 'Unsaved drafts in all three files will be lost.', keepEditing: 'Keep editing', discard: 'Discard changes',
+    discardTitle: 'Discard unsaved persona changes?', discardHint: 'Unsaved changes in this editor will be lost.', keepEditing: 'Keep editing', discard: 'Discard changes',
   },
   skills: {
     title: 'Skills', description: 'Manage skills',

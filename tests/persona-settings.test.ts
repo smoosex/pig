@@ -61,16 +61,15 @@ async function fixture() {
   let dirty = false
   let busy = false
   const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find((node) => node.textContent === text)!
-  const click = async (text: string) => { await act(async () => { button(text).click() }) }
-  const tab = async (name: string) => {
-    await act(async () => {
-      const node = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((item) => item.textContent?.startsWith(name))!
-      node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, ctrlKey: false }))
-    })
+  const flush = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 15)) }) }
+  const click = async (text: string) => { await act(async () => { button(text).click() }); await flush() }
+  const open = async (name: 'Soul' | 'About you') => {
+    await act(async () => { host.querySelector<HTMLButtonElement>(`[aria-label="Configure ${name}"]`)!.click() })
   }
+  const editor = () => document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!
   const edit = async (value: string) => {
     await act(async () => {
-      const node = host.querySelector('textarea')!
+      const node = editor()
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(node, value)
       node.dispatchEvent(new Event('input', { bubbles: true }))
     })
@@ -78,18 +77,39 @@ async function fixture() {
   try {
     await act(async () => { root.render(h(TooltipProvider, null, h(PersonaSettings, { onDirtyChange: (value) => { dirty = value }, onBusyChange: (value) => { busy = value } }))) })
     assert.equal(getCount, 1)
+    assert.equal(host.querySelector('textarea'), null, 'files do not render inline')
+    assert.equal(host.querySelector('[role="tab"]'), null, 'file tabs are replaced by buttons')
+    const configure = host.querySelector<HTMLButtonElement>('[aria-label="Configure Soul"]')!
+    assert.equal(configure.parentElement?.closest('[data-slot="dialog-content"]'), null)
+    await open('Soul')
     await edit('soul draft')
     assert.equal(dirty, true)
-    await tab('USER.md')
-    await edit('user draft')
-    await tab('SOUL.md')
-    assert.equal(host.querySelector('textarea')!.value, 'soul draft')
-    assert.match(host.textContent!, /Calm and rested/)
-    assert.match(host.textContent!, /additional model calls/)
     snapshot = { ...snapshot, mood: { ...snapshot.mood, feeling: 'Changed in a conversation' } }
     await act(async () => { changed!() })
-    assert.match(host.textContent!, /Changed in a conversation/, 'a conversation change reaches the open page')
-    assert.equal(host.querySelector('textarea')!.value, 'soul draft', 'unsaved drafts survive the reread')
+    assert.equal(editor().value, 'soul draft', 'conversation changes preserve the original draft and revision')
+    await click('Cancel')
+    assert.ok(document.querySelector('[role="alertdialog"]'), 'closing a dirty editor requires confirmation')
+    await click('Keep editing')
+    assert.equal(editor().value, 'soul draft')
+    await click('Save SOUL.md')
+    assert.deepEqual(saved, { name: 'SOUL.md', content: 'soul draft', revision: null })
+    assert.equal(busy, true)
+    assert.equal(editor().disabled, true)
+    assert.equal(button('Working…').disabled, true)
+    assert.equal(button('Cancel').disabled, true)
+    await act(async () => {
+      document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    assert.ok(editor(), 'saving cannot be interrupted with Escape')
+    snapshot = { ...snapshot, files: snapshot.files.map(document => document.name === 'SOUL.md' ? { ...document, content: 'soul draft', revision: 'sha-soul' } : document) }
+    await act(async () => { settle!(snapshot) })
+    assert.equal(busy, false)
+    assert.equal(dirty, false)
+    assert.equal(document.querySelector('[role="dialog"]'), null, 'a successful save closes the editor')
+    await flush()
+    assert.equal(document.activeElement === configure, true, 'closing returns focus to the matching configuration button')
+    assert.match(host.textContent!, /Changed in a conversation/)
+    assert.match(host.textContent!, /additional model calls/)
     assert.match(host.textContent!, /not work capability/)
     const sliders = [...host.querySelectorAll<HTMLElement>('[role="slider"]')]
     assert.equal(sliders.length, 3)
@@ -131,29 +151,32 @@ async function fixture() {
     await act(async () => { host.querySelector<HTMLButtonElement>('fieldset button')!.click() })
     await act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Automatic changes"]')!.click() })
     assert.equal(host.querySelector('[aria-label="Automatic changes"]')!.getAttribute('aria-checked'), 'true')
-    assert.equal(host.querySelector('textarea')!.value, 'soul draft', 'mood reply preserves file drafts')
-    await click('Save SOUL.md')
-    assert.deepEqual(saved, { name: 'SOUL.md', content: 'soul draft', revision: null })
-    assert.equal(busy, true)
-    assert.equal(host.querySelector('textarea')!.disabled, true)
-    assert.equal(button('Working…').disabled, true)
-    snapshot = { ...snapshot, files: snapshot.files.map((document) => document.name === 'SOUL.md' ? { ...document, content: 'soul draft', revision: 'sha-soul' } : document) }
-    await act(async () => { settle!(snapshot) })
-    assert.equal(busy, false)
-    assert.equal(dirty, true, 'saving one file does not clear another draft')
-    await tab('USER.md')
-    assert.equal(host.querySelector('textarea')!.value, 'user draft')
+    await open('About you')
+    await edit('user draft')
     rejectSave = true
     await click('Save USER.md')
-    assert.match(host.querySelector('[role="alert"]')!.textContent!, /revision conflict/)
-    assert.equal(host.querySelector('textarea')!.value, 'user draft')
+    assert.match(document.querySelector('[role="dialog"] [role="alert"]')!.textContent!, /revision conflict/)
+    assert.equal(editor().value, 'user draft', 'a failed save keeps the editor open')
+    assert.deepEqual(saved, { name: 'USER.md', content: 'user draft', revision: null })
     rejectSave = false
     await click('Save USER.md')
-    snapshot = { ...snapshot, files: snapshot.files.map((document) => document.name === 'USER.md' ? { ...document, content: 'user draft', revision: 'sha-user' } : document) }
+    snapshot = { ...snapshot, files: snapshot.files.map(document => document.name === 'USER.md' ? { ...document, content: 'user draft', revision: 'sha-user' } : document) }
     await act(async () => { settle!(snapshot) })
     assert.equal(dirty, false)
-    await tab('SOUL.md')
-    assert.equal(host.querySelector('textarea')!.value, 'soul draft')
+    assert.equal(document.querySelector('[role="dialog"]'), null)
+    await open('Soul')
+    assert.equal(editor().value, 'soul draft')
+    await edit('discard me')
+    await click('Cancel')
+    await click('Discard changes')
+    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assert.equal(dirty, false)
+    await open('Soul')
+    assert.equal(editor().value, 'soul draft', 'discard restores only the selected document')
+    await click('Cancel')
+    await open('About you')
+    assert.equal(editor().value, 'user draft', 'each row edits its own saved document')
+    await click('Cancel')
   } finally {
     await act(async () => root.unmount())
     host.remove()

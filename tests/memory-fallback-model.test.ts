@@ -7,7 +7,7 @@
  */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { Runtime } from '../src/main/plugins/observational-memory/runtime'
+import { Runtime } from '../src/main/features/memory/runtime'
 
 type RegistryOptions = {
   /** Models the registry resolves, keyed `provider/id`. */
