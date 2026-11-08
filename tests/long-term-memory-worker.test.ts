@@ -13,6 +13,7 @@ async function fixture() {
   try {
     const { requestReviews } = await import('../src/main/features/memory/long-term/reviewer')
     const { abortable } = await import('../src/main/features/memory/long-term/extension')
+    const { MemoryReviewError } = await import('../src/main/features/memory/long-term/review-errors')
     const model: Model<'openai-responses'> = { id: 'custom', provider: 'custom', name: 'Custom', api: 'openai-responses',
       baseUrl: 'https://unused.invalid', reasoning: true, input: ['text'], contextWindow: 128_000, maxTokens: 16_384,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
@@ -27,6 +28,7 @@ async function fixture() {
     let stop: AssistantMessage['stopReason'] = 'stop'
     let text = JSON.stringify({ reviews: [{ candidateId: id, action: 'skip', sourceEntryIds: [] }] })
     let hold = false
+    let errorMessage: string | undefined
     const streams: ReturnType<typeof createAssistantMessageEventStream>[] = []
     const ctx = { cwd: root, model, sessionManager: { getSessionId: () => access.session }, modelRegistry: {
       find: () => model, hasConfiguredAuth: () => true,
@@ -35,13 +37,15 @@ async function fixture() {
         calls.push({ model, context, options })
         const stream = createAssistantMessageEventStream(); streams.push(stream)
         if (!hold) stream.end({ role: 'assistant', api: model.api, provider: model.provider, model: model.id, timestamp: 0,
-          content: [{ type: 'text', text }], stopReason: stop,
+          content: [{ type: 'text', text }], stopReason: stop, errorMessage,
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } })
         return stream
       },
     } } as unknown as ExtensionContext
-    const result = await requestReviews(ctx, settings, inputs, [], access, new AbortController().signal)
+    let resolvedModel: { provider: string; id: string } | undefined
+    const result = await requestReviews(ctx, settings, inputs, [], access, new AbortController().signal, value => { resolvedModel = value })
+    assert.deepEqual(resolvedModel, { provider: 'custom', id: 'custom' })
     assert.equal(result[0]!.action, 'skip'); assert.equal(calls.length, 1)
     assert.equal(calls[0]!.options!.reasoning, undefined)
     assert.equal(calls[0]!.model.baseUrl, 'https://resolved.invalid')
@@ -58,6 +62,12 @@ async function fixture() {
     await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /Invalid.*JSON/)
     text = JSON.stringify({ reviews: [{ candidateId: id, action: 'skip', sourceEntryIds: [] }] }); stop = 'length'
     await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /did not complete/)
+    stop = 'error'; errorMessage = 'HTTP 401 SECRET-provider-payload'
+    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal),
+      error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
+    errorMessage = 'SECRET-provider-payload'
+    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal),
+      error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
     hold = true
     const controller = new AbortController()
     const before = calls.length

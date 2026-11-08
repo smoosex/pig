@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { LongTermRetrievalTrace } from '../../../../shared/long-term-memory'
 import { userTurnRenderKey } from '../../../../shared/turn-identity'
 import { publishMemoryRetrieval } from '../../../plugins/pig-ui'
+import { t } from '../../../i18n'
 import { realTarget } from '../../../sandbox/path'
 import { sessionWorkspace } from '../../../sandbox/workspace'
 import { getMemorySettings } from '../../memory-settings'
@@ -16,6 +17,7 @@ import { collectMemoryCandidates } from './candidates'
 import { MemoryCandidateStore, type MemoryAccess } from './store'
 import { admissionInput, requestReviews } from './reviewer'
 import { recallLongTermSources } from './recall'
+import { MemoryReviewError, ReviewBackoff, REVIEW_FAILURES, REVIEW_TIMEOUT_MS, type ReviewFailureCode } from './review-errors'
 
 export async function memoryAccess(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Promise<MemoryAccess> {
   const workspace = await sessionWorkspace(ctx.cwd)
@@ -56,9 +58,17 @@ export async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promi
 
 export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
   let controller: AbortController | undefined
-  let flight: Promise<void> | undefined
+  let flight: Promise<number | undefined> | undefined
+  let wakeTimer: ReturnType<typeof setTimeout> | undefined
+  let pendingContext: ExtensionContext | undefined
+  const backoff = new ReviewBackoff()
   let live = false
-  const cancel = () => { controller?.abort(); controller = undefined }
+  const cancel = () => {
+    controller?.abort()
+    if (wakeTimer) clearTimeout(wakeTimer)
+    wakeTimer = undefined
+    pendingContext = undefined
+  }
   let retrievalRevision = 0
   const retrievals = new Map<string, { ctx: ExtensionContext; trace: LongTermRetrievalTrace; startedAt: number }>()
   const finishRetrieval = (id: string, status: LongTermRetrievalTrace['status'], memories: LongTermRetrievalTrace['memories'] = []) => {
@@ -73,59 +83,120 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
     for (const id of retrievals.keys()) finishRetrieval(id, 'cancelled')
   }
 
-  const run = async (ctx: ExtensionContext, signal: AbortSignal) => {
-    const settings = await getMemorySettings()
-    signal.throwIfAborted()
-    if (!live || !settings.longTerm?.enabled || settings.passive) return
-    // OM may have just launched from its earlier agent_settled handler.
-    if (om.consolidationPromise) await abortable(om.consolidationPromise, signal)
-    signal.throwIfAborted()
-    if (!live || !ctx.isIdle()) return
-    const sessionFile = ctx.sessionManager.getSessionFile()
-    if (!sessionFile) return
-    const entries = ctx.sessionManager.getBranch() as Entry[]
-    const collection = collectMemoryCandidates({ sessionId: ctx.sessionManager.getSessionId(), sessionFile, cwd: ctx.cwd }, entries)
-    if (!collection.candidates.length) return
-    const access = await memoryAccess(ctx)
-    signal.throwIfAborted()
-    const snapshot = withStore(store => {
-      const candidates = store.pending(access.session, new Set(collection.candidates.map(item => item.id)), 1)
-      const existing = [...new Map(candidates.flatMap(candidate => store.search(candidate.content, access, 8)).map(item => [item.id, item])).values()]
-      return { candidates, existing, revision: store.revision() }
-    })
-    if (!snapshot.candidates.length) return
-    const inputs = snapshot.candidates.map(candidate => admissionInput(candidate, entries))
-    const reviews = await abortable(requestReviews(ctx, settings.longTerm, inputs, snapshot.existing, access, signal), signal)
-    signal.throwIfAborted()
-    const currentSettings = await getMemorySettings()
-    const currentAccess = await memoryAccess(ctx)
-    signal.throwIfAborted()
-    if (!live || !ctx.isIdle() || !currentSettings.longTerm?.enabled || currentSettings.passive
-      || JSON.stringify(currentSettings.longTerm) !== JSON.stringify(settings.longTerm)
-      || JSON.stringify(currentAccess) !== JSON.stringify(access)) return
-    const branch = ctx.sessionManager.getBranch() as Entry[]
-    const current = collectMemoryCandidates({ sessionId: access.session, sessionFile, cwd: ctx.cwd }, branch)
-    if (reviews.some(review => !current.candidates.some(candidate => JSON.stringify(candidate) === JSON.stringify(review.candidate)))) return
-    withStore(store => store.review(reviews, snapshot.revision))
+  const run = async (ctx: ExtensionContext, signal: AbortSignal): Promise<number | undefined> => {
+    const startedAt = performance.now()
+    let candidateId: string | undefined
+    let model: { provider: string; id: string } | undefined
+    let fallback: ReviewFailureCode = 'configuration'
+    try {
+      const settings = await getMemorySettings()
+      signal.throwIfAborted()
+      if (!live || !settings.longTerm?.enabled || settings.passive) return
+      model = settings.longTerm.model
+      const sharedDelay = backoff.remaining('shared')
+      if (sharedDelay) return sharedDelay
+      // Waiting for OM is cancellable, but does not consume the model request's timeout.
+      if (om.consolidationPromise) await abortable(om.consolidationPromise, signal)
+      signal.throwIfAborted()
+      if (!live || !ctx.isIdle()) return
+      fallback = 'storage'
+      const sessionFile = ctx.sessionManager.getSessionFile()
+      if (!sessionFile) return
+      const entries = ctx.sessionManager.getBranch() as Entry[]
+      const collection = collectMemoryCandidates({ sessionId: ctx.sessionManager.getSessionId(), sessionFile, cwd: ctx.cwd }, entries)
+      if (!collection.candidates.length) return
+      const access = await memoryAccess(ctx)
+      signal.throwIfAborted()
+      const eligible = new Set(collection.candidates.filter(item => !backoff.remaining(item.id)).map(item => item.id))
+      const snapshot = withStore(store => {
+        const candidates = store.pending(access.session, eligible, 1)
+        const existing = [...new Map(candidates.flatMap(candidate => store.search(candidate.content, access, 8)).map(item => [item.id, item])).values()]
+        return { candidates, existing, revision: store.revision() }
+      })
+      if (!snapshot.candidates.length) {
+        const delays = collection.candidates.map(item => backoff.remaining(item.id)).filter(delay => delay > 0)
+        return delays.length ? Math.min(...delays) : undefined
+      }
+      candidateId = snapshot.candidates[0]!.id
+      const inputs = snapshot.candidates.map(candidate => admissionInput(candidate, entries))
+      const request = new AbortController()
+      const cancelRequest = () => request.abort(signal.reason)
+      signal.addEventListener('abort', cancelRequest, { once: true })
+      const timer = setTimeout(() => request.abort(new MemoryReviewError('timeout')), REVIEW_TIMEOUT_MS)
+      timer.unref?.()
+      let reviews
+      try {
+        signal.throwIfAborted()
+        fallback = 'request'
+        reviews = await abortable(requestReviews(ctx, settings.longTerm, inputs, snapshot.existing, access, request.signal,
+          resolved => { model = resolved }), request.signal)
+      } finally {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', cancelRequest)
+      }
+      signal.throwIfAborted()
+      fallback = 'configuration'
+      const currentSettings = await getMemorySettings()
+      fallback = 'storage'
+      const currentAccess = await memoryAccess(ctx)
+      signal.throwIfAborted()
+      if (!live || !ctx.isIdle() || !currentSettings.longTerm?.enabled || currentSettings.passive
+        || JSON.stringify(currentSettings.longTerm) !== JSON.stringify(settings.longTerm)
+        || JSON.stringify(currentAccess) !== JSON.stringify(access)) return
+      const branch = ctx.sessionManager.getBranch() as Entry[]
+      const current = collectMemoryCandidates({ sessionId: access.session, sessionFile, cwd: ctx.cwd }, branch)
+      if (reviews.some(review => !current.candidates.some(candidate => JSON.stringify(candidate) === JSON.stringify(review.candidate)))) return
+      withStore(store => store.review(reviews, snapshot.revision))
+      backoff.clear(candidateId)
+      backoff.clear('shared')
+      return 0
+    } catch (error) {
+      if (signal.aborted) return
+      const code = error instanceof MemoryReviewError ? error.code : fallback
+      const failure = REVIEW_FAILURES[code]
+      const shared = failure.shared || !candidateId
+      const delay = backoff.fail(shared ? 'shared' : candidateId!)
+      // Never log the raw exception, response, prompt, auth headers or filesystem scope.
+      console.warn('[long-term-memory] review failed', {
+        code, stage: failure.stage, durationMs: Math.round(performance.now() - startedAt),
+        candidateId, model: model ? { provider: model.provider, id: model.id } : 'inherited',
+        retryInMs: delay, queuePaused: shared,
+      })
+      om.notify(t(code === 'timeout' ? 'longTerm.reviewTimedOut' : 'longTerm.reviewFailed', {
+        reason: t(`longTerm.reviewReasons.${code}`), code,
+      }), 'warning')
+      return shared ? delay : 0
+    }
   }
   const schedule = (ctx: ExtensionContext) => {
-    if (flight || !live) return
+    if (!live) return
+    if (flight) {
+      // A fast new turn may settle before the cancelled worker's finally runs.
+      if (controller?.signal.aborted) pendingContext = ctx
+      return
+    }
+    if (wakeTimer) { clearTimeout(wakeTimer); wakeTimer = undefined }
     const next = new AbortController()
     controller = next
-    const timeoutError = new Error('Long-term memory review timed out')
-    const timer = setTimeout(() => next.abort(timeoutError), 60_000)
-    timer.unref?.()
-    const task = run(ctx, next.signal).catch(() => {
-      if (next.signal.reason === timeoutError) om.notify('Long-term memory review timed out; candidates remain pending', 'warning')
-      else if (!next.signal.aborted) om.notify('Long-term memory review failed; candidates remain pending', 'warning')
-    })
+    const task = run(ctx, next.signal)
     flight = task
-    void task.then(() => { clearTimeout(timer); if (flight === task) flight = undefined; if (controller === next) controller = undefined })
+    void task.then(delay => {
+      if (flight !== task) return
+      flight = undefined
+      if (controller === next) controller = undefined
+      const pending = pendingContext
+      pendingContext = undefined
+      if (!live) return
+      if (pending) { schedule(pending); return }
+      if (next.signal.aborted || delay === undefined) return
+      wakeTimer = setTimeout(() => { wakeTimer = undefined; schedule(ctx) }, delay)
+      wakeTimer.unref?.()
+    })
   }
   pi.on('session_start', (_event, ctx) => { live = true; schedule(ctx) })
   pi.on('agent_start', () => { cancel(); cancelRetrievals() })
   pi.on('agent_end', () => cancelRetrievals())
-  pi.on('session_tree', () => { cancel(); cancelRetrievals() })
+  pi.on('session_tree', (_event, ctx) => { cancel(); cancelRetrievals(); schedule(ctx) })
   pi.on('session_shutdown', () => { live = false; cancel(); cancelRetrievals() })
   pi.on('agent_settled', (_event, ctx) => schedule(ctx))
 

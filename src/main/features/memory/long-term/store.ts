@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { MemoryCandidate } from './candidates'
 import type { LongTermFact, LongTermEvidence, LongTermPage, MemoryScope } from '../../../../shared/long-term-memory'
 import { memoryQuery, memoryTerms } from './search'
+import { MemoryReviewError } from './review-errors'
 
 export interface MemoryAccess { project: string; session: string }
 export interface MemoryReview {
@@ -183,13 +184,13 @@ export class MemoryCandidateStore {
   review(reviews: readonly MemoryReview[], revision: number): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      if (this.revision() !== revision) throw new Error('Long-term memory changed during review')
+      if (this.revision() !== revision) throw new MemoryReviewError('conflict', 'Long-term memory changed during review')
       for (const review of reviews) {
         const { candidate, action } = review
         const row = this.db.prepare('SELECT payload FROM memory_candidates WHERE id = ?').get(candidate.id)
         if (!row || row.payload !== JSON.stringify(candidate)
           || this.db.prepare('SELECT 1 FROM candidate_reviews WHERE candidate_id = ?').get(candidate.id)) {
-          throw new Error('Long-term memory candidate changed during review')
+          throw new MemoryReviewError('conflict', 'Long-term memory candidate changed during review')
         }
         if (action === 'skip') {
           this.db.prepare('INSERT INTO candidate_reviews VALUES (?, ?)').run(candidate.id, 'skipped')
