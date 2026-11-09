@@ -44,6 +44,16 @@ describe('long-term memory candidate inbox', () => {
     expect(candidates[0]).not.toHaveProperty('scope')
   })
 
+  test('incremental collection validates ancestor evidence but only derives selected reflections', () => {
+    const entries = branch()
+    entries.push({ ...entries[2]!, id: 'new-reflection-entry' })
+    const result = collectMemoryCandidates(origin, entries, new Set(['new-reflection-entry']))
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]!.reflectionEntryId).toBe('new-reflection-entry')
+    expect(result.candidates[0]!.evidence[0]!.sourceEntryIds).toEqual(['user'])
+    expect(collectMemoryCandidates(origin, entries.slice(1), new Set(['new-reflection-entry'])).candidates).toEqual([])
+  })
+
   test('rejects missing, ambiguous, forward and injected-only evidence', () => {
     const entries = branch()
     for (const invalid of [
@@ -102,8 +112,12 @@ describe('long-term memory candidate inbox', () => {
       store.enqueue([candidate])
       expect(() => store.enqueue([
         { ...candidate, id: 'another-id' }, { ...candidate, content: 'Changed claim' }
-      ])).toThrow('source changed')
+      ], { sessionId: origin.sessionId, entryIds: ['checkpoint'] })).toThrow('source changed')
       expect(store.list()).toEqual([candidate])
+      expect(store.collectionEntryProcessed(origin.sessionId, 'checkpoint')).toBe(false)
+      store.enqueue([], { sessionId: origin.sessionId, entryIds: ['checkpoint'] })
+      expect(store.collectionEntryProcessed(origin.sessionId, 'checkpoint')).toBe(true)
+      expect(store.collectionEntryProcessed('other-session', 'checkpoint')).toBe(false)
     } finally { store.close() }
   }))
 
@@ -111,7 +125,7 @@ describe('long-term memory candidate inbox', () => {
     const candidate = collectMemoryCandidates(origin, branch()).candidates[0]!
     let store = new MemoryCandidateStore(path)
     store.enqueue([candidate])
-    store.forget(candidate.id)
+    store.deleteCandidate(candidate.id)
     store.close()
     store = new MemoryCandidateStore(path)
     try {

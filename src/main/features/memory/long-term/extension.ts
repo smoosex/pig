@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { obj, opt, str, int } from '@earendil-works/pi-schema'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { LongTermRetrievalTrace } from '../../../../shared/long-term-memory'
+import type { LongTermFact, LongTermRetrievalTrace } from '../../../../shared/long-term-memory'
 import { userTurnRenderKey } from '../../../../shared/turn-identity'
 import { publishMemoryRetrieval } from '../../../plugins/pig-ui'
 import { t } from '../../../i18n'
@@ -13,10 +13,10 @@ import { getMemorySettings } from '../../memory-settings'
 import { longTermMemoryPath } from '../paths'
 import type { Runtime } from '../runtime'
 import type { Entry } from '../session-ledger/types'
-import { collectMemoryCandidates } from './candidates'
 import { MemoryCandidateStore, type MemoryAccess } from './store'
 import { admissionInput, requestReviews } from './reviewer'
 import { recallLongTermSources } from './recall'
+import { recallQuestion, selectMemories, RELEVANCE_TIMEOUT_MS } from './relevance'
 import { MemoryReviewError, ReviewBackoff, REVIEW_FAILURES, REVIEW_TIMEOUT_MS, type ReviewFailureCode } from './review-errors'
 
 export async function memoryAccess(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Promise<MemoryAccess> {
@@ -63,6 +63,15 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
   let pendingContext: ExtensionContext | undefined
   const backoff = new ReviewBackoff()
   let live = false
+  let branchSnapshot: { manager: ExtensionContext['sessionManager']; leaf: string | null; entries: Entry[]; ids: Set<string> } | undefined
+  const currentBranch = (ctx: ExtensionContext) => {
+    const leaf = ctx.sessionManager.getLeafId()
+    if (!branchSnapshot || branchSnapshot.manager !== ctx.sessionManager || branchSnapshot.leaf !== leaf) {
+      const entries = ctx.sessionManager.getBranch() as Entry[]
+      branchSnapshot = { manager: ctx.sessionManager, leaf, entries, ids: new Set(entries.map(entry => entry.id)) }
+    }
+    return branchSnapshot
+  }
   const cancel = () => {
     controller?.abort()
     if (wakeTimer) clearTimeout(wakeTimer)
@@ -70,7 +79,8 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
     pendingContext = undefined
   }
   let retrievalRevision = 0
-  const retrievals = new Map<string, { ctx: ExtensionContext; trace: LongTermRetrievalTrace; startedAt: number }>()
+  let retrievalCache: { key: string; selected: LongTermFact[]; status: 'done' | 'error' } | undefined
+  const retrievals = new Map<string, { ctx: ExtensionContext; trace: LongTermRetrievalTrace; startedAt: number; controller: AbortController }>()
   const finishRetrieval = (id: string, status: LongTermRetrievalTrace['status'], memories: LongTermRetrievalTrace['memories'] = []) => {
     const pending = retrievals.get(id)
     if (!pending) return
@@ -80,7 +90,11 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
   }
   const cancelRetrievals = () => {
     retrievalRevision++
-    for (const id of retrievals.keys()) finishRetrieval(id, 'cancelled')
+    retrievalCache = undefined
+    for (const [id, pending] of retrievals) {
+      pending.controller.abort()
+      finishRetrieval(id, 'cancelled')
+    }
   }
 
   const run = async (ctx: ExtensionContext, signal: AbortSignal): Promise<number | undefined> => {
@@ -102,19 +116,18 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
       fallback = 'storage'
       const sessionFile = ctx.sessionManager.getSessionFile()
       if (!sessionFile) return
-      const entries = ctx.sessionManager.getBranch() as Entry[]
-      const collection = collectMemoryCandidates({ sessionId: ctx.sessionManager.getSessionId(), sessionFile, cwd: ctx.cwd }, entries)
-      if (!collection.candidates.length) return
+      const branch = currentBranch(ctx)
+      const entries = branch.entries
       const access = await memoryAccess(ctx)
       signal.throwIfAborted()
-      const eligible = new Set(collection.candidates.filter(item => !backoff.remaining(item.id)).map(item => item.id))
       const snapshot = withStore(store => {
-        const candidates = store.pending(access.session, eligible, 1)
+        const pending = store.unreviewed(access.session).filter(candidate => branch.ids.has(candidate.reflectionEntryId))
+        const candidates = pending.filter(candidate => !backoff.remaining(candidate.id)).slice(0, 1)
         const existing = [...new Map(candidates.flatMap(candidate => store.search(candidate.content, access, 8)).map(item => [item.id, item])).values()]
-        return { candidates, existing, revision: store.revision() }
+        return { candidates, pending, existing, revision: store.revision() }
       })
       if (!snapshot.candidates.length) {
-        const delays = collection.candidates.map(item => backoff.remaining(item.id)).filter(delay => delay > 0)
+        const delays = snapshot.pending.map(item => backoff.remaining(item.id)).filter(delay => delay > 0)
         return delays.length ? Math.min(...delays) : undefined
       }
       candidateId = snapshot.candidates[0]!.id
@@ -143,9 +156,11 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
       if (!live || !ctx.isIdle() || !currentSettings.longTerm?.enabled || currentSettings.passive
         || JSON.stringify(currentSettings.longTerm) !== JSON.stringify(settings.longTerm)
         || JSON.stringify(currentAccess) !== JSON.stringify(access)) return
-      const branch = ctx.sessionManager.getBranch() as Entry[]
-      const current = collectMemoryCandidates({ sessionId: access.session, sessionFile, cwd: ctx.cwd }, branch)
-      if (reviews.some(review => !current.candidates.some(candidate => JSON.stringify(candidate) === JSON.stringify(review.candidate)))) return
+      // SDK entries are immutable. An unchanged leaf preserves the exact source branch;
+      // the store separately validates candidate payloads and the knowledge revision.
+      // Metadata updates such as renaming append entries without a scheduling event.
+      // Discard the stale result, but keep the idle queue moving with a fresh snapshot.
+      if (ctx.sessionManager !== branch.manager || ctx.sessionManager.getLeafId() !== branch.leaf) return 0
       withStore(store => store.review(reviews, snapshot.revision))
       backoff.clear(candidateId)
       backoff.clear('shared')
@@ -197,44 +212,85 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
   pi.on('agent_start', () => { cancel(); cancelRetrievals() })
   pi.on('agent_end', () => cancelRetrievals())
   pi.on('session_tree', (_event, ctx) => { cancel(); cancelRetrievals(); schedule(ctx) })
-  pi.on('session_shutdown', () => { live = false; cancel(); cancelRetrievals() })
+  pi.on('session_shutdown', () => { live = false; branchSnapshot = undefined; cancel(); cancelRetrievals() })
   pi.on('agent_settled', (_event, ctx) => schedule(ctx))
 
   pi.on('context', async (event, ctx) => {
+    if (retrievals.size) cancelRetrievals()
+    else retrievalRevision++
     const generation = retrievalRevision
+    const request = new AbortController()
+    const parentSignal = ctx.signal
+    const cancelRequest = () => request.abort(parentSignal?.reason)
+    parentSignal?.addEventListener('abort', cancelRequest, { once: true })
+    if (parentSignal?.aborted) cancelRequest()
+    let timer: ReturnType<typeof setTimeout> | undefined
     let trace: LongTermRetrievalTrace | undefined
     try {
       const settings = await getMemorySettings()
       if (!settings.longTerm?.enabled || !live || generation !== retrievalRevision) return
-      const branch = ctx.sessionManager.getBranch() as Entry[]
+      request.signal.throwIfAborted()
+      const manager = ctx.sessionManager
+      const leaf = manager.getLeafId()
+      const branch = manager.getBranch() as Entry[]
       const lastUser = branch.filter(entry => entry.type === 'message' && (entry.message as { role?: string })?.role === 'user').at(-1)
       const message = lastUser?.message as { content?: unknown; timestamp?: number } | undefined
-      const query = messageText(message?.content).slice(0, 2000)
-      if (!lastUser?.id || !query || typeof message?.timestamp !== 'number') return
-      trace = { id: randomUUID(), turnId: lastUser.id,
-        renderKey: userTurnRenderKey({ timestamp: message.timestamp, content: message.content }), status: 'running', memories: [] }
-      retrievals.set(trace.id, { ctx, trace, startedAt: performance.now() })
-      publishMemoryRetrieval(ctx, trace)
+      const question = messageText(message?.content)
+      const query = question.slice(0, 2000)
+      if (!lastUser?.id || !query.trim() || typeof message?.timestamp !== 'number') return
       const access = await memoryAccess(ctx)
       if (!live || generation !== retrievalRevision) return
-      const matches = withStore(store => store.search(query, access))
-      const selected: typeof matches = []
-      for (const fact of matches) {
-        if (Buffer.byteLength(fenced([...selected, fact])) > 6000) continue
-        selected.push(fact)
+      request.signal.throwIfAborted()
+      trace = { id: randomUUID(), turnId: lastUser.id,
+        renderKey: userTurnRenderKey({ timestamp: message.timestamp, content: message.content }), status: 'running', memories: [] }
+      retrievals.set(trace.id, { ctx, trace, startedAt: performance.now(), controller: request })
+      publishMemoryRetrieval(ctx, trace)
+      const snapshot = withStore(store => ({ matches: store.search(query, access, 20), revision: store.revision() }))
+      const key = JSON.stringify([lastUser.id, settings.longTerm, access, snapshot.revision])
+      if (retrievalCache?.key === key) {
+        finishRetrieval(trace.id, retrievalCache.status, retrievalCache.selected.map(({ id, content, scope, status }) => ({ id, content, scope, status })))
+        if (!retrievalCache.selected.length) return
+        return { messages: [...event.messages, { role: 'user' as const, content: fenced(retrievalCache.selected), timestamp: 0 }] }
       }
+      // Repeated tool rounds reuse the turn's selection (including empty/error results).
+      retrievalCache = { key, selected: [], status: 'error' }
+      let relevant: LongTermFact[] = []
+      if (snapshot.matches.length) {
+        timer = setTimeout(() => request.abort(new MemoryReviewError('timeout')), RELEVANCE_TIMEOUT_MS)
+        timer.unref?.()
+        relevant = await abortable(selectMemories(ctx, settings.longTerm,
+          recallQuestion(branch, lastUser.id, question), snapshot.matches, request.signal), request.signal)
+      }
+      request.signal.throwIfAborted()
       const latestSettings = await getMemorySettings()
-      if (!live || generation !== retrievalRevision || !latestSettings.longTerm?.enabled) {
+      const latestAccess = await memoryAccess(ctx)
+      if (!live || generation !== retrievalRevision || parentSignal?.aborted
+        || ctx.sessionManager !== manager || manager.getLeafId() !== leaf
+        || !latestSettings.longTerm?.enabled || JSON.stringify(latestSettings.longTerm) !== JSON.stringify(settings.longTerm)
+        || JSON.stringify(latestAccess) !== JSON.stringify(access)
+        || withStore(store => store.revision()) !== snapshot.revision) {
+        if (generation === retrievalRevision) retrievalCache = undefined
         finishRetrieval(trace.id, 'cancelled')
         return
       }
-      // The UI shows the budget-selected set, not every FTS hit. Diagnostics never enter JSONL.
+      request.signal.throwIfAborted()
+      const selected: LongTermFact[] = []
+      for (const fact of relevant) {
+        if (Buffer.byteLength(fenced([...selected, fact])) > 6000) continue
+        selected.push(fact)
+      }
+      retrievalCache = { key, selected, status: 'done' }
+      // Only model-selected, budget-fitting facts appear in the UI and the main request.
       finishRetrieval(trace.id, 'done', selected.map(({ id, content, scope, status }) => ({ id, content, scope, status })))
       if (!selected.length) return
       return { messages: [...event.messages, { role: 'user' as const, content: fenced(selected), timestamp: 0 }] }
     } catch {
-      if (trace) finishRetrieval(trace.id, 'error')
-      if (live && generation === retrievalRevision) om.notify('Long-term memory retrieval failed; continuing without recalled facts', 'warning')
+      const cancelled = !live || generation !== retrievalRevision || parentSignal?.aborted
+      if (trace) finishRetrieval(trace.id, cancelled ? 'cancelled' : 'error')
+      if (!cancelled) om.notify('Long-term memory retrieval failed; continuing without recalled facts', 'warning')
+    } finally {
+      clearTimeout(timer)
+      parentSignal?.removeEventListener('abort', cancelRequest)
     }
     return undefined
   })

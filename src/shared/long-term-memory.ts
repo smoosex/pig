@@ -41,7 +41,7 @@ export interface LongTermCandidateView {
   content: string
   sessionId: string
   recordedAt: string
-  status: 'pending' | 'accepted' | 'skipped'
+  status: 'pending'
 }
 export interface LongTermPage {
   candidates: LongTermCandidateView[]
@@ -51,5 +51,6 @@ export interface LongTermPage {
 export interface LongTermMemoryApi {
   list(kind: 'candidates' | 'memories', offset?: number): Promise<LongTermPage>
   evidence(id: string): Promise<LongTermEvidence[]>
-  forget(kind: 'candidates' | 'memories', id: string): Promise<void>
+  deleteCandidate(id: string): Promise<void>
+  forget(id: string): Promise<void>
 }

@@ -44,7 +44,7 @@ export function isDerivedMemoryTool(name: unknown): boolean {
   return typeof name === 'string' && (name.startsWith('memory_') || name === 'recall' || name === 'session_read')
 }
 
-export function collectMemoryCandidates(origin: CandidateOrigin, branch: readonly Entry[]): CandidateCollection {
+export function collectMemoryCandidates(origin: CandidateOrigin, branch: readonly Entry[], reflectionEntryIds?: ReadonlySet<string>): CandidateCollection {
   const result: CandidateCollection = { candidates: [], incomplete: 0, sensitive: 0 }
   const sources = new Set<string>()
   const observations = new Map<string, { observation: Observation; entryId: string; index: number; validSources: boolean }[]>()
@@ -63,7 +63,7 @@ export function collectMemoryCandidates(origin: CandidateOrigin, branch: readonl
         observations.set(observation.id, matches)
       })
     }
-    if (!isReflectionsRecordedEntry(entry)) continue
+    if (!isReflectionsRecordedEntry(entry) || (reflectionEntryIds && !reflectionEntryIds.has(entry.id))) continue
     entry.data.reflections.forEach((reflection, reflectionRecordIndex) => {
       const evidence: CandidateEvidence[] = []
       for (const id of new Set(reflection.supportingObservationIds)) {

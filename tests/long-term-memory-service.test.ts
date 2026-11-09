@@ -31,8 +31,17 @@ async function fixture(): Promise<void> {
     // Simulate an app exit between the JSONL append and the inbox write.
     expect(existsSync(path)).toBe(false)
     const restored = SessionManager.open(sm.getSessionFile()!)
+    let branchReads = 0
+    const getBranch = restored.getBranch.bind(restored)
+    restored.getBranch = (...args) => { branchReads++; return getBranch(...args) }
     collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
+    expect(branchReads).toBe(1)
     collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
+    expect(branchReads).toBe(1)
+    // Checkpoints survive a real SDK reload and a fresh store connection.
+    const reopened = SessionManager.open(sm.getSessionFile()!)
+    reopened.getBranch = () => { throw new Error('unchanged restart must not reconstruct the branch') }
+    collectPersistedMemoryCandidates({ cwd: root, sessionManager: reopened })
     let store = new MemoryCandidateStore(path)
     let candidateId: string
     try {
@@ -46,11 +55,36 @@ async function fixture(): Promise<void> {
       expect(recallLongTermSources(candidate, evidence).sources[0]!.text).toBe('Use bun')
       expect(recallLongTermSources({ ...candidate, content: 'changed' }, evidence).status).toBe('changed')
       expect(recallLongTermSources({ ...candidate, origin: { ...candidate.origin, sessionFile: join(root, 'missing.jsonl') } }, evidence).status).not.toBe('available')
-      store.forget(candidate.id)
+      store.deleteCandidate(candidate.id)
     } finally { store.close() }
     collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
     store = new MemoryCandidateStore(path)
     try { expect(store.list().some(item => item.id === candidateId)).toBe(false) } finally { store.close() }
+
+    // Message-only growth advances checkpoints without rebuilding evidence.
+    restored.appendMessage({ role: 'user', content: 'Continue', timestamp: Date.now() })
+    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
+    expect(branchReads).toBe(1)
+    const oldLeaf = restored.getLeafId()!
+    restored.branch(user)
+    const forkUser = restored.appendMessage({ role: 'user', content: 'Prefer uv', timestamp: Date.now() })
+    restored.appendCustomEntry('om.observations.recorded', { coversUpToId: forkUser, observations: [{
+      id: 'cccccccccccc', content: 'Use uv.', relevance: 'high', timestamp: '2026-11-06 12:01',
+      sourceEntryIds: [forkUser], tokenCount: 6
+    }] })
+    restored.appendCustomEntry('om.reflections.recorded', { coversUpToId: forkUser, reflections: [{
+      id: 'dddddddddddd', content: 'Use uv for Python.', supportingObservationIds: ['cccccccccccc'], tokenCount: 8
+    }] })
+    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
+    expect(branchReads).toBe(2)
+    store = new MemoryCandidateStore(path)
+    try {
+      expect(store.list().map(item => item.content)).toEqual(['Use uv for Python.'])
+      expect(store.collectionEntryProcessed(restored.getSessionId(), restored.getLeafId()!)).toBe(true)
+    } finally { store.close() }
+    restored.branch(oldLeaf)
+    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
+    expect(branchReads).toBe(2)
 
     // A newly opened alternative branch cannot collect the abandoned branch's reflection.
     restored.branch(user)

@@ -1,7 +1,7 @@
-/** Collect only persisted branch-local reflections; replay repairs a missed inbox write after restart. */
-import { statSync } from 'node:fs'
+/** Durable ancestry checkpoints repair interrupted collection without replaying processed reflections. */
+import { existsSync, statSync } from 'node:fs'
 import { longTermMemoryPath } from '../paths'
-import type { Entry } from '../session-ledger/types'
+import { isReflectionsRecordedEntry, type Entry } from '../session-ledger/types'
 import { collectMemoryCandidates } from './candidates'
 import { MemoryCandidateStore } from './store'
 
@@ -10,6 +10,8 @@ export interface CandidateContext {
   sessionManager: {
     getSessionId?: () => string
     getSessionFile?: () => string | undefined
+    getLeafId?: () => string | null
+    getEntry?: (id: string) => (Entry & { parentId: string | null }) | undefined
     getBranch: () => unknown
   }
 }
@@ -17,8 +19,7 @@ export interface CandidateContext {
 export function collectPersistedMemoryCandidates(ctx: CandidateContext): void {
   const sessionId = ctx.sessionManager.getSessionId?.()
   const sessionFile = ctx.sessionManager.getSessionFile?.()
-  // The SDK synchronously persists appendEntry once a conversation exists. In-memory sessions
-  // and not-yet-created files must not create cross-session copies of ephemeral state.
+  // Only persisted conversations may advance durable collection progress.
   if (!sessionId || !sessionFile) return
   try {
     if (!statSync(sessionFile).isFile()) throw new Error('Memory source is not a session file')
@@ -26,12 +27,36 @@ export function collectPersistedMemoryCandidates(ctx: CandidateContext): void {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     throw error
   }
-  const collection = collectMemoryCandidates({ sessionId, sessionFile, cwd: ctx.cwd }, ctx.sessionManager.getBranch() as Entry[])
-  if (collection.candidates.length === 0) return
-  const store = new MemoryCandidateStore(longTermMemoryPath())
+  const { getLeafId, getEntry } = ctx.sessionManager
+  if (!getLeafId || !getEntry) throw new Error('Memory collection requires session ancestry access')
+  const path = longTermMemoryPath()
+  let store = existsSync(path) ? new MemoryCandidateStore(path) : undefined
   try {
-    store.enqueue(collection.candidates)
+    const entryIds: string[] = []
+    const seen = new Set<string>()
+    const reflections = new Set<string>()
+    let id = getLeafId.call(ctx.sessionManager)
+    // A checkpoint is branch-local: walking parents naturally stops at a shared ancestor,
+    // not at a file offset that could belong to an abandoned sibling branch.
+    while (id && !store?.collectionEntryProcessed(sessionId, id)) {
+      if (seen.has(id)) throw new Error('Cyclic memory source branch')
+      seen.add(id)
+      const entry = getEntry.call(ctx.sessionManager, id)
+      if (!entry) throw new Error('Missing memory source entry')
+      entryIds.push(id)
+      if (isReflectionsRecordedEntry(entry)) reflections.add(id)
+      id = entry.parentId
+    }
+    if (!entryIds.length) return
+    if (!store && !reflections.size) return
+    store ??= new MemoryCandidateStore(path)
+    // Evidence validation needs ancestors, but only unseen reflection payloads are derived.
+    // No branch reconstruction at all on an unchanged restart or a message-only suffix.
+    const candidates = reflections.size ? collectMemoryCandidates(
+      { sessionId, sessionFile, cwd: ctx.cwd }, ctx.sessionManager.getBranch() as Entry[], reflections,
+    ).candidates : []
+    store.enqueue(candidates, { sessionId, entryIds })
   } finally {
-    store.close()
+    store?.close()
   }
 }

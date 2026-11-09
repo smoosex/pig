@@ -125,9 +125,13 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
     if (open) void read()
     return () => { generation.current++ }
   }, [open, kind])
-  const forget = async (id: string) => {
+  const remove = async (id: string) => {
     setDeleting(true); setError(undefined)
-    try { await api.longTermMemory.forget(kind, id); setConfirm(undefined); setEvidence(undefined); await read() }
+    try {
+      if (kind === 'candidates') await api.longTermMemory.deleteCandidate(id)
+      else await api.longTermMemory.forget(id)
+      setConfirm(undefined); setEvidence(undefined); await read()
+    }
     catch (failure) { setError(failureMessage(failure)) }
     finally { setDeleting(false) }
   }
@@ -161,12 +165,14 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
           <p className="whitespace-pre-wrap break-words">{item.content}</p>
           <div className="flex gap-2">
             {'scope' in item ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button> : null}
-            <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirm(item.id)}>{t('longTerm.forget')}</Button>
+            {kind === 'candidates'
+              ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.deleteCandidate')}</Button>
+              : <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirm(item.id)}>{t('longTerm.forget')}</Button>}
           </div>
           {evidence && evidence.id === item.id ? <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(evidence.items, null, 2)}</pre> : null}
           {confirm === item.id ? <div className="flex flex-col gap-2">
             <p>{t('longTerm.forgetConfirm')}</p>
-            <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={deleting} onClick={() => void forget(item.id)}>{t('longTerm.confirm')}</Button>
+            <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.confirm')}</Button>
               <Button variant="outline" size="sm" disabled={deleting} onClick={() => setConfirm(undefined)}>{t('longTerm.cancel')}</Button></div>
           </div> : null}
         </section>)}

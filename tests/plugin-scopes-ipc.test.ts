@@ -55,7 +55,7 @@ async function fixture(): Promise<void> {
     await assert.rejects(invoke('memory:long-term:list', 'arbitrary'), /Invalid.*kind/)
     await assert.rejects(invoke('memory:long-term:list', 'memories', -1), /offset/)
     await assert.rejects(invoke('memory:long-term:evidence', '../secret'), /Invalid.*id/)
-    await assert.rejects(invoke('memory:long-term:forget', 'memories', '../secret'), /Invalid.*id/)
+    await assert.rejects(invoke('memory:long-term:forget', '../secret'), /Invalid.*id/)
     await assert.rejects(invoke('memory:enabled'), /Session id is required/)
     await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {

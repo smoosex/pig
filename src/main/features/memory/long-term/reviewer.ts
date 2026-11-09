@@ -1,15 +1,12 @@
 /** One tool-free admission request. Validate proposals against direct source roles, not reflections alone. */
-import { clampThinkingLevel, type Context, type Model } from '@earendil-works/pi-ai'
 import { arr, compile, obj, oneOf, opt, str, type Static } from '@earendil-works/pi-schema'
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type { LongTermFact, LongTermSettings } from '../../../../shared/long-term-memory'
-import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../agents/worker-stream'
-import { Runtime } from '../runtime'
-import { workerHeadersFor, workerThinkingLevel } from '../hooks/worker-options'
 import type { Entry } from '../session-ledger/types'
 import { SENSITIVE_CONTENT, isDerivedMemoryTool, type MemoryCandidate } from './candidates'
 import type { MemoryAccess, MemoryReview } from './store'
-import { MemoryReviewError, providerFailure, reviewPhase } from './review-errors'
+import { MemoryReviewError } from './review-errors'
+import { memoryWorker } from './worker'
 
 const schema = obj({ reviews: arr(obj({
   candidateId: str(), action: oneOf(['skip', 'add', 'merge', 'supersede', 'dispute'] as const),
@@ -96,25 +93,8 @@ export function parseReviews(text: string, inputs: readonly AdmissionInput[], ex
 export async function requestReviews(ctx: ExtensionContext, settings: LongTermSettings, inputs: readonly AdmissionInput[],
   existing: readonly LongTermFact[], access: MemoryAccess, signal: AbortSignal,
   onModel?: (model: { provider: string; id: string }) => void): Promise<MemoryReview[]> {
-  const runtime = new Runtime()
-  await reviewPhase('configuration', () => runtime.ensureConfig(ctx.cwd))
-  if (settings.model) {
-    if (!ctx.modelRegistry.find(settings.model.provider, settings.model.id)) throw new MemoryReviewError('model', 'Long-term memory model unavailable')
-    runtime.config.model = settings.model
-    runtime.config.fallbackModel = undefined
-  }
-  const resolved = await reviewPhase('authentication', () => runtime.resolveModel({ ...ctx, signal }))
-  signal.throwIfAborted()
-  if (!resolved.ok) throw new MemoryReviewError('authentication', 'Long-term memory model authentication unavailable')
-  const worker = workerHeadersFor(ctx, resolved)
-  const model = worker.model as Model<any>
-  onModel?.({ provider: model.provider, id: model.id })
-  if (settings.model && (model.id !== settings.model.id || model.provider !== settings.model.provider)) {
-    throw new MemoryReviewError('model', 'Long-term memory model changed during resolution')
-  }
-  const thinking = clampThinkingLevel(model, settings.model?.thinking ?? (settings.model ? 'off' : workerThinkingLevel(runtime, worker)))
-  const maxTokens = Math.min(thinking === 'off' ? 4096 : 8192, model.maxTokens, Math.floor(model.contextWindow / 3))
-  const budget = Math.min(32_000, model.contextWindow) - maxTokens - Buffer.byteLength(ADMISSION_SYSTEM)
+  const worker = await memoryWorker(ctx, settings, ADMISSION_SYSTEM, signal, onModel)
+  const { budget } = worker
   const related = [...existing]
   // Retain complete related facts; never present a cut-off old assertion as a safe merge target.
   while (related.length && Buffer.byteLength(JSON.stringify(related)) > budget / 3) related.pop()
@@ -138,20 +118,5 @@ export async function requestReviews(ctx: ExtensionContext, settings: LongTermSe
     slot.set(chars.slice(0, length).join('') + '\n[... context-budget excerpt; middle omitted ...]\n' + chars.slice(-length).join(''))
     payload = serialize()
   }
-  const context: Context = { systemPrompt: ADMISSION_SYSTEM, messages: [{ role: 'user', content: payload, timestamp: 0 }] }
-  const requestModel = worker.baseUrl ? { ...model, baseUrl: worker.baseUrl } : model
-  const result = await reviewPhase('request', async () => {
-    const stream = resolveWorkerStreamSimple(requestModel, ctx.modelRegistry as unknown as StreamableModelRegistry)(requestModel, context, {
-      apiKey: worker.apiKey, headers: worker.headers, env: worker.env, signal, maxTokens,
-      ...(thinking === 'off' ? {} : { reasoning: thinking }), cacheRetention: 'short',
-    })
-    for await (const _event of stream) signal.throwIfAborted()
-    return await stream.result()
-  })
-  signal.throwIfAborted()
-  if (result.stopReason === 'error' || result.stopReason === 'aborted') throw providerFailure(result.errorMessage)
-  if (result.stopReason !== 'stop' || result.content.some(block => block.type === 'toolCall')) {
-    throw new MemoryReviewError('truncated', 'Long-term memory review did not complete')
-  }
-  return parseReviews(result.content.filter(block => block.type === 'text').map(block => block.text).join(''), inputs.map((input, index) => ({ candidate: input.candidate, sources: prepared[index]!.sources })), related, access)
+  return parseReviews(await worker.complete(payload), inputs.map((input, index) => ({ candidate: input.candidate, sources: prepared[index]!.sources })), related, access)
 }

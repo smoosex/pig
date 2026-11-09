@@ -28,7 +28,7 @@ async function fixture(scenario: string): Promise<void> {
     manager.appendCustomEntry('om.observations.recorded', { version: 3, coversUpToId: user, observations: [
       { id: 'aaaaaaaaaaaa', content: '项目使用中文检索', timestamp: new Date().toISOString(), relevance: 'high', tokenCount: 10, sourceEntryIds: [user] },
     ] })
-    const count = ['drain', 'bad-first', 'shared'].includes(scenario) ? 3 : 1
+    const count = ['drain', 'bad-first', 'shared', 'rename'].includes(scenario) ? 3 : 1
     manager.appendCustomEntry('om.reflections.recorded', { version: 3, coversUpToId: user, reflections: Array.from({ length: count }, (_, index) => ({
       id: String(index + 1).repeat(12), content: `项目使用中文检索 ${index}`, tokenCount: 10, supportingObservationIds: ['aaaaaaaaaaaa'],
     })) })
@@ -43,6 +43,7 @@ async function fixture(scenario: string): Promise<void> {
     const calls: string[] = []
     const signals: AbortSignal[] = []
     const release = Promise.withResolvers<void>()
+    const retry = Promise.withResolvers<void>()
     const logs: unknown[][] = []
     const originalWarn = console.warn
     console.warn = (...args: unknown[]) => { logs.push(args) }
@@ -53,7 +54,8 @@ async function fixture(scenario: string): Promise<void> {
         calls.push(candidate.id); signals.push(signal)
         if (scenario === 'shared' && calls.length === 1) throw new errors.MemoryReviewError('authentication', 'SECRET-provider-response')
         if (scenario === 'bad-first' && calls.length === 1) throw new errors.MemoryReviewError('json', 'SECRET-model-output')
-        if (['timeout', 'cancel', 'fast-settle', 'branch', 'disable'].includes(scenario) && calls.length === 1) await release.promise
+        if (['timeout', 'cancel', 'fast-settle', 'branch', 'disable', 'rename'].includes(scenario) && calls.length === 1) await release.promise
+        if (scenario === 'rename' && calls.length === 2) await retry.promise
         return [{ candidate, action: 'skip', sourceEntryIds: [] }]
       },
     }))
@@ -66,6 +68,9 @@ async function fixture(scenario: string): Promise<void> {
     runtime.notifications = { notify: (message: string) => { notifications.push(message) } }
     const consolidation = Promise.withResolvers<void>()
     if (scenario === 'consolidation') runtime.consolidationPromise = consolidation.promise
+    let branchReads = 0
+    const getBranch = manager.getBranch.bind(manager)
+    manager.getBranch = (...args) => { branchReads++; return getBranch(...args) }
     const context = { cwd: root, sessionManager: manager, isIdle: () => true } as unknown as ExtensionContext
     const emit = async (name: string) => { for (const handler of handlers.get(name) ?? []) await handler({}, context) }
     const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -84,14 +89,15 @@ async function fixture(scenario: string): Promise<void> {
       }
       await until(() => calls.length > 0)
       if (scenario === 'drain' || scenario === 'consolidation') {
-        await until(() => probe().every(item => item.status === 'skipped'))
+        await until(() => probe().length === 0)
         assert.equal(calls.length, count, 'one idle event drains all eligible candidates')
+        assert.equal(branchReads, 1, 'the unchanged queue reuses one source branch snapshot')
         assert.deepEqual(notifications, [])
       } else if (scenario === 'bad-first') {
         await until(() => calls.length === 3 && probe().filter(item => item.status === 'pending').length === 1)
         assert.equal(new Set(calls).size, 3, 'failed oldest candidate must not block later candidates')
         assert.equal(probe().filter(item => item.status === 'pending').length, 1)
-        await until(() => probe().every(item => item.status === 'skipped'))
+        await until(() => probe().length === 0)
         assert.equal(calls.length, 4, 'failed candidate wakes after its cooldown')
         assert.equal(calls[3], calls[0])
         assert.match(notifications[0]!, /\[json\]/)
@@ -101,7 +107,7 @@ async function fixture(scenario: string): Promise<void> {
         await emit('agent_settled')
         await sleep(15)
         assert.equal(calls.length, 1, 'idle events do not bypass shared cooldown')
-        await until(() => probe().every(item => item.status === 'skipped'))
+        await until(() => probe().length === 0)
         assert.equal(calls.length, 4)
         assert.match(notifications[0]!, /\[authentication\]/)
       } else if (scenario === 'timeout') {
@@ -115,7 +121,7 @@ async function fixture(scenario: string): Promise<void> {
         // Invoke both handlers synchronously, before the cancelled flight can finish its microtasks.
         for (const handler of handlers.get('agent_start') ?? []) handler({}, context)
         for (const handler of handlers.get('agent_settled') ?? []) handler({}, context)
-        await until(() => probe()[0]!.status === 'skipped')
+        await until(() => probe().length === 0)
         assert.equal(calls.length, 2, 'a settled event during cancellation cannot be lost')
         release.resolve()
         assert.deepEqual(notifications, [])
@@ -125,6 +131,19 @@ async function fixture(scenario: string): Promise<void> {
         release.resolve(); await sleep(80)
         assert.equal(calls.length, 1, 'candidate outside the current branch is not reviewed')
         assert.equal(probe()[0]!.status, 'pending')
+        assert.deepEqual(notifications, [])
+      } else if (scenario === 'rename') {
+        const leaf = manager.getLeafId()
+        manager.appendSessionInfo('Renamed during review')
+        assert.notEqual(manager.getLeafId(), leaf)
+        release.resolve()
+        await until(() => calls.length === 2)
+        assert.equal(calls[1], calls[0], 'the stale result is discarded and the same candidate is retried')
+        assert.equal(probe().length, count, 'no candidate is deleted by the stale review')
+        retry.resolve()
+        await until(() => probe().length === 0)
+        assert.equal(calls.length, count + 1, 'renaming alone must not stall the remaining queue')
+        assert.equal(branchReads, 2, 'retry refreshes the changed branch snapshot once')
         assert.deepEqual(notifications, [])
       } else if (scenario === 'disable') {
         enabled = false
@@ -141,7 +160,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.doesNotMatch(JSON.stringify({ logs, notifications }), /SECRET-/)
     } finally {
       await emit('session_shutdown')
-      release.resolve(); consolidation.resolve()
+      release.resolve(); retry.resolve(); consolidation.resolve()
       console.warn = originalWarn
     }
   } finally {
@@ -151,7 +170,7 @@ async function fixture(scenario: string): Promise<void> {
 }
 
 if (process.argv.includes('--fixture')) await fixture(process.argv[3]!)
-else for (const scenario of ['drain', 'bad-first', 'shared', 'consolidation', 'timeout', 'cancel', 'fast-settle', 'branch', 'disable']) {
+else for (const scenario of ['drain', 'bad-first', 'shared', 'consolidation', 'timeout', 'cancel', 'fast-settle', 'branch', 'rename', 'disable']) {
   test(`long-term idle queue: ${scenario}`, async () => {
     const result = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
     assert.equal(result.exitCode, 0, result.stderr || result.stdout)

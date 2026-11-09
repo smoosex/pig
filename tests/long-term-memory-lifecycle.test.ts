@@ -38,6 +38,10 @@ async function fixture(scenario: string): Promise<void> {
           scopeKey: access.project, assertion: 'user-statement', sourceTime: new Date().toISOString() } }]
       },
     }))
+    const relevance = await import('../src/main/features/memory/long-term/relevance')
+    mock.module('../src/main/features/memory/long-term/relevance', () => ({ ...relevance,
+      selectMemories: async (...args: Parameters<typeof relevance.selectMemories>) => [...args[3]],
+    }))
     const { registerLongTermMemory } = await import('../src/main/features/memory/long-term/extension')
     const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>()
     const tools: string[] = []
@@ -63,7 +67,7 @@ async function fixture(scenario: string): Promise<void> {
     await emit('agent_settled')
     assert.equal(requests, 1, 'same-session workers cannot overlap')
     if (['agent_start', 'session_tree', 'session_shutdown'].includes(scenario)) await emit(scenario)
-    if (scenario === 'forget') { const current = new MemoryCandidateStore(longTermMemoryPath()); current.forget(candidate.id); current.close() }
+    if (scenario === 'forget') { const current = new MemoryCandidateStore(longTermMemoryPath()); current.deleteCandidate(candidate.id); current.close() }
     release.resolve()
     const deadline = Date.now() + 2000
     for (;;) {

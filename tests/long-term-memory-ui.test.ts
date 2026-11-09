@@ -10,6 +10,7 @@ async function fixture() {
   let config: MemorySettings = {}
   const patches: MemorySettingsPatch[] = []
   const forgotten: string[] = []
+  const deleted: string[] = []
   let waitForSave: Promise<void> | undefined
   let failSave = false
   let failApply = false
@@ -25,12 +26,13 @@ async function fixture() {
     },
     longTermMemory: {
       list: async (kind: string) => ({
-        candidates: kind === 'candidates' ? [{ id: 'b'.repeat(64), content: '尚未审核的 reflection', sessionId: 'source', recordedAt: '2026-11-06T00:00:00.000Z', status: 'pending' }] : [],
+        candidates: kind === 'candidates' && !deleted.length ? [{ id: 'b'.repeat(64), content: '尚未审核的 reflection', sessionId: 'source', recordedAt: '2026-11-06T00:00:00.000Z', status: 'pending' }] : [],
         memories: kind === 'memories' && !forgotten.length ? [{ id: 'a'.repeat(64), content: '<script>not executable</script> 项目使用中文检索', kind: 'decision', scope: 'project', scopeKey: '/repo/.git', status: 'active', assertion: 'user-statement', sourceTime: '2026-11-06T00:00:00.000Z', createdAt: '2026-11-06T01:00:00.000Z' }] : [],
         nextOffset: null,
       }),
       evidence: async () => [{ candidateId: 'a'.repeat(64), sessionId: 'source-session', reflectionEntryId: 'reflection-entry', reflectionId: '123456abcdef', sourceEntryIds: ['user-entry'] }],
-      forget: async (_kind: string, id: string) => { forgotten.push(id) },
+      deleteCandidate: async (id: string) => { deleted.push(id) },
+      forget: async (id: string) => { forgotten.push(id) },
     },
   } })
   const { act, createElement: h } = await import('react')
@@ -107,6 +109,11 @@ async function fixture() {
     await act(async () => { candidateTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })) }); await flush()
     assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('尚未审核的 reflection'))
     assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('待审'))
+    assert.equal(button('忘记'), undefined, 'candidates are not admitted memories')
+    await act(async () => { button('删除').click() }); await flush()
+    assert.deepEqual(deleted, ['b'.repeat(64)])
+    assert.deepEqual(forgotten, ['a'.repeat(64)], 'candidate deletion must not call forgetting')
+    assert.ok(!document.querySelector('[role="dialog"]')!.textContent!.includes('尚未审核的 reflection'))
   } finally { await act(async () => { root.unmount() }); GlobalRegistrator.unregister() }
 }
 if (process.argv.includes('--fixture')) await fixture()

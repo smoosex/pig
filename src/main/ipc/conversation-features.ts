@@ -36,11 +36,15 @@ export function registerConversationFeaturesIpc(): void {
     memoryId(id)
     return withLongTermStore(store => store.evidence(id))
   })
-  ipcMain.handle('memory:long-term:forget', (event, kind: unknown, id: unknown) => {
+  ipcMain.handle('memory:long-term:delete-candidate', (event, id: unknown) => {
     assertUi(event)
-    memoryKind(kind)
     memoryId(id)
-    withLongTermStore(store => kind === 'candidates' ? store.forget(id) : store.forgetFact(id))
+    withLongTermStore(store => store.deleteCandidate(id))
+  })
+  ipcMain.handle('memory:long-term:forget', (event, id: unknown) => {
+    assertUi(event)
+    memoryId(id)
+    withLongTermStore(store => store.forgetFact(id))
   })
   ipcMain.handle('memory:enabled', (event, sessionId: string) => {
     assertUi(event)

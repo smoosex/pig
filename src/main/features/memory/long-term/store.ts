@@ -35,14 +35,16 @@ export class MemoryCandidateStore {
     this.db = new DatabaseSync(path, { timeout: 5_000 })
     try {
       this.db.exec('PRAGMA secure_delete = ON; PRAGMA foreign_keys = ON')
-      const version = this.db.prepare('PRAGMA user_version').get()!.user_version
-      if (version !== 0 && version !== 1 && version !== 2) throw new Error('Unsupported long-term memory database version')
       this.db.exec(`
         BEGIN IMMEDIATE;
         CREATE TABLE IF NOT EXISTS memory_candidates (
           id TEXT PRIMARY KEY,
           payload TEXT NOT NULL,
           created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS candidate_collection_entries (
+          session_id TEXT NOT NULL, entry_id TEXT NOT NULL,
+          PRIMARY KEY (session_id, entry_id)
         );
         CREATE TABLE IF NOT EXISTS forgotten_candidates (
           id TEXT PRIMARY KEY
@@ -63,7 +65,6 @@ export class MemoryCandidateStore {
         INSERT INTO memory_fts(memory_fts, rank) VALUES ('secure-delete', 1);
         CREATE TABLE IF NOT EXISTS memory_state (id INTEGER PRIMARY KEY CHECK(id = 1), revision INTEGER NOT NULL);
         INSERT OR IGNORE INTO memory_state VALUES (1, 0);
-        PRAGMA user_version = 2;
         COMMIT;
       `)
     } catch (error) {
@@ -72,8 +73,12 @@ export class MemoryCandidateStore {
     }
   }
 
-  enqueue(candidates: readonly MemoryCandidate[]): number {
-    if (candidates.length === 0) return 0
+  collectionEntryProcessed(sessionId: string, entryId: string): boolean {
+    return !!this.db.prepare('SELECT 1 FROM candidate_collection_entries WHERE session_id = ? AND entry_id = ?').get(sessionId, entryId)
+  }
+
+  enqueue(candidates: readonly MemoryCandidate[], progress?: { sessionId: string; entryIds: readonly string[] }): number {
+    if (candidates.length === 0 && !progress?.entryIds.length) return 0
     const forgotten = this.db.prepare('SELECT 1 FROM forgotten_candidates WHERE id = ?')
     const existing = this.db.prepare('SELECT payload FROM memory_candidates WHERE id = ?')
     const insert = this.db.prepare('INSERT INTO memory_candidates (id, payload, created_at) VALUES (?, ?, ?)')
@@ -88,8 +93,13 @@ export class MemoryCandidateStore {
           if (previous.payload !== payload) throw new Error('Long-term memory candidate source changed')
           continue
         }
+        if (this.collectionEntryProcessed(candidate.origin.sessionId, candidate.reflectionEntryId)) continue
         insert.run(candidate.id, payload, new Date().toISOString())
         added++
+      }
+      if (progress) {
+        const checkpoint = this.db.prepare('INSERT OR IGNORE INTO candidate_collection_entries VALUES (?, ?)')
+        for (const entryId of progress.entryIds) checkpoint.run(progress.sessionId, entryId)
       }
       this.db.exec('COMMIT')
       return added
@@ -105,14 +115,14 @@ export class MemoryCandidateStore {
       .all(limit).map(row => JSON.parse(row.payload as string) as MemoryCandidate)
   }
 
-  /** Removes the derived copy, retaining only its opaque source key to prevent automatic reimport. */
-  forget(id: string): void {
+  deleteCandidate(id: string): void {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      const linked = this.db.prepare('SELECT memory_id FROM memory_evidence WHERE candidate_id = ?').get(id)
-      if (linked) this.removeFact(linked.memory_id as string)
-      this.removeCandidate(id)
-      this.bump()
+      const candidate = this.candidate(id)
+      if (candidate) {
+        this.discardCandidate(candidate)
+        this.bump()
+      }
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
@@ -130,25 +140,29 @@ export class MemoryCandidateStore {
   }
 
   pending(sessionId: string, branchIds: ReadonlySet<string>, limit = 4): MemoryCandidate[] {
+    return this.unreviewed(sessionId).filter(candidate => branchIds.has(candidate.id)).slice(0, limit)
+  }
+
+  unreviewed(sessionId: string): MemoryCandidate[] {
     return this.db.prepare(`SELECT c.payload FROM memory_candidates c
       LEFT JOIN candidate_reviews r ON c.id = r.candidate_id
       WHERE r.candidate_id IS NULL AND json_extract(c.payload, '$.origin.sessionId') = ?
       ORDER BY c.created_at, c.id`).all(sessionId)
       .map(row => JSON.parse(row.payload as string) as MemoryCandidate)
-      .filter(candidate => branchIds.has(candidate.id)).slice(0, limit)
   }
 
   page(kind: 'candidates' | 'memories', offset = 0): LongTermPage {
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid memory page offset')
     if (kind === 'candidates') {
-      const rows = this.db.prepare(`SELECT c.payload, r.status FROM memory_candidates c
+      const rows = this.db.prepare(`SELECT c.payload FROM memory_candidates c
         LEFT JOIN candidate_reviews r ON c.id = r.candidate_id
+        WHERE r.candidate_id IS NULL
         ORDER BY c.created_at DESC, c.id LIMIT 51 OFFSET ?`).all(offset)
       return {
         candidates: rows.slice(0, 50).map(row => {
           const candidate = JSON.parse(row.payload as string) as MemoryCandidate
           return { id: candidate.id, content: candidate.content, recordedAt: candidate.recordedAt,
-            sessionId: candidate.origin.sessionId, status: (row.status ?? 'pending') as 'pending' | 'accepted' | 'skipped' }
+            sessionId: candidate.origin.sessionId, status: 'pending' as const }
         }),
         memories: [], nextOffset: rows.length > 50 ? offset + 50 : null,
       }
@@ -193,7 +207,7 @@ export class MemoryCandidateStore {
           throw new MemoryReviewError('conflict', 'Long-term memory candidate changed during review')
         }
         if (action === 'skip') {
-          this.db.prepare('INSERT INTO candidate_reviews VALUES (?, ?)').run(candidate.id, 'skipped')
+          this.discardCandidate(candidate)
           continue
         }
         if (!review.fact) throw new Error('Memory review has no fact')
@@ -252,6 +266,17 @@ export class MemoryCandidateStore {
   }
 
   private bump(): void { this.db.exec('UPDATE memory_state SET revision = revision + 1 WHERE id = 1') }
+
+  /** Manual deletion and model rejection share exactly the same pending-only operation. */
+  private discardCandidate(candidate: MemoryCandidate): void {
+    if (this.db.prepare('SELECT 1 FROM candidate_reviews WHERE candidate_id = ?').get(candidate.id)
+      || this.db.prepare('SELECT 1 FROM memory_evidence WHERE candidate_id = ?').get(candidate.id)) {
+      throw new Error('Only pending candidates can be deleted')
+    }
+    this.db.prepare('INSERT OR IGNORE INTO candidate_collection_entries VALUES (?, ?)')
+      .run(candidate.origin.sessionId, candidate.reflectionEntryId)
+    this.db.prepare('DELETE FROM memory_candidates WHERE id = ?').run(candidate.id)
+  }
 
   private removeCandidate(id: string): void {
     this.db.prepare('INSERT OR IGNORE INTO forgotten_candidates VALUES (?)').run(id)

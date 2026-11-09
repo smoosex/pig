@@ -74,7 +74,9 @@ test('SQLite admission is replay-safe, Chinese-searchable and scope-isolated acr
   assert.equal(store.search('中文检索', { ...access, session: 'another-session' })[0]!.id, candidate(1).id)
   assert.deepEqual(store.search('中文检索', { project: '/other', session: 'other' }), [])
   assert.equal(store.pending(access.session, new Set([candidate(1).id, candidate(2).id])).length, 1)
-  assert.equal(store.page('candidates').candidates.find(item => item.id === candidate(1).id)!.status, 'accepted')
+  assert.deepEqual(store.page('candidates').candidates.map(item => item.id), [candidate(2).id])
+  assert.throws(() => store.deleteCandidate(candidate(1).id), /Only pending/)
+  assert.ok(store.read(candidate(1).id, access), 'a stale candidate delete cannot remove an admitted fact')
   assert.deepEqual(store.evidence(candidate(1).id)[0]!.sourceEntryIds, ['user-1'])
   store.review(parse(2), store.revision())
   assert.equal(store.page('memories').memories.length, 1, 'exact duplicate adds evidence, not a competing fact')
@@ -111,30 +113,54 @@ test('forget deletes derived indexes and linked candidates, prevents replay, and
   assert.deepEqual(store.pending(access.session, new Set([candidate(3).id])).map(item => item.id), [candidate(3).id])
 }))
 
-test('a failed review batch rolls back earlier writes and skip remains durable without becoming a fact', () => storeTest(store => {
+test('skip atomically deletes rejected content, preserves progress and cannot replay after restart', () => storeTest((store, path) => {
   store.enqueue([candidate(1), candidate(2)])
   const broken = parse(2)[0]!; broken.action = 'merge'; broken.targetId = 'unknown'
   assert.throws(() => store.review([...parse(1), broken], store.revision()))
   assert.equal(store.page('memories').memories.length, 0)
   assert.ok(store.page('candidates').candidates.every(item => item.status === 'pending'))
-  store.review([{ candidate: candidate(1), action: 'skip', sourceEntryIds: [] }], store.revision())
-  assert.equal(store.page('candidates').candidates.find(item => item.id === candidate(1).id)!.status, 'skipped')
+  const skip = { candidate: candidate(1), action: 'skip' as const, sourceEntryIds: [] }
+  const before = store.revision()
+  assert.throws(() => store.review([skip, broken], before))
+  assert.ok(store.candidate(candidate(1).id), 'a later failure rolls back the earlier deletion')
+  assert.equal(store.collectionEntryProcessed(access.session, candidate(1).reflectionEntryId), false)
+  assert.equal(store.revision(), before)
+  store.review([skip], before)
+  assert.equal(store.candidate(candidate(1).id), undefined)
+  assert.deepEqual(store.page('candidates').candidates.map(item => item.id), [candidate(2).id])
+  assert.equal(store.page('memories').memories.length, 0)
+  assert.equal(store.revision(), before + 1)
+  const reopened = new MemoryCandidateStore(path)
+  try {
+    assert.equal(reopened.enqueue([candidate(1)]), 0)
+    assert.ok(reopened.candidate(candidate(2).id), 'other pending candidates are untouched')
+    assert.equal(reopened.collectionEntryProcessed(access.session, candidate(1).reflectionEntryId), true)
+  } finally { reopened.close() }
+  const db = new DatabaseSync(path)
+  try {
+    assert.equal(db.prepare('SELECT count(*) AS n FROM candidate_reviews').get()!.n, 0)
+    assert.equal(db.prepare('SELECT count(*) AS n FROM forgotten_candidates').get()!.n, 0)
+  } finally { db.close() }
 }))
 
-test('schema v1 inboxes migrate without losing candidates, future versions remain untouched', () => {
-  const root = mkdtempSync(join(tmpdir(), 'pig-long-term-migration-')); const path = join(root, 'memory.sqlite')
-  try {
-    const old = new DatabaseSync(path)
-    old.exec('CREATE TABLE memory_candidates(id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL); CREATE TABLE forgotten_candidates(id TEXT PRIMARY KEY); PRAGMA user_version = 1')
-    old.prepare('INSERT INTO memory_candidates VALUES (?, ?, ?)').run(candidate(1).id, JSON.stringify(candidate(1)), time); old.close()
-    const upgraded = new MemoryCandidateStore(path)
-    assert.equal(upgraded.list()[0]!.id, candidate(1).id); upgraded.close()
-    const future = new DatabaseSync(path); future.exec('PRAGMA user_version = 99'); future.close()
-    assert.throws(() => new MemoryCandidateStore(path), /Unsupported/)
-    const verify = new DatabaseSync(path)
-    assert.equal(verify.prepare('PRAGMA user_version').get()!.user_version, 99); verify.close()
-  } finally { rmSync(root, { recursive: true, force: true }) }
-})
+test('candidate deletion preserves other pending records and never deletes admitted memory', () => storeTest((store, path) => {
+  store.enqueue([candidate(1), candidate(2), candidate(3)])
+  store.review(parse(1), store.revision())
+  const before = store.revision()
+  store.deleteCandidate(candidate(2).id)
+  assert.equal(store.revision(), before + 1)
+  assert.equal(store.candidate(candidate(2).id), undefined)
+  assert.equal(store.enqueue([candidate(2)]), 0)
+  assert.deepEqual(store.page('candidates').candidates.map(item => item.id), [candidate(3).id])
+  assert.equal(store.search('中文检索', access)[0]!.id, candidate(1).id)
+  assert.equal(store.evidence(candidate(1).id).length, 1)
+  assert.throws(() => store.review(parse(3), before), /changed during review/)
+  store.deleteCandidate(candidate(2).id)
+  assert.equal(store.revision(), before + 1, 'already-deleted candidates are a no-op')
+  const db = new DatabaseSync(path)
+  try { assert.equal(db.prepare('SELECT count(*) AS n FROM forgotten_candidates').get()!.n, 0) }
+  finally { db.close() }
+}))
 
 test('long-term model settings are strict and never accept coerced values or hidden endpoints', () => {
   validateLongTermSettings({ enabled: false })

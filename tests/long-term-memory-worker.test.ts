@@ -12,6 +12,7 @@ async function fixture() {
   const previous = process.env.PIG_DIR; process.env.PIG_DIR = root
   try {
     const { requestReviews } = await import('../src/main/features/memory/long-term/reviewer')
+    const { selectMemories } = await import('../src/main/features/memory/long-term/relevance')
     const { abortable } = await import('../src/main/features/memory/long-term/extension')
     const { MemoryReviewError } = await import('../src/main/features/memory/long-term/review-errors')
     const model: Model<'openai-responses'> = { id: 'custom', provider: 'custom', name: 'Custom', api: 'openai-responses',
@@ -58,7 +59,37 @@ async function fixture() {
     const body = String(budgeted.context.messages[0]!.content)
     assert.match(body, /context-budget excerpt/)
     assert.ok(Buffer.byteLength((budgeted.context.systemPrompt ?? '') + body) + budgeted.options!.maxTokens! <= 32_000)
+    const facts = [{ id, content: 'Pig embeds pi; no global CLI is required.', kind: 'decision' as const,
+      scope: 'project' as const, scopeKey: root, status: 'active' as const, assertion: 'user-statement' as const,
+      sourceTime: candidate.recordedAt, createdAt: candidate.recordedAt }]
+    const question = { question: '是否需要本地有 pi？' + '完整问题'.repeat(600),
+      recentExchanges: [{ user: 'Pig 的安装依赖是什么？', assistant: '正在讨论安装方式。' }] }
+    text = JSON.stringify({ selectedIds: [id] })
+    assert.deepEqual(await selectMemories(ctx, settings, question, facts, new AbortController().signal), facts)
+    const selection = calls.at(-1)!
+    assert.equal(selection.model.baseUrl, 'https://resolved.invalid')
+    assert.equal(selection.options!.reasoning, undefined)
+    assert.equal(selection.context.tools, undefined)
+    const selectionPayload = JSON.parse(String(selection.context.messages[0]!.content))
+    assert.equal(selectionPayload.question, question.question, 'the full current question reaches the selector')
+    assert.deepEqual(selectionPayload.recentExchanges, question.recentExchanges)
+    assert.equal(selectionPayload.memories[0].scopeKey, undefined)
+    const callCount = calls.length
+    assert.deepEqual(await selectMemories(ctx, settings, question, [], new AbortController().signal), [])
+    assert.equal(calls.length, callCount, 'no candidates means no authentication or request')
+    text = JSON.stringify({ selectedIds: [] })
+    assert.deepEqual(await selectMemories(ctx, settings, question, facts, new AbortController().signal), [])
+    assert.deepEqual(await selectMemories(ctx, { enabled: true }, question, facts, new AbortController().signal), [])
+    assert.equal(calls.at(-1)!.model.id, model.id, 'default recall selection follows OM model resolution')
+    const find = ctx.modelRegistry.find
+    ctx.modelRegistry.find = () => undefined
+    await assert.rejects(selectMemories(ctx, settings, question, facts, new AbortController().signal), /model unavailable/)
+    ctx.modelRegistry.find = find
     text = 'not JSON'
+    await assert.rejects(selectMemories(ctx, settings, question, facts, new AbortController().signal), /Invalid.*JSON/)
+    stop = 'length'
+    await assert.rejects(selectMemories(ctx, settings, question, facts, new AbortController().signal), /did not complete/)
+    stop = 'stop'
     await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /Invalid.*JSON/)
     text = JSON.stringify({ reviews: [{ candidateId: id, action: 'skip', sourceEntryIds: [] }] }); stop = 'length'
     await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /did not complete/)
