@@ -84,10 +84,7 @@ export function useComposer(
       if (draftKey) useComposerDraftsStore.getState().setBashMode(draftKey, false)
     }
   })
-  const commands = useSlashCommands(sessionId, draft.text, (command) => {
-    replaceText(`/${command.name} `)
-    editor?.commands.focus('end')
-  }, bashMode || inputDisabled)
+  const commands = useSlashCommands(sessionId, editor, bashMode || inputDisabled)
   const mentions = useFileMentions({ resetKey: sessionId, cwd: mentionCwd, editor, disabled: commands.open || bashMode || inputDisabled })
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 
