@@ -108,11 +108,13 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirm, setConfirm] = useState<string>()
-  const [evidence, setEvidence] = useState<{ id: string; items: LongTermEvidence[] }>()
+  const [evidence, setEvidence] = useState<{ id: string; items?: LongTermEvidence[] }>()
   const generation = useRef(0)
   const evidenceRequest = useRef(0)
   const read = async (offset = 0) => {
     const request = ++generation.current
+    evidenceRequest.current++
+    setEvidence(undefined)
     setLoading(true); setError(undefined)
     try {
       const [result, current] = await Promise.all([api.longTermMemory.list(kind, offset), api.longTermMemory.status()])
@@ -149,10 +151,16 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
   const showEvidence = async (id: string) => {
     const request = generation.current
     const evidenceGeneration = ++evidenceRequest.current
+    if (evidence?.id === id) { setEvidence(undefined); return }
+    setEvidence({ id })
     try {
       const items = await api.longTermMemory.evidence(id)
       if (request === generation.current && evidenceGeneration === evidenceRequest.current) setEvidence({ id, items })
-    } catch (failure) { if (request === generation.current) setError(failureMessage(failure)) }
+    } catch (failure) {
+      if (request === generation.current && evidenceGeneration === evidenceRequest.current) {
+        setEvidence(undefined); setError(failureMessage(failure))
+      }
+    }
   }
   const items: (TaskEpisode | LongTermFact)[] = kind === 'episodes' ? page.episodes : page.memories
   const kinds: MemoryViewKind[] = ['preference', 'project', 'knowledge', 'lesson', 'episodes']
@@ -174,7 +182,7 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
         })}</p>)}
       </div> : null}
       {error ? <p role="alert" className="text-destructive">{error}</p> : null}
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {!items.length ? <p className="text-muted-foreground">{t(loading ? 'longTerm.loading' : 'longTerm.empty')}</p> : null}
         {items.map(item => <section key={item.id} className="flex flex-col gap-2 rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -188,12 +196,12 @@ export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpe
           {'applicability' in item ? <p className="whitespace-pre-wrap text-sm text-muted-foreground">{t('longTerm.applicability')}: {item.applicability}</p> : null}
           {'checkoutKey' in item && item.checkoutKey ? <p className="break-all text-xs text-muted-foreground">{t('longTerm.checkout')}: {item.checkoutKey}</p> : null}
           <div className="flex gap-2">
-            <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button>
+            <Button variant="ghost" size="sm" disabled={deleting} aria-expanded={evidence?.id === item.id} aria-controls={`memory-evidence-${item.id}`} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button>
             {kind === 'episodes'
               ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.deleteEpisode')}</Button>
               : <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirm(item.id)}>{t('longTerm.forget')}</Button>}
           </div>
-          {evidence && evidence.id === item.id ? <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(evidence.items, null, 2)}</pre> : null}
+          {evidence && evidence.id === item.id ? <pre id={`memory-evidence-${item.id}`} className="overflow-x-auto whitespace-pre-wrap break-all text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{evidence.items ? JSON.stringify(evidence.items, null, 2) : t('longTerm.loading')}</pre> : null}
           {confirm === item.id ? <div className="flex flex-col gap-2">
             <p>{t('longTerm.forgetConfirm')}</p>
             <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.confirm')}</Button>

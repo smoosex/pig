@@ -12,6 +12,8 @@ async function fixture() {
   const forgotten: string[] = []
   const deleted: string[] = []
   let waitForSave: Promise<void> | undefined
+  let waitForEvidence: Promise<void> | undefined
+  let nextPage: number | null = null
   let failSave = false
   let failApply = false
   Object.assign(window, { api: {
@@ -25,12 +27,15 @@ async function fixture() {
       return config
     },
     longTermMemory: {
-      list: async (kind: string) => ({
-        episodes: kind === 'episodes' && !deleted.length ? [{ id: 'b'.repeat(64), title: '任务经历', content: '修复 mock 后验证通过', sessionId: 'source', sourceTime: '2026-11-06T00:00:00.000Z', outcome: 'success' }] : [],
-        memories: kind === 'preference' && !forgotten.length ? [{ id: 'a'.repeat(64), content: '<script>not executable</script> 项目使用中文检索', kind: 'preference', applicability: '开发协作', scope: 'project', scopeKey: '/repo/.git', status: 'active', assertion: 'user-statement', sourceTime: '2026-11-06T00:00:00.000Z', createdAt: '2026-11-06T01:00:00.000Z' }] : [],
-        nextOffset: null,
+      list: async (kind: string, offset = 0) => ({
+        episodes: !offset && kind === 'episodes' && !deleted.length ? [{ id: 'b'.repeat(64), title: '任务经历', content: '修复 mock 后验证通过', sessionId: 'source', sourceTime: '2026-11-06T00:00:00.000Z', outcome: 'success' }] : [],
+        memories: !offset && kind === 'preference' && !forgotten.length ? [{ id: 'a'.repeat(64), content: '<script>not executable</script> 项目使用中文检索', kind: 'preference', applicability: '开发协作', scope: 'project', scopeKey: '/repo/.git', status: 'active', assertion: 'user-statement', sourceTime: '2026-11-06T00:00:00.000Z', createdAt: '2026-11-06T01:00:00.000Z' }] : [],
+        nextOffset: offset ? null : nextPage,
       }),
-      evidence: async () => [{ episodeId: 'a'.repeat(64), sources: [{ entryId: 'user-entry' }] }],
+      evidence: async () => {
+        await waitForEvidence
+        return [{ episodeId: 'a'.repeat(64), sources: [{ entryId: 'user-entry' }] }]
+      },
       status: async () => ({ runningJobs: 0, pendingJobs: 1, pendingIntegrations: 2, lastSuccess: null, lastError: null, usage: [] }),
       deleteEpisode: async (id: string) => { deleted.push(id) },
       forget: async (id: string) => { forgotten.push(id) },
@@ -101,6 +106,37 @@ async function fixture() {
     await act(async () => { button('查看长期记忆').click() }); await flush()
     assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('项目使用中文检索'))
     assert.equal(document.querySelector('script'), null, 'stored text never executes as HTML')
+    await act(async () => { button('来源引用').click() }); await flush()
+    assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('user-entry'))
+    assert.equal(button('来源引用').getAttribute('aria-expanded'), 'true')
+    await act(async () => { button('来源引用').click() }); await flush()
+    assert.equal(button('来源引用').getAttribute('aria-expanded'), 'false')
+    assert.ok(!document.querySelector('[role="dialog"]')!.textContent!.includes('user-entry'))
+    const pendingEvidence = Promise.withResolvers<void>()
+    waitForEvidence = pendingEvidence.promise
+    await act(async () => { button('来源引用').click() }); await flush()
+    assert.equal(button('来源引用').getAttribute('aria-expanded'), 'true')
+    await act(async () => { button('来源引用').click() }); await flush()
+    await act(async () => { pendingEvidence.resolve() }); await flush()
+    assert.equal(button('来源引用').getAttribute('aria-expanded'), 'false')
+    assert.ok(!document.querySelector('[role="dialog"]')!.textContent!.includes('user-entry'), 'late evidence must not reopen a collapsed source')
+    waitForEvidence = undefined
+    for (const action of ['刷新', '加载更多']) {
+      nextPage = 1
+      await act(async () => { button('刷新').click() }); await flush()
+      const loadingEvidence = Promise.withResolvers<void>()
+      waitForEvidence = loadingEvidence.promise
+      await act(async () => { button('来源引用').click() }); await flush()
+      assert.equal(button('来源引用').getAttribute('aria-expanded'), 'true')
+      await act(async () => { button(action).click() }); await flush()
+      assert.equal(button('来源引用').getAttribute('aria-expanded'), 'false', `${action} clears pending source state`)
+      assert.equal(document.querySelector('[role="dialog"] pre'), null)
+      await act(async () => { loadingEvidence.resolve() }); await flush()
+      assert.equal(button('来源引用').getAttribute('aria-expanded'), 'false', `${action} invalidates late source results`)
+      assert.equal(document.querySelector('[role="dialog"] pre'), null)
+      waitForEvidence = undefined
+    }
+    nextPage = null
     await act(async () => { button('来源引用').click() }); await flush()
     assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('user-entry'))
     await act(async () => { button('忘记').click() }); assert.deepEqual(forgotten, [])
