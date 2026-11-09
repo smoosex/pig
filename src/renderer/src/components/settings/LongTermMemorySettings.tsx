@@ -1,6 +1,6 @@
 /** Long-term admission has its own model selector and a paged, UI-only inspector. */
 import { useEffect, useRef, useState } from 'react'
-import type { LongTermEvidence, LongTermPage, LongTermSettings } from '../../../../shared/long-term-memory'
+import type { LongTermEvidence, LongTermPage, LongTermSettings, MemoryViewKind, MemoryLearningStatus, LongTermFact, TaskEpisode } from '../../../../shared/long-term-memory'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -101,72 +101,96 @@ export function LongTermMemorySettings({ onBusyChange }: {
 
 export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const t = useT()
-  const [kind, setKind] = useState<'candidates' | 'memories'>('memories')
-  const [page, setPage] = useState<LongTermPage>({ candidates: [], memories: [], nextOffset: null })
+  const [kind, setKind] = useState<MemoryViewKind>('preference')
+  const [page, setPage] = useState<LongTermPage>({ episodes: [], memories: [], nextOffset: null })
+  const [status, setStatus] = useState<MemoryLearningStatus>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirm, setConfirm] = useState<string>()
   const [evidence, setEvidence] = useState<{ id: string; items: LongTermEvidence[] }>()
   const generation = useRef(0)
+  const evidenceRequest = useRef(0)
   const read = async (offset = 0) => {
     const request = ++generation.current
     setLoading(true); setError(undefined)
     try {
-      const result = await api.longTermMemory.list(kind, offset)
+      const [result, current] = await Promise.all([api.longTermMemory.list(kind, offset), api.longTermMemory.status()])
       if (request !== generation.current) return
-      setPage(previous => offset ? { candidates: [...previous.candidates, ...result.candidates],
+      setStatus(current)
+      setPage(previous => offset ? { episodes: [...previous.episodes, ...result.episodes],
         memories: [...previous.memories, ...result.memories], nextOffset: result.nextOffset } : result)
     } catch (failure) { if (request === generation.current) setError(failureMessage(failure)) }
     finally { if (request === generation.current) setLoading(false) }
   }
   useEffect(() => {
-    setPage({ candidates: [], memories: [], nextOffset: null }); setConfirm(undefined); setEvidence(undefined)
+    setPage({ episodes: [], memories: [], nextOffset: null }); setConfirm(undefined); setEvidence(undefined)
     if (open) void read()
-    return () => { generation.current++ }
+    return () => { generation.current++; evidenceRequest.current++ }
   }, [open, kind])
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    const timer = setInterval(() => {
+      void api.longTermMemory.status().then(value => { if (!cancelled) setStatus(value) },
+        failure => { if (!cancelled) setError(failureMessage(failure)) })
+    }, 5000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [open])
   const remove = async (id: string) => {
     setDeleting(true); setError(undefined)
     try {
-      if (kind === 'candidates') await api.longTermMemory.deleteCandidate(id)
+      if (kind === 'episodes') await api.longTermMemory.deleteEpisode(id)
       else await api.longTermMemory.forget(id)
       setConfirm(undefined); setEvidence(undefined); await read()
-    }
-    catch (failure) { setError(failureMessage(failure)) }
+    } catch (failure) { setError(failureMessage(failure)) }
     finally { setDeleting(false) }
   }
   const showEvidence = async (id: string) => {
     const request = generation.current
+    const evidenceGeneration = ++evidenceRequest.current
     try {
       const items = await api.longTermMemory.evidence(id)
-      if (request === generation.current) setEvidence({ id, items })
+      if (request === generation.current && evidenceGeneration === evidenceRequest.current) setEvidence({ id, items })
     } catch (failure) { if (request === generation.current) setError(failureMessage(failure)) }
   }
-  const items: (LongTermPage['memories'][number] | LongTermPage['candidates'][number])[] = kind === 'memories' ? page.memories : page.candidates
+  const items: (TaskEpisode | LongTermFact)[] = kind === 'episodes' ? page.episodes : page.memories
+  const kinds: MemoryViewKind[] = ['preference', 'project', 'knowledge', 'lesson', 'episodes']
   return <Dialog open={open} onOpenChange={value => { if (!deleting) onOpenChange(value) }}>
     <DialogContent className="flex max-h-4/5 flex-col sm:max-w-3xl">
       <DialogHeader><DialogTitle>{t('longTerm.title')}</DialogTitle><DialogDescription>{t('longTerm.sourceHint')}</DialogDescription></DialogHeader>
-      <div className="flex items-center justify-between gap-3">
-        <Tabs value={kind} onValueChange={value => { if (!deleting) setKind(value as typeof kind) }}>
-          <TabsList><TabsTrigger value="memories" disabled={deleting}>{t('longTerm.memories')}</TabsTrigger>
-            <TabsTrigger value="candidates" disabled={deleting}>{t('longTerm.candidates')}</TabsTrigger></TabsList>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={kind} onValueChange={value => { if (!deleting) setKind(value as MemoryViewKind) }}>
+          <TabsList>{kinds.map(value => <TabsTrigger key={value} value={value} disabled={deleting}>{t(value === 'project' ? 'longTerm.projectProfile' : `longTerm.${value}`)}</TabsTrigger>)}</TabsList>
         </Tabs>
         <Button variant="outline" size="sm" disabled={loading || deleting} onClick={() => void read()}>{t('longTerm.refresh')}</Button>
       </div>
+      {status ? <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <p>{t('longTerm.queueStatus', { running: status.runningJobs, jobs: status.pendingJobs, integrations: status.pendingIntegrations })}</p>
+        {status.lastSuccess ? <p>{t('longTerm.lastSuccess')}: {new Date(status.lastSuccess).toLocaleString()}</p> : null}
+        {status.lastError ? <p>{t(`longTerm.${status.lastError.stage}`)}: {t(`longTerm.reviewReasons.${status.lastError.code}`)} [{status.lastError.code}] · {t('longTerm.retryAt')}: {new Date(status.lastError.retryAt).toLocaleString()}</p> : null}
+        {status.usage.map(item => <p key={item.stage}>{t(`longTerm.${item.stage}`)}: {t('longTerm.usageSummary', {
+          requests: item.requests, input: item.input, output: item.output, cost: item.cost.toFixed(4),
+        })}</p>)}
+      </div> : null}
       {error ? <p role="alert" className="text-destructive">{error}</p> : null}
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         {!items.length ? <p className="text-muted-foreground">{t(loading ? 'longTerm.loading' : 'longTerm.empty')}</p> : null}
         {items.map(item => <section key={item.id} className="flex flex-col gap-2 rounded-lg border p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{t(`longTerm.${item.status}`)}</Badge>
-            {'scope' in item ? <Badge variant="outline">{t(`longTerm.${item.scope}`)}</Badge> : null}
-            <span className="text-xs text-muted-foreground">{new Date('sourceTime' in item ? item.sourceTime : item.recordedAt).toLocaleString()}</span>
+            <Badge variant="secondary">{t(`longTerm.${'status' in item ? item.status : item.outcome}`)}</Badge>
+            {'scope' in item ? <><Badge variant="outline">{t(`longTerm.${item.scope}`)}</Badge>
+              <Badge variant="outline">{t(`longTerm.${item.assertion}`)}</Badge></> : null}
+            <span className="text-xs text-muted-foreground">{new Date(item.sourceTime).toLocaleString()}</span>
           </div>
+          {'title' in item ? <p className="font-medium">{item.title}</p> : null}
           <p className="whitespace-pre-wrap break-words">{item.content}</p>
+          {'applicability' in item ? <p className="whitespace-pre-wrap text-sm text-muted-foreground">{t('longTerm.applicability')}: {item.applicability}</p> : null}
+          {'checkoutKey' in item && item.checkoutKey ? <p className="break-all text-xs text-muted-foreground">{t('longTerm.checkout')}: {item.checkoutKey}</p> : null}
           <div className="flex gap-2">
-            {'scope' in item ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button> : null}
-            {kind === 'candidates'
-              ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.deleteCandidate')}</Button>
+            <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button>
+            {kind === 'episodes'
+              ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.deleteEpisode')}</Button>
               : <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirm(item.id)}>{t('longTerm.forget')}</Button>}
           </div>
           {evidence && evidence.id === item.id ? <pre className="overflow-x-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(evidence.items, null, 2)}</pre> : null}

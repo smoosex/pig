@@ -26,12 +26,13 @@ async function fixture() {
     },
     longTermMemory: {
       list: async (kind: string) => ({
-        candidates: kind === 'candidates' && !deleted.length ? [{ id: 'b'.repeat(64), content: '尚未审核的 reflection', sessionId: 'source', recordedAt: '2026-11-06T00:00:00.000Z', status: 'pending' }] : [],
-        memories: kind === 'memories' && !forgotten.length ? [{ id: 'a'.repeat(64), content: '<script>not executable</script> 项目使用中文检索', kind: 'decision', scope: 'project', scopeKey: '/repo/.git', status: 'active', assertion: 'user-statement', sourceTime: '2026-11-06T00:00:00.000Z', createdAt: '2026-11-06T01:00:00.000Z' }] : [],
+        episodes: kind === 'episodes' && !deleted.length ? [{ id: 'b'.repeat(64), title: '任务经历', content: '修复 mock 后验证通过', sessionId: 'source', sourceTime: '2026-11-06T00:00:00.000Z', outcome: 'success' }] : [],
+        memories: kind === 'preference' && !forgotten.length ? [{ id: 'a'.repeat(64), content: '<script>not executable</script> 项目使用中文检索', kind: 'preference', applicability: '开发协作', scope: 'project', scopeKey: '/repo/.git', status: 'active', assertion: 'user-statement', sourceTime: '2026-11-06T00:00:00.000Z', createdAt: '2026-11-06T01:00:00.000Z' }] : [],
         nextOffset: null,
       }),
-      evidence: async () => [{ candidateId: 'a'.repeat(64), sessionId: 'source-session', reflectionEntryId: 'reflection-entry', reflectionId: '123456abcdef', sourceEntryIds: ['user-entry'] }],
-      deleteCandidate: async (id: string) => { deleted.push(id) },
+      evidence: async () => [{ episodeId: 'a'.repeat(64), sources: [{ entryId: 'user-entry' }] }],
+      status: async () => ({ runningJobs: 0, pendingJobs: 1, pendingIntegrations: 2, lastSuccess: null, lastError: null, usage: [] }),
+      deleteEpisode: async (id: string) => { deleted.push(id) },
       forget: async (id: string) => { forgotten.push(id) },
     },
   } })
@@ -52,7 +53,7 @@ async function fixture() {
   try {
     await act(async () => { root.render(h(TooltipProvider, null, h(LongTermMemorySettings, { onBusyChange: value => { busy = value } }))) })
     await flush()
-    const toggle = document.querySelector<HTMLButtonElement>('[aria-label="自动筛选与召回"]')!
+    const toggle = document.querySelector<HTMLButtonElement>('[aria-label="自动学习与召回"]')!
     assert.equal(toggle.getAttribute('aria-checked'), 'false')
     assert.equal(button('保存设置'), undefined)
     const pending = Promise.withResolvers<void>()
@@ -105,15 +106,15 @@ async function fixture() {
     await act(async () => { button('忘记').click() }); assert.deepEqual(forgotten, [])
     await act(async () => { button('确认忘记').click() }); await flush()
     assert.deepEqual(forgotten, ['a'.repeat(64)])
-    const candidateTab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(item => item.textContent === '候选')!
+    const candidateTab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(item => item.textContent === '任务经历')!
     await act(async () => { candidateTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })) }); await flush()
-    assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('尚未审核的 reflection'))
-    assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('待审'))
+    assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('修复 mock 后验证通过'))
+    assert.ok(document.querySelector('[role="dialog"]')!.textContent!.includes('成功'))
     assert.equal(button('忘记'), undefined, 'candidates are not admitted memories')
     await act(async () => { button('删除').click() }); await flush()
     assert.deepEqual(deleted, ['b'.repeat(64)])
     assert.deepEqual(forgotten, ['a'.repeat(64)], 'candidate deletion must not call forgetting')
-    assert.ok(!document.querySelector('[role="dialog"]')!.textContent!.includes('尚未审核的 reflection'))
+    assert.ok(!document.querySelector('[role="dialog"]')!.textContent!.includes('修复 mock 后验证通过'))
   } finally { await act(async () => { root.unmount() }); GlobalRegistrator.unregister() }
 }
 if (process.argv.includes('--fixture')) await fixture()

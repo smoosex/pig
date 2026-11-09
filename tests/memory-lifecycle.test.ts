@@ -92,6 +92,8 @@ async function fixture(scenario: string): Promise<void> {
       hasConfiguredAuth: () => { assertActive(); return true }
     },
     sessionManager: {
+      getLeafId: () => { assertActive(); return entries.at(-1)?.id ?? null },
+      getEntry: (id: string) => { assertActive(); return entries.find(entry => entry.id === id) },
       getBranch: () => { assertActive(); return entries },
       getSessionId: () => { assertActive(); return 'session' },
       getSessionFile: () => { assertActive(); return '/session.jsonl' }

@@ -1,4 +1,4 @@
-/** Shared tool-free model resolution and transport for admission and recall relevance. */
+/** Shared tool-free transport and aggregated usage for learning, integration and relevance. */
 import { clampThinkingLevel, type Context, type Model } from '@earendil-works/pi-ai'
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type { LongTermSettings } from '../../../../shared/long-term-memory'
@@ -6,9 +6,12 @@ import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../agen
 import { Runtime } from '../runtime'
 import { workerHeadersFor, workerThinkingLevel } from '../hooks/worker-options'
 import { MemoryReviewError, providerFailure, reviewPhase } from './review-errors'
+import { LongTermMemoryStore } from './store'
+import { longTermMemoryPath } from '../paths'
 
 export async function memoryWorker(ctx: ExtensionContext, settings: LongTermSettings, systemPrompt: string,
-  signal: AbortSignal, onModel?: (model: { provider: string; id: string }) => void) {
+  signal: AbortSignal, onModel?: (model: { provider: string; id: string }) => void,
+  stage: 'extraction' | 'integration' | 'relevance' = 'relevance') {
   const runtime = new Runtime()
   await reviewPhase('configuration', () => runtime.ensureConfig(ctx.cwd))
   signal.throwIfAborted()
@@ -42,7 +45,13 @@ export async function memoryWorker(ctx: ExtensionContext, settings: LongTermSett
           ...(thinking === 'off' ? {} : { reasoning: thinking }), cacheRetention: 'short',
         })
         for await (const _event of stream) signal.throwIfAborted()
-        return await stream.result()
+        const result = await stream.result()
+        try {
+          const store = new LongTermMemoryStore(longTermMemoryPath())
+          try { store.recordUsage(stage, { input: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
+            output: result.usage.output, cost: result.usage.cost.total }) } finally { store.close() }
+        } catch { console.warn('[long-term-memory] usage persistence failed') }
+        return result
       })
       signal.throwIfAborted()
       if (result.stopReason === 'error' || result.stopReason === 'aborted') throw providerFailure(result.errorMessage)

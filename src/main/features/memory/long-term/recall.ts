@@ -1,12 +1,12 @@
-/** Resolve persisted evidence by exact session/ledger addresses; missing history is explicit, never guessed. */
+/** Read immutable raw evidence by session identity, branch address and source digest. */
 import { readFileSync } from 'node:fs'
 import { CURRENT_SESSION_VERSION, SessionManager, type FileEntry } from '@earendil-works/pi-coding-agent'
 import type { LongTermEvidence } from '../../../../shared/long-term-memory'
-import type { Entry } from '../session-ledger/types'
-import { collectMemoryCandidates, SENSITIVE_CONTENT, type MemoryCandidate } from './candidates'
+import { SENSITIVE_CONTENT } from './hygiene'
+import { sourceHash, messageText } from './sources'
 
 export interface RecalledMemorySource {
-  candidateId: string
+  episodeId: string
   status: 'available' | 'unavailable' | 'changed'
   sources: { id: string; role: string; timestamp: string; text: string; truncated: boolean }[]
   nextOffset: number | null
@@ -57,27 +57,29 @@ function loadSourceSession(path: string): SessionManager | undefined {
   return SessionManager.inMemory(header.cwd, undefined, entries)
 }
 
-export function recallLongTermSources(candidate: MemoryCandidate, evidence: LongTermEvidence, offset = 0): RecalledMemorySource {
+
+export function recallLongTermSources(evidence: LongTermEvidence, offset = 0): RecalledMemorySource {
   if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid memory source offset')
-  const result: RecalledMemorySource = { candidateId: candidate.id, status: 'unavailable', sources: [], nextOffset: null }
-  const manager = loadSourceSession(candidate.origin.sessionFile)
-  if (!manager) return result
-  if (manager.getSessionId() !== candidate.origin.sessionId) return { ...result, status: 'changed' }
-  const branch = manager.getBranch(candidate.reflectionEntryId) as Entry[]
-  const recorded = collectMemoryCandidates(candidate.origin, branch).candidates.find(item => item.id === candidate.id)
-  if (!recorded || JSON.stringify(recorded) !== JSON.stringify(candidate)) return { ...result, status: 'changed' }
-  const ids = new Set(evidence.sourceEntryIds.slice(offset, offset + 4))
-  result.nextOffset = offset + 4 < evidence.sourceEntryIds.length ? offset + 4 : null
-  for (const entry of branch) {
-    if (!ids.has(entry.id) || entry.type !== 'message') continue
-    const message = entry.message as { role: string; content: unknown; timestamp?: number }
-    let text = typeof message.content === 'string' ? message.content : Array.isArray(message.content)
-      ? message.content.filter(item => item?.type === 'text' && typeof item.text === 'string').map(item => item.text).join('\n') : ''
-    if (SENSITIVE_CONTENT.test(text)) text = '[source omitted: may contain credentials]'
+  const result: RecalledMemorySource = { episodeId: evidence.episodeId, status: 'unavailable', sources: [],
+    nextOffset: offset + 4 < evidence.sources.length ? offset + 4 : null }
+  let changed = false
+  let unavailable = false
+  const managers = new Map<string, SessionManager | undefined>()
+  for (const ref of evidence.sources.slice(offset, offset + 4)) {
+    if (!managers.has(ref.sessionFile)) managers.set(ref.sessionFile, loadSourceSession(ref.sessionFile))
+    const manager = managers.get(ref.sessionFile)
+    if (!manager) { unavailable = true; continue }
+    const entry = manager.getEntry(ref.entryId)
+    const anchor = manager.getEntry(ref.anchorId)
+    if (manager.getSessionId() !== ref.sessionId || !entry || !anchor || sourceHash(entry) !== ref.digest
+      || !manager.getBranch(ref.anchorId).some(item => item.id === ref.entryId)) { changed = true; continue }
+    if (entry.type !== 'message' || entry.message.role !== ref.role) { changed = true; continue }
+    let text = messageText(entry.message.content)
+    if (SENSITIVE_CONTENT.test(text)) text = '[Source omitted: possible credentials]'
     const truncated = text.length > 2000
-    result.sources.push({ id: entry.id, role: message.role, timestamp: message.timestamp !== undefined ? new Date(message.timestamp).toISOString() : entry.timestamp ?? 'unknown', text: truncated ? text.slice(0, 2000) + '\n[... truncated ...]' : text, truncated })
-    if (result.sources.length === 4) break
+    result.sources.push({ id: ref.entryId, role: ref.role, timestamp: ref.timestamp,
+      text: truncated ? text.slice(0, 2000) + '\n[... truncated ...]' : text, truncated })
   }
-  result.status = result.sources.length ? 'available' : 'unavailable'
+  result.status = changed ? 'changed' : unavailable || !result.sources.length ? 'unavailable' : 'available'
   return result
 }

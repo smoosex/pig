@@ -1,105 +1,65 @@
-import { mock, test } from 'bun:test'
-import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { test, expect } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { runSelf } from './helpers/subprocess'
+import { LongTermMemoryStore } from '../src/main/features/memory/long-term/store'
+import { parseLearning } from '../src/main/features/memory/long-term/learning'
+import { parseIntegration } from '../src/main/features/memory/long-term/integration'
+import { rawWindow, learningOutput, seedKnowledge } from './helpers/long-term-memory'
 
-async function fixture(scenario: string): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), 'pig-long-term-lifecycle-'))
-  const previous = process.env.PIG_DIR; process.env.PIG_DIR = root
+test('integration validates IDs, targets, immutable merge semantics and direct evidence before writes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pig-integration-')); const store = new LongTermMemoryStore(join(root, 'memory.sqlite'))
   try {
-    const { SessionManager } = await import('@earendil-works/pi-coding-agent')
-    const { collectMemoryCandidates } = await import('../src/main/features/memory/long-term/candidates')
-    const { MemoryCandidateStore } = await import('../src/main/features/memory/long-term/store')
-    const { longTermMemoryPath } = await import('../src/main/features/memory/paths')
-    const { Runtime } = await import('../src/main/features/memory/runtime')
-    const manager = SessionManager.create(root, root)
-    const user = manager.appendMessage({ role: 'user', content: '项目决定使用中文检索', timestamp: Date.now() })
-    manager.appendCustomEntry('om.observations.recorded', { version: 3, coversUpToId: user, observations: [
-      { id: 'aaaaaaaaaaaa', content: '项目使用中文检索', timestamp: new Date().toISOString(), relevance: 'high', tokenCount: 10, sourceEntryIds: [user] },
-    ] })
-    manager.appendCustomEntry('om.reflections.recorded', { version: 3, coversUpToId: user, reflections: [
-      { id: 'bbbbbbbbbbbb', content: '项目使用中文检索', tokenCount: 10, supportingObservationIds: ['aaaaaaaaaaaa'] },
-    ] })
-    const candidate = collectMemoryCandidates({ sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile()!, cwd: root }, manager.getBranch()).candidates[0]!
-    assert.ok(candidate)
-    const store = new MemoryCandidateStore(longTermMemoryPath()); store.enqueue([candidate]); store.close()
-    const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>()
-    let requests = 0
-    mock.module('../src/main/features/memory-settings', () => ({ getMemorySettings: async () => ({ longTerm: { enabled: scenario !== 'disabled' } }) }))
-    mock.module('../src/main/features/memory/long-term/reviewer', () => ({
-      admissionInput: (item: unknown) => item,
-      requestReviews: async (_ctx: unknown, _settings: unknown, _inputs: unknown, _existing: unknown, access: { project: string }) => {
-        requests++; entered.resolve(); await release.promise
-        if (scenario === 'error') throw new Error('Provider failed')
-        return [{ candidate, action: 'add', sourceEntryIds: [user], fact: { content: '项目决定使用中文检索', kind: 'decision', scope: 'project',
-          scopeKey: access.project, assertion: 'user-statement', sourceTime: new Date().toISOString() } }]
-      },
-    }))
-    const relevance = await import('../src/main/features/memory/long-term/relevance')
-    mock.module('../src/main/features/memory/long-term/relevance', () => ({ ...relevance,
-      selectMemories: async (...args: Parameters<typeof relevance.selectMemories>) => [...args[3]],
-    }))
-    const { registerLongTermMemory } = await import('../src/main/features/memory/long-term/extension')
-    const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>()
-    const tools: string[] = []
-    const pi = { on: (name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(name, [...handlers.get(name) ?? [], handler]),
-      registerTool: (tool: { name: string }) => tools.push(tool.name) } as unknown as ExtensionAPI
-    const notifications: string[] = []
-    const runtime = new Runtime(); runtime.notifications = { notify: (message: string) => { notifications.push(message) } }
-    const context = { cwd: root, sessionManager: manager, isIdle: () => true } as unknown as ExtensionContext
-    const emit = async (name: string) => {
-      let result: unknown
-      for (const handler of handlers.get(name) ?? []) result = await handler({}, context)
-      return result
-    }
-    registerLongTermMemory(pi, runtime)
-    assert.deepEqual(tools, ['memory_search', 'memory_recall', 'memory_read'])
-    await emit('session_start')
-    if (scenario === 'disabled') {
-      for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve))
-      assert.equal(requests, 0)
-      await emit('session_shutdown'); return
-    }
-    await entered.promise
-    await emit('agent_settled')
-    assert.equal(requests, 1, 'same-session workers cannot overlap')
-    if (['agent_start', 'session_tree', 'session_shutdown'].includes(scenario)) await emit(scenario)
-    if (scenario === 'forget') { const current = new MemoryCandidateStore(longTermMemoryPath()); current.deleteCandidate(candidate.id); current.close() }
-    release.resolve()
-    const deadline = Date.now() + 2000
-    for (;;) {
-      const probe = new MemoryCandidateStore(longTermMemoryPath())
-      const committed = probe.page('memories').memories.length > 0
-      probe.close()
-      if (scenario === 'success' ? committed : notifications.length > 0 || !['error', 'forget'].includes(scenario)) break
-      if (Date.now() >= deadline) break
-      await new Promise<void>(resolve => setTimeout(resolve, 5))
-    }
-    const result = new MemoryCandidateStore(longTermMemoryPath())
+    const access = { project: root, session: 'session', cwd: root }
+    const previous = seedKnowledge(store, rawWindow(root))[0]!
+    const window = rawWindow(root, 2); store.register(window)
+    store.commitLearning(window, parseLearning(JSON.stringify(learningOutput(window)), window, []), store.sourceRevision())
+    const input = store.pending('session', new Set([window.anchorId]))[0]!
+    const proposalId = input.proposals[0]!.id
+    const parse = (change: Record<string, unknown>) => parseIntegration(JSON.stringify({ changes: [change] }), input, [previous], access)
+    expect(() => parse({ proposalId: 'unknown', action: 'skip' })).toThrow()
+    expect(() => parse({ proposalId, action: 'merge', targetId: previous.id, content: 'rewrite' })).toThrow(/rewrite/)
+    expect(() => parse({ proposalId, action: 'add', targetId: previous.id, content: 'new', applicability: 'scope' })).toThrow(/boundary/)
+    expect(() => parse({ proposalId, action: 'supersede', targetId: 'not supplied', content: 'new', applicability: 'scope' })).toThrow(/boundary/)
+    const changes = parse({ proposalId, action: 'merge', targetId: previous.id })
+    store.integrate(input, changes, store.revision())
+    expect(store.page('knowledge').memories).toHaveLength(1)
+    expect(store.evidence(previous.id)).toHaveLength(2)
+    expect(store.read(previous.id, access)!.content).toBe(previous.content)
+    expect(() => store.integrate(input, changes, store.revision())).toThrow()
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
+})
+
+test('continuations update one experience and retain exact old/new source references', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pig-continuation-')); const store = new LongTermMemoryStore(join(root, 'memory.sqlite'))
+  try {
+    seedKnowledge(store, rawWindow(root))
+    const previous = store.page('episodes').episodes[0]!
+    const window = rawWindow(root, 2)
+    const draft = learningOutput(window)
+    const output = { episodes: draft.episodes.map(item => ({ ...item, continuationId: previous.id, content: '同一任务后续修复已完成并验证', proposals: [] })) }
+    const result = parseLearning(JSON.stringify(output), window, [previous])
+    store.register(window); store.commitLearning(window, result, store.sourceRevision())
+    expect(store.page('episodes').episodes).toHaveLength(1)
+    expect(store.episode(previous.id)!.sources.map(ref => ref.entryId)).toEqual(['u1', 't1', 'u2', 't2'])
+    expect(() => parseLearning(JSON.stringify(output), window, [])).toThrow(/continuation/)
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
+})
+
+test('pending jobs retain retry backoff across fresh connections; usage is aggregate-only', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pig-learning-status-')); const path = join(root, 'memory.sqlite')
+  const store = new LongTermMemoryStore(path)
+  try {
+    const window = rawWindow(root); store.register(window)
+    expect(store.fail(window.id, 'schema', 'extraction', 0)).toBe(60_000)
+    expect(store.fail(window.id, 'schema', 'extraction', 0)).toBe(120_000)
+    store.recordUsage('extraction', { input: 30, output: 20, cost: 0.01 })
+    const other = new LongTermMemoryStore(path)
     try {
-      if (scenario === 'success') {
-        assert.equal(result.page('memories').memories.length, 1)
-        const original = manager.getEntries().length
-        const contextHandler = handlers.get('context')![0]!
-        const response = await contextHandler({ messages: [] }, context) as { messages: { role: string; content: string }[] }
-        assert.match(response.messages[0]!.content, /untrusted historical data/)
-        assert.equal(manager.getEntries().length, original, 'automatic recall never persists new evidence')
-      } else assert.equal(result.page('memories').memories.length, 0, 'cancelled, failed or forgotten candidates never commit')
-      if (scenario === 'error' || scenario === 'forget') assert.ok(notifications.some(message => /review failed/.test(message)))
-      else if (scenario !== 'success') assert.deepEqual(notifications, [])
-    } finally { result.close(); await emit('session_shutdown') }
-  } finally {
-    if (previous === undefined) delete process.env.PIG_DIR; else process.env.PIG_DIR = previous
-    await rm(root, { recursive: true, force: true })
-  }
-}
-if (process.argv.includes('--fixture')) await fixture(process.argv[3]!)
-else for (const scenario of ['disabled', 'success', 'agent_start', 'session_tree', 'session_shutdown', 'forget', 'error']) {
-  test(`long-term admission lifecycle: ${scenario}`, async () => {
-    const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
-    assert.equal(exitCode, 0, stderr || stdout)
-  }, 15_000)
-}
+      expect(other.job(window.id)!.retryAt).toBe(120_000)
+      expect(other.status().usage).toEqual([{ stage: 'extraction', requests: 1, input: 30, output: 20, cost: 0.01 }])
+      expect(other.status().lastError!.code).toBe('schema')
+      expect(other.status().pendingJobs).toBe(1)
+    } finally { other.close() }
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }) }
+})

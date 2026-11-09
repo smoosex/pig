@@ -20,7 +20,7 @@ test('review failures expose only fixed diagnostics and distinguish provider HTT
   await assert.rejects(reviewPhase('request', () => { throw validation }), error => error === validation)
 })
 
-test('review cooldowns are per candidate, exponential, capped, and reset only on success', () => {
+test('worker cooldowns are per job, exponential, capped, and reset only on success', () => {
   const backoff = new ReviewBackoff()
   assert.equal(backoff.remaining('a', 0), 0)
   assert.equal(backoff.fail('a', 0), 60_000)

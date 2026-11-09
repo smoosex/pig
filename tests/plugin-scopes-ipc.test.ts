@@ -51,9 +51,9 @@ async function fixture(): Promise<void> {
     assert.equal(refreshes, 2)
     assert.deepEqual((await invoke('memory:get') as { longTerm: unknown }).longTerm,
       { enabled: true, model: { provider: 'fixture', id: 'model', thinking: 'off' } })
-    assert.deepEqual(await invoke('memory:long-term:list', 'memories'), { memories: [], candidates: [], nextOffset: null })
+    assert.deepEqual(await invoke('memory:long-term:list', 'knowledge'), { memories: [], episodes: [], nextOffset: null })
     await assert.rejects(invoke('memory:long-term:list', 'arbitrary'), /Invalid.*kind/)
-    await assert.rejects(invoke('memory:long-term:list', 'memories', -1), /offset/)
+    await assert.rejects(invoke('memory:long-term:list', 'knowledge', -1), /offset/)
     await assert.rejects(invoke('memory:long-term:evidence', '../secret'), /Invalid.*id/)
     await assert.rejects(invoke('memory:long-term:forget', '../secret'), /Invalid.*id/)
     await assert.rejects(invoke('memory:enabled'), /Session id is required/)

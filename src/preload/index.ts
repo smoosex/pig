@@ -86,8 +86,9 @@ const api: SessionApi = {
   longTermMemory: {
     list: (kind, offset) => ipcRenderer.invoke('memory:long-term:list', kind, offset),
     evidence: (id) => ipcRenderer.invoke('memory:long-term:evidence', id),
-    deleteCandidate: (id) => ipcRenderer.invoke('memory:long-term:delete-candidate', id),
+    deleteEpisode: (id) => ipcRenderer.invoke('memory:long-term:delete-episode', id),
     forget: (id) => ipcRenderer.invoke('memory:long-term:forget', id),
+    status: () => ipcRenderer.invoke('memory:long-term:status'),
   },
   conversationFeatures: {
     onChanged: (listener) => {

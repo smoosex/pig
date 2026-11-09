@@ -8,15 +8,17 @@ import { memoryStatus, memoryView } from '../features/memory/details'
 import type { Entry } from '../features/memory/session-ledger'
 import { applyConversationFeatures } from '../features/apply'
 import type { MemorySettingsPatch } from '../../shared/api'
-import { MemoryCandidateStore } from '../features/memory/long-term/store'
+import { LongTermMemoryStore } from '../features/memory/long-term/store'
+import { MEMORY_KINDS, type MemoryViewKind } from '../../shared/long-term-memory'
 import { longTermMemoryPath } from '../features/memory/paths'
+import { learningConcurrency } from '../features/memory/long-term/service'
 
-function withLongTermStore<T>(action: (store: MemoryCandidateStore) => T): T {
-  const store = new MemoryCandidateStore(longTermMemoryPath())
+function withLongTermStore<T>(action: (store: LongTermMemoryStore) => T): T {
+  const store = new LongTermMemoryStore(longTermMemoryPath())
   try { return action(store) } finally { store.close() }
 }
-function memoryKind(value: unknown): asserts value is 'candidates' | 'memories' {
-  if (value !== 'candidates' && value !== 'memories') throw new Error('Invalid long-term memory kind')
+function memoryKind(value: unknown): asserts value is MemoryViewKind {
+  if (value !== 'episodes' && !MEMORY_KINDS.includes(value as typeof MEMORY_KINDS[number])) throw new Error('Invalid long-term memory kind')
 }
 function memoryId(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('Invalid long-term memory id')
@@ -34,12 +36,19 @@ export function registerConversationFeaturesIpc(): void {
   ipcMain.handle('memory:long-term:evidence', (event, id: unknown) => {
     assertUi(event)
     memoryId(id)
-    return withLongTermStore(store => store.evidence(id))
+    return withLongTermStore(store => {
+      const episode = store.episode(id)
+      return episode ? [{ episodeId: episode.id, sources: episode.sources }] : store.evidence(id)
+    })
   })
-  ipcMain.handle('memory:long-term:delete-candidate', (event, id: unknown) => {
+  ipcMain.handle('memory:long-term:status', event => {
+    assertUi(event)
+    return withLongTermStore(store => ({ ...store.status(), runningJobs: learningConcurrency() }))
+  })
+  ipcMain.handle('memory:long-term:delete-episode', (event, id: unknown) => {
     assertUi(event)
     memoryId(id)
-    withLongTermStore(store => store.deleteCandidate(id))
+    withLongTermStore(store => store.deleteEpisode(id))
   })
   ipcMain.handle('memory:long-term:forget', (event, id: unknown) => {
     assertUi(event)

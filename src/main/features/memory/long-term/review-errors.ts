@@ -1,5 +1,6 @@
 /** Only fixed diagnostics cross the notification/log boundary; provider errors may contain secrets. */
 import { t } from '../../../i18n'
+import type { MemoryFailureCode } from '../../../../shared/long-term-memory'
 
 export const REVIEW_FAILURES = {
   configuration: { stage: 'configuration', shared: true },
@@ -15,9 +16,9 @@ export const REVIEW_FAILURES = {
   budget: { stage: 'preparation', shared: false },
   conflict: { stage: 'commit', shared: false },
   storage: { stage: 'storage', shared: true },
-} as const
+} as const satisfies Record<MemoryFailureCode, { stage: string; shared: boolean }>
 
-export type ReviewFailureCode = keyof typeof REVIEW_FAILURES
+export type ReviewFailureCode = MemoryFailureCode
 export class MemoryReviewError extends Error {
   constructor(readonly code: ReviewFailureCode, message: string = t(`longTerm.reviewReasons.${code}`)) {
     super(message)

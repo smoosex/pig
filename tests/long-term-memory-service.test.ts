@@ -1,107 +1,75 @@
-import { test, expect } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { mock, test, expect } from 'bun:test'
+import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { runSelf } from './helpers/subprocess'
 
-async function fixture(): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), 'pig-memory-service-'))
-  process.env.PIG_DIR = join(root, 'pig')
+async function fixture(scenario: string) {
+  const root = mkdtempSync(join(tmpdir(), 'pig-learning-step-')); process.env.PIG_DIR = join(root, 'pig')
   try {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent')
-    const { collectPersistedMemoryCandidates } = await import('../src/main/features/memory/long-term/service')
-    const { MemoryCandidateStore } = await import('../src/main/features/memory/long-term/store')
-    const { recallLongTermSources } = await import('../src/main/features/memory/long-term/recall')
-    const path = join(process.env.PIG_DIR, 'memory', 'long-term.sqlite')
-    const ephemeral = SessionManager.inMemory(root)
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: ephemeral })
-    expect(existsSync(path)).toBe(false)
-
-    const sm = SessionManager.create(root, join(root, 'sessions'))
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: sm })
-    expect(existsSync(path)).toBe(false)
-    const user = sm.appendMessage({ role: 'user', content: 'Use bun', timestamp: Date.now() })
-    sm.appendCustomEntry('om.observations.recorded', { coversUpToId: user, observations: [{
-      id: 'aaaaaaaaaaaa', content: 'User prefers bun.', relevance: 'high', timestamp: '2026-11-06 12:00',
-      sourceEntryIds: [user], tokenCount: 6
-    }] })
-    sm.appendCustomEntry('om.reflections.recorded', { coversUpToId: user, reflections: [{
-      id: 'bbbbbbbbbbbb', content: 'Use bun for this project.', supportingObservationIds: ['aaaaaaaaaaaa'], tokenCount: 8
-    }] })
-    // Simulate an app exit between the JSONL append and the inbox write.
-    expect(existsSync(path)).toBe(false)
-    const restored = SessionManager.open(sm.getSessionFile()!)
-    let branchReads = 0
-    const getBranch = restored.getBranch.bind(restored)
-    restored.getBranch = (...args) => { branchReads++; return getBranch(...args) }
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(branchReads).toBe(1)
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(branchReads).toBe(1)
-    // Checkpoints survive a real SDK reload and a fresh store connection.
-    const reopened = SessionManager.open(sm.getSessionFile()!)
-    reopened.getBranch = () => { throw new Error('unchanged restart must not reconstruct the branch') }
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: reopened })
-    let store = new MemoryCandidateStore(path)
-    let candidateId: string
-    try {
-      expect(store.list()).toHaveLength(1)
-      const candidate = store.list()[0]!
-      candidateId = candidate.id
-      expect(candidate.origin.sessionId).toBe(sm.getSessionId())
-      expect(candidate.evidence[0]!.sourceEntryIds).toEqual([user])
-      const evidence = { candidateId: candidate.id, sessionId: candidate.origin.sessionId,
-        reflectionEntryId: candidate.reflectionEntryId, reflectionId: candidate.reflectionId, sourceEntryIds: [user] }
-      expect(recallLongTermSources(candidate, evidence).sources[0]!.text).toBe('Use bun')
-      expect(recallLongTermSources({ ...candidate, content: 'changed' }, evidence).status).toBe('changed')
-      expect(recallLongTermSources({ ...candidate, origin: { ...candidate.origin, sessionFile: join(root, 'missing.jsonl') } }, evidence).status).not.toBe('available')
-      store.deleteCandidate(candidate.id)
-    } finally { store.close() }
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    store = new MemoryCandidateStore(path)
-    try { expect(store.list().some(item => item.id === candidateId)).toBe(false) } finally { store.close() }
-
-    // Message-only growth advances checkpoints without rebuilding evidence.
-    restored.appendMessage({ role: 'user', content: 'Continue', timestamp: Date.now() })
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(branchReads).toBe(1)
-    const oldLeaf = restored.getLeafId()!
-    restored.branch(user)
-    const forkUser = restored.appendMessage({ role: 'user', content: 'Prefer uv', timestamp: Date.now() })
-    restored.appendCustomEntry('om.observations.recorded', { coversUpToId: forkUser, observations: [{
-      id: 'cccccccccccc', content: 'Use uv.', relevance: 'high', timestamp: '2026-11-06 12:01',
-      sourceEntryIds: [forkUser], tokenCount: 6
-    }] })
-    restored.appendCustomEntry('om.reflections.recorded', { coversUpToId: forkUser, reflections: [{
-      id: 'dddddddddddd', content: 'Use uv for Python.', supportingObservationIds: ['cccccccccccc'], tokenCount: 8
-    }] })
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(branchReads).toBe(2)
-    store = new MemoryCandidateStore(path)
-    try {
-      expect(store.list().map(item => item.content)).toEqual(['Use uv for Python.'])
-      expect(store.collectionEntryProcessed(restored.getSessionId(), restored.getLeafId()!)).toBe(true)
-    } finally { store.close() }
-    restored.branch(oldLeaf)
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(branchReads).toBe(2)
-
-    // A newly opened alternative branch cannot collect the abandoned branch's reflection.
-    restored.branch(user)
-    restored.appendMessage({ role: 'user', content: 'Try another approach', timestamp: Date.now() })
-    process.env.PIG_DIR = join(root, 'alternative-pig')
-    collectPersistedMemoryCandidates({ cwd: root, sessionManager: restored })
-    expect(existsSync(join(process.env.PIG_DIR, 'memory', 'long-term.sqlite'))).toBe(false)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+    const { parseLearning } = await import('../src/main/features/memory/long-term/learning')
+    const { learningOutput } = await import('./helpers/long-term-memory')
+    const { parseIntegration } = await import('../src/main/features/memory/long-term/integration')
+    let enabled = true
+    mock.module('../src/main/features/memory-settings', () => ({ getMemorySettings: async () => ({ passive: false, longTerm: { enabled } }) }))
+    const started = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>()
+    let calls = 0
+    const learning = await import('../src/main/features/memory/long-term/learning')
+    mock.module('../src/main/features/memory/long-term/learning', () => ({ ...learning,
+      extractLearning: async (_ctx: unknown, _settings: unknown, window: Parameters<typeof parseLearning>[1], prior: Parameters<typeof parseLearning>[2]) => {
+        calls++; started.resolve()
+        if (['rename', 'branch', 'cancel', 'disable', 'forget'].includes(scenario)) await release.promise
+        return parseLearning(JSON.stringify(scenario === 'no-op' ? { episodes: [] } : learningOutput(window)), window, prior)
+      },
+    }))
+    const integration = await import('../src/main/features/memory/long-term/integration')
+    mock.module('../src/main/features/memory/long-term/integration', () => ({ ...integration,
+      integrateKnowledge: async (_ctx: unknown, _settings: unknown, input: Parameters<typeof parseIntegration>[1], existing: Parameters<typeof parseIntegration>[2], access: Parameters<typeof parseIntegration>[3]) =>
+        parseIntegration(JSON.stringify({ changes: input.proposals.map(p => ({ proposalId: p.id, action: 'add', content: p.content, applicability: p.applicability })) }), input, existing, access),
+    }))
+    const { learningStep, withMemoryStore } = await import('../src/main/features/memory/long-term/service')
+    const manager = SessionManager.create(root, join(root, 'sessions'))
+    const user = manager.appendMessage({ role: 'user', content: '项目使用中文检索', timestamp: Date.now() })
+    manager.appendCustomEntry('test.flush', {})
+    expect(existsSync(manager.getSessionFile()!)).toBe(true)
+    const ctx = { cwd: root, sessionManager: manager, isIdle: () => true } as unknown as ExtensionContext
+    const { memoryAccess } = await import('../src/main/features/memory/long-term/access')
+    const access = await memoryAccess(ctx)
+    const ids = () => new Set(manager.getBranch().map(e => e.id))
+    const controller = new AbortController()
+    const pending = learningStep(ctx, { enabled }, access, ids(), controller.signal)
+    if (['rename', 'branch', 'cancel', 'disable', 'forget'].includes(scenario)) {
+      await started.promise
+      if (scenario === 'rename') manager.appendSessionInfo('renamed without idle event')
+      if (scenario === 'branch') manager.branch(user)
+      if (scenario === 'cancel') controller.abort(new Error('cancelled'))
+      if (scenario === 'disable') enabled = false
+      if (scenario === 'forget') withMemoryStore(store => store.forgetFact('a'.repeat(64)))
+      release.resolve()
+    }
+    if (['branch', 'cancel', 'disable', 'forget'].includes(scenario)) {
+      await expect(pending).rejects.toThrow()
+      expect(withMemoryStore(store => store.processed(access.session, user))).toBe(false)
+    } else {
+      await pending
+      expect(withMemoryStore(store => store.processed(access.session, user))).toBe(true)
+      if (scenario !== 'no-op') {
+        await learningStep(ctx, { enabled }, access, ids(), new AbortController().signal)
+        expect(withMemoryStore(store => store.search('中文', access))).toHaveLength(1)
+      }
+      if (scenario === 'rename') await learningStep(ctx, { enabled }, access, ids(), new AbortController().signal)
+      const restored = SessionManager.open(manager.getSessionFile()!)
+      const reopened = { ...ctx, sessionManager: restored } as ExtensionContext
+      await learningStep(reopened, { enabled }, access, new Set(restored.getBranch().map(e => e.id)), new AbortController().signal)
+      expect(calls).toBe(1)
+      if (scenario === 'no-op') expect(withMemoryStore(store => store.page('episodes').episodes)).toEqual([])
+    }
+  } finally { delete process.env.PIG_DIR; rmSync(root, { recursive: true, force: true }) }
 }
-
-if (process.argv.includes('--long-term-service-fixture')) {
-  await fixture()
-} else {
-  test('real SDK replay repairs an interrupted candidate write, preserves forgetting and isolates branch evidence', async () => {
-    const result = await runSelf(import.meta.path, ['--long-term-service-fixture'], { timeoutMs: 10_000 })
-    expect(result.exitCode, result.stderr || result.stdout).toBe(0)
-  })
-}
+if (process.argv.includes('--fixture')) await fixture(process.argv[3]!)
+else for (const scenario of ['success', 'no-op', 'rename', 'branch', 'cancel', 'disable', 'forget']) test(`raw learning atomic lifecycle: ${scenario}`, async () => {
+  const { exitCode, stderr, stdout } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
+  expect(exitCode, stderr || stdout).toBe(0)
+}, 15_000)

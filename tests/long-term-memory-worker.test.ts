@@ -11,7 +11,8 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'pig-long-term-worker-'))
   const previous = process.env.PIG_DIR; process.env.PIG_DIR = root
   try {
-    const { requestReviews } = await import('../src/main/features/memory/long-term/reviewer')
+    const { extractLearning } = await import('../src/main/features/memory/long-term/learning')
+    const { rawWindow } = await import('./helpers/long-term-memory')
     const { selectMemories } = await import('../src/main/features/memory/long-term/relevance')
     const { abortable } = await import('../src/main/features/memory/long-term/extension')
     const { MemoryReviewError } = await import('../src/main/features/memory/long-term/review-errors')
@@ -20,14 +21,11 @@ async function fixture() {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
     const calls: { context: Context; options?: SimpleStreamOptions; model: Model<any> }[] = []
     const id = 'a'.repeat(64)
-    const candidate = { id, origin: { sessionId: 'source-session', sessionFile: '/session.jsonl', cwd: root }, reflectionId: 'b'.repeat(12),
-      reflectionEntryId: 'reflection', reflectionRecordIndex: 0, content: '项目使用中文检索', recordedAt: '2026-11-06T00:00:00.000Z',
-      evidence: [{ observationId: 'c'.repeat(12), observationEntryId: 'observation', observationRecordIndex: 0, sourceEntryIds: ['user'] }] }
-    const inputs = [{ candidate, sources: [{ id: 'user', role: 'user', timestamp: candidate.recordedAt, text: '我们决定项目使用中文检索' }] }]
+    const window = rawWindow(root)
     const settings = { enabled: true, model: { provider: 'custom', id: 'custom', thinking: 'off' as const } }
     const access = { project: root, session: 'source-session' }
     let stop: AssistantMessage['stopReason'] = 'stop'
-    let text = JSON.stringify({ reviews: [{ candidateId: id, action: 'skip', sourceEntryIds: [] }] })
+    let text = JSON.stringify({ episodes: [] })
     let hold = false
     let errorMessage: string | undefined
     const streams: ReturnType<typeof createAssistantMessageEventStream>[] = []
@@ -44,25 +42,19 @@ async function fixture() {
         return stream
       },
     } } as unknown as ExtensionContext
-    let resolvedModel: { provider: string; id: string } | undefined
-    const result = await requestReviews(ctx, settings, inputs, [], access, new AbortController().signal, value => { resolvedModel = value })
-    assert.deepEqual(resolvedModel, { provider: 'custom', id: 'custom' })
-    assert.equal(result[0]!.action, 'skip'); assert.equal(calls.length, 1)
+    const result = await extractLearning(ctx, settings, window, [], new AbortController().signal)
+    assert.deepEqual(result.episodes, []); assert.equal(calls.length, 1)
     assert.equal(calls[0]!.options!.reasoning, undefined)
     assert.equal(calls[0]!.model.baseUrl, 'https://resolved.invalid')
     assert.equal(calls[0]!.context.tools, undefined, 'review has no tool access')
-    await requestReviews(ctx, { ...settings, model: { ...settings.model, thinking: 'high' } }, inputs, [], access, new AbortController().signal)
+    await extractLearning(ctx, { ...settings, model: { ...settings.model, thinking: 'high' } }, window, [], new AbortController().signal)
     assert.equal(calls[1]!.options!.reasoning, 'high')
-    const huge = [{ ...inputs[0]!, sources: [{ ...inputs[0]!.sources[0]!, text: '中文字'.repeat(20_000) }] }]
-    await requestReviews(ctx, settings, huge, [], access, new AbortController().signal)
-    const budgeted = calls.at(-1)!
-    const body = String(budgeted.context.messages[0]!.content)
-    assert.match(body, /context-budget excerpt/)
-    assert.ok(Buffer.byteLength((budgeted.context.systemPrompt ?? '') + body) + budgeted.options!.maxTokens! <= 32_000)
-    const facts = [{ id, content: 'Pig embeds pi; no global CLI is required.', kind: 'decision' as const,
-      scope: 'project' as const, scopeKey: root, status: 'active' as const, assertion: 'user-statement' as const,
-      sourceTime: candidate.recordedAt, createdAt: candidate.recordedAt }]
-    const question = { question: '是否需要本地有 pi？' + '完整问题'.repeat(600),
+    const huge = { ...window, sources: window.sources.map(source => ({ ...source, text: '中文字'.repeat(20_000) })) }
+    await assert.rejects(extractLearning(ctx, settings, huge, [], new AbortController().signal), /budget/)
+    const facts = [{ id, content: 'Pig embeds pi; no global CLI is required.', kind: 'knowledge' as const,
+      scope: 'project' as const, scopeKey: root, projectKey: root, checkoutKey: '', applicability: 'Pig installation', status: 'active' as const, assertion: 'user-statement' as const,
+      sourceTime: window.sources[0]!.ref.timestamp, createdAt: window.sources[0]!.ref.timestamp, updatedAt: window.sources[0]!.ref.timestamp }]
+    const question = { availableContext: ['The visible conversation already establishes the current project.'], question: '是否需要本地有 pi？' + '完整问题'.repeat(600),
       recentExchanges: [{ user: 'Pig 的安装依赖是什么？', assistant: '正在讨论安装方式。' }] }
     text = JSON.stringify({ selectedIds: [id] })
     assert.deepEqual(await selectMemories(ctx, settings, question, facts, new AbortController().signal), facts)
@@ -73,6 +65,8 @@ async function fixture() {
     const selectionPayload = JSON.parse(String(selection.context.messages[0]!.content))
     assert.equal(selectionPayload.question, question.question, 'the full current question reaches the selector')
     assert.deepEqual(selectionPayload.recentExchanges, question.recentExchanges)
+    assert.deepEqual(selectionPayload.availableContext, question.availableContext)
+    assert.equal(selectionPayload.memories[0].applicability, facts[0]!.applicability)
     assert.equal(selectionPayload.memories[0].scopeKey, undefined)
     const callCount = calls.length
     assert.deepEqual(await selectMemories(ctx, settings, question, [], new AbortController().signal), [])
@@ -90,19 +84,19 @@ async function fixture() {
     stop = 'length'
     await assert.rejects(selectMemories(ctx, settings, question, facts, new AbortController().signal), /did not complete/)
     stop = 'stop'
-    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /Invalid.*JSON/)
-    text = JSON.stringify({ reviews: [{ candidateId: id, action: 'skip', sourceEntryIds: [] }] }); stop = 'length'
-    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal), /did not complete/)
+    await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal), /JSON/)
+    text = JSON.stringify({ episodes: [] }); stop = 'length'
+    await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal), /did not complete/)
     stop = 'error'; errorMessage = 'HTTP 401 SECRET-provider-payload'
-    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal),
+    await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal),
       error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
     errorMessage = 'SECRET-provider-payload'
-    await assert.rejects(requestReviews(ctx, settings, inputs, [], access, new AbortController().signal),
+    await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal),
       error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
     hold = true
     const controller = new AbortController()
     const before = calls.length
-    const pending = abortable(requestReviews(ctx, settings, inputs, [], access, controller.signal), controller.signal)
+    const pending = abortable(extractLearning(ctx, settings, window, [], controller.signal), controller.signal)
     const rejection = assert.rejects(pending, /cancelled/)
     while (calls.length <= before) await new Promise<void>(resolve => setImmediate(resolve))
     controller.abort(new Error('cancelled'))
@@ -114,7 +108,7 @@ async function fixture() {
   }
 }
 if (process.argv.includes('--fixture')) await fixture()
-else test('admission uses authenticated composed streams, honours thinking, rejects truncated output and cancels without waiting for a provider', async () => {
+else test('learning and relevance use authenticated tool-free streams, honour thinking, enforce budgets and cancel without waiting for a provider', async () => {
   const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
   assert.equal(exitCode, 0, stderr || stdout)
 }, 15_000)

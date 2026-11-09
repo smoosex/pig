@@ -2,14 +2,35 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { LongTermFact } from '../src/shared/long-term-memory'
 import type { Entry } from '../src/main/features/memory/session-ledger/types'
-import { parseSelection, recallQuestion } from '../src/main/features/memory/long-term/relevance'
+import { parseSelection, recallQuestion, visibleRecallContext, novelMemories, memoryReference, RELEVANCE_SYSTEM } from '../src/main/features/memory/long-term/relevance'
 
-const fact = (id: string): LongTermFact => ({ id, content: 'Pig embeds the pi SDK.', kind: 'decision', scope: 'project',
-  scopeKey: '/repo', status: 'active', assertion: 'user-statement', sourceTime: '', createdAt: '' })
+const fact = (id: string): LongTermFact => ({ id, content: 'Pig embeds the pi SDK.', kind: 'knowledge', scope: 'project',
+  scopeKey: '/repo', projectKey: '/repo', checkoutKey: '', applicability: 'Pig SDK integration', status: 'active', assertion: 'user-statement', sourceTime: '', createdAt: '', updatedAt: '' })
 const message = (id: string, role: string, content: unknown, stopReason?: string): Entry => ({
   id, type: 'message', message: { role, content, ...(stopReason ? { stopReason } : {}) },
 })
 const reply = (id: string, text: string): Entry => message(id, 'assistant', [{ type: 'text', text }], 'stop')
+
+test('incremental recall excludes visible duplicates but not compacted-away history or hidden injections', () => {
+  const known = fact('known')
+  const visible = visibleRecallContext([
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'PRIVATE' }, { type: 'text', text: 'Pig  embeds the pi SDK.' }] },
+    { role: 'toolResult', content: [{ type: 'text', text: 'tool output' }] },
+    { role: 'custom', content: 'hidden snapshot' },
+    { role: 'user', content: 'Pig long-term memory — previous injection' },
+    { role: 'assistant', content: [{ type: 'toolCall', name: 'read' }, { type: 'text', text: 'intermediate' }] },
+  ])
+  assert.deepEqual(visible, ['Pig  embeds the pi SDK.'])
+  assert.deepEqual(novelMemories([known], visible), [])
+  assert.deepEqual(novelMemories([known], []), [known])
+  assert.match(RELEVANCE_SYSTEM, /including a paraphrase/)
+})
+
+test('injected references preserve applicability and caveats without internal storage metadata', () => {
+  const reference = memoryReference({ ...fact('one'), checkoutKey: '/repo', assertion: 'tool-verified', sourceTime: '2026-11-09', status: 'disputed' })
+  assert.deepEqual(reference, { id: 'one', content: 'Pig embeds the pi SDK.', applicability: 'Pig SDK integration', checkout: '/repo', asOf: '2026-11-09', status: 'disputed' })
+  assert.deepEqual(memoryReference(fact('two')), { id: 'two', content: 'Pig embeds the pi SDK.', applicability: 'Pig SDK integration' })
+})
 
 test('recall selector accepts only distinct supplied IDs, including no selection, without rewriting facts', () => {
   const facts = [fact('one'), fact('two')]

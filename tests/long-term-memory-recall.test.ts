@@ -9,24 +9,17 @@ async function fixture(scenario: string): Promise<void> {
   const root = fs.mkdtempSync(join(tmpdir(), 'pig-memory-recall-'))
   try {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent')
-    const { collectMemoryCandidates } = await import('../src/main/features/memory/long-term/candidates')
+    const { sourceHash } = await import('../src/main/features/memory/long-term/sources')
     const { recallLongTermSources } = await import('../src/main/features/memory/long-term/recall')
     const manager = SessionManager.create(root, root)
     const user = manager.appendMessage({ role: 'user', content: 'Use bun', timestamp: Date.now() })
-    manager.appendCustomEntry('om.observations.recorded', { coversUpToId: user, observations: [{
-      id: 'aaaaaaaaaaaa', content: 'User prefers bun.', relevance: 'high', timestamp: '2026-11-06 12:00',
-      sourceEntryIds: [user], tokenCount: 6,
-    }] })
-    manager.appendCustomEntry('om.reflections.recorded', { coversUpToId: user, reflections: [{
-      id: 'bbbbbbbbbbbb', content: 'Use bun for this project.', supportingObservationIds: ['aaaaaaaaaaaa'], tokenCount: 8,
-    }] })
+    manager.appendCustomEntry('test.flush', {})
     const path = manager.getSessionFile()!
     const original = fs.readFileSync(path)
-    const candidate = collectMemoryCandidates({ sessionId: manager.getSessionId(), sessionFile: path, cwd: root }, manager.getBranch()).candidates[0]!
-    assert.ok(candidate)
-    const evidence = { candidateId: candidate.id, sessionId: candidate.origin.sessionId,
-      reflectionEntryId: candidate.reflectionEntryId, reflectionId: candidate.reflectionId, sourceEntryIds: [user] }
-    const recall = () => recallLongTermSources(candidate, evidence)
+    const source = { sessionId: manager.getSessionId(), sessionFile: path, cwd: root, anchorId: manager.getLeafId()!,
+      entryId: user, digest: sourceHash(manager.getEntry(user)), role: 'user' as const, timestamp: new Date().toISOString() }
+    const evidence = { episodeId: 'a'.repeat(64), sources: [source] }
+    const recall = () => recallLongTermSources(evidence)
     if (scenario === 'read-only') {
       const entries = original.toString('utf8').trim().split('\n').map(line => JSON.parse(line))
       const legacy = (version: number) => entries.map((entry, index) => {
@@ -59,7 +52,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(recall().status, 'unavailable')
       assert.equal(fs.existsSync(path), false, 'recall must not initialize missing history')
       fs.writeFileSync(path, 'parent is a regular file')
-      assert.equal(recallLongTermSources({ ...candidate, origin: { ...candidate.origin, sessionFile: join(path, 'child') } }, evidence).status, 'unavailable')
+      assert.equal(recallLongTermSources({ ...evidence, sources: [{ ...source, sessionFile: join(path, 'child') }] }).status, 'unavailable')
     } else if (scenario === 'malformed') {
       for (const body of ['not JSON\n', 'null\n', '[]\n', '{}\n', original.toString('utf8') + '{"note":"private source text",']) {
         fs.writeFileSync(path, body)
@@ -83,7 +76,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.throws(recall, RangeError)
       fs.writeFileSync(path, Buffer.concat([original, Buffer.from([0xff])]))
       assert.throws(recall, error => (error as NodeJS.ErrnoException).code === 'ERR_ENCODING_INVALID_ENCODED_DATA')
-      assert.throws(() => recallLongTermSources({ ...candidate, origin: { ...candidate.origin, sessionFile: root } }, evidence),
+      assert.throws(() => recallLongTermSources({ ...evidence, sources: [{ ...source, sessionFile: root }] }),
         error => (error as NodeJS.ErrnoException).code === 'EISDIR')
     } else {
       const failure = Object.assign(new Error('Source read failed'), { code: '' })

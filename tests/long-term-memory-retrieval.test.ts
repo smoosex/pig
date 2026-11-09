@@ -14,6 +14,7 @@ async function fixture(scenario: string) {
   let unregister = () => {}
   try {
     let enabled = scenario !== 'disabled'
+    const questionText = scenario === 'project-history' ? '我做过哪些项目？' : '项目决定使用中文检索'
     mock.module('../src/main/features/memory-settings', () => ({ getMemorySettings: async () => ({ passive: true, longTerm: { enabled } }) }))
     const relevance = await import('../src/main/features/memory/long-term/relevance')
     const selectionStarted = Promise.withResolvers<void>()
@@ -22,11 +23,12 @@ async function fixture(scenario: string) {
     mock.module('../src/main/features/memory/long-term/relevance', () => ({ ...relevance, RELEVANCE_TIMEOUT_MS: 50,
       selectMemories: async (_ctx: unknown, _settings: unknown, question: RecallQuestion, memories: LongTermFact[], signal: AbortSignal) => {
         selections++
-        assert.equal(question.question, '项目决定使用中文检索')
+        assert.equal(question.question, questionText)
+        if (scenario === 'duplicate') assert.ok(question.availableContext?.length)
         selectionStarted.resolve()
         if (['cancelled', 'timeout', 'rename', 'forget', 'disable', 'signal'].includes(scenario)) await releaseSelection.promise
         if (scenario === 'selection-error') throw new Error('SECRET-provider-error')
-        const ids = scenario === 'rejected' ? [] : scenario === 'invalid' ? ['unknown-id']
+        const ids = ['rejected', 'preference-rejected', 'project-only', 'duplicate'].includes(scenario) ? [] : scenario === 'invalid' ? ['unknown-id']
           : scenario === 'filtered' ? [memories[1]!.id] : memories.map(item => item.id)
         // Simulate a provider that ignores abort; the host still must reject its late result.
         if (!['cancelled', 'timeout', 'signal'].includes(scenario)) signal.throwIfAborted()
@@ -36,29 +38,29 @@ async function fixture(scenario: string) {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent')
     const { Runtime } = await import('../src/main/features/memory/runtime')
     const { registerLongTermMemory, memoryAccess } = await import('../src/main/features/memory/long-term/extension')
-    const { collectMemoryCandidates } = await import('../src/main/features/memory/long-term/candidates')
-    const { MemoryCandidateStore } = await import('../src/main/features/memory/long-term/store')
+    const { sourceWindow } = await import('../src/main/features/memory/long-term/sources')
+    const { LongTermMemoryStore } = await import('../src/main/features/memory/long-term/store')
+    const { seedKnowledge } = await import('./helpers/long-term-memory')
     const { longTermMemoryPath } = await import('../src/main/features/memory/paths')
     const { registerSystemUI } = await import('../src/main/plugins/pig-ui')
     const manager = SessionManager.create(root, root)
-    const user = manager.appendMessage({ role: 'user', content: '项目决定使用中文检索', timestamp: Date.now() })
-    manager.appendCustomEntry('om.observations.recorded', { version: 3, coversUpToId: user, observations: [
-      { id: 'aaaaaaaaaaaa', content: '项目使用中文检索', timestamp: new Date().toISOString(), relevance: 'high', tokenCount: 10, sourceEntryIds: [user] },
-    ] })
-    manager.appendCustomEntry('om.reflections.recorded', { version: 3, coversUpToId: user, reflections: [0, 1].map(index => ({
-      id: 'bbbbbbbbbbb' + index, content: '中文检索决策 ' + index, tokenCount: 10, supportingObservationIds: ['aaaaaaaaaaaa'],
-    })) })
+    const user = manager.appendMessage({ role: 'user', content: questionText, timestamp: Date.now() })
+    manager.appendCustomEntry('test.flush', {})
     const turn = new AbortController()
     const context = { cwd: root, sessionManager: manager, isIdle: () => true, signal: turn.signal } as unknown as ExtensionContext
-    const candidates = collectMemoryCandidates({ sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile()!, cwd: root }, manager.getBranch()).candidates
     const access = await memoryAccess(context)
-    const store = new MemoryCandidateStore(longTermMemoryPath())
-    store.enqueue(candidates)
-    if (!['empty', 'disabled'].includes(scenario)) store.review(candidates.map((candidate, index) => ({ candidate, action: 'add', sourceEntryIds: [user], fact: {
-      content: (scenario === 'budget' ? '中文检索'.repeat(300) : '项目决定使用中文检索') + index,
-      kind: 'decision', scope: 'project', scopeKey: access.project, assertion: 'user-statement', sourceTime: new Date().toISOString(),
-    } })), store.revision())
+    const store = new LongTermMemoryStore(longTermMemoryPath())
+    const window = sourceWindow(manager, { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile()!, cwd: root, project: access.project }, () => false)!
+    const kind = ['project-only', 'project-history', 'legacy-profile'].includes(scenario) ? 'project' : scenario === 'preference-rejected' ? 'preference' : 'knowledge'
+    const facts = ['empty', 'disabled'].includes(scenario) ? [] : seedKnowledge(store, window, [0, 1].map(index =>
+      (['project-only', 'project-history'].includes(scenario) ? 'Atlas 是 Rust 日志查看器。' : scenario === 'preference-rejected' ? '以后 JavaScript 项目默认使用 Bun。' : scenario === 'budget' ? '中文检索'.repeat(300) : '项目决定使用中文检索') + index), kind)
     store.close()
+    if (scenario === 'legacy-profile') {
+      const { DatabaseSync } = await import('node:sqlite')
+      const db = new DatabaseSync(longTermMemoryPath())
+      db.prepare("UPDATE knowledge_items SET payload=json_set(payload, '$.content', ?)").run('Pig implementation lives in src/main/features/memory/long-term/extension.ts')
+      db.close()
+    }
     if (scenario === 'error') await writeFile(longTermMemoryPath(), 'invalid sqlite')
     const traces: LongTermRetrievalTrace[] = []
     const started = Promise.withResolvers<void>()
@@ -77,7 +79,8 @@ async function fixture(scenario: string) {
     registerLongTermMemory(pi, runtime)
     await handlers.get('session_start')!({}, context)
     const original = manager.getEntries().length
-    const pending = handlers.get('context')!({ messages: [] }, context)
+    const messages = scenario === 'duplicate' ? [{ role: 'assistant', content: [{ type: 'text', text: '当前已经知道：项目使用中文关键词搜索，不必重复这一结论。' }] }] : []
+    const pending = handlers.get('context')!({ messages }, context)
     if (['cancelled', 'rename', 'forget', 'disable', 'signal'].includes(scenario)) {
       await selectionStarted.promise
       if (scenario === 'cancelled') await handlers.get('agent_start')!({}, context)
@@ -85,8 +88,8 @@ async function fixture(scenario: string) {
       if (scenario === 'rename') manager.appendSessionInfo('Renamed during selection')
       if (scenario === 'disable') enabled = false
       if (scenario === 'forget') {
-        const current = new MemoryCandidateStore(longTermMemoryPath())
-        current.forgetFact(candidates[0]!.id); current.close()
+        const current = new LongTermMemoryStore(longTermMemoryPath())
+        current.forgetFact(facts[0]!.id); current.close()
       }
       if (!['cancelled', 'signal'].includes(scenario)) releaseSelection.resolve()
     }
@@ -109,21 +112,29 @@ async function fixture(scenario: string) {
       }
       else {
         assert.equal(last.status, 'done')
-        assert.equal(last.memories.length, ['empty', 'rejected'].includes(scenario) ? 0 : ['budget', 'filtered'].includes(scenario) ? 1 : 2)
-        if (['empty', 'rejected'].includes(scenario)) assert.equal(response, undefined)
+        const noInjection = ['empty', 'rejected', 'preference-rejected', 'project-only', 'legacy-profile', 'duplicate'].includes(scenario)
+        assert.equal(last.memories.length, noInjection ? 0 : ['budget', 'filtered'].includes(scenario) ? 1 : 2)
+        if (noInjection) assert.equal(response, undefined)
         else {
           const injected = response.messages[0].content as string
           for (const memory of last.memories) assert.ok(injected.includes(memory.id))
           assert.ok(Buffer.byteLength(injected) <= 6000)
           assert.ok(!JSON.stringify(last).includes('scopeKey'), 'UI diagnostics do not leak filesystem scope keys')
+          for (const key of ['scopeKey', 'projectKey', 'checkoutKey', 'createdAt', 'updatedAt', 'sourceTime', 'assertion']) assert.ok(!injected.includes(`"${key}"`), 'the request carries references, not database rows')
         }
       }
     }
-    if (['disabled', 'empty', 'error'].includes(scenario)) assert.equal(selections, 0, 'no matches means no model request')
+    if (['disabled', 'empty', 'error', 'legacy-profile'].includes(scenario)) assert.equal(selections, 0, 'no matches means no model request')
     if (['success', 'rejected'].includes(scenario)) {
       const again = await handlers.get('context')!({ messages: [] }, context)
       assert.deepEqual(again, response)
       assert.equal(selections, 1, 'tool rounds reuse the selection, including zero matches')
+      if (scenario === 'success') {
+        const duplicate = await handlers.get('context')!({ messages: [{ role: 'assistant', content: [{ type: 'text', text: facts.map(fact => fact.content).join('\n') }] }] }, context)
+        assert.equal(duplicate, undefined, 'cached facts already present in the effective context are not reinjected')
+        assert.equal(selections, 1)
+        assert.deepEqual(traces.at(-1)!.memories, [])
+      }
     }
     assert.ok(!JSON.stringify({ traces, notifications }).includes('SECRET-'))
     await handlers.get('session_shutdown')!({}, context)
@@ -134,7 +145,7 @@ async function fixture(scenario: string) {
   }
 }
 if (process.argv.includes('--fixture')) await fixture(process.argv[3]!)
-else for (const scenario of ['disabled', 'success', 'empty', 'budget', 'error', 'cancelled', 'filtered', 'rejected', 'invalid', 'selection-error', 'timeout', 'rename', 'forget', 'disable', 'signal']) test(`memory recall UI events: ${scenario}`, async () => {
+else for (const scenario of ['disabled', 'success', 'empty', 'budget', 'error', 'cancelled', 'filtered', 'rejected', 'invalid', 'selection-error', 'timeout', 'rename', 'forget', 'disable', 'signal', 'project-only', 'project-history', 'legacy-profile', 'preference-rejected', 'duplicate']) test(`memory recall UI events: ${scenario}`, async () => {
   const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
   assert.equal(exitCode, 0, stderr || stdout)
 }, 15_000)

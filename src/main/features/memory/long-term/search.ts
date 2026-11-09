@@ -1,4 +1,9 @@
-/** FTS terms include CJK bigrams so Chinese does not depend on whitespace tokenization. */
+/** FTS terms and locale-independent query hints; not translated UI copy or authorization rules. */
+export const MEMORY_QUERY_PATTERNS = {
+  preference: /偏好|习惯|平时|prefer|usual/i,
+  lesson: /报错|错误|失败|排查|教训|error|exception|debug|failure/i,
+  directory: /做过.*项目|哪些项目|项目经历|projects|worked on/i,
+}
 export function memoryTerms(text: string): string[] {
   const terms = new Set<string>()
   for (const match of text.normalize('NFKC').toLowerCase().matchAll(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+|[\p{L}\p{N}_]+/gu)) {
