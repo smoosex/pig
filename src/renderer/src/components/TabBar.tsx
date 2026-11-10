@@ -216,7 +216,7 @@ export async function newStripSession(sidebarTab: SidebarTab): Promise<void> {
   else if (currentProjectCwd) await newSession(currentProjectCwd)
 }
 
-export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
+export function NewTabButton({ sidebarTab, sidebarLayout }: { sidebarTab: SidebarTab; sidebarLayout: string }) {
   const t = useT()
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
   const workspaceError = useSessionsStore((state) => state.workspaceError)
@@ -226,6 +226,9 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const creatingRef = useRef(false)
   // A picked item hands focus to the new tab; only a dismissed menu returns it to the trigger.
   const pickedRef = useRef(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // Close before paint when either rail (including its floating panel) changes the browser layout.
+  useLayoutEffect(() => { setMenuOpen(false) }, [sidebarLayout])
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -256,7 +259,7 @@ export function NewTabButton({ sidebarTab }: { sidebarTab: SidebarTab }) {
           <CircleAlert />
         </span>
       ) : null}
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             data-new-tab

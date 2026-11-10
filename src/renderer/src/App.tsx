@@ -535,7 +535,7 @@ export default function App() {
           </div>
           {!settingsOpen ? (
             <div data-header-trailing className="flex h-full shrink-0 items-center gap-1 pl-2 pr-3">
-              <NewTabButton sidebarTab={sidebarTab} />
+              <NewTabButton sidebarTab={sidebarTab} sidebarLayout={`${leftCollapsed}:${rightCollapsed}:${hoverSidebar}:${settingsOpen}`} />
               {currentProjectCwd ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
