@@ -19,7 +19,7 @@ export const MemoryRetrieval = memo(function MemoryRetrieval({ trace }: { trace:
     <CollapsibleTrigger asChild>
       <Button type="button" variant="ghost" size="sm" className={disclosureButton} aria-busy={running}>
         {running ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <DatabaseSearch data-icon="inline-start" />}
-        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-left">{label}{trace.error ? ` [${trace.error.code}]` : null}</span>
         {trace.durationMs !== undefined ? <span className="shrink-0 text-muted-foreground">{t('longTerm.recallDuration', { ms: trace.durationMs })}</span> : null}
         <Chevron open={open} />
       </Button>
@@ -30,6 +30,10 @@ export const MemoryRetrieval = memo(function MemoryRetrieval({ trace }: { trace:
           <p className="text-muted-foreground" role={trace.status === 'error' ? 'alert' : undefined}>
             {t(trace.status === 'error' ? 'longTerm.recallErrorHint' : 'longTerm.recallHint')}
           </p>
+          {trace.error ? <p className="text-muted-foreground">{t('longTerm.recallFailureDetails', {
+            stage: trace.error.stage, code: trace.error.code, http: trace.error.httpStatus !== undefined ? ` · HTTP ${trace.error.httpStatus}` : '',
+          })}</p> : null}
+          {trace.cached ? <p className="text-muted-foreground">{t('longTerm.recallCached')}</p> : null}
           {trace.memories.map(memory => <div key={memory.id} className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap gap-1">
               <Badge variant="outline">{t(`longTerm.${memory.scope}`)}</Badge>

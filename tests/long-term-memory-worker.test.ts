@@ -89,10 +89,16 @@ async function fixture() {
     await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal), /did not complete/)
     stop = 'error'; errorMessage = 'HTTP 401 SECRET-provider-payload'
     await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal),
-      error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
+      error => error instanceof MemoryReviewError && error.code === 'authentication' && error.httpStatus === 401 && !error.message.includes('SECRET'))
     errorMessage = 'SECRET-provider-payload'
     await assert.rejects(extractLearning(ctx, settings, window, [], new AbortController().signal),
       error => error instanceof MemoryReviewError && error.code === 'request' && !error.message.includes('SECRET'))
+    for (const [message, code] of [['429: SECRET', 'rateLimit'], ['OpenAI API error (503): SECRET', 'httpServer'],
+      ['fetch failed SECRET', 'connection'], ['Request timed out. SECRET', 'providerTimeout'], ['read ECONNRESET SECRET', 'connectionReset']]) {
+      errorMessage = message
+      await assert.rejects(selectMemories(ctx, settings, question, facts, new AbortController().signal),
+        error => error instanceof MemoryReviewError && error.code === code && !error.message.includes('SECRET'))
+    }
     hold = true
     const controller = new AbortController()
     const before = calls.length

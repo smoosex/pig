@@ -7,7 +7,7 @@ import { memoryWorker } from './worker'
 import { MEMORY_QUERY_PATTERNS } from './search'
 import { MemoryReviewError } from './review-errors'
 
-export const RELEVANCE_TIMEOUT_MS = 10_000
+export const RELEVANCE_TIMEOUT_MS = 60_000
 const schema = obj({ selectedIds: arr(str(), { maxItems: 5 }) })
 const validator = compile(schema)
 export const RELEVANCE_SYSTEM = `Select historical memories that materially help answer the CURRENT user question. Default: select nothing. Shared project names, generic words, and broad topic similarity are NOT enough. A selected memory must supply a directly applicable fact, constraint, or enduring user preference that would concretely change the answer. Use recent exchanges only to resolve the current question's referents; do not select memories just because they relate to an older topic. Select only INCREMENTAL information: if the current question, recent exchanges or availableContext already contain the fact, constraint or preference (including a paraphrase), reject it. Existing context is not evidence that a memory deserves reinjection. Project profiles are directory identities, not a way to smuggle implementation details into unrelated tasks. Only select another project's profile when the user asks about that project or their project history. Check applicability and source checkout; do not select a preference whose conditions do not apply to this task. Do not pad results to fill a quota. Empty selectedIds is valid and preferred over weak matches.

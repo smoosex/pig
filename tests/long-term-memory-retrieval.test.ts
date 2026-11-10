@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import type { LongTermFact, LongTermRetrievalTrace } from '../src/shared/long-term-memory'
+import type { LongTermFact, LongTermRetrievalTrace, MemoryFailureCode } from '../src/shared/long-term-memory'
 import type { RecallQuestion } from '../src/main/features/memory/long-term/relevance'
 import { runSelf } from './helpers/subprocess'
 
@@ -17,6 +17,8 @@ async function fixture(scenario: string) {
     const questionText = scenario === 'project-history' ? '我做过哪些项目？' : '项目决定使用中文检索'
     mock.module('../src/main/features/memory-settings', () => ({ getMemorySettings: async () => ({ passive: true, longTerm: { enabled } }) }))
     const relevance = await import('../src/main/features/memory/long-term/relevance')
+    assert.equal(relevance.RELEVANCE_TIMEOUT_MS, 60_000)
+    const { MemoryReviewError, REVIEW_FAILURES, providerFailure } = await import('../src/main/features/memory/long-term/review-errors')
     const selectionStarted = Promise.withResolvers<void>()
     const releaseSelection = Promise.withResolvers<void>()
     let selections = 0
@@ -27,6 +29,8 @@ async function fixture(scenario: string) {
         if (scenario === 'duplicate') assert.ok(question.availableContext?.length)
         selectionStarted.resolve()
         if (['cancelled', 'timeout', 'rename', 'forget', 'disable', 'signal'].includes(scenario)) await releaseSelection.promise
+        if (scenario === 'http-error') throw providerFailure('OpenAI API error (503): SECRET-provider-response')
+        if (scenario.startsWith('failure-')) throw new MemoryReviewError(scenario.slice(8) as MemoryFailureCode, 'SECRET-provider-response')
         if (scenario === 'selection-error') throw new Error('SECRET-provider-error')
         const ids = ['rejected', 'preference-rejected', 'project-only', 'duplicate'].includes(scenario) ? [] : scenario === 'invalid' ? ['unknown-id']
           : scenario === 'filtered' ? [memories[1]!.id] : memories.map(item => item.id)
@@ -105,10 +109,25 @@ async function fixture(scenario: string) {
       assert.ok(last.renderKey.startsWith('user:'))
       assert.ok(last.durationMs! >= 0)
       const cancelled = ['cancelled', 'rename', 'forget', 'disable', 'signal'].includes(scenario)
-      const failed = ['error', 'selection-error', 'invalid', 'timeout'].includes(scenario)
+      const failed = ['error', 'selection-error', 'invalid', 'timeout', 'http-error'].includes(scenario) || scenario.startsWith('failure-')
       if (failed || cancelled) {
         assert.equal(last.status, cancelled ? 'cancelled' : 'error')
         assert.equal(response, undefined); assert.deepEqual(last.memories, [])
+        if (cancelled) assert.equal(last.error, undefined)
+        else {
+          const code: MemoryFailureCode = scenario.startsWith('failure-') ? scenario.slice(8) as MemoryFailureCode
+            : scenario === 'error' ? 'storage' : scenario === 'invalid' ? 'evidence' : scenario === 'timeout' ? 'timeout'
+            : scenario === 'http-error' ? 'httpServer' : 'request'
+          const expected = { code, stage: REVIEW_FAILURES[code].stage, ...(scenario === 'http-error' ? { httpStatus: 503 } : {}) }
+          assert.deepEqual(last.error, expected)
+          assert.ok(notifications.some(message => message.includes(`[${expected.stage}/${code}]`)))
+          if (scenario !== 'error') {
+            assert.equal(await handlers.get('context')!({ messages: [] }, context), undefined)
+            assert.deepEqual(traces.at(-1)!.error, expected)
+            assert.equal(traces.at(-1)!.cached, true)
+            assert.equal(selections, 1, 'cached failures preserve diagnostics without another request')
+          }
+        }
       }
       else {
         assert.equal(last.status, 'done')
@@ -145,7 +164,7 @@ async function fixture(scenario: string) {
   }
 }
 if (process.argv.includes('--fixture')) await fixture(process.argv[3]!)
-else for (const scenario of ['disabled', 'success', 'empty', 'budget', 'error', 'cancelled', 'filtered', 'rejected', 'invalid', 'selection-error', 'timeout', 'rename', 'forget', 'disable', 'signal', 'project-only', 'project-history', 'legacy-profile', 'preference-rejected', 'duplicate']) test(`memory recall UI events: ${scenario}`, async () => {
+else for (const scenario of ['disabled', 'success', 'empty', 'budget', 'error', 'cancelled', 'filtered', 'rejected', 'invalid', 'selection-error', 'timeout', 'rename', 'forget', 'disable', 'signal', 'project-only', 'project-history', 'legacy-profile', 'preference-rejected', 'duplicate', 'http-error', 'failure-connection', 'failure-connectionReset', 'failure-dns', 'failure-tls', 'failure-providerTimeout', 'failure-httpClient', 'failure-authentication', 'failure-rateLimit']) test(`memory recall UI events: ${scenario}`, async () => {
   const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--fixture', scenario], { timeoutMs: 10_000 })
   assert.equal(exitCode, 0, stderr || stdout)
 }, 15_000)

@@ -60,6 +60,8 @@ export interface LongTermRetrievalTrace {
   renderKey: string
   status: 'running' | 'done' | 'error' | 'cancelled'
   durationMs?: number
+  error?: { code: MemoryFailureCode; stage: string; httpStatus?: number }
+  cached?: boolean
   memories: Pick<LongTermFact, 'id' | 'content' | 'scope' | 'status'>[]
 }
 export interface LongTermPage {
@@ -67,7 +69,7 @@ export interface LongTermPage {
   memories: LongTermFact[]
   nextOffset: number | null
 }
-export type MemoryFailureCode = 'configuration' | 'model' | 'authentication' | 'request' | 'rateLimit' | 'timeout' | 'truncated' | 'json' | 'schema' | 'evidence' | 'budget' | 'conflict' | 'storage'
+export type MemoryFailureCode = 'configuration' | 'model' | 'authentication' | 'request' | 'connection' | 'connectionReset' | 'dns' | 'tls' | 'providerTimeout' | 'httpClient' | 'httpServer' | 'rateLimit' | 'timeout' | 'truncated' | 'json' | 'schema' | 'evidence' | 'budget' | 'conflict' | 'storage'
 export type MemoryWorkerStage = 'extraction' | 'integration' | 'relevance'
 export interface MemoryLearningStatus {
   runningJobs: number

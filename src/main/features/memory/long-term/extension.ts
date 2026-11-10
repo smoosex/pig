@@ -2,7 +2,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { obj, opt, str, int, oneOf } from '@earendil-works/pi-schema'
 import { randomUUID } from 'node:crypto'
-import { MEMORY_KINDS, type LongTermFact, type LongTermRetrievalTrace } from '../../../../shared/long-term-memory'
+import { MEMORY_KINDS, type LongTermFact, type LongTermRetrievalTrace, type MemoryFailureCode } from '../../../../shared/long-term-memory'
 import { userTurnRenderKey } from '../../../../shared/turn-identity'
 import { publishMemoryRetrieval } from '../../../plugins/pig-ui'
 import { t } from '../../../i18n'
@@ -55,13 +55,13 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
     pendingContext = undefined
   }
   let retrievalRevision = 0
-  let retrievalCache: { key: string; selected: LongTermFact[]; status: 'done' | 'error' } | undefined
+  let retrievalCache: { key: string; selected: LongTermFact[]; status: 'done' | 'error'; error?: LongTermRetrievalTrace['error'] } | undefined
   const retrievals = new Map<string, { ctx: ExtensionContext; trace: LongTermRetrievalTrace; startedAt: number; controller: AbortController }>()
-  const finishRetrieval = (id: string, status: LongTermRetrievalTrace['status'], memories: LongTermRetrievalTrace['memories'] = []) => {
+  const finishRetrieval = (id: string, status: LongTermRetrievalTrace['status'], memories: LongTermRetrievalTrace['memories'] = [], details: Pick<LongTermRetrievalTrace, 'error' | 'cached'> = {}) => {
     const pending = retrievals.get(id)
     if (!pending) return
     retrievals.delete(id)
-    publishMemoryRetrieval(pending.ctx, { ...pending.trace, status, memories,
+    publishMemoryRetrieval(pending.ctx, { ...pending.trace, status, memories, ...details,
       durationMs: Math.round(performance.now() - pending.startedAt) })
   }
   const cancelRetrievals = () => {
@@ -167,10 +167,13 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
     if (parentSignal?.aborted) cancelRequest()
     let timer: ReturnType<typeof setTimeout> | undefined
     let trace: LongTermRetrievalTrace | undefined
+    let failureCode: MemoryFailureCode = 'configuration'
+    let cacheKey: string | undefined
     try {
       const settings = await getMemorySettings()
       if (!settings.longTerm?.enabled || !live || generation !== retrievalRevision) return
       request.signal.throwIfAborted()
+      failureCode = 'storage'
       const manager = ctx.sessionManager
       const leaf = manager.getLeafId()
       const branch = manager.getBranch() as Entry[]
@@ -198,9 +201,11 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
         return { matches, revision: store.revision() }
       })
       const key = JSON.stringify([lastUser.id, settings.longTerm, access, snapshot.revision])
+      cacheKey = key
       if (retrievalCache?.key === key) {
         const selected = novelMemories(retrievalCache.selected, availableContext)
-        finishRetrieval(trace.id, retrievalCache.status, selected.map(({ id, content, scope, status }) => ({ id, content, scope, status })))
+        finishRetrieval(trace.id, retrievalCache.status, selected.map(({ id, content, scope, status }) => ({ id, content, scope, status })),
+          { error: retrievalCache.error, cached: true })
         if (!selected.length) return
         return { messages: [...event.messages, { role: 'user' as const, content: fenced(selected.map(memoryReference)), timestamp: 0 }] }
       }
@@ -208,13 +213,16 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
       retrievalCache = { key, selected: [], status: 'error' }
       let relevant: LongTermFact[] = []
       if (snapshot.matches.length) {
+        failureCode = 'request'
         timer = setTimeout(() => request.abort(new MemoryReviewError('timeout')), RELEVANCE_TIMEOUT_MS)
         timer.unref?.()
         relevant = await abortable(selectMemories(ctx, settings.longTerm,
           recallContext, snapshot.matches, request.signal), request.signal)
       }
       request.signal.throwIfAborted()
+      failureCode = 'configuration'
       const latestSettings = await getMemorySettings()
+      failureCode = 'storage'
       const latestAccess = await memoryAccess(ctx)
       if (!live || generation !== retrievalRevision || parentSignal?.aborted
         || ctx.sessionManager !== manager || manager.getLeafId() !== leaf
@@ -236,10 +244,21 @@ export function registerLongTermMemory(pi: ExtensionAPI, om: Runtime): void {
       finishRetrieval(trace.id, 'done', selected.map(({ id, content, scope, status }) => ({ id, content, scope, status })))
       if (!selected.length) return
       return { messages: [...event.messages, { role: 'user' as const, content: fenced(selected.map(memoryReference)), timestamp: 0 }] }
-    } catch {
+    } catch (error) {
       const cancelled = !live || generation !== retrievalRevision || parentSignal?.aborted
-      if (trace) finishRetrieval(trace.id, cancelled ? 'cancelled' : 'error')
-      if (!cancelled) om.notify('Long-term memory retrieval failed; continuing without recalled facts', 'warning')
+      if (cancelled) {
+        if (generation === retrievalRevision && cacheKey && retrievalCache?.key === cacheKey) retrievalCache = undefined
+        if (trace) finishRetrieval(trace.id, 'cancelled')
+      } else {
+        const code = error instanceof MemoryReviewError ? error.code : failureCode
+        const httpStatus = error instanceof MemoryReviewError ? error.httpStatus : undefined
+        const failure = { code, stage: REVIEW_FAILURES[code].stage, ...(httpStatus !== undefined ? { httpStatus } : {}) }
+        if (cacheKey && retrievalCache?.key === cacheKey) retrievalCache.error = failure
+        if (trace) finishRetrieval(trace.id, 'error', [], { error: failure })
+        console.warn('[long-term-memory] retrieval failed', failure)
+        om.notify(t('longTerm.recallFailedNotice', { code, stage: failure.stage,
+          http: httpStatus !== undefined ? ` HTTP ${httpStatus}` : '' }), 'warning')
+      }
     } finally {
       clearTimeout(timer)
       parentSignal?.removeEventListener('abort', cancelRequest)

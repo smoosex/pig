@@ -59,6 +59,15 @@ async function fixture() {
     assert.ok(host.textContent!.includes('未找到相关记忆'))
     await render({ ...done, status: 'error', memories: [] })
     assert.ok(host.textContent!.includes('记忆召回失败'))
+    await render({ ...done, status: 'error', memories: [], error: { code: 'httpServer', stage: 'request', httpStatus: 503 }, cached: true })
+    assert.ok(host.textContent!.includes('记忆召回失败 [httpServer]'))
+    if (!host.textContent!.includes('HTTP 503')) {
+      await act(async () => { host.querySelector<HTMLButtonElement>('[data-memory-retrieval] button')!.click() }); await flush()
+    }
+    assert.ok(host.textContent!.includes('失败阶段：request'))
+    assert.ok(host.textContent!.includes('错误码：httpServer'))
+    assert.ok(host.textContent!.includes('HTTP 503'))
+    assert.ok(host.textContent!.includes('未重新执行筛选'))
     await render({ ...done, status: 'cancelled', memories: [] })
     assert.ok(host.textContent!.includes('记忆召回已取消'))
     await render(done, true)
