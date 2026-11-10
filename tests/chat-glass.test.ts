@@ -53,7 +53,7 @@ async function fixture(scenario: string): Promise<void> {
   document.body.append(host)
   const root = createRoot(host)
   try {
-    if (scenario === 'canvas' || scenario === 'tab-layout' || scenario === 'tab-sizing') {
+    if (scenario === 'canvas' || scenario === 'tab-layout' || scenario === 'tab-sizing' || scenario === 'settings-layout') {
       const closedTabs: string[] = []
       sessions.setState({ openTabs: [...tabs, { id: 'chat-two', kind: 'chat', cwd: '/chats/b', title: 'Another chat with a much longer title', loadState: 'ready' }] })
       for (const name of ['useEventBridge', 'useSessionNames', 'useSessionWindows', 'useWorktreeDeletions', 'useBrowserAgentRequests', 'useTerminalAgentRequests', 'useSessionAgentRequests', 'useModelCatalog']) {
@@ -93,7 +93,7 @@ async function fixture(scenario: string): Promise<void> {
           closeTab: (id) => { closedTabs.push(id) }
         })
       }
-      if (scenario === 'tab-layout') {
+      if (scenario === 'tab-layout' || scenario === 'settings-layout') {
         sessions.setState({ activeTabId: 'project', currentProjectCwd: '/p' })
         useDiffStore.setState({ reviewOpen: true })
         for (const name of ['Sidebar', 'WorkspacePanel']) {
@@ -103,10 +103,43 @@ async function fixture(scenario: string): Promise<void> {
           }))
         }
       }
+      if (scenario === 'settings-layout') {
+        const { createPortal } = await import('react-dom')
+        mock.module('../src/renderer/src/components/settings/SettingsPage', () => ({
+          SettingsPage: ({ navigationTarget }: { navigationTarget: HTMLElement | null }) => h('div', { 'data-view': 'SettingsPage' },
+            navigationTarget ? createPortal(h('nav', null, 'Settings'), navigationTarget) : null)
+        }))
+      }
       const { useSplitLayoutStore: split, paneOfTab } = await import('../src/renderer/src/stores/split-layout')
       const { default: App } = await import('../src/renderer/src/App')
       await act(async () => { theme('glass', 'light', 'pig'); root.render(h(App)) })
       const surface = host.querySelector<HTMLElement>('[data-content-surface]')!
+      if (scenario === 'settings-layout') {
+        const rail = (side: string) => host.querySelector<HTMLElement>(`[data-workspace-${side}-rail]`)!
+        const sidebar = host.querySelector('[data-view="Sidebar"]')!
+        const panel = host.querySelector('[data-view="WorkspacePanel"]')!
+        for (const [leftHidden, rightHidden] of [[false, false], [false, true], [true, true], [true, false]]) {
+          if ((sidebar.getAttribute('aria-hidden') === 'true') !== leftHidden) {
+            await act(async () => browserShortcut('sidebar.toggleLeft'))
+          }
+          await act(async () => useDiffStore.setState({ reviewOpen: !rightHidden }))
+          await act(async () => browserShortcut('settings.toggle'))
+          assert.ok(rail('left').classList.contains('w-62'))
+          assert.ok(rail('right').classList.contains('w-0'))
+          assert.equal(panel.getAttribute('aria-hidden'), 'true')
+          assert.ok(host.querySelector('[data-settings-navigation] nav'))
+          assert.equal(host.querySelector('[data-workspace-center] nav'), null)
+          assert.equal(useDiffStore.getState().reviewOpen, !rightHidden, 'settings do not overwrite the right sidebar preference')
+          await act(async () => browserShortcut('settings.toggle'))
+          assert.ok(rail('left').classList.contains(leftHidden ? 'w-0' : 'w-62'))
+          assert.ok(rail('right').classList.contains(rightHidden ? 'w-0' : 'w-62'))
+          assert.equal(host.querySelector('[data-view="Sidebar"]'), sidebar)
+          assert.equal(host.querySelector('[data-view="WorkspacePanel"]'), panel)
+          assert.equal(sidebar.getAttribute('aria-hidden'), String(leftHidden))
+          assert.equal(panel.getAttribute('aria-hidden'), String(rightHidden))
+        }
+        return
+      }
       if (scenario === 'tab-sizing') {
         const faces = [...host.querySelectorAll<HTMLElement>('[data-session-tab]')]
         assert.equal(faces.length, 16)
@@ -408,8 +441,10 @@ async function fixture(scenario: string): Promise<void> {
 
 if (process.argv[2] === '--fixture') await fixture(process.argv[3])
 else {
-  for (const scenario of ['canvas', 'tab-layout', 'tab-sizing', 'composer', 'prompt']) {
-    const name = scenario === 'tab-layout'
+  for (const scenario of ['canvas', 'tab-layout', 'tab-sizing', 'settings-layout', 'composer', 'prompt']) {
+    const name = scenario === 'settings-layout'
+      ? 'settings layout: App restores all four sidebar combinations with shared navigation'
+      : scenario === 'tab-layout'
       ? 'header tabs: reserve both sidebar widths through every toggle and keep creation in the trailing toolbar'
       : scenario === 'tab-sizing'
         ? 'header tabs: selection keeps full width and stable nodes while icon tabs remain renamable and closable'

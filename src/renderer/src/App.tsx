@@ -42,6 +42,7 @@ import { ChatView } from './components/ChatView'
 import { ChangesView } from './components/diff/ChangesView'
 import { TurnDiffPanel } from './components/diff/TurnDiffPanel'
 import { WorkspacePanel } from './components/panel/WorkspacePanel'
+import { WorkspaceLayout } from './components/WorkspaceLayout'
 import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
@@ -512,7 +513,7 @@ export default function App() {
       <ProjectPickerDialog />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
-          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20', (!leftCollapsed || settingsOpen) && 'w-62')}>
+          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20 transition-[width] duration-200 ease-in-out motion-reduce:transition-none', !leftCollapsed || settingsOpen ? 'w-62' : 'w-38')}>
             {settingsOpen ? null : (
               <>
                 <SidebarToggle onClick={toggleLeftSidebar} />
@@ -577,133 +578,41 @@ export default function App() {
           {!settingsOpen && leftCollapsed && hoverSidebar !== 'left' ? (
             <div className="absolute inset-y-0 left-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('left')} />
           ) : null}
-          <div
-            className={cn('flex shrink-0', leftCollapsed && 'absolute inset-y-0 left-0 z-30',
-              leftCollapsed && hoverSidebar === 'left' && !settingsOpen && 'p-2',
-              leftCollapsed && hoverSidebar !== 'left' && 'pointer-events-none')}
-            onMouseMoveCapture={(event) => floatingSidebar.trackPointer('left', event)}
-          >
-            <div
-              data-sidebar-overlay={leftCollapsed && hoverSidebar === 'left' && !settingsOpen ? '' : undefined}
-              className={cn('flex', leftCollapsed && hoverSidebar === 'left' && !settingsOpen &&
-                'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
-            >
-              <Sidebar
-                floating={leftCollapsed}
-                replaced={settingsOpen}
-                hidden={leftCollapsed && hoverSidebar !== 'left'}
-                onOpenSettings={() => setSettingsOpen(true)}
-                tab={sidebarTab}
-                preferencesError={sidebarPrefsError}
-              />
-            </div>
-          </div>
-          {settingsOpen ? (
-            <SettingsPage onClose={() => setSettingsOpen(false)} />
-          ) : (
-            <>
-              <div
-                data-content-surface
-                // One material backplate for every tab kind; panes and reading views paint nothing over it in glass.
-                className="m-2 flex min-w-96 flex-1 flex-col rounded-xl bg-glass-content-background bg-(image:--glass-content-sheen) shadow-glass-content ring-1 ring-glass-content-border transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-chat-background solid:bg-none solid:shadow-md solid:ring-0"
-              >
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
+          {!settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar !== 'right' ? (
+            <div className="absolute inset-y-0 right-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('right')} />
+          ) : null}
+          <WorkspaceLayout
+            settingsOpen={settingsOpen}
+            leftCollapsed={leftCollapsed}
+            rightCollapsed={!currentProjectCwd || rightCollapsed}
+            leftFloating={leftCollapsed && hoverSidebar === 'left'}
+            rightFloating={rightCollapsed && hoverSidebar === 'right'}
+            left={
+              <>
+                <div
+                  className={cn('flex shrink-0', leftCollapsed && 'absolute inset-y-0 left-0 z-30',
+                    leftCollapsed && hoverSidebar === 'left' && !settingsOpen && 'p-2',
+                    leftCollapsed && hoverSidebar !== 'left' && 'pointer-events-none')}
+                  onMouseMoveCapture={(event) => floatingSidebar.trackPointer('left', event)}
+                >
                   <div
-                    className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                    data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}
+                    data-sidebar-overlay={leftCollapsed && hoverSidebar === 'left' && !settingsOpen ? '' : undefined}
+                    className={cn('flex', leftCollapsed && hoverSidebar === 'left' && !settingsOpen &&
+                      'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
                   >
-                    {activeSplit ? (
-                      <SplitPaneContainer
-                        tabId={activeTabId!}
-                        className="flex-1 min-h-0 min-w-0"
-                        renderPane={(node: PaneNode, isActive) => (
-                          <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
-                        )}
-                      />
-                    ) : activeTab?.kind === 'browser' ? (
-                      <BrowserTabContent tab={activeTab} />
-                    ) : activeTab?.kind === 'terminal' ? (
-                      <TerminalTabContent tab={activeTab} active />
-                    ) : diffTab ? (
-                      <ChangesView cwd={diffTab.cwd} />
-                    ) : activeTab?.kind === 'turn-diff' && activeTab.turnDiff ? (
-                      <TurnDiffPanel tab={activeTab} />
-                    ) : fileTab?.path ? (
-                      <Suspense
-                        fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
-                      >
-                        <FileView cwd={fileTab.cwd} path={fileTab.path} />
-                      </Suspense>
-                    ) : sessionReady || projectHome || chatHome ? (
-                      <>
-                        {/* Basis 0 like the greeting, so an empty session shares the height with the spacer below. */}
-                        {sessionReady ? <div className="flex min-h-0 flex-1 flex-col"><ChatView /></div> : <SessionGreeting />}
-                        {chatHome && (chatDraftError || workspaceError) ? (
-                          <div
-                            role="alert"
-                            className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
-                          >
-                            {chatDraftError ? (
-                              <span className="flex items-center gap-2">
-                                {chatDraftError}
-                                <Button variant="outline" size="xs" onClick={retryChatDraft}>
-                                  <RotateCw />
-                                  {t('common.retry')}
-                                </Button>
-                              </span>
-                            ) : null}
-                            {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
-                            {workspaceError ? <span>{workspaceError}</span> : null}
-                          </div>
-                        ) : null}
-                        <Composer
-                          draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
-                          draftSessionId={
-                            projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
-                          }
-                          centered={projectHome || chatHome || sessionEmpty}
-                          workspace={composerWorkspace}
-                        />
-                        {projectHome ? (
-                          <ProjectSessionHome cwd={currentProjectCwd!} />
-                        ) : chatHome || sessionEmpty ? (
-                          <div className="min-h-0 flex-1" />
-                        ) : null}
-                      </>
-                    ) : (
-                      <Empty className="gap-4">
-                        <EmptyDescription>
-                          {restoreError
-                            ? t('app.restoreFailed', { error: restoreError })
-                            : activeTab?.loadState === 'error'
-                              ? activeTab.loadError || t('app.loadFailed')
-                              : t('app.loadingSession')}
-                        </EmptyDescription>
-                        {restoreError ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
-                          >
-                            <RotateCw />
-                            {t('app.retryRestore')}
-                          </Button>
-                        ) : null}
-                      </Empty>
-                    )}
-                    {!isMultiPane && (
-                      <SplitPaneOverlay
-                        position={splitDragOver?.paneId === (activeTabId ?? 'single') ? splitDragOver.position : null}
-                      />
-                    )}
+                    <Sidebar
+                      floating={leftCollapsed}
+                      hidden={leftCollapsed && hoverSidebar !== 'left'}
+                      onOpenSettings={() => setSettingsOpen(true)}
+                      tab={sidebarTab}
+                      preferencesError={sidebarPrefsError}
+                    />
                   </div>
                 </div>
-              </div>
-            {currentProjectCwd ? (
+              </>
+            }
+            right={currentProjectCwd ? (
               <>
-                {rightCollapsed && hoverSidebar !== 'right' ? (
-                  <div className="absolute inset-y-0 right-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('right')} />
-                ) : null}
                 <div
                   className={cn('flex shrink-0', rightCollapsed && 'absolute inset-y-0 right-0 z-30',
                     rightCollapsed && hoverSidebar === 'right' && 'p-2',
@@ -711,17 +620,117 @@ export default function App() {
                   onMouseMoveCapture={(event) => floatingSidebar.trackPointer('right', event)}
                 >
                   <div
-                    data-sidebar-overlay={rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
-                    className={cn('flex', rightCollapsed && hoverSidebar === 'right' &&
+                    data-sidebar-overlay={!settingsOpen && rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
+                    className={cn('flex', !settingsOpen && rightCollapsed && hoverSidebar === 'right' &&
                       'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
                   >
-                    <WorkspacePanel cwd={currentProjectCwd} floating={rightCollapsed} hidden={rightCollapsed && hoverSidebar !== 'right'} />
+                    <WorkspacePanel cwd={currentProjectCwd} floating={rightCollapsed} hidden={settingsOpen || (rightCollapsed && hoverSidebar !== 'right')} />
                   </div>
                 </div>
               </>
             ) : null}
-            </>
-          )}
+            renderSettings={(navigationTarget, active) => (
+              <SettingsPage navigationTarget={navigationTarget} active={active} onClose={() => setSettingsOpen(false)} />
+            )}
+          >
+            <div
+              data-content-surface
+              // One material backplate for every tab kind; panes and reading views paint nothing over it in glass.
+              className="m-2 flex min-w-96 flex-1 flex-col rounded-xl bg-glass-content-background bg-(image:--glass-content-sheen) shadow-glass-content ring-1 ring-glass-content-border transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:bg-chat-background solid:bg-none solid:shadow-md solid:ring-0"
+            >
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
+                <div
+                  className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                  data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}
+                >
+                  {activeSplit ? (
+                    <SplitPaneContainer
+                      tabId={activeTabId!}
+                      className="flex-1 min-h-0 min-w-0"
+                      renderPane={(node: PaneNode, isActive) => (
+                        <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
+                      )}
+                    />
+                  ) : activeTab?.kind === 'browser' ? (
+                    <BrowserTabContent tab={activeTab} />
+                  ) : activeTab?.kind === 'terminal' ? (
+                    <TerminalTabContent tab={activeTab} active />
+                  ) : diffTab ? (
+                    <ChangesView cwd={diffTab.cwd} />
+                  ) : activeTab?.kind === 'turn-diff' && activeTab.turnDiff ? (
+                    <TurnDiffPanel tab={activeTab} />
+                  ) : fileTab?.path ? (
+                    <Suspense
+                      fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
+                    >
+                      <FileView cwd={fileTab.cwd} path={fileTab.path} />
+                    </Suspense>
+                  ) : sessionReady || projectHome || chatHome ? (
+                    <>
+                      {/* Basis 0 like the greeting, so an empty session shares the height with the spacer below. */}
+                      {sessionReady ? <div className="flex min-h-0 flex-1 flex-col"><ChatView /></div> : <SessionGreeting />}
+                      {chatHome && (chatDraftError || workspaceError) ? (
+                        <div
+                          role="alert"
+                          className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
+                        >
+                          {chatDraftError ? (
+                            <span className="flex items-center gap-2">
+                              {chatDraftError}
+                              <Button variant="outline" size="xs" onClick={retryChatDraft}>
+                                <RotateCw />
+                                {t('common.retry')}
+                              </Button>
+                            </span>
+                          ) : null}
+                          {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
+                          {workspaceError ? <span>{workspaceError}</span> : null}
+                        </div>
+                      ) : null}
+                      <Composer
+                        draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
+                        draftSessionId={
+                          projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
+                        }
+                        centered={projectHome || chatHome || sessionEmpty}
+                        workspace={composerWorkspace}
+                      />
+                      {projectHome ? (
+                        <ProjectSessionHome cwd={currentProjectCwd!} />
+                      ) : chatHome || sessionEmpty ? (
+                        <div className="min-h-0 flex-1" />
+                      ) : null}
+                    </>
+                  ) : (
+                    <Empty className="gap-4">
+                      <EmptyDescription>
+                        {restoreError
+                          ? t('app.restoreFailed', { error: restoreError })
+                          : activeTab?.loadState === 'error'
+                            ? activeTab.loadError || t('app.loadFailed')
+                            : t('app.loadingSession')}
+                      </EmptyDescription>
+                      {restoreError ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
+                        >
+                          <RotateCw />
+                          {t('app.retryRestore')}
+                        </Button>
+                      ) : null}
+                    </Empty>
+                  )}
+                  {!isMultiPane && (
+                    <SplitPaneOverlay
+                      position={splitDragOver?.paneId === (activeTabId ?? 'single') ? splitDragOver.position : null}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </WorkspaceLayout>
         </div>
       </div>
     </TooltipProvider>

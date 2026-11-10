@@ -103,6 +103,15 @@ async function fixture(): Promise<void> {
     await act(async () => { back.click() })
     await act(async () => { action(translate('en', 'persona.discard')).click() })
     assert.equal(closes, 1)
+    const navigationTarget = document.createElement('div')
+    host.append(navigationTarget)
+    await act(async () => root.render(h(SettingsPage, {
+      onClose: () => { closes++ }, navigationTarget, active: false
+    })))
+    assert.ok(navigationTarget.querySelector('nav'), 'navigation can share the workspace rail through a portal')
+    assert.equal(host.querySelector('[data-settings-surface] nav'), null)
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    assert.equal(closes, 1, 'an exiting settings page must no longer handle Escape')
   } finally {
     await act(async () => {
       root.unmount()

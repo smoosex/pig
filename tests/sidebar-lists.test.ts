@@ -47,43 +47,6 @@ afterEach(async () => {
 })
 
 describe('sidebar list per half', () => {
-  test('settings replacement removes the rail immediately and restores it without changing its width or list', async () => {
-    await ensureDom()
-    const { act, createElement: h } = await import('react')
-    const { createRoot } = await import('react-dom/client')
-    const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
-    const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    try {
-      for (const hidden of [false, true]) {
-        const render = async (replaced: boolean) => {
-          await act(async () => root.render(h(TooltipProvider, null,
-            h(Sidebar, { hidden, replaced, onOpenSettings: () => {}, tab: 'projects', preferencesError: null })
-          )))
-        }
-        await render(false)
-        const rail = container.querySelector('aside')!
-        const list = container.querySelector('[data-stub="project-list"]')!
-        const width = hidden ? 'w-0' : 'w-62'
-        for (const replaced of [true, false]) {
-          await render(replaced)
-          assert.equal(container.querySelector('aside'), rail)
-          assert.equal(container.querySelector('[data-stub="project-list"]'), list, 'replacement preserves list state')
-          assert.equal(rail.classList.contains('hidden'), replaced, 'page switching uses display, not a width transition')
-          assert.equal(rail.classList.contains('flex'), !replaced)
-          assert.ok(rail.classList.contains(width), 'settings do not change the saved rail width')
-          assert.equal(rail.getAttribute('aria-hidden'), String(hidden || replaced))
-          assert.equal(rail.inert, hidden || replaced)
-        }
-      }
-    } finally {
-      await act(async () => root.unmount())
-      container.remove()
-    }
-  })
-
   test('floating sidebars close without a width transition; docked sidebars retain it', async () => {
     await ensureDom()
     const { act, createElement: h } = await import('react')

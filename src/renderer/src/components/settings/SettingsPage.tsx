@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BookOpen, Brain, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
@@ -88,7 +89,11 @@ const sections = [
 
 type SettingsSection = (typeof sections)[number]['id']
 
-export function SettingsPage({ onClose }: { onClose: () => void }) {
+export function SettingsPage({ onClose, navigationTarget, active = true }: {
+  onClose: () => void
+  navigationTarget?: HTMLElement | null
+  active?: boolean
+}) {
   const t = useT()
   const [section, setSection] = useState<SettingsSection>('general')
   const [featureDirty, setFeatureDirty] = useState(false)
@@ -108,6 +113,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   }, [load])
 
   useEffect(() => {
+    if (!active) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || isShortcutRecording()) return
       if (
@@ -121,60 +127,64 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, featureBusy, featureDirty])
+  }, [active, onClose, featureBusy, featureDirty])
+
+  const navigation = (
+    <nav className="flex h-full min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
+      <div className="flex h-8 shrink-0 items-center px-2.5 text-xs font-normal text-muted-foreground">
+        {t('sidebar.settings')}
+      </div>
+      <ScrollArea className="-mx-1.5 -mt-1.5 min-h-0 flex-1">
+        <SidebarHoverHighlight className="flex flex-col gap-1 p-1.5">
+          {sections.map(({ id, title, description, icon: SectionIcon }) => {
+            const active = section === id
+            return (
+              <Button
+                key={id}
+                type="button"
+                variant="ghost"
+                data-sidebar-hover-row
+                data-sidebar-selected={active || undefined}
+                className={cn(
+                  'relative h-auto w-full items-start justify-start gap-2.5 px-2.5 py-2 text-left',
+                  sidebarRowSurface(active),
+                  active
+                    ? 'text-sidebar-accent-foreground'
+                    : 'text-sidebar-foreground hover:text-sidebar-accent-foreground'
+                )}
+                onClick={() => setSection(id)}
+              >
+                <SectionIcon className="mt-0.5 size-4 shrink-0" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-normal leading-tight">{t(title)}</span>
+                  <span className="text-xs font-normal text-muted-foreground leading-normal">
+                    {t(description)}
+                  </span>
+                </span>
+              </Button>
+            )
+          })}
+        </SidebarHoverHighlight>
+      </ScrollArea>
+      <div className="pt-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn('w-full justify-start text-muted-foreground hover:text-sidebar-accent-foreground', sidebarSurfaceHover)}
+          disabled={featureBusy}
+          onClick={requestClose}
+        >
+          <ChevronLeft data-icon="inline-start" />
+          {t('settings.back')}
+        </Button>
+      </div>
+    </nav>
+  )
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <nav className="flex min-h-0 w-62 shrink-0 flex-col gap-1 px-2 py-2">
-        <div className="flex h-8 shrink-0 items-center px-2.5 text-xs font-normal text-muted-foreground">
-          {t('sidebar.settings')}
-        </div>
-        <ScrollArea className="-mx-1.5 -mt-1.5 min-h-0 flex-1">
-          <SidebarHoverHighlight className="flex flex-col gap-1 p-1.5">
-            {sections.map(({ id, title, description, icon: SectionIcon }) => {
-              const active = section === id
-              return (
-                <Button
-                  key={id}
-                  type="button"
-                  variant="ghost"
-                  data-sidebar-hover-row
-                  data-sidebar-selected={active || undefined}
-                  className={cn(
-                    'relative h-auto w-full items-start justify-start gap-2.5 px-2.5 py-2 text-left',
-                    sidebarRowSurface(active),
-                    active
-                      ? 'text-sidebar-accent-foreground'
-                      : 'text-sidebar-foreground hover:text-sidebar-accent-foreground'
-                  )}
-                  onClick={() => setSection(id)}
-                >
-                  <SectionIcon className="mt-0.5 size-4 shrink-0" />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-sm font-normal leading-tight">{t(title)}</span>
-                    <span className="text-xs font-normal text-muted-foreground leading-normal">
-                      {t(description)}
-                    </span>
-                  </span>
-                </Button>
-              )
-            })}
-          </SidebarHoverHighlight>
-        </ScrollArea>
-        <div className="pt-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={cn('w-full justify-start text-muted-foreground hover:text-sidebar-accent-foreground', sidebarSurfaceHover)}
-            disabled={featureBusy}
-            onClick={requestClose}
-          >
-            <ChevronLeft data-icon="inline-start" />
-            {t('settings.back')}
-          </Button>
-        </div>
-      </nav>
+      {navigationTarget === undefined ? navigation : navigationTarget ? createPortal(navigation, navigationTarget) : null}
       <div
         data-app-surface
         data-settings-surface
