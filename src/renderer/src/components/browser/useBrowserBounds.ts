@@ -26,6 +26,8 @@ export function useBrowserBounds(
     if (visible) owners.set(browserId, token)
     let last = ''
     let applied: string | undefined
+    let captured: string | undefined
+    let appliedOccluded = false
     let frame = 0
     let pending: AbortController | undefined
     const enqueue = (bounds: BrowserBounds | null, freeze: boolean, key: string, signal: AbortSignal) => {
@@ -33,23 +35,36 @@ export function useBrowserBounds(
       writes = writes.then(async () => {
         if (!current()) return
         let captureFailure: { error: unknown } | undefined
-        if (freeze && applied !== key) {
+        const needsCapture = freeze && captured !== key
+        const apply = async () => {
+          if (applied === key) return
+          await api.browser.setBounds(browserId, bounds)
+          applied = key
+          appliedOccluded = bounds?.occluded ?? false
+          if (!appliedOccluded) captured = undefined
+        }
+        // The first hide preserves the visible frame's paint barrier. Subsequent overlay resizes
+        // lay out the already-hidden native views first, then capture their new responsive layout.
+        if (needsCapture && appliedOccluded) await apply()
+        if (needsCapture) {
           try {
             const snapshot = await api.browser.snapshot(browserId)
             if (!current()) return
             // A page already hidden by the previous owner may have no new frame. Keep its placeholder.
-            if (snapshot !== null) await onFreeze(snapshot, signal)
+            if (snapshot !== null) {
+              // onFreeze can replace the image before its paint barrier finishes or is cancelled.
+              captured = undefined
+              await onFreeze(snapshot, signal)
+              if (current()) captured = key
+            }
           } catch (error) { captureFailure = { error } }
         }
         if (!current()) return
         // A failed capture/decode cannot prevent mandatory occlusion. Report it after attempting
         // to hide, including when setBounds also fails, without caching failed native writes.
         try {
-          if (applied !== key) {
-            await api.browser.setBounds(browserId, bounds)
-            applied = key
-          }
-          if (bounds !== null && current()) {
+          await apply()
+          if (bounds !== null && !bounds.occluded && current()) {
             // IPC acknowledgement is not a native presentation acknowledgement. Keep the decoded
             // frame across the next paint opportunity rather than removing it in the IPC microtask.
             await waitForBrowserPaint(signal)
@@ -102,8 +117,9 @@ export function useBrowserBounds(
         })
       const divider = element?.querySelector(DIVIDER)?.getBoundingClientRect()
       const devtools = rect && divider ? { height: Math.max(0, rect.bottom - Math.max(divider.top, rect.top)) } : undefined
-      const bounds = visible && !blocked && rect && rect.width > 0 && rect.height > 0
+      const bounds = visible && rect && rect.width > 0 && rect.height > 0
         ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          ...(blocked ? { occluded: true } : {}),
           ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}),
           ...(devtools ? { devtools } : {}) } : null
       // Enter/exit transforms can move a menu across the viewport without DOM or resize mutations.

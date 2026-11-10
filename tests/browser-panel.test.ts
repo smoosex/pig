@@ -41,11 +41,11 @@ async function fixture() {
     setSelecting: async (_id, _selecting, options) => { assert.ok(options?.labels.add); assert.ok(options?.theme.foreground) }, close: async () => { closed++ },
     setBounds: async (browserId, rect) => {
       bounds.push({ browserId, bounds: rect })
-      if (browserId === 'two' && rect === null && hideFailures > 0) {
+      if (browserId === 'two' && (rect === null || rect.occluded) && hideFailures > 0) {
         hideFailures--
         throw new Error('hide failed')
       }
-      appliedBounds.set(browserId, rect)
+      appliedBounds.set(browserId, rect?.occluded ? null : rect)
     },
     capture: async () => { captures++; return new Promise((resolve) => { capture = resolve }) },
     snapshot: async (browserId) => {
@@ -257,7 +257,7 @@ async function fixture() {
   hint.getBoundingClientRect = () => new DOMRect(450, 150, 120, 30)
   hint.setAttribute('style', 'opacity:1')
   await flush()
-  assert.equal(bounds.at(-1)?.bounds, null, 'a tooltip over the webpage must not be covered by the native view')
+  assert.equal(bounds.at(-1)?.bounds?.occluded, true, 'a tooltip over the webpage must not be covered by the native view')
   assert.equal(container.querySelector('[data-browser-viewport] img')?.getAttribute('src'), 'data:image/jpeg;base64,YWJj', 'a still frame replaces the hidden page')
   hint.remove()
   await flush()
@@ -267,13 +267,13 @@ async function fixture() {
   overlay.setAttribute('role', 'dialog')
   document.body.append(overlay)
   await flush()
-  assert.equal(bounds.at(-1)?.bounds, null)
+  assert.equal(bounds.at(-1)?.bounds?.occluded, true)
   overlay.remove()
   await flush()
   assert.ok(bounds.at(-1)?.bounds)
   document.documentElement.setAttribute('data-surface-reveal', 'glass')
   await flush()
-  assert.equal(bounds.at(-1)?.bounds, null)
+  assert.equal(bounds.at(-1)?.bounds?.occluded, true)
   document.documentElement.removeAttribute('data-surface-reveal')
   await flush()
   assert.ok(bounds.at(-1)?.bounds)
@@ -402,10 +402,10 @@ async function fixture() {
   assert.ok(appliedBounds.get('two'), 'the rejected hide has not changed native visibility')
   assert.ok(errors.some(error => error instanceof Error && error.message === 'snapshot failed'))
   assert.ok(errors.some(error => error instanceof Error && error.message === 'hide failed'), 'both IPC failures are reported')
-  const attempts = bounds.filter(entry => entry.browserId === 'two' && entry.bounds === null).length
+  const attempts = bounds.filter(entry => entry.browserId === 'two' && (entry.bounds === null || entry.bounds.occluded)).length
   window.dispatchEvent(new Event('resize'))
   await flush()
-  assert.equal(bounds.filter(entry => entry.browserId === 'two' && entry.bounds === null).length, attempts + 1, 'a failed transition must not suppress a same-layout retry')
+  assert.equal(bounds.filter(entry => entry.browserId === 'two' && (entry.bounds === null || entry.bounds.occluded)).length, attempts + 1, 'a failed transition must not suppress a same-layout retry')
   assert.equal(appliedBounds.get('two'), null, 'snapshot rejection still allows the native view to be hidden')
   snapshotFailure = false
   overlay.remove()

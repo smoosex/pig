@@ -208,6 +208,13 @@ export class BrowserHost {
       page.devtools?.setVisible(false)
       return
     }
+    const visible = !page.bounds.occluded
+    // Hide before resizing/reparenting; an overlay must never expose a native frame above itself.
+    if (!visible) {
+      page.clip?.setVisible(false)
+      page.view.setVisible(false)
+      page.devtools?.setVisible(false)
+    }
     const [width, height] = owner.win.getContentSize()
     const zoom = owner.win.webContents.getZoomFactor()
     const bounds = browserDipBounds(page.bounds, zoom, width, height)
@@ -247,7 +254,7 @@ export class BrowserHost {
     }
     // Move the upper corners above the clipped view; extend square split-pane edges past the clip.
     const bottomY = bounds.y + bounds.height - bottomHeight
-    const resizeable = dock && bounds.width > 0 && tools > 0 && pageHeight > 0
+    const resizeable = visible && dock && bounds.width > 0 && tools > 0 && pageHeight > 0
     if (!resizeable) page.devtoolsDragging = false
     page.devtoolsTop = resizeable ? bottomY : undefined
     page.devtoolsPageHeight = resizeable ? pageHeight : undefined
@@ -259,14 +266,14 @@ export class BrowserHost {
         width: bounds.width + offsetX + (!right ? radius : 0), height: bottomHeight + offsetY
       })
       page.clip.setBorderRadius(radius)
-      page.clip.setVisible(bounds.width > 0 && bottomHeight > 0)
+      page.clip.setVisible(visible && bounds.width > 0 && bottomHeight > 0)
     }
     const at = (y: number, h: number, clipped: boolean) => clipped
       ? { x: offsetX, y: offsetY, width: bounds.width, height: h }
       : { x: bounds.x, y, width: bounds.width, height: h }
     page.view.setBounds(at(bounds.y, pageHeight, page.clipped === page.view))
-    page.view.setVisible(bounds.width > 0 && pageHeight > 0)
-    if (page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
+    page.view.setVisible(visible && bounds.width > 0 && pageHeight > 0)
+    if (visible && page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
       page.focusOnShow = false
       if (owner.win.isFocused()) {
         page.view.webContents.focus()
@@ -274,7 +281,7 @@ export class BrowserHost {
     }
     if (page.devtools) {
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
-      page.devtools.setVisible(bounds.width > 0 && tools > 0)
+      page.devtools.setVisible(visible && bounds.width > 0 && tools > 0)
     }
     this.syncDevtoolsPageEdge(owner, page)
   }
@@ -693,7 +700,7 @@ export class BrowserHost {
     const { owner, page } = bounds === null ? retained : this.page(win, id)
     if (!page) return
     page.bounds = bounds
-    if (!bounds) this.picker(owner, page, false)
+    if (!bounds || bounds.occluded) this.picker(owner, page, false)
     this.layout(owner, page)
     this.push(owner, page)
     if (restoreUrl) this.restorePage(win, id, restoreUrl)
@@ -710,7 +717,7 @@ export class BrowserHost {
     if (options !== undefined) validatePickerOptions(options)
     const { owner, page } = this.page(win, id, false)
     if (!page) { if (selecting) throw new Error('No browser page'); return }
-    if (selecting && (!page.bounds || page.state.loading || page.state.error || !isBrowserUrl(page.state.url))) throw new Error('Browser page is not ready')
+    if (selecting && (!page.bounds || page.bounds.occluded || page.state.loading || page.state.error || !isBrowserUrl(page.state.url))) throw new Error('Browser page is not ready')
     if (options) page.pickerOptions = options
     this.picker(owner, page, selecting)
     this.push(owner, page)
@@ -770,7 +777,17 @@ export class BrowserHost {
 
   async snapshot(win: BrowserWindow, id: string): Promise<BrowserFrame | null> {
     const { owner, page } = this.page(win, id, false)
-    if (!page || !page.view.getVisible() || page.state.error || !isBrowserUrl(page.state.url)) return null
+    if (!page || page.state.error || !isBrowserUrl(page.state.url)) return null
+    if (!page.view.getVisible()) {
+      if (!page.bounds?.occluded) return null
+      const tools = page.bounds.devtools && page.devtools
+      const [image, toolsImage] = await Promise.all([
+        captureHiddenPage(page.view.webContents),
+        tools ? captureHiddenPage(tools.webContents) : undefined
+      ])
+      if (!this.alive(owner, page) || (tools && page.devtools !== tools)) return null
+      return { page: `data:image/png;base64,${image}`, devtools: toolsImage ? `data:image/png;base64,${toolsImage}` : null }
+    }
     const tools = page.devtools?.getVisible() ? page.devtools : undefined
     const [image, toolsImage] = await Promise.all([
       page.view.webContents.capturePage(),

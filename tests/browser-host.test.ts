@@ -123,6 +123,31 @@ const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
 
 describe('browser host', () => {
+  test('occluded panes resize and recapture both native views without showing or focusing them', async () => {
+    const { host, owner, views } = fixture()
+    host.setBounds(owner, 'overlay', bounds)
+    await host.navigate(owner, 'overlay', 'https://example.test')
+    host.inspect(owner, 'overlay')
+    const docked = { ...bounds, devtools: { height: 80 }, occluded: true }
+    host.setBounds(owner, 'overlay', docked)
+    host.setBounds(owner, 'overlay', { ...docked, width: 350 })
+    expect(views[0].bounds).toEqual({ x: 15, y: 30, width: 525, height: 180 })
+    expect(views[1].bounds).toEqual({ x: 15, y: 210, width: 525, height: 120 })
+    expect(views.every(view => !view.visible && view.webContents.focusCalls === 0)).toBe(true)
+    const frame = await host.snapshot(owner, 'overlay')
+    expect(frame?.page).toStartWith('data:image/png;base64,')
+    expect(frame?.devtools).toStartWith('data:image/png;base64,')
+    for (const view of views) {
+      expect(view.visible).toBe(false)
+      expect(view.webContents.debuggerCommands).toContainEqual(['Page.captureScreenshot', {
+        format: 'png', fromSurface: true, captureBeyondViewport: false
+      }])
+    }
+    host.setBounds(owner, 'overlay', null)
+    expect(await host.snapshot(owner, 'overlay')).toBeNull()
+    host.closeWindow(owner)
+  })
+
   test('native clipping wraps only the bottom view, and the page covers the clip above docked DevTools', async () => {
     const { host, owner, win, views, clips, removed } = fixture()
     win.webContents.getZoomFactor = () => 1.5

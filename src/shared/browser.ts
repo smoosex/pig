@@ -6,6 +6,8 @@ export interface BrowserBounds {
   height: number
   bottomLeftRadius?: number
   bottomRightRadius?: number
+  /** Keep layout current while DOM overlays hide the native views. */
+  occluded?: boolean
   /** Open DevTools take this much of the bottom of these bounds. */
   devtools?: { height: number }
 }

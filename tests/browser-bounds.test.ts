@@ -31,6 +31,7 @@ async function fixture(scenario: string) {
   const calls: (BrowserBounds | null)[] = []
   const freezes: { frame: BrowserFrame | null; signal: AbortSignal }[] = []
   const errors: unknown[] = []
+  let viewportWidth = 400
   let native: BrowserBounds | null = null
   let still: BrowserFrame | null = null
   let snapshots = 0
@@ -41,8 +42,8 @@ async function fixture(scenario: string) {
     snapshot: async () => { snapshots++; return snapshot() },
     setBounds: async (_id: string, bounds: BrowserBounds | null) => {
       calls.push(bounds)
-      await write(bounds)
-      native = bounds
+      await write(bounds?.occluded ? null : bounds)
+      native = bounds?.occluded ? null : bounds
     }
   } } })
   const { act, createElement, useRef } = await import('react')
@@ -59,7 +60,7 @@ async function fixture(scenario: string) {
     useBrowserBounds('bounds-probe', true, viewport, report, onFreeze)
     const content = createElement('div', { ref: (node: HTMLDivElement | null) => {
       viewport.current = node
-      if (node) node.getBoundingClientRect = () => new DOMRect(100, 100, 400, 300)
+      if (node) node.getBoundingClientRect = () => new DOMRect(100, 100, viewportWidth, 300)
     } })
     return scenario === 'split-corners' ? createElement('div', {
       'data-split-pane': 'true',
@@ -89,7 +90,7 @@ async function fixture(scenario: string) {
     await drain()
   }
   const settle = async () => { for (let i = 0; i < 6; i++) await paint() }
-  const hideCount = () => calls.filter(bounds => bounds === null).length
+  const hideCount = () => calls.filter(bounds => bounds === null || bounds.occluded).length
   const clearCount = () => freezes.filter(entry => entry.frame === null).length
   const overlay = () => {
     const element = document.createElement('div')
@@ -243,6 +244,83 @@ async function fixture(scenario: string) {
       content.style.visibility = 'visible'
       await settle()
       assert.equal(hideCount(), 1, 'visible overlapping content does hide the native view')
+    } else if (scenario === 'occluded-resize') {
+      const content = overlay()
+      await settle()
+      assert.equal(native, null)
+      const captures = snapshots
+      viewportWidth = 650
+      const resized: BrowserFrame = { page: 'data:image/png;base64,bmV3', devtools: null }
+      snapshot = async () => {
+        assert.equal(calls.at(-1)?.width, 650, 'hidden layout is resized before recapture')
+        assert.equal(calls.at(-1)?.occluded, true)
+        assert.equal(native, null, 'recapture must never reveal the native page')
+        return resized
+      }
+      window.dispatchEvent(new Event('resize'))
+      await settle()
+      assert.equal(snapshots, captures + 1)
+      assert.equal(still, resized, 'a sidebar resize replaces the old still with the new responsive layout')
+      content.remove()
+      await settle()
+      assert.equal((native as BrowserBounds | null)?.width, 650)
+      assert.equal(still, null)
+    } else if (scenario === 'occluded-resize-roundtrip' || scenario === 'occluded-resize-roundtrip-freeze') {
+      const content = overlay()
+      await settle()
+      assert.equal(still, image)
+      const resized: BrowserFrame = { page: 'data:image/png;base64,bmV3', devtools: null }
+      const ready = deferred<void>()
+      const captures = snapshots
+      let first = true
+      snapshot = async () => {
+        if (first && scenario === 'occluded-resize-roundtrip') await ready.promise
+        first = false
+        return resized
+      }
+      let firstFreeze = true
+      freeze = async frame => {
+        if (frame !== null && firstFreeze && scenario === 'occluded-resize-roundtrip-freeze') {
+          firstFreeze = false
+          await ready.promise
+        }
+      }
+      viewportWidth = 650
+      window.dispatchEvent(new Event('resize'))
+      await paint()
+      assert.equal(calls.at(-1)?.width, 650, 'native layout is applied before the pending capture commits')
+      assert.equal(snapshots, captures + 1)
+      for (const width of [700, 650]) {
+        viewportWidth = width
+        window.dispatchEvent(new Event('resize'))
+        await paint()
+      }
+      ready.resolve()
+      await settle()
+      assert.equal(snapshots, captures + 2, 'returning to applied native bounds still recaptures a discarded frame')
+      assert.equal(still, resized, 'the final 650 layout replaces the original 400 placeholder')
+      assert.equal(calls.at(-1)?.width, 650)
+      assert.equal(native, null, 'the page remains hidden throughout the resize sequence')
+      assert.equal(errors.length, 0)
+      content.remove()
+    } else if (scenario === 'occluded-resize-stale') {
+      const content = overlay()
+      await settle()
+      const capture = deferred<BrowserFrame>()
+      snapshot = () => capture.promise
+      viewportWidth = 650
+      window.dispatchEvent(new Event('resize'))
+      await settle()
+      assert.equal(native, null)
+      const commits = freezes.length
+      content.remove()
+      await paint()
+      capture.resolve({ page: 'data:image/png;base64,b2Jzb2xldGU=', devtools: null })
+      await settle()
+      assert.equal(freezes.slice(commits).filter(entry => entry.frame !== null).length, 0,
+        'a hidden recapture that finishes after the menu closes must not replace the placeholder')
+      assert.equal((native as BrowserBounds | null)?.width, 650)
+      assert.equal(still, null)
     } else if (scenario === 'freeze-barrier') {
       const ready = deferred<void>()
       freeze = async frame => { if (frame !== null) await ready.promise }
@@ -378,10 +456,10 @@ async function fixture(scenario: string) {
       content.remove()
       await settle()
       assert.equal(native, null)
-      const shows = calls.filter(Boolean).length
+      const shows = calls.filter(bounds => bounds && !bounds.occluded).length
       window.dispatchEvent(new Event('resize'))
       await settle()
-      assert.equal(calls.filter(Boolean).length, shows + 1, 'failed restores also permit same-layout retries')
+      assert.equal(calls.filter(bounds => bounds && !bounds.occluded).length, shows + 1, 'failed restores also permit same-layout retries')
       assert.ok(native)
     } else {
       throw new Error(`Unknown scenario: ${scenario}`)
@@ -403,6 +481,10 @@ const scenarios = {
   'split-preview': 'the split drop preview over a page swaps it for its still until the drag leaves',
   devtools: 'docked DevTools take the viewport below their marker and follow it when it moves',
   invisible: 'transparent, hidden and closed overlays do not occlude the viewport',
+  'occluded-resize': 'sidebar resize under an open menu relayouts hidden views and replaces the still',
+  'occluded-resize-stale': 'closing the menu discards an in-flight hidden resize capture',
+  'occluded-resize-roundtrip': 'returning to applied bounds recaptures a cancelled screenshot',
+  'occluded-resize-roundtrip-freeze': 'returning to applied bounds recaptures a cancelled frame handoff',
   'freeze-barrier': 'hide awaits the asynchronous still-frame paint barrier',
   'stale-snapshot': 'an obsolete snapshot cannot hide the viewport',
   'restore-paint': 'restore retains the still until two paints and never clears it after reblocking',
