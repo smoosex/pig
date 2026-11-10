@@ -19,12 +19,15 @@ import { useProjectAction } from './sidebar/project-action'
 export function Sidebar({
   onOpenSettings,
   hidden = false,
+  replaced = false,
   floating = false,
   tab,
   preferencesError
 }: {
   onOpenSettings: () => void
   hidden?: boolean
+  /** Page replacement removes the rail immediately without animating or unmounting its list. */
+  replaced?: boolean
   floating?: boolean
   tab: SidebarTab
   preferencesError: string | null
@@ -47,10 +50,11 @@ export function Sidebar({
 
   return (
     <aside
-      inert={hidden}
-      aria-hidden={hidden}
+      inert={hidden || replaced}
+      aria-hidden={hidden || replaced}
       className={cn(
-        'flex min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground duration-200 ease-in-out motion-reduce:transition-none',
+        replaced ? 'hidden' : 'flex',
+        'min-w-0 overflow-hidden bg-transparent solid:bg-sidebar text-sidebar-foreground duration-200 ease-in-out motion-reduce:transition-none',
         floating && hidden ? 'transition-[background-color]' : 'transition-[width,background-color]',
         hidden ? 'w-0' : 'w-62'
       )}

@@ -590,7 +590,8 @@ export default function App() {
             >
               <Sidebar
                 floating={leftCollapsed}
-                hidden={settingsOpen || (leftCollapsed && hoverSidebar !== 'left')}
+                replaced={settingsOpen}
+                hidden={leftCollapsed && hoverSidebar !== 'left'}
                 onOpenSettings={() => setSettingsOpen(true)}
                 tab={sidebarTab}
                 preferencesError={sidebarPrefsError}
