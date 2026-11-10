@@ -22,7 +22,7 @@ import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel 
 import { clusterWork, processToolNames, toolUsageSummary, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ThinkingRow } from './ProcessText'
-import { MemoryRetrieval } from './MemoryRetrieval'
+
 
 const GroupBody = memo(function GroupBody({ items }: { items: ProcessItem[] }) {
   return (
@@ -31,7 +31,7 @@ const GroupBody = memo(function GroupBody({ items }: { items: ProcessItem[] }) {
         if (row.kind === 'thinking') {
           return <ThinkingRow key={i} text={row.text} durationMs={row.durationMs} />
         }
-        if (row.kind === 'memory') return <MemoryRetrieval key={i} trace={row.retrieval} />
+
         if (row.kind === 'tools') return <ToolCluster key={row.steps[0].id} steps={row.steps} />
         if (row.kind === 'bash') return <BashCluster key={i} messages={row.messages} />
         if (row.kind === 'custom') return <CustomProcess key={i} message={row.message} />
@@ -48,7 +48,6 @@ const ActivityGroup = memo(function ActivityGroup({ items }: { items: ProcessIte
     return (
       <>
         {items.map((item, i) => {
-          if (item.kind === 'memory') return <MemoryRetrieval key={i} trace={item.retrieval} />
           if (item.kind === 'thinking') {
             return <ThinkingRow key={i} text={item.text} durationMs={item.durationMs} stacked />
           }
@@ -132,7 +131,7 @@ const OutlineRow = memo(function OutlineRow({ row, last, streaming }: { row: Wor
     }
     return <ThinkingRow text={row.text} durationMs={row.durationMs} />
   }
-  if (row.kind === 'memory') return <MemoryRetrieval trace={row.retrieval} />
+
   if (row.kind === 'tools') {
     const current = row.steps.findLastIndex((step) => !step.result)
     return (
@@ -179,7 +178,6 @@ const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { 
     return (
       <>
         {items.map((item, i) => {
-          if (item.kind === 'memory') return <MemoryRetrieval key={i} trace={item.retrieval} />
           if (item.kind === 'thinking') {
             const live = streaming && active && i === items.length - 1 && item.live
             if (live) {

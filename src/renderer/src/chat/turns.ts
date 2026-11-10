@@ -3,7 +3,6 @@ import { addUsage } from '../../../shared/turn-usage'
 import { turnTiming } from '../../../shared/turn-timing'
 export { userTurnRenderKey as renderKeyForUser } from '../../../shared/turn-identity'
 import { userTurnRenderKey as renderKeyForUser } from '../../../shared/turn-identity'
-import type { LongTermRetrievalTrace } from '../../../shared/long-term-memory'
 import type { Translate } from '../../../shared/i18n'
 import type {
   AssistantMessage,
@@ -41,7 +40,6 @@ export type ProcessItem =
   | { kind: 'tools'; tools: ToolStep[] }
   | { kind: 'bash'; message: BashExecutionMessage }
   | { kind: 'custom'; message: CustomMessage }
-  | { kind: 'memory'; retrieval: LongTermRetrievalTrace }
   | CompactionItem
 
 /**
@@ -76,7 +74,6 @@ export interface Turn {
   bash?: { command: string; exitCode?: number; cancelled: boolean }
   bashRunning?: boolean
   process: ProcessItem[]
-  memoryRetrieval?: LongTermRetrievalTrace
   /**
    * Landmarks from the projection, used until the process is read: Pi writes a compaction into the
    * same stream as the work, so a loaded process carries its own copies and outranks these.

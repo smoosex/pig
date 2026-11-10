@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Brain, ChevronRight, DatabaseSearch, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { Brain, ChevronRight, FileText, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import { cn, hideScroll } from '../../lib/utils'
 import type { IconKind } from './process-model'
 
@@ -23,7 +23,6 @@ export function Chevron({ open }: { open: boolean }) {
 
 const ICONS: Record<IconKind, LucideIcon> = {
   thinking: Brain,
-  memory: DatabaseSearch,
   bash: SquareTerminal,
   file: FileText,
   tool: Wrench

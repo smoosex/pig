@@ -9,5 +9,5 @@ export function memoryDataPath(...parts: string[]): string {
 
 export const memorySettingsPath = (): string => memoryDataPath('settings.json')
 
-/** Separate from the legacy OM settings directory; main sets PIG_DIR before loading features. */
-export const longTermMemoryPath = (): string => join(process.env.PIG_DIR || join(process.cwd(), '.pig'), 'memory', 'long-term.sqlite')
+/** Markdown memory is separate from OM's session compaction data. */
+export const fileMemoryPath = (): string => join(process.env.PIG_DIR || join(process.cwd(), '.pig'), 'memory')

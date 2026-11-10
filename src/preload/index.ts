@@ -84,11 +84,10 @@ const api: SessionApi = {
     }
   },
   longTermMemory: {
-    list: (kind, offset) => ipcRenderer.invoke('memory:long-term:list', kind, offset),
-    evidence: (id) => ipcRenderer.invoke('memory:long-term:evidence', id),
-    deleteEpisode: (id) => ipcRenderer.invoke('memory:long-term:delete-episode', id),
-    forget: (id) => ipcRenderer.invoke('memory:long-term:forget', id),
-    status: () => ipcRenderer.invoke('memory:long-term:status'),
+    list: () => ipcRenderer.invoke('memory:files:list'),
+    read: path => ipcRenderer.invoke('memory:files:read', path),
+    save: (path, content, revision) => ipcRenderer.invoke('memory:files:save', path, content, revision),
+    delete: (path, revision) => ipcRenderer.invoke('memory:files:delete', path, revision),
   },
   conversationFeatures: {
     onChanged: (listener) => {

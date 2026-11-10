@@ -2,7 +2,6 @@ import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { showsInTranscript } from '../chat/compactions'
 import { toTurn } from '../chat/display-turns'
 import { groupTurns } from '../chat/turns'
-import { withMemoryRetrieval } from '../chat/memory-retrieval'
 import { SCROLL_END, TURN_ALIGN, type ScrollSnapshot } from '../chat/scroll-state'
 import { useSessionsStore, selectActiveSessionId, type OpenTab } from '../stores/sessions'
 import { isSessionEmpty } from '../chat/session-empty'
@@ -18,7 +17,6 @@ const emptyMessages: RuntimeState['liveMessages'] = []
 const emptyCompactions: RuntimeState['liveCompactions'] = []
 const emptyToolUpdates: RuntimeState['toolUpdates'] = {}
 const emptyProcess: RuntimeState['processByTurnId'] = {}
-const emptyRetrievals: RuntimeState['memoryRetrievals'] = {}
 const emptyDurations: Record<string, number> = {}
 const emptyGeneration: RuntimeState['generationByTurnId'] = {}
 const MAX_SCROLL_SNAPSHOTS = 32
@@ -84,7 +82,6 @@ const SessionChatPane = memo(function SessionChatPane({
   const toolUpdates = useSessionsStore((s) => s.runtime[sessionId]?.toolUpdates ?? emptyToolUpdates)
   const bashExecution = useSessionsStore((s) => s.runtime[sessionId]?.bashExecution ?? null)
   const processByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.processByTurnId ?? emptyProcess)
-  const memoryRetrievals = useSessionsStore((s) => s.runtime[sessionId]?.memoryRetrievals ?? emptyRetrievals)
   const thinkingDurations = useSessionsStore((s) => s.runtime[sessionId]?.thinkingDurations ?? emptyDurations)
   const elapsedByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.elapsedByTurnId ?? emptyDurations)
   const generationByTurnId = useSessionsStore((s) => s.runtime[sessionId]?.generationByTurnId ?? emptyGeneration)
@@ -95,13 +92,13 @@ const SessionChatPane = memo(function SessionChatPane({
   const reviewReturning = useSystemUIStore((s) => !!s.reviewReturnPhases[sessionId])
 
   const historical = useMemo(
-    () => turns.map((turn) => withMemoryRetrieval(toTurn(
+    () => turns.map((turn) => toTurn(
       turn,
       processByTurnId[turn.id] ?? [],
       elapsedByTurnId[turn.id],
       generationByTurnId[turn.id]
-    ), memoryRetrievals)),
-    [turns, processByTurnId, elapsedByTurnId, generationByTurnId, memoryRetrievals]
+    )),
+    [turns, processByTurnId, elapsedByTurnId, generationByTurnId]
   )
   const live = useMemo(() => {
     const marks = liveCompactions.filter((mark) => showsInTranscript(mark, liveMessages.length > 0))
@@ -120,8 +117,8 @@ const SessionChatPane = memo(function SessionChatPane({
         workedMs: undefined
       })
     }
-    return turns.map(turn => withMemoryRetrieval(turn, memoryRetrievals))
-  }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs, liveCompactions, memoryRetrievals])
+    return turns
+  }, [liveMessages, toolUpdates, bashExecution, isStreaming, thinkingDurations, streamElapsedMs, liveCompactions])
 
   const scrollKey = branchViewId ? `${sessionId}\u0000${branchViewId}` : null
   const saveScrollState = useCallback((state: ScrollSnapshot) => {

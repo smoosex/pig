@@ -3,7 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { dirname, join } from 'node:path'
 import { realTarget } from '../../../sandbox/path'
 import { sessionWorkspace } from '../../../sandbox/workspace'
-import type { MemoryAccess } from './store'
+export interface MemoryAccess { project: string; session: string; cwd: string }
 
 export async function memoryAccess(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Promise<MemoryAccess> {
   const workspace = await sessionWorkspace(ctx.cwd)

@@ -141,12 +141,6 @@ function AgentTurnView({
   const blocks = turn.process.length === 0 && turn.workBlocks
     ? projectedSegments(landmarks, turn.workBlocks)
     : segmentProcess(inline)
-  if (turn.memoryRetrieval) {
-    const recall: ProcessItem = { kind: 'memory', retrieval: turn.memoryRetrieval }
-    const first = blocks.find(segment => segment.kind === 'work' && segment.block === 0)
-    if (first?.kind === 'work') first.items.unshift(recall)
-    else blocks.unshift({ kind: 'work', items: [recall], block: 0 })
-  }
   // Handoffs occupy compaction intervals without creating new timed work blocks. Source offsets
   // keep their order even when history bodies are unread or multiple entries share a timestamp.
   for (const item of turn.branchSummaries ?? []) {

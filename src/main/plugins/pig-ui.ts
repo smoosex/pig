@@ -1,13 +1,7 @@
 import type { ReviewFeedback, ReviewOption, ReviewReturnPhase, ReviewStep, SystemUIEvent } from '../../shared/api'
 
-import type { LongTermRetrievalTrace } from '../../shared/long-term-memory'
-
 type SessionIdentity = { sessionManager: { getSessionId(): string } }
 
-export function publishMemoryRetrieval(ctx: SessionIdentity, trace: LongTermRetrievalTrace): void {
-  const sessionId = ctx.sessionManager.getSessionId()
-  hosts.get(sessionId)?.send({ kind: 'memory-retrieval', sessionId, trace })
-}
 export interface SystemNotifier {
   notify(message: string, level?: 'info' | 'warning' | 'error'): void
 }

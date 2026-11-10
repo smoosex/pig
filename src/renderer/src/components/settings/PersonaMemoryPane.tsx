@@ -18,8 +18,9 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
   const [personaBusy, setPersonaBusy] = useState(false)
   const [memoryBusy, setMemoryBusy] = useState(false)
   const [longTermBusy, setLongTermBusy] = useState(false)
+  const [longTermDirty, setLongTermDirty] = useState(false)
 
-  useEffect(() => { onDirtyChange?.(personaDirty || memoryDirty) }, [personaDirty, memoryDirty, onDirtyChange])
+  useEffect(() => { onDirtyChange?.(personaDirty || memoryDirty || longTermDirty) }, [personaDirty, memoryDirty, longTermDirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(personaBusy || memoryBusy || longTermBusy) }, [personaBusy, memoryBusy, longTermBusy, onBusyChange])
 
   return <Tabs value={tab} onValueChange={setTab} className="gap-6">
@@ -38,7 +39,7 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
       <MemorySettings onDirtyChange={setMemoryDirty} onBusyChange={setMemoryBusy} />
     </TabsContent>
     <TabsContent value="long-term" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
-      <LongTermMemorySettings onBusyChange={setLongTermBusy} />
+      <LongTermMemorySettings onBusyChange={setLongTermBusy} onDirtyChange={setLongTermDirty} />
     </TabsContent>
   </Tabs>
 }

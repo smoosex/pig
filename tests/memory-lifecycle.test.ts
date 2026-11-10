@@ -46,6 +46,7 @@ async function fixture(scenario: string): Promise<void> {
   }
   const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
   mock.module(path('../src/main/features/memory-settings.ts'), () => ({ getMemorySettings: async () => ({}) }))
+  mock.module(path('../src/main/permissions/store.ts'), () => ({ sessionPermission: () => ({ mode: 'default' }) }))
   mock.module(path('../src/main/features/memory/agents/observer/agent.ts'), () => ({
     ObserverStreamError,
     runObserver: (args: { signal?: AbortSignal }) => run('observer', args, observations)
@@ -112,7 +113,7 @@ async function fixture(scenario: string): Promise<void> {
     for (const handler of handlers.get(event) ?? []) await handler({}, ctx)
   }
   const start = async () => {
-    plugin(pi)
+    await plugin(pi)
     await emit('session_start')
     const runtime = memoryRuntime('session')!
     assert.ok(runtime)

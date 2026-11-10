@@ -28,7 +28,6 @@ export const emptyRuntime = (): RuntimeState => ({
   branchRequest: 0,
   isNavigatingBranch: false,
   liveMessages: [],
-  memoryRetrievals: {},
   toolUpdates: {},
   bashExecution: null,
   pendingUserMessage: false,

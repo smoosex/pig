@@ -1,214 +1,148 @@
-/** Long-term admission has its own model selector and a paged, UI-only inspector. */
+/** Direct Markdown inspection; no learning queue, classification or auxiliary model. */
 import { useEffect, useRef, useState } from 'react'
-import type { LongTermEvidence, LongTermPage, LongTermSettings, MemoryViewKind, MemoryLearningStatus, LongTermFact, TaskEpisode } from '../../../../shared/long-term-memory'
+import type { MemoryFile } from '../../../../shared/long-term-memory'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
-import { useModelCatalogStore } from '../../stores/model-catalog'
 import { Button } from '../ui/button'
 import { Switch } from '../ui/switch'
-import { Badge } from '../ui/badge'
+import { Textarea } from '../ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
 import { SettingsCard, SettingsRow } from './SettingsFields'
-import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 
-export function LongTermMemorySettings({ onBusyChange }: {
-  onBusyChange?: (busy: boolean) => void
-}) {
+export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const t = useT()
-  const [draft, setDraft] = useState<LongTermSettings>()
-  const current = useRef<LongTermSettings>(undefined)
-  const confirmed = useRef<LongTermSettings>(undefined)
-  const writes = useRef(Promise.resolve())
-  const revision = useRef(0)
-  const mounted = useRef(true)
-  const [busy, setBusy] = useState(false)
+  const [enabled, setEnabled] = useState<boolean>()
+  const [busy, setBusy] = useState(true)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [editorBusy, setEditorBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [open, setOpen] = useState(false)
-  const models = useModelCatalogStore(state => state.models)
-  const model = models.find(item => item.provider === draft?.model?.provider && item.id === draft?.model?.id) ?? null
-  useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
-  useEffect(() => {
-    let cancelled = false
-    mounted.current = true
-    void api.getMemorySettings().then(settings => {
-      if (cancelled) return
-      const value = settings.longTerm ?? { enabled: false }
-      current.current = confirmed.current = value
-      setDraft(value)
-    }, failure => { if (!cancelled) setError(failureMessage(failure)) })
-    return () => { cancelled = true; mounted.current = false }
-  }, [])
-  const change = (update: (value: LongTermSettings) => LongTermSettings) => {
-    if (!current.current) return
-    const next = update(current.current)
-    if (JSON.stringify(next) === JSON.stringify(current.current)) return
-    const request = ++revision.current
-    current.current = next
-    setDraft(next); setBusy(true); setError(undefined)
-    // Model and thinking selections can overlap. Serialize full snapshots, and never let an
-    // earlier reply replace a newer selection; failures re-read storage because applying the
-    // configuration can fail after the write has already succeeded.
-    writes.current = writes.current.then(async () => {
-      try {
-        const settings = await api.setMemorySettings({ longTerm: next })
-        confirmed.current = settings.longTerm ?? { enabled: false }
-        if (request === revision.current) {
-          current.current = confirmed.current
-          if (mounted.current) setDraft(confirmed.current)
-        }
-      } catch (failure) {
-        let message = failureMessage(failure)
-        try {
-          confirmed.current = (await api.getMemorySettings()).longTerm ?? { enabled: false }
-        } catch (readFailure) {
-          message += `\n${failureMessage(readFailure)}`
-        }
-        if (request === revision.current) {
-          current.current = confirmed.current
-          if (mounted.current) { setDraft(confirmed.current); setError(message) }
-        }
-      } finally {
-        if (mounted.current && request === revision.current) setBusy(false)
-      }
-    })
+  useEffect(() => { let active = true
+    setBusy(true); setError(undefined)
+    void api.getMemorySettings().then(
+      value => { if (active) setEnabled(value.fileMemory?.enabled ?? false) },
+      failure => { if (active) { setEnabled(undefined); setError(failureMessage(failure)) } }
+    ).finally(() => { if (active) setBusy(false) })
+    return () => { active = false }
+  }, [reloadKey])
+  useEffect(() => { onBusyChange?.(busy || editorBusy) }, [busy, editorBusy, onBusyChange])
+  const change = async (value: boolean) => {
+    setBusy(true); setError(undefined)
+    try { setEnabled((await api.setMemorySettings({ fileMemory: { enabled: value } })).fileMemory?.enabled ?? false) }
+    catch (failure) {
+      setEnabled(undefined); setError(failureMessage(failure))
+      try { setEnabled((await api.getMemorySettings()).fileMemory?.enabled ?? false) }
+      catch (reloadFailure) { setError(`${failureMessage(failure)}\n${t('longTerm.reloadFailed', { error: failureMessage(reloadFailure) })}`) }
+    }
+    finally { setBusy(false) }
   }
   return <div className="flex flex-col gap-3">
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     <SettingsCard>
-      <SettingsRow title={t('longTerm.enabled')} description={t('longTerm.enabledHint')}>
-        <Switch aria-label={t('longTerm.enabled')} disabled={!draft} checked={draft?.enabled ?? false}
-          onCheckedChange={enabled => change(value => ({ ...value, enabled }))} />
-      </SettingsRow>
-      <SettingsRow title={t('longTerm.model')} description={t('longTerm.modelHint')}>
-        <ModelThinkingPicker model={model} models={models}
-          label={draft?.model ? `${draft.model.provider}/${draft.model.id}` : undefined}
-          thinking={draft?.model?.thinking ?? null}
-          defaultOption={{ active: !draft?.model, description: t('longTerm.inherit'),
-            onSelect: () => change(value => ({ enabled: value.enabled })) }}
-          onModelChange={item => change(value => ({ ...value, model: { provider: item.provider, id: item.id,
-            ...(supportedThinking(item, value.model?.thinking ?? null) ? { thinking: supportedThinking(item, value.model?.thinking ?? null)! } : {}) } }))}
-          onThinkingChange={thinking => change(value => value.model ? { ...value, model: { ...value.model, thinking } } : value)} />
+      <SettingsRow title={t('longTerm.enabled')} description={enabled === undefined ? t('longTerm.stateUnknown') : t('longTerm.enabledHint')}>
+        <div className="flex items-center gap-2">
+          {enabled === undefined ? <Button variant="outline" size="sm" disabled={busy} onClick={() => setReloadKey(value => value + 1)}>{t('longTerm.reload')}</Button> : null}
+          <Switch aria-label={t('longTerm.enabled')} disabled={enabled === undefined || busy} checked={enabled ?? false} onCheckedChange={value => void change(value)} />
+        </div>
       </SettingsRow>
       <SettingsRow title={t('longTerm.browse')} description={t('longTerm.browseHint')}>
         <Button variant="outline" size="sm" onClick={() => setOpen(true)}>{t('longTerm.browse')}</Button>
       </SettingsRow>
     </SettingsCard>
-    <LongTermInspector open={open} onOpenChange={setOpen} />
+    <LongTermInspector open={open} onOpenChange={setOpen} onBusyChange={setEditorBusy} onDirtyChange={onDirtyChange} />
   </div>
 }
 
-export function LongTermInspector({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyChange }: {
+  open: boolean; onOpenChange: (open: boolean) => void
+  onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void
+}) {
   const t = useT()
-  const [kind, setKind] = useState<MemoryViewKind>('preference')
-  const [page, setPage] = useState<LongTermPage>({ episodes: [], memories: [], nextOffset: null })
-  const [status, setStatus] = useState<MemoryLearningStatus>()
+  const [items, setItems] = useState<{ path: string; bytes: number }[]>([])
+  const [file, setFile] = useState<MemoryFile>()
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
-  const [loading, setLoading] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [confirm, setConfirm] = useState<string>()
-  const [evidence, setEvidence] = useState<{ id: string; items?: LongTermEvidence[] }>()
+  const [confirm, setConfirm] = useState<'discard' | 'delete'>()
+  const pendingPath = useRef<string | undefined>(undefined)
   const generation = useRef(0)
-  const evidenceRequest = useRef(0)
-  const read = async (offset = 0) => {
-    const request = ++generation.current
-    evidenceRequest.current++
-    setEvidence(undefined)
-    setLoading(true); setError(undefined)
-    try {
-      const [result, current] = await Promise.all([api.longTermMemory.list(kind, offset), api.longTermMemory.status()])
-      if (request !== generation.current) return
-      setStatus(current)
-      setPage(previous => offset ? { episodes: [...previous.episodes, ...result.episodes],
-        memories: [...previous.memories, ...result.memories], nextOffset: result.nextOffset } : result)
-    } catch (failure) { if (request === generation.current) setError(failureMessage(failure)) }
-    finally { if (request === generation.current) setLoading(false) }
+  const dirty = !!file && file.content !== draft
+  useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
+  useEffect(() => { onDirtyChange?.(open && dirty) }, [open, dirty, onDirtyChange])
+  const refresh = async () => {
+    const id = ++generation.current
+    setBusy(true); setError(undefined)
+    try { const result = await api.longTermMemory.list(); if (id === generation.current) setItems(result) }
+    catch (failure) { if (id === generation.current) setError(failureMessage(failure)) }
+    finally { if (id === generation.current) setBusy(false) }
   }
   useEffect(() => {
-    setPage({ episodes: [], memories: [], nextOffset: null }); setConfirm(undefined); setEvidence(undefined)
-    if (open) void read()
-    return () => { generation.current++; evidenceRequest.current++ }
-  }, [open, kind])
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    const timer = setInterval(() => {
-      void api.longTermMemory.status().then(value => { if (!cancelled) setStatus(value) },
-        failure => { if (!cancelled) setError(failureMessage(failure)) })
-    }, 5000)
-    return () => { cancelled = true; clearInterval(timer) }
+    if (open) { setFile(undefined); setDraft(''); setConfirm(undefined); void refresh() }
+    return () => { generation.current++ }
   }, [open])
-  const remove = async (id: string) => {
-    setDeleting(true); setError(undefined)
+  const load = async (path: string) => {
+    setConfirm(undefined)
+    const id = ++generation.current
+    setBusy(true); setError(undefined)
+    try { const next = await api.longTermMemory.read(path); if (id === generation.current) { setFile(next); setDraft(next.content) } }
+    catch (failure) { if (id === generation.current) setError(failureMessage(failure)) }
+    finally { if (id === generation.current) setBusy(false) }
+  }
+  const select = (path: string) => {
+    if (busy || file?.path === path) return
+    if (dirty) { pendingPath.current = path; setConfirm('discard') }
+    else void load(path)
+  }
+  const close = (value: boolean) => {
+    if (busy) return
+    if (!value && dirty) { pendingPath.current = undefined; setConfirm('discard'); return }
+    onOpenChange(value)
+  }
+  const save = async () => {
+    if (!file || busy) return
+    setBusy(true); setError(undefined)
+    try { const next = await api.longTermMemory.save(file.path, draft, file.revision); setFile(next); setDraft(next.content) }
+    catch (failure) { setError(failureMessage(failure)) }
+    finally { setBusy(false) }
+  }
+  const remove = async () => {
+    if (!file || busy) return
+    setBusy(true); setError(undefined)
     try {
-      if (kind === 'episodes') await api.longTermMemory.deleteEpisode(id)
-      else await api.longTermMemory.forget(id)
-      setConfirm(undefined); setEvidence(undefined); await read()
+      await api.longTermMemory.delete(file.path, file.revision)
+      setFile(undefined); setDraft(''); setConfirm(undefined)
+      await refresh()
     } catch (failure) { setError(failureMessage(failure)) }
-    finally { setDeleting(false) }
+    finally { setBusy(false) }
   }
-  const showEvidence = async (id: string) => {
-    const request = generation.current
-    const evidenceGeneration = ++evidenceRequest.current
-    if (evidence?.id === id) { setEvidence(undefined); return }
-    setEvidence({ id })
-    try {
-      const items = await api.longTermMemory.evidence(id)
-      if (request === generation.current && evidenceGeneration === evidenceRequest.current) setEvidence({ id, items })
-    } catch (failure) {
-      if (request === generation.current && evidenceGeneration === evidenceRequest.current) {
-        setEvidence(undefined); setError(failureMessage(failure))
-      }
-    }
-  }
-  const items: (TaskEpisode | LongTermFact)[] = kind === 'episodes' ? page.episodes : page.memories
-  const kinds: MemoryViewKind[] = ['preference', 'project', 'knowledge', 'lesson', 'episodes']
-  return <Dialog open={open} onOpenChange={value => { if (!deleting) onOpenChange(value) }}>
-    <DialogContent className="flex max-h-4/5 flex-col sm:max-w-3xl">
+  return <Dialog open={open} onOpenChange={close}>
+    <DialogContent className="flex max-h-4/5 flex-col sm:max-w-3xl" showCloseButton={!busy}>
       <DialogHeader><DialogTitle>{t('longTerm.title')}</DialogTitle><DialogDescription>{t('longTerm.sourceHint')}</DialogDescription></DialogHeader>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={kind} onValueChange={value => { if (!deleting) setKind(value as MemoryViewKind) }}>
-          <TabsList>{kinds.map(value => <TabsTrigger key={value} value={value} disabled={deleting}>{t(value === 'project' ? 'longTerm.projectProfile' : `longTerm.${value}`)}</TabsTrigger>)}</TabsList>
-        </Tabs>
-        <Button variant="outline" size="sm" disabled={loading || deleting} onClick={() => void read()}>{t('longTerm.refresh')}</Button>
-      </div>
-      {status ? <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-        <p>{t('longTerm.queueStatus', { running: status.runningJobs, jobs: status.pendingJobs, integrations: status.pendingIntegrations })}</p>
-        {status.lastSuccess ? <p>{t('longTerm.lastSuccess')}: {new Date(status.lastSuccess).toLocaleString()}</p> : null}
-        {status.lastError ? <p>{t(`longTerm.${status.lastError.stage}`)}: {t(`longTerm.reviewReasons.${status.lastError.code}`)} [{status.lastError.code}] · {t('longTerm.retryAt')}: {new Date(status.lastError.retryAt).toLocaleString()}</p> : null}
-        {status.usage.map(item => <p key={item.stage}>{t(`longTerm.${item.stage}`)}: {t('longTerm.usageSummary', {
-          requests: item.requests, input: item.input, output: item.output, cost: item.cost.toFixed(4),
-        })}</p>)}
-      </div> : null}
-      {error ? <p role="alert" className="text-destructive">{error}</p> : null}
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {!items.length ? <p className="text-muted-foreground">{t(loading ? 'longTerm.loading' : 'longTerm.empty')}</p> : null}
-        {items.map(item => <section key={item.id} className="flex flex-col gap-2 rounded-lg border p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{t(`longTerm.${'status' in item ? item.status : item.outcome}`)}</Badge>
-            {'scope' in item ? <><Badge variant="outline">{t(`longTerm.${item.scope}`)}</Badge>
-              <Badge variant="outline">{t(`longTerm.${item.assertion}`)}</Badge></> : null}
-            <span className="text-xs text-muted-foreground">{new Date(item.sourceTime).toLocaleString()}</span>
-          </div>
-          {'title' in item ? <p className="font-medium">{item.title}</p> : null}
-          <p className="whitespace-pre-wrap break-words">{item.content}</p>
-          {'applicability' in item ? <p className="whitespace-pre-wrap text-sm text-muted-foreground">{t('longTerm.applicability')}: {item.applicability}</p> : null}
-          {'checkoutKey' in item && item.checkoutKey ? <p className="break-all text-xs text-muted-foreground">{t('longTerm.checkout')}: {item.checkoutKey}</p> : null}
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" disabled={deleting} aria-expanded={evidence?.id === item.id} aria-controls={`memory-evidence-${item.id}`} onClick={() => void showEvidence(item.id)}>{t('longTerm.source')}</Button>
-            {kind === 'episodes'
-              ? <Button variant="ghost" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.deleteEpisode')}</Button>
-              : <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setConfirm(item.id)}>{t('longTerm.forget')}</Button>}
-          </div>
-          {evidence && evidence.id === item.id ? <pre id={`memory-evidence-${item.id}`} className="overflow-x-auto whitespace-pre-wrap break-all text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{evidence.items ? JSON.stringify(evidence.items, null, 2) : t('longTerm.loading')}</pre> : null}
-          {confirm === item.id ? <div className="flex flex-col gap-2">
-            <p>{t('longTerm.forgetConfirm')}</p>
-            <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={deleting} onClick={() => void remove(item.id)}>{t('longTerm.confirm')}</Button>
-              <Button variant="outline" size="sm" disabled={deleting} onClick={() => setConfirm(undefined)}>{t('longTerm.cancel')}</Button></div>
+      {error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}
+      <div className="flex min-h-0 flex-1 gap-3">
+        <div className="flex max-h-96 w-1/3 flex-col gap-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void refresh()}>{t('longTerm.refresh')}</Button>
+          {!items.length ? <p className="text-sm text-muted-foreground">{t('longTerm.empty')}</p> : null}
+          {items.map(item => <Button key={item.path} variant={file?.path === item.path ? 'secondary' : 'ghost'} className="justify-start" disabled={busy} onClick={() => select(item.path)}><span className="truncate">{item.path}</span></Button>)}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {file ? <>
+            <p className="break-all text-sm">{file.path}</p>
+            <Textarea aria-label={t('longTerm.editor')} disabled={busy} value={draft} onChange={event => setDraft(event.target.value)} className="min-h-64 flex-1 font-mono [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" />
+            <div className="flex gap-2"><Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>{t('longTerm.save')}</Button>
+              <Button variant="destructive" size="sm" disabled={busy} onClick={() => setConfirm('delete')}>{t('longTerm.delete')}</Button></div>
+          </> : <p className="text-sm text-muted-foreground">{t('longTerm.select')}</p>}
+          {confirm ? <div className="flex flex-col gap-2">
+            <p className="text-sm">{t(confirm === 'delete' ? 'longTerm.deleteConfirm' : 'longTerm.discardConfirm')}</p>
+            <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={busy} onClick={() => {
+              if (confirm === 'delete') { void remove(); return }
+              setConfirm(undefined)
+              if (pendingPath.current) void load(pendingPath.current)
+              else { setFile(undefined); onOpenChange(false) }
+            }}>{t('longTerm.confirm')}</Button><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm(undefined)}>{t('longTerm.cancel')}</Button></div>
           </div> : null}
-        </section>)}
-        {page.nextOffset !== null ? <Button variant="outline" disabled={loading || deleting} onClick={() => void read(page.nextOffset!)}>{t('longTerm.more')}</Button> : null}
+        </div>
       </div>
     </DialogContent>
   </Dialog>

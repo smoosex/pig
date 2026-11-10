@@ -5,7 +5,7 @@
 import type { BashExecutionMessage, CustomMessage } from '../../pi/types'
 import type { ProcessItem, ToolStep } from '../../chat/turns'
 
-export type IconKind = 'thinking' | 'bash' | 'file' | 'tool' | 'memory'
+export type IconKind = 'thinking' | 'bash' | 'file' | 'tool'
 
 export function stackKindForTool(name: string): IconKind {
   if (name === 'bash') return 'bash'
@@ -25,7 +25,6 @@ export function iconKinds(items: ProcessItem[]): IconKind[] {
     if (item.kind === 'thinking') push('thinking')
     else if (item.kind === 'bash') push('bash')
     else if (item.kind === 'custom') push('tool')
-    else if (item.kind === 'memory') push('memory')
     else if (item.kind === 'tools') {
       for (const step of item.tools) push(stackKindForTool(step.name))
     }
@@ -34,7 +33,7 @@ export function iconKinds(items: ProcessItem[]): IconKind[] {
 }
 
 export type WorkRow =
-  | Extract<ProcessItem, { kind: 'thinking' | 'memory' }>
+  | Extract<ProcessItem, { kind: 'thinking' }>
   | { kind: 'tools'; steps: ToolStep[] }
   | { kind: 'bash'; messages: BashExecutionMessage[] }
   | { kind: 'custom'; message: CustomMessage }
@@ -44,7 +43,7 @@ export function clusterWork(items: ProcessItem[]): WorkRow[] {
   for (const item of items) {
     // Compactions are lifted out of the work list by the turn view.
     if (item.kind === 'compaction') continue
-    if (item.kind === 'thinking' || item.kind === 'memory') {
+    if (item.kind === 'thinking') {
       rows.push({ ...item })
       continue
     }
@@ -93,9 +92,6 @@ export function processSegments(items: ProcessItem[]): Array<{ kind: 'text'; tex
     if (item.kind === 'text') {
       flush()
       segments.push({ kind: 'text', text: item.text })
-    } else if (item.kind === 'memory') {
-      flush()
-      segments.push({ kind: 'group', items: [item] })
     } else {
       group.push(item)
     }

@@ -9,7 +9,7 @@ export function conversationFeatureFactories(): InlineExtension[] {
     } },
     { name: 'observational-memory', factory: async pi => {
       const { default: memory } = await import('./memory')
-      memory(pi)
+      await memory(pi)
     } },
   ]
 }

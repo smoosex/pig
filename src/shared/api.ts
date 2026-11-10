@@ -702,7 +702,6 @@ export interface ReviewFeedback {
 }
 
 export type SystemUIEvent =
-  | { kind: 'memory-retrieval'; sessionId: string; trace: import('./long-term-memory').LongTermRetrievalTrace }
   | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string; error?: string }
   | { kind: 'dismiss'; id: string; sessionId: string }
   | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
@@ -712,7 +711,7 @@ export type SystemUIEvent =
   | { kind: 'reset'; sessionId: string }
 
 export interface MemorySettings {
-  longTerm?: import('./long-term-memory').LongTermSettings
+  fileMemory?: import('./long-term-memory').LongTermSettings
   observeAfterTokens?: number
   reflectAfterTokens?: number
   observerChunkMaxTokens?: number

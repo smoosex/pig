@@ -7,7 +7,7 @@ import { registerRecallTool } from "./tools/recall-observation.js";
 import { memoryUI } from "../../plugins/pig-ui.js";
 import { registerLongTermMemory } from "./long-term/extension.js";
 
-export default function observationalMemory(pi: ExtensionAPI) {
+export default async function observationalMemory(pi: ExtensionAPI) {
 	const runtime = new Runtime();
 
 	registerConsolidationTrigger(pi, runtime, {
@@ -26,5 +26,5 @@ export default function observationalMemory(pi: ExtensionAPI) {
 		registerMemoryRuntime(ctx.sessionManager.getSessionId());
 	});
 	registerRecallTool(pi);
-	registerLongTermMemory(pi, runtime);
+	await registerLongTermMemory(pi);
 }

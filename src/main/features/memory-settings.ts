@@ -39,7 +39,7 @@ export async function getMemorySettings(): Promise<MemorySettings> {
   const value = (await readSettingsObject(memorySettingsPath()))['observational-memory']
   if (value === undefined) return {}
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid observational-memory namespace')
-  if ('longTerm' in value) validateLongTermSettings((value as MemorySettings).longTerm)
+  if ('fileMemory' in value) validateLongTermSettings((value as MemorySettings).fileMemory)
   return value as MemorySettings
 }
 
@@ -48,12 +48,12 @@ export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySet
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
     const allowed = new Set<string>([
       ...integerKeys, ...nonNegativeIntegerKeys, ...booleanKeys,
-      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio', 'longTerm'
+      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio', 'fileMemory'
     ])
     for (const [key, value] of Object.entries(patch)) {
       if (!allowed.has(key)) throw new Error(`Unknown memory setting: ${key}`)
       if (value === undefined || value === null) continue
-      if (key === 'longTerm') validateLongTermSettings(value)
+      if (key === 'fileMemory') validateLongTermSettings(value)
       const nonNegative = (nonNegativeIntegerKeys as readonly string[]).includes(key)
       const integer = (integerKeys as readonly string[]).includes(key) || nonNegative
       if (integer && (!Number.isSafeInteger(value) || (value as number) < (nonNegative ? 0 : 1))) {
@@ -63,8 +63,12 @@ export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySet
       if (key === 'compactAfterTokensMode' && value !== 'calibrated' && value !== 'ratio') throw new Error('Invalid compaction mode')
       if (key === 'compactAfterTokensRatio' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value >= 1)) throw new Error('Ratio must be between 0 and 1')
       if (key === 'model' || key === 'fallbackModel') {
-        try { validateLongTermSettings({ enabled: false, model: value }) }
-        catch { throw new Error('Invalid memory model') }
+        const model = value as Record<string, unknown>
+        if (!model || typeof model !== 'object' || Array.isArray(model)
+          || Object.keys(model).some(key => !['provider', 'id', 'thinking'].includes(key))
+          || typeof model.provider !== 'string' || !model.provider.trim()
+          || typeof model.id !== 'string' || !model.id.trim()
+          || (model.thinking !== undefined && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(model.thinking as string))) throw new Error('Invalid memory model')
       }
     }
     const path = memorySettingsPath()

@@ -20,11 +20,6 @@ const allowed = new Map<string, string[]>([
 
 // Search aliases stay bilingual regardless of locale; only these exact declarations are exempt.
 const searchAliasDeclarations = new Map<string, string[]>([
-  ['src/main/features/memory/long-term/search.ts', [
-    'preference: /偏好|习惯|平时|prefer|usual/i,',
-    'lesson: /报错|错误|失败|排查|教训|error|exception|debug|failure/i,',
-    'directory: /做过.*项目|哪些项目|项目经历|projects|worked on/i,',
-  ]],
   ['src/renderer/src/components/composer/tab-mentions.ts', [
     "session: ['session', 'chat', '会话', '聊天'],",
     "browser: ['browser', 'web', '浏览器', '网页'],",

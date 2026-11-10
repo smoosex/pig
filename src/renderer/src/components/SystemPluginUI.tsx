@@ -6,7 +6,6 @@ import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../hooks/useT'
 import { useSettingsStore } from '../stores/settings'
 import { useSystemUIStore } from '../stores/system-ui'
-import { useSessionsStore } from '../stores/sessions'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -118,7 +117,6 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
   const visible = useRef(new Set<string>())
   const prompt = prompts.find((item) => item.sessionId === activeSessionId)
   useEffect(() => api.onSystemUI((event) => {
-    if (event.kind === 'memory-retrieval') useSessionsStore.getState().setMemoryRetrieval(event.sessionId, event.trace)
     if (event.kind === 'review-prompt') setPrompts((items) => [...items, event])
     if (event.kind === 'dismiss') setPrompts((items) => items.filter((item) => item.id !== event.id))
     if (event.kind === 'notify') {
@@ -137,7 +135,6 @@ export function SystemPluginUI({ activeSessionId }: { activeSessionId: string | 
     if (event.kind === 'review-state') useSystemUIStore.getState().setReviewActive(event.sessionId, event.active)
     if (event.kind === 'review-returning') useSystemUIStore.getState().setReviewReturning(event.sessionId, event.returning, event.phase)
     if (event.kind === 'reset') {
-      useSessionsStore.getState().clearMemoryRetrievals(event.sessionId)
       setPrompts((items) => items.filter((item) => item.sessionId !== event.sessionId))
       setNotices((items) => items.filter((item) => item.sessionId !== event.sessionId))
       useSystemUIStore.getState().setReviewFeedback(event.sessionId, null)
