@@ -351,7 +351,7 @@ const api: SessionApi = {
   loginMcpServer: (name) => ipcRenderer.invoke('mcp:login', name),
   logoutMcpServer: (name) => ipcRenderer.invoke('mcp:logout', name),
   cancelMcpLogin: () => ipcRenderer.invoke('mcp:cancel-login'),
-  replyExtensionUI: (id, value) => ipcRenderer.invoke('extensions:reply', id, value),
+  replyExtensionUI: (id, value, reason) => ipcRenderer.invoke('extensions:reply', id, value, reason),
   onExtensionUI: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, value: ExtensionUIEvent) => listener(value)
     ipcRenderer.on('extensions:ui', handler)

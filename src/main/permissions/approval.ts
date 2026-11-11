@@ -7,10 +7,15 @@ import { updatePermissionSettings } from './store'
 import { grantSession, hasSessionGrant } from './grants'
 
 /** Pig's extension UI renders a select carrying this option in place of the session's composer. */
-export interface ApprovalOptions { signal?: AbortSignal; approval: { message: string } }
+export interface ApprovalOptions { signal?: AbortSignal; approval: { message: string; onDeny?(reason: string): void } }
 
-const ask = (ui: Pick<ExtensionUIContext, 'select'>, title: string, choices: string[], message: string, signal?: AbortSignal) =>
-  ui.select(title, choices, { signal, approval: { message } } as ApprovalOptions)
+async function ask(ui: Pick<ExtensionUIContext, 'select'>, title: string, choices: string[], message: string, signal?: AbortSignal) {
+  let reason: string | undefined
+  const value = await ui.select(title, choices, { signal, approval: { message, onDeny: (value) => { reason = value } } } as ApprovalOptions)
+  return { value, reason }
+}
+
+const refusalReason = (reason?: string) => reason ? `\nReason provided by the user: ${reason}` : ''
 
 /**
  * Asks once / for this session / deny, unless an earlier session answer covers one of `keys`. The
@@ -24,11 +29,11 @@ export async function approve(ui: Pick<ExtensionUIContext, 'select'> | undefined
   if (!ui) throw new Error('This session cannot ask the user, so the operation was refused')
   const once = t('permissions.allowOnce')
   const session = sessionLabel ?? t('permissions.allowSession')
-  const answer = await ask(ui, title, [once, ...(keys.length ? [session] : []), t('permissions.deny')], message, signal)
+  const { value: answer, reason } = await ask(ui, title, [once, ...(keys.length ? [session] : []), t('permissions.deny')], message, signal)
   signal?.throwIfAborted()
   if (keys.length && answer === session) grantSession(sessionId, keys[0]!)
   else if (answer !== once) {
-    throw new Error(answer === undefined ? 'The approval request was cancelled; nothing was allowed' : 'The user did not allow this operation. Do not retry it.')
+    throw new Error(answer === undefined ? 'The approval request was cancelled; nothing was allowed' : `The user did not allow this operation. Do not retry it.${refusalReason(reason)}`)
   }
 }
 
@@ -40,7 +45,7 @@ export async function offerHosts(ui: Pick<ExtensionUIContext, 'select'> | undefi
   const session = t('permissions.hostsSession')
   const persistent = t('permissions.hostsProject')
   const choices = [session, ...(project ? [persistent] : []), t('permissions.hostsDeny')]
-  const answer = await ask(ui, t('permissions.hostsTitle', { hosts: hosts.join(', ') }), choices, t('permissions.hostsMessage'), signal)
+  const { value: answer, reason } = await ask(ui, t('permissions.hostsTitle', { hosts: hosts.join(', ') }), choices, t('permissions.hostsMessage'), signal)
   signal?.throwIfAborted()
   if (answer === session) for (const host of hosts) allowSessionHost(sessionId, host)
   else if (answer === persistent && project) {
@@ -51,7 +56,7 @@ export async function offerHosts(ui: Pick<ExtensionUIContext, 'select'> | undefi
       return { ...current, projects: [...current.projects.filter((entry) => entry !== existing), { root: project, domains }] }
     })
   } else if (answer === choices[choices.length - 1]) {
-    return `\nThe user did not allow ${hosts.join(', ')}. Do not retry it.`
+    return `\nThe user did not allow ${hosts.join(', ')}. Do not retry it.${refusalReason(reason)}`
   } else return `\nApproval for ${hosts.join(', ')} was cancelled; no permission was granted.`
   return `\nThe user allowed ${hosts.join(', ')}. Rerun the command if it still needs that host; Pig did not rerun it.`
 }

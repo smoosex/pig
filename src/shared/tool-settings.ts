@@ -59,6 +59,8 @@ export interface McpProbeResult {
   message?: string
   tools: { name: string; description?: string }[]
 }
+export const MAX_APPROVAL_REASON_LENGTH = 2000
+
 export type ExtensionUIEvent =
   | {
       kind: 'prompt'
@@ -91,7 +93,7 @@ export interface ToolSettingsApi {
   loginMcpServer(name: string): Promise<McpProbeResult>
   logoutMcpServer(name: string): Promise<McpSettingsState>
   cancelMcpLogin(): Promise<void>
-  replyExtensionUI(id: string, value: string | null): Promise<void>
+  replyExtensionUI(id: string, value: string | null, reason?: string): Promise<void>
   onExtensionUI(listener: (event: ExtensionUIEvent) => void): () => void
   onMcpChanged(listener: () => void): () => void
 }

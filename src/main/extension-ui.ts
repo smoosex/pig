@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import type { BrowserWindow, WebContents, Event, WebContentsDidStartNavigationEventParams } from 'electron'
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import type { ExtensionUIEvent } from '../shared/api'
+import { MAX_APPROVAL_REASON_LENGTH } from '../shared/tool-settings'
+import type { ApprovalOptions } from './permissions/approval'
 import { mcpSdk } from './mcp/sdk'
 import { approvalDelegation, onApprovalDelegationEnded } from './permissions/delegation'
 
@@ -10,7 +12,7 @@ type Scope = 'extension' | 'process' | 'subagent'
 type ApprovalSource = Extract<ExtensionUIEvent, { kind: 'prompt' }>['approvalSource']
 const requests = new Map<
   string,
-  { owner: string; controller?: string; approval: boolean; scope: Scope; sender: WebContents; finish(value: string | null): void }
+  { owner: string; controller?: string; approval: boolean; scope: Scope; sender: WebContents; finish(value: string | null, reason?: string): void }
 >()
 
 onApprovalDelegationEnded(owner => {
@@ -62,10 +64,10 @@ function approvalNotifications(update: (module: typeof import('./approval-notifi
   notifications.then(update).catch((error: unknown) => console.error('Approval notification failed:', error))
 }
 
-export function replyExtensionUI(sender: WebContents, id: string, value: string | null): void {
+export function replyExtensionUI(sender: WebContents, id: string, value: string | null, reason?: string): void {
   const request = requests.get(id)
   if (request?.sender === sender && (value === null || typeof value === 'string'))
-    request.finish(value)
+    request.finish(value, reason)
 }
 export function cancelExtensionUI(owner: string, scope?: Scope): void {
   for (const request of requests.values())
@@ -95,7 +97,8 @@ export async function createExtensionUI(
   }
   const prompt = (
     fields: Omit<Extract<ExtensionUIEvent, { kind: 'prompt' }>, 'kind' | 'id' | 'owner'>,
-    opts?: { timeout?: number; signal?: AbortSignal }
+    opts?: { timeout?: number; signal?: AbortSignal },
+    onDeny?: (reason: string) => void
   ): Promise<string | undefined> => {
     if (!available() || opts?.signal?.aborted)
       return Promise.resolve(undefined)
@@ -105,10 +108,12 @@ export async function createExtensionUI(
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const cancel = () => finish(null)
-      const finish = (value: string | null) => {
+      const finish = (value: string | null, reason?: string) => {
         // Invalid/forged choices must not consume a valid request. Both visible cards and native
         // notification actions resolve this single record; delete claims it before any callbacks.
         if (value !== null && fields.options && !fields.options.includes(value)) return
+        if (reason !== undefined && (!fields.approval || value !== fields.options?.at(-1) ||
+          typeof reason !== 'string' || reason.length > MAX_APPROVAL_REASON_LENGTH)) return
         if (value !== null && delegated) {
           try { delegated.check() } catch { value = null }
         }
@@ -117,6 +122,7 @@ export async function createExtensionUI(
         opts?.signal?.removeEventListener('abort', cancel)
         send({ kind: 'dismiss', id })
         if (fields.approval) approvalNotifications((module) => module.retireApproval(noticeOwner, id))
+        if (value !== null && reason?.trim()) onDeny?.(reason.trim())
         resolve(
           value !== null && (!fields.options || fields.options.includes(value)) ? value : undefined
         )
@@ -134,9 +140,9 @@ export async function createExtensionUI(
   return {
     select: (title, options, opts) => {
       // Pi forwards the options object unchanged, so the permission layer can mark its requests.
-      const approval = (opts as { approval?: { message?: unknown } } | undefined)?.approval
+      const approval = (opts as ApprovalOptions | undefined)?.approval
       return prompt({ method: 'select', title, options, ...(approval && typeof approval.message === 'string'
-        ? { approval: true as const, message: approval.message, ...(approvalSource ? { approvalSource } : {}) } : {}) }, opts)
+        ? { approval: true as const, message: approval.message, ...(approvalSource ? { approvalSource } : {}) } : {}) }, opts, typeof approval?.onDeny === 'function' ? approval.onDeny : undefined)
     },
     confirm: async (title, message, opts) =>
       (await prompt({ method: 'confirm', title, message }, opts)) === 'yes',

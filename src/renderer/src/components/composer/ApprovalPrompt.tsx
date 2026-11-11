@@ -14,6 +14,9 @@ import { toast } from 'sonner'
 import { useT } from '../../hooks/useT'
 import { replyExtensionPrompt, useExtensionPrompts, type ExtensionPrompt } from '../../stores/extension-prompts'
 import { Kbd } from '../ui/kbd'
+import { Field } from '../ui/field'
+import { Textarea } from '../ui/textarea'
+import { MAX_APPROVAL_REASON_LENGTH } from '../../../../shared/tool-settings'
 
 const ARM_MS = 600
 
@@ -36,18 +39,33 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
   const scrollHintId = useId()
   const [detailsOverflow, setDetailsOverflow] = useState(false)
   const answered = useRef(false)
+  const reasonInput = useRef<HTMLTextAreaElement>(null)
+  const reasonVisited = useRef(false)
+  const [reasonOpen, setReasonOpen] = useState(false)
+  const [reason, setReason] = useState('')
   // One highlight: the pointer's choice while the mouse moves, otherwise the keyboard's. CSS :hover
   // would stay on a still pointer after the arrows move the selection away.
   const [hovered, setHovered] = useState<string | null>(null)
   const [focused, setFocused] = useState<string | null>(null)
   const highlighted = hovered ?? focused
   const options = prompt.options ?? []
+  const denyOption = options.at(-1)
+  const reasonOption = t('permissions.denyWithReason')
+  const choices = useMemo(() => denyOption === undefined ? options : [...options, reasonOption], [options, denyOption, reasonOption])
   // Declared up front so the item is active (not inert) on the first render and can take focus.
-  const items = useMemo(() => [{ name: 'approval', required: true, choices: options.map((value) => ({ value })) }], [options])
-  const answer = (value: string) => {
+  const items = useMemo(() => [{ name: 'approval', required: true, choices: choices.map((value) => ({ value })) }], [choices])
+  const answer = (value: string, reason?: string) => {
     if (answered.current) return
     answered.current = true
-    void replyExtensionPrompt(prompt.id, value).catch((error) => toast.error(failureMessage(error)))
+    void replyExtensionPrompt(prompt.id, value, reason).catch((error) => toast.error(failureMessage(error)))
+  }
+
+  const choose = (value: string) => {
+    if (value === reasonOption) {
+      reasonVisited.current = true
+      setReasonOpen(true)
+      reasonInput.current?.focus({ preventScroll: true })
+    } else answer(value)
   }
 
   useLayoutEffect(() => {
@@ -69,10 +87,29 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
     // split pane takes it once the user makes that pane active.
     if (!autoFocus) return
     armedAt.current = performance.now() + ARM_MS
-    form.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
-  }, [autoFocus])
+    if (reasonOpen) reasonInput.current?.focus({ preventScroll: true })
+    else {
+      const radios = form.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+      const target = reasonVisited.current ? radios?.[options.length - 1] : radios?.[0]
+      target?.focus({ preventScroll: true })
+    }
+  }, [autoFocus, reasonOpen])
 
   const onKeyDownCapture = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (reasonOpen && (event.target === reasonInput.current || event.key === 'Escape')) {
+      // Text and IME belong to the reason, not Questionnaire's choice shortcuts.
+      event.stopPropagation()
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+      if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault()
+        if (!event.repeat && denyOption !== undefined) answer(denyOption, reason.trim() || undefined)
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!event.repeat) setReasonOpen(false)
+      }
+      return
+    }
     if (event.nativeEvent.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
     // App shortcuts above still work.
     setHovered(null)
@@ -84,19 +121,23 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
     }
     // Focus alone highlights a choice without checking it, and Questionnaire's Enter ignores an
     // unchecked choice, so Enter answers with the focused choice itself.
-    const focusedIndex = event.key === 'Enter' && event.target instanceof HTMLInputElement ? options.indexOf(event.target.value) : -1
+    const focusedIndex = event.key === 'Enter' && event.target instanceof HTMLInputElement ? choices.indexOf(event.target.value) : -1
     const index = event.key === 'Escape' ? options.length - 1 : /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : focusedIndex
-    const option = options[index]
+    const option = choices[index]
     if (option === undefined) return
     // Prevented before Questionnaire's own shortcut, which would only select the choice.
     event.preventDefault()
     event.stopPropagation()
-    if (!event.repeat) answer(option)
+    if (!event.repeat) choose(option)
   }
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (reasonOpen) {
+      if (denyOption !== undefined) answer(denyOption, reason.trim() || undefined)
+      return
+    }
     const value = new FormData(event.currentTarget).get('approval')
-    if (typeof value === 'string' && options.includes(value)) answer(value)
+    if (typeof value === 'string' && choices.includes(value)) choose(value)
   }
 
   return (
@@ -147,12 +188,12 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
           </>
         ) : null}
         <Questionnaire.Choices className="mt-2 flex flex-col gap-0.5" onPointerLeave={() => setHovered(null)}>
-          {options.map((option) => (
+          {choices.map((option) => (
             <Questionnaire.Choice
               key={option}
               value={option}
               // A mouse click has a detail; the synthetic click of Space or arrow keys does not.
-              onClick={(event) => { if (event.detail > 0) answer(option) }}
+              onClick={(event) => { if (event.detail > 0) choose(option) }}
               onPointerMove={() => setHovered(option)}
               data-highlighted={highlighted === option ? '' : undefined}
               className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm transition-colors data-highlighted:bg-glass-prompt-foreground/8 solid:data-highlighted:bg-accent solid:data-highlighted:text-accent-foreground"
@@ -169,8 +210,26 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
             </Questionnaire.Choice>
           ))}
         </Questionnaire.Choices>
+        {reasonOpen ? (
+          <Field orientation="horizontal" className="mt-1 items-start pl-10">
+            <Textarea
+              ref={reasonInput}
+              rows={1}
+              className="max-h-12 min-h-6 resize-none overflow-y-auto rounded-none border-0 border-b bg-transparent! px-0 py-0 leading-5 shadow-none focus-visible:border-input focus-visible:ring-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label={t('permissions.denialReason')}
+              value={reason}
+              onFocus={() => setFocused(reasonOption)}
+              onBlur={() => setFocused(current => current === reasonOption ? null : current)}
+              onChange={event => setReason(event.target.value)}
+              placeholder={t('permissions.denialReasonPlaceholder')}
+              maxLength={MAX_APPROVAL_REASON_LENGTH}
+            />
+          </Field>
+        ) : null}
       </Questionnaire.Item>
-      <p className="mt-1.5 px-1 text-right text-xs text-muted-foreground">{t('permissions.approvalHint')}</p>
+      <p className="mt-1.5 px-1 text-right text-xs text-muted-foreground">
+        {t(reasonOpen ? 'permissions.denialReasonHint' : 'permissions.approvalHint')}
+      </p>
     </Questionnaire.Root>
   )
 }

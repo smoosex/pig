@@ -25,8 +25,8 @@ async function fixture() {
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   mock.module('../src/renderer/src/hooks/useT', () => ({ useT: () => (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate('en', key, params) }))
-  const replies: Array<[string, string | null]> = []
-  mock.module('../src/renderer/src/ipc/api', () => ({ api: { replyExtensionUI: async (id: string, value: string | null) => { replies.push([id, value]) } } }))
+  const replies: Array<[string, string | null, string?]> = []
+  mock.module('../src/renderer/src/ipc/api', () => ({ api: { replyExtensionUI: async (id: string, value: string | null, reason?: string) => { replies.push(reason === undefined ? [id, value] : [id, value, reason]) } } }))
   // The card ignores keys briefly after taking focus; tests advance this clock past that window.
   let now = 0
   performance.now = () => now
@@ -57,7 +57,7 @@ async function fixture() {
   assert.equal(card()?.querySelector('[aria-label="Approval details"]')?.getAttribute('tabindex'), null)
   assert.equal(card()?.textContent?.includes('More details'), false)
   const labels = [...card()!.querySelectorAll('label')].map((label) => label.textContent)
-  assert.deepEqual(labels, ['1Allow once', '2Allow for this session', '3Deny'])
+  assert.deepEqual(labels, ['1Allow once', '2Allow for this session', '3Deny', '4Deny with a reason…'])
   // The first choice takes focus so number keys work without clicking.
   assert.equal(document.activeElement?.getAttribute('type'), 'radio')
   // A digit or Enter still being typed into the draft when the card appears is not an answer.
@@ -96,6 +96,74 @@ async function fixture() {
   assert.deepEqual(replies.at(-1), ['by-click', 'Allow once'])
   assert.equal(card(), null)
   assert.deepEqual(useExtensionPrompts.getState().prompts.map((prompt) => prompt.id), ['plain', 'foreign'])
+  const openReason = () => act(() => {
+    const row = [...card()!.querySelectorAll('label')].find(item => item.textContent === '4Deny with a reason…')!
+    row.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  })
+  await add('reason')
+  const beforeReason = replies.length
+  now += 1000
+  await key(document.activeElement!, '4')
+  const reasonInput = card()!.querySelector<HTMLTextAreaElement>('textarea')!
+  assert.equal(document.activeElement, reasonInput)
+  assert.equal(reasonInput.maxLength, 2000)
+  assert.equal(reasonInput.getAttribute('rows'), '1')
+  assert.equal(card()!.querySelector('button'), null, 'reason submission has no confirmation button')
+  for (const name of ['max-h-12', 'min-h-6', 'field-sizing-content', 'overflow-y-auto', 'resize-none', 'border-b', 'focus-visible:border-input', 'focus-visible:ring-0', '[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden']) {
+    assert.ok(reasonInput.classList.contains(name), name)
+  }
+  assert.equal(card()!.querySelectorAll('input[type="radio"]').length, 4, 'all four options stay visible while entering a reason')
+  assert.equal(replies.length, beforeReason, 'opening the editor does not decide the approval')
+  await act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(reasonInput, '  Wrong directory.\nCheck target 123 first.  ')
+    reasonInput.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  now += 1000
+  for (const value of ['1', '3', ' ']) {
+    const event = new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })
+    await act(() => reasonInput.dispatchEvent(event))
+    assert.equal(event.defaultPrevented, false, 'normal text must work in the reason')
+  }
+  const newline = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })
+  await act(() => reasonInput.dispatchEvent(newline))
+  assert.equal(newline.defaultPrevented, false, 'Shift+Enter inserts a new line instead of submitting')
+  await act(() => reasonInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })))
+  await act(() => reasonInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true })))
+  assert.equal(replies.length, beforeReason, 'typing and IME must never select an approval')
+  await key(reasonInput, 'Escape')
+  assert.equal(replies.length, beforeReason, 'Esc returns to the choices without submitting a partial reason')
+  assert.equal(card()?.querySelector<HTMLInputElement>('input:focus')?.value, 'Deny', 'returning focuses denial, not allow')
+  await openReason()
+  assert.equal(card()!.querySelector<HTMLTextAreaElement>('textarea')!.value, '  Wrong directory.\nCheck target 123 first.  ')
+  await key(document.activeElement!, 'Enter')
+  assert.deepEqual(replies.at(-1), ['reason', 'Deny', 'Wrong directory.\nCheck target 123 first.'])
+  assert.equal(card(), null)
+
+  await add('empty-reason')
+  await openReason()
+  assert.equal(card()!.querySelector<HTMLTextAreaElement>('textarea')!.value, '', 'new approvals never inherit the previous reason')
+  await key(document.activeElement!, 'Enter')
+  assert.deepEqual(replies.at(-1), ['empty-reason', 'Deny'], 'a reason is optional')
+
+  await act(() => useExtensionPrompts.getState().add({
+    kind: 'prompt', id: 'two-options', owner: 'one', method: 'select',
+    title: 'Allow once?', options: ['Allow once', 'Deny'], approval: true
+  }))
+  assert.deepEqual([...card()!.querySelectorAll('label')].map(item => item.textContent), ['1Allow once', '2Deny', '3Deny with a reason…'])
+  now += 1000
+  await key(document.activeElement!, '3')
+  assert.ok(card()!.querySelector('textarea'))
+  await key(document.activeElement!, 'Escape')
+  now += 1000
+  await key(document.activeElement!, 'Escape')
+  assert.deepEqual(replies.at(-1), ['two-options', 'Deny'], 'Esc still submits the original denial, never the extra UI option')
+
+  await add('cancel-editing')
+  await openReason()
+  const beforeCancel = replies.length
+  await act(() => useExtensionPrompts.getState().remove('cancel-editing'))
+  assert.equal(card(), null)
+  assert.equal(replies.length, beforeCancel, 'cancelled approvals cannot submit their draft reason')
   // A pane that is not active shows the card but leaves the keyboard alone until it becomes active.
   const outside = document.createElement('button')
   document.body.append(outside)

@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import type { BrowserWindow, WebContents } from 'electron'
 import type { ExtensionUIEvent } from '../src/shared/api'
+import type { ApprovalOptions } from '../src/main/permissions/approval'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
@@ -59,11 +60,44 @@ async function fixture(): Promise<void> {
   tracked.at(-1)!.reply('deny')
   assert.equal(await fromNotification, 'deny', 'a notification action answers the request')
   assert.equal(events.at(-1)?.kind, 'dismiss')
+  let denialReason: string | undefined
+  const denied = ui.select('With reason', ['once', 'deny'], { approval: {
+    message: 'write: /z', onDeny: reason => { denialReason = reason }
+  } } as ApprovalOptions)
+  const denial = events.at(-1)!
+  assert.ok(denial.kind === 'prompt')
+  replyExtensionUI(sender, denial.id, 'once', 'not an approval')
+  replyExtensionUI(sender, denial.id, 'deny', 'x'.repeat(2001))
+  replyExtensionUI(sender, denial.id, 'deny', 42 as never)
+  replyExtensionUI({} as WebContents, denial.id, 'deny', 'wrong sender')
+  assert.equal(events.at(-1), denial, 'invalid reasons, positive choices and foreign senders cannot consume the request')
+  assert.equal(denialReason, undefined)
+  replyExtensionUI(sender, denial.id, 'deny', '  Wrong target.\nUse the selected directory.  ')
+  replyExtensionUI(sender, denial.id, 'once')
+  assert.equal(await denied, 'deny', 'a reason never changes denial into permission')
+  assert.equal(denialReason, 'Wrong target.\nUse the selected directory.')
+  assert.equal(events.at(-1)?.kind, 'dismiss')
+
+  denialReason = undefined
+  const cancelledReason = ui.select('Cancelled reason', ['once', 'deny'], { approval: {
+    message: 'write: /z', onDeny: reason => { denialReason = reason }
+  } } as ApprovalOptions)
+  const cancelledReasonRequest = events.at(-1)!
+  assert.ok(cancelledReasonRequest.kind === 'prompt')
+  cancelExtensionUI('session')
+  replyExtensionUI(sender, cancelledReasonRequest.id, 'deny', 'Late reason')
+  assert.equal(await cancelledReason, undefined)
+  assert.equal(denialReason, undefined)
   ui.select('Plain', ['a'])
   const plain = events.at(-1)!
   assert.ok(plain.kind === 'prompt' && plain.approval === undefined)
-  if (plain.kind === 'prompt') replyExtensionUI(sender, plain.id, null)
-  assert.equal(tracked.length, 2, 'ordinary selects never notify')
+  if (plain.kind === 'prompt') {
+    replyExtensionUI(sender, plain.id, 'a', 'Not an approval')
+    assert.equal(events.at(-1), plain, 'ordinary selects cannot accept a denial reason')
+    replyExtensionUI(sender, plain.id, null)
+  }
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(tracked.length, 4, 'ordinary selects never notify')
   const confirm = ui.confirm('Confirm', 'Message')
   const editor = ui.editor('Editor', 'original')
   cancelExtensionUI('session')
@@ -134,6 +168,17 @@ async function fixture(): Promise<void> {
   assert.equal(staleNotice.owner, 'controller')
   staleNotice.reply('deny')
   assert.equal(events.length, beforeShared + 1, 'a late native notification cannot decide twice')
+  let mirroredReason: string | undefined
+  const mirroredDenial = childUI.select('Mirrored refusal', ['once', 'deny'], { approval: {
+    message: 'write: /mirrored', onDeny: reason => { mirroredReason = reason }
+  } } as ApprovalOptions)
+  const mirroredRequest = events.at(-1)!
+  assert.ok(mirroredRequest.kind === 'prompt' && mirroredRequest.approvalController === 'controller')
+  replyExtensionUI(sender, mirroredRequest.id, 'deny', 'Ask before modifying shared files.')
+  replyExtensionUI(sender, mirroredRequest.id, 'once')
+  assert.equal(await mirroredDenial, 'deny')
+  assert.equal(mirroredReason, 'Ask before modifying shared files.', 'the controlling pane can explain a target or subagent refusal')
+  assert.equal(hasPendingApproval('session'), false)
   const cancelledRoute = childUI.select('Route ends', ['once', 'deny'], { approval: { message: 'x' } } as never)
   const staleRoute = events.at(-1)!
   assert.ok(staleRoute.kind === 'prompt')

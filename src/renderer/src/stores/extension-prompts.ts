@@ -20,9 +20,9 @@ export const useExtensionPrompts = create<ExtensionPromptsState>((set) => ({
 }))
 
 /** Removes the prompt locally first so a second keypress cannot answer it twice. */
-export function replyExtensionPrompt(id: string, value: string | null): Promise<void> {
+export function replyExtensionPrompt(id: string, value: string | null, reason?: string): Promise<void> {
   const store = useExtensionPrompts.getState()
   if (!store.prompts.some(prompt => prompt.id === id)) return Promise.resolve()
   store.remove(id)
-  return api.replyExtensionUI(id, value)
+  return api.replyExtensionUI(id, value, reason)
 }

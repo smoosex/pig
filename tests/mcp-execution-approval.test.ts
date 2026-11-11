@@ -37,9 +37,11 @@ async function fixture() {
   let enter!: () => void
   let answer!: (value: string) => void
   let choices: string[] = []
+  let onDeny: ((reason: string) => void) | undefined
   let asked = 0
   let entered = new Promise<void>(resolve => { enter = resolve })
-  const approvalUI = { select: async (_title: string, options: string[]) => {
+  const approvalUI = { select: async (_title: string, options: string[], opts?: unknown) => {
+    onDeny = (opts as import('../src/main/permissions/approval').ApprovalOptions)?.approval.onDeny
     asked++
     choices = options
     enter()
@@ -139,6 +141,21 @@ async function fixture() {
     await run
     assert.equal(await readFile(marker, 'utf8'), 'x', 'a previously preflighted MCP call must not reach the server')
     assert.ok(agent.state.messages.some(message => message.role === 'toolResult' && message.toolCallId === 'batch-mcp' && message.isError))
+
+    await saveSessionPermission('parent', 'default')
+    requests = 0
+    entered = new Promise<void>(resolve => { enter = resolve })
+    const refused = agent.prompt('test explained refusal')
+    await entered
+    const reason = 'Inspect the current settings before changing them.'
+    assert.ok(onDeny)
+    onDeny(reason)
+    answer(choices.at(-1)!)
+    await refused
+    const refusal = agent.state.messages.findLast(message => message.role === 'toolResult' && message.toolCallId === 'batch-mcp')
+    assert.ok(refusal?.role === 'toolResult' && refusal.isError)
+    assert.ok(refusal.content.some(item => item.type === 'text' && item.text.includes(reason)), 'the next model turn receives the user reason in its tool result')
+    assert.equal(await readFile(marker, 'utf8'), 'x', 'explaining a refusal must never dispatch the denied tool')
   } finally {
     await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' })
     session.dispose()

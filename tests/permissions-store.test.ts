@@ -101,6 +101,35 @@ test('approval cancellation differs from user refusal and never grants permissio
   expect(existsSync(join(root, 'permissions.json'))).toBe(false)
 })
 
+test('refusal reasons reach the agent without granting operations or domains', async () => {
+  const { approve, offerHosts } = await import('../src/main/permissions/approval')
+  const { hasSessionGrant } = await import('../src/main/permissions/grants')
+  const reason = 'Wrong directory. Confirm the target before requesting access.'
+  const ui = { select: async (_title: string, choices: string[], opts?: unknown) => {
+    const options = opts as import('../src/main/permissions/approval').ApprovalOptions
+    options.approval.onDeny?.(reason)
+    return choices.at(-1)
+  } }
+  await expect(approve(ui, 'denial-reason', ['file:write:/outside'], 'Write', '/outside')).rejects.toThrow(
+    `The user did not allow this operation. Do not retry it.\nReason provided by the user: ${reason}`
+  )
+  expect(hasSessionGrant('denial-reason', ['file:write:/outside'])).toBe(false)
+  const result = await offerHosts(ui, 'denial-reason', ['deny.example'], '/repo/.git')
+  expect(result).toContain('The user did not allow deny.example. Do not retry it.')
+  expect(result).toContain(`Reason provided by the user: ${reason}`)
+  expect(existsSync(join(root, 'permissions.json'))).toBe(false)
+
+  const cancelled = { select: async (_title: string, _choices: string[], opts?: unknown) => {
+    const options = opts as import('../src/main/permissions/approval').ApprovalOptions
+    options.approval.onDeny?.('Stale reason')
+    return undefined
+  } }
+  await expect(approve(cancelled, 'denial-reason', [], 'Write', '/outside')).rejects.toThrow(
+    'The approval request was cancelled; nothing was allowed'
+  )
+  expect(await offerHosts(cancelled, 'denial-reason', ['deny.example'], '/repo/.git')).not.toContain('Stale reason')
+})
+
 test('one-time approvals never offer or remember a session grant', async () => {
   const { approve } = await import('../src/main/permissions/approval')
   let prompts = 0
