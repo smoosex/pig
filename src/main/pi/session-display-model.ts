@@ -362,6 +362,7 @@ function summarizeChunk(chunk: PathMessage[], sessionId: string): Omit<DisplayTu
     bash,
     userTimestamp: typeof userMsg?.timestamp === 'number' ? userMsg.timestamp : undefined,
     answer,
+    replyEntryId: rest[lastAssistant]?.id,
     compactions,
     branchSummaries,
     workBlocks,

@@ -18,6 +18,8 @@ import { ProcessList, ProcessOutline } from './turn/TurnProcess'
 import { useWorkBlockMs } from './turn/useWorkBlockMs'
 import { TurnFileChanges } from './turn/TurnFileChanges'
 import { failureMessage } from '../lib/ipc-error'
+import { useBookmarksStore } from '../stores/bookmarks'
+import { replyBookmarkId } from '../../../shared/bookmarks'
 
 /**
  * A mid-turn compaction splits the process: the work either side of it is rendered as its own block,
@@ -122,6 +124,8 @@ function AgentTurnView({
   /** Off for the leftovers after a standalone command, which have no reply of their own. */
   actions?: boolean
 }) {
+  const bookmarked = useBookmarksStore(state => Boolean(sessionId && turn.replyEntryId &&
+    state.items.some(item => item.id === replyBookmarkId(sessionId, turn.replyEntryId!))))
   const trailing: SummarySegment[] = []
   const trailingCompactions: CompactionItem[] = []
   const inline: ProcessItem[] = []
@@ -296,25 +300,30 @@ function AgentTurnView({
             {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
           </div>
         ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
-        {turn.streaming ? null : <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />}
-        {turn.streaming || !sessionId || !turn.id ? null : <TurnFileChanges sessionId={sessionId} turnId={turn.id} />}
-        {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
-        {trailing.length ? (
-          <div className="mb-2">
-            {trailing.map((segment, index) => segment.kind === 'compaction'
-              ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
-              : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
-          </div>
-        ) : null}
-        {showActions ? (
-          <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Activity className="size-3.5 shrink-0" />
-              <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} speed={false} />
-            </span>
-            <AssistantMessageActions turn={turn} sessionId={sessionId} tps={turnTps(turn)} />
-          </div>
-        ) : null}
+        <div data-bookmarked={bookmarked || undefined}
+          className={cn(bookmarked && 'rounded-xl bg-primary/5 px-3 pt-3 pb-2 ring-1 ring-primary/15 shadow-sm')}>
+          {turn.streaming ? null : (
+            <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />
+          )}
+          {turn.streaming || !sessionId || !turn.id ? null : <TurnFileChanges sessionId={sessionId} turnId={turn.id} />}
+          {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
+          {trailing.length ? (
+            <div className="mb-2">
+              {trailing.map((segment, index) => segment.kind === 'compaction'
+                ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
+                : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+            </div>
+          ) : null}
+          {showActions ? (
+            <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Activity className="size-3.5 shrink-0" />
+                <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} speed={false} />
+              </span>
+              <AssistantMessageActions turn={turn} sessionId={sessionId} tps={turnTps(turn)} />
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   )

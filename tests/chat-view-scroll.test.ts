@@ -550,7 +550,7 @@ async function runFixture(name: string): Promise<void> {
       await settle()
       assert.ok(row(79), 'the bottom control returns to the newest tail')
       atEnd()
-    } else if (name === 'far-jump') {
+    } else if (name === 'far-jump' || name === 'bookmark-jump') {
       // A live session keeps the whole minimap, but its window only holds the newest turns.
       const total = 2000
       const start = total - 60
@@ -563,7 +563,13 @@ async function runFixture(name: string): Promise<void> {
       atEnd()
       const target = container.querySelector<HTMLButtonElement>('[role="navigation"] [data-turn-index="100"]')
       assert.ok(target, 'a turn far above the window still has a minimap bar')
-      await act(async () => { target.click() })
+      if (name === 'bookmark-jump') {
+        const { useBookmarksStore } = await import('../src/renderer/src/stores/bookmarks')
+        await act(async () => useBookmarksStore.getState().requestJump({
+          id: 's1/last', turnId: 't100', entryId: 'last', preview: 'saved', kind: 'project', createdAt: 1,
+          session: { id: 's1', path: '/sessions/s1.jsonl', cwd: '/project', created: '', modified: '', size: 0, firstMessage: '' }
+        }, 100))
+      } else await act(async () => { target.click() })
       for (let round = 0; round < 6 && !row(100); round += 1) await settle()
       assert.ok(preloaded.length > 1, `a far jump pages instead of pulling the whole gap: ${preloaded.join(', ')}`)
       assert.ok(
@@ -798,6 +804,7 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     paging: 'long histories mount one page and paging keeps the reading position',
     'minimap-jump': 'minimap navigation mounts and aligns an older turn',
     'far-jump': 'a far minimap jump pages the window instead of reading the whole gap',
+    'bookmark-jump': 'a bookmarked reply pages and aligns its historical turn using the existing scroller',
     'window-without-summary': 'a windowed minimap jumps by the branch turn behind each bar',
     'return-to-branch-window': 'returning to a branch pages back to the saved reading row',
     'pending-window-status': 'a provisional window asks for its window instead of pretending to page',

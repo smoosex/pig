@@ -2,6 +2,14 @@ import type { Messages } from './zh'
 
 /** Language names stay in their own language: a reader looking for 简体中文 should find it. */
 export const en: Messages = {
+  bookmarks: {
+    imageReply: 'Image reply',
+    loading: 'Loading bookmarks…',
+    title: 'Bookmarks', add: 'Add bookmark', remove: 'Remove bookmark', failed: 'Bookmark operation failed',
+    empty: 'Keep replies worth rereading', emptyHint: 'Click the bookmark button below a reply to save it for later. Bookmarks from all chats appear here.',
+    thisChat: 'This chat', busy: 'This reply is on another branch. Stop the chat’s current task before jumping.',
+    unavailable: 'Cannot locate this reply. The original chat or reply may have been deleted.', jumpFailed: 'Could not jump to this reply. Please try again.'
+  },
   features: {
     title: 'Persona & Memory',
     description: 'Configure personality and memory',

@@ -11,6 +11,7 @@ import type { SavedSplitLayout } from './split-layout'
 import type { ShortcutOverrides, ShortcutPatch } from './shortcuts'
 import type { SettingsEventsApi, SettingsReply } from './settings'
 import type { QuitApi } from './quit'
+import type { BookmarksApi } from './bookmarks'
 import type { SessionAgentUiApi } from './session-agent'
 export type * from './session-capabilities'
 export type * from './tool-settings'
@@ -466,6 +467,8 @@ export interface DisplayTurn {
   endedAt: number
   /** Whether the turn has work beyond its summaries: the process disclosure has something behind it. */
   hasProcess: boolean
+  /** The persisted assistant outcome; trailing compactions or summaries do not change its identity. */
+  replyEntryId?: string
   /** The turn's last visible entry: forking at it keeps the whole turn. */
   lastEntryId: string
   /** Summed over every model call of the turn; absent when no call reported usage. */
@@ -885,6 +888,7 @@ export type * from './terminal'
 export type * from './processes'
 
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
+  bookmarks: BookmarksApi
   sessionAgent: SessionAgentUiApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi

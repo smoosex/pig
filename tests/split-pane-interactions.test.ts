@@ -18,6 +18,7 @@ async function fixture(scenario: string): Promise<void> {
   Object.assign(window, {
     api: {
       getCommands: async () => [],
+      bookmarks: { list: async () => ({ revision: 0, items: [] }), onChanged: () => () => {} },
       onPluginsChanged: () => () => {},
     conversationFeatures: { onChanged: () => () => {} },
       listSubagents: async () => [],

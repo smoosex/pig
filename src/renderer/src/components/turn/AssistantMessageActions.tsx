@@ -1,6 +1,6 @@
 /** Reply toolbar: regenerating resends the turn's prompt in place, forking keeps the whole turn. */
 import { useMemo, useState } from 'react'
-import { Check, Copy, GitFork, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { Bookmark, Check, Copy, GitFork, MoreHorizontal, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Turn } from '../../chat/turns'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
@@ -9,6 +9,8 @@ import { cn } from '../../lib/utils'
 import { markdownToPlainText } from '../../lib/markdown-plain-text'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
+import { useBookmarksStore } from '../../stores/bookmarks'
+import { replyBookmarkId } from '../../../../shared/bookmarks'
 import { Button } from '../ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger
@@ -46,7 +48,23 @@ export function AssistantMessageActions({
     return Boolean(runtime?.isStreaming || runtime?.bashExecution || runtime?.isNavigatingBranch)
   })
   const persisted = Boolean(sessionId && turn.id && !turn.id.startsWith('live:') && turn.lastEntryId)
+  const bookmarkId = sessionId && turn.replyEntryId ? replyBookmarkId(sessionId, turn.replyEntryId) : ''
+  const bookmarked = useBookmarksStore(state => state.items.some(item => item.id === bookmarkId))
+  const bookmarkPending = useBookmarksStore(state => Boolean(state.pending[bookmarkId]))
+  const bookmarksReady = useBookmarksStore(state => state.ready)
   const canChange = persisted && !busy && !pending
+
+  async function toggleBookmark(): Promise<void> {
+    if (!sessionId || !turn.id || !turn.replyEntryId) return
+    try {
+      const store = useBookmarksStore.getState()
+      if (bookmarked) await store.remove(bookmarkId)
+      else await store.add(sessionId, turn.id, turn.replyEntryId,
+        useSessionsStore.getState().openTabs.find(tab => tab.id === sessionId)?.title ?? '')
+    } catch (error) {
+      toast.error(t('bookmarks.failed'), { description: error instanceof Error ? error.message : String(error) })
+    }
+  }
   const canRegenerate = canChange && Boolean(turn.user)
   const fullTimestamp = timestampFormat.format(turn.endedAt)
 
@@ -81,9 +99,21 @@ export function AssistantMessageActions({
       data-slot="assistant-message-actions"
       className={cn(
         'flex items-center gap-0.5 opacity-0 transition-opacity group-hover/agent-reply:opacity-100 group-focus-within/agent-reply:opacity-100',
-        (menuOpen || usageOpen) && 'opacity-100'
+        (menuOpen || usageOpen || bookmarked) && 'opacity-100'
       )}
     >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button type="button" variant="ghost" size="icon-xs" aria-pressed={bookmarked}
+            aria-label={t(bookmarked ? 'bookmarks.remove' : 'bookmarks.add')}
+            disabled={!persisted || !turn.replyEntryId || (!turn.answer.length && !turn.errorMessage) || !bookmarksReady || bookmarkPending}
+            className={cn(bookmarked && 'text-foreground')}
+            onClick={() => void toggleBookmark()}>
+            <Bookmark className={cn(bookmarked && 'fill-current')} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>{t(bookmarked ? 'bookmarks.remove' : 'bookmarks.add')}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button type="button" variant="ghost" size="icon-xs"

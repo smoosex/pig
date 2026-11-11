@@ -4,6 +4,14 @@
  * Placeholders are `{name}` and are filled by `translate`.
  */
 export const zh = {
+  bookmarks: {
+    imageReply: '图片回复',
+    loading: '加载书签…',
+    title: '书签', add: '添加书签', remove: '移除书签', failed: '书签操作失败',
+    empty: '留住值得重读的回复', emptyHint: '点击回复下方的书签按钮，收藏值得重读的内容。所有聊天的书签都会汇集在这里。',
+    thisChat: '此聊天', busy: '目标回复在另一分支，请先停止该聊天的任务再跳转。',
+    unavailable: '无法定位这条回复，原聊天或回复可能已被删除。', jumpFailed: '无法跳转到该回复，请重试。'
+  },
   features: {
     title: '人格与记忆',
     description: '设置性格和记忆',

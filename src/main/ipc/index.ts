@@ -1,4 +1,5 @@
 import { registerSessionIpc } from './session'
+import { registerBookmarksIpc } from './bookmarks'
 import { registerProjectIpc } from './projects'
 import { registerSettingsIpc } from './settings'
 import { registerSystemIpc } from './system'
@@ -23,6 +24,7 @@ import { registerSessionAgentIpc } from './session-agent'
 export function registerIpc(): void {
   registerProjectIpc()
   registerSessionIpc()
+  registerBookmarksIpc()
   registerSessionReader()
   registerSessionAgentIpc()
   registerSystemIpc()

@@ -266,6 +266,25 @@ describe('work layout before process loading', () => {
   const after = message('after', 5_000, [{ type: 'thinking', thinking: 'after' }])
   const answer = message('answer', 6_000, [{ type: 'text', text: 'final answer' }])
 
+  test('keeps the assistant reply identity stable across trailing compactions and branch summaries', () => {
+    const [original] = displayTurnsFromEntries('session', [user, before, answer])
+    const summary = {
+      type: 'branch_summary', id: 'handoff', parentId: 'tail', timestamp: new Date(8_000).toISOString(),
+      fromId: 'answer', summary: 'Branch handoff'
+    } as SessionEntry
+    const [compacted] = displayTurnsFromEntries('session', [user, before, answer, compaction('tail', 7_000)])
+    const [annotated] = displayTurnsFromEntries('session', [user, before, answer, compaction('tail', 7_000), summary])
+    expect([original.lastEntryId, compacted.lastEntryId, annotated.lastEntryId]).toEqual(['answer', 'tail', 'handoff'])
+    for (const projected of [original, compacted, annotated]) {
+      expect(projected.replyEntryId).toBe('answer')
+      expect(toTurn(projected, []).replyEntryId).toBe('answer')
+      expect(projected.answer).toEqual(original.answer)
+    }
+    expect(displayTurnsFromEntries('session', [user, compaction('only', 3_000)])[0].replyEntryId).toBeUndefined()
+    const replacement = message('replacement', 9_000, [{ type: 'text', text: 'new answer' }])
+    expect(displayTurnsFromEntries('session', [user, answer, replacement])[0].replyEntryId).toBe('replacement')
+  })
+
   test('projects both work blocks and preserves empty intervals between compactions', () => {
     for (const [entries, expected] of [
       [[user, before, compaction('k1', 3_000), after, answer], [true, true]],

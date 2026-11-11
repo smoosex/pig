@@ -1155,17 +1155,58 @@ async function runFixture(name: string): Promise<void> {
       const reply = makeTurn({
         id: 'user-entry',
         lastEntryId: 'reply-entry',
+        replyEntryId: 'reply-entry',
         user: { role: 'user', content: '问题', timestamp: 1_000 },
         answer: [{ type: 'text', text: '**第一段**' }, { type: 'text', text: '第二段' }],
         usage: { input: 100, output: 20, cacheRead: 300, cacheWrite: 0, total: 420, calls: 2 },
         streaming: false
       })
+      const { useBookmarksStore } = await import('../src/renderer/src/stores/bookmarks')
+      const { replyBookmarkId } = await import('../src/shared/bookmarks')
+      let bookmarkAdds = 0
+      useBookmarksStore.setState({ ready: true, add: async (sessionId, turnId, entryId) => {
+        bookmarkAdds++
+        useBookmarksStore.setState({ items: [{
+          id: replyBookmarkId(sessionId, entryId), turnId, entryId, preview: 'saved', createdAt: 1,
+          kind: 'project', session: { id: sessionId, path: '/session.jsonl', cwd: '/project', created: '', modified: '', size: 0, firstMessage: '' }
+        }] })
+      }, remove: async () => { useBookmarksStore.setState({ items: [] }) } })
       await render(reply, undefined, 'session-one')
       const toolbar = () => container.querySelector('[data-slot="assistant-message-actions"]')!
       const button = (label: string) => toolbar().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
       assert.deepEqual([...toolbar().querySelectorAll('button')].map((item) => item.getAttribute('aria-label')),
-        ['复制', '重新生成', '用量', '更多操作'])
+        ['添加书签', '复制', '重新生成', '用量', '更多操作'])
       assert.ok(toolbar().className.includes('group-hover/agent-reply:opacity-100'))
+      assert.equal(container.querySelector('[data-bookmarked]'), null)
+      await act(async () => button('添加书签').click())
+      assert.equal(button('移除书签').getAttribute('aria-pressed'), 'true')
+      assert.ok(button('移除书签').querySelector('svg')?.classList.contains('fill-current'))
+      assert.ok(toolbar().classList.contains('opacity-100'), 'saved replies keep their bookmark visible')
+      assert.ok(container.querySelector('[data-bookmarked]')?.classList.contains('shadow-sm'))
+      assert.ok(container.querySelector('[data-bookmarked]')?.contains(container.querySelector('[data-slot="assistant-message-footer"]')), 'the bookmark surface includes the action buttons and timing footer')
+      const { displayTurnsFromEntries } = await import('../src/main/pi/session-display-model')
+      const { toTurn } = await import('../src/renderer/src/chat/display-turns')
+      const entries = [
+        { type: 'message', id: 'user-entry', parentId: null, timestamp: new Date(1_000).toISOString(),
+          message: { role: 'user', content: '问题', timestamp: 1_000 } },
+        { type: 'message', id: 'reply-entry', parentId: 'user-entry', timestamp: new Date(4_000).toISOString(),
+          message: { role: 'assistant', content: reply.answer, stopReason: 'stop', timestamp: 4_000 } },
+        { type: 'compaction', id: 'manual-compaction', parentId: 'reply-entry', timestamp: new Date(5_000).toISOString(),
+          summary: 'Compacted context', firstKeptEntryId: 'user-entry', tokensBefore: 100 }
+      ] as Parameters<typeof displayTurnsFromEntries>[1]
+      const compacted = toTurn(displayTurnsFromEntries('session-one', entries)[0], [])
+      assert.equal(compacted.lastEntryId, 'manual-compaction')
+      await render(compacted, undefined, 'session-one')
+      assert.equal(button('移除书签').getAttribute('aria-pressed'), 'true', 'compaction keeps the bookmark selected')
+      assert.ok(button('移除书签').querySelector('svg')?.classList.contains('fill-current'))
+      assert.ok(container.querySelector('[data-bookmarked]'), 'compaction keeps the reply highlighted')
+      assert.equal(useBookmarksStore.getState().items[0].entryId, 'reply-entry')
+      await act(async () => button('移除书签').click())
+      assert.equal(bookmarkAdds, 1, 'the second toggle removes the existing bookmark instead of adding a duplicate')
+      assert.equal(useBookmarksStore.getState().items.length, 0)
+      await render(reply, undefined, 'session-one')
+      assert.equal(container.querySelector('[data-bookmarked]'), null)
+      assert.equal(button('添加书签').getAttribute('aria-pressed'), 'false')
       const footer = container.querySelector('[data-slot="assistant-message-footer"]')!
       assert.match(footer.textContent ?? '', /耗时/, 'the duration stays visible beside the hover actions')
       assert.equal(toolbar().querySelector('time')?.getAttribute('datetime'), new Date(4_000).toISOString())
@@ -1203,6 +1244,7 @@ async function runFixture(name: string): Promise<void> {
       await render({ ...reply, id: 'live:pending', lastEntryId: undefined, user: undefined, usage: undefined }, undefined, 'session-one')
       assert.equal(button('重新生成').getAttribute('aria-disabled'), 'true', 'a prompt-less or unsaved turn cannot regenerate')
       assert.equal(button('用量').disabled, true)
+      assert.equal(button('添加书签').disabled, true, 'unsaved replies cannot be bookmarked')
       await act(async () => { button('重新生成').click(); await Bun.sleep(0) })
       assert.equal(retries.length, 1)
 

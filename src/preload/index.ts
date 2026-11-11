@@ -4,6 +4,17 @@ import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, Wo
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
+  bookmarks: {
+    list: () => ipcRenderer.invoke('bookmarks:list'),
+    add: (sessionId, turnId, entryId, title) => ipcRenderer.invoke('bookmarks:add', sessionId, turnId, entryId, title),
+    remove: (id) => ipcRenderer.invoke('bookmarks:remove', id),
+    locate: (id) => ipcRenderer.invoke('bookmarks:locate', id),
+    onChanged: (listener) => {
+      const handler = () => listener()
+      ipcRenderer.on('bookmarks:changed', handler)
+      return () => ipcRenderer.off('bookmarks:changed', handler)
+    }
+  },
   sessionAgent: {
     onRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/session-agent').SessionAgentUiRequest) => listener(request)

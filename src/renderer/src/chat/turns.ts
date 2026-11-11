@@ -93,6 +93,8 @@ export interface Turn {
   workedMs?: number
   generation?: GenerationStats
   usage?: TurnUsage
+  /** The persisted assistant outcome, independent of trailing turn landmarks. */
+  replyEntryId?: string
   /** The persisted turn's last entry; a live turn has none until it is saved. */
   lastEntryId?: string
   /** Stable UI identity shared by the live and persisted versions of a turn. */

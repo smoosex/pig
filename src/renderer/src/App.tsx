@@ -39,6 +39,7 @@ import { isChatScope } from './stores/sessions/tab-order'
 import type { OpenTab } from './stores/sessions'
 import { BrowserPanel } from './components/browser/BrowserPanel'
 import { ChatView } from './components/ChatView'
+import { ReplyBookmarks } from './components/ReplyBookmarks'
 import { ChangesView } from './components/diff/ChangesView'
 import { TurnDiffPanel } from './components/diff/TurnDiffPanel'
 import { WorkspacePanel } from './components/panel/WorkspacePanel'
@@ -536,6 +537,10 @@ export default function App() {
           {!settingsOpen ? (
             <div data-header-trailing className="flex h-full shrink-0 items-center gap-1 pl-2 pr-3">
               <NewTabButton sidebarTab={sidebarTab} sidebarLayout={`${leftCollapsed}:${rightCollapsed}:${hoverSidebar}:${settingsOpen}`} />
+              <ReplyBookmarks onNavigate={kind => {
+                setWorkspaceRestoreMode(kind === 'chat')
+                setSidebarTab(kind === 'chat' ? 'chats' : 'projects')
+              }} />
               {currentProjectCwd ? (
                 <Tooltip>
                   <TooltipTrigger asChild>

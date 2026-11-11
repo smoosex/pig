@@ -76,6 +76,7 @@ export function toTurn(
     workedMs,
     generation,
     ...(display.usage ? { usage: display.usage } : {}),
+    replyEntryId: display.replyEntryId,
     lastEntryId: display.lastEntryId,
     renderKey: renderKeyForDisplayTurn(display)
   }

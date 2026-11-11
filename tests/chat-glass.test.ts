@@ -13,6 +13,7 @@ async function fixture(scenario: string): Promise<void> {
   let browserShortcut: (action: import('../src/shared/browser').BrowserHostShortcut) => void = noop
   Object.assign(window, { api: {
     browser: { onShortcutRequested: (listener: typeof browserShortcut) => { browserShortcut = listener; return () => { browserShortcut = noop } } },
+    bookmarks: { list: async () => ({ revision: 0, items: [] }), onChanged: () => noop },
     supportsGlass: true,
     onMcpChanged: () => noop, onSettingsChanged: () => noop, onSettingsSurface: () => noop, onQuitConfirm: () => noop,
     onNotificationClick: () => noop,
@@ -190,7 +191,8 @@ async function fixture(scenario: string): Promise<void> {
         const toolbar = host.querySelector<HTMLElement>('[data-header-trailing]')!
         const buttons = [...toolbar.querySelectorAll('button')]
         assert.equal(buttons[0], newButton)
-        assert.equal(buttons[1].getAttribute('aria-pressed'), 'true', 'the add button immediately precedes the right sidebar toggle')
+        assert.equal(buttons[1].getAttribute('aria-label'), 'Bookmarks')
+        assert.equal(buttons[2].getAttribute('aria-pressed'), 'true', 'bookmarks sit between creation and the right sidebar toggle')
         assert.ok(!strip.contains(newButton), 'the add action cannot take width from the tab rail')
         const initialClass = headerTabs.className
         const checkBounds = () => {
@@ -216,7 +218,7 @@ async function fixture(scenario: string): Promise<void> {
           assert.equal(host.querySelector('[data-view="Sidebar"]')!.getAttribute('aria-hidden'), String(leftHidden))
           assert.equal(host.querySelector('[data-view="WorkspacePanel"]')!.getAttribute('aria-hidden'), String(rightHidden))
         }
-        await act(async () => { buttons[1].click() })
+        await act(async () => { buttons[2].click() })
         assert.equal(useDiffStore.getState().reviewOpen, false)
         checkBounds()
 
@@ -248,7 +250,7 @@ async function fixture(scenario: string): Promise<void> {
         assert.equal(newButton.title, 'cannot create session')
         assert.ok(newButton.querySelector('.lucide-circle-alert'))
         await act(async () => { sessions.setState({ activeTabId: 'chat', currentProjectCwd: null }) })
-        assert.equal(toolbar.querySelectorAll('button').length, 1, 'chats still have the add action without a project sidebar toggle')
+        assert.equal(toolbar.querySelectorAll('button').length, 2, 'chats keep creation and bookmarks without a project sidebar toggle')
         await chooseSession()
         assert.deepEqual(created, ['/p', 'chat'])
         assert.ok(newButton.querySelector('.lucide-plus'), 'a successful retry clears the creation error')

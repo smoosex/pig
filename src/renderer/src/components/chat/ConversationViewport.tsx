@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { chatColumn } from '../../chat/layout'
 import { summaryMinimapItem, turnMinimapItem, turnMinimapPreview, type MinimapItem, type MinimapPreview } from '../../chat/minimap'
 import type { ScrollSnapshot } from '../../chat/scroll-state'
@@ -8,6 +8,8 @@ import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { useSessionsStore } from '../../stores/sessions'
+import { useBookmarksStore } from '../../stores/bookmarks'
+import { toast } from 'sonner'
 import { TurnView } from '../TurnView'
 import {
   MessageScroller,
@@ -138,8 +140,28 @@ export function ConversationViewport({
       if (after.turnStart === before) break
     }
     const loaded = useSessionsStore.getState().runtime[sessionId]
-    if (!loaded || !jumpToTurn(turnIndex - loaded.turnStart)) abandon()
+    if (token !== jumpToRequested.current) return
+    if (!loaded || !jumpToTurn(turnIndex - loaded.turnStart)) {
+      abandon()
+      return false
+    }
+    return true
   }, [jumpToTurn, loadOlderTurns, sessionId])
+  const bookmarkJump = useBookmarksStore(state => state.jump)
+  const startedBookmarkJump = useRef(0)
+  useEffect(() => () => { jumpToRequested.current++ }, [active, branchViewId])
+  useEffect(() => {
+    if (!active || !indexTrusted || !bookmarkJump || bookmarkJump.sessionId !== sessionId ||
+      startedBookmarkJump.current === bookmarkJump.token) return
+    const targetId = summary[bookmarkJump.turnIndex]?.id ?? historical[bookmarkJump.turnIndex - windowStart]?.id
+    if (targetId !== bookmarkJump.turnId) return
+    startedBookmarkJump.current = bookmarkJump.token
+    void jumpToTurnIndex(bookmarkJump.turnIndex).then(success => {
+      if (success === false) toast.error(t('bookmarks.jumpFailed'))
+    }).catch(() => toast.error(t('bookmarks.jumpFailed'))).finally(() => {
+      useBookmarksStore.getState().clearJump(bookmarkJump.token)
+    })
+  }, [active, indexTrusted, bookmarkJump, sessionId, summary, historical, windowStart, jumpToTurnIndex, t])
   const onNeedProcess = useCallback(async (turnId: string) => {
     await loadTurnProcess(sessionId, turnId)
   }, [sessionId, loadTurnProcess])
