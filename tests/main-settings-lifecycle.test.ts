@@ -190,13 +190,15 @@ async function fixture(name: string): Promise<void> {
     await assert.rejects(controls.applyPendingControls(pending, session), /Model not found/)
 
     available = true
-    const opened = (branch: unknown[], messages: unknown[] = []) => ({
+    const opened = (branch: Record<string, unknown>[], messages: unknown[] = []) => ({
       sessionId: 'opened', cwd: '/tmp', win: {},
       sessionManager: {
         getEntries: () => [],
         getBranch: () => branch,
         buildSessionContext: () => ({
-          messages, thinkingLevel: 'off', model: { provider: 'test', modelId: 'recorder' }
+          messages,
+          thinkingLevel: branch.findLast(entry => entry.type === 'thinking_level_change')?.thinkingLevel ?? 'off',
+          model: { provider: 'test', modelId: 'recorder' }
         })
       }
     }) as unknown as import('../src/main/pi/session-state').PendingSession

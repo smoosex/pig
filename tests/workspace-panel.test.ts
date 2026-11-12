@@ -326,7 +326,7 @@ async function runFixture(name: string): Promise<void> {
     await render('/clean')
     assert.match(container.textContent ?? '', /工作区没有未提交的变更/)
 
-    // An unknown file must not hide known totals, either for its group, its directory, or the worktree.
+    // An unknown file must not hide known counts on files, groups or directories.
     api.readWorktreeDiff = async () =>
       worktree({
         staged: [{ path: 'src/staged.ts', status: 'added', additions: 3, deletions: 0 }],
@@ -344,7 +344,8 @@ async function runFixture(name: string): Promise<void> {
     const [stagedHeader, unstagedHeader] = [...container.querySelectorAll('button[aria-expanded]')]
     assert.match(stagedHeader!.textContent ?? '', /已暂存\(1\)\+3-0/, 'a group whose counts are all known keeps them')
     assert.match(unstagedHeader!.textContent ?? '', /未提交\(2\)\+2-1$/)
-    assert.match(container.textContent ?? '', /合计\+5-1/)
+    assert.match(row('src/staged.ts')!.textContent ?? '', /\+3-0$/)
+    assert.match(row('src/work.ts')!.textContent ?? '', /\+2-1$/)
     assert.doesNotMatch(container.textContent ?? '', /未计入/)
     await click(container.querySelector('button[aria-label="以树状显示"]'))
     const directories = [...container.querySelectorAll('button[title="src"]')]
@@ -353,7 +354,8 @@ async function runFixture(name: string): Promise<void> {
     api.countUntrackedFiles = async () => { throw new Error('EIO: count read failed') }
     await render('/count-failed')
     assert.match(container.textContent ?? '', /部分行数统计失败：EIO: count read failed/)
-    assert.match(container.textContent ?? '', /合计\+5-1/)
+    assert.match(container.querySelector('[data-change-group="staged"] button[aria-expanded]')!.textContent ?? '', /已暂存\(1\)\+3-0$/)
+    assert.match(container.querySelector('[data-change-group="unstaged"] button[aria-expanded]')!.textContent ?? '', /未提交\(2\)\+2-1$/)
     assert.match(container.textContent ?? '', /src\/new\.ts|new\.ts/)
   } else if (name === 'refresh') {
     await render(CWD)
