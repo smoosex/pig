@@ -123,15 +123,16 @@ function CookieImportSession({ browserId, url, onOpenChange, onChanged }: Cookie
   const skipped = valid ? valid.skipped.expired + valid.skipped.partitioned + valid.skipped.unsupported : 0
   const status = busy === 'import' ? 'browser.cookieImporting' : busy === 'clear' ? 'browser.cookieClearing' : loading ? 'browser.cookieReading' : null
   return <Dialog open onOpenChange={(open) => { if (!locked.current) onOpenChange(open) }}>
-    <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md" showCloseButton={!busy} onEscapeKeyDown={(event) => { if (locked.current) event.preventDefault() }} onInteractOutside={(event) => { if (locked.current) event.preventDefault() }}>
+    <DialogContent confirmation={Boolean(confirm)} className="flex max-h-[85vh] flex-col sm:max-w-md" showCloseButton={!busy} onEscapeKeyDown={(event) => { if (locked.current) event.preventDefault() }} onInteractOutside={(event) => { if (locked.current) event.preventDefault() }}>
       <DialogHeader>
         <DialogTitle>{t(confirm === 'all' ? 'browser.cookieConfirmAll' : confirm === 'clear' ? 'browser.cookieConfirmClear' : 'browser.cookieImport')}</DialogTitle>
         <DialogDescription>{t(confirm === 'all' ? 'browser.cookieAllWarning' : confirm === 'clear' ? 'browser.cookieClearWarning' : 'browser.cookieDescription', { site: site ?? '' })}</DialogDescription>
       </DialogHeader>
       {confirm ? <DialogFooter>
-        <Button variant="outline" onClick={() => setConfirm(null)}>{t('browser.cancel')}</Button>
+        <Button variant="ghost" onClick={() => setConfirm(null)}>{t('browser.cancel')}</Button>
         <Button variant={confirm === 'clear' ? 'destructive' : 'default'} disabled={confirm === 'all' ? !canImport : !site || !!busy} onClick={() => void mutate(confirm === 'clear' ? 'clear' : 'import')}>{t('browser.cookieConfirm')}</Button>
       </DialogFooter> : <>
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Select value={source} disabled={!!busy || listing || !listingData?.supported} onValueChange={(value) => { setPreview(null); setResult(null); setSource(value) }}>
@@ -158,15 +159,16 @@ function CookieImportSession({ browserId, url, onOpenChange, onChanged }: Cookie
               : valid ? <p className="font-medium">{t('browser.cookieCount', { n: valid.count })}</p> : null}
             {valid && !status && skipped > 0 ? <span className="text-muted-foreground" title={t('browser.cookieSkipped', { ...valid.skipped })}>{t('browser.cookieSkippedShort', { n: skipped })}</span> : null}
           </div>
-          {valid && !status && valid.domains.length ? <ul className="max-h-44 overflow-y-auto py-1">{valid.domains.map((item) => <li key={item.domain} className="flex justify-between gap-4 px-3 py-1"><span className="min-w-0 truncate" title={item.domain}>{item.domain}</span><span className="text-muted-foreground tabular-nums">{item.count}</span></li>)}</ul> : null}
+          {valid && !status && valid.domains.length ? <ul className="max-h-44 overflow-y-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{valid.domains.map((item) => <li key={item.domain} className="flex justify-between gap-4 px-3 py-1"><span className="min-w-0 truncate" title={item.domain}>{item.domain}</span><span className="text-muted-foreground tabular-nums">{item.count}</span></li>)}</ul> : null}
         </section> : null}
         {result ? <Alert variant={result.partial ? 'destructive' : 'default'}><AlertTitle>{t(result.partial ? 'browser.cookiePartial' : 'browser.cookieDone')}</AlertTitle><AlertDescription>{result.text}</AlertDescription></Alert> : null}
         {refreshError ? <Alert variant="destructive"><AlertTitle>{t('browser.cookieRefreshFailed')}</AlertTitle><AlertDescription>{refreshError}</AlertDescription></Alert> : null}
         <p className="text-xs text-muted-foreground">{t('browser.cookiePermissions')}</p>
+        </div>
         <DialogFooter className="sm:justify-between">
           <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={!site || listing || !!busy} onClick={() => setConfirm('clear')}>{t('browser.cookieClear')}</Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="outline" disabled={!!busy} onClick={() => onOpenChange(false)}>{t('browser.cookieClose')}</Button>
+            <Button variant="ghost" disabled={!!busy} onClick={() => onOpenChange(false)}>{t('browser.cookieClose')}</Button>
             <Button disabled={!canImport} onClick={() => scope === 'all' ? setConfirm('all') : void mutate('import')}>{t('browser.cookieImportAction')}</Button>
           </div>
         </DialogFooter>

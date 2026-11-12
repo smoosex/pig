@@ -232,7 +232,7 @@ export function PersonaSettings({ actionsContainer, onDirtyChange, onBusyChange 
               <DialogDescription>{t(FILE_HINTS[file])}</DialogDescription>
             </DialogHeader>
             {failure}
-            <FieldGroup className="min-h-0 overflow-y-auto">
+            <FieldGroup className="min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Field data-disabled={busy}>
                 <FieldLabel htmlFor={`persona-${file}`}>{file}</FieldLabel>
                 <Textarea id={`persona-${file}`} className="min-h-72" value={drafts[file]?.content ?? ''} disabled={busy} spellCheck={false}
@@ -247,7 +247,7 @@ export function PersonaSettings({ actionsContainer, onDirtyChange, onBusyChange 
             </FieldGroup>
             <DialogFooter className="items-center">
               <span className="mr-auto text-xs text-muted-foreground">{drafts[file]?.content !== drafts[file]?.saved ? t('persona.unsaved') : t('persona.saved')}</span>
-              <Button variant="outline" disabled={busy} onClick={closeEditor}>{t('persona.usageCancel')}</Button>
+              <Button variant="ghost" disabled={busy} onClick={closeEditor}>{t('persona.usageCancel')}</Button>
               <Button disabled={busy || !drafts[file] || drafts[file]?.content === drafts[file]?.saved} onClick={() => void save()}>{busy ? t('persona.working') : t('persona.save', { file })}</Button>
             </DialogFooter>
           </DialogContent>

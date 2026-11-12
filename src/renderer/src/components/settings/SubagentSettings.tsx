@@ -5,6 +5,7 @@ import { api, type SubagentSettings as Settings } from '../../ipc/api'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
+import { DialogFooter } from '../ui/dialog'
 import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 
@@ -68,7 +69,8 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
+    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       <SettingsCard>
         <SettingsRow title={t('plugins.subagentModel')} description={t('plugins.subagentModelHint')}>
@@ -94,7 +96,11 @@ export function SubagentSettings({ onClose }: { onClose: () => void }) {
           </SettingsRow>
         ))}
       </SettingsCard>
-      <Button size="sm" className="self-end" disabled={saving} onClick={() => void save()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>
     </div>
+    <DialogFooter>
+      <Button variant="ghost" disabled={saving} onClick={onClose}>{t('common.cancel')}</Button>
+      <Button disabled={saving} onClick={() => void save()}>{saving ? t('plugins.working') : t('plugins.save')}</Button>
+    </DialogFooter>
+    </>
   )
 }

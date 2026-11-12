@@ -106,7 +106,7 @@ export function AuthDialog({
           ) : null}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
           {prompt && prompt.type !== 'select' ? (

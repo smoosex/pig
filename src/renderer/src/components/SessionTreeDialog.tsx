@@ -557,11 +557,11 @@ export function SessionTreeButton({ disabled }: { disabled?: boolean }) {
             autoFocus
           />
           <AlertDialogFooter className="sm:justify-between">
-            <Button variant="ghost" size="sm" onClick={() => setCustomTarget(null)}>
+            <Button variant="ghost" onClick={() => setCustomTarget(null)}>
               <ChevronLeft data-icon="inline-start" />
               {t('tree.back')}
             </Button>
-            <Button size="sm" disabled={busy || !instructions.trim()} onClick={() => {
+            <Button disabled={busy || !instructions.trim()} onClick={() => {
               const target = customTarget
               if (!target) return
               setCustomTarget(null)

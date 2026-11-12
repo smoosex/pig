@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { useT } from '../../hooks/useT'
 import { useProjectAction } from './project-action'
 import { CreateWorktreeButton } from './WorktreeActions'
@@ -182,13 +182,13 @@ export function ProjectRow({
           )}
         </div>
         <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent showCloseButton={false}>
+          <DialogContent confirmation showCloseButton={false}>
             <DialogHeader>
               <DialogTitle className="text-sm">{t('project.delete')}</DialogTitle>
               <DialogDescription className="text-xs">{t('project.deleteBody')}</DialogDescription>
             </DialogHeader>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
                 {t('common.cancel')}
               </Button>
               <Button
@@ -201,7 +201,7 @@ export function ProjectRow({
               >
                 {t('project.deleteConfirm')}
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
         <CollapsibleContent>

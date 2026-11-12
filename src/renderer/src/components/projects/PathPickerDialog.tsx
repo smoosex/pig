@@ -282,7 +282,7 @@ export function PathPickerDialog({ onClose, onSelect, title, description, confir
         </p>
         <DialogFooter className="items-center">
           <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={selectedFile ?? listing?.path}>{selectedFile ?? listing?.path}</p>
-          <Button variant="outline" disabled={adding} onClick={onClose}>{t('common.cancel')}</Button>
+          <Button variant="ghost" disabled={adding} onClick={onClose}>{t('common.cancel')}</Button>
           <Button disabled={!canAdd} onClick={() => void add()}>{adding ? <LoaderCircle className="animate-spin" /> : null}{adding ? busyLabel ?? confirmLabel : confirmLabel}</Button>
         </DialogFooter>
       </DialogContent>

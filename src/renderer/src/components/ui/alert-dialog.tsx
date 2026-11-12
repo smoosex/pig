@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
 
 import { Button } from '@/components/ui/button'
+import { DialogFooter, focusDialogContent } from '@/components/ui/dialog'
 
 function AlertDialog({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
@@ -37,6 +38,7 @@ function AlertDialogOverlay({
 function AlertDialogContent({
   className,
   size = 'default',
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: 'default' | 'sm'
@@ -52,6 +54,10 @@ function AlertDialogContent({
           className
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (!event.defaultPrevented) focusDialogContent(event)
+        }}
       />
     </AlertDialogPortal>
   )
@@ -71,16 +77,7 @@ function AlertDialogHeader({ className, ...props }: React.ComponentProps<'div'>)
 }
 
 function AlertDialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="alert-dialog-footer"
-      className={cn(
-        '-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-glass-border bg-glass-composer-background/30 solid:border-border solid:bg-muted/50 p-4 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end',
-        className
-      )}
-      {...props}
-    />
-  )
+  return <DialogFooter data-slot="alert-dialog-footer" separator={false} className={className} {...props} />
 }
 
 function AlertDialogMedia({ className, ...props }: React.ComponentProps<'div'>) {
@@ -148,7 +145,7 @@ function AlertDialogAction({
 
 function AlertDialogCancel({
   className,
-  variant = 'outline',
+  variant = 'ghost',
   size = 'default',
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> &

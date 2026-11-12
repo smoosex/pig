@@ -7,6 +7,13 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+const DialogConfirmationContext = React.createContext(false)
+
+function focusDialogContent(event: Event) {
+  event.preventDefault()
+  if (event.target instanceof HTMLElement) event.target.focus({ preventScroll: true })
+}
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -51,9 +58,12 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  confirmation = false,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  confirmation?: boolean
 }) {
   return (
     <DialogPortal>
@@ -65,13 +75,19 @@ function DialogContent({
           className
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (confirmation && !event.defaultPrevented) focusDialogContent(event)
+        }}
       >
-        {children}
+        <DialogConfirmationContext.Provider value={confirmation}>
+          {children}
+        </DialogConfirmationContext.Provider>
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
             <Button
               variant="ghost"
-              className="absolute top-2 right-2"
+              className="absolute top-4 right-4"
               size="icon-sm"
             >
               <XIcon
@@ -98,16 +114,20 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 function DialogFooter({
   className,
   showCloseButton = false,
+  separator,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
+  separator?: boolean
 }) {
+  const confirmation = React.useContext(DialogConfirmationContext)
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-glass-border bg-glass-composer-background/30 solid:border-border solid:bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end",
+        (separator ?? !confirmation) && "border-t border-glass-border pt-4 solid:border-border",
         className
       )}
       {...props}
@@ -115,7 +135,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="ghost">Close</Button>
         </DialogPrimitive.Close>
       )}
     </div>
@@ -130,7 +150,7 @@ function DialogTitle({
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "font-heading text-base leading-none font-medium",
+        "flex min-h-7 items-center font-heading text-base leading-none font-medium",
         className
       )}
       {...props}
@@ -155,6 +175,7 @@ function DialogDescription({
 }
 
 export {
+  focusDialogContent,
   Dialog,
   DialogClose,
   DialogContent,

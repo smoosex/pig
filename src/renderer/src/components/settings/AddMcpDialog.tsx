@@ -178,7 +178,7 @@ export function AddMcpDialog({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-2xl" showCloseButton={false} onPaste={pasteConfig}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl" showCloseButton={false} onPaste={pasteConfig}>
         {recipe ? (
           <DialogHeader className="-mx-4 -mt-4 flex-row items-center gap-3 border-b p-4">
             <McpIcon source={recipe.icon} name={recipe.title || recipe.name} className="size-10" />
@@ -231,7 +231,7 @@ export function AddMcpDialog({
             </ToggleGroup>
           </DialogHeader>
         )}
-        <div className="flex max-h-[65vh] flex-col gap-4 overflow-auto p-1">
+        <div className="flex min-h-0 flex-col gap-4 overflow-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {recipe ? (
             <>
               {recipe.description ? (
@@ -312,7 +312,7 @@ export function AddMcpDialog({
           ) : null}
           {conflictBlock}
         </div>
-        <DialogFooter className="items-center py-3">
+        <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t('common.cancel')}
           </Button>

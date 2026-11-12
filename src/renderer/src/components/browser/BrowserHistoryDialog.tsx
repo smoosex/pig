@@ -146,13 +146,13 @@ function BrowserHistorySession({ onOpenChange, onOpenUrl }: BrowserHistoryDialog
   const clock = useMemo(() => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), [locale])
 
   return <Dialog open onOpenChange={(open) => { if (!busy) onOpenChange(open) }}>
-    <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-xl">
+    <DialogContent confirmation={confirmClear} className="flex max-h-[85vh] flex-col sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>{t(confirmClear ? 'browser.historyConfirmClear' : 'browser.history')}</DialogTitle>
         <DialogDescription>{t(confirmClear ? 'browser.historyClearWarning' : 'browser.historyDescription')}</DialogDescription>
       </DialogHeader>
       {confirmClear ? <DialogFooter>
-        <Button variant="outline" disabled={busy} onClick={() => setConfirmClear(false)}>{t('browser.cancel')}</Button>
+        <Button variant="ghost" disabled={busy} onClick={() => setConfirmClear(false)}>{t('browser.cancel')}</Button>
         <Button variant="destructive" disabled={busy} onClick={() => act(async () => {
           await api.browser.clearHistory()
           setConfirmClear(false)
@@ -172,7 +172,7 @@ function BrowserHistorySession({ onOpenChange, onOpenUrl }: BrowserHistoryDialog
         </div>
         {recording === false ? <p className="text-xs text-muted-foreground">{t('browser.historyPaused')}</p> : null}
         {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
-        <div className="-mx-2 min-h-40 flex-1 overflow-y-auto px-2" aria-busy={loading}>
+        <div className="-mx-2 min-h-40 flex-1 overflow-y-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-busy={loading}>
           {groups.map((group) => <section key={group.day} aria-label={group.label} className="pb-2">
             <h3 className="py-1 text-xs font-medium text-muted-foreground">{group.label}</h3>
             <ul>
@@ -198,7 +198,7 @@ function BrowserHistorySession({ onOpenChange, onOpenUrl }: BrowserHistoryDialog
         </div>
         <DialogFooter className="sm:justify-between">
           <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={busy || (!entries.length && !search.trim())} onClick={() => setConfirmClear(true)}>{t('browser.historyClear')}</Button>
-          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>{t('browser.cookieClose')}</Button>
+          <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>{t('browser.cookieClose')}</Button>
         </DialogFooter>
       </>}
     </DialogContent>

@@ -3,6 +3,7 @@ import { ChevronDownIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { api, type WebSearchSettingsState, type WebSearchSettingsPatch, type WebSearchProviderState } from '../../ipc/api'
 import { Button } from '../ui/button'
+import { DialogFooter } from '../ui/dialog'
 import { Alert, AlertDescription } from '../ui/alert'
 import { Field, FieldContent, FieldGroup, FieldLabel, FieldDescription } from '../ui/field'
 import { Input } from '../ui/input'
@@ -74,11 +75,12 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
   const added = draft.added.map(id => state.providers.find(provider => provider.id === id)!)
   const available = state.providers.filter(provider => !draft.added.includes(provider.id))
   return (
-    <div className="flex flex-col gap-4">
+    <>
+    <Button variant="outline" size="sm" className="absolute top-4 right-14" disabled={busy || !available.length} onClick={() => setDialog({ editing: null })}>
+      <PlusIcon data-icon="inline-start" />{t('webSearch.addProvider')}
+    </Button>
+    <div className="flex min-h-0 flex-col gap-4 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {state.error ? <Alert variant="destructive"><AlertDescription>{state.error}</AlertDescription></Alert> : null}
-      <Button variant="outline" size="sm" className="absolute top-4 right-14" disabled={busy || !available.length} onClick={() => setDialog({ editing: null })}>
-        <PlusIcon data-icon="inline-start" />{t('webSearch.addProvider')}
-      </Button>
       <SettingsCard>
         <SettingsRow title={t('webSearch.defaultProvider')} description={t('webSearch.defaultProviderHint')}>
           <Select value={draft.provider} onValueChange={provider => setDraft({ ...draft, provider })} disabled={busy}>
@@ -135,13 +137,13 @@ export function WebSearchSettings({ onClose }: { onClose: () => void }) {
       </Collapsible>
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {testResult ? <p role="status" className="text-sm text-success">{testResult}</p> : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">{t('webSearch.testNotice')}</p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(true)}>{t('webSearch.test')}</Button>
-          <Button size="sm" disabled={busy} onClick={() => void run(false)}>{t('plugins.save')}</Button>
-        </div>
-      </div>
     </div>
+    <DialogFooter>
+      <p className="mr-auto text-xs text-muted-foreground">{t('webSearch.testNotice')}</p>
+      <Button variant="ghost" disabled={busy} onClick={onClose}>{t('common.cancel')}</Button>
+      <Button variant="outline" disabled={busy} onClick={() => void run(true)}>{t('webSearch.test')}</Button>
+      <Button disabled={busy} onClick={() => void run(false)}>{t('plugins.save')}</Button>
+    </DialogFooter>
+    </>
   )
 }

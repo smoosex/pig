@@ -206,12 +206,13 @@ export function PluginsPane() {
         </div>
       </div>
       <Dialog open={!!selectedPluginId} onOpenChange={(open) => { if (!open) setSelectedPluginId(null) }}>
-        <DialogContent data-plugin={selectedPluginId ?? undefined} className="max-h-[80vh] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <DialogContent data-plugin={selectedPluginId ?? undefined} className="flex max-h-[80vh] flex-col overflow-hidden sm:max-w-2xl sm:data-[plugin=pig-web]:max-w-xl data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:top-4 data-[plugin=pig-web]:[&>[data-slot=dialog-close]]:right-4" onOpenAutoFocus={(event) => event.preventDefault()}>
           <DialogHeader className={selectedPluginId === 'pig-web' ? 'min-h-7 min-w-0 justify-center pr-44' : undefined}>
             <DialogTitle className={selectedPluginId === 'pig-web' ? 'truncate' : undefined}>{t('plugins.configure')} · {selectedPlugin?.name}</DialogTitle>
           </DialogHeader>
       {selectedPlugin?.settings ? (
-        <div className="flex flex-col gap-3">
+        <>
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {pluginConfigError ? <p role="alert" className="text-sm text-destructive">{pluginConfigError}</p> : null}
           {selectedPluginId === 'pig-review' ? <SettingsCard>
             <SettingsRow title={t('plugins.reviewModel')} description={t('plugins.reviewModelHint')}>
@@ -250,8 +251,12 @@ export function PluginsPane() {
               )}
             </SettingsRow>
           ))}</SettingsCard>}
-          <Button size="sm" className="self-end" disabled={configSaving} onClick={() => void saveConfig()}>{configSaving ? t('plugins.working') : t('plugins.save')}</Button>
         </div>
+        <DialogFooter>
+          <Button variant="ghost" disabled={configSaving} onClick={() => setSelectedPluginId(null)}>{t('common.cancel')}</Button>
+          <Button disabled={configSaving} onClick={() => void saveConfig()}>{configSaving ? t('plugins.working') : t('plugins.save')}</Button>
+        </DialogFooter>
+        </>
       ) : null}
       {selectedPluginId === 'pig-web' ? <WebSearchSettings onClose={() => setSelectedPluginId(null)} /> : null}
       {selectedPluginId === 'pig-subagent' ? <SubagentSettings onClose={() => setSelectedPluginId(null)} /> : null}
@@ -265,9 +270,9 @@ export function PluginsPane() {
         onSelect={(path) => { setSource(path); setPickingPath(false) }}
       /> : null}
       <Dialog open={!!toRemove} onOpenChange={(open) => { if (!open) setToRemove(null) }}>
-        <DialogContent><DialogHeader><DialogTitle>{t('plugins.remove')} {toRemove?.name}</DialogTitle><DialogDescription>{toRemove?.source}</DialogDescription></DialogHeader>
+        <DialogContent confirmation><DialogHeader><DialogTitle>{t('plugins.remove')} {toRemove?.name}</DialogTitle><DialogDescription>{toRemove?.source}</DialogDescription></DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setToRemove(null)}>{t('common.cancel')}</Button>
+            <Button variant="ghost" onClick={() => setToRemove(null)}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => { const plugin = toRemove; setToRemove(null); if (plugin) void actOnPlugin(plugin.id, () => api.removePlugin(plugin.id)) }}>{t('plugins.remove')}</Button>
           </DialogFooter>
         </DialogContent>

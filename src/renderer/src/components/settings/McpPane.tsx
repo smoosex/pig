@@ -28,7 +28,7 @@ import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '../ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../ui/input-group'
 import { Switch } from '../ui/switch'
@@ -424,15 +424,15 @@ export function McpPane() {
           if (!open && !busy) setRemoving(undefined)
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent confirmation showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-sm">
               {t('mcp.removeTitle', { name: removing ?? '' })}
             </DialogTitle>
             <DialogDescription className="text-xs">{t('mcp.removeDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" disabled={busy} onClick={() => setRemoving(undefined)}>
+          <DialogFooter>
+            <Button variant="ghost" disabled={busy} onClick={() => setRemoving(undefined)}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -447,7 +447,7 @@ export function McpPane() {
             >
               {t('mcp.remove')}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

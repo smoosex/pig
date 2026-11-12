@@ -45,7 +45,7 @@ test('small web panel saves credentials before testing and exposes no legacy fea
     assert.equal(document.querySelector('[aria-label="网页读取供应商"]'), null)
     assert.doesNotMatch(host.textContent!, /source_check|视频理解|允许的提取模式/)
     assert.doesNotMatch(host.textContent!, /API 基础地址/)
-    const buttons = () => [...document.querySelectorAll('button')]
+    const buttons = () => [...(document.querySelector('[role="dialog"]') ?? document).querySelectorAll<HTMLButtonElement>('button')]
     assert.equal(document.querySelector('#web-max-chars'), null)
     assert.equal(document.querySelector('#web-ssrf-ranges'), null)
     assert.equal(document.querySelector('#web-trust-proxy'), null)

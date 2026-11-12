@@ -22,13 +22,13 @@ export function AddSearchEngineDialog({ providers, editing, values, sources, onS
   const [source, setSource] = useState<'env' | 'config'>(sources[id] ?? 'config')
   const provider = providers.find(provider => provider.id === id)
   return <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-    <DialogContent>
+    <DialogContent className="flex max-h-[85vh] flex-col">
       <DialogHeader>
         <DialogTitle>{t(editing ? 'webSearch.editProvider' : 'webSearch.addProvider')}</DialogTitle>
         <DialogDescription>{t('webSearch.providerDialogHint')}</DialogDescription>
       </DialogHeader>
-      <form className="flex flex-col gap-4" onSubmit={event => { event.preventDefault(); if (provider) onSave(id, apiKey, source) }}>
-        <FieldGroup>
+      <form className="flex min-h-0 flex-col gap-4" onSubmit={event => { event.preventDefault(); if (provider) onSave(id, apiKey, source) }}>
+        <FieldGroup className="min-h-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Field>
             <FieldLabel htmlFor="web-provider-select">{t('webSearch.providerLabel')}</FieldLabel>
             <Select value={id} onValueChange={id => { setId(id); setApiKey(values[id] ?? ''); setSource(sources[id] ?? 'config') }} disabled={!!editing}>
@@ -52,7 +52,7 @@ export function AddSearchEngineDialog({ providers, editing, values, sources, onS
           </> : null}
         </FieldGroup>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
           <Button type="submit" disabled={!provider || (provider.kind === 'key' && (source === 'env' ? !provider.envAvailable : !apiKey.trim()))}>{t(editing ? 'plugins.save' : 'webSearch.addProvider')}</Button>
         </DialogFooter>
       </form>

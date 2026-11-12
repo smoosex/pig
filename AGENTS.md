@@ -210,6 +210,7 @@ tests/ 由 `tsconfig.test.json` 单独检查（依赖从 `src/` 的真实类型�
 ## 注意事项
 
 - 能用 `components/ui` 里的 shadcn 组件就不要写原生标签：按钮、输入、选择、对话框等都走现成封装。图标用 `lucide-react`，不要手画 SVG。
+- 对话框底部操作统一用 `DialogFooter` / `AlertDialogFooter`，普通弹窗底栏有顶部细分隔线，二次确认不显示分隔线；无独立背景或负边距，沿用 Dialog 背景。`DialogContent confirmation` 与 `AlertDialogContent` 打开时只聚焦无轮廓的弹窗容器，不自动选中取消或危险操作，保留 Tab 导航及关闭后的焦点恢复；通常由 `DialogContent` 的 `p-4` 提供外侧 16px 留白，`p-0` 容器须给底栏补 `p-4`。按钮统一默认尺寸、间距 8px，取消／关闭用 ghost，主操作靠右，危险操作用 destructive；辅助信息或独立删除入口靠左。长内容只滚动正文、隐藏滚动条，标题与底栏留在滚动区外。
 - 主题：`src/renderer/src/themes/` 定义完整语义颜色；`styles.css` 只注册 Tailwind token，不绑定基础色板。切换靠 `html[data-palette]` + `.dark`，组件不要引用色板编号或写死颜色。
 - glass 的磨砂来自网页下面的原生材质（macOS `vibrancy`、Windows `acrylic`）。glass 下不要依赖 `backdrop-filter`：窗口透明，网页内容大多半透明，Chromium 会把模糊结果叠在未模糊的原内容上而不是替换（[electron#19765](https://github.com/electron/electron/issues/19765)、[Chromium 380416865](https://issues.chromium.org/issues/380416865)），直接铺在窗口上时还会读回上一帧，出现半截变色。浮层、卡片、按钮的层次靠填充不透明度、边缘高光与投影表达；solid 下底色不透明，遮罩可用 `solid:` 前缀保留模糊。glass 弹窗的背景模糊改用 `filter`：Dialog / AlertDialog 打开时，`styles.css` 用 `:has()` 给应用根容器 `[data-modal-blur-root]` 加 `filter: blur(8px)`，它只栅格化元素自身，没有上述问题；弹窗 portal 到 `body` 保持清晰。标记不要复用 `data-app-surface`，设置页嵌套了一个，会重复模糊。
 - Composer：IME 组字时 Enter 不能发送。工作耗时那一行不要 hover / `aria-expanded` 高亮。

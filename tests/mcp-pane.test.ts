@@ -437,9 +437,13 @@ async function fixture(): Promise<void> {
     assert.ok(
       confirmation.querySelector('[data-slot="dialog-description"]')!.classList.contains('text-xs')
     )
-    assert.equal(confirmation.querySelector('[data-slot="dialog-footer"]'), null)
+    const footer = confirmation.querySelector('[data-slot="dialog-footer"]')!
+    assert.ok(footer)
+    assert.ok(!footer.classList.contains('border-t'))
+    assert.equal(document.activeElement, confirmation, 'opening confirmation must not select Cancel')
+    assert.ok(![...footer.classList].some(token => token.includes('bg-')))
     assert.equal(confirmation.querySelector('[data-slot="dialog-close"]'), null)
-    assert.ok(button('Cancel').classList.contains('border'))
+    assert.equal(button('Cancel').getAttribute('data-variant'), 'ghost')
     await click('Cancel')
     await flush()
     assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)

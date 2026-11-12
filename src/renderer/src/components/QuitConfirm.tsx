@@ -3,7 +3,7 @@ import { api } from '../ipc/api'
 import { useT } from '../hooks/useT'
 import { describeQuitActivity, type QuitConfirmRequest } from '../../../shared/quit'
 import { Button } from './ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 
 type QuitAsk = Extract<QuitConfirmRequest, { type: 'ask' }>
 
@@ -44,15 +44,15 @@ export function QuitConfirm() {
 
   return (
     <Dialog open={open} onOpenChange={(open) => { if (!open) answer(false) }}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent confirmation showCloseButton={false}>
         <DialogHeader>
           <DialogTitle className="text-sm">{t('quit.title')}</DialogTitle>
           <DialogDescription className="text-xs">{request && describeQuitActivity(request.activity, t)}</DialogDescription>
         </DialogHeader>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => answer(false)}>{t('common.cancel')}</Button>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => answer(false)}>{t('common.cancel')}</Button>
           <Button variant="destructive" onClick={() => answer(true)}>{t('quit.confirm')}</Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

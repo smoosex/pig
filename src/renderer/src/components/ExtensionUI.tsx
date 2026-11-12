@@ -38,7 +38,7 @@ function ExtensionPrompt({ prompt, reply }: { prompt: Prompt; reply(value: strin
         if (!open) reply(null)
       }}
     >
-      <DialogContent>
+      <DialogContent confirmation={prompt.method === 'confirm'}>
         <DialogHeader>
           <DialogTitle>{prompt.title}</DialogTitle>
           <DialogDescription>{prompt.message || t('mcp.promptDescription')}</DialogDescription>

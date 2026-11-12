@@ -104,7 +104,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
           <DialogTitle>{t('skills.add')}</DialogTitle>
           <DialogDescription>{t('skills.sourceHint')}</DialogDescription>
         </DialogHeader>
-        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-0.5">
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <form onSubmit={(event) => { event.preventDefault(); void scan(source) }}>
             <FieldGroup>
               <Field>
@@ -156,7 +156,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
           <p className="text-xs leading-relaxed text-muted-foreground">{t('skills.importWarning')}</p>
         </div>
         <DialogFooter>
-          <Button variant="outline" disabled={installing} onClick={onClose}>{t(result ? 'skills.done' : 'skills.cancel')}</Button>
+          <Button variant="ghost" disabled={installing} onClick={onClose}>{t(result ? 'skills.done' : 'skills.cancel')}</Button>
           {!result ? <Button disabled={!probe || !picked.size || installing || scanning} onClick={() => void install()}>
             {installing ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}
             {installing ? t('skills.installing') : t('skills.install', { n: picked.size })}

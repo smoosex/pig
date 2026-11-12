@@ -116,7 +116,7 @@ function UsageDialog({ onCleared }: { onCleared(): void }) {
     <DialogFooter>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button size="sm" variant="outline" disabled={!summary?.totals.requests && range === 'all'}>{t('persona.usageClear')}</Button>
+          <Button variant="outline" disabled={!summary?.totals.requests && range === 'all'}>{t('persona.usageClear')}</Button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>

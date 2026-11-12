@@ -368,9 +368,9 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           {releaseError ? <Alert variant="destructive"><AlertDescription>{releaseError}</AlertDescription></Alert> : null}
           <AlertDialogFooter>
             {agentRunning
-              ? <Button size="sm" variant="outline" disabled={releasePending} onClick={() => void releaseControl(false)}>{t('browser.releaseDirectly')}</Button>
-              : <AlertDialogCancel size="sm" disabled={releasePending}>{t('browser.cancel')}</AlertDialogCancel>}
-            <Button size="sm" disabled={releasePending} onClick={() => void releaseControl(agentRunning)}>{releasePending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t(agentRunning ? 'browser.stopAndRelease' : 'browser.releaseControl')}</Button>
+              ? <Button variant="outline" disabled={releasePending} onClick={() => void releaseControl(false)}>{t('browser.releaseDirectly')}</Button>
+              : <AlertDialogCancel disabled={releasePending}>{t('browser.cancel')}</AlertDialogCancel>}
+            <Button disabled={releasePending} onClick={() => void releaseControl(agentRunning)}>{releasePending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t(agentRunning ? 'browser.stopAndRelease' : 'browser.releaseControl')}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

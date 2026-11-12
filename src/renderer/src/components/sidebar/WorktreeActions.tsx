@@ -3,7 +3,7 @@ import { GitBranch, LoaderCircle, Plus, Trash2 } from 'lucide-react'
 import { api } from '../../ipc/api'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { useT } from '../../hooks/useT'
 import { sidebarButtonSurface } from './sidebar-surface'
@@ -66,15 +66,15 @@ export function CreateWorktreeButton({
           if (!open) setPrompt(null)
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent confirmation showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {prompt?.hasGit ? t('worktree.emptyPrompt') : t('worktree.initPrompt')}
             </DialogTitle>
             <DialogDescription>{t('worktree.emptyNote')}</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setPrompt(null)}>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPrompt(null)}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -87,7 +87,7 @@ export function CreateWorktreeButton({
             >
               {prompt?.hasGit ? t('worktree.createEmpty') : t('worktree.initAndCreate')}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -157,13 +157,13 @@ export function WorktreeDeleteButton({
           if (!open) setPrompt(null)
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent confirmation showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-sm">{prompt?.title}</DialogTitle>
             <DialogDescription className="text-xs">{prompt?.body}</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setPrompt(null)}>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPrompt(null)}>
               {t('common.cancel')}
             </Button>
             <Button
@@ -173,7 +173,7 @@ export function WorktreeDeleteButton({
             >
               {t('common.delete')}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

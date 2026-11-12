@@ -103,9 +103,9 @@ function TerminalAgentControl({ terminalId, cwd }: { terminalId: string; cwd: st
         {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
         <AlertDialogFooter>
           {running
-            ? <Button size="sm" variant="outline" disabled={pending} onClick={() => void release(false)}>{t('terminal.releaseDirectly')}</Button>
-            : <AlertDialogCancel size="sm" disabled={pending}>{t('terminal.cancel')}</AlertDialogCancel>}
-          <Button size="sm" disabled={pending} onClick={() => void release(running)}>{pending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t(running ? 'terminal.stopAndRelease' : 'terminal.releaseControl')}</Button>
+            ? <Button variant="outline" disabled={pending} onClick={() => void release(false)}>{t('terminal.releaseDirectly')}</Button>
+            : <AlertDialogCancel disabled={pending}>{t('terminal.cancel')}</AlertDialogCancel>}
+          <Button disabled={pending} onClick={() => void release(running)}>{pending ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}{t(running ? 'terminal.stopAndRelease' : 'terminal.releaseControl')}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

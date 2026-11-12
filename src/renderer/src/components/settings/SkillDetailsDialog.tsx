@@ -34,9 +34,9 @@ export function SkillDetailsDialog({ skill, onClose }: { skill: SkillInfo; onClo
         </div>
         <p className="break-all font-mono text-xs text-muted-foreground">{skill.filePath}</p>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="ghost" onClick={() => action(() => navigator.clipboard.writeText(`/skill:${skill.name}`))}><Copy data-icon="inline-start" />{t('skills.copyCommand')}</Button>
-          <Button size="sm" variant="outline" onClick={() => action(() => api.openSkillDirectory(skill.id))}><FolderOpen data-icon="inline-start" />{t('skills.openDirectory')}</Button>
-          <Button size="sm" onClick={onClose}>{t('skills.close')}</Button>
+          <Button variant="ghost" onClick={() => action(() => navigator.clipboard.writeText(`/skill:${skill.name}`))}><Copy data-icon="inline-start" />{t('skills.copyCommand')}</Button>
+          <Button variant="outline" onClick={() => action(() => api.openSkillDirectory(skill.id))}><FolderOpen data-icon="inline-start" />{t('skills.openDirectory')}</Button>
+          <Button variant="ghost" onClick={onClose}>{t('skills.close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
