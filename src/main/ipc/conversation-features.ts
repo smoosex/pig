@@ -57,7 +57,7 @@ export function registerConversationFeaturesIpc(): void {
   ipcMain.handle('memory:set', async (event, patch: MemorySettingsPatch) => {
     assertUi(event)
     const settings = await setMemorySettings(patch)
-    if (patch.fileMemory?.enabled === false) await shutdownDream()
+    if (patch.fileMemory?.enabled === false) await shutdownDream(true)
     await applyConversationFeatures()
     return settings
   })

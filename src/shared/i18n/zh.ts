@@ -21,6 +21,10 @@ export const zh = {
     discardHint: '人格或记忆配置中还有未保存的修改。返回聊天将丢弃这些修改。',
   },
   dream: {
+    search: '搜索做梦和修复记录…', noMatch: '没有匹配的记录',
+    usageIncomplete: '旧记录未单独记录缓存用量，相关统计显示为未知。',
+    history: '做梦记录', historyHint: '只读查看以往的做梦和记忆修复结果。', historyEmpty: '暂无做梦记录',
+    add: '新增做梦', back: '返回记录', more: '加载更多', historyLoading: '正在读取记录…', dreamKind: '做梦', repairKind: '修复',
     title: '做梦', description: '围绕你指定的主题，搜索历史片段并维护相关记忆。不会自动运行。',
     open: '做梦…', dialogHint: '围绕你指定的主题查找历史线索，核实并维护相关记忆。',
     runningDescription: '正在按主题搜索、核实并维护相关记忆。', resultDescription: '本次回顾的报告与记忆修改。',
@@ -43,6 +47,16 @@ export const zh = {
     failed: '{code}：本次未正常结束，请检查修改清单与备份；未查看或省略的历史不代表已核实。', changed: '修改文件',
   },
   longTerm: {
+    unreadable: '无法安全读取此项',
+    symlink: '符号链接不会被跟随，请手动处理',
+    oversized: '文件超出大小限制，请手动拆分',
+    scanLimit: '达到扫描限制，列表不完整，请手动处理',
+    problems: '记忆目录存在异常',
+    problemsHint: '正常记忆仍可浏览。修复仅整理错放的文件；其他异常需手动处理。扫描达到上限时，列表不完整。',
+    repair: '修复记忆',
+    repairHint: '整理错放的记忆，维护相关索引和链接；不自动开启文件记忆。',
+    misplaced: '错放的记忆',
+
     title: '长期记忆', observational: '会话记忆',
     enabled: '文件记忆', enabledHint: '由 Agent 按需读取索引和维护记忆。系统提示词仅包含使用说明，不自动注入记忆内容。不自动后台学习或筛选，做梦由你手动触发；关闭不会删除文件。',
     stateUnknown: '配置状态未知；重新读取成功后才能更改。', reload: '重新读取', reloadFailed: '重新读取配置失败：{error}',

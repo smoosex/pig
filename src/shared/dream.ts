@@ -1,5 +1,5 @@
 /** UI-only, topic-driven Dream. No history queue, time ranges or completion checkpoints. */
-export interface DreamRequest { topic: string }
+export type DreamRequest = { topic: string } | { repair: true }
 export type DreamBudgetKind = 'tokens' | 'cost'
 export interface DreamUsage {
   input: number
@@ -16,6 +16,7 @@ export const dreamTokens = (usage: Pick<DreamUsage, 'input' | 'cacheRead' | 'cac
 export interface DreamStatus {
   id?: string
   topic?: string
+  repair?: boolean
   state: 'idle' | 'running' | 'done' | 'limited' | 'cancelled' | 'error'
   phase?: 'preparing' | 'searching' | 'reading' | 'maintaining' | 'wrappingUp' | 'publishing'
   wrappingUp?: DreamBudgetKind
@@ -34,7 +35,21 @@ export interface DreamStatus {
   requests: number
   error?: string
 }
+export interface DreamRecord extends DreamStatus {
+  /** Older receipts did not separate cached tokens from input. */
+  usageIncomplete?: boolean
+  id: string
+  startedAt: number
+  endedAt: number
+}
+export type DreamRecordSummary = Pick<DreamRecord, 'id' | 'topic' | 'repair' | 'state' | 'startedAt' | 'endedAt'>
+export interface DreamRecordPage {
+  items: DreamRecordSummary[]
+  nextOffset?: number
+}
 export interface DreamApi {
+  list(offset?: number): Promise<DreamRecordPage>
+  read(id: string): Promise<DreamRecord>
   start(request: DreamRequest): Promise<DreamStatus>
   status(): Promise<DreamStatus>
   stop(): Promise<DreamStatus>

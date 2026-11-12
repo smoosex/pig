@@ -11,11 +11,13 @@ import { DreamHistory, loadDreamSources } from './history'
 import { DreamStage } from './staging'
 import { runDreamWorker } from './runner'
 import { registerDreamShutdown } from './lifecycle'
+import { memoryScopeOf } from '../long-term/inventory'
 
 const idle = (): DreamStatus => ({ state: 'idle', changes: [], input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0, costKnown: true, requests: 0 })
 export function validateDreamRequest(value: unknown): asserts value is DreamRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Dream request')
   const input = value as Record<string, unknown>
+  if (Object.keys(input).length === 1 && input.repair === true) return
   if (Object.keys(input).length !== 1 || typeof input.topic !== 'string' || !input.topic.trim() || input.topic.length > 2000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(input.topic)) throw new Error('DREAM_TOPIC: Provide a topic of 1 to 2000 characters')
 }
 export class DreamService {
@@ -27,7 +29,7 @@ export class DreamService {
     validateDreamRequest(request)
     if (this.flight) throw new Error('DREAM_BUSY: Another Dream is running')
     const controller = new AbortController()
-    this.value = { ...idle(), id: randomUUID(), topic: request.topic.trim(), state: 'running', phase: 'preparing' }
+    this.value = { ...idle(), id: randomUUID(), ...('repair' in request ? { repair: true } : { topic: request.topic.trim() }), state: 'running', phase: 'preparing' }
     const flight = { owner, controller, done: Promise.resolve() }
     this.flight = flight
     flight.done = this.run(controller).catch(() => { this.value.state = 'error'; this.value.error = 'DREAM_FAILED' })
@@ -53,15 +55,29 @@ export class DreamService {
       }
       unsubscribe = onPermissionsChanged(() => { try { check() } catch { controller.abort(new Error('DREAM_PERMISSION')) } })
       check()
-      if (!(await getMemorySettings()).fileMemory?.enabled) throw new Error('DREAM_DISABLED')
-      const sources = await this.load(signal)
+      if (!this.value.repair && (await getMemorySettings()).fileMemory?.enabled === false) throw new Error('DREAM_DISABLED')
+      const catalog = this.value.repair ? await (await import('../long-term/catalog')).listMemoryFiles() : undefined
+      const misplaced = catalog?.filter(file => file.repairable).map(file => file.path)
+      if (catalog?.some(file => /LIMIT$/.test(file.issue ?? ''))) throw new Error('DREAM_REPAIR: Resolve incomplete directory scans first')
+      if (misplaced && !misplaced.length) throw new Error('DREAM_REPAIR: No repairable misplaced files')
+      const projects = new Map<string, { id: string; name?: string; cwd?: string }>()
+      if (this.value.repair) for (const project of await (await import('../long-term/catalog')).listMemoryProjects()) projects.set(project.id, project)
+      for (const file of catalog ?? []) {
+        const scope = memoryScopeOf(file.path)
+        if (scope?.startsWith('projects/')) {
+          const id = scope.slice('projects/'.length)
+          if (!projects.has(id)) projects.set(id, { id, name: file.projectName })
+        }
+      }
+      const repair = misplaced ? { misplaced, projects: [...projects.values()] } : undefined
+      const sources = repair ? [] : await this.load(signal)
       check()
       const progress = (phase: DreamStatus['phase'], current: string) => {
         if (!this.value.wrappingUp) { this.value.phase = phase; this.value.current = current }
       }
       const history = new DreamHistory(sources, signal, progress)
-      const stage = new DreamStage(directory)
-      this.value.report = await this.worker({ directory, topic: this.value.topic!, history, signal, check,
+      const stage = new DreamStage(directory, undefined, misplaced ? new Set(misplaced) : undefined)
+      this.value.report = await this.worker({ directory, topic: this.value.topic ?? '', history, repair, signal, check,
         transcript: () => { this.value.sessionFile = 'session.jsonl' },
         progress,
         usage: usage => {
@@ -83,10 +99,10 @@ export class DreamService {
         }
       })
       check()
-      if (!(await getMemorySettings()).fileMemory?.enabled) throw new Error('DREAM_DISABLED')
+      if (!repair && (await getMemorySettings()).fileMemory?.enabled === false) throw new Error('DREAM_DISABLED')
       await history.validateReadSources(); check()
       this.value.phase = 'publishing'
-      this.value.changes = stage.publish(history.writableScopes(), check)
+      this.value.changes = stage.publish(repair ? new Set(['global', ...repair.projects.map(project => `projects/${project.id}`)]) : history.writableScopes(), check)
       this.value.state = 'done'
     } catch (error) {
       const reason = signal.aborted ? signal.reason : error
@@ -105,4 +121,4 @@ export class DreamService {
   }
 }
 export const dreamService = new DreamService()
-registerDreamShutdown(() => dreamService.stop())
+registerDreamShutdown(disabling => disabling && dreamService.status().repair ? Promise.resolve() : dreamService.stop())

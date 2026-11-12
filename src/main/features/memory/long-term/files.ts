@@ -129,11 +129,11 @@ export class MemoryFiles {
     return { files, visited }
   }
   /** Call under the catalog lease before a batch commit. Retained empty directories still count. */
-  checkPublication(nextPaths: readonly string[]): void {
-    const { files, visited } = this.scan()
+  checkPublication(nextPaths: readonly string[], inventory?: { files: { path: string }[]; visited: number; retainedFiles?: number }): void {
+    const { files, visited } = inventory ?? this.scan()
     const existing = new Set(files.map(file => file.path))
     const next = new Set(nextPaths)
-    if (next.size > MAX_FILES) throw new MemoryLimitError('MEMORY_FILE_LIMIT', 'Memory file limit exceeded')
+    if (next.size + (inventory?.retainedFiles ?? 0) > MAX_FILES) throw new MemoryLimitError('MEMORY_FILE_LIMIT', 'Memory file limit exceeded')
     const addedDirectories = new Set<string>()
     for (const path of next) {
       const parts = safeParts(path)

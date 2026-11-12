@@ -19,6 +19,10 @@ export const en: Messages = {
     discardHint: 'Persona or memory settings have unsaved changes. Returning to chat will discard them.',
   },
   dream: {
+    search: 'Search dreams and repairs…', noMatch: 'No matching records',
+    usageIncomplete: 'This older record did not separate cached tokens; affected usage statistics are unknown.',
+    history: 'Dream history', historyHint: 'Read-only results from previous dreams and memory repairs.', historyEmpty: 'No Dream records yet',
+    add: 'New dream', back: 'Back to history', more: 'Load more', historyLoading: 'Loading records…', dreamKind: 'Dream', repairKind: 'Repair',
     title: 'Dream', description: 'Search historical passages and maintain related memories around your topic. Never runs automatically.',
     open: 'Dream…', dialogHint: 'Find historical clues around your topic, verify them and maintain related memories.',
     runningDescription: 'Searching, checking and maintaining memories around your topic.', resultDescription: 'The review report and memory changes from this run.',
@@ -41,6 +45,16 @@ export const en: Messages = {
     failed: '{code}: This run did not finish normally; inspect the change list and backups. Unviewed or omitted history is not verified.', changed: 'Changed files',
   },
   longTerm: {
+    unreadable: 'This entry cannot be read safely',
+    symlink: 'Symbolic links are not followed; resolve manually',
+    oversized: 'File size limit exceeded; split manually',
+    scanLimit: 'Scan limit reached; listing incomplete; resolve manually',
+    problems: 'Memory directory issues',
+    problemsHint: 'Valid memories remain available. Repair organizes misplaced files only; other issues need manual attention. A scan limit means the listing is incomplete.',
+    repair: 'Repair memories',
+    repairHint: 'Organize misplaced memories and maintain affected indexes and links. File memory will not be enabled automatically.',
+    misplaced: 'Misplaced memory',
+
     title: 'Long-term memory', observational: 'Session memory',
     enabled: 'File memory', enabledHint: 'The agent reads indexes and maintains memories on demand. The system prompt contains usage guidance only; no memory content is injected automatically. No automatic background learning or filtering; Dream runs only when you start it. Disabling keeps the files.',
     stateUnknown: 'Configuration state is unknown. Reload successfully before changing it.', reload: 'Reload', reloadFailed: 'Failed to reload configuration: {error}',

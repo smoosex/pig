@@ -5,15 +5,16 @@ import { dirname, join, posix } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { MemoryFile } from '../../../../shared/long-term-memory'
 import { MemoryFiles, memoryRoot, resolveMemoryLink } from '../long-term/files'
+import { inspectMemoryDirectory, memoryScopeOf } from '../long-term/inventory'
 
 export class DreamStage {
   readonly store: MemoryFiles
   private readonly before = new Map<string, MemoryFile>()
-  constructor(readonly directory: string, private readonly live = new MemoryFiles(memoryRoot())) {
+  constructor(readonly directory: string, private readonly live = new MemoryFiles(memoryRoot()), private readonly misplaced?: Set<string>) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     this.store = new MemoryFiles(join(directory, 'staged'))
     live.withCatalogLease(() => {
-      for (const { path } of live.list()) {
+      for (const { path } of this.snapshot()) {
         const file = live.read(path)
         this.before.set(path, file)
         const target = this.store.resolve(path)
@@ -22,19 +23,26 @@ export class DreamStage {
       }
     })
   }
+  private snapshot() {
+    if (!this.misplaced) return this.live.list()
+    const inventory = inspectMemoryDirectory(this.live.root)
+    if (inventory.truncated) throw new Error('DREAM_REPAIR: Memory scan is incomplete; resolve scan limits first')
+    return inventory.files.filter(file => !file.issue || file.repairable)
+  }
   publish(writable: Set<string>, check: () => void): string[] {
     const after = new Map(this.store.list().map(({ path }) => [path, this.store.read(path)]))
     const paths = [...new Set([...this.before.keys(), ...after.keys()])]
       .filter(path => this.before.get(path)?.revision !== after.get(path)?.revision)
     for (const path of paths) {
-      const scope = path.startsWith('global/') ? 'global' : path.split('/').slice(0, 2).join('/')
-      if (!writable.has(scope)) throw new Error('DREAM_SCOPE: Memory change is outside the writable scope')
+      if (this.misplaced?.has(path) && this.before.has(path) && !after.has(path)) continue
+      const scope = memoryScopeOf(path)
+      if (!scope || !writable.has(scope)) throw new Error('DREAM_SCOPE: Memory change is outside the writable scope')
     }
     const changed = new Set(paths)
     const deleted = new Set(paths.filter(path => !after.has(path)))
     // Validate new/changed links and incoming references to deleted notes, not unrelated legacy gaps.
     for (const [path, file] of after) {
-      if (!changed.has(path) && !deleted.size) continue
+      if ((!changed.has(path) && !deleted.size) || !memoryScopeOf(path)) continue
       const parts = path.split('/')
       const prefix = parts[0] === 'global' ? 'global' : parts.slice(0, 2).join('/')
       const local = path.slice(prefix.length + 1)
@@ -51,11 +59,21 @@ export class DreamStage {
     }
     return this.live.withCatalogLease(() => {
       check()
-      const current = this.live.list()
+      const current = this.snapshot()
       if (current.length !== this.before.size || current.some(({ path }) => this.live.read(path).revision !== this.before.get(path)?.revision)) {
         throw new Error('DREAM_CONFLICT: Memories changed during Dream; nothing was published')
       }
-      this.live.checkPublication([...after.keys()])
+      if (this.misplaced) {
+        const inventory = inspectMemoryDirectory(this.live.root)
+        const blocked = inventory.files.filter(file => file.issue && !file.repairable)
+        if (paths.some(path => blocked.some(file => path === file.path || path.startsWith(file.path + '/')))) {
+          throw new Error('DREAM_REPAIR: A proposed change would overwrite an unreadable or unsafe entry')
+        }
+        this.live.checkPublication([...after.keys()], {
+          files: current, visited: inventory.visited,
+          retainedFiles: inventory.files.filter(file => file.issue && !file.repairable && file.path.endsWith('.md')).length
+        })
+      } else this.live.checkPublication([...after.keys()])
       const temporary = new Map<string, string>()
       const createdDirectories = new Set<string>()
       const applied: string[] = []
@@ -119,8 +137,8 @@ export class DreamStage {
       }
       // Only empty note directories are reclaimed. Scope roots stay in place.
       for (const path of paths.filter(path => !after.has(path))) {
-        const scope = path.startsWith('global/') ? 'global' : path.split('/').slice(0, 2).join('/')
-        const root = join(this.live.root, scope)
+        const scope = memoryScopeOf(path)
+        const root = scope ? join(this.live.root, scope) : this.live.root
         let directory = dirname(this.live.resolve(path))
         while (directory !== root) {
           try { rmdirSync(directory) } catch (error) {

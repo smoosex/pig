@@ -1,6 +1,6 @@
 import { test, mock } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { DreamRequest, DreamStatus } from '../src/shared/dream'
+import type { DreamRecord, DreamRequest, DreamStatus } from '../src/shared/dream'
 import { runSelf } from './helpers/subprocess'
 
 if (process.argv.includes('--dream-ui-fixture')) {
@@ -16,8 +16,13 @@ if (process.argv.includes('--dream-ui-fixture')) {
   Object.assign(window, { api: {
     getMemorySettings: async () => ({ fileMemory: { enabled: true } }),
     dream: {
+      list: async (offset?: number) => offset === 30 ? { items: [{ id: 'old-archived', topic: 'Archived clue', state: 'done', startedAt: 5, endedAt: 6 }] } : ({ nextOffset: 30, items: [
+        { id: 'old-dream', topic: 'Earlier topic', state: 'done', startedAt: 1, endedAt: 2 },
+        { id: 'old-repair', repair: true, state: 'done', startedAt: 3, endedAt: 4 }
+      ] }),
+      read: async (id: string): Promise<DreamRecord> => ({ ...status, id, repair: id === 'old-repair', topic: 'Earlier topic', state: 'done', report: '**Stored report**', usageIncomplete: true, costKnown: false, startedAt: 1, endedAt: 2 }),
       status: async () => ++reads === 1 ? initial : status,
-      start: async (request: DreamRequest) => { starts.push(request); status = { ...status, id: 'run-id', sessionFile: 'session.jsonl', topic: request.topic, state: 'running', phase: 'searching', current: 'DETAILED SEARCH QUERY' }; return status },
+      start: async (request: DreamRequest) => { starts.push(request); status = { ...status, id: 'run-id', sessionFile: 'session.jsonl', topic: 'topic' in request ? request.topic : undefined, repair: 'repair' in request, state: 'running', phase: 'searching', current: 'DETAILED SEARCH QUERY' }; return status },
       stop: async () => { stops++; status = { ...status, state: 'cancelled', phase: undefined }; return status }
     }
   } })
@@ -45,6 +50,45 @@ if (process.argv.includes('--dream-ui-fixture')) {
     assert.equal(reads, 1, 'the sidebar and dialog share one pending status read')
     await act(async () => { resolveInitial(status) }); await flush()
     assert.equal(starts.length, 0)
+    assert.ok(document.querySelector('[data-dream-history]'))
+    assert.ok(document.querySelector('[data-slot="dialog-description"]')!.classList.contains('sr-only'), 'the history subtitle is not visible')
+    const historyRows = [...document.querySelectorAll<HTMLElement>('[data-dream-history-list] [data-dream-record]')]
+    assert.equal(historyRows.length, 2)
+    for (const row of historyRows) {
+      assert.ok(row.hasAttribute('data-hover-highlight-row'))
+      assert.ok(row.classList.contains('data-selected:bg-transparent!'), 'the moving highlight owns the row background')
+      assert.ok(row.classList.contains('text-sm'), 'rows use the same font size as the provider chooser')
+      assert.equal(row.getAttribute('data-slot'), 'command-item')
+    }
+    await act(async () => historyRows[0]!.dispatchEvent(new window.PointerEvent('pointermove', { bubbles: true, clientX: 20, clientY: 20 }))); await flush()
+    assert.ok(historyRows[0]!.hasAttribute('data-hover-highlight-target'))
+    await act(async () => historyRows[1]!.dispatchEvent(new window.PointerEvent('pointermove', { bubbles: true, clientX: 20, clientY: 40 }))); await flush()
+    assert.ok(!historyRows[0]!.hasAttribute('data-hover-highlight-target'))
+    assert.ok(historyRows[1]!.hasAttribute('data-hover-highlight-target'), 'the shared hover target moves between rows')
+    for (const label of ['刷新', '新增做梦', '关闭']) {
+      await act(async () => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.focus()); await flush()
+      assert.ok([...document.querySelectorAll('[role="tooltip"]')].some(tooltip => tooltip.textContent?.includes(label)), `${label} has a Tooltip`)
+    }
+    const search = document.querySelector<HTMLInputElement>('[data-slot="command-input"]')!
+    const searchFor = async (value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(search, value)
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      }); await flush()
+    }
+    await searchFor('Archived clue')
+    await flush()
+    assert.ok(document.querySelector('[data-dream-record="old-archived"]'), 'search loads older pages rather than searching only the first page')
+    await searchFor('NO MATCH FOR THIS QUERY')
+    assert.match(document.querySelector('[data-slot="command-empty"]')!.textContent!, /没有匹配/)
+    await searchFor('修复')
+    assert.ok(document.querySelector('[data-dream-record="old-repair"]'), 'records can be searched by their displayed kind')
+    assert.equal(document.querySelector('[data-dream-record="old-dream"]'), null)
+    await searchFor('')
+    assert.equal(document.querySelector('textarea'), null, 'settings opens the record list, not a new run')
+    assert.match(document.querySelector('[data-dream-record="old-dream"]')!.textContent!, /做梦/)
+    assert.match(document.querySelector('[data-dream-record="old-repair"]')!.textContent!, /修复/)
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="新增做梦"]')!.click()); await flush()
     assert.equal(button('开始做梦').disabled, true)
     const content = document.querySelector('[role="dialog"]')!
     const title = content.querySelector('[data-slot="dialog-title"]')!
@@ -134,11 +178,16 @@ if (process.argv.includes('--dream-ui-fixture')) {
     assert.ok(!dialog.textContent?.includes('session.jsonl'))
     assert.ok(!dialog.textContent?.includes('完整会话已保存'))
     assert.equal(document.querySelector('[data-dream-status]')?.getAttribute('data-running'), 'false')
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click()); await flush()
+    assert.equal(document.querySelector('[data-dream-status]'), null, 'viewing and closing a Dream result dismisses its indicator')
+    await act(async () => { await useDreamStore.getState().refresh() }); await flush()
+    assert.equal(document.querySelector('[data-dream-status]'), null)
+    await act(async () => useDreamStore.getState().openDialog(true)); await flush()
     await act(async () => button('新的主题').click()); await flush()
     assert.ok(document.querySelector('textarea'))
     assert.equal(document.querySelector('[data-dream-changes]'), null)
     assert.equal(starts.length, 1)
-    await act(async () => useDreamStore.setState({ compose: false, status: { ...status, state: 'error', error: 'DREAM_TOOL' } }))
+    await act(async () => useDreamStore.setState({ compose: false, status: { ...status, id: 'failed-run', state: 'error', error: 'DREAM_TOOL' } }))
     assert.ok(document.querySelector('[data-dream-problem]'))
     assert.match(document.querySelector('[role="dialog"]')!.textContent!, /DREAM_TOOL/)
     await act(async () => useDreamStore.setState({ status: { ...status, state: 'limited', error: 'DREAM_TOKEN_BUDGET',
@@ -155,6 +204,36 @@ if (process.argv.includes('--dream-ui-fixture')) {
     await toggleStatistics()
     await act(async () => useDreamStore.setState({ status: { ...status, state: 'running', wrappingUp: 'tokens', phase: 'wrappingUp' } }))
     assert.match(document.querySelector('[role="dialog"]')!.textContent!, /停止扩大搜索/)
+    status = { ...status, state: 'done', repair: true, id: 'repair-run' }
+    await act(async () => useDreamStore.setState({ status }))
+    assert.equal(document.querySelector('[data-slot="dialog-footer"]'), null, 'repair results have no bottom actions')
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))); await flush()
+    assert.ok(document.querySelector('[role="dialog"]'), 'repair details close only through the close icon')
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click()); await flush()
+    assert.equal(document.querySelector('[data-dream-status]'), null, 'viewing and closing a repair result dismisses the indicator')
+    await act(async () => { await useDreamStore.getState().refresh() }); await flush()
+    assert.equal(document.querySelector('[data-dream-status]'), null, 'polling the same result does not restore its indicator')
+    await act(async () => button('做梦…').click()); await flush()
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-dream-record="old-repair"]')!.click()); await flush()
+    const recordDialog = document.querySelector('[role="dialog"]')!
+    assert.equal(recordDialog.querySelector('[data-slot="dialog-footer"]'), null)
+    assert.equal(recordDialog.querySelector('textarea'), null)
+    assert.match(recordDialog.textContent!, /Stored report/)
+    await toggleStatistics()
+    const legacyUsage = document.querySelector('[data-dream-usage]')!
+    assert.equal(legacyUsage.querySelector('dd')!.textContent, '未知')
+    assert.match(document.querySelector('[data-slot="popover-content"]')!.textContent!, /旧记录未单独记录缓存用量/)
+    await toggleStatistics()
+    assert.equal(starts.length, 1, 'reading old records does not run the agent')
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="返回记录"]')!.click()); await flush()
+    assert.ok(document.querySelector('[data-dream-history]'))
+    await act(async () => useDreamStore.getState().openDialog(true)); await flush()
+    status = { ...status, id: 'next-repair', state: 'running', repair: true }
+    await act(async () => useDreamStore.setState({ status }))
+    assert.equal(document.querySelector('[data-slot="dialog-footer"]'), null)
+    assert.ok(document.querySelector('[aria-label="停止"]'), 'running repair keeps a stop control in its header')
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click()); await flush()
+    assert.ok(document.querySelector('[data-dream-status]'), 'closing a running repair does not dismiss its indicator')
   } finally { await act(async () => root.unmount()); host.remove(); GlobalRegistrator.unregister() }
 } else test('Dream sidebar status and shared dialog preserve background work and render a separate Markdown result', async () => {
   const result = await runSelf(import.meta.path, ['--dream-ui-fixture'], { timeoutMs: 15000 })

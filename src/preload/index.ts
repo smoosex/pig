@@ -95,6 +95,8 @@ const api: SessionApi = {
     }
   },
   dream: {
+    list: offset => ipcRenderer.invoke('memory:dream:list', offset),
+    read: id => ipcRenderer.invoke('memory:dream:read', id),
     start: request => ipcRenderer.invoke('memory:dream:start', request),
     status: () => ipcRenderer.invoke('memory:dream:status'),
     stop: () => ipcRenderer.invoke('memory:dream:stop')

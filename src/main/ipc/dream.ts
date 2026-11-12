@@ -3,6 +3,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
 import { dreamService, validateDreamRequest } from '../features/memory/dream/service'
+import { listDreamRecords, readDreamRecord } from '../features/memory/dream/records'
 
 export function registerDreamIpc(): void {
   const bound = new WeakSet<Electron.WebContents>()
@@ -20,6 +21,8 @@ export function registerDreamIpc(): void {
     }
     return contents.id
   }
+  ipcMain.handle('memory:dream:list', (event, offset?: number) => { owner(event); return listDreamRecords(offset) })
+  ipcMain.handle('memory:dream:read', (event, id: string) => { owner(event); return readDreamRecord(id) })
   ipcMain.handle('memory:dream:status', event => { owner(event); return dreamService.status() })
   ipcMain.handle('memory:dream:start', (event, request: unknown) => {
     const id = owner(event)

@@ -13,10 +13,11 @@ export function DreamStatusButton() {
   const status = useDreamStore(state => state.status)
   const loadError = useDreamStore(state => state.loadError)
   const open = useDreamStore(state => state.openDialog)
-  if (!status || status.state === 'idle') return null
+  const dismissedId = useDreamStore(state => state.dismissedId)
+  if (!status || status.state === 'idle' || (status.state !== 'running' && dismissedId !== undefined && status.id === dismissedId)) return null
   const running = status.state === 'running'
   const failed = status.state === 'error' || Boolean(loadError)
-  const summary = `${t('dream.title')} · ${t(`dream.${status.state}`)}${running && status.phase ? ` · ${t(`dream.${status.phase}`)}` : ''}`
+  const summary = `${t(status.repair ? 'longTerm.repair' : 'dream.title')} · ${t(`dream.${status.state}`)}${running && status.phase ? ` · ${t(`dream.${status.phase}`)}` : ''}`
   return <Tooltip>
     <TooltipTrigger asChild>
       <Button variant="outline" size="icon-xs" data-dream-status data-running={running}

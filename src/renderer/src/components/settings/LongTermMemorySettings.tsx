@@ -1,11 +1,13 @@
 /** Direct Markdown inspection; no learning queue, classification or auxiliary model. */
 import { useEffect, useRef, useState } from 'react'
-import { RotateCw } from 'lucide-react'
+import { CircleAlert, RotateCw, Wrench } from 'lucide-react'
 import type { MemoryFile, MemoryFileListItem } from '../../../../shared/long-term-memory'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { Button } from '../ui/button'
+import { Alert, AlertTitle, AlertDescription } from '../ui/alert'
+import { useDreamMonitor, useDreamStore } from '../../stores/dream'
 import { Switch } from '../ui/switch'
 import { Textarea } from '../ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
@@ -24,7 +26,7 @@ export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusy
   useEffect(() => { let active = true
     setBusy(true); setError(undefined)
     void api.getMemorySettings().then(
-      value => { if (active) setEnabled(value.fileMemory?.enabled ?? false) },
+      value => { if (active) setEnabled(value.fileMemory?.enabled ?? true) },
       failure => { if (active) { setEnabled(undefined); setError(failureMessage(failure)) } }
     ).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
@@ -32,10 +34,10 @@ export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusy
   useEffect(() => { onBusyChange?.(busy || editorBusy) }, [busy, editorBusy, onBusyChange])
   const change = async (value: boolean) => {
     setBusy(true); setError(undefined)
-    try { setEnabled((await api.setMemorySettings({ fileMemory: { enabled: value } })).fileMemory?.enabled ?? false) }
+    try { setEnabled((await api.setMemorySettings({ fileMemory: { enabled: value } })).fileMemory?.enabled ?? true) }
     catch (failure) {
       setEnabled(undefined); setError(failureMessage(failure))
-      try { setEnabled((await api.getMemorySettings()).fileMemory?.enabled ?? false) }
+      try { setEnabled((await api.getMemorySettings()).fileMemory?.enabled ?? true) }
       catch (reloadFailure) { setError(`${failureMessage(failure)}\n${t('longTerm.reloadFailed', { error: failureMessage(reloadFailure) })}`) }
     }
     finally { setBusy(false) }
@@ -69,8 +71,20 @@ export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyCha
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [confirm, setConfirm] = useState<'discard' | 'delete'>()
+  useDreamMonitor()
+  const repairStatus = useDreamStore(state => state.status)
+  const repairBusy = useDreamStore(state => state.busy)
+  const repair = useDreamStore(state => state.repair)
+  const issues = items.filter(item => item.issue)
+  const normalFiles = items.filter(item => !item.issue)
+  const issueNames: Record<string, string> = {
+    MEMORY_MISPLACED: t('longTerm.misplaced'), MEMORY_UNREADABLE: t('longTerm.unreadable'),
+    MEMORY_SYMLINK: t('longTerm.symlink'), MEMORY_OVERSIZED: t('longTerm.oversized'),
+    MEMORY_SCAN_LIMIT: t('longTerm.scanLimit'), MEMORY_FILE_LIMIT: t('longTerm.scanLimit'), MEMORY_DEPTH_LIMIT: t('longTerm.scanLimit')
+  }
   const pendingPath = useRef<string | undefined>(undefined)
   const generation = useRef(0)
+  const refreshedRepair = useRef('')
   const dirty = !!file && file.content !== draft
   useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
   useEffect(() => { onDirtyChange?.(open && dirty) }, [open, dirty, onDirtyChange])
@@ -85,6 +99,13 @@ export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyCha
     if (open) { setFile(undefined); setDraft(''); setConfirm(undefined); void refresh() }
     return () => { generation.current++ }
   }, [open])
+  useEffect(() => {
+    if (!open || busy || !repairStatus?.repair || repairStatus.state === 'running') return
+    const key = `${repairStatus.id}:${repairStatus.state}`
+    if (refreshedRepair.current === key) return
+    refreshedRepair.current = key
+    void refresh()
+  }, [open, busy, repairStatus?.id, repairStatus?.state])
   const load = async (path: string) => {
     setConfirm(undefined)
     const id = ++generation.current
@@ -125,9 +146,18 @@ export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyCha
       <DialogHeader><DialogTitle className="pr-16">{t('longTerm.title')}</DialogTitle><DialogDescription>{t('longTerm.sourceHint')}</DialogDescription></DialogHeader>
       <Button variant="ghost" size="icon-sm" className="absolute top-4 right-12" aria-label={t('longTerm.refresh')} title={t('longTerm.refresh')} disabled={busy} onClick={() => void refresh()}><RotateCw /></Button>
       {error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}
+      {issues.length ? <Alert><CircleAlert /><AlertTitle>{t('longTerm.problems')}</AlertTitle><AlertDescription>
+        <div className="flex flex-col gap-2">
+          <p>{t('longTerm.problemsHint')}</p>
+          <ul className="flex max-h-32 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {issues.map(item => <li key={item.path} className="break-all text-xs">{item.path} · {issueNames[item.issue!] ?? item.issue} [{item.issue}]</li>)}
+          </ul>
+          {issues.some(item => item.repairable) ? <Button variant="outline" className="self-start" disabled={busy || dirty || repairBusy || repairStatus?.state === 'running' || issues.some(item => /LIMIT$/.test(item.issue ?? ''))} onClick={() => void repair()}><Wrench data-icon="inline-start" />{t('longTerm.repair')}</Button> : null}
+        </div>
+      </AlertDescription></Alert> : null}
       <div className="flex min-h-0 flex-1 gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex max-h-96 w-1/3 shrink-0 flex-col gap-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {!items.length ? <p className="text-sm text-muted-foreground">{t('longTerm.empty')}</p> : <MemoryFileTree files={items} selected={file?.path} disabled={busy} onSelect={select} />}
+          {!normalFiles.length ? (!error && !busy ? <p className="text-sm text-muted-foreground">{t('longTerm.empty')}</p> : null) : <MemoryFileTree files={normalFiles} selected={file?.path} disabled={busy} onSelect={select} />}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {file ? <>

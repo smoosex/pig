@@ -2,7 +2,7 @@
 export interface LongTermSettings { enabled: boolean }
 export type MemoryScope = 'global' | 'project'
 export interface MemoryFile { path: string; revision: string; content: string }
-export interface MemoryFileListItem { path: string; bytes: number; projectName?: string }
+export interface MemoryFileListItem { path: string; bytes: number; projectName?: string; issue?: string; repairable?: boolean }
 export interface MemoryReadResult {
   files?: { path: string; bytes: number }[]
   file?: MemoryFile

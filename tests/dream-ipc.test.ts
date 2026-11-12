@@ -22,6 +22,10 @@ if (process.argv.includes('--dream-ipc-fixture')) {
       cancelOwner: (...args: unknown[]) => { calls.push(['cancel', ...args]) }
     }
   }))
+  mock.module('../src/main/features/memory/dream/records', () => ({
+    listDreamRecords: (offset?: number) => { calls.push(['list', offset]); return { items: [] } },
+    readDreamRecord: (id: string) => { calls.push(['read', id]); return { id } }
+  }))
   const { registerDreamIpc } = await import('../src/main/ipc/dream')
   registerDreamIpc()
   const event = { main: true, sender: contents }
@@ -40,6 +44,13 @@ if (process.argv.includes('--dream-ipc-fixture')) {
   assert.deepEqual(calls.at(-1), ['cancel', 9])
   await handlers.get('memory:dream:stop')!(event)
   assert.deepEqual(calls.at(-1), ['stop', 9])
+  handlers.get('memory:dream:list')!(event, 30)
+  assert.deepEqual(calls.at(-1), ['list', 30])
+  handlers.get('memory:dream:read')!(event, 'record-id')
+  assert.deepEqual(calls.at(-1), ['read', 'record-id'])
+  for (const channel of ['memory:dream:list', 'memory:dream:read']) {
+    assert.throws(() => handlers.get(channel)!({ ...event, main: false }), /main frame/)
+  }
   owned = false
   assert.throws(() => handlers.get('memory:dream:status')!(event), /owning/)
 } else test('Dream IPC rejects foreign/guest senders and cancels only on owning document teardown', async () => {

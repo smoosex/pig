@@ -11,14 +11,14 @@ import { runSelf } from './helpers/subprocess'
 async function fixture(): Promise<void> {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'pig-file-memory-extension-')))
   process.env.PIG_DIR = root
-  let enabled = true
+  let enabled: boolean | undefined = true
   let mode = 'default'
   let project = 'project-a'
   const modulePath = (name: string) => fileURLToPath(new URL(name, import.meta.url))
-  mock.module(modulePath('../src/main/features/memory-settings.ts'), () => ({ getMemorySettings: async () => ({ fileMemory: { enabled } }) }))
+  mock.module(modulePath('../src/main/features/memory-settings.ts'), () => ({ getMemorySettings: async () => enabled === undefined ? {} : ({ fileMemory: { enabled } }) }))
   mock.module(modulePath('../src/main/permissions/store.ts'), () => ({ sessionPermission: () => ({ mode }) }))
   mock.module(modulePath('../src/main/features/memory/long-term/access.ts'), () => ({ memoryAccess: async () => ({ project, session: 'session', cwd: '/project' }) }))
-  const { registerLongTermMemory, MEMORY_GUIDANCE } = await import('../src/main/features/memory/long-term/extension')
+  const { registerLongTermMemory, MEMORY_GUIDANCE, MEMORY_DISABLED_GUIDANCE } = await import('../src/main/features/memory/long-term/extension')
   const { MemoryFiles, memoryRoot, projectMemoryKey } = await import('../src/main/features/memory/long-term/files')
   const tools = new Map<string, any>()
   const events = new Map<string, Array<(...args: any[]) => any>>()
@@ -36,12 +36,15 @@ async function fixture(): Promise<void> {
   }
   try {
     enabled = false
-    await registerLongTermMemory({
-      registerTool: () => { throw new Error('Disabled memory must not register tools') },
-      on: () => { throw new Error('Disabled memory must not register prompt hooks') }
-    } as unknown as ExtensionAPI)
-    enabled = true
     await registerLongTermMemory(pi)
+    assert.equal((await prompt()).memory, MEMORY_DISABLED_GUIDANCE)
+    for (const name of ['memory_read', 'memory_add', 'memory_edit', 'memory_delete']) {
+      await assert.rejects(call(name, { scope: 'global', path: 'blocked.md', content: 'no', revision: 'a'.repeat(64), oldText: '', newText: 'no' }), { code: 'MEMORY_DISABLED' })
+    }
+    enabled = undefined
+    assert.equal((await prompt()).memory, MEMORY_GUIDANCE, 'missing setting defaults to enabled')
+    await call('memory_read', { scope: 'global' })
+    enabled = true
     assert.equal(memoryRoot(), join(root, 'memory'), 'global and project scopes live directly under memory/')
     assert.deepEqual([...tools.keys()], ['memory_read', 'memory_add', 'memory_edit', 'memory_delete'])
     assert.deepEqual([...events.keys()], ['before_agent_start'], 'no per-request context injection')
@@ -160,8 +163,15 @@ async function fixture(): Promise<void> {
     assert.ok(files.optional('cancellation.md'))
     await call('memory_delete', { scope: 'global', path: 'cancellation.md', revision: files.read('cancellation.md').revision })
     assert.equal(files.optional('cancellation.md'), undefined)
-    enabled = false
-    assert.equal((await prompt({ memory: injected.memory })).memory, undefined)
+    const { withFileMutationQueue } = await import('@earendil-works/pi-coding-agent')
+    const gate = Promise.withResolvers<void>()
+    const held = withFileMutationQueue(files.resolve('queued.md'), () => gate.promise)
+    const queued = call('memory_add', { scope: 'global', path: 'queued.md', content: 'must not commit' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    enabled = false; gate.resolve(); await held
+    await assert.rejects(queued, { code: 'MEMORY_DISABLED' }, 'queued writes re-check the switch before committing')
+    assert.equal(files.optional('queued.md'), undefined)
+    assert.equal((await prompt({ memory: injected.memory })).memory, MEMORY_DISABLED_GUIDANCE)
     await assert.rejects(call('memory_read', { scope: 'global' }), /disabled/)
     assert.ok(new MemoryFiles(join(memoryRoot(), 'projects', projectMemoryKey('project-a'))).optional('MEMORY.md'))
     mkdirSync(join(root, 'memory'), { recursive: true })
@@ -212,11 +222,11 @@ async function fixture(): Promise<void> {
       assert.match((await call('memory_read', { scope: 'global' })).content[0].text, /testing.md/)
       enabled = false
       await session.reload()
-      assert.equal(session.getAllTools().some(tool => tool.name.startsWith('memory_')), false, 'disabled tools are not registered or discoverable')
+      assert.equal(session.getAllTools().filter(tool => tool.name.startsWith('memory_')).length, 4, 'disabled memory tools stay discoverable')
       assert.equal(session.getActiveToolNames().some(name => name.startsWith('memory_')), false)
       const disabledPatch = (await prepare())!
-      assert.equal(disabledPatch.memory, null, 'disabling removes the old guidance through the SDK patch')
-      assert.equal(disabledPatch.pig_servers, null, 'disabling removes the memory server advertisement')
+      assert.equal(disabledPatch.memory, `<memory>\n${MEMORY_DISABLED_GUIDANCE}\n</memory>`, 'disabling replaces old instructions with English disabled guidance')
+      assert.equal(disabledPatch.pig_servers, undefined, 'the discoverable memory namespace stays unchanged')
       record(disabledPatch)
       assert.equal(await prepare(), undefined, 'disabled memory adds no prompt sections on later runs')
       enabled = true
@@ -224,7 +234,7 @@ async function fixture(): Promise<void> {
       assert.deepEqual(session.getAllTools().filter(tool => tool.name.startsWith('memory_')).map(tool => tool.name).sort(), ['memory_add', 'memory_delete', 'memory_edit', 'memory_read'])
       const enabledPatch = (await prepare())!
       assert.equal(enabledPatch.memory, baseline.memory)
-      assert.match(enabledPatch.pig_servers!, /- memory \(tool_search\)/)
+      assert.equal(enabledPatch.pig_servers, undefined)
     } finally { session.dispose() }
   } finally { rmSync(root, { recursive: true, force: true }) }
 }

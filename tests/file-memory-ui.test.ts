@@ -15,6 +15,9 @@ async function fixture(): Promise<void> {
   const nestedFile: MemoryFile = { path: 'global/topics/design.md', content: 'Nested clue', revision: 'd'.repeat(64) }
   const projectFile: MemoryFile = { path: `projects/${project}/MEMORY.md`, content: 'Project clue', revision: 'e'.repeat(64) }
   let lists = 0
+  let showIssues = false
+  const repairRequests: unknown[] = []
+  let maintenanceStatus = { state: 'idle', repair: false, id: 'repair', changes: [], input: 0, cacheRead: 0, cacheWrite: 0, output: 0, requests: 0, cost: 0, costKnown: true }
   let fail = false
   let settingsSaveFailure = false
   let settingsReadFailure = false
@@ -24,6 +27,7 @@ async function fixture(): Promise<void> {
   let deletes = 0
   const saved: unknown[][] = []
   Object.assign(window, { api: {
+    dream: { status: async () => maintenanceStatus, start: async (request: unknown) => { repairRequests.push(request); maintenanceStatus = { ...maintenanceStatus, state: 'running', repair: true }; return maintenanceStatus } },
     getMemorySettings: async () => {
       await settingsReadGate
       if (settingsReadFailure) throw Object.assign(new Error('Configuration reload unavailable'), { code: 'RELOAD_FAILED' })
@@ -36,7 +40,7 @@ async function fixture(): Promise<void> {
       return config
     },
     longTermMemory: {
-      list: async () => { lists++; return file ? [file, otherFile, nestedFile, projectFile].map(item => ({ path: item.path, bytes: item.content.length, ...(item.path === projectFile.path ? { projectName: 'Pig' } : {}) })) : [] },
+      list: async () => { lists++; return [...(file ? [file, otherFile, nestedFile, projectFile].map(item => ({ path: item.path, bytes: item.content.length, ...(item.path === projectFile.path ? { projectName: 'Pig' } : {}) })) : []), ...(showIssues ? [{ path: 'stray.md', bytes: 12, issue: 'MEMORY_MISPLACED', repairable: true }, { path: 'global/broken.md', bytes: 0, issue: 'MEMORY_UNREADABLE' }] : [])] },
       read: async (path: string) => [otherFile, nestedFile, projectFile].find(item => item.path === path) ?? file,
       save: async (...args: [string, string, string]) => {
         saved.push(args); await saveGate
@@ -69,6 +73,10 @@ async function fixture(): Promise<void> {
     await flush()
     assert.doesNotMatch(host.textContent!, /长期记忆模型|自动学习|任务经历/)
     const toggle = () => document.querySelector<HTMLButtonElement>('[aria-label="文件记忆"]')!
+    assert.equal(toggle().getAttribute('aria-checked'), 'true', 'file memory defaults to enabled')
+    await act(async () => toggle().click()); await flush()
+    assert.deepEqual(config.fileMemory, { enabled: false })
+    settingsWrites = 0
     settingsSaveFailure = true; settingsReadFailure = true
     await act(async () => toggle().click()); await flush()
     assert.deepEqual(config.fileMemory, { enabled: true }, 'configuration persisted before application failed')
@@ -184,6 +192,26 @@ async function fixture(): Promise<void> {
     assert.equal(deletes, 1)
     assert.equal(dirty, false)
     assert.match(document.querySelector('[role="dialog"]')!.textContent!, /暂无记忆文件/)
+    await act(async () => button('取消').click()); await flush()
+    await act(async () => toggle().click()); await flush()
+    assert.equal(toggle().getAttribute('aria-checked'), 'false')
+    file = { path: 'global/MEMORY.md', content: 'Valid index', revision: 'e'.repeat(64) }
+    showIssues = true
+    await act(async () => button('浏览记忆文件').click()); await flush()
+    assert.ok(fileButton('global/MEMORY.md'), 'broken entries do not hide the normal tree')
+    assert.equal(fileButton('stray.md'), undefined)
+    assert.match(document.querySelector('[role="dialog"]')!.textContent!, /stray.md.*错放的记忆/)
+    assert.match(document.querySelector('[role="dialog"]')!.textContent!, /global\/broken.md.*无法安全读取/)
+    assert.equal(button('修复记忆').disabled, false, 'manual repair is available with file memory disabled')
+    await act(async () => button('修复记忆').click()); await flush()
+    assert.deepEqual(repairRequests, [{ repair: true }])
+    assert.equal(toggle().getAttribute('aria-checked'), 'false', 'repair never enables file memory')
+    assert.equal(button('修复记忆').disabled, true)
+    showIssues = false; maintenanceStatus = { ...maintenanceStatus, state: 'done' }
+    const { useDreamStore } = await import('../src/renderer/src/stores/dream')
+    await act(async () => useDreamStore.getState().refresh()); await flush()
+    assert.doesNotMatch(document.querySelector('[role="dialog"]')!.textContent!, /stray.md|global\/broken.md/)
+    assert.ok(fileButton('global/MEMORY.md'))
   } finally {
     await act(async () => root.unmount()); host.remove()
     GlobalRegistrator.unregister()
