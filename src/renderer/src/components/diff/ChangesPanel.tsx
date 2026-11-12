@@ -4,11 +4,13 @@
  * there, so the column stays a list and the reading happens in the conversation area. Nothing here
  * mutates git, it only reads.
  */
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { scopeLabel } from '../../stores/diff'
 import { useT } from '../../hooks/useT'
 import { ChevronRight, Folder, FolderOpen, ListTree } from 'lucide-react'
 import { Button } from '../ui/button'
+import { Separator } from '../ui/separator'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import { useDiffStore } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
@@ -27,6 +29,8 @@ type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
 
 export function ChangesPanel({ cwd }: { cwd: string }) {
   const t = useT()
+  const modeId = useId()
+  const reduced = useReducedMotion()
   const state = useDiffStore((s) => s.worktrees[cwd])
   const openChangesTab = useSessionsStore((s) => s.openChangesTab)
   // A primitive, because a fresh object on every render would loop zustand's store subscription.
@@ -228,7 +232,8 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
       </div>
 
       {state?.countError && <Notice>{t('diff.countFailed', { error: state.countError })}</Notice>}
-      <footer className="flex shrink-0 items-center gap-2 px-2 pt-1.5 pb-2">
+      <div className="shrink-0 px-2"><Separator /></div>
+      <footer className="flex shrink-0 items-center gap-2 px-2 py-2">
         <ToggleGroup
           type="single"
           size="xs"
@@ -236,12 +241,16 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           onValueChange={(value) => value && setFlat(value === 'all')}
           aria-label={t('diff.groupsAria')}
         >
-          <ToggleGroupItem value="grouped" className={sidebarSurfaceToggle}>
-            {t('diff.group')}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="all" className={sidebarSurfaceToggle}>
-            {t('diff.flat')}
-          </ToggleGroupItem>
+          {(['grouped', 'all'] as const).map(value => {
+            const selected = flat === (value === 'all')
+            return <ToggleGroupItem key={value} value={value}
+              className="relative rounded-full px-2.5 font-normal text-muted-foreground data-[state=on]:bg-transparent! data-[state=on]:text-sidebar-foreground solid:data-[state=on]:bg-transparent! solid:data-[state=on]:text-sidebar-foreground">
+              {selected ? <motion.span layoutId={modeId} data-diff-mode-pill aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-full border border-glass-button-border bg-glass-button-background bg-[image:var(--glass-button-sheen)] shadow-glass-button solid:border-border solid:bg-sidebar-accent solid:bg-none solid:shadow-none"
+                transition={reduced ? { duration: 0 } : { type: 'spring', visualDuration: 0.25, bounce: 0 }} /> : null}
+              <span className="relative">{t(value === 'all' ? 'diff.flat' : 'diff.group')}</span>
+            </ToggleGroupItem>
+          })}
         </ToggleGroup>
         <span className="flex-1" />
         <Button

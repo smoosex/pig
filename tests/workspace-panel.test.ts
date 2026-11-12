@@ -387,16 +387,24 @@ async function runFixture(name: string): Promise<void> {
     const sizes = [...container.querySelectorAll('footer button[role="radio"]')]
     assert.equal(sizes.length, 2)
     for (const size of sizes) assert.match(size.className, /\bh-6\b/, 'the switcher is one size down')
-    for (const toggle of container.querySelectorAll('footer button[role="radio"]')) {
-      assert.ok(toggle.classList.contains('hover:bg-sidebar-foreground/6!'))
-      assert.ok(toggle.classList.contains('data-[state=on]:bg-sidebar-foreground/12'))
-      assert.ok(toggle.classList.contains('data-[state=on]:hover:bg-sidebar-foreground/12!'))
-      assert.ok(toggle.classList.contains('duration-100'))
+    for (const toggle of sizes) {
+      assert.ok(toggle.classList.contains('rounded-full'))
+      assert.ok(toggle.classList.contains('data-[state=on]:bg-transparent!'))
       assert.ok(!toggle.className.includes('backdrop-blur'))
     }
+    const footer = container.querySelector('footer')!
+    assert.ok(footer.previousElementSibling!.querySelector('[data-slot="separator"]'), 'a divider sits above the footer')
+    assert.equal(footer.querySelectorAll('button').length, 3, 'two mode choices and only the tree action')
+    assert.equal(footer.querySelectorAll('[data-diff-mode-pill]').length, 1)
+    const all = sizes.find(button => button.textContent === '全部')!
+    await click(all)
+    assert.equal(all.getAttribute('data-state'), 'on')
+    assert.ok(all.querySelector('[data-diff-mode-pill]'), 'the capsule follows the selected mode')
+    await click(sizes.find(button => button.textContent === '分组'))
+    assert.equal(footer.querySelectorAll('[data-diff-mode-pill]').length, 1)
     assert.equal(container.querySelectorAll('header [data-panel-pill]').length, 1)
     assert.ok(container.querySelector('header [data-panel-pill]')!.classList.contains('rounded-full'))
-    assert.match(container.querySelector('footer')!.className, /\bpb-2\b/, 'the footer clears the window edge like the left column')
+    assert.match(container.querySelector('footer')!.className, /\bpy-2\b/, 'the footer clears the window edge like the left column')
 
     // The rail collapses like the left sidebar, retaining its inner inset inside the clipped contents.
     await render(CWD, true)
@@ -558,7 +566,7 @@ if (process.argv[2] === '--review-panel-fixture') {
     'prefs-race': 'toggle writes remain ordered and a later success clears a prior failure',
     grouped: 'grouped rows list both stages and a click reveals the file in the changes tab',
     sticky: 'transparent sticky titles clip scrolled rows without painting another surface',
-    shell: 'the column has no separators and no duplicate collapse button',
+    shell: 'the column has animated footer modes and a divider without outer borders or duplicate collapse actions',
     states: 'a broken read, a non-git folder and a clean worktree each say so',
     refresh: 'a refresh keeps the list while only a first read shows the loading text',
     views: 'the column switches between the changes list and the file tree',
