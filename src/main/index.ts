@@ -9,6 +9,7 @@ import { applyWindowSurfaceStyle } from './window-surface'
 import { registerIpc } from './ipc'
 import { shutdownTerminals } from './ipc/terminal'
 import { shutdownProcesses } from './processes'
+import { shutdownDream } from './features/memory/dream/lifecycle'
 import { shutdownSandbox } from './sandbox/service'
 import { exitAfterCleanup } from './shutdown'
 import { confirmQuit, needsQuitConfirmation, registerQuitConfirmIpc } from './quit-confirmation'
@@ -167,6 +168,7 @@ app.on('before-quit', (event) => {
   isDisposing = true
   for (const window of BrowserWindow.getAllWindows()) window.hide()
   const teardown = Promise.allSettled([
+    shutdownDream(),
     worktrees.shutdown(),
     flushOpenProjectSessions(),
     flushBrowserHistory(),

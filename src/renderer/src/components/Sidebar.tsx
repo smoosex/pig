@@ -14,6 +14,7 @@ import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { sidebarButtonSurface, sidebarSurfaceHover } from './sidebar/sidebar-surface'
 import { SurfaceStyleToggle } from './sidebar/SurfaceStyleToggle'
+import { DreamStatusButton } from './sidebar/DreamStatus'
 import { useProjectAction } from './sidebar/project-action'
 
 export function Sidebar({
@@ -121,6 +122,7 @@ export function Sidebar({
             </TooltipContent>
           </Tooltip>
           <span className="flex-1" />
+          <DreamStatusButton />
           {supportsGlass ? (
             <Tooltip>
               <TooltipTrigger asChild>

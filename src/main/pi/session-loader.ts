@@ -379,13 +379,15 @@ function projectGroup(cwd: string, sessions: SessionMeta[]): ProjectGroup {
   }
 }
 
-async function collectAllFiles(): Promise<string[]> {
+export async function collectAllFiles(signal?: AbortSignal): Promise<string[]> {
+  signal?.throwIfAborted()
   const root = sessionsRoot()
   try {
     const dirs = await readdir(root, { withFileTypes: true })
     const groups = await Promise.all(
-      dirs.filter((entry) => entry.isDirectory()).map((entry) => listJsonlFiles(join(root, entry.name)))
+      dirs.filter((entry) => entry.isDirectory()).map((entry) => { signal?.throwIfAborted(); return listJsonlFiles(join(root, entry.name)) })
     )
+    signal?.throwIfAborted()
     return groups.flat()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []

@@ -11,6 +11,10 @@ async function fixture(): Promise<void> {
   let config: MemorySettings = {}
   let file: MemoryFile | undefined = { path: 'global/MEMORY.md', content: '[Build](build.md)', revision: 'a'.repeat(64) }
   const otherFile: MemoryFile = { path: 'global/other.md', content: 'Another note', revision: 'c'.repeat(64) }
+  const project = 'a'.repeat(64)
+  const nestedFile: MemoryFile = { path: 'global/topics/design.md', content: 'Nested clue', revision: 'd'.repeat(64) }
+  const projectFile: MemoryFile = { path: `projects/${project}/MEMORY.md`, content: 'Project clue', revision: 'e'.repeat(64) }
+  let lists = 0
   let fail = false
   let settingsSaveFailure = false
   let settingsReadFailure = false
@@ -32,8 +36,8 @@ async function fixture(): Promise<void> {
       return config
     },
     longTermMemory: {
-      list: async () => file ? [file, otherFile].map(item => ({ path: item.path, bytes: item.content.length })) : [],
-      read: async (path: string) => path === otherFile.path ? otherFile : file,
+      list: async () => { lists++; return file ? [file, otherFile, nestedFile, projectFile].map(item => ({ path: item.path, bytes: item.content.length, ...(item.path === projectFile.path ? { projectName: 'Pig' } : {}) })) : [] },
+      read: async (path: string) => [otherFile, nestedFile, projectFile].find(item => item.path === path) ?? file,
       save: async (...args: [string, string, string]) => {
         saved.push(args); await saveGate
         if (fail) throw new Error('Memory revision conflict')
@@ -52,6 +56,7 @@ async function fixture(): Promise<void> {
   const root = createRoot(host)
   const flush = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)) }) }
   const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === text)!
+  const fileButton = (path: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-memory-file-tree] button')].find(item => item.title === path)!
   const input = () => document.querySelector<HTMLTextAreaElement>('textarea')!
   const change = async (value: string) => act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input(), value)
@@ -102,18 +107,51 @@ async function fixture(): Promise<void> {
     await act(async () => toggle().click()); await flush()
     assert.deepEqual(config.fileMemory, { enabled: true })
     await act(async () => button('浏览记忆文件').click()); await flush()
-    await act(async () => button('global/MEMORY.md').click()); await flush()
+    const dialog = document.querySelector('[role="dialog"]')!
+    const refresh = dialog.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!
+    assert.ok(refresh.classList.contains('right-12') && refresh.classList.contains('top-4'))
+    assert.equal(refresh.getAttribute('data-size'), 'icon-sm')
+    assert.ok(refresh.querySelector('.lucide-rotate-cw'), 'refresh uses the shared single-arrow icon')
+    assert.equal(refresh.querySelector('.lucide-refresh-cw'), null)
+    assert.ok(!dialog.querySelector('[data-memory-file-tree]')!.contains(refresh))
+    assert.equal(fileButton('global').getAttribute('aria-expanded'), 'true')
+    assert.equal(fileButton('global/MEMORY.md').textContent, 'MEMORY.md', 'file labels omit the scope prefix')
+    await act(async () => fileButton('global').click()); await flush()
+    assert.equal(fileButton('global').getAttribute('aria-expanded'), 'false')
+    assert.equal(fileButton('global/MEMORY.md'), undefined)
+    await act(async () => fileButton('global').click()); await flush()
+    assert.equal(fileButton('global/topics/design.md'), undefined, 'nested directories start collapsed')
+    await act(async () => fileButton('global/topics').click()); await flush()
+    await act(async () => fileButton(nestedFile.path).click()); await flush()
+    assert.equal(input().value, nestedFile.content)
+    assert.equal(fileButton(`projects/${project}`).textContent, `Pig (${project})`)
+    assert.equal(fileButton(`projects/${project}`).title, `projects/${project}`, 'project names are display labels, not paths')
+    await act(async () => fileButton(`projects/${project}`).click()); await flush()
+    await act(async () => fileButton(projectFile.path).click()); await flush()
+    assert.equal(input().value, projectFile.content, 'identical basenames retain distinct canonical paths')
+    assert.equal(fileButton(projectFile.path).getAttribute('aria-pressed'), 'true')
+    await act(async () => fileButton('global/MEMORY.md').click()); await flush()
     assert.equal(input().value, '[Build](build.md)')
+    const footer = document.querySelector('[role="dialog"] [data-slot="dialog-footer"]')!
+    assert.ok(footer.contains(button('保存')) && footer.contains(button('删除')))
+    assert.equal(button('取消').getAttribute('data-variant'), 'ghost')
+    assert.ok(button('删除').classList.contains('mr-auto'), 'delete is separated from save')
     await act(async () => button('删除').click())
     assert.ok(button('确认'))
-    await act(async () => button(otherFile.path).click()); await flush()
+    await act(async () => fileButton(otherFile.path).click()); await flush()
     assert.equal(input().value, otherFile.content)
     assert.equal(button('确认'), undefined, 'switching files cancels deletion confirmation for the previous note')
     assert.equal(deletes, 0)
-    await act(async () => button('global/MEMORY.md').click()); await flush()
+    await act(async () => fileButton('global/MEMORY.md').click()); await flush()
     assert.equal(button('确认'), undefined, 'the old confirmation cannot reappear on returning')
     await change('New index')
     assert.equal(dirty, true)
+    const beforeRefresh = lists
+    await act(async () => refresh.click()); await flush()
+    assert.equal(lists, beforeRefresh + 1)
+    assert.equal(input().value, 'New index', 'refreshing the tree does not discard an unsaved draft')
+    assert.equal(fileButton('global/MEMORY.md').getAttribute('aria-pressed'), 'true')
+    assert.equal(fileButton('global/topics').getAttribute('aria-expanded'), 'true', 'refresh preserves expanded directories')
     fail = true
     await act(async () => button('保存').click()); await flush()
     assert.equal(input().value, 'New index')

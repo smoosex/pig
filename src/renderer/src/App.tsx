@@ -29,6 +29,7 @@ import { ShortcutKbd } from './components/ShortcutKbd'
 import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
+import { DreamDialogHost } from './components/settings/DreamSettings'
 import { GooglyEyesButton } from './components/ui/googly-eyes-button'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
@@ -738,6 +739,7 @@ export default function App() {
           </WorkspaceLayout>
         </div>
       </div>
+      <DreamDialogHost />
     </TooltipProvider>
   )
 }

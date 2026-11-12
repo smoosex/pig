@@ -892,6 +892,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   sessionAgent: SessionAgentUiApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
+  dream: import('./dream').DreamApi
   longTermMemory: import('./long-term-memory').LongTermMemoryApi
   conversationFeatures: import('./features').ConversationFeaturesApi
   permissions: import('./permissions').PermissionsApi

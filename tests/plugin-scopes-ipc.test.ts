@@ -1,6 +1,6 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,6 +65,30 @@ async function fixture(): Promise<void> {
     const current = files.read('MEMORY.md')
     await invoke('memory:files:delete', 'global/MEMORY.md', current.revision)
     assert.deepEqual(await invoke('memory:files:list'), [])
+    const { addOpenedProject } = await import('../src/main/opened-projects')
+    const { projectMemoryKey } = await import('../src/main/features/memory/long-term/files')
+    const gitProject = join(root, 'project-pig')
+    const plainProject = join(root, 'plain-project')
+    await mkdir(join(gitProject, '.git', 'objects'), { recursive: true })
+    await mkdir(join(gitProject, '.git', 'refs'))
+    await writeFile(join(gitProject, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+    await mkdir(plainProject)
+    const missingProject = join(root, 'missing-project')
+    for (const cwd of [gitProject, plainProject, missingProject]) await addOpenedProject(cwd)
+    const { sessionWorkspace } = await import('../src/main/sandbox/workspace')
+    assert.equal((await sessionWorkspace(gitProject)).gitCommonDir, join(gitProject, '.git'))
+    const { listOpenedCwds } = await import('../src/main/opened-projects')
+    assert.ok((await listOpenedCwds()).includes(gitProject))
+    const identities = [join(gitProject, '.git'), plainProject, missingProject, gitProject]
+    for (const identity of identities) {
+      new MemoryFiles(join(memoryRoot(), 'projects', projectMemoryKey(identity)), memoryRoot()).save('MEMORY.md', 'Entry', null)
+    }
+    const listing = await invoke('memory:files:list') as { path: string; projectName?: string }[]
+    const named = (identity: string) => listing.find(item => item.path === `projects/${projectMemoryKey(identity)}/MEMORY.md`)!
+    assert.equal(named(join(gitProject, '.git')).projectName, 'project-pig', 'Git memory uses the common directory identity')
+    assert.equal(named(plainProject).projectName, 'plain-project', 'non-Git memory uses its real cwd')
+    assert.equal(named(gitProject).projectName, undefined, 'a matching name cannot override a different project identity')
+    assert.equal(named(missingProject).projectName, undefined, 'missing projects retain their ID without a guessed name')
     await assert.rejects(invoke('memory:enabled'), /Session id is required/)
     await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {

@@ -1,14 +1,17 @@
 /** Direct Markdown inspection; no learning queue, classification or auxiliary model. */
 import { useEffect, useRef, useState } from 'react'
-import type { MemoryFile } from '../../../../shared/long-term-memory'
+import { RotateCw } from 'lucide-react'
+import type { MemoryFile, MemoryFileListItem } from '../../../../shared/long-term-memory'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { Button } from '../ui/button'
 import { Switch } from '../ui/switch'
 import { Textarea } from '../ui/textarea'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { SettingsCard, SettingsRow } from './SettingsFields'
+import { DreamSettings } from './DreamSettings'
+import { MemoryFileTree } from './MemoryFileTree'
 
 export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void }) {
   const t = useT()
@@ -49,6 +52,7 @@ export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusy
       <SettingsRow title={t('longTerm.browse')} description={t('longTerm.browseHint')}>
         <Button variant="outline" size="sm" onClick={() => setOpen(true)}>{t('longTerm.browse')}</Button>
       </SettingsRow>
+      <DreamSettings enabled={enabled === true} />
     </SettingsCard>
     <LongTermInspector open={open} onOpenChange={setOpen} onBusyChange={setEditorBusy} onDirtyChange={onDirtyChange} />
   </div>
@@ -59,7 +63,7 @@ export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyCha
   onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void
 }) {
   const t = useT()
-  const [items, setItems] = useState<{ path: string; bytes: number }[]>([])
+  const [items, setItems] = useState<MemoryFileListItem[]>([])
   const [file, setFile] = useState<MemoryFile>()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -117,33 +121,37 @@ export function LongTermInspector({ open, onOpenChange, onBusyChange, onDirtyCha
     finally { setBusy(false) }
   }
   return <Dialog open={open} onOpenChange={close}>
-    <DialogContent className="flex max-h-4/5 flex-col sm:max-w-3xl" showCloseButton={!busy}>
-      <DialogHeader><DialogTitle>{t('longTerm.title')}</DialogTitle><DialogDescription>{t('longTerm.sourceHint')}</DialogDescription></DialogHeader>
+    <DialogContent confirmation={Boolean(confirm)} className="flex max-h-4/5 flex-col sm:max-w-3xl" showCloseButton={!busy}>
+      <DialogHeader><DialogTitle className="pr-16">{t('longTerm.title')}</DialogTitle><DialogDescription>{t('longTerm.sourceHint')}</DialogDescription></DialogHeader>
+      <Button variant="ghost" size="icon-sm" className="absolute top-4 right-12" aria-label={t('longTerm.refresh')} title={t('longTerm.refresh')} disabled={busy} onClick={() => void refresh()}><RotateCw /></Button>
       {error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}
-      <div className="flex min-h-0 flex-1 gap-3">
-        <div className="flex max-h-96 w-1/3 flex-col gap-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void refresh()}>{t('longTerm.refresh')}</Button>
-          {!items.length ? <p className="text-sm text-muted-foreground">{t('longTerm.empty')}</p> : null}
-          {items.map(item => <Button key={item.path} variant={file?.path === item.path ? 'secondary' : 'ghost'} className="justify-start" disabled={busy} onClick={() => select(item.path)}><span className="truncate">{item.path}</span></Button>)}
+      <div className="flex min-h-0 flex-1 gap-3 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex max-h-96 w-1/3 shrink-0 flex-col gap-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {!items.length ? <p className="text-sm text-muted-foreground">{t('longTerm.empty')}</p> : <MemoryFileTree files={items} selected={file?.path} disabled={busy} onSelect={select} />}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {file ? <>
             <p className="break-all text-sm">{file.path}</p>
             <Textarea aria-label={t('longTerm.editor')} disabled={busy} value={draft} onChange={event => setDraft(event.target.value)} className="min-h-64 flex-1 font-mono [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" />
-            <div className="flex gap-2"><Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>{t('longTerm.save')}</Button>
-              <Button variant="destructive" size="sm" disabled={busy} onClick={() => setConfirm('delete')}>{t('longTerm.delete')}</Button></div>
           </> : <p className="text-sm text-muted-foreground">{t('longTerm.select')}</p>}
-          {confirm ? <div className="flex flex-col gap-2">
-            <p className="text-sm">{t(confirm === 'delete' ? 'longTerm.deleteConfirm' : 'longTerm.discardConfirm')}</p>
-            <div className="flex gap-2"><Button variant="destructive" size="sm" disabled={busy} onClick={() => {
-              if (confirm === 'delete') { void remove(); return }
-              setConfirm(undefined)
-              if (pendingPath.current) void load(pendingPath.current)
-              else { setFile(undefined); onOpenChange(false) }
-            }}>{t('longTerm.confirm')}</Button><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm(undefined)}>{t('longTerm.cancel')}</Button></div>
-          </div> : null}
+          {confirm ? <p className="text-sm">{t(confirm === 'delete' ? 'longTerm.deleteConfirm' : 'longTerm.discardConfirm')}</p> : null}
         </div>
       </div>
+      <DialogFooter>
+        {confirm ? <>
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirm(undefined)}>{t('longTerm.cancel')}</Button>
+          <Button variant="destructive" disabled={busy} onClick={() => {
+            if (confirm === 'delete') { void remove(); return }
+            setConfirm(undefined)
+            if (pendingPath.current) void load(pendingPath.current)
+            else { setFile(undefined); onOpenChange(false) }
+          }}>{t('longTerm.confirm')}</Button>
+        </> : <>
+          {file ? <Button variant="destructive" className="mr-auto" disabled={busy} onClick={() => setConfirm('delete')}>{t('longTerm.delete')}</Button> : null}
+          <Button variant="ghost" disabled={busy} onClick={() => close(false)}>{t('longTerm.cancel')}</Button>
+          {file ? <Button disabled={busy || !dirty} onClick={() => void save()}>{t('longTerm.save')}</Button> : null}
+        </>}
+      </DialogFooter>
     </DialogContent>
   </Dialog>
 }

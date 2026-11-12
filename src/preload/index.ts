@@ -94,6 +94,11 @@ const api: SessionApi = {
       return () => ipcRenderer.off('browser:selection', handler)
     }
   },
+  dream: {
+    start: request => ipcRenderer.invoke('memory:dream:start', request),
+    status: () => ipcRenderer.invoke('memory:dream:status'),
+    stop: () => ipcRenderer.invoke('memory:dream:stop')
+  },
   longTermMemory: {
     list: () => ipcRenderer.invoke('memory:files:list'),
     read: path => ipcRenderer.invoke('memory:files:read', path),

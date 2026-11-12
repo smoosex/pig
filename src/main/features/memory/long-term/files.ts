@@ -128,6 +128,29 @@ export class MemoryFiles {
     walk(this.root, '', 0)
     return { files, visited }
   }
+  /** Call under the catalog lease before a batch commit. Retained empty directories still count. */
+  checkPublication(nextPaths: readonly string[]): void {
+    const { files, visited } = this.scan()
+    const existing = new Set(files.map(file => file.path))
+    const next = new Set(nextPaths)
+    if (next.size > MAX_FILES) throw new MemoryLimitError('MEMORY_FILE_LIMIT', 'Memory file limit exceeded')
+    const addedDirectories = new Set<string>()
+    for (const path of next) {
+      const parts = safeParts(path)
+      if (parts.length - 1 > MAX_DEPTH) throw new MemoryLimitError('MEMORY_DEPTH_LIMIT', 'Memory directory depth exceeded')
+      this.target(path)
+      for (let index = 1; index < parts.length; index++) {
+        const directory = parts.slice(0, index).join('/')
+        try { lstatSync(join(this.root, directory)) } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          addedDirectories.add(directory)
+        }
+      }
+    }
+    const added = [...next].filter(path => !existing.has(path)).length
+    const removed = [...existing].filter(path => !next.has(path)).length
+    if (visited + addedDirectories.size + added - removed > MAX_ENTRIES) throw new MemoryLimitError('MEMORY_SCAN_LIMIT', 'Memory directory scan limit exceeded')
+  }
   private checkCapacity(target: string, creating: boolean): void {
     const catalog = new MemoryFiles(this.catalogRoot)
     const path = relative(resolve(this.catalogRoot), target).split(sep).join('/')
@@ -232,6 +255,9 @@ export class MemoryFiles {
       return action(target)
     } finally { rmSync(lock, { recursive: true }) }
   }
+  /** Batch publishers share the exact lease used by ordinary note mutations. Keep the callback synchronous. */
+  withCatalogLease<T>(action: () => T): T { return this.mutate('MEMORY.md', () => action()) }
+
   save(path: string, content: string, expectedRevision: string | null, check: () => void = () => {}): MemoryFile {
     if (typeof content !== 'string' || content.includes('\0') || Buffer.from(content, 'utf8').toString('utf8') !== content || Buffer.byteLength(content) > MAX_MEMORY_BYTES) throw new Error('Memory file exceeds 64 KiB or contains invalid text')
     if (content.split('\n').some(line => Buffer.byteLength(line) > 15000)) throw new Error('Memory lines must stay within 15 KB for paged reading')

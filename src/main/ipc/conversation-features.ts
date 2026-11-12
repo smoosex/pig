@@ -11,8 +11,10 @@ import type { MemorySettingsPatch } from '../../shared/api'
 import { MemoryFiles, memoryRoot } from '../features/memory/long-term/files'
 import { join } from 'node:path'
 import { withFileMutationQueue } from '@earendil-works/pi-coding-agent'
+import { registerDreamIpc } from './dream'
+import { shutdownDream } from '../features/memory/dream/lifecycle'
 
-const memoryFiles = () => new MemoryFiles(memoryRoot())
+import { listMemoryFiles } from '../features/memory/long-term/catalog'
 function scopedFile(path: unknown): { store: MemoryFiles; path: string } {
   if (typeof path !== 'string') throw new Error('Invalid memory path')
   const match = /^(global|projects\/[a-f0-9]{64})\/(.+)$/.exec(path)
@@ -24,7 +26,13 @@ function assertUi(event: IpcMainInvokeEvent): void {
   assertBrowserSender(event, windowForEvent(event))
 }
 export function registerConversationFeaturesIpc(): void {
-  ipcMain.handle('memory:files:list', event => { assertUi(event); return memoryFiles().list() })
+  registerDreamIpc()
+  ipcMain.handle('memory:files:list', async event => {
+    assertUi(event)
+    const files = await listMemoryFiles()
+    assertUi(event)
+    return files
+  })
   ipcMain.handle('memory:files:read', (event, path: string) => { assertUi(event); const item = scopedFile(path); return { ...item.store.read(item.path), path } })
   ipcMain.handle('memory:files:save', async (event, path: string, content: string, revision: string) => {
     assertUi(event)
@@ -49,6 +57,7 @@ export function registerConversationFeaturesIpc(): void {
   ipcMain.handle('memory:set', async (event, patch: MemorySettingsPatch) => {
     assertUi(event)
     const settings = await setMemorySettings(patch)
+    if (patch.fileMemory?.enabled === false) await shutdownDream()
     await applyConversationFeatures()
     return settings
   })

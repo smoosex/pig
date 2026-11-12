@@ -6,6 +6,7 @@ import type { Turn } from '../../chat/turns'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
+import { failureMessage } from '../../lib/ipc-error'
 import { markdownToPlainText } from '../../lib/markdown-plain-text'
 import { useSessionsStore } from '../../stores/sessions'
 import { useSettingsStore } from '../../stores/settings'
@@ -62,7 +63,7 @@ export function AssistantMessageActions({
       else await store.add(sessionId, turn.id, turn.replyEntryId,
         useSessionsStore.getState().openTabs.find(tab => tab.id === sessionId)?.title ?? '')
     } catch (error) {
-      toast.error(t('bookmarks.failed'), { description: error instanceof Error ? error.message : String(error) })
+      toast.error(t('bookmarks.failed'), { description: failureMessage(error) })
     }
   }
   const canRegenerate = canChange && Boolean(turn.user)
