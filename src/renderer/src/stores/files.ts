@@ -98,6 +98,7 @@ interface FilesStore {
   /** Opens every level on the way to a directory, so a row inside it can be on screen. */
   ensureDirectory: (cwd: string, path: string) => void
   setHideIgnored: (hide: boolean) => void
+  collapseDirectories: (cwd: string) => void
   openDocument: (cwd: string, path: string) => Promise<void>
   setDraft: (cwd: string, path: string, text: string) => void
   saveDocument: (cwd: string, path: string, overwrite?: boolean) => Promise<void>
@@ -244,6 +245,8 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   },
 
   setHideIgnored: (hideIgnored) => set({ hideIgnored }),
+  collapseDirectories: cwd => set(state => ({ expanded: { ...state.expanded, [cwd]: {} } })),
+
 
   openDocument: async (cwd, path) => {
     const document = get().documents[fileKey(cwd, path)]

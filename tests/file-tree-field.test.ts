@@ -50,7 +50,8 @@ async function runFixture(name: string): Promise<void> {
    */
   const listing = new Map<string, FileTreeEntry[]>([
     ['', [folder('src'), file('readme.md')]],
-    ['src', [file('src/main.ts'), folder('src/deep')]]
+    ['src', [file('src/main.ts'), folder('src/deep')]],
+    ['src/deep', [file('src/deep/target.ts')]]
   ])
   const reads: string[] = []
   const created: { kind: 'file' | 'directory'; path: string }[] = []
@@ -66,13 +67,20 @@ async function runFixture(name: string): Promise<void> {
   }
   const entriesFor = (path: string): FileTreeEntry[] => listing.get(path) ?? []
   const renamed: { path: string; name: string }[] = []
+  const notifications = new Set<(cwd: string) => void>()
+  let searches = 0
   Object.assign(window, {
     api: {
       readDirectory: async (_cwd: string, path: string) => {
         reads.push(path)
         return { path, entries: entriesFor(path) }
       },
-      onDiffChanged: () => () => {},
+      onDiffChanged: (listener: (cwd: string) => void) => { notifications.add(listener); return () => notifications.delete(listener) },
+      searchFiles: async (_cwd: string, query: string, hideIgnored: boolean) => {
+        searches++
+        return { entries: [...listing.values()].flat().filter(entry => entry.path.includes(query) && (!hideIgnored || !entry.ignored)), truncated: false }
+      },
+      cancelFileSearch: async () => {},
       createFile: async (_cwd: string, path: string) => {
         created.push({ kind: 'file', path })
         listing.set(levelOf(path), [...(listing.get(levelOf(path)) ?? []), make(path, 'file')])
@@ -138,7 +146,7 @@ async function runFixture(name: string): Promise<void> {
 
   /** Right-clicks the row whose title is this name, and runs the menu item with that label. */
   const openMenu = async (rowTitle: string, label: string) => {
-    const rows = [...host.querySelectorAll<HTMLButtonElement>('button[title]')]
+    const rows = [...host.querySelectorAll<HTMLButtonElement>('button[data-file-path]')]
     const row = rows.find((item) => item.getAttribute('title') === rowTitle)
     assert.ok(row, `the tree shows ${rowTitle}`)
     await act(async () => {
@@ -160,7 +168,7 @@ async function runFixture(name: string): Promise<void> {
   }
 
   const field = (): HTMLInputElement => {
-    const input = host.querySelector<HTMLInputElement>('input')
+    const input = host.querySelector<HTMLInputElement>('input[data-slot="input"]')
     assert.ok(input, 'the field is on screen')
     return input
   }
@@ -170,7 +178,7 @@ async function runFixture(name: string): Promise<void> {
    * where that field sits among the others is the whole point of the placement cases.
    */
   const rowNames = (): string[] => {
-    const rows = [...host.querySelectorAll<HTMLElement>('button[title], input')]
+    const rows = [...host.querySelectorAll<HTMLElement>('button[data-file-path], input[data-slot="input"]')]
     return rows.map((item) =>
       item instanceof HTMLInputElement ? '' : item.getAttribute('title') ?? ''
     )
@@ -189,7 +197,50 @@ async function runFixture(name: string): Promise<void> {
     await flush()
   }
 
+  const waitForSearch = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 240)) }) }
+  const filter = async (query: string) => {
+    await act(async () => {
+      const input = host.querySelector<HTMLInputElement>('[data-slot="input-group-control"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, query)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await waitForSearch()
+  }
+
   try {
+    if (name === 'search-rename') {
+      await filter('target.ts')
+      assert.deepEqual(reads, [''], 'the hit is under two directories never opened in the tree')
+      await openMenu('src/deep/target.ts', '重命名')
+      assert.equal(field().value, 'target.ts')
+      assert.equal(document.activeElement, field())
+      assert.ok(reads.includes('src') && reads.includes('src/deep'))
+      assert.equal(useFilesStore.getState().expanded[CWD]?.['src/deep'], true)
+      await type('renamed.ts')
+      await press('Enter')
+      assert.deepEqual(renamed, [{ path: 'src/deep/target.ts', name: 'renamed.ts' }])
+      assert.equal(useFilesStore.getState().naming, null)
+      assert.equal(host.querySelector<HTMLInputElement>('[data-slot="input-group-control"]')!.disabled, false)
+      assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="全部收起"]')!.disabled, false)
+      return
+    }
+    if (name === 'search-refresh') {
+      await filter('match.ts')
+      assert.ok(!rowNames().includes('src/deep/match.ts'))
+      const before = searches
+      await act(async () => notifications.forEach(listener => listener('/other')))
+      await waitForSearch()
+      assert.equal(searches, before, 'an unrelated worktree does not restart the search')
+      listing.set('src/deep', [...entriesFor('src/deep'), file('src/deep/match.ts')])
+      await act(async () => notifications.forEach(listener => listener(CWD)))
+      await waitForSearch()
+      assert.ok(rowNames().includes('src/deep/match.ts'), 'new matches appear without editing the query')
+      await openMenu('src/deep/match.ts', '移到废纸篓')
+      await waitForSearch()
+      assert.ok(!rowNames().includes('src/deep/match.ts'), 'local trash invalidates the search without waiting for a notification')
+      assert.equal(host.querySelector<HTMLInputElement>('[data-slot="input-group-control"]')!.value, 'match.ts')
+      return
+    }
     if (name === 'new-file-focus') {
       await openMenu('src', '新建文件')
       const input = field()
@@ -296,7 +347,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(rowNames()[1], '', 'a new file follows the folders, so it leads the files')
       assert.equal(field().value, '')
       await press('Escape')
-      assert.equal(host.querySelector('input'), null, 'Escape closes the field')
+      assert.equal(host.querySelector('input[data-slot="input"]'), null, 'Escape closes the field')
 
       await openMenu('src', '新建文件夹')
       assert.deepEqual(rowNames().slice(0, 3), ['src', '', 'src/main.ts'], 'a new folder leads the level')
@@ -317,6 +368,8 @@ if (process.argv.includes('--file-tree-fixture')) {
   await runFixture(process.argv[process.argv.indexOf('--file-tree-fixture') + 1]!)
 } else {
   for (const [name, description] of Object.entries({
+    'search-rename': 'a search hit under unloaded ancestors can be renamed and releases the controls',
+    'search-refresh': 'filtering refreshes on worktree changes and local trash without changing the query',
     'new-file-focus': 'a new file is typed into without touching the field first',
     'new-folder-focus': 'a new folder is typed into without touching the field first',
     'rename-focus': 'a rename is typed into without touching the field first',

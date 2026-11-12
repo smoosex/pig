@@ -4,7 +4,7 @@
  * it, so a worktree with a huge `node_modules` only pays for what is on screen — and a link that leads
  * out of the worktree is refused rather than listed.
  */
-import { readdir } from 'node:fs/promises'
+import { opendir, readdir } from 'node:fs/promises'
 import type { DirectoryListing, FileTreeEntry } from '../../shared/api'
 import { compareFileNames } from '../../shared/file-order'
 import { GitExecError, isNotARepoError } from '../git/exec'
@@ -18,37 +18,57 @@ const HIDDEN = new Set(['.git'])
 /** `git check-ignore` takes the paths as arguments, so they go over in batches well inside ARG_MAX. */
 const IGNORE_BATCH = 256
 
-export async function readDirectory(cwd: string, path: string): Promise<DirectoryListing> {
+interface DirectoryScanOptions {
+  maxEntries: number
+  signal?: AbortSignal
+}
+
+interface DirectoryScan extends DirectoryListing {
+  scanned: number
+  truncated: boolean
+}
+
+export function readDirectory(cwd: string, path: string): Promise<DirectoryListing>
+export function readDirectory(cwd: string, path: string, options: DirectoryScanOptions): Promise<DirectoryScan>
+export async function readDirectory(cwd: string, path: string, options?: DirectoryScanOptions): Promise<DirectoryListing | DirectoryScan> {
+  const signal = options?.signal
+  signal?.throwIfAborted()
   const target = await resolveWorktreePath(cwd, path, 'directory')
   if (!target) throw new Error(t('error.directoryOutsideWorkspace'))
-  const dirents = await readdir(target.absolute, { withFileTypes: true })
-
+  signal?.throwIfAborted()
+  // Search reads a bounded prefix, including hidden and non-file entries in its budget. Normal tree
+  // expansion still lists the complete level. Breaking or cancelling closes the directory iterator.
+  const dirents = options
+    ? await opendir(target.absolute, { bufferSize: Math.min(32, options.maxEntries) })
+    : await readdir(target.absolute, { withFileTypes: true })
+  let scanned = 0, truncated = false
   const entries: FileTreeEntry[] = []
-  for (const dirent of dirents) {
-    if (HIDDEN.has(dirent.name)) continue
-    const kind = dirent.isDirectory()
-      ? 'directory'
-      : dirent.isFile()
-        ? 'file'
-        : dirent.isSymbolicLink()
-          ? 'link'
-          : null
-    // Sockets, fifos and devices are not something a reader can open or edit, so they are not rows.
-    if (!kind) continue
-    const entryPath = target.relative ? `${target.relative}/${dirent.name}` : dirent.name
-    entries.push({ name: dirent.name, path: entryPath, kind, ignored: false })
+  for await (const dirent of dirents) {
+    signal?.throwIfAborted()
+    scanned++
+    if (!HIDDEN.has(dirent.name)) {
+      const kind = dirent.isDirectory() ? 'directory' : dirent.isFile() ? 'file' : dirent.isSymbolicLink() ? 'link' : null
+      if (kind) {
+        const entryPath = target.relative ? `${target.relative}/${dirent.name}` : dirent.name
+        entries.push({ name: dirent.name, path: entryPath, kind, ignored: false })
+      }
+    }
+    if (options && scanned >= options.maxEntries) { truncated = true; break }
   }
+  signal?.throwIfAborted()
 
   const ignored = await ignoredPaths(
     target.absolute,
     // A directory is asked about with a trailing slash: `dist/` in a `.gitignore` matches the directory
     // and not a file of the same name, and git needs the slash to tell which one is being asked about.
-    entries.map((entry) => (entry.kind === 'directory' ? `${entry.name}/` : entry.name))
+    entries.map((entry) => (entry.kind === 'directory' ? `${entry.name}/` : entry.name)),
+    signal
   )
   const folders = entries.filter((entry) => entry.kind === 'directory').sort(byName)
   const leaves = entries.filter((entry) => entry.kind !== 'directory').sort(byName)
   return {
     path: target.relative,
+    ...(options ? { scanned, truncated } : {}),
     entries: [...folders, ...leaves].map((entry) => ({ ...entry, ignored: ignored.has(entry.name) }))
   }
 }
@@ -69,9 +89,10 @@ function byName(left: FileTreeEntry, right: FileTreeEntry): number {
  * even when the link leads back inside the worktree — and that refusal would cost the whole level its
  * ignore verdicts. A bare name cannot walk through anything.
  */
-async function ignoredPaths(directory: string, names: string[]): Promise<Set<string>> {
+async function ignoredPaths(directory: string, names: string[], signal?: AbortSignal): Promise<Set<string>> {
   const ignored = new Set<string>()
   for (let start = 0; start < names.length; start += IGNORE_BATCH) {
+    signal?.throwIfAborted()
     const batch = names.slice(start, start + IGNORE_BATCH)
     let output: string
     try {
@@ -81,9 +102,12 @@ async function ignoredPaths(directory: string, names: string[]): Promise<Set<str
       output = await execGit(directory, ['check-ignore', '--', ...batch], {
         optionalLocks: false,
         quotePath: false,
-        locale: 'C'
+        locale: 'C',
+        signal
       })
+      signal?.throwIfAborted()
     } catch (error) {
+      signal?.throwIfAborted()
       // Exit 1 is "none of these are ignored" and a directory outside a repository is 128: the tree shows
       // every row undimmed, which is what having no ignore rules amounts to, and neither means the level
       // is unreadable.

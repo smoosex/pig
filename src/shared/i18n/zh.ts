@@ -370,6 +370,8 @@ export const zh = {
     statusConflicted: '冲突'
   },
   file: {
+    locateCurrent: '定位当前文件', collapseAll: '全部收起',
+    searching: '正在搜索文件…', noMatch: '没有匹配的文件', searchTruncated: '搜索已达到上限，结果不完整，请缩小范围。',
     save: '保存',
     saving: '保存中…',
     openWith: '打开方式…',
@@ -565,6 +567,7 @@ export const zh = {
     empty: '输入开发环境网址以打开预览，例如 localhost:3000。'
   },
   panel: {
+    filterFiles: '筛选文件', filterChanges: '筛选变更文件',
     viewAria: '侧边栏视图',
     files: '文件',
     changes: '变更',

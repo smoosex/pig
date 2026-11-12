@@ -4,6 +4,9 @@ import { externalPath, fileMentionInfo, openablePath, readFile, writeFile } from
 import { absolutePath, createEntry, renameEntry } from '../files/mutations'
 import { suggestFiles } from '../files/suggest'
 import { readDirectory } from '../files/tree'
+import { searchFiles } from '../files/search'
+import { assertBrowserSender } from '../browser/validation'
+import { windowForEvent } from './window'
 import { openedWorktree, requireWorktree } from '../worktree-access'
 
 /**
@@ -13,6 +16,36 @@ import { openedWorktree, requireWorktree } from '../worktree-access'
  * its own failures propagate like every other handler: the composer already clears a failed fetch.
  */
 export function registerFilesIpc(): void {
+  const searches = new WeakMap<Electron.WebContents, AbortController>()
+  ipcMain.handle('files:cancel-search', event => {
+    assertBrowserSender(event, windowForEvent(event))
+    searches.get(event.sender)?.abort()
+    searches.delete(event.sender)
+  })
+  ipcMain.handle('files:search', async (event, cwd: string, query: string, hideIgnored: boolean) => {
+    assertBrowserSender(event, windowForEvent(event))
+    if (typeof query !== 'string' || query.length > 500 || typeof hideIgnored !== 'boolean') throw new Error('Invalid file search')
+    searches.get(event.sender)?.abort()
+    const controller = new AbortController()
+    searches.set(event.sender, controller)
+    const abort = () => controller.abort()
+    const navigating = (_event: Electron.Event, _url: string, inPlace: boolean, mainFrame: boolean) => { if (mainFrame && !inPlace) abort() }
+    event.sender.once('destroyed', abort)
+    event.sender.once('render-process-gone', abort)
+    event.sender.on('did-start-navigation', navigating)
+    try {
+      const root = await requireWorktree(cwd)
+      controller.signal.throwIfAborted()
+      const result = await searchFiles(root, query, hideIgnored, controller.signal)
+      assertBrowserSender(event, windowForEvent(event))
+      return result
+    } finally {
+      event.sender.removeListener('destroyed', abort)
+      event.sender.removeListener('render-process-gone', abort)
+      event.sender.removeListener('did-start-navigation', navigating)
+      if (searches.get(event.sender) === controller) searches.delete(event.sender)
+    }
+  })
   ipcMain.handle('files:read-directory', async (_event, cwd: string, path: string) =>
     readDirectory(await requireWorktree(cwd), path)
   )

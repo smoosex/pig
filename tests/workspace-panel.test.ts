@@ -33,6 +33,8 @@ async function runFixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  // Happy DOM rejects cancelled WAAPI promises; use Motion's JS fallback.
+  Reflect.deleteProperty(Element.prototype, 'animate')
   const { mock } = await import('bun:test')
   const opened: { path: string; scope?: string }[] = []
   const filesOpened: string[] = []
@@ -385,14 +387,15 @@ async function runFixture(name: string): Promise<void> {
     const sizes = [...container.querySelectorAll('footer button[role="radio"]')]
     assert.equal(sizes.length, 2)
     for (const size of sizes) assert.match(size.className, /\bh-6\b/, 'the switcher is one size down')
-    for (const toggle of container.querySelectorAll('button[role="radio"]')) {
+    for (const toggle of container.querySelectorAll('footer button[role="radio"]')) {
       assert.ok(toggle.classList.contains('hover:bg-sidebar-foreground/6!'))
       assert.ok(toggle.classList.contains('data-[state=on]:bg-sidebar-foreground/12'))
       assert.ok(toggle.classList.contains('data-[state=on]:hover:bg-sidebar-foreground/12!'))
       assert.ok(toggle.classList.contains('duration-100'))
       assert.ok(!toggle.className.includes('backdrop-blur'))
     }
-    assert.ok(container.querySelector('span.will-change-transform')!.classList.contains('bg-sidebar-foreground/6'))
+    assert.equal(container.querySelectorAll('header [data-panel-pill]').length, 1)
+    assert.ok(container.querySelector('header [data-panel-pill]')!.classList.contains('rounded-full'))
     assert.match(container.querySelector('footer')!.className, /\bpb-2\b/, 'the footer clears the window edge like the left column')
 
     // The rail collapses like the left sidebar, retaining its inner inset inside the clipped contents.
@@ -405,6 +408,24 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(collapsed.hasAttribute('inert'), 'and stops answering the keyboard')
   } else if (name === 'views') {
     const treeCalls: string[] = []
+    const searches: string[] = []
+    let cancellations = 0
+    const late = Promise.withResolvers<import('../src/shared/api').FileSearchResult>()
+    api.searchFiles = async (_cwd, query, hideIgnored) => {
+      searches.push(query)
+      if (query === 'late') return late.promise
+      if (query === 'failure') throw new Error('Search failed')
+      return { entries: query === 'deep' ? [{ name: 'deep.ts', path: 'unopened/deep.ts', kind: 'file', ignored: false }] : [], truncated: query === 'deep' && hideIgnored }
+    }
+    api.cancelFileSearch = async () => { cancellations++ }
+    const filter = async (label: string, value: string) => {
+      await act(async () => {
+        const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new window.Event('input', { bubbles: true }))
+      })
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 230)) })
+    }
     api.readDirectory = async (_cwd: string, path: string) => {
       treeCalls.push(path)
       if (path === '') {
@@ -429,8 +450,16 @@ async function runFixture(name: string): Promise<void> {
 
     await render(CWD)
     assert.equal(rowTexts().length, 3, 'the changes list is what the column opens on')
+    await filter('筛选变更文件', 'WORK.TS')
+    assert.equal(rowTexts().length, 1)
+    assert.ok(row('src/work.ts'))
+    assert.equal(row('src/staged.ts'), null)
+    await filter('筛选变更文件', 'absent')
+    assert.match(container.textContent!, /没有匹配的文件/)
+    await filter('筛选变更文件', '')
 
     await click(switcher('文件'))
+    assert.equal(container.querySelector<HTMLButtonElement>('[aria-label="定位当前文件"]')!.disabled, true)
     assert.deepEqual(treeCalls, [''], 'the tree reads the root the first time it is shown')
     assert.deepEqual(rowTexts(), ['node_modules', 'src', 'readme.md'])
     assert.ok(container.querySelector('span.will-change-transform')!.classList.contains('bg-sidebar-foreground/6'))
@@ -451,9 +480,9 @@ async function runFixture(name: string): Promise<void> {
 
     // What git ignores is listed but dimmed, and the footer toggle hides it outright.
     assert.match(row('node_modules')!.className, /text-muted-foreground/)
-    await click(container.querySelector('footer button[aria-pressed]'))
+    await click(container.querySelector('[data-workspace-filter] button[aria-pressed]'))
     assert.deepEqual(rowTexts(), ['src', 'work.ts', 'readme.md'])
-    const ignoredToggle = container.querySelector('footer button[aria-pressed="true"]')!
+    const ignoredToggle = container.querySelector('[data-workspace-filter] button[aria-pressed="true"]')!
     assert.ok(ignoredToggle.classList.contains('aria-pressed:bg-sidebar-foreground/12'))
     assert.ok(ignoredToggle.classList.contains('aria-pressed:hover:bg-sidebar-foreground/12!'))
     assert.ok(!ignoredToggle.className.includes('backdrop-blur'))
@@ -467,6 +496,28 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(row('src/work.ts')!.classList.contains('bg-sidebar-foreground/12'))
     assert.ok(row('src/work.ts')!.classList.contains('hover:bg-sidebar-foreground/12!'))
     assert.ok(!row('src/work.ts')!.classList.contains('hover:bg-sidebar-foreground/6!'))
+    const { useFilesStore } = await import('../src/renderer/src/stores/files')
+    await act(async () => useFilesStore.setState(state => ({ expanded: { ...state.expanded, '/other': { keep: true } } })))
+    await click(container.querySelector('[aria-label="全部收起"]'))
+    assert.equal(row('src/work.ts'), null)
+    assert.deepEqual(useFilesStore.getState().expanded[CWD], {})
+    assert.equal(useFilesStore.getState().expanded['/other']!.keep, true)
+    const revealed: string[] = []
+    window.HTMLElement.prototype.scrollIntoView = function () { revealed.push(this.getAttribute('data-file-path')!) }
+    await click(container.querySelector('[aria-label="定位当前文件"]'))
+    assert.ok(row('src/work.ts'))
+    assert.deepEqual(revealed, ['src/work.ts'])
+    await filter('筛选文件', 'deep')
+    assert.ok(row('unopened/deep.ts'), 'search includes directories that were never expanded')
+    assert.match(container.textContent!, /结果不完整/)
+    await filter('筛选文件', 'late')
+    await filter('筛选文件', 'failure')
+    await act(async () => late.resolve({ entries: [{ name: 'old.ts', path: 'old.ts', kind: 'file', ignored: false }], truncated: false }))
+    assert.equal(row('old.ts'), null, 'a late search cannot replace the current result')
+    assert.match(container.querySelector('[role="alert"]')!.textContent!, /Search failed/)
+    await filter('筛选文件', '')
+    assert.ok(row('src/work.ts'), 'clearing search restores the expanded tree')
+    assert.ok(searches.includes('deep') && cancellations >= 2)
   } else if (name === 'width') {
     const writes: Partial<SidebarPrefs>[] = []
     api.setSidebarPrefs = async (patch) => {

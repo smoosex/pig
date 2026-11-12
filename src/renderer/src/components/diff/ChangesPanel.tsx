@@ -21,6 +21,7 @@ import { FileTypeIcon } from '../files/FileTypeIcon'
 import { STATUS_META, splitPath } from './file-entry'
 import { DiffCounts } from './DiffCounts'
 import { fileDragProps } from '../composer/file-drag'
+import { WorkspaceFilter } from '../panel/WorkspaceFilter'
 
 type Group = { key: 'staged' | 'unstaged'; entries: DiffFileEntry[] }
 
@@ -32,6 +33,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   const changesActive = useSessionsStore((s) => s.openTabs.some((tab) => tab.id === s.activeTabId && tab.kind === 'diff'))
   // What the changes tab is showing right now, so the column marks the file being read.
   const visiblePath = useDiffStore((s) => s.visible[cwd])
+  const [query, setQuery] = useState('')
   const [flat, setFlat] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [tree, setTree] = useState(false)
@@ -40,11 +42,13 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   const diff = state?.diff
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = (entry: DiffFileEntry) => entry.path.toLocaleLowerCase().includes(needle)
   const groups: Group[] = [
-    { key: 'staged', entries: diff?.staged ?? [] },
-    { key: 'unstaged', entries: diff?.unstaged ?? [] }
+    { key: 'staged', entries: (diff?.staged ?? []).filter(matches) },
+    { key: 'unstaged', entries: (diff?.unstaged ?? []).filter(matches) }
   ]
-  const flatEntries = diff?.all ?? []
+  const flatEntries = (diff?.all ?? []).filter(matches)
 
   useLayoutEffect(() => {
     const area = scrollAreaRef.current!
@@ -74,7 +78,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
       area.removeEventListener('scroll', updateClips)
       observer.disconnect()
     }
-  }, [collapsed, cwd, flat, state, tree, treeCollapsed])
+  }, [collapsed, cwd, flat, query, state, tree, treeCollapsed])
 
   function rows(entries: DiffFileEntry[], scope: DiffScope, indented: boolean) {
     // The left column's rhythm: 2px between rows, inset 4px so the hover background can round off.
@@ -181,7 +185,8 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     if (state.status === 'loading' && !state.diff) return <Notice>{t('diff.reading')}</Notice>
     if (state.status === 'error') return <Notice>{state.error}</Notice>
     if (!diff?.git) return <Notice>{t('diff.notGit')}</Notice>
-    if (!flatEntries.length) return <Notice>{t('diff.emptyWorktree')}</Notice>
+    if (!diff.all.length) return <Notice>{t('diff.emptyWorktree')}</Notice>
+    if (!flatEntries.length) return <Notice>{t('file.noMatch')}</Notice>
     if (flat) return rows(flatEntries, 'all', false)
     return groups.map((group) => {
       if (!group.entries.length) return null
@@ -214,6 +219,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <WorkspaceFilter label={t('panel.filterChanges')} value={query} onChange={setQuery} />
       {/* The 4px of air above the list lives here, not on the scroll region: sticky offsets resolve
           against the content box, so padding there both leaves an uncovered band that rows scroll
           through and makes the group label travel before it pins to the top. */}

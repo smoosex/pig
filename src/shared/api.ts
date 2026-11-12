@@ -366,6 +366,11 @@ export interface FileSuggestion {
   isDirectory: boolean
 }
 
+export interface FileSearchResult {
+  entries: FileTreeEntry[]
+  truncated: boolean
+}
+
 /** What a file chip's hover card shows; `lineCount` is null for binary or oversized files. */
 export type FileMentionInfo =
   | { kind: 'missing' }
@@ -989,6 +994,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   getSidebarPrefs: () => Promise<SidebarPrefs>
   setSidebarPrefs: (patch: Partial<SidebarPrefs>) => Promise<SidebarPrefs>
   readDirectory: (cwd: string, path: string) => Promise<DirectoryListing>
+  searchFiles: (cwd: string, query: string, hideIgnored: boolean) => Promise<FileSearchResult>
+  cancelFileSearch: () => Promise<void>
   suggestFiles: (cwd: string, query: string) => Promise<FileSuggestion[]>
   fileMentionInfo: (cwd: string, path: string) => Promise<FileMentionInfo>
   readFile: (cwd: string, path: string) => Promise<FileReadResult>

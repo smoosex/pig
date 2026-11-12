@@ -373,6 +373,8 @@ export const en: Messages = {
     statusConflicted: 'Conflicted'
   },
   file: {
+    locateCurrent: 'Locate current file', collapseAll: 'Collapse all',
+    searching: 'Searching files…', noMatch: 'No matching files', searchTruncated: 'Search limit reached; results are incomplete. Narrow your search.',
     save: 'Save',
     saving: 'Saving…',
     openWith: 'Open with…',
@@ -568,6 +570,7 @@ export const en: Messages = {
     empty: 'Enter a development URL to preview, for example localhost:3000.'
   },
   panel: {
+    filterFiles: 'Filter files', filterChanges: 'Filter changed files',
     viewAria: 'Sidebar view',
     files: 'Files',
     changes: 'Changes',

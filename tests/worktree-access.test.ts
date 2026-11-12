@@ -13,6 +13,7 @@ import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import { runGit } from '../src/main/git/run'
 import { runSelf } from './helpers/subprocess.ts'
@@ -54,6 +55,8 @@ async function runFixture(): Promise<void> {
 
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   const { expect, mock } = await import('bun:test')
+  const contents = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false })
+  const win = { isDestroyed: () => false, webContents: contents }
   mock.module('electron', () => ({
     app: { isPackaged: false },
     ipcMain: {
@@ -63,7 +66,7 @@ async function runFixture(): Promise<void> {
     },
     shell: { openPath: async () => '', showItemInFolder: () => {} },
     clipboard: { writeText: () => {} },
-    BrowserWindow: { getAllWindows: () => [] }
+    BrowserWindow: { getAllWindows: () => [], fromWebContents: () => win }
   }))
 
   const { applyLocaleSetting } = await import('../src/main/i18n')
@@ -80,6 +83,23 @@ async function runFixture(): Promise<void> {
     assert.ok(listener, `expected ${channel} to be registered`)
     return Promise.resolve(listener!(null, ...args))
   }
+
+  const event = { sender: contents, senderFrame: contents.mainFrame }
+  const search = handlers.get('files:search')!
+  const cancelSearch = handlers.get('files:cancel-search')!
+  assert.deepEqual(await search(event, project, 'SRC.TS', true), {
+    entries: [{ name: 'src.ts', path: 'src.ts', kind: 'file', ignored: false }], truncated: false
+  })
+  await assert.rejects(async () => search({ ...event, senderFrame: {} }, project, 'src', true), /main frame/)
+  assert.throws(() => cancelSearch({ ...event, senderFrame: {} }), /main frame/)
+  await assert.rejects(async () => search(event, '/etc', 'src', true), /不是已打开的工作区/)
+  const cancelled = Promise.resolve(search(event, project, 'src', true))
+  cancelSearch(event)
+  await assert.rejects(cancelled, { name: 'AbortError' })
+  const navigating = Promise.resolve(search(event, project, 'src', true))
+  contents.emit('did-start-navigation', {}, 'http://localhost', false, true)
+  await assert.rejects(navigating, { name: 'AbortError' })
+  assert.equal(contents.listenerCount('destroyed'), 0, 'finished searches release lifecycle listeners')
 
   assert.equal(await openedWorktree(project), project, 'the project is its own worktree')
   // A worktree is answered in the spelling that was asked with, because that string goes back out in the

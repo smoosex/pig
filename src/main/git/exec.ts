@@ -10,6 +10,7 @@ export interface GitExecOptions {
   literalPathspecs?: boolean
   maxBuffer?: number
   locale?: 'C'
+  signal?: AbortSignal
 }
 
 export class GitExecError extends Error {
@@ -62,11 +63,13 @@ export async function execGit(cwd: string, args: string[], options: GitExecOptio
     const { stdout } = await exec('git', commandArgs, {
       env,
       encoding: 'utf8',
+      signal: options.signal,
       timeout: 30_000,
       maxBuffer: options.maxBuffer ?? 8 * 1024 * 1024
     })
     return stdout
   } catch (error) {
+    options.signal?.throwIfAborted()
     const cause = error as Error & {
       code?: string | number | null
       stdout?: string

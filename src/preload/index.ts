@@ -307,6 +307,8 @@ const api: SessionApi = {
   getSidebarPrefs: () => ipcRenderer.invoke('system:get-sidebar-prefs'),
   readDirectory: (cwd: string, path: string) => ipcRenderer.invoke('files:read-directory', cwd, path),
   suggestFiles: (cwd: string, query: string) => ipcRenderer.invoke('files:suggest', cwd, query),
+  searchFiles: (cwd, query, hideIgnored) => ipcRenderer.invoke('files:search', cwd, query, hideIgnored),
+  cancelFileSearch: () => ipcRenderer.invoke('files:cancel-search'),
   fileMentionInfo: (cwd: string, path: string) => ipcRenderer.invoke('files:mention-info', cwd, path),
   readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (
