@@ -168,7 +168,7 @@ export function BrowserAddressInput({ value, onValueChange, onPick, composing }:
               remove(highlight)
             }
           }}
-          className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs border-glass-card-border bg-glass-prompt-foreground/4! solid:border-input solid:bg-background! solid:dark:bg-input/30!" />
+          className="h-7 min-w-0 flex-1 rounded-md px-2 text-xs md:text-xs" />
       </PopoverAnchor>
       <PopoverContent align="start" sideOffset={4} className="w-(--radix-popover-trigger-width) gap-0 p-1"
         onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()}>

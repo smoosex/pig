@@ -125,7 +125,7 @@ export interface BrowserPickerOptions {
   labels: { comment: string; add: string; cancel: string; remove: string; update: string }
   theme: {
     background: string; foreground: string; border: string; muted: string
-    primary: string; primaryForeground: string; input: string; ring: string; shadow: string; destructive: string
+    primary: string; primaryForeground: string; input: string; inputBorder: string; inputPlaceholder: string; ring: string; shadow: string; destructive: string
   }
 }
 

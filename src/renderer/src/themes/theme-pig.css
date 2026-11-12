@@ -28,6 +28,7 @@ html[data-palette='pig'] {
   --sidebar-ring: #386750;
   --chat-background: #f8f8fa;
   --composer-background: #e9ebef;
+  --composer-input-background: color-mix(in srgb, #c6cbd3 30%, transparent);
   --tab-bar-background: #d6dde7;
   --tab-active-background: #f8f8fa;
   --tab-hover-background: #c7d2e0;
@@ -155,6 +156,7 @@ html.dark[data-palette='pig'] {
   --sidebar-ring: #83c092;
   --chat-background: #1e1f21;
   --composer-background: #252729;
+  --composer-input-background: color-mix(in srgb, #484d54 30%, transparent);
   --tab-bar-background: #343a40;
   --tab-active-background: #1e1f21;
   --tab-hover-background: #424950;

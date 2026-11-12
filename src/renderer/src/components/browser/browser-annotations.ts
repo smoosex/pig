@@ -1,6 +1,7 @@
 /** Browser marks become unsent prompt text in a real session's composer; the user decides when to send. */
 import type { BrowserAnnotation, BrowserPickerOptions } from '../../../../shared/browser'
 import { api } from '../../ipc/api'
+import { inputSurface } from '../ui/input-surface'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { useSessionsStore } from '../../stores/sessions'
 import { t } from '../../lib/i18n'
@@ -21,7 +22,9 @@ export async function addBrowserAnnotationsToDraft(browserId: string, target: st
 /** Resolve semantic variables on a real element so guests never inherit unresolved var() tokens. */
 export function browserPickerOptions(labels: BrowserPickerOptions['labels']): BrowserPickerOptions {
   const solid = document.documentElement.dataset.surfaceStyle === 'solid'
-  const probe = document.createElement('div')
+  const probe = document.createElement('input')
+  probe.placeholder = ' '
+  probe.className = inputSurface
   probe.style.position = 'absolute'
   probe.style.visibility = 'hidden'
   document.body.append(probe)
@@ -34,7 +37,9 @@ export function browserPickerOptions(labels: BrowserPickerOptions['labels']): Br
     foreground: color(solid ? 'popover-foreground' : 'glass-prompt-foreground'),
     border: color(solid ? 'border' : 'glass-card-border'),
     muted: color('muted-foreground'), primary: color('primary'), primaryForeground: color('primary-foreground'),
-    input: color(solid ? 'background' : 'glass-popover-background'), ring: color('ring'), shadow: '',
+    input: getComputedStyle(probe).backgroundColor, inputBorder: getComputedStyle(probe).borderTopColor,
+    inputPlaceholder: getComputedStyle(probe, '::placeholder').color,
+    ring: color('ring'), shadow: '',
     destructive: color('destructive')
   }
   probe.style.boxShadow = solid ? 'var(--shadow-md)' : 'var(--glass-popover-shadow)'

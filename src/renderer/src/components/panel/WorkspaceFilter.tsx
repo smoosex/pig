@@ -7,7 +7,7 @@ export function WorkspaceFilter({ label, value, onChange, disabled, children }: 
   label: string; value: string; onChange: (value: string) => void; disabled?: boolean; children?: ReactNode
 }) {
   return <div className="flex shrink-0 items-center gap-1 px-1 pb-2" data-workspace-filter>
-    <InputGroup className="h-6 rounded-full border-transparent bg-sidebar-foreground/6 shadow-none solid:bg-sidebar-accent">
+    <InputGroup className="h-6 rounded-full">
       <InputGroupInput className="h-6 text-xs md:text-xs" aria-label={label} placeholder={label} value={value} maxLength={500}
         disabled={disabled} onChange={event => onChange(event.target.value)} />
       <InputGroupAddon><Search className="size-3.5" /></InputGroupAddon>

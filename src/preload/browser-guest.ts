@@ -295,7 +295,7 @@ function installPicker(): void {
   function applyTheme(): void {
     const fallback: BrowserPickerOptions['theme'] = {
       background: 'Canvas', foreground: 'CanvasText', border: 'ButtonBorder', muted: 'GrayText',
-      primary: 'Highlight', primaryForeground: 'HighlightText', input: 'Canvas', ring: 'Highlight', shadow: '0 6px 24px color-mix(in srgb,CanvasText 22%,transparent)', destructive: 'crimson'
+      primary: 'Highlight', primaryForeground: 'HighlightText', input: 'Canvas', inputBorder: 'ButtonBorder', inputPlaceholder: 'GrayText', ring: 'Highlight', shadow: '0 6px 24px color-mix(in srgb,CanvasText 22%,transparent)', destructive: 'crimson'
     }
     for (const key of Object.keys(fallback) as (keyof typeof fallback)[]) {
       host?.style.setProperty(`--pig-${key}`, options?.theme[key] ?? fallback[key])
@@ -330,9 +330,10 @@ function installPicker(): void {
       .outline { position:fixed;pointer-events:none;border:2px solid var(--pig-ring);background:color-mix(in srgb,var(--pig-ring) 10%,transparent); }
       .selector { position:fixed;pointer-events:none;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 6px;border-radius:4px;background:var(--pig-primary);color:var(--pig-primaryForeground);font:11px/1.5 monospace; }
       .panel { position:fixed;pointer-events:auto;width:280px;padding:10px;border-radius:12px;border:1px solid var(--pig-border);background:var(--pig-background);box-shadow:var(--pig-shadow);overflow:auto;color:var(--pig-foreground); }
-      textarea { display:block;resize:vertical;width:100%;min-height:72px;max-height:160px;padding:8px;border:1px solid var(--pig-border);border-radius:6px;background:var(--pig-input);color:var(--pig-foreground);font:inherit; }
-      textarea::placeholder { color:var(--pig-muted); }
-      textarea:focus-visible,button:focus-visible { outline:2px solid var(--pig-ring);outline-offset:2px; }
+      textarea { display:block;resize:vertical;width:100%;min-height:72px;max-height:160px;padding:8px;border:1px solid var(--pig-inputBorder);border-radius:6px;background:var(--pig-input);color:var(--pig-foreground);font:inherit; }
+      textarea::placeholder { color:var(--pig-inputPlaceholder); }
+      textarea:focus-visible { outline:none; }
+      button:focus-visible { outline:2px solid var(--pig-ring);outline-offset:2px; }
       .actions { display:flex;justify-content:flex-end;gap:6px;margin-top:8px; }
       button { pointer-events:auto;cursor:pointer;border:1px solid var(--pig-border);border-radius:6px;padding:4px 10px;background:var(--pig-background);color:var(--pig-foreground);font:inherit; }
       [data-add],[data-update],.pin { background:var(--pig-primary);color:var(--pig-primaryForeground);border-color:transparent; }

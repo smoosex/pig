@@ -109,7 +109,7 @@ async function fixture() {
   assert.equal(reasonInput.maxLength, 2000)
   assert.equal(reasonInput.getAttribute('rows'), '1')
   assert.equal(card()!.querySelector('button'), null, 'reason submission has no confirmation button')
-  for (const name of ['max-h-12', 'min-h-6', 'field-sizing-content', 'overflow-y-auto', 'resize-none', 'border-b', 'focus-visible:border-input', 'focus-visible:ring-0', '[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden']) {
+  for (const name of ['max-h-12', 'min-h-6', 'field-sizing-content', 'overflow-y-auto', 'resize-none', 'border-b', 'border-glass-border', 'bg-glass-prompt-foreground/6', 'solid:bg-input/30', 'focus-visible:ring-0', '[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden']) {
     assert.ok(reasonInput.classList.contains(name), name)
   }
   assert.equal(card()!.querySelectorAll('input[type="radio"]').length, 4, 'all four options stay visible while entering a reason')

@@ -30,7 +30,7 @@ async function fixture(mainFrame: boolean): Promise<void> {
   const options: BrowserPickerOptions = {
     labels: { comment: '可选评论', add: '添加', cancel: '取消', remove: '删除', update: '更新' },
     theme: { background: 'Canvas', foreground: 'CanvasText', border: 'ButtonBorder', muted: 'GrayText',
-      primary: 'Highlight', primaryForeground: 'HighlightText', input: 'Canvas', ring: 'Highlight', shadow: 'CanvasText', destructive: 'crimson' }
+      primary: 'Highlight', primaryForeground: 'HighlightText', input: 'Canvas', inputBorder: 'ButtonBorder', inputPlaceholder: 'GrayText', ring: 'Highlight', shadow: 'CanvasText', destructive: 'crimson' }
   }
   const command = (active: boolean, documentId = 'doc-1', markers: BrowserMarker[] = []): void => {
     commands.get('browser:picker')!({}, { active, documentId, markers, options })
@@ -154,6 +154,8 @@ async function fixture(mainFrame: boolean): Promise<void> {
   assert.equal(currentShadow().adoptedStyleSheets.length, 1)
   assert.equal([...currentShadow().adoptedStyleSheets[0]!.cssRules].some(rule => rule.cssText.includes('backdrop-filter')), false)
   assert.equal(overlayHost.style.getPropertyValue('--pig-primary'), 'Highlight')
+  assert.equal(overlayHost.style.getPropertyValue('--pig-inputBorder'), 'ButtonBorder')
+  assert.ok([...currentShadow().adoptedStyleSheets[0]!.cssRules].some(rule => rule.cssText.includes('var(--pig-inputBorder)')), 'guest comment fields use the shared input border, not the card border')
   let pageClicks = 0
   let pageDowns = 0
   let pageKeys = 0

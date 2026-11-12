@@ -215,7 +215,7 @@ function ApprovalCard({ prompt, autoFocus }: { prompt: ExtensionPrompt; autoFocu
             <Textarea
               ref={reasonInput}
               rows={1}
-              className="max-h-12 min-h-6 resize-none overflow-y-auto rounded-none border-0 border-b bg-transparent! px-0 py-0 leading-5 shadow-none focus-visible:border-input focus-visible:ring-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="max-h-12 min-h-6 resize-none overflow-y-auto rounded-none border-0 border-b px-0 py-0 leading-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               aria-label={t('permissions.denialReason')}
               value={reason}
               onFocus={() => setFocused(reasonOption)}

@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
 import { cn } from "@/lib/utils"
+import { inputPlaceholder } from "@/components/ui/input-surface"
 
 import {
   Dialog,
@@ -69,11 +70,12 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
-      <InputGroup className="h-8! rounded-lg! border-glass-border bg-glass-prompt-foreground/6 dark:bg-glass-prompt-foreground/6 shadow-none! *:data-[slot=input-group-addon]:pl-2! solid:border-input/30 solid:bg-input/30 solid:dark:bg-input/30">
+      <InputGroup className="h-8! rounded-lg! *:data-[slot=input-group-addon]:pl-2!">
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(
-            "w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+            "w-full bg-transparent text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-100",
+            inputPlaceholder,
             className
           )}
           {...props}

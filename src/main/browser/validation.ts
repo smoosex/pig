@@ -62,7 +62,7 @@ export function validatePickerOptions(value: unknown): asserts value is BrowserP
   for (const key of ['comment', 'add', 'cancel', 'remove', 'update'] as const) {
     if (typeof options.labels[key] !== 'string' || options.labels[key].length > 256) throw new Error('Invalid picker label')
   }
-  for (const key of ['background', 'foreground', 'border', 'muted', 'primary', 'primaryForeground', 'input', 'ring', 'shadow', 'destructive'] as const) {
+  for (const key of ['background', 'foreground', 'border', 'muted', 'primary', 'primaryForeground', 'input', 'inputBorder', 'inputPlaceholder', 'ring', 'shadow', 'destructive'] as const) {
     if (typeof options.theme[key] !== 'string' || options.theme[key].length > 2048) throw new Error('Invalid picker theme')
   }
 }

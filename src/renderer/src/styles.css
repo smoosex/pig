@@ -41,6 +41,7 @@
   --color-sidebar: var(--sidebar);
   --color-chat-background: var(--chat-background);
   --color-composer-background: var(--composer-background);
+  --color-composer-input-background: var(--composer-input-background);
   --color-tab-bar-background: var(--tab-bar-background);
   --color-tab-active-background: var(--tab-active-background);
   --color-tab-hover-background: var(--tab-hover-background);
