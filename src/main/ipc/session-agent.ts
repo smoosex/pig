@@ -5,11 +5,12 @@ import type { SessionAgentUiAnswer, SessionAgentUiRequest } from '../../shared/s
 import { getLive } from '../pi/session-registry'
 import { registerSessionController, type SessionUiAction } from '../pi/session-agent'
 import { windowForEvent } from './window'
+import { requestReply, type PendingReply } from './pending-reply'
 
 export function registerSessionAgentIpc(): void {
   const reloading = new WeakSet<BrowserWindow>()
   const watched = new WeakSet<BrowserWindow>()
-  const pending = new Map<string, { win: BrowserWindow; caller: string; owner: ReturnType<typeof getLive>; finish(error?: Error): void }>()
+  const pending = new Map<string, PendingReply<void> & { win: BrowserWindow; caller: string; owner: NonNullable<ReturnType<typeof getLive>> }>()
   const assertWindow = (win: BrowserWindow) => {
     if (win.isDestroyed() || win.webContents.isDestroyed() || reloading.has(win)) throw new Error('The Pig window is unavailable or reloading')
   }
@@ -18,7 +19,7 @@ export function registerSessionAgentIpc(): void {
     watched.add(win)
     const cancel = () => {
       reloading.add(win)
-      for (const item of pending.values()) if (item.win === win) item.finish(new Error('Pig window was closed or reloaded'))
+      for (const item of pending.values()) if (item.win === win) item.fail(new Error('Pig window was closed or reloaded'))
     }
     win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) cancel() })
     win.webContents.on('render-process-gone', cancel)
@@ -32,24 +33,9 @@ export function registerSessionAgentIpc(): void {
     if (!win) throw new Error('Calling session has no window')
     watch(win)
     assertWindow(win)
-    const requestId = randomUUID()
-    await new Promise<void>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const abort = () => finish(new Error('Session UI request was cancelled'))
-      const finish = (error?: Error) => {
-        if (!pending.delete(requestId)) return
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', abort)
-        if (error) reject(error)
-        else resolve()
-      }
-      pending.set(requestId, { win, caller, owner, finish })
-      timer = setTimeout(() => finish(new Error('Timed out waiting for the session UI')), 20000)
-      signal?.addEventListener('abort', abort, { once: true })
-      if (signal?.aborted) { abort(); return }
-      try { win.webContents.send('session:agent-request', { ...action, requestId, callerSessionId: caller } satisfies SessionAgentUiRequest) }
-      catch (error) { finish(error instanceof Error ? error : new Error(String(error))) }
-    })
+    await requestReply(pending, { win, caller, owner }, requestId => {
+      win.webContents.send('session:agent-request', { ...action, requestId, callerSessionId: caller } satisfies SessionAgentUiRequest)
+    }, { signal, timeoutMs: 20_000, timeoutMessage: 'Timed out waiting for the session UI', cancelError: new Error('Session UI request was cancelled') })
   }
   registerSessionController({
     assertWindow: win => { watch(win); assertWindow(win) }, request,
@@ -71,9 +57,9 @@ export function registerSessionAgentIpc(): void {
       if (!answer || typeof answer !== 'object') throw new Error('Invalid session UI answer')
       if ('error' in answer && typeof answer.error === 'string') throw new Error(answer.error.slice(0, 2000))
       if (!('ok' in answer) || answer.ok !== true) throw new Error('Invalid session UI answer')
-      item.finish()
+      item.settle()
     } catch (error) {
-      item.finish(error instanceof Error ? error : new Error(String(error)))
+      item.fail(error instanceof Error ? error : new Error(String(error)))
       throw error
     }
   })

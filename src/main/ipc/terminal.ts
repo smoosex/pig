@@ -1,5 +1,4 @@
 /** Terminal panes: requests come only from the owning UI main frame; shells live in the PTY host. */
-import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute } from 'node:path'
@@ -18,6 +17,7 @@ import { registerTerminalAgentHost } from '../plugins/pig-terminal-host'
 import type { TerminalAgentOpenAnswer, TerminalAgentOpenRequest } from '../../shared/terminal-agent'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
+import { requestReply, type PendingReply } from './pending-reply'
 import { TERMINAL_COLS, TERMINAL_ID_PATTERN, TERMINAL_MAX_WRITE, TERMINAL_ROWS } from '../../shared/terminal'
 
 function forkPtyHost(): PtyHostProcess {
@@ -59,32 +59,19 @@ export function registerTerminalIpc(sessions?: Pick<TerminalAgentDeps, 'sessionW
   }), (id, reason) => controller?.terminalStopped(id, reason))
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
-  const pendingOpens = new Map<string, {
-    win: BrowserWindow; sessionId: string; change?: { action: 'activate' | 'close'; terminalId: string }
-    settle(result: TerminalAgentOpenAnswer): void; fail(error: unknown): void
+  const pendingOpens = new Map<string, PendingReply<TerminalAgentOpenAnswer> & {
+    win: BrowserWindow; sessionId: string; change: { action: 'activate' | 'close'; terminalId: string } | undefined
   }>()
   function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; terminalId: string }): Promise<string> {
     signal?.throwIfAborted()
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Terminal UI is reloading')
     watch(win)
-    return new Promise((resolve, reject) => {
-      const requestId = randomUUID()
-      const finish = (settle: () => void) => {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', abort)
-        pendingOpens.delete(requestId)
-        settle()
-      }
-      const abort = () => finish(() => reject(signal!.reason))
-      const timer = setTimeout(() => finish(() => reject(new Error('The window did not apply the terminal tab request in time'))), 15_000)
-      signal?.addEventListener('abort', abort, { once: true })
-      pendingOpens.set(requestId, {
-        win, sessionId, change,
-        settle: result => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.terminalId)),
-        fail: error => finish(() => reject(error))
-      })
+    return requestReply(pendingOpens, { win, sessionId, change }, requestId => {
       const request: TerminalAgentOpenRequest = change ? { requestId, sessionId, ...change } : { requestId, sessionId }
       win.webContents.send('terminal:agent-open-request', request)
+    }, { signal, timeoutMs: 15_000, timeoutMessage: 'The window did not apply the terminal tab request in time' }).then(result => {
+      if ('error' in result) throw new Error(result.error)
+      return result.terminalId
     })
   }
   controller = sessions ? new TerminalAgentController({

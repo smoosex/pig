@@ -70,6 +70,8 @@ src/
 新增跨进程字段时先改共享契约，再改 main 的生产端和 renderer 的消费端。
 不要在 preload 声明、renderer 或 main 各复制一份接口。
 
+main 向 UI 发起的浏览器、终端和会话控制请求共用 `src/main/ipc/pending-reply.ts` 的请求生命周期：统一清理超时、取消、发送异常及已结算请求。各 IPC 模块仍持有自己的 pending 清单，校验 UI 主 frame、窗口／会话实例、资源归属和应答内容，并在窗口重载／关闭时拒绝所属请求；公共工具不代替这些授权检查。
+
 ## 文件修改记录
 
 - `src/main/pi/session-file-changes.ts` 从当前分支的原始 JSONL 条目累计成功的 edit／write 操作，不等同于 Git 净差异，不读取文件当前内容来重建历史。

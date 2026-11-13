@@ -1,5 +1,4 @@
 /** Independent browser panes belong to the creating UI window, never to a Pi session or page guest. */
-import { randomUUID } from 'node:crypto'
 import { t } from '../i18n'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +12,7 @@ import { saveBrowserTabUrl } from '../open-project-sessions'
 import { browserHistory as history, BrowserHistoryRecorder } from '../browser/history'
 import { fetchFavicon } from '../browser/favicon'
 import { windowForEvent } from './window'
+import { requestReply, type PendingReply } from './pending-reply'
 import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest } from '../../shared/browser'
 
 /** Live Pi sessions, for agent browser control. Without it the browser tools report the browser unavailable. */
@@ -23,13 +23,11 @@ export interface BrowserSessions {
   sessionScope(sessionId: string): string | undefined
 }
 
-interface PendingOpen {
+interface PendingOpen extends PendingReply<{ browserId: string } | { error: string }> {
   win: BrowserWindow
   sessionId: string
-  action?: 'open' | 'activate' | 'close'
+  action?: 'activate' | 'close'
   browserId?: string
-  settle(result: { browserId: string } | { error: string }): void
-  fail(error: Error): void
 }
 
 export function registerBrowserIpc(sessions?: BrowserSessions): void {
@@ -56,25 +54,12 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   })
   function requestTab(win: BrowserWindow, sessionId: string, signal?: AbortSignal, change?: { action: 'activate' | 'close'; browserId: string }): Promise<string> {
     if (reloading.has(win) || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('Browser UI is reloading')
-    signal?.throwIfAborted()
-    return new Promise((resolve, reject) => {
-      const requestId = randomUUID()
-      const finish = (settle: () => void) => {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', abort)
-        pendingOpens.delete(requestId)
-        settle()
-      }
-      const abort = () => finish(() => reject(signal!.reason))
-      const timer = setTimeout(() => finish(() => reject(new Error('The window did not open a browser tab in time'))), 15_000)
-      signal?.addEventListener('abort', abort, { once: true })
-      pendingOpens.set(requestId, {
-        win, sessionId, ...change,
-        settle: (result) => finish(() => 'error' in result ? reject(new Error(result.error)) : resolve(result.browserId)),
-        fail: (error) => finish(() => reject(error))
-      })
+    return requestReply(pendingOpens, { win, sessionId, ...change }, requestId => {
       const request: BrowserAgentOpenRequest = change ? { requestId, sessionId, ...change } : { requestId, sessionId }
       win.webContents.send('browser:agent-open-request', request)
+    }, { signal, timeoutMs: 15_000, timeoutMessage: 'The window did not open a browser tab in time' }).then(result => {
+      if ('error' in result) throw new Error(result.error)
+      return result.browserId
     })
   }
   if (sessions) {
