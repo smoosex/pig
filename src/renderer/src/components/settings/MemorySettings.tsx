@@ -1,6 +1,6 @@
 /** Standalone configuration of built-in observational memory. */
 import { useEffect, useState } from 'react'
-import { api, type MemorySettings, type MemorySettingsPatch, type ThinkingLevel } from '../../ipc/api'
+import { api, type MemorySettings, type MemorySettingsPatch } from '../../ipc/api'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -22,10 +22,7 @@ const nonNegativeKeys = ['compactionCatchUpMaxChunks'] as const
 const numberSettingKeys = [...numericKeys, ...nonNegativeKeys] as const
 const booleanKeys = ['consolidateWhenIdle', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
 
-/** Drafts keep the unset level as a sentinel string; the picker takes null. */
-function thinkingOf(value: string | undefined): ThinkingLevel | null {
-  return value && value !== 'default' && value !== '__pig_default__' ? value as ThinkingLevel : null
-}
+const modelKeys = ['model', 'fallbackModel'] as const
 
 export function MemorySettings({ onDirtyChange, onBusyChange }: { onDirtyChange?: (dirty: boolean) => void; onBusyChange?: (busy: boolean) => void }) {
   const t = useT()
@@ -34,21 +31,11 @@ export function MemorySettings({ onDirtyChange, onBusyChange }: { onDirtyChange?
   const [draft, setDraft] = useState<MemorySettings>({})
   const [numbers, setNumbers] = useState<Record<string, string>>({})
   const [defaults, setDefaults] = useState<Record<string, number>>({})
-  const [modelProvider, setModelProvider] = useState('')
-  const [modelId, setModelId] = useState('')
-  const [modelThinking, setModelThinking] = useState('default')
-  const [fallbackProvider, setFallbackProvider] = useState('')
-  const [fallbackId, setFallbackId] = useState('')
-  const [fallbackThinking, setFallbackThinking] = useState('default')
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const models = useModelCatalogStore((s) => s.models)
-  const memoryModel = modelProvider.trim() && modelId.trim()
-    ? models.find((item) => item.provider === modelProvider.trim() && item.id === modelId.trim()) ?? null
-    : null
-  const memoryFallbackModel = fallbackProvider.trim() && fallbackId.trim()
-    ? models.find((item) => item.provider === fallbackProvider.trim() && item.id === fallbackId.trim()) ?? null
-    : null
+  const memoryModel = models.find((item) => item.provider === draft.model?.provider && item.id === draft.model?.id) ?? null
+  const memoryFallbackModel = models.find((item) => item.provider === draft.fallbackModel?.provider && item.id === draft.fallbackModel?.id) ?? null
 
   useEffect(() => {
     let cancelled = false
@@ -59,24 +46,18 @@ export function MemorySettings({ onDirtyChange, onBusyChange }: { onDirtyChange?
       setSaved(config)
       setDraft(config)
       setNumbers(Object.fromEntries(numberSettingKeys.map((key) => [key, config[key] == null ? '' : String(config[key])])))
-      setModelProvider(config.model?.provider ?? '')
-      setModelId(config.model?.id ?? '')
-      setModelThinking(config.model?.thinking ?? 'default')
-      setFallbackProvider(config.fallbackModel?.provider ?? '')
-      setFallbackId(config.fallbackModel?.id ?? '')
-      setFallbackThinking(config.fallbackModel?.thinking ?? 'default')
       setSettingsError(null)
     }, (failure) => { if (!cancelled) setSettingsError(failureMessage(failure)) })
     return () => { cancelled = true }
   }, [])
 
-
+  const modelChanged = (key: typeof modelKeys[number]) =>
+    draft[key]?.provider !== saved[key]?.provider || draft[key]?.id !== saved[key]?.id || draft[key]?.thinking !== saved[key]?.thinking
   const dirty = loaded && (
     numberSettingKeys.some(key => (numbers[key] ?? '').trim() !== (saved[key] == null ? '' : String(saved[key]))) ||
     booleanKeys.some(key => draft[key] !== saved[key]) ||
     draft.compactAfterTokensMode !== saved.compactAfterTokensMode ||
-    modelProvider !== (saved.model?.provider ?? '') || modelId !== (saved.model?.id ?? '') || modelThinking !== (saved.model?.thinking ?? 'default') ||
-    fallbackProvider !== (saved.fallbackModel?.provider ?? '') || fallbackId !== (saved.fallbackModel?.id ?? '') || fallbackThinking !== (saved.fallbackModel?.thinking ?? 'default')
+    modelKeys.some(modelChanged)
   )
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(saving) }, [saving, onBusyChange])
@@ -94,22 +75,9 @@ export function MemorySettings({ onDirtyChange, onBusyChange }: { onDirtyChange?
     if (draft.compactAfterTokensMode !== saved.compactAfterTokensMode) {
       patch.compactAfterTokensMode = draft.compactAfterTokensMode ?? null
     }
-    const model = modelProvider.trim() && modelId.trim()
-      ? { provider: modelProvider.trim(), id: modelId.trim(), ...(modelThinking === 'default' ? {} : { thinking: modelThinking as NonNullable<MemorySettings['model']>['thinking'] }) }
-      : null
-    if ((modelProvider.trim() || modelId.trim()) && !model) {
-      setSettingsError('Provider and model ID are both required')
-      return
+    for (const key of modelKeys) {
+      if (modelChanged(key)) patch[key] = draft[key] ?? null
     }
-    if (JSON.stringify(model) !== JSON.stringify(saved.model ?? null)) patch.model = model
-    const fallback = fallbackProvider.trim() && fallbackId.trim()
-      ? { provider: fallbackProvider.trim(), id: fallbackId.trim(), ...(fallbackThinking === 'default' ? {} : { thinking: fallbackThinking as NonNullable<MemorySettings['fallbackModel']>['thinking'] }) }
-      : null
-    if ((fallbackProvider.trim() || fallbackId.trim()) && !fallback) {
-      setSettingsError('Provider and model ID are both required')
-      return
-    }
-    if (JSON.stringify(fallback) !== JSON.stringify(saved.fallbackModel ?? null)) patch.fallbackModel = fallback
     setSaving(true)
     setSettingsError(null)
     try {
@@ -128,35 +96,33 @@ export function MemorySettings({ onDirtyChange, onBusyChange }: { onDirtyChange?
         <SettingsCard>
           <SettingsRow title={t('plugins.memoryModel')} description={t('plugins.memoryModelHint')}>
             <ModelThinkingPicker model={memoryModel} models={models}
-              label={modelProvider.trim() && modelId.trim() ? `${modelProvider.trim()}/${modelId.trim()}` : undefined}
-              thinking={thinkingOf(modelThinking)}
+              label={draft.model ? `${draft.model.provider}/${draft.model.id}` : undefined}
+              thinking={draft.model?.thinking ?? null}
               defaultOption={{
-                active: !(modelProvider.trim() && modelId.trim()),
+                active: !draft.model,
                 description: t('plugins.memoryModelDefault'),
-                onSelect: () => { setModelProvider(''); setModelId(''); setModelThinking('default') }
+                onSelect: () => setDraft({ ...draft, model: undefined })
               }}
               onModelChange={(item) => {
-                setModelProvider(item.provider)
-                setModelId(item.id)
-                setModelThinking(supportedThinking(item, thinkingOf(modelThinking)) ?? 'default')
+                const thinking = supportedThinking(item, draft.model?.thinking ?? null)
+                setDraft({ ...draft, model: { provider: item.provider, id: item.id, ...(thinking ? { thinking } : {}) } })
               }}
-              onThinkingChange={setModelThinking} />
+              onThinkingChange={(thinking) => { if (draft.model) setDraft({ ...draft, model: { ...draft.model, thinking } }) }} />
           </SettingsRow>
           <SettingsRow title={t('plugins.fallbackModel')} description={t('plugins.fallbackModelHint')}>
             <ModelThinkingPicker model={memoryFallbackModel} models={models}
-              label={fallbackProvider.trim() && fallbackId.trim() ? `${fallbackProvider.trim()}/${fallbackId.trim()}` : undefined}
-              thinking={thinkingOf(fallbackThinking)}
+              label={draft.fallbackModel ? `${draft.fallbackModel.provider}/${draft.fallbackModel.id}` : undefined}
+              thinking={draft.fallbackModel?.thinking ?? null}
               defaultOption={{
-                active: !(fallbackProvider.trim() && fallbackId.trim()),
+                active: !draft.fallbackModel,
                 description: t('plugins.fallbackModelDefault'),
-                onSelect: () => { setFallbackProvider(''); setFallbackId(''); setFallbackThinking('default') }
+                onSelect: () => setDraft({ ...draft, fallbackModel: undefined })
               }}
               onModelChange={(item) => {
-                setFallbackProvider(item.provider)
-                setFallbackId(item.id)
-                setFallbackThinking(supportedThinking(item, thinkingOf(fallbackThinking)) ?? 'default')
+                const thinking = supportedThinking(item, draft.fallbackModel?.thinking ?? null)
+                setDraft({ ...draft, fallbackModel: { provider: item.provider, id: item.id, ...(thinking ? { thinking } : {}) } })
               }}
-              onThinkingChange={setFallbackThinking} />
+              onThinkingChange={(thinking) => { if (draft.fallbackModel) setDraft({ ...draft, fallbackModel: { ...draft.fallbackModel, thinking } }) }} />
           </SettingsRow>
           {numericKeys.map((key) => (
             <SettingsRow key={key} title={t(`plugins.${key}`)} description={key === 'observerChunkMaxTokens' ? t('plugins.observerChunkAutoHint') : t(`plugins.${key}Hint`)}>

@@ -41,6 +41,7 @@
 ## 模型思考强度偏好
 
 - 模型思考强度偏好复用 Pi `settings.json` 的 `modelThinkingLevels`（按 `provider/modelId`），不另存 Pig 配置。
+- 观测记忆设置直接以 `draft.model`／`draft.fallbackModel` 保存完整模型配置，显示、dirty 和保存共用该对象，不另存 provider／ID／强度字符串；成功保存后以 main 返回值替换草稿。
 - 输入框强度菜单的「记住此模型的强度」开启时保存当前值，关闭时删除该偏好但不改变当前会话；仅已有偏好的模型会跟随后续手动选档更新。
 - 用户切换模型时，live / pending 统一按模型偏好 → 全局默认 → 当前会话强度选择，再用 SDK `clampThinkingLevel` 适配支持档位（如不支持 `xhigh` 时降为 `high`，不能直接降到最低档）；打开历史与 materialization 保留历史/显式会话选择。
 - SDK session 的只读 settings 快照可能较旧，用户切换时以 main 的共享偏好解析结果为准。

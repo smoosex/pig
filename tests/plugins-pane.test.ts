@@ -29,6 +29,9 @@ async function fixture(): Promise<void> {
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
   let memoryConfig: MemorySettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
+  let memoryDirty = false
+  let memorySaveFails = false
+  let normalizeMemoryThinking = false
   const persona: PersonaSnapshot = {
     active: false,
     files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
@@ -71,7 +74,9 @@ async function fixture(): Promise<void> {
     getMemorySettings: async () => memoryConfig,
     setMemorySettings: async (patch: MemorySettingsPatch) => {
       patches.push(patch)
+      if (memorySaveFails) throw new Error('Memory save failed')
       memoryConfig = Object.fromEntries(Object.entries({ ...memoryConfig, ...patch }).filter(([, value]) => value !== null)) as MemorySettings
+      if (normalizeMemoryThinking && memoryConfig.model) memoryConfig.model = { ...memoryConfig.model, thinking: 'low' }
       return memoryConfig
     }
   } })
@@ -81,7 +86,8 @@ async function fixture(): Promise<void> {
   const { useModelCatalogStore } = await import('../src/renderer/src/stores/model-catalog')
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   useModelCatalogStore.setState({ revision: 1, refreshing: false, models: [
-    { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['low', 'medium', 'high'] }
+    { id: 'm1', name: 'M1', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['low', 'medium', 'high'] },
+    { id: 'm2', name: 'M2', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['off', 'low'] }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
   const { MemorySettings } = await import('../src/renderer/src/components/settings/MemorySettings')
@@ -189,7 +195,7 @@ async function fixture(): Promise<void> {
     await act(async () => { missingAll.click() })
     assert.equal(missingAll.disabled, true)
     assert.deepEqual(scopeChanges.at(-1), { id: 'missing', scopes: [] })
-    await act(async () => { root.render(h(TooltipProvider, null, h(MemorySettings))) })
+    await act(async () => { root.render(h(TooltipProvider, null, h(MemorySettings, { onDirtyChange: value => { memoryDirty = value } }))) })
     await flush()
     assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
     const input = document.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')
@@ -256,6 +262,54 @@ async function fixture(): Promise<void> {
     await act(async () => { saveDefault.click() })
     await flush()
     assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
+    assert.equal(memoryDirty, false)
+
+    await act(async () => { picker.click() })
+    const memoryRaise = popover().querySelector<HTMLButtonElement>('[aria-label="提高思考强度"]')!
+    for (let step = 0; step < 3; step++) await act(async () => { memoryRaise.click() })
+    await act(async () => { picker.click() })
+    assert.equal(memoryDirty, true)
+    memorySaveFails = true
+    await act(async () => { saveDefault.click() })
+    assert.match(host.querySelector('[role="alert"]')?.textContent ?? '', /Memory save failed/)
+    assert.equal(memoryDirty, true, 'a failed save retains the model draft')
+    assert.ok(picker.textContent?.includes('高'))
+    memorySaveFails = false
+    normalizeMemoryThinking = true
+    await act(async () => { saveDefault.click() })
+    assert.equal(memoryDirty, false, 'the server reply becomes both the saved and displayed model')
+    assert.equal(picker.textContent, 'M1低')
+    normalizeMemoryThinking = false
+
+    const fallbackPicker = host.querySelectorAll<HTMLButtonElement>('[data-slot="popover-trigger"]')[1]!
+    await act(async () => { fallbackPicker.click() })
+    await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
+    await act(async () => { [...popover().querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Test · test/m1'))!.click() })
+    const fallbackRaise = popover().querySelector<HTMLButtonElement>('[aria-label="提高思考强度"]')!
+    for (let step = 0; step < 2; step++) await act(async () => { fallbackRaise.click() })
+    assert.equal(popover().querySelector('[role="slider"]')?.getAttribute('aria-valuetext'), '中')
+    await act(async () => { [...popover().querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Test · test/m2'))!.click() })
+    assert.equal(popover().querySelector('[role="slider"]')?.getAttribute('aria-valuetext'), '未指定', 'switching models clears unsupported thinking')
+    await act(async () => { fallbackPicker.click() })
+    await flush()
+    await act(async () => { saveDefault.click() })
+    assert.deepEqual(patches.at(-1), { fallbackModel: { provider: 'test', id: 'm2' } }, 'saving a fallback does not resend the main model')
+    assert.equal(memoryDirty, false)
+
+    for (const index of [0, 1]) {
+      const trigger = () => host.querySelectorAll<HTMLButtonElement>('[data-slot="popover-trigger"]')[index]!
+      await act(async () => { trigger().click() })
+      await flush()
+      await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
+      await act(async () => { trigger().click() })
+      await flush()
+    }
+    assert.equal(memoryDirty, true)
+    await act(async () => { saveDefault.click() })
+    assert.deepEqual(patches.at(-1), { model: null, fallbackModel: null })
+    assert.equal(memoryDirty, false)
+    await act(async () => { saveDefault.click() })
+    assert.deepEqual(patches.at(-1), {}, 'unchanged models do not produce a patch')
 
     await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
     await flush()
