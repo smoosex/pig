@@ -6,7 +6,7 @@ Pig manages plugins by `project` / `chat` scopes; [] disables a plugin. Saved sc
 
 Open **Settings → Plugins** to manage extensions or install a local directory, an `npm:package[@version]`, or a `git:URL`. User-installed plugins start disabled. Disable a plugin before uninstalling it. Updating or uninstalling a package while a plugin session is busy is blocked.
 
-Persona and Observational Memory are built-in conversation features, not plugin entries. See [Persona](persona.md) and [Memory](long-term-memory.md); their reload path is independent of the plugin path allowlist.
+Persona and file memory are built-in conversation features, not plugin entries. See [Persona](persona.md) and [Memory](long-term-memory.md); their reload path is independent of the plugin path allowlist.
 
 Ordinary sessions bind extensions in `rpc` mode with Pig's `createExtensionUI` in `src/main/pi/session-registry.ts`. Dialog and approval replies are window-bound; this is not a full terminal TUI compatibility layer. Extension-driven new-session/fork replacement is explicitly refused rather than reporting a fake success.
 

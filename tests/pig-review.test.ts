@@ -66,7 +66,7 @@ function createSession(id: string, branch: unknown[] = [], cwd = '/nonexistent-p
       setReturning: (returning, phase) => { returningStates.push(returning); returningPhases.push(phase) },
       setFeedback: (value) => feedback.push(value)
   }
-  registerSystemUI(id, { send: () => {}, memory: { notify: () => {} }, review: reviewUI })
+  registerSystemUI(id, { send: () => {}, review: reviewUI })
   return { api, ctx, commands, handlers, reviewStates, returningStates, returningPhases, appended, sent, feedback, reviewUI }
 }
 

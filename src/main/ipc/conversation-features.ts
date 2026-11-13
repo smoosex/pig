@@ -2,10 +2,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
-import { getMemoryDefaults, getMemorySettings, setMemorySettings } from '../features/memory-settings'
-import { getLive, sessionCwd, sessionSourceFor } from '../pi/session-registry'
-import { memoryStatus, memoryView } from '../features/memory/details'
-import type { Entry } from '../features/memory/session-ledger'
+import { getMemorySettings, setMemorySettings } from '../features/memory-settings'
 import { applyConversationFeatures } from '../features/apply'
 import type { MemorySettingsPatch } from '../../shared/api'
 import { MemoryFiles, memoryRoot } from '../features/memory/long-term/files'
@@ -46,13 +43,6 @@ export function registerConversationFeaturesIpc(): void {
     const item = scopedFile(path)
     return withFileMutationQueue(item.store.resolve(item.path), async () => { assertUi(event); item.store.delete(item.path, revision) })
   })
-  ipcMain.handle('memory:enabled', (event, sessionId: string) => {
-    assertUi(event)
-    if (typeof sessionId !== 'string') throw new Error('Session id is required')
-    sessionCwd(sessionId)
-    return true
-  })
-  ipcMain.handle('memory:defaults', (event) => { assertUi(event); return getMemoryDefaults() })
   ipcMain.handle('memory:get', (event) => { assertUi(event); return getMemorySettings() })
   ipcMain.handle('memory:set', async (event, patch: MemorySettingsPatch) => {
     assertUi(event)
@@ -60,15 +50,5 @@ export function registerConversationFeaturesIpc(): void {
     if (patch.fileMemory?.enabled === false) await shutdownDream(true)
     await applyConversationFeatures()
     return settings
-  })
-  ipcMain.handle('memory:detail', async (event, sessionId: string, kind: 'status' | 'view', full?: boolean) => {
-    assertUi(event)
-    if (typeof sessionId !== 'string' || !['status', 'view'].includes(kind) || (full !== undefined && typeof full !== 'boolean')) {
-      throw new Error('Invalid memory detail request')
-    }
-    sessionCwd(sessionId)
-    const entries = (await sessionSourceFor(sessionId)).branch() as Entry[]
-    if (kind === 'view') return memoryView(entries, full)
-    return memoryStatus(sessionId, entries, getLive(sessionId)?.agentSession.model?.contextWindow, sessionCwd(sessionId))
   })
 }

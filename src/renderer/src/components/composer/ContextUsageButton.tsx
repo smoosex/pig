@@ -1,9 +1,7 @@
 import { failureMessage } from '../../lib/ipc-error'
 import { useEffect, useRef, useState } from 'react'
-import { Activity, ChevronDown, FoldVertical, LoaderCircle, ScrollText } from 'lucide-react'
+import { ChevronDown, FoldVertical, LoaderCircle } from 'lucide-react'
 import { Button } from '../ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
-import { ScrollArea } from '../ui/scroll-area'
 import { api } from '../../ipc/api'
 import type { SessionContextUsage, SessionTokenStats } from '../../ipc/api'
 import { cn } from '../../lib/utils'
@@ -35,7 +33,6 @@ function StatRow({
 
 export function ContextUsageButton({
   sessionId,
-  memoryAvailable,
   usage,
   tokens,
   error,
@@ -44,7 +41,6 @@ export function ContextUsageButton({
   disabled
 }: {
   sessionId: string | null
-  memoryAvailable: boolean
   usage: SessionContextUsage | null
   tokens: SessionTokenStats | null
   error?: string | null
@@ -55,25 +51,6 @@ export function ContextUsageButton({
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
-  const [detail, setDetail] = useState<'status' | 'view' | null>(null)
-  const [full, setFull] = useState(false)
-  const [text, setText] = useState<string | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
-  useEffect(() => {
-    if (!memoryAvailable) setDetail(null)
-  }, [memoryAvailable])
-  useEffect(() => {
-    if (!detail || !sessionId) return
-    let active = true
-    setText(null)
-    setDetailError(null)
-    void api.getMemoryDetail(sessionId, detail, detail === 'view' && full).then((value) => {
-      if (active) setText(value)
-    }, (failure) => {
-      if (active) setDetailError(failureMessage(failure))
-    })
-    return () => { active = false }
-  }, [detail, full, sessionId])
   // Keyed by session: the toolbar outlives a tab switch, and a late reply must not land on another tab.
   const [compacting, setCompacting] = useState<ReadonlySet<string>>(() => new Set())
   const [compactError, setCompactError] = useState<{ sessionId: string; message: string } | null>(null)
@@ -104,11 +81,6 @@ export function ContextUsageButton({
       return next
     }))
   }
-  const showDetail = (kind: 'status' | 'view') => {
-    setFull(false)
-    setDetail(kind)
-    setOpen(false)
-  }
   const used = usage?.tokens ?? null
   const windowSize = usage?.contextWindow ?? 0
   const percent = usage?.percent ?? null
@@ -126,7 +98,6 @@ export function ContextUsageButton({
   const compactDisabled = !sessionId || busy || blockedKey !== null
 
   return (
-    <>
     <Popover
       open={open}
       onOpenChange={(next) => {
@@ -153,20 +124,6 @@ export function ContextUsageButton({
       <PopoverContent align="end" side="top" className="w-72" onOpenAutoFocus={(event) => event.preventDefault()}>
         <PopoverHeader className="flex-row items-center justify-between">
           <PopoverTitle className="text-xs">{t('context.title')}</PopoverTitle>
-          {memoryAvailable ? <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('context.memoryStatus')} onClick={() => showDetail('status')}><Activity /></Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('context.memoryStatus')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={t('context.memoryView')} onClick={() => showDetail('view')}><ScrollText /></Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('context.memoryView')}</TooltipContent>
-            </Tooltip>
-          </div> : null}
         </PopoverHeader>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
@@ -267,23 +224,6 @@ export function ContextUsageButton({
         </div>
       </PopoverContent>
     </Popover>
-    <Dialog open={detail !== null} onOpenChange={(next) => { if (!next) setDetail(null) }}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
-        <DialogHeader><DialogTitle>{t(detail === 'status' ? 'context.memoryStatus' : 'context.memoryView')}</DialogTitle></DialogHeader>
-        {detail === 'view' ? <div className="flex items-center gap-2">
-          <Button size="sm" variant={full ? 'ghost' : 'secondary'} onClick={() => setFull(false)}>{t('context.memoryVisible')}</Button>
-          <Button size="sm" variant={full ? 'secondary' : 'ghost'} onClick={() => setFull(true)}>{t('context.memoryFull')}</Button>
-        </div> : null}
-        {detailError ? <p role="alert" className="text-sm text-destructive">{t('context.memoryFailed', { error: detailError })}</p> : null}
-        {!text && !detailError ? <p className="text-sm text-muted-foreground">{t('context.memoryLoading')}</p> : null}
-        {text ? <>
-          <ScrollArea className="h-[min(60vh,32rem)] rounded-md border border-glass-card-border bg-glass-composer-background/60 text-glass-prompt-foreground shadow-glass-card-edge transition-[background-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none solid:border-code-border solid:bg-code-background solid:text-code-foreground solid:shadow-none">
-            <pre className="whitespace-pre-wrap break-words p-4 font-mono text-xs">{text}</pre>
-          </ScrollArea>
-        </> : null}
-      </DialogContent>
-    </Dialog>
-    </>
   )
 }
 

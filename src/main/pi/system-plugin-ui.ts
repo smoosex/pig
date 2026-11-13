@@ -42,9 +42,9 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
     if (hasState) send({ kind: 'reset', sessionId })
     hasState = false
   })
-  const notifier = (plugin: 'memory' | 'host'): SystemNotifier => ({
-    notify: (message, level = 'info') => send({ kind: 'notify', sessionId, plugin, message, level })
-  })
+  const notifier: SystemNotifier = {
+    notify: (message, level = 'info') => send({ kind: 'notify', sessionId, plugin: 'host', message, level })
+  }
   const prompt = (step: ReviewStep, options?: ReviewOption[], prefill?: string, error?: string): Promise<string | undefined> => {
     if (win.isDestroyed() || win.webContents.isDestroyed()) return Promise.resolve(undefined)
     const id = randomUUID()
@@ -60,7 +60,6 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
   }
   registerSystemUI(sessionId, {
     send,
-    memory: notifier('memory'),
     review: {
       available: true,
       get returning() { return returning },
@@ -74,7 +73,7 @@ export function attachSystemUI(sessionId: string, win: BrowserWindow): SystemNot
       }
     }
   })
-  return notifier('host')
+  return notifier
 }
 
 export function resetSystemUI(sessionId: string): void {

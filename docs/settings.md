@@ -41,7 +41,6 @@
 ## 模型思考强度偏好
 
 - 模型思考强度偏好复用 Pi `settings.json` 的 `modelThinkingLevels`（按 `provider/modelId`），不另存 Pig 配置。
-- 观测记忆设置直接以 `draft.model`／`draft.fallbackModel` 保存完整模型配置，显示、dirty 和保存共用该对象，不另存 provider／ID／强度字符串；成功保存后以 main 返回值替换草稿。
 - 输入框强度菜单的「记住此模型的强度」开启时保存当前值，关闭时删除该偏好但不改变当前会话；仅已有偏好的模型会跟随后续手动选档更新。
 - 用户切换模型时，live / pending 统一按模型偏好 → 全局默认 → 当前会话强度选择，再用 SDK `clampThinkingLevel` 适配支持档位（如不支持 `xhigh` 时降为 `high`，不能直接降到最低档）；打开历史与 materialization 保留历史/显式会话选择。
 - SDK session 的只读 settings 快照可能较旧，用户切换时以 main 的共享偏好解析结果为准。
@@ -54,7 +53,7 @@
 - 启用范围仍沿用 `reviewScopes`。
 - 模型字段 `provider` / `modelId` 必须同时填写或清空；可选 `thinking` 配置该模型的思考强度。
 - 配置 UI 使用设置页统一的 `ModelThinkingPicker`（上方供应商／模型合并搜索，底部固定按所选模型过滤的思考强度栏，不提供 ID 手填）；「默认」按钮表示模型与思考强度都继承当前会话，选中后锁定列表。
-- 除输入框外，设置里所有选模型的地方（默认模型、Review、观测记忆主/备用模型、子 agent）都用这一个组件，档位来自 `SessionModelInfo.thinkingLevels`，插件与通用默认模型统一保留模型支持的 off/minimal；通用默认未配置或已有档位不支持时仍优先回落到原有可见档位，输入框的会话强度菜单仍使用原有过滤。
+- 除输入框外，设置里所有选模型的地方（默认模型、Review、人格情绪观察员、子 agent）都用这一个组件，档位来自 `SessionModelInfo.thinkingLevels`，插件与通用默认模型统一保留模型支持的 off/minimal；通用默认未配置或已有档位不支持时仍优先回落到原有可见档位，输入框的会话强度菜单仍使用原有过滤。
 - Review 与子 agent 的旧数据若只有思考强度而没有模型，运行时忽略该强度、统一继承会话，子 agent 设置保存时同时清除该旧值。
 - 每次 review 开始时读取并校验，默认继承当前会话模型；仅指定模型缺失、鉴权返回失败或切换返回失败时提示并回退，配置 JSON、校验及非 ENOENT 的 IO 错误必须抛出。
 - Review turn 请求失败时恢复原会话模型并继续一次，不循环重试；最终答复或中止的 `turn_end` 即恢复原模型及思考强度（工具调用中间轮次不恢复），确保排队 follow-up 不借用 review 设置，`agent_end` 仅补充清理提前终止的情况。

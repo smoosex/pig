@@ -3,7 +3,6 @@
 import { clampThinkingLevel, type Context, type Model, type Usage } from '@earendil-works/pi-ai'
 import type { ThinkingLevel } from '../../../shared/api'
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
-import { resolveWorkerStreamSimple, type StreamableModelRegistry } from '../memory/agents/worker-stream'
 import type { MoodObservation } from './types'
 
 export type { MoodObservation } from './types'
@@ -12,7 +11,7 @@ export interface MoodObserverArgs {
   /** Completed text only: no tools, thinking, custom messages, images or mood snapshots. */
   rounds: readonly MoodObserverRound[]
   model: Model<any>
-  modelRegistry: StreamableModelRegistry & Pick<ModelRegistry, 'getApiKeyAndHeaders' | 'find'>
+  modelRegistry: Pick<ModelRegistry, 'streamSimple' | 'getApiKeyAndHeaders' | 'find'>
   provider?: string
   modelId?: string
   /** Only honoured with an explicit model; otherwise no reasoning option is sent. */
@@ -135,7 +134,7 @@ async function requestObservation(args: MoodObserverArgs, context: Context, mete
   const thinking = observerThinking(args, model)
   const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model
   meter.sent = true
-  const stream = resolveWorkerStreamSimple(requestModel, args.modelRegistry)(requestModel, context, {
+  const stream = args.modelRegistry.streamSimple(requestModel, context, {
     apiKey: auth.apiKey, headers: auth.headers, env: auth.env,
     signal: args.signal, maxTokens: outputTokens(args, model), cacheRetention: 'short',
     ...(thinking === 'off' ? {} : { reasoning: thinking }),

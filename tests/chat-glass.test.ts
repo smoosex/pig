@@ -19,7 +19,6 @@ async function fixture(scenario: string): Promise<void> {
     onNotificationClick: () => noop,
     setVisibleNotificationSessions: async () => {},
     getCommands: async () => [],
-    isMemoryEnabled: async () => false,
     listSubagents: async () => [],
     onSubagentsChanged: () => noop,
     processes: { list: async () => [], onChanged: () => () => {} },

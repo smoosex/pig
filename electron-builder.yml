@@ -58,8 +58,6 @@ extraResources:
     to: system-plugins/pig-settings
     filter:
       - '**/*.ts'
-  - from: src/main/features/memory/LICENSE
-    to: licenses/observational-memory-LICENSE
   - from: src/main/plugins/pig-review
     to: system-plugins/pig-review
     filter:

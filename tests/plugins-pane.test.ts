@@ -1,6 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import type { MemorySettings, MemorySettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
+import type { MemorySettingsPatch, PluginInfo, PluginScope } from '../src/shared/api'
 import { reviewSettingsSchema } from '../src/main/plugins/pig-review/settings'
 import { PERSONA_FILES, type PersonaSnapshot } from '../src/shared/persona'
 import { runSelf } from './helpers/subprocess.ts'
@@ -15,7 +15,6 @@ async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  const patches: MemorySettingsPatch[] = []
   const scopeChanges: { id: string; scopes: PluginScope[] }[] = []
   let reviewConfig: Record<string, string | number | boolean> = {}
   const reviewPatches: Record<string, string | number | boolean | null>[] = []
@@ -28,10 +27,7 @@ async function fixture(): Promise<void> {
     { id: 'pig-review', kind: 'system', name: 'Review', source: 'Pig built-in', scopes: ['project'], available: true, settings: reviewSettingsSchema },
     { id: 'missing', kind: 'local', name: 'Missing plugin', source: '/missing', scopes: ['project', 'chat'], available: false }
   ]
-  let memoryConfig: MemorySettings = { observeAfterTokens: 800, compactionCatchUpMaxChunks: 3, consolidateWhenIdle: false }
-  let memoryDirty = false
-  let memorySaveFails = false
-  let normalizeMemoryThinking = false
+  let fileMemoryEnabled = true
   const persona: PersonaSnapshot = {
     active: false,
     files: PERSONA_FILES.map((name) => ({ name, content: '', revision: null })),
@@ -70,14 +66,10 @@ async function fixture(): Promise<void> {
       reviewConfig = Object.fromEntries(Object.entries({ ...reviewConfig, ...patch }).filter(([, value]) => value !== null)) as typeof reviewConfig
       return reviewConfig
     },
-    getMemoryDefaults: async () => ({ observeAfterTokens: 10000, compactionCatchUpMaxChunks: 2 }),
-    getMemorySettings: async () => memoryConfig,
+    getMemorySettings: async () => ({ fileMemory: { enabled: fileMemoryEnabled } }),
     setMemorySettings: async (patch: MemorySettingsPatch) => {
-      patches.push(patch)
-      if (memorySaveFails) throw new Error('Memory save failed')
-      memoryConfig = Object.fromEntries(Object.entries({ ...memoryConfig, ...patch }).filter(([, value]) => value !== null)) as MemorySettings
-      if (normalizeMemoryThinking && memoryConfig.model) memoryConfig.model = { ...memoryConfig.model, thinking: 'low' }
-      return memoryConfig
+      fileMemoryEnabled = patch.fileMemory?.enabled ?? true
+      return { fileMemory: { enabled: fileMemoryEnabled } }
     }
   } })
   const { act, createElement: h } = await import('react')
@@ -90,7 +82,6 @@ async function fixture(): Promise<void> {
     { id: 'm2', name: 'M2', provider: 'test', providerName: 'Test', contextWindow: 100000, reasoning: true, thinkingLevels: ['off', 'low'] }
   ] })
   const { PluginsPane } = await import('../src/renderer/src/components/settings/PluginsPane')
-  const { MemorySettings } = await import('../src/renderer/src/components/settings/MemorySettings')
   const { PersonaMemoryPane } = await import('../src/renderer/src/components/settings/PersonaMemoryPane')
   const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
   const host = document.createElement('div')
@@ -100,7 +91,6 @@ async function fixture(): Promise<void> {
   try {
     await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
     await flush()
-    assert.equal(document.querySelector('[aria-label="观察阈值（token）"]'), null, 'settings are hidden until configured')
     const group = document.querySelector<HTMLElement>('[aria-label="Example 启用范围"]')
     assert.ok(group)
     assert.equal(group.parentElement?.lastElementChild, group)
@@ -195,122 +185,8 @@ async function fixture(): Promise<void> {
     await act(async () => { missingAll.click() })
     assert.equal(missingAll.disabled, true)
     assert.deepEqual(scopeChanges.at(-1), { id: 'missing', scopes: [] })
-    await act(async () => { root.render(h(TooltipProvider, null, h(MemorySettings, { onDirtyChange: value => { memoryDirty = value } }))) })
-    await flush()
-    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
-    const input = document.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')
-    assert.ok(input)
-    assert.equal(input.value, '800')
-    assert.equal(input.placeholder, '10000')
-    const chunk = document.querySelector<HTMLInputElement>('[aria-label="观察片段上限（token）"]')
-    assert.ok(chunk)
-    assert.equal(chunk.value, '')
-    assert.equal(chunk.placeholder, '自动')
-    assert.ok(document.body.textContent?.includes('上次观察后新增 token 达此数量时触发一次观察'))
-    const workerSwitch = document.querySelector('[aria-label="记忆任务通知"]')
-    assert.ok(workerSwitch)
-    assert.equal(workerSwitch.parentElement?.childElementCount, 1)
-    const catchUp = document.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')
-    assert.ok(catchUp)
-    assert.equal(catchUp.value, '3')
-    assert.equal(catchUp.min, '0')
-    assert.equal(catchUp.placeholder, '2')
-    const idleSwitch = document.querySelector<HTMLButtonElement>('[aria-label="仅在空闲时运行"]')
-    assert.ok(idleSwitch)
-    assert.equal(idleSwitch.getAttribute('aria-checked'), 'false')
-    await act(async () => {
-      setValue.call(input, '900'); input.dispatchEvent(new Event('input', { bubbles: true }))
-      setValue.call(catchUp, '0'); catchUp.dispatchEvent(new Event('input', { bubbles: true }))
-      idleSwitch.click()
-    })
-    assert.equal(idleSwitch.getAttribute('aria-checked'), 'true')
-    const buttons = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].filter((button) => button.textContent === label)
-    const picker = buttons('默认')[0]
-    assert.ok(picker, 'an unset memory model shows the default choice')
-    await act(async () => { picker.click() })
-    await flush()
+    const buttons = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].filter(button => button.textContent === label)
     const popover = () => document.querySelector<HTMLElement>('[data-slot="popover-content"]')!
-    const lockedOption = [...popover().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('M1'))!
-    assert.equal(lockedOption.disabled, true, 'the default choice locks the model list')
-    const defaultToggle = popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!
-    assert.equal(defaultToggle.getAttribute('aria-checked'), 'true')
-    await act(async () => { defaultToggle.click() })
-    const option = [...popover().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('M1'))!
-    assert.equal(option.disabled, false, 'turning the default off unlocks the list')
-    await act(async () => { option.click() })
-    await flush()
-    assert.ok(picker.textContent?.includes('M1'))
-    assert.ok(popover(), 'choosing a model keeps the menu open for the thinking level')
-    const slider = popover().querySelector<HTMLElement>('[role="slider"]')!
-    assert.equal(slider.getAttribute('aria-valuemax'), '2', 'levels follow the model')
-    assert.equal(slider.getAttribute('aria-valuetext'), '未指定')
-    const save = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')
-    assert.ok(save)
-    await act(async () => { save.click() })
-    await flush()
-    assert.deepEqual(patches, [{ observeAfterTokens: 900, compactionCatchUpMaxChunks: 0, consolidateWhenIdle: true, model: { provider: 'test', id: 'm1' } }])
-    assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
-    await act(async () => { picker.click() })
-    await flush()
-    const savedCatchUp = document.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')
-    assert.ok(savedCatchUp)
-    assert.equal(savedCatchUp.value, '0', 'zero is an explicit saved value, not the default')
-    assert.equal(document.querySelector('[aria-label="仅在空闲时运行"]')?.getAttribute('aria-checked'), 'true')
-    await act(async () => { setValue.call(savedCatchUp, ''); savedCatchUp.dispatchEvent(new Event('input', { bubbles: true })) })
-    const saveDefault = [...document.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '保存设置')
-    assert.ok(saveDefault)
-    await act(async () => { saveDefault.click() })
-    await flush()
-    assert.deepEqual(patches[1], { compactionCatchUpMaxChunks: null })
-    assert.equal(memoryDirty, false)
-
-    await act(async () => { picker.click() })
-    const memoryRaise = popover().querySelector<HTMLButtonElement>('[aria-label="提高思考强度"]')!
-    for (let step = 0; step < 3; step++) await act(async () => { memoryRaise.click() })
-    await act(async () => { picker.click() })
-    assert.equal(memoryDirty, true)
-    memorySaveFails = true
-    await act(async () => { saveDefault.click() })
-    assert.match(host.querySelector('[role="alert"]')?.textContent ?? '', /Memory save failed/)
-    assert.equal(memoryDirty, true, 'a failed save retains the model draft')
-    assert.ok(picker.textContent?.includes('高'))
-    memorySaveFails = false
-    normalizeMemoryThinking = true
-    await act(async () => { saveDefault.click() })
-    assert.equal(memoryDirty, false, 'the server reply becomes both the saved and displayed model')
-    assert.equal(picker.textContent, 'M1低')
-    normalizeMemoryThinking = false
-
-    const fallbackPicker = host.querySelectorAll<HTMLButtonElement>('[data-slot="popover-trigger"]')[1]!
-    await act(async () => { fallbackPicker.click() })
-    await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
-    await act(async () => { [...popover().querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Test · test/m1'))!.click() })
-    const fallbackRaise = popover().querySelector<HTMLButtonElement>('[aria-label="提高思考强度"]')!
-    for (let step = 0; step < 2; step++) await act(async () => { fallbackRaise.click() })
-    assert.equal(popover().querySelector('[role="slider"]')?.getAttribute('aria-valuetext'), '中')
-    await act(async () => { [...popover().querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Test · test/m2'))!.click() })
-    assert.equal(popover().querySelector('[role="slider"]')?.getAttribute('aria-valuetext'), '未指定', 'switching models clears unsupported thinking')
-    await act(async () => { fallbackPicker.click() })
-    await flush()
-    await act(async () => { saveDefault.click() })
-    assert.deepEqual(patches.at(-1), { fallbackModel: { provider: 'test', id: 'm2' } }, 'saving a fallback does not resend the main model')
-    assert.equal(memoryDirty, false)
-
-    for (const index of [0, 1]) {
-      const trigger = () => host.querySelectorAll<HTMLButtonElement>('[data-slot="popover-trigger"]')[index]!
-      await act(async () => { trigger().click() })
-      await flush()
-      await act(async () => { popover().querySelector<HTMLButtonElement>('[role="switch"][aria-label="默认"]')!.click() })
-      await act(async () => { trigger().click() })
-      await flush()
-    }
-    assert.equal(memoryDirty, true)
-    await act(async () => { saveDefault.click() })
-    assert.deepEqual(patches.at(-1), { model: null, fallbackModel: null })
-    assert.equal(memoryDirty, false)
-    await act(async () => { saveDefault.click() })
-    assert.deepEqual(patches.at(-1), {}, 'unchanged models do not produce a patch')
-
     await act(async () => { root.render(h(TooltipProvider, null, h(PluginsPane))) })
     await flush()
     const openReview = document.querySelector<HTMLButtonElement>('[aria-label="配置 Review"]')!
@@ -378,23 +254,18 @@ async function fixture(): Promise<void> {
     await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '取消')!.click() })
     await flush()
     assert.equal(document.querySelector('[role="dialog"]'), null)
-    await switchFeature('会话记忆')
-    assert.ok(configure.closest('[hidden]'), 'persona actions are hidden on the memory tab')
-    const threshold = host.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')!
-    await act(async () => {
-      setValue.call(threshold, '950')
-      threshold.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    assert.equal(dirty, true)
+    assert.deepEqual(featureTabs().map(button => button.textContent), ['人格', '长期记忆'])
+    await switchFeature('长期记忆')
+    assert.ok(configure.closest('[hidden]'), 'persona actions are hidden on the file-memory tab')
+    const fileMemory = host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="文件记忆"]')!
+    assert.ok(fileMemory)
+    await act(async () => { fileMemory.click() })
+    await flush()
+    assert.equal(fileMemoryEnabled, false, 'file-memory settings remain independently writable')
+    assert.equal(dirty, false)
     await switchFeature('人格')
-    assert.equal(dirty, true, 'switching feature tabs preserves memory settings drafts')
     assert.equal(configure.closest('[hidden]'), null)
-    await switchFeature('会话记忆')
-    assert.equal(threshold.value, '950')
     assert.equal(document.querySelector('[aria-label="人格 默认启用范围"]'), null)
-    assert.equal(document.querySelector('[aria-label="记忆 默认启用范围"]'), null)
-    assert.equal(host.textContent?.includes('人格与表达状态由所有会话共用'), false)
-    assert.equal(host.textContent?.includes('观测记忆从会话上下文提炼信息'), false)
     const mood = document.getElementById('persona-pleasantness')!
     assert.ok(configure.compareDocumentPosition(mood) & Node.DOCUMENT_POSITION_FOLLOWING, 'file buttons are in the header above the mood card')
   } finally {

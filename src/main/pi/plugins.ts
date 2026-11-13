@@ -32,8 +32,6 @@ interface Registry {
   processScopes: PluginScope[]
   settingsScopes: PluginScope[]
   sessionScopes: PluginScope[]
-  /** Preserved for compatibility only; persona and memory no longer use enablement scopes. */
-  legacyFeatures: Record<string, unknown>
   installed: InstalledPlugin[]
 }
 
@@ -75,7 +73,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], legacyFeatures: {}, installed: [] }
+  const defaults: Registry = { reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -111,15 +109,13 @@ async function readRegistry(): Promise<Registry> {
     processScopes: 'processScopes' in value ? parseScopes(value.processScopes) : defaults.processScopes,
     settingsScopes: 'settingsScopes' in value ? parseScopes(value.settingsScopes) : defaults.settingsScopes,
     sessionScopes: 'sessionScopes' in value ? parseScopes(value.sessionScopes) : defaults.sessionScopes,
-    legacyFeatures: Object.fromEntries(['memoryScopes', 'memoryEnabled', 'personaScopes'].filter(key => key in value).map(key => [key, (value as Record<string, unknown>)[key]])),
     installed
   }
 }
 
 async function saveRegistry(value: Registry): Promise<void> {
   await mkdir(pigPath(), { recursive: true })
-  const { legacyFeatures, ...plugins } = value
-  await writeFileAtomic(registryPath(), `${JSON.stringify({ version: 2, ...legacyFeatures, ...plugins }, null, 2)}\n`)
+  await writeFileAtomic(registryPath(), `${JSON.stringify({ version: 2, ...value }, null, 2)}\n`)
 }
 
 function packageManager(source: string): DefaultPackageManager {

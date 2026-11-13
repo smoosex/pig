@@ -26,7 +26,7 @@ async function fixture(): Promise<void> {
   document.body.appendChild(host)
   const root = createRoot(host)
   const usage: SessionContextUsage = { tokens: 250_000, contextWindow: 1_000_000, autoCompactAt: 983_616, percent: 25 }
-  const props = { sessionId: 's1', memoryAvailable: false, usage, tokens: null, onOpen: () => {}, compactBlock: null as 'running' | 'navigating' | 'compacting' | null }
+  const props = { sessionId: 's1', usage, tokens: null, onOpen: () => {}, compactBlock: null as 'running' | 'navigating' | 'compacting' | null }
   const render = async (patch: Partial<typeof props> = {}) => {
     await act(async () => { root.render(h(TooltipProvider, null, h(ContextUsageButton, { ...props, ...patch }))) })
   }

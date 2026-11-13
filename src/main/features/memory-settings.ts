@@ -1,7 +1,8 @@
-/** Configuration of built-in observational memory; preserves the existing data directory. */
+/** File-memory enablement, independent of session compaction and auxiliary models. */
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { readSettingsObject, saveNamespacedSettings } from '../settings/json-file'
 import type { MemorySettings, MemorySettingsPatch } from '../../shared/api'
-import { DEFAULTS } from './memory/config'
 import { memorySettingsPath } from './memory/paths'
 import { validateLongTermSettings } from './memory/long-term/settings'
 
@@ -12,81 +13,43 @@ function serialize<T>(action: () => Promise<T>): Promise<T> {
   return result
 }
 
-const integerKeys = [
-  'observeAfterTokens', 'reflectAfterTokens', 'observerChunkMaxTokens', 'compactAfterTokens',
-  'compactionMaxRetainedTokens', 'compactionSummaryMaxTokens', 'workerMemoryMaxTokens',
-  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens'
-] as const
-// 0 is meaningful here: it disables the synchronous observer catch-up.
-const nonNegativeIntegerKeys = ['compactionCatchUpMaxChunks'] as const
-const booleanKeys = [
-  'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog', 'consolidateWhenIdle'
-] as const
-
-const memoryDefaultKeys = [
-  'observeAfterTokens', 'reflectAfterTokens', 'compactAfterTokens', 'compactAfterTokensRatio',
-  'observationsPoolMaxTokens', 'observationsPoolTargetTokens', 'agentMaxTurns', 'agentMaxTokens',
-  'compactionCatchUpMaxChunks'
-] as const
-
-export async function getMemoryDefaults(): Promise<Record<string, number>> {
-  await mutation
-  return Object.fromEntries(memoryDefaultKeys.map((key) => [key, DEFAULTS[key] as number]))
+function validate(value: unknown): asserts value is MemorySettings {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid memory settings')
+  if (Object.keys(value).some(key => key !== 'fileMemory')) throw new Error('Unknown memory setting')
+  if ('fileMemory' in value && value.fileMemory !== undefined) validateLongTermSettings(value.fileMemory)
 }
 
-export async function getMemorySettings(): Promise<MemorySettings> {
-  await mutation
-  const value = (await readSettingsObject(memorySettingsPath()))['observational-memory']
-  if (value === undefined) return {}
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid observational-memory namespace')
-  if ('fileMemory' in value) validateLongTermSettings((value as MemorySettings).fileMemory)
-  return value as MemorySettings
+async function read(): Promise<MemorySettings> {
+  const path = memorySettingsPath()
+  let value: unknown
+  try { value = JSON.parse(await readFile(path, 'utf8')) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    // Carry over only file-memory enablement once; never load the retired worker settings.
+    const old = (await readSettingsObject(join(dirname(path), 'plugins', 'observational-memory', 'settings.json')))['observational-memory']
+    if (old !== undefined && (!old || typeof old !== 'object' || Array.isArray(old))) throw new Error('Invalid previous memory settings')
+    const fileMemory = (old as MemorySettings | undefined)?.fileMemory
+    value = fileMemory === undefined ? {} : { fileMemory }
+    validate(value)
+    await saveNamespacedSettings(path, { ...value })
+  }
+  validate(value)
+  return value
+}
+
+export function getMemorySettings(): Promise<MemorySettings> {
+  return serialize(read)
 }
 
 export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySettings> {
   return serialize(async () => {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
-    const allowed = new Set<string>([
-      ...integerKeys, ...nonNegativeIntegerKeys, ...booleanKeys,
-      'model', 'fallbackModel', 'compactAfterTokensMode', 'compactAfterTokensRatio', 'fileMemory'
-    ])
-    for (const [key, value] of Object.entries(patch)) {
-      if (!allowed.has(key)) throw new Error(`Unknown memory setting: ${key}`)
-      if (value === undefined || value === null) continue
-      if (key === 'fileMemory') validateLongTermSettings(value)
-      const nonNegative = (nonNegativeIntegerKeys as readonly string[]).includes(key)
-      const integer = (integerKeys as readonly string[]).includes(key) || nonNegative
-      if (integer && (!Number.isSafeInteger(value) || (value as number) < (nonNegative ? 0 : 1))) {
-        throw new Error(nonNegative ? `Invalid non-negative integer: ${key}` : `Invalid positive integer: ${key}`)
-      }
-      if ((booleanKeys as readonly string[]).includes(key) && typeof value !== 'boolean') throw new Error(`Invalid boolean: ${key}`)
-      if (key === 'compactAfterTokensMode' && value !== 'calibrated' && value !== 'ratio') throw new Error('Invalid compaction mode')
-      if (key === 'compactAfterTokensRatio' && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value >= 1)) throw new Error('Ratio must be between 0 and 1')
-      if (key === 'model' || key === 'fallbackModel') {
-        const model = value as Record<string, unknown>
-        if (!model || typeof model !== 'object' || Array.isArray(model)
-          || Object.keys(model).some(key => !['provider', 'id', 'thinking'].includes(key))
-          || typeof model.provider !== 'string' || !model.provider.trim()
-          || typeof model.id !== 'string' || !model.id.trim()
-          || (model.thinking !== undefined && !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(model.thinking as string))) throw new Error('Invalid memory model')
-      }
-    }
-    const path = memorySettingsPath()
-    const settings = await readSettingsObject(path)
-    const previous = settings['observational-memory']
-    if (previous !== undefined && (!previous || typeof previous !== 'object' || Array.isArray(previous))) {
-      throw new Error('Invalid observational-memory namespace')
-    }
-    const next = { ...(previous as Record<string, unknown> | undefined) }
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null) delete next[key]
-      else if (value !== undefined) next[key] = value
-    }
-    if (typeof next.observationsPoolTargetTokens === 'number' && typeof next.observationsPoolMaxTokens === 'number' && next.observationsPoolTargetTokens >= next.observationsPoolMaxTokens) {
-      throw new Error('Observation pool target must be smaller than its maximum')
-    }
-    settings['observational-memory'] = next
-    await saveNamespacedSettings(path, settings)
+    if (Object.keys(patch).some(key => key !== 'fileMemory')) throw new Error('Unknown memory setting')
+    if (patch.fileMemory != null) validateLongTermSettings(patch.fileMemory)
+    const next = await read()
+    if (patch.fileMemory === null) delete next.fileMemory
+    else if (patch.fileMemory !== undefined) next.fileMemory = patch.fileMemory
+    await saveNamespacedSettings(memorySettingsPath(), { ...next })
     return next
   })
 }

@@ -1,8 +1,4 @@
-import { failureMessage } from '../../lib/ipc-error'
-import { useEffect, useState } from 'react'
 import { ArrowUp, SquareTerminal } from 'lucide-react'
-import { toast } from 'sonner'
-import { api } from '../../ipc/api'
 import type { ThinkingLevel } from '../../ipc/api'
 import { useSettingsStore } from '../../stores/settings'
 import { useModelCatalogStore } from '../../stores/model-catalog'
@@ -21,7 +17,6 @@ import { useModelControls } from './useModelControls'
 
 const EMPTY_LEVELS: ThinkingLevel[] = ['off']
 function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
-  const t = useT()
   const ready = useSessionsStore((s) => {
     if (!sessionId) return false
     const tab = s.openTabs.find((item) => item.id === sessionId)
@@ -29,22 +24,6 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
     // Project draft ids precede registration; their first controls reply proves main holds them.
     return s.chatDraft?.sessionId === sessionId || (s.runtime[sessionId]?.controlsRevision ?? 0) > 0
   })
-  const [memorySessionId, setMemorySessionId] = useState<string | null>(null)
-  useEffect(() => {
-    let active = true
-    if (!sessionId || !ready) return
-    const load = () => { void api.isMemoryEnabled(sessionId).then((enabled) => {
-      if (active) setMemorySessionId(enabled ? sessionId : null)
-    }, (failure) => {
-      // Report IPC/config failures at this read-only UI boundary, not as a disabled plugin.
-      if (active) toast.error(t('context.memoryFailed', {
-        error: failureMessage(failure)
-      }))
-    }) }
-    load()
-    const off = api.conversationFeatures.onChanged(load)
-    return () => { active = false; off() }
-  }, [sessionId, ready, t])
   const usage = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.contextUsage ?? null) : null)
   const tokens = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokens ?? null) : null)
   const tokensError = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.tokensError ?? null) : null)
@@ -60,7 +39,6 @@ function SessionContextUsage({ sessionId }: { sessionId: string | null }) {
   return (
     <ContextUsageButton
       sessionId={sessionId}
-      memoryAvailable={ready && memorySessionId === sessionId}
       usage={usage}
       tokens={tokens}
       error={tokensError}

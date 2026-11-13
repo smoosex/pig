@@ -7,7 +7,7 @@ export function conversationFeatureFactories(): InlineExtension[] {
       const { default: persona } = await import('./persona')
       persona(pi)
     } },
-    { name: 'observational-memory', factory: async pi => {
+    { name: 'pig-memory', factory: async pi => {
       const { default: memory } = await import('./memory')
       await memory(pi)
     } },

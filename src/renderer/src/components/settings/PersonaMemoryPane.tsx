@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useT } from '../../hooks/useT'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { PersonaSettings } from './PersonaSettings'
-import { MemorySettings } from './MemorySettings'
 import { LongTermMemorySettings } from './LongTermMemorySettings'
 
 export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
@@ -14,29 +13,23 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
   const [tab, setTab] = useState('persona')
   const [actionsContainer, setActionsContainer] = useState<HTMLDivElement | null>(null)
   const [personaDirty, setPersonaDirty] = useState(false)
-  const [memoryDirty, setMemoryDirty] = useState(false)
   const [personaBusy, setPersonaBusy] = useState(false)
-  const [memoryBusy, setMemoryBusy] = useState(false)
   const [longTermBusy, setLongTermBusy] = useState(false)
   const [longTermDirty, setLongTermDirty] = useState(false)
 
-  useEffect(() => { onDirtyChange?.(personaDirty || memoryDirty || longTermDirty) }, [personaDirty, memoryDirty, longTermDirty, onDirtyChange])
-  useEffect(() => { onBusyChange?.(personaBusy || memoryBusy || longTermBusy) }, [personaBusy, memoryBusy, longTermBusy, onBusyChange])
+  useEffect(() => { onDirtyChange?.(personaDirty || longTermDirty) }, [personaDirty, longTermDirty, onDirtyChange])
+  useEffect(() => { onBusyChange?.(personaBusy || longTermBusy) }, [personaBusy, longTermBusy, onBusyChange])
 
   return <Tabs value={tab} onValueChange={setTab} className="gap-6">
     <div className="flex items-center justify-between gap-4">
       <TabsList>
         <TabsTrigger value="persona">{t('features.persona')}</TabsTrigger>
-        <TabsTrigger value="memory">{t('longTerm.observational')}</TabsTrigger>
         <TabsTrigger value="long-term">{t('longTerm.title')}</TabsTrigger>
       </TabsList>
       <div ref={setActionsContainer} hidden={tab !== 'persona'} className="flex items-center gap-2" />
     </div>
     <TabsContent value="persona" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
       <PersonaSettings actionsContainer={actionsContainer} onDirtyChange={setPersonaDirty} onBusyChange={setPersonaBusy} />
-    </TabsContent>
-    <TabsContent value="memory" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
-      <MemorySettings onDirtyChange={setMemoryDirty} onBusyChange={setMemoryBusy} />
     </TabsContent>
     <TabsContent value="long-term" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
       <LongTermMemorySettings onBusyChange={setLongTermBusy} onDirtyChange={setLongTermDirty} />

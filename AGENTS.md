@@ -22,7 +22,7 @@ bun run build
 | `src/main/` | 窗口、IPC、Pi runtime、权限及持久化 |
 | `src/preload/` | contextBridge 白名单，隔离 renderer 与 main |
 | `src/renderer/src/` | React UI、Zustand stores、消息投影与主题 |
-| `src/main/features/` | 内置人格、观测记忆和文件记忆，不是可停用插件 |
+| `src/main/features/` | 内置人格和文件记忆，不是可停用插件 |
 | `src/main/plugins/` | 内置工具注册与 host bridge |
 
 - Pi 会话运行在 main，普通会话构造复用 `createSessionRuntime`；辅助 runtime／子 agent 的资源排除必须显式保留。
@@ -73,7 +73,7 @@ bun run build
 | Skills 发现、导入、更新与引用 | [Skills](docs/skills.md) |
 | 设置服务、模型强度、Review 模型及恢复 | [应用设置](docs/settings.md) |
 | 人格前缀、心情、情绪观察员与用量 | [人格](docs/persona.md) |
-| OM、文件记忆、Dream、修复及回执 | [记忆](docs/long-term-memory.md) |
+| 文件记忆、Dream、修复及回执 | [记忆](docs/long-term-memory.md) |
 | 子任务生命周期、审批和结果投递 | [子 agent](docs/subagents.md) |
 | 原生网页、DevTools、浏览器工具、网络、Cookie、历史 | [浏览器](docs/browser.md) |
 | PTY、终端输入、输出历史、终端工具 | [终端](docs/terminal.md) |

@@ -27,7 +27,7 @@ export async function createSessionRuntime(
   appendSystemPrompt?: string[],
   options: Pick<NonNullable<Parameters<typeof createChatResourceLoader>[2]>, 'onSkillBase'> & {
     toolPreferences?: Parameters<typeof sessionToolFactory>[2]
-    /** Subagents exclude human-conversation identity, persona and observational memory. */
+    /** Subagents exclude human-conversation identity, persona and file memory. */
     identity?: boolean
     /** Subagents share the parent's grants, but may never exceed their launch mode. */
     permissions?: { sessionId: string; mode: PermissionMode; approvalUI?: Pick<ExtensionUIContext, 'select'>; signal?: AbortSignal }

@@ -1,10 +1,10 @@
 # 人格、表达状态与观察员
 
-修改 `src/main/features/persona/`、preamble、心情设置或观察员前阅读。OM 与文件记忆见 [记忆](long-term-memory.md)。
+修改 `src/main/features/persona/`、preamble、心情设置或观察员前阅读。文件记忆见 [记忆](long-term-memory.md)。
 
 ## 会话接入与文件
 
-- 人格和观测记忆是 `src/main/features/` 内置功能，不走插件注册表或插件路径白名单。项目和 Chat 均接入，子 agent 的 `identity:false` 同时排除两者；没有会话类型开关。这不取消文件记忆自身的开关。
+- 人格和文件记忆是 `src/main/features/` 内置功能，不走插件注册表或插件路径白名单。项目和 Chat 均接入，子 agent 的 `identity:false` 同时排除两者；没有会话类型开关。这不取消文件记忆自身的开关。
 - `createSessionRuntime` 用 SDK inline factories 加载；配置变化复用空闲资源 reload，运行中等任务结束。旧 `conversation-features.json`、`personaScopes`、`memoryScopes`、`memoryEnabled` 不读取、不迁移、不删除数据。
 - 仅使用 `$PIG_DIR/persona/{SOUL.md,USER.md,mood-state.json}`，目录 0700、文件 0600，路径延迟解析；不读写 CLI 人格文件、不读取 IDENTIFY.md，也无本机 Pi 导入入口。
 - `src/shared/persona.ts` 是 IPC 唯一契约，只接受所属 UI 主 frame；记忆设置另走 `memory:*` IPC 和 `conversation-features:changed`。

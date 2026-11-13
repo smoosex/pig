@@ -41,14 +41,11 @@ async function fixture(): Promise<void> {
     for (const channel of handlers.keys()) {
       await assert.rejects(Promise.resolve().then(() => handlers.get(channel)!({ sender: webContents, senderFrame: {} })), /owning UI main frame/)
     }
-    for (const sessionId of ['project', 'chat']) {
-      assert.equal(await invoke('memory:enabled', sessionId), true)
-      assert.match(await invoke('memory:detail', sessionId, 'view') as string, /No visible observations/)
-    }
-    await invoke('memory:set', { observeAfterTokens: 900 })
-    assert.equal(refreshes, 1, 'memory settings still reload idle sessions')
+    for (const removed of ['memory:enabled', 'memory:detail', 'memory:defaults']) assert.equal(handlers.has(removed), false)
+    await assert.rejects(invoke('memory:set', { observeAfterTokens: 900 }), /Unknown memory setting/)
+    assert.equal(refreshes, 0)
     await invoke('memory:set', { fileMemory: { enabled: true } })
-    assert.equal(refreshes, 2)
+    assert.equal(refreshes, 1, 'file-memory settings still reload idle sessions')
     assert.deepEqual((await invoke('memory:get') as { fileMemory: unknown }).fileMemory, { enabled: true })
     await assert.rejects(invoke('memory:set', { longTerm: { enabled: true } }), /Unknown memory setting/)
     await assert.rejects(invoke('memory:set', { fileMemory: { enabled: true, model: {} } }), /Invalid/)
@@ -89,8 +86,6 @@ async function fixture(): Promise<void> {
     assert.equal(named(plainProject).projectName, 'plain-project', 'non-Git memory uses its real cwd')
     assert.equal(named(gitProject).projectName, undefined, 'a matching name cannot override a different project identity')
     assert.equal(named(missingProject).projectName, undefined, 'missing projects retain their ID without a guessed name')
-    await assert.rejects(invoke('memory:enabled'), /Session id is required/)
-    await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {
     if (previousPig === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previousPig
@@ -99,7 +94,7 @@ async function fixture(): Promise<void> {
 }
 
 if (process.argv.includes('--fixture')) await fixture()
-else test('built-in memory IPC is enabled in project and chat sessions and only accepts the owning UI', async () => {
+else test('file-memory IPC retains scoped editing and accepts only the owning UI', async () => {
   const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
   assert.equal(code, 0, stderr || stdout)
 }, 12_000)

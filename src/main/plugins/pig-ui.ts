@@ -16,7 +16,6 @@ export interface ReviewUI {
 }
 export interface SystemUIHost {
   review: ReviewUI
-  memory: SystemNotifier
   send(event: SystemUIEvent): void
 }
 
@@ -45,9 +44,4 @@ export function reviewUI(ctx: SessionIdentity): ReviewUI {
     setActive: (active) => hosts.get(sessionId)?.review.setActive(active),
     setReturning: (returning, phase) => hosts.get(sessionId)?.review.setReturning(returning, phase)
   }
-}
-
-export function memoryUI(ctx: SessionIdentity): SystemNotifier {
-  const sessionId = ctx.sessionManager.getSessionId()
-  return { notify: (message, level) => hosts.get(sessionId)?.memory.notify(message, level) }
 }

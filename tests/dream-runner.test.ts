@@ -64,7 +64,7 @@ if (process.argv.includes('--dream-runner-fixture')) {
     assert.equal(statSync(root).mode & 0o777, 0o700)
     assert.equal(new MemoryFiles(join(root, 'staged', 'global'), join(root, 'staged')).read('MEMORY.md').content, 'Useful clue')
     const expected = ['dream_history_read', 'dream_history_search', 'dream_turn_tools', 'memory_add', 'memory_delete', 'memory_edit', 'memory_read'].sort()
-    for (const names of toolNames) assert.deepEqual(names.sort(), expected, 'no shell, MCP, discovery, plugins, persona, OM or unrelated tools')
+    for (const names of toolNames) assert.deepEqual(names.sort(), expected, 'no shell, MCP, discovery, plugins, persona or unrelated tools')
     assert.equal(requests, 2)
     requests = 0
     await assert.rejects(runDreamWorker(options()), /DREAM_TOOL/, 'failed writes must not become a successful no-op')
