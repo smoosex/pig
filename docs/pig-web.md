@@ -43,7 +43,7 @@ Fetch 默认跟随选定的搜索供应商，复用同一个 Key，不需要独�
 | Brave | `braveApiKey` / `BRAVE_API_KEY` | `https://api.search.brave.com/res/v1/web` |
 | Tavily | `tavilyApiKey` / `TAVILY_API_KEY` | `https://api.tavily.com` |
 
-DeepSeek 使用直接工具 API，而非 Anthropic Messages 代理；每条搜索查询最多 128 个 Unicode 字符。
+DeepSeek 使用直接工具 API `/v1/tools/search` 与 `/v1/tools/fetch`，而非 Anthropic Messages 代理；每条搜索查询最多 128 个 Unicode 字符。
 
 「测试搜索」先保存当前草稿，再直接请求所选供应商；不调用对话模型，也不测试 Fetch。测试付费供应商可能产生正常服务费用。
 
@@ -61,3 +61,13 @@ DeepSeek 使用直接工具 API，而非 Anthropic Messages 代理；每条搜�
 ## 配置兼容
 
 插件显示名为 Web，注册 ID 为 `pig-web`。配置文件仍为 `$PIG_DIR/web-search.json`，启用范围继续使用 `plugins.json` 的 `webAccessScopes` 字段，因此重命名不会重置供应商、凭据或启用范围。现有会话页面条目 `pig-web-page-v1` 与三个工具名称保持不变。
+
+## 实现维护
+
+源码在 `src/main/plugins/pig-web/`，经 plugins:build 打成单文件，SDK 通过 jiti alias 提供依赖。`transport.ts` 统一执行 URL、域名与重定向策略。
+
+- `config.ts` 声明供应商、凭据与固定官方端点，`web-search-settings.ts` 是配置唯一写入者；坏 JSON 和非 ENOENT IO 错误不能当成空配置覆盖。
+- `config-file.ts` 每次延迟解析路径，按路径、mtime、size 缓存；解析错误只报告位置，不转发可能含 Key 的 V8 原文。Node 回归见 `tests/pig-web-config-errors.test.ts`。
+- 代理作用域通过 `Symbol.for("pig-web.proxy-storage")` 跨扩展 reload 共享。
+- `pages.ts` 的完整页面以 `pig-web-page-v1` custom entry 写入 JSONL，只重建当前分支；输出按 UTF-8 字节限额和自适应 fence 标记不可信，关闭会话清内存。
+- 供应商设置、传输协议／代理、重定向、凭据泄漏、配置重载和页面隔离分别有回归；不得为搜索测试创建辅助模型会话。

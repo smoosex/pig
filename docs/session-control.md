@@ -74,3 +74,16 @@
 使用独立任务项目，不修改 Pig 来完成题目。A 组关闭 subagent 工具，B 组启用；用户要求的 B 组明确委派提示需作为策略差异记录，并验证确实产生 spawn。新一轮与旧手工试跑分开。
 
 功能允许同时运行多个会话，但正式对比任务速度时应串行执行样本，避免 CPU、网络、缓存与 API 限流相互干扰；B 内部子 agent 并行属于被测策略，应保留。隐藏验收继续在目标项目之外执行，不把答案注入会话。
+
+## 实现入口
+
+- `pig-session-host.ts` 连接插件与 main；`src/main/ipc/session-agent.ts` 的 `session:agent-request/answer` 负责所属窗口的 UI 往返。
+
+- `src/shared/session-agent.ts` 统一配置、任务和 UI request/answer；`src/main/pi/session-agent.ts` 复用项目注册、pending/live runtime、能力偏好与 prompt 链路，不另造 Agent。
+- `project-open.ts` 与目录选择器共用；移出项目经 `project-unpin.ts`，不是删除源码。项目锁及 blocked cwd 期间持有控制租约，UI remove-project 为 check/apply 两阶段。
+- create 先配置并发布空 JSONL、持久化成员，再请求所属 UI 添加精确 ID 的后台标签；`attachAgentSession` 不复用草稿或切前台，项目清单以递增 catalog membership revision 合并，失败按 runtime 实例回收。
+- `session-control-lock.ts` 阻止配置／任务期间并发输入、切分支和 UI 配置。任务文本走 `promptSession` literal 入口，不展开 slash/template。
+- `session-agent-tasks.ts` 统一等待真正结束；`session-prompt.ts` 的 beforeSubmit 转为 SDK beforeStart，stop 用 reason 身份判断自己的取消，stop revision 拒绝停止前准备中的迟到 spawn/restart。
+- `permissions/delegation.ts` 管理控制者绑定，`approvalController` 路由唯一审批请求；授权持续校验到实际执行，不因插件 scope reload 取消另一个会话的子 agent/process 审批。
+- `session_read` 带 `readOnlyHint` 注解，宿主只校验同窗口等程序边界，不把列出会话当成用户授权。
+- `src/main/pi/session-read.ts` 在单次 withSource 回调内同步读取当前分支，再校验双方状态及窗口；每页最多 20 条、单条 8000 字，过滤思考／工具／隐藏消息／图片。仅同窗口另一已打开会话，工具说明要求用户明确授权；只读模式仍可用，不另设审批。

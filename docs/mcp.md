@@ -5,10 +5,10 @@
 - **Settings → MCP** shows added servers as compact rows above the marketplace. Icon actions edit, test, sign in/out and remove; the rightmost switch controls global enablement. Connection tests run independently by server and only lock their own row; OAuth sign-in and configuration changes retain global locks. The market combines Magpie-inspired featured recipes (without Magpie Image) with explicit searches of the official MCP Registry.
 - Use **Add MCP** above the server list to open the manual form: name, command/HTTP, a quoted command line or URL, and editable environment/header rows. Paste a single server's JSON or a named entry anywhere in the form to fill it in; a multi-server `mcpServers` object opens the JSON editor. The header's JSON/Form segmented switch selects the editor; JSON mode keeps advanced options available. Blank examples are placeholders, while existing configuration and filled form values remain editable content. Pasting never saves automatically; configuration is validated as you save it and same-name replacements require confirmation.
 - Command lines are split into executable and arguments, not run through a shell. New environment/header values are literal except a whole `${NAME}` environment-variable reference; existing and JSON-authored values retain Pi configuration expressions. Legacy SSE is not supported.
-- New servers are disabled. Enabling a server applies to all projects, worktrees and ordinary chats. Removal deletes Pig configuration and saved OAuth credentials, not system runtimes or shared package caches.
-- **Settings → General → Codemode** controls the global setting for all user sessions, initially off. Enabled Codemode uses `on`, preserving direct tools rather than forcing every operation through scripts.
+- New servers are disabled. The global enable flag supplies the default for projects, worktrees and ordinary chats; an explicit per-session MCP override takes precedence. Removal deletes Pig configuration and saved OAuth credentials, not system runtimes or shared package caches.
+- **Session capabilities → Tools** controls Codemode for that session. Codemode is enabled unless the session's `tools.codemode` override is explicitly false. Its factory uses `on`, preserving direct tools rather than forcing every operation through scripts; there is no global Codemode switch in General settings.
 
-Idle sessions reload immediately; active tasks finish before their tool resources reload. Settings show pending sessions. New inputs wait for runtime replacement, including further changes queued during reload. Parsing, IO and inline-extension errors keep the affected session unavailable until a successful reload; they never silently restore defaults or permit prompts against an incomplete runtime. Internal naming/search-test sessions never load these capabilities; ordinary chats use the same global tools without gaining permission to inspect their scratch directory.
+Idle sessions reload immediately; active tasks finish before their tool resources reload. Settings show pending sessions. New inputs wait for runtime replacement, including further changes queued during reload. Parsing, IO and inline-extension errors keep the affected session unavailable until a successful reload; they never silently restore defaults or permit prompts against an incomplete runtime. Internal naming/search-test sessions never load these capabilities; ordinary chats use the configured tools subject to their session capability overrides, without gaining permission to inspect their scratch directory.
 
 ## Storage and security
 
@@ -19,11 +19,11 @@ Pig owns these files under `PIG_DIR` (development: `cwd/.pig`; packaged: `$HOME/
 | `mcp.json` | Standard `mcpServers` configuration and global enable flags |
 | `mcp-icons.json` | Catalog icon sources by server name, kept out of `mcp.json` |
 | `mcp-icons/` | Fetched icon bytes, keyed by source |
-| `tool-settings.json` | Global Codemode enable flag |
+| `session-capabilities/<sessionId>.json` | Per-session tool, MCP and Skill overrides, including `tools.codemode` |
 | `mcp-auth.json` | Pi-managed OAuth credentials and client registration |
 | `mcp.log` | Pi MCP diagnostic log |
 
-Configuration and credential files are written with owner-only permissions on Unix. Legacy project overrides in `tool-settings.json` are ignored and discarded when Codemode is saved; they do not change global enablement. Pig does not read/write terminal Pi's MCP configuration or automatically load repository `.pi/mcp.json`. Repository configuration must be explicitly imported. MCP processes run with the user's permissions, not inside the Codemode sandbox.
+Configuration and credential files are written with owner-only permissions on Unix. Session capability overrides are read and written by `src/main/pi/session-capabilities.ts`; MCP defaults are combined with those overrides by `src/main/mcp/settings.ts`. Pig does not read/write terminal Pi's MCP configuration or automatically load repository `.pi/mcp.json`. Repository configuration must be explicitly imported. MCP processes run with the user's permissions, not inside the Codemode sandbox.
 
 Local recipes use `npx` or `uvx` with latest package specifications; the launcher owns resolution and caching. Install the launcher separately and make it available in the login shell's `PATH`. Adding a recipe only saves configuration; enabling or testing can launch a process and download its package. Docker-backed Registry entries require Docker. Supported remote transport is streamable HTTP, not legacy SSE.
 
@@ -37,10 +37,17 @@ API keys go in the HTTP form's header rows, for example `Authorization: Bearer <
 
 ## Runtime and display
 
-`src/main/mcp/` owns configuration, catalog conversion, DNS-enforced networking and short-lived management connections. The Pi SDK is pinned to 1.1.0 with a small dependency patch exposing custom fetch for HTTP/OAuth and awaiting browser launch. Upgrading requires porting that patch; silently losing it would bypass the connection policy. `src/main/pi/tool-resources.ts` adds Pi's MCP, tool-search and optional Codemode factories only to user sessions. MCP discovery uses deferred exposure, independent of Codemode; imported codemode exposure is treated as deferred. Hidden/direct exposures remain intact.
+`src/main/mcp/` owns configuration, catalog conversion, DNS-enforced networking and short-lived management connections. SDK version pins and all local patches are maintained in [SDK maintenance](sdk-maintenance.md). The HTTP/OAuth fetch and awaited browser-launch patches are security requirements, not optional compatibility work. `src/main/pi/tool-resources.ts` registers Pi's MCP, tool-search and Codemode factories for session runtimes. Session capability overrides determine Codemode activation; unless explicitly disabled for the session, tool-search remains available when deferred tools require it, even with Codemode disabled. MCP discovery uses deferred exposure, independent of Codemode; imported codemode exposure is treated as deferred. Hidden/direct exposures remain intact.
 
 QuickJS has no Node, filesystem, network or timer APIs. Scripts access tools through the SDK pipeline and available models through Pi's model runtime. Finished side effects are not rolled back if a script fails.
 
 Nested calls appear in a collapsed list under the parent tool, not as synthetic transcript messages. Live events show parameters, state, duration and errors; replay uses Pi's bounded `nestedCalls` records and indicates omitted/incomplete metadata. Child result bodies are not persisted in those records.
 
 Validation covers configuration isolation and global enablement, serial writes, input/reload races, cancellation, real SDK discovery/direct MCP invocation and QuickJS execution without an external model. A macOS packaged-SDK smoke check also executes QuickJS from ASAR. Real-provider OAuth and UI end-to-end flows require manual verification.
+
+## Open Computer Use preset
+
+- Open Computer Use 作为普通 stdio MCP 预置，不增加专用审批、宿主生命周期或 project/chat 限制。
+- 启动时 `initializeMcpDefaults()` 一次性写入 `npx -y open-computer-use@1.1.2 mcp`（默认停用、`deferred`）；`mcp.json` 的 `pigDefaults` 记录已初始化项，保留已有同名/同 namespace 配置，修改、启停和删除都走普通 MCP 流程且重启不恢复已删除项。
+- 首次启用需 Node.js/npx 与联网下载，macOS 权限授给 Open Computer Use，不授给 Pig；安装包不内嵌 OCU。
+- MCP 直接调用会转发图片；codemode 脚本需显式 `image(block)`，仅 `text(result)` 不会把截图交给模型。

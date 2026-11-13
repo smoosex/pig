@@ -2,6 +2,17 @@
 
 长期记忆由主 Agent 按需读取和维护。Markdown 文件是唯一内容来源，没有知识数据库、固定分类、自动提取／整合、后台自动学习或模型召回筛选。另提供手动 Dream，围绕用户指定的主题搜索历史片段，维护同一套 Markdown 记忆。OM 的 observations/reflections 继续只负责当前会话压缩，不参与这条链路。
 
+实现入口：`src/main/features/memory/long-term/` 管理文件记忆，`src/main/features/memory/dream/` 管理 Dream 与修复。
+
+## OM 会话接入
+
+- OM 是内置会话压缩功能，源于 pi-observational-memory，保留上游 MIT LICENSE；不恢复上游 slash／终端专用渲染。
+- 状态与历史从上下文用量弹层进入，可查看可见／完整历史。人格和记忆统一接入项目、Chat，子 agent 排除；文件记忆开关只控制长期文件记忆。
+- 记忆设置只属于 Pig，沿用 `PIG_DIR/plugins/observational-memory/settings.json`，不读取 CLI 记忆设置或 `PI_OBSERVATIONAL_MEMORY_PASSIVE`。
+- OM 读取共享 Pi `compaction.enabled`（全局后项目）：关闭自动压缩时，主动触发按原始来源 tokens 而非已观测 tokens 计数，压缩 hook 同步标识度量。
+- 每个会话扩展实例持有独立的 `Runtime`，在 session_start 时按 session ID 注册到进程共享的 Runtime 表；session_shutdown 时取消后台 observer／reflector／dropper、解除通知引用并注销该 Runtime。reload 同样经过 shutdown，迟到结果不得访问会话或写记忆；正常取消不提示 worker 失败，已写入会话的记忆保留。不要与 [人格情绪观察员](persona.md) 混同。
+- 配置和 runtime 工厂位于 `src/main/features/`，空闲资源重载见 [架构](architecture.md)，文件级权限和写入不变。
+
 ## 存储与范围
 
 ```text
@@ -97,7 +108,7 @@ Agent 按需维护记忆，没有强制补记忆轮次或后台定时器。
 
 数据为 `$PIG_DIR/dream/<run id>/{session.jsonl,result.json,before/,changes.json}`，0600／0700；暂存目录结束时清理。回执含主题、结果报告、用量、修改清单及固定错误码，没有知识 DB 或已处理历史检查点；旧 checkpoints.json 不读取、不迁移、不自动删除。同一主题可以再次回顾。独立 SDK SessionManager 将完整会话持续追加到本次目录的 session.jsonl（含提示词、消息、工具调用／结果及压缩记录），在首次消息前以 0600 创建；失败、停止后也保留。它不在普通 Pi sessions 目录，不进入会话列表或后续 Dream 的历史来源，不能跨重启续跑；原始会话内容可能敏感，仅靠私有目录及文件权限保护。
 
-界面区分记录列表、只读详情、主题输入与实时运行状态，报告复用 MarkdownText，文件行突出 scope 内路径、完整路径放 tooltip，用量在右上角统计弹层展示；只有正文滚动且隐藏滚动条。修复详情不显示底部按钮，只通过右上角关闭图标关闭，运行中的停止按钮移到标题栏；历史详情也不提供修改或重新运行按钮。运行时明确提示可以关闭弹窗后台执行。侧栏底部 glass/solid 左侧的月亮按钮展示同一份状态，运行外环转动、失败红点，点击返回详情而不创建任务；任务结束后查看详情再关闭即隐藏该次图标，后续轮询不会使它重新出现，运行中关闭则保留。Sidebar 与全局 DialogHost 共用引用计数轮询和请求 revision，旧轮询不能覆盖 start／stop 回复。界面显示准备目录／搜索／阅读／维护／提交、当前线索、用量、报告、修改文件及固定错误码，不显示会话完成比例。只有所属 UI 主 frame 的 `memory:dream:start/status/stop` IPC 可控制，`memory:dream:list/read` 只读回执。列表每页最多 30 条，单份 result.json 最多 2 MiB；早期回执缺少缓存分项和费用可信度时只读兼容，保留原始数据、将相关统计显示为未知，不把旧输入当成新输入，不迁移回执；已存在但类型错误的字段仍报错。校验运行 ID、内容与文件类型，拒绝符号链接、硬链接和越界路径，不读取或暴露 JSONL；错误不泄漏原始 JSON 或绝对存储路径。关闭普通对话框不停止任务；所属窗口重载／退出、关闭文件记忆或默认权限变化会取消本次运行，切回权限不能复活。未提交修改取消后丢弃。应用退出经轻量 lifecycle hook 停止，未使用时不初始化 Dream 模型运行时。
+界面区分记录列表、只读详情、主题输入与实时运行状态，报告复用 MarkdownText，文件行突出 scope 内路径、完整路径放 tooltip，用量在右上角统计弹层展示；只有正文滚动且隐藏滚动条。修复详情不显示底部按钮，只通过右上角关闭图标关闭，运行中的停止按钮移到标题栏；历史详情也不提供修改或重新运行按钮。运行时明确提示可以关闭弹窗后台执行。侧栏底部 glass/solid 左侧的月亮按钮展示同一份状态，运行外环转动、失败红点，点击返回详情而不创建任务；任务结束后查看详情再关闭即隐藏该次图标，后续轮询不会使它重新出现，运行中关闭则保留。Sidebar 与全局 DialogHost 共用引用计数轮询和请求 revision，旧轮询不能覆盖 start／stop 回复。运行时在标题行显示状态和当前阶段（准备／搜索／阅读／维护／收尾／提交），不渲染详细搜索线索或查询文本；用量从统计弹层查看，结果展示报告、修改文件及固定错误码，不显示会话完成比例。只有所属 UI 主 frame 的 `memory:dream:start/status/stop` IPC 可控制，`memory:dream:list/read` 只读回执。列表每页最多 30 条，单份 result.json 最多 2 MiB；早期回执缺少缓存分项和费用可信度时只读兼容，保留原始数据、将相关统计显示为未知，不把旧输入当成新输入，不迁移回执；已存在但类型错误的字段仍报错。校验运行 ID、内容与文件类型，拒绝符号链接、硬链接和越界路径，不读取或暴露 JSONL；错误不泄漏原始 JSON 或绝对存储路径。关闭普通对话框不停止任务；所属窗口重载／退出或默认权限变化会取消运行，切回权限不能复活。关闭文件记忆会取消普通 Dream，但不会中止正在运行的修复任务，也不会因修复而重新开启文件记忆。未提交修改取消后丢弃。应用退出经轻量 lifecycle hook 停止，未使用时不初始化 Dream 模型运行时。
 
 ## 参考与边界
 
