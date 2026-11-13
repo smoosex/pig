@@ -30,6 +30,8 @@ export function useBrowserBounds(
     let appliedOccluded = false
     let frame = 0
     let pending: AbortController | undefined
+    const movesViewport = (target: EventTarget | null) => target instanceof Element &&
+      target.matches('[data-pane-frame]') && target.contains(viewport.current)
     const enqueue = (bounds: BrowserBounds | null, freeze: boolean, key: string, signal: AbortSignal) => {
       const current = () => !signal.aborted && owners.get(browserId) === token
       writes = writes.then(async () => {
@@ -122,8 +124,11 @@ export function useBrowserBounds(
           ...(blocked ? { occluded: true } : {}),
           ...(bottomLeftRadius || bottomRightRadius ? { bottomLeftRadius, bottomRightRadius } : {}),
           ...(devtools ? { devtools } : {}) } : null
-      // Enter/exit transforms can move a menu across the viewport without DOM or resize mutations.
-      if ([...document.querySelectorAll<HTMLElement>(RELEVANT)].some(element =>
+      // Equal-size pane movement does not notify ResizeObserver. Track its own native/WAAPI
+      // animation too; the next sample after it stops captures the final position.
+      const pane = element?.closest<HTMLElement>('[data-pane-frame]')
+      if (pane?.getAnimations().some(animation => animation.playState === 'running') ||
+        [...document.querySelectorAll<HTMLElement>(RELEVANT)].some(element =>
         element.getAnimations({ subtree: true }).some(animation => animation.playState === 'running'))) schedule()
       const key = JSON.stringify(bounds)
       if (last === key) return
@@ -133,17 +138,19 @@ export function useBrowserBounds(
       enqueue(bounds, visible && blocked && !!rect && rect.width > 0 && rect.height > 0, key, pending.signal)
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
-    const overlayMotion = (event: Event) => {
-      if (event.target instanceof Element && event.target.closest(RELEVANT)) schedule()
+    const layoutMotion = (event: Event) => {
+      if (movesViewport(event.target) || (event.target instanceof Element && event.target.closest(RELEVANT))) schedule()
     }
     const motionEvents = ['animationstart', 'animationend', 'animationcancel', 'transitionrun', 'transitionend', 'transitioncancel']
-    for (const event of motionEvents) document.addEventListener(event, overlayMotion, true)
+    for (const event of motionEvents) document.addEventListener(event, layoutMotion, true)
     const observer = new ResizeObserver(schedule)
     if (viewport.current) observer.observe(viewport.current)
-    // Ignore streaming text and unrelated row mutations; inspect only overlay roots and their state.
+    // Ignore streaming text and unrelated panes; inspect overlays and the viewport's own frame.
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === 'attributes'
-        ? record.attributeName === 'data-surface-reveal' || record.attributeName === 'data-sidebar-overlay' || (record.target instanceof Element && record.target.matches(RELEVANT))
+        ? record.attributeName === 'data-surface-reveal' || record.attributeName === 'data-sidebar-overlay' ||
+          (record.attributeName === 'style' && movesViewport(record.target)) ||
+          (record.target instanceof Element && record.target.matches(RELEVANT))
         : [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
           (node.matches(RELEVANT) || node.querySelector(RELEVANT))))) schedule()
     })
@@ -159,7 +166,7 @@ export function useBrowserBounds(
       cancelAnimationFrame(frame)
       observer.disconnect()
       mutations.disconnect()
-      for (const event of motionEvents) document.removeEventListener(event, overlayMotion, true)
+      for (const event of motionEvents) document.removeEventListener(event, layoutMotion, true)
       window.removeEventListener('resize', schedule)
       window.removeEventListener('scroll', schedule, true)
       writes = writes.then(async () => {

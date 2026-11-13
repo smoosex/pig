@@ -10,9 +10,9 @@ export interface SplitPaneOverlayProps {
 
 const positionClasses: Record<SplitDropPosition, string> = {
   left: 'top-0 left-0 w-1/2 h-full',
-  right: 'top-0 right-0 w-1/2 h-full',
+  right: 'top-0 left-1/2 w-1/2 h-full',
   top: 'top-0 left-0 w-full h-1/2',
-  bottom: 'bottom-0 left-0 w-full h-1/2'
+  bottom: 'top-1/2 left-0 w-full h-1/2'
 }
 
 export const SplitPaneOverlay: FC<SplitPaneOverlayProps> = ({ position, className }) => {
@@ -25,7 +25,7 @@ export const SplitPaneOverlay: FC<SplitPaneOverlayProps> = ({ position, classNam
       aria-hidden="true"
       data-split-drop-preview
       className={cn(
-        'pointer-events-none absolute z-50 rounded-lg border-2 border-primary/40 bg-primary/15 transition-all duration-150 ease-out',
+        'pointer-events-none absolute z-50 rounded-lg border-2 border-primary/40 bg-primary/15 transition-[top,left,width,height] duration-150 ease-out motion-reduce:transition-none',
         positionClasses[position],
         className
       )}

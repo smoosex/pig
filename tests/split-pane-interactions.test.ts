@@ -2,6 +2,7 @@
 import { mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import type { GroupProps, PanelProps } from 'react-resizable-panels'
+import type { HTMLMotionProps } from 'motion/react'
 import type { DragEndEvent, DndContextProps } from '@dnd-kit/core'
 import type { OpenTab } from '../src/renderer/src/stores/sessions/types'
 import type { PaneNode } from '../src/renderer/src/stores/split-layout'
@@ -12,6 +13,7 @@ async function fixture(scenario: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  Reflect.deleteProperty(Element.prototype, 'animate')
   const queries: string[] = []
   const orders: string[][] = []
   const closed: string[] = []
@@ -43,10 +45,24 @@ async function fixture(scenario: string): Promise<void> {
       }
     }
   })
-  const { act, createElement: h, Fragment } = await import('react')
+  const { act, createElement: h, Fragment, useLayoutEffect } = await import('react')
+  let injectTransientLayout = false
+  let layoutPending = false
+  let restoreQueued = false
+  const resizeCallbacks = new Set<() => void>()
   const groups = new Map<string, GroupProps>()
   mock.module('react-resizable-panels', () => ({
     Group: (props: GroupProps) => {
+      if (injectTransientLayout) { injectTransientLayout = false; layoutPending = true }
+      useLayoutEffect(() => {
+        if (!layoutPending || restoreQueued) return
+        restoreQueued = true
+        queueMicrotask(() => {
+          layoutPending = false
+          restoreQueued = false
+          for (const callback of resizeCallbacks) callback()
+        })
+      })
       groups.set(String(props.id), props)
       return h(
         'div',
@@ -84,6 +100,31 @@ async function fixture(scenario: string): Promise<void> {
       sessions.setState({ activeTabId: id })
     }
   })
+  const frames = new Map<string, HTMLMotionProps<'div'>>()
+  const frameHistory: { id: string; animate: HTMLMotionProps<'div'>['animate'] }[] = []
+  let scene: unknown
+  let reduced = false
+  if (scenario === 'animation') {
+    Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class {
+      constructor(private callback: () => void) {}
+      observe() { resizeCallbacks.add(this.callback) }
+      disconnect() { resizeCallbacks.delete(this.callback) }
+    } })
+    const original = await import('motion/react')
+    mock.module('motion/react', () => ({
+      ...original,
+      motion: { div: (props: HTMLMotionProps<'div'> & { 'data-pane-id': string }) => {
+        frames.set(props['data-pane-id'], props)
+        frameHistory.push({ id: props['data-pane-id'], animate: props.animate })
+        return h('div', { 'data-pane-id': props['data-pane-id'] }, props.children as import('react').ReactNode)
+      } },
+      AnimatePresence: (props: { custom: unknown; children: import('react').ReactNode }) => {
+        scene = props.custom
+        return props.children
+      },
+      useReducedMotion: () => reduced
+    }))
+  }
   const { SplitPaneContainer } =
     await import('../src/renderer/src/components/chat/SplitPaneContainer')
   const { createRoot } = await import('react-dom/client')
@@ -95,7 +136,88 @@ async function fixture(scenario: string): Promise<void> {
   const layoutRoot = () => split.getState().groups[0]?.root ?? null
   const tabIds = () => collectPaneNodes(layoutRoot()).map((pane) => pane.tabId)
   try {
-    if (scenario === 'loading') {
+    if (scenario === 'animation') {
+      const original = HTMLElement.prototype.getBoundingClientRect
+      let direction = 'right'
+      const canvasReads = new Map<string, number>()
+      HTMLElement.prototype.getBoundingClientRect = function () {
+        const tab = this.dataset.paneSlot
+        const paneId = this.parentElement?.dataset.paneId
+        if (!tab && paneId) canvasReads.set(paneId, (canvasReads.get(paneId) ?? 0) + 1)
+        if (!tab || !split.getState().groups.length) return new DOMRect(0, 0, 1000, 800)
+        const first = direction === 'left' || direction === 'top' ? 'B' : 'A'
+        const horizontal = direction === 'left' || direction === 'right'
+        if (tabIds().includes('C') && tab !== 'A') return horizontal
+          ? new DOMRect(first === 'B' ? 8 : 504, tab === 'B' ? 8 : 404, 488, 388)
+          : new DOMRect(tab === 'B' ? 8 : 504, first === 'B' ? 8 : 404, 488, 388)
+        const rect = horizontal ? new DOMRect(tab === first ? 8 : 504, 8, 488, 784)
+          : new DOMRect(8, tab === first ? 8 : 404, 984, 388)
+        if (layoutPending && tab === 'A') rect.width += 8
+        return rect
+      }
+      try {
+        let pass = 0
+        for (const position of ['left', 'right', 'top', 'bottom', 'right'] as const) {
+          reduced = pass++ === 4
+          direction = position
+          await act(async () => { root.render(null); split.getState().reset() })
+          await act(async () => { renderContainer() })
+          await act(async () => { split.getState().splitTab('A', 'B', position) })
+          const a = paneOfTab(split.getState().groups, 'A')!
+          const b = paneOfTab(split.getState().groups, 'B')!
+          const incoming = frames.get(b.id)!
+          const expected = position === 'left' ? { left: 8, top: 8, width: 0, height: 784 }
+            : position === 'right' ? { left: 992, top: 8, width: 0, height: 784 }
+            : position === 'top' ? { left: 8, top: 8, width: 984, height: 0 }
+            : { left: 8, top: 792, width: 984, height: 0 }
+          assert.deepEqual(incoming.initial, reduced ? false : expected, position + ': the new pane grows from its outer edge')
+          const incomingCanvas = host.querySelector<HTMLElement>(`[data-pane-id="${b.id}"]`)!.firstElementChild as HTMLElement
+          const incomingTarget = incoming.animate as { left: number; top: number; width: number; height: number }
+          assert.equal(incomingCanvas.style.width, reduced ? '' : `${incomingTarget.width - 2}px`, 'the incoming pane keeps its target viewport instead of wrapping from zero width')
+          assert.equal(incomingCanvas.style.height, reduced ? '' : `${incomingTarget.height - 2}px`)
+          const target = frames.get(a.id)!.animate as { left: number; top: number; width: number; height: number; transition: { duration: number } }
+          assert.equal(target.transition.duration, reduced ? 0 : 0.2)
+          assert.equal('scale' in target || 'x' in target || 'y' in target, false, 'no text scaling or full-page translation')
+          const existingCanvas = host.querySelector<HTMLElement>(`[data-pane-id="${a.id}"]`)!.firstElementChild as HTMLElement
+          assert.equal(existingCanvas.style.width, '', 'existing content follows the frame width throughout the animation')
+          assert.equal(existingCanvas.style.height, '', 'existing content follows the frame height throughout the animation')
+          const beforeCompletion = existingCanvas.getAttribute('style')
+          await act(async () => { frames.get(a.id)!.onAnimationComplete?.({}) })
+          assert.equal(existingCanvas.getAttribute('style'), beforeCompletion, 'completion must not switch content dimensions')
+          if (!reduced) {
+            const half = frames.get(a.id)!.animate as typeof target
+            const reads = canvasReads.get(a.id) ?? 0
+            const horizontal = position === 'left' || position === 'right'
+            const historyStart = frameHistory.length
+            injectTransientLayout = true
+            await act(async () => { split.getState().splitPane(b.id, 'C', horizontal ? 'bottom' : 'right') })
+            for (const frame of frameHistory.slice(historyStart).filter(frame => frame.id === a.id)) {
+              const rect = frame.animate as typeof target
+              assert.deepEqual([rect.left, rect.top, rect.width, rect.height], [half.left, half.top, half.width, half.height], 'a transient resize-tree layout must never reach the untouched pane')
+            }
+            const c = paneOfTab(split.getState().groups, 'C')!
+            const untouched = frames.get(a.id)!.animate as typeof target
+            assert.deepEqual({ ...untouched, transition: half.transition }, half, 'the other half keeps its exact rectangle')
+            assert.equal(untouched.transition.duration, 0, 'the other half must not participate in the third-pane animation')
+            assert.equal((frames.get(b.id)!.animate as typeof target).transition.duration, 0.2)
+            const shrinkingCanvas = host.querySelector<HTMLElement>(`[data-pane-id="${b.id}"]`)!.firstElementChild as HTMLElement
+            assert.equal(shrinkingCanvas.style.width, '', 'the previously incoming pane now resizes its content continuously')
+            assert.equal(shrinkingCanvas.style.height, '')
+            assert.deepEqual(frames.get(c.id)!.initial, horizontal
+              ? { left: position === 'left' ? 8 : 504, top: 792, width: 488, height: 0 }
+              : { left: 992, top: position === 'top' ? 8 : 404, width: 0, height: 388 })
+            assert.equal(canvasReads.get(a.id) ?? 0, reads, 'the unrelated half does not force a layout read to freeze its canvas')
+            await act(async () => { split.getState().closePane(c.id) })
+            assert.equal((frames.get(a.id)!.animate as typeof target).transition.duration, 0, 'removing a quarter also leaves the unrelated half alone')
+            assert.equal((frames.get(b.id)!.animate as typeof target).transition.duration, 0.2)
+            assert.equal(canvasReads.get(a.id) ?? 0, reads, 'the unrelated half is not frozen on quarter removal either')
+          }
+          const exit = frames.get(b.id)!.variants!.exit as (custom: unknown) => object
+          await act(async () => { split.getState().closePane(b.id) })
+          assert.deepEqual(exit(scene), { ...expected, transition: { duration: reduced ? 0 : 0.2 } }, position + ': removal retracts toward the same edge using the new survivor bounds')
+        }
+      } finally { HTMLElement.prototype.getBoundingClientRect = original }
+    } else if (scenario === 'loading') {
       mock.module('../src/renderer/src/components/ChatView', () => ({
         ChatView: () => h('div', { 'data-chat': true })
       }))
@@ -164,8 +286,6 @@ async function fixture(scenario: string): Promise<void> {
         drafts[node.tabId] = state
         return h('div', { 'data-editor': node.tabId }, h(EditorContent, { editor: state.editor }))
       }
-      split.getState().splitTab('A', 'B', 'right')
-      const a = paneOfTab(split.getState().groups, 'A')!.id
       const render = () =>
         root.render(
           h(SplitPaneContainer, { tabId: 'A',
@@ -175,6 +295,10 @@ async function fixture(scenario: string): Promise<void> {
       await act(async () => {
         render()
       })
+      const standalone = drafts.A.editor
+      await act(async () => { split.getState().splitTab('A', 'B', 'right') })
+      const a = paneOfTab(split.getState().groups, 'A')!.id
+      assert.equal(drafts.A.editor, standalone, 'entering split view retains the standalone editor')
       await act(async () => {
         drafts.A.editor!.commands.insertContent('unsent A')
         drafts.B.editor!.commands.insertContent('unsent B')
@@ -186,10 +310,10 @@ async function fixture(scenario: string): Promise<void> {
       await act(async () => {
         split.getState().splitPane(a, 'C', 'bottom')
       })
-      assert.notEqual(
+      assert.equal(
         drafts.A.editor,
         original,
-        'splitting changes ownership and really remounts this editor'
+        'changing the resize tree must not remount the existing editor'
       )
       assert.equal(drafts.A.editor!.getText(), 'unsent A')
       assert.equal(drafts.B.editor!.getText(), 'unsent B')
@@ -205,6 +329,7 @@ async function fixture(scenario: string): Promise<void> {
         'unsent A',
         'collapsing the split also preserves the draft'
       )
+      assert.equal(drafts.A.editor, original, 'collapsing the tree also retains the editor')
       assert.equal(drafts.A.attachments.images.length, 1)
       const shortcut = () =>
         window.dispatchEvent(
@@ -304,6 +429,34 @@ async function fixture(scenario: string): Promise<void> {
       })
       assert.equal(drafts.A.editor!.getText(), '')
       assert.equal(drafts.A.attachments.images.length, 0, 'cleared attachments must not reappear')
+      const beforeDissolve = drafts.A.editor
+      await act(async () => { split.getState().closePane(paneOfTab(split.getState().groups, 'B')!.id) })
+      assert.deepEqual(split.getState().groups, [])
+      assert.equal(drafts.A.editor, beforeDissolve, 'returning to a standalone pane retains its editor')
+    } else if (scenario === 'detach') {
+      const b = split.getState().splitTab('A', 'B', 'right')
+      const a = paneOfTab(split.getState().groups, 'A')!.id
+      const c = split.getState().splitPane(a, 'C', 'bottom')
+      sessions.setState({ activeTabId: 'C' })
+      await act(async () => { renderContainer() })
+      const header = document.createElement('header')
+      header.dataset.appHeader = ''
+      document.elementsFromPoint = () => [header]
+      const detach = async (id: string) => act(async () => {
+        host.querySelector(`[data-pane-id="${id}"] [data-pane-header]`)!.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, clientX: 100, clientY: 200 }))
+        window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 100, clientY: 20 }))
+        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 100, clientY: 20 }))
+      })
+      await detach(b)
+      assert.deepEqual(tabIds(), ['A', 'C'])
+      assert.equal(sessions.getState().activeTabId, 'C', 'detaching an inactive pane preserves the focused survivor')
+      await detach(c)
+      assert.deepEqual(split.getState().groups, [])
+      assert.equal(sessions.getState().activeTabId, 'A', 'detaching the active pane keeps the remaining standalone tab visible')
+      assert.deepEqual(sessions.getState().openTabs.map(tab => tab.id), ['A', 'B', 'C', 'D'])
+      assert.ok(sessions.getState().runtime.B && sessions.getState().runtime.C)
+      assert.deepEqual(closed, [], 'detaching never closes a tab or its session')
     } else if (scenario === 'headers') {
       const b = split.getState().splitTab('A', 'B', 'right')
       const a = paneOfTab(split.getState().groups, 'A')!.id
@@ -594,6 +747,33 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(computeSplitPosition(rect, 700, 300), 'right')
       assert.equal(computeSplitPosition(rect, 900, 300), null)
       assert.equal(computeSplitPosition(new DOMRect(), 0, 0), null)
+      await act(async () => {
+        split.getState().reset()
+        sessions.setState({ openTabs: tabs, activeTabId: 'A' })
+        split.getState().splitTab('A', 'B', 'right')
+      })
+      const a = paneOfTab(split.getState().groups, 'A')!.id
+      const b = paneOfTab(split.getState().groups, 'B')!.id
+      let c = ''
+      await act(async () => {
+        c = split.getState().splitPane(a, 'C', 'bottom')
+        sessions.setState({ activeTabId: 'C' })
+      })
+      const detach = async (tabId: string, paneId: string) => act(async () => {
+        context.onDragEnd!({
+          active: { id: tabId, data: { current: { sourcePaneId: paneId } }, rect: { current: { initial: null, translated: null } } },
+          over: { id: 'C', rect: new DOMRect(), data: { current: {} }, disabled: false },
+          activatorEvent: new MouseEvent('pointerup'), collisions: null, delta: { x: 0, y: 0 }
+        })
+      })
+      await detach('B', b)
+      assert.deepEqual(tabIds(), ['A', 'C'])
+      assert.equal(sessions.getState().activeTabId, 'C', 'strip reintegration keeps focus in the original split')
+      await detach('C', c)
+      assert.deepEqual(split.getState().groups, [])
+      assert.equal(sessions.getState().activeTabId, 'A', 'dissolving the split selects its survivor, not the extracted tab')
+      assert.deepEqual(sessions.getState().openTabs.map(tab => tab.id), ['A', 'B', 'C', 'D'])
+      assert.deepEqual(closed, [])
     } else if (scenario === 'menus') {
       const copied: string[] = []
       Object.defineProperty(navigator, 'clipboard', {
@@ -714,8 +894,10 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--fixture') await fixture(process.argv[3])
 else
   for (const scenario of [
+    'animation',
     'loading',
     'drafts',
+    'detach',
     'headers',
     'close-active',
     'close-sidebar',

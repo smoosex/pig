@@ -355,10 +355,14 @@ export const useSplitLayoutStore = create<SplitLayoutState>((set, get) => ({
     }),
 
   setDragOver: (dragOver) => {
+    const current = get().dragOver
+    if (current?.paneId === dragOver?.paneId && current?.position === dragOver?.position) return
     set({ dragOver })
   },
 
   setReintegratingTab: (reintegratingTab) => {
+    const current = get().reintegratingTab
+    if (current?.paneId === reintegratingTab?.paneId && current?.tabId === reintegratingTab?.tabId) return
     set({ reintegratingTab })
   },
 

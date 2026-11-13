@@ -32,6 +32,8 @@ async function fixture(scenario: string) {
   const freezes: { frame: BrowserFrame | null; signal: AbortSignal }[] = []
   const errors: unknown[] = []
   let viewportWidth = 400
+  let viewportX = 100
+  let viewportY = 100
   let native: BrowserBounds | null = null
   let still: BrowserFrame | null = null
   let snapshots = 0
@@ -60,7 +62,7 @@ async function fixture(scenario: string) {
     useBrowserBounds('bounds-probe', true, viewport, report, onFreeze)
     const content = createElement('div', { ref: (node: HTMLDivElement | null) => {
       viewport.current = node
-      if (node) node.getBoundingClientRect = () => new DOMRect(100, 100, viewportWidth, 300)
+      if (node) node.getBoundingClientRect = () => new DOMRect(viewportX, viewportY, viewportWidth, 300)
     } })
     return scenario === 'split-corners' ? createElement('div', {
       'data-split-pane': 'true',
@@ -68,7 +70,8 @@ async function fixture(scenario: string) {
       ref: (node: HTMLDivElement | null) => {
         if (node) node.getBoundingClientRect = () => new DOMRect(99, 70, 402, 331)
       }
-    }, content) : content
+    }, content) : scenario === 'equal-size-swap'
+      ? createElement('div', { 'data-pane-frame': '', 'data-probe-pane': '' }, content) : content
   }
   const container = document.createElement('div')
   let surfaceLeft = 100
@@ -108,7 +111,53 @@ async function fixture(scenario: string) {
     calls.length = 0
     freezes.length = 0
 
-    if (scenario === 'split-corners') {
+    if (scenario === 'equal-size-swap') {
+      const pane = container.querySelector<HTMLElement>('[data-probe-pane]')!
+      const assertPosition = (x: number, y: number) => {
+        assert.equal(native?.x, x)
+        assert.equal(native?.y, y)
+        assert.equal(native?.width, 400, 'only position changes, without a ResizeObserver notification')
+        assert.equal(native?.height, 300)
+      }
+      viewportX = 300
+      pane.style.left = '200px'
+      await settle()
+      assertPosition(300, 100)
+      viewportX = 600
+      pane.style.left = '500px'
+      await settle()
+      assertPosition(600, 100)
+
+      // The opposite pane moves too, but must not wake this browser's synchronization.
+      const other = document.createElement('div')
+      other.setAttribute('data-pane-frame', '')
+      document.body.append(other)
+      await settle()
+      const before = calls.length
+      viewportX = 650
+      other.style.left = '1px'
+      await settle()
+      assert.equal(calls.length, before, 'unrelated pane movement does not measure this viewport')
+      other.remove()
+
+      // CSS/WAAPI motion may move without inline style writes between frames.
+      let running = true
+      pane.getAnimations = () => running ? [{ playState: 'running' } as Animation] : []
+      pane.dispatchEvent(new Event('transitionrun', { bubbles: true }))
+      await paint()
+      assertPosition(650, 100)
+      viewportY = 180
+      await paint()
+      assertPosition(650, 180)
+      running = false
+      viewportX = 700
+      viewportY = 200
+      pane.dispatchEvent(new Event('transitionend', { bubbles: true }))
+      await settle()
+      assertPosition(700, 200)
+      assert.equal(frames.size, 0, 'bounds tracking stops after the final position and paint handoff')
+      assert.equal(snapshots, 0, 'pane movement is not an occluding overlay')
+    } else if (scenario === 'split-corners') {
       assert.equal((native as BrowserBounds | null)?.bottomLeftRadius, 7, 'the pane border reduces the inner corner radius')
       assert.equal((native as BrowserBounds | null)?.bottomRightRadius, 7)
       const viewport = container.querySelector('[data-split-pane]')!.firstElementChild as HTMLElement
@@ -473,6 +522,7 @@ async function fixture(scenario: string) {
 }
 
 const scenarios = {
+  'equal-size-swap': 'equal-size pane movement tracks intermediate/final positions without resize or unrelated-pane work',
   corners: 'native bounds and frozen frame inherit only the outer panel bottom corners',
   'split-corners': 'native bounds and frozen frame use the split pane inner bottom corners',
   wrapper: 'positioning wrapper is ignored but its style remeasures real overlapping content',

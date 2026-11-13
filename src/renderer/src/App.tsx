@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react'
 import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
+import { useIsPresent } from 'motion/react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { isSessionEmpty } from './chat/session-empty'
 import { useDiffStore } from './stores/diff'
@@ -60,7 +61,6 @@ import { failureMessage } from './lib/ipc-error'
 
 import { useSplitLayoutStore, allPanes, collectPaneNodes, groupOfTab, paneOfTab, type PaneNode } from './stores/split-layout'
 import { SplitPaneContainer } from './components/chat/SplitPaneContainer'
-import { SplitPaneOverlay } from './components/chat/SplitPaneOverlay'
 
 // The editor is the heaviest thing a tab can pull in, so it arrives with the first file that is opened.
 const FileView = lazy(() => import('./components/files/FileView'))
@@ -116,6 +116,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
 }
 
 function BrowserTabContent({ tab }: { tab: OpenTab }) {
+  const present = useIsPresent()
   const targetSessionId = useSessionsStore((state) => {
     const realTarget = (id: string | null | undefined) => state.openTabs.find((item) =>
       item.id === id && (item.kind === 'project' || item.kind === 'chat') &&
@@ -125,7 +126,7 @@ function BrowserTabContent({ tab }: { tab: OpenTab }) {
     return realTarget(tab.browserTargetSessionId) ?? null
   })
   // A mounted pane is visible even when another split pane owns keyboard focus.
-  return <BrowserPanel browserId={tab.id} targetSessionId={targetSessionId} active onFocus={() => {
+  return <BrowserPanel browserId={tab.id} targetSessionId={targetSessionId} active={present} onFocus={() => {
     const layout = useSplitLayoutStore.getState()
     const pane = paneOfTab(layout.groups, tab.id)
     if (pane) layout.setActivePane(pane.id)
@@ -134,9 +135,10 @@ function BrowserTabContent({ tab }: { tab: OpenTab }) {
 }
 
 function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) {
+  const present = useIsPresent()
   return (
     <Suspense fallback={null}>
-      <TerminalPanel terminalId={tab.id} cwd={tab.cwd || null} active={active} onFocus={() => {
+      <TerminalPanel terminalId={tab.id} cwd={tab.cwd || null} active={active && present} onFocus={() => {
         const layout = useSplitLayoutStore.getState()
         const pane = paneOfTab(layout.groups, tab.id)
         if (pane) layout.setActivePane(pane.id)
@@ -146,7 +148,7 @@ function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) 
   )
 }
 
-export function PaneViewContent({
+export const PaneViewContent = memo(function PaneViewContent({
   node,
   isActive,
   composerWorkspace
@@ -156,6 +158,7 @@ export function PaneViewContent({
   composerWorkspace: { project: string; branch: string } | null
 }) {
   const t = useT()
+  const present = useIsPresent()
   const paneTab = useSessionsStore((s) => s.openTabs.find((item) => item.id === node.tabId))
   const runtime = useSessionsStore((s) => s.runtime[node.tabId])
   const empty = useSessionsStore((s) => paneTab?.loadState === 'ready' && isSessionEmpty(s.runtime[node.tabId]))
@@ -177,7 +180,8 @@ export function PaneViewContent({
     }
   }, [paneTab, isDiff, isFile, isTurnDiff, node.tabId])
 
-  if (paneTab?.loadState === 'error') {
+  if (!paneTab) return null
+  if (paneTab.loadState === 'error') {
     return (
       <Empty>
         <EmptyDescription role="alert">{paneTab.loadError || t('app.loadFailed')}</EmptyDescription>
@@ -216,13 +220,13 @@ export function PaneViewContent({
               <ChatView explicitSessionId={node.tabId} />
             )}
           </div>
-          <Composer explicitSessionId={node.tabId} isActive={isActive} centered={empty} workspace={composerWorkspace} />
+          <Composer explicitSessionId={node.tabId} isActive={isActive && present} centered={empty} workspace={composerWorkspace} />
           {empty ? <div className="min-h-0 flex-1" /> : null}
         </>
       )}
     </div>
   )
-}
+})
 
 export default function App() {
   const t = useT()
@@ -259,11 +263,9 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.load)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
   const splitGroups = useSplitLayoutStore((s) => s.groups)
-  const splitDragOver = useSplitLayoutStore((s) => s.dragOver)
   // Only the group holding the active tab is on screen; the others wait behind their merged tabs.
   const activeSplit = groupOfTab(splitGroups, activeTabId)
   const splitPaneNodes = activeSplit ? collectPaneNodes(activeSplit.root) : []
-  const isMultiPane = activeSplit !== null
 
   useEffect(() => {
     const openTabIds = new Set(openTabs.map((t) => t.id))
@@ -401,8 +403,6 @@ export default function App() {
     void loadReviewPrefs()
   }, [loadChats, loadSettings, loadReviewPrefs])
 
-  const diffTab = activeTab?.kind === 'diff' ? activeTab : null
-  const fileTab = activeTab?.kind === 'file' ? activeTab : null
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
   useEffect(() => {
     setAutoCollapsed((previous) => {
@@ -420,8 +420,6 @@ export default function App() {
       floatingSidebar.close()
     }
   }, [settingsOpen, hoverSidebar, leftCollapsed, rightCollapsed, currentProjectCwd, floatingSidebar.close])
-  const sessionReady = Boolean(activeSessionId && activeTab?.loadState === 'ready')
-  const sessionEmpty = useSessionsStore((s) => sessionReady && isSessionEmpty(s.runtime[activeSessionId!]))
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
   /**
    * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
@@ -647,9 +645,8 @@ export default function App() {
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div
                   className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                  data-pane-id={isMultiPane ? undefined : activeTabId ?? 'single'}
                 >
-                  {activeSplit ? (
+                  {activeTab ? (
                     <SplitPaneContainer
                       tabId={activeTabId!}
                       className="flex-1 min-h-0 min-w-0"
@@ -657,24 +654,9 @@ export default function App() {
                         <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
                       )}
                     />
-                  ) : activeTab?.kind === 'browser' ? (
-                    <BrowserTabContent tab={activeTab} />
-                  ) : activeTab?.kind === 'terminal' ? (
-                    <TerminalTabContent tab={activeTab} active />
-                  ) : diffTab ? (
-                    <ChangesView cwd={diffTab.cwd} />
-                  ) : activeTab?.kind === 'turn-diff' && activeTab.turnDiff ? (
-                    <TurnDiffPanel tab={activeTab} />
-                  ) : fileTab?.path ? (
-                    <Suspense
-                      fallback={<p className="px-3 py-2 text-xs text-muted-foreground">{t('app.openingFile')}</p>}
-                    >
-                      <FileView cwd={fileTab.cwd} path={fileTab.path} />
-                    </Suspense>
-                  ) : sessionReady || projectHome || chatHome ? (
+                  ) : projectHome || chatHome ? (
                     <>
-                      {/* Basis 0 like the greeting, so an empty session shares the height with the spacer below. */}
-                      {sessionReady ? <div className="flex min-h-0 flex-1 flex-col"><ChatView /></div> : <SessionGreeting />}
+                      <SessionGreeting />
                       {chatHome && (chatDraftError || workspaceError) ? (
                         <div
                           role="alert"
@@ -698,23 +680,19 @@ export default function App() {
                         draftSessionId={
                           projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
                         }
-                        centered={projectHome || chatHome || sessionEmpty}
+                        centered
                         workspace={composerWorkspace}
                       />
                       {projectHome ? (
                         <ProjectSessionHome cwd={currentProjectCwd!} />
-                      ) : chatHome || sessionEmpty ? (
-                        <div className="min-h-0 flex-1" />
-                      ) : null}
+                      ) : <div className="min-h-0 flex-1" />}
                     </>
                   ) : (
                     <Empty className="gap-4">
                       <EmptyDescription>
                         {restoreError
                           ? t('app.restoreFailed', { error: restoreError })
-                          : activeTab?.loadState === 'error'
-                            ? activeTab.loadError || t('app.loadFailed')
-                            : t('app.loadingSession')}
+                          : t('app.loadingSession')}
                       </EmptyDescription>
                       {restoreError ? (
                         <Button
@@ -727,11 +705,6 @@ export default function App() {
                         </Button>
                       ) : null}
                     </Empty>
-                  )}
-                  {!isMultiPane && (
-                    <SplitPaneOverlay
-                      position={splitDragOver?.paneId === (activeTabId ?? 'single') ? splitDragOver.position : null}
-                    />
                   )}
                 </div>
               </div>

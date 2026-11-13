@@ -1,14 +1,19 @@
+/** Stable tab-keyed pane content overlays the resize tree; only lightweight frames animate. */
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useRef,
+  useState,
   type ReactNode,
   type PointerEvent as ReactPointerEvent
 } from 'react'
 import { CircleAlert, X } from 'lucide-react'
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
 import { Group, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import {
   useSplitLayoutStore,
+  collectPaneNodes,
   isSplitNode,
   findPaneNode,
   groupOfPane,
@@ -26,9 +31,10 @@ import { TabContextMenu } from '../TabContextMenu'
 import { TabKindIcon } from '../TabKindIcon'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
 import { useProjectAction } from '../sidebar/project-action'
+import { collapsedPaneRect, samePaneRect, type PaneRect } from './split-pane-geometry'
 
 export interface SplitPaneContainerProps {
-  /** Any tab in the group to show; the container follows that group as panes move in and out of it. */
+  /** The visible tab; standalone pages and split groups share the same stable content hosts. */
   tabId: string
   className?: string
   renderPane: (node: PaneNode, isActive: boolean) => ReactNode
@@ -44,6 +50,49 @@ export function SplitPaneContainer({
   const closeTab = useSessionsStore((state) => state.closeTab)
   const dragOver = useSplitLayoutStore((state) => state.dragOver)
   const openTabs = useSessionsStore((state) => state.openTabs)
+  const area = useRef<HTMLDivElement>(null)
+  const panes = group ? collectPaneNodes(group.root) : [{ id: tabId, tabId }]
+  const measuredPanes = useRef(panes)
+  const topology = group ? JSON.stringify(group.root, (key, value) => key === 'sizes' ? undefined : value) : tabId
+  const [scene, setScene] = useState<PaneScene>({ rects: {}, previous: {}, topology: '', animate: false })
+  const reduced = useReducedMotion()
+  useLayoutEffect(() => {
+    const element = area.current!
+    const slots = [...element.querySelectorAll<HTMLElement>('[data-pane-slot]')]
+    let active = true
+    const measure = () => {
+      if (!active) return
+      const bounds = element.getBoundingClientRect()
+      const rects = Object.fromEntries(slots.map(slot => {
+        const rect = slot.getBoundingClientRect()
+        return [slot.dataset.paneSlot!, { left: rect.left - bounds.left, top: rect.top - bounds.top, width: rect.width, height: rect.height }]
+      }))
+      setScene(current => {
+        const ids = Object.keys(rects)
+        for (const id of ids) if (samePaneRect(current.rects[id], rects[id])) rects[id] = current.rects[id]
+        if (current.topology === topology && ids.length === Object.keys(current.rects).length &&
+          ids.every(id => rects[id] === current.rects[id])) return current
+        return { rects, previous: current.rects, topology,
+          animate: current.topology !== topology && Object.keys(rects).some(id => current.rects[id]) }
+      })
+    }
+    // Panel registration causes nested synchronous commits. Reading inside the parent layout
+    // effect catches a temporary flex layout and briefly animates an otherwise untouched pane.
+    let queued = false
+    const schedule = () => {
+      if (!active || queued) return
+      queued = true
+      queueMicrotask(() => { queued = false; measure() })
+    }
+    const observer = new ResizeObserver(schedule)
+    observer.observe(element)
+    for (const slot of slots) observer.observe(slot)
+    schedule()
+    return () => { active = false; observer.disconnect() }
+  }, [group?.root, tabId, topology])
+  useLayoutEffect(() => {
+    if (scene.topology === topology) measuredPanes.current = panes
+  })
   const cancelDrag = useRef<(() => void) | null>(null)
   useEffect(
     () => () => {
@@ -51,9 +100,6 @@ export function SplitPaneContainer({
     },
     []
   )
-
-  if (!group) return null
-  const { root, activePaneId } = group
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>, pane: PaneNode) => {
     if (event.button !== 0) return
@@ -120,8 +166,8 @@ export function SplitPaneContainer({
       )
         return
       if (reintegratingTab) {
-        layout.closePane(pane.id)
-        useSessionsStore.getState().setActive(pane.tabId)
+        const survivor = layout.closePane(pane.id)
+        if (survivor) useSessionsStore.getState().setActive(survivor)
       } else if (
         dragOver &&
         dragOver.paneId !== pane.id &&
@@ -190,26 +236,26 @@ export function SplitPaneContainer({
         </Group>
       )
     }
-    const isActive = activePaneId === node.id
+    return <div data-pane-slot={node.tabId} className="h-full w-full" />
+  }
+
+  const renderFrame = (node: PaneNode) => {
+    const isActive = !group || group.activePaneId === node.id
     const isDraggingOver = dragOver?.paneId === node.id
     const paneTab = openTabs.find((tab) => tab.id === node.tabId)
     const tabTitle = paneTab?.title || node.tabId
+    const rect = scene.rects[node.tabId] ?? { left: 0, top: 0, width: 0, height: 0 }
     return (
-      <div
-        key={node.id}
-        data-split-pane="true"
-        data-pane-id={node.id}
-        data-active={isActive ? 'true' : 'false'}
-        onClick={() => {
+      <PaneFrame key={node.tabId} paneId={node.id} isActive={isActive} rect={rect} scene={scene}
+        animate={scene.animate && !samePaneRect(scene.previous[node.tabId], rect) && !reduced}
+        entering={!scene.previous[node.tabId]} split={Boolean(group)} native={paneTab?.kind === 'browser'}
+        onSelect={() => {
+          if (!group) return
           setActivePane(node.id)
           useSessionsStore.getState().setActive(node.tabId)
-        }}
-        className={cn(
-          'relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border shadow-glass-pane transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none',
-          'border-border/60 bg-glass-pane-background bg-(image:--glass-pane-sheen) solid:bg-card solid:bg-none solid:shadow-md'
-        )}
-      >
-        <PaneHeader
+        }}>
+        <div className="relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden">
+        {group ? <PaneHeader
           isActive={isActive}
           tab={paneTab}
           tabId={node.tabId}
@@ -221,20 +267,62 @@ export function SplitPaneContainer({
             useSessionsStore.getState().setActive(node.tabId)
           }}
           onClose={() => closeTab(node.tabId)}
-        />
+        /> : null}
         {renderPane(node, isActive)}
         <SplitPaneOverlay position={isDraggingOver ? dragOver.position : null} />
       </div>
+      </PaneFrame>
     )
   }
 
   return (
-    <div
-      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden p-2', className)}
+    <div ref={area}
+      className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden', group && 'p-2', className)}
     >
-      {renderLayoutNode(root)}
+      {group ? renderLayoutNode(group.root) : <div data-pane-slot={tabId} className="h-full w-full" />}
+      <AnimatePresence initial={false} custom={{ ...scene, animate: scene.animate && !reduced }}>
+        {(scene.topology === topology ? panes : measuredPanes.current).filter(node => scene.rects[node.tabId]).map(renderFrame)}
+      </AnimatePresence>
     </div>
   )
+}
+
+interface PaneScene {
+  rects: Record<string, PaneRect>
+  previous: Record<string, PaneRect>
+  topology: string
+  animate: boolean
+}
+
+/** Content stays a flat, tab-keyed sibling while the resize tree only measures empty slots. */
+function PaneFrame({ paneId, isActive, rect, scene, animate, entering, split, native, onSelect, children }: {
+  paneId: string; isActive: boolean; rect: PaneRect; scene: PaneScene; animate: boolean; entering: boolean; split: boolean;
+  native: boolean; onSelect: () => void; children: ReactNode
+}) {
+  const present = useIsPresent()
+  const initial = animate ? collapsedPaneRect(rect, Object.values(scene.previous)) : rect
+  // Existing content follows its frame continuously. Only incoming/exiting DOM content clips a
+  // fixed viewport; native browser views must always track their actual bounds.
+  const clip = !native && ((entering && animate) || !present)
+  const right = entering && initial.left !== rect.left
+  const bottom = entering && initial.top !== rect.top
+  return <motion.div data-pane-frame data-pane-id={paneId} data-split-pane={split ? 'true' : undefined}
+    data-active={isActive ? 'true' : 'false'} onClick={onSelect}
+    initial={animate ? { ...initial } : false}
+    animate={{ ...rect, transition: { duration: animate ? 0.2 : 0, ease: [0.22, 1, 0.36, 1] } }}
+    variants={{ exit: (next: PaneScene) => ({
+      ...collapsedPaneRect(rect, Object.values(next.rects)), transition: { duration: next.animate ? 0.2 : 0 }
+    }) }}
+    exit="exit"
+    inert={!present || undefined} aria-hidden={!present || undefined}
+    className={cn('absolute min-h-0 min-w-0 overflow-hidden transition-[background-color,border-color] duration-200 motion-reduce:transition-none',
+      split && 'rounded-lg border border-border/60 bg-glass-pane-background bg-(image:--glass-pane-sheen) shadow-glass-pane solid:bg-card solid:bg-none solid:shadow-md')}>
+    <div className="absolute top-0 left-0 h-full w-full" style={clip ? {
+      width: Math.max(0, rect.width - (split ? 2 : 0)), height: Math.max(0, rect.height - (split ? 2 : 0)),
+      left: right ? 'auto' : 0, right: right ? 0 : undefined,
+      top: bottom ? 'auto' : 0, bottom: bottom ? 0 : undefined
+    } : undefined}>{children}</div>
+  </motion.div>
 }
 
 /** Each pane's header owns the right-click actions of the tab it shows. */

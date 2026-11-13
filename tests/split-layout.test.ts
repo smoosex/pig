@@ -118,6 +118,25 @@ describe('useSplitLayoutStore', () => {
     assert.equal(groupOfTab(store().groups, 'x')!.activePaneId, paneId('y'), 'the other group keeps its focus')
   })
 
+  test('pointer movement within the same target does not publish duplicate drag state', () => {
+    let updates = 0
+    const unsubscribe = useSplitLayoutStore.subscribe(() => updates++)
+    try {
+      for (let i = 0; i < 100; i++) store().setDragOver({ paneId: 'a', position: 'right' })
+      assert.equal(updates, 1)
+      store().setDragOver({ paneId: 'a', position: 'bottom' })
+      assert.equal(updates, 2)
+      store().setDragOver(null)
+      store().setDragOver(null)
+      assert.equal(updates, 3)
+      for (let i = 0; i < 100; i++) store().setReintegratingTab({ paneId: 'a', tabId: 'A' })
+      assert.equal(updates, 4)
+      store().setReintegratingTab(null)
+      store().setReintegratingTab(null)
+      assert.equal(updates, 5)
+    } finally { unsubscribe() }
+  })
+
   test('dragOver clears when its pane closes', () => {
     store().splitTab('1', '2', 'right')
     const p1 = paneId('1')

@@ -136,10 +136,17 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
       })()
     : undefined
 
+  const updateDropTarget = (next: TabStripDropTarget) => {
+    const current = dropTargetRef.current
+    if (current === next || (current && next && typeof current === 'object' && typeof next === 'object' &&
+      current.paneId === next.paneId && current.position === next.position)) return
+    dropTargetRef.current = next
+    setDropTarget(next)
+  }
+
   const clearDrag = () => {
     setActiveId(null)
-    dropTargetRef.current = null
-    setDropTarget(null)
+    updateDropTarget(null)
     sourcePaneIdRef.current = null
     activeDataRef.current = undefined
     lastPointerRef.current = null
@@ -160,19 +167,16 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
         getSourcePaneId({ id: activeId, data: { current: activeDataRef.current } })
 
       if (composerAtPoint(e.clientX, e.clientY)) {
-        dropTargetRef.current = null
-        setDropTarget(null)
+        updateDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
         return
       }
 
       if (isPointerOverTabBar(e.clientX, e.clientY)) {
         if (sourcePaneId) {
-          dropTargetRef.current = 'tab-strip-reintegrate'
-          setDropTarget('tab-strip-reintegrate')
+          updateDropTarget('tab-strip-reintegrate')
         } else {
-          dropTargetRef.current = null
-          setDropTarget(null)
+          updateDropTarget(null)
         }
         useSplitLayoutStore.getState().setDragOver(null)
         return
@@ -182,17 +186,13 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
       const tabBarBottom = tabBarRect ? tabBarRect.bottom : 40
 
       if (e.clientY <= tabBarBottom) {
-        if (!sourcePaneId) {
-          dropTargetRef.current = null
-          setDropTarget(null)
-        }
+        if (!sourcePaneId) updateDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
         return
       }
 
       if (isGroupDrag(activeId, sourcePaneId)) {
-        dropTargetRef.current = null
-        setDropTarget(null)
+        updateDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
         return
       }
@@ -236,12 +236,10 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
       const pos = paneEl ? computeSplitPosition(paneEl.getBoundingClientRect(), e.clientX, e.clientY) : null
       if (paneEl && pos) {
         const nextDrop = { paneId: paneEl.getAttribute('data-pane-id')!, position: pos }
-        dropTargetRef.current = nextDrop
-        setDropTarget(nextDrop)
+        updateDropTarget(nextDrop)
         useSplitLayoutStore.getState().setDragOver(nextDrop)
       } else {
-        dropTargetRef.current = null
-        setDropTarget(null)
+        updateDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
       }
     }
@@ -326,15 +324,8 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
       Boolean(over && visibleTabs.some((tab) => tab.id === over.id))
 
     if (sourcePaneId && isOverTop) {
-      const tabId =
-        sourceNode?.tabId ??
-        (typeof (active.data?.current as Record<string, unknown> | undefined)?.tabId === 'string'
-          ? ((active.data?.current as Record<string, unknown>).tabId as string)
-          : undefined)
-      if (tabId) {
-        useSessionsStore.getState().setActive(tabId)
-      }
-      useSplitLayoutStore.getState().closePane(sourcePaneId)
+      const survivor = useSplitLayoutStore.getState().closePane(sourcePaneId)
+      if (survivor) useSessionsStore.getState().setActive(survivor)
       return
     }
 
