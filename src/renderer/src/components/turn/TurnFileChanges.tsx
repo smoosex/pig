@@ -16,12 +16,21 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 type Counts = Pick<FileChangeSummary, 'added' | 'removed' | 'unknownOperations'>
 
 /** Counts only when every operation had a diff to count: a partial sum would read as the whole change. */
-export function FileChangeCounts({ file, className }: { file: Counts; className?: string }) {
+export function FileChangeCounts({ file, className, indicator = false }: { file: Counts; className?: string; indicator?: boolean }) {
   if (file.unknownOperations > 0 || (!file.added && !file.removed)) return null
+  const ratio = Math.round(5 * file.added / (file.added + file.removed))
+  const addedBlocks = file.added && file.removed ? Math.max(1, Math.min(4, ratio)) : ratio
   return (
     <span className={cn('flex shrink-0 gap-1.5 tabular-nums', className)}>
       {file.added ? <span className="text-success">+{file.added}</span> : null}
       {file.removed ? <span className="text-destructive">−{file.removed}</span> : null}
+      {indicator ? (
+        <span data-change-indicator aria-hidden className="ml-0.5 flex items-center gap-0.5">
+          {Array.from({ length: 5 }, (_, index) => (
+            <span key={index} className={cn('size-1.5 rounded-xs', index < addedBlocks ? 'bg-success' : 'bg-destructive')} />
+          ))}
+        </span>
+      ) : null}
     </span>
   )
 }
@@ -76,7 +85,7 @@ export function TurnFileChanges({ sessionId, turnId }: { sessionId: string; turn
         <IconBox>{singleShown ? <FileTypeIcon path={singleShown} className="size-3.5" /> : <Files />}</IconBox>
         <span className="pointer-events-none min-w-0 flex-1 truncate">{title}</span>
         {single ? <OpenFileButton file={single} cwd={projectCwd} /> : null}
-        <FileChangeCounts file={totalChanges(files)} className="pointer-events-none" />
+        <FileChangeCounts file={totalChanges(files)} indicator className="pointer-events-none" />
         {open && !single ? (
           <Button
             type="button"

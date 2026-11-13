@@ -74,7 +74,7 @@ main 向 UI 发起的浏览器、终端和会话控制请求共用 `src/main/ipc
 
 ## 文件修改记录
 
-- `src/main/pi/session-file-changes.ts` 从当前分支的原始 JSONL 条目累计成功的 edit／write 操作，不等同于 Git 净差异，不读取文件当前内容来重建历史。
+- `src/main/pi/session-file-changes.ts` 从当前分支的原始 JSONL 条目累计成功的 edit／write 操作，不等同于 Git 净差异，不读取文件当前内容来重建历史。bash／终端脚本造成的修改目前不在记录范围内；不能解析命令文本猜测差异，也不能拿当前 Git 状态冒充本轮历史。
 - 直接调用使用 toolResult 的 `details.patch`／`diff`。嵌套调用由 `session-file-change-records.ts` 在工具完成时捕获最终结果，将操作 ID、最外层调用 ID、实际路径和差异写入 `pig-file-change-v1` custom entry；只存文件操作证据，不存任意子工具结果，也不进入模型上下文。
 - 这些条目跟随会话分支持久化，不依赖 SDK 有界 nestedCalls 是否保留参数；聚合时与 nestedCalls 去重。父脚本之后失败或未留下结果，不抹掉已经成功的文件操作。已识别的 `pig-file-change-v1` 记录校验失败时抛出 `ERR_INVALID_FILE_CHANGE_RECORD`，不静默忽略或返回貌似完整的统计。
 - write 只记录本次写入内容，沿用整份内容计为新增的语义，不推断被覆盖的旧内容。旧会话未记录的 edit 差异继续显示不可用，不用当前 Git 状态或替换参数补造。
