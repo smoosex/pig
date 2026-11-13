@@ -467,6 +467,9 @@ async function runFixture(name: string): Promise<void> {
     await filter('筛选变更文件', '')
 
     await click(switcher('文件'))
+    const fileFilter = container.querySelector('[data-workspace-filter]')!
+    assert.ok(fileFilter.parentElement!.classList.contains('pb-2'), 'file-page bottom clearance stays outside the scroll viewport')
+    assert.ok(fileFilter.nextElementSibling!.classList.contains('overflow-y-auto'), 'the inset contains the scroll viewport, not just its scrolling contents')
     assert.equal(container.querySelector<HTMLButtonElement>('[aria-label="定位当前文件"]')!.disabled, true)
     assert.deepEqual(treeCalls, [''], 'the tree reads the root the first time it is shown')
     assert.deepEqual(rowTexts(), ['node_modules', 'src', 'readme.md'])

@@ -91,7 +91,7 @@ export function FileTree({ cwd }: { cwd: string }) {
         : null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col pb-2">
       <WorkspaceFilter label={t('panel.filterFiles')} value={query} onChange={setQuery} disabled={!!draft}>
         <Button variant="ghost" size="icon-xs" className={cn('shrink-0 text-muted-foreground', sidebarSurfaceToggle)} aria-pressed={hideIgnored}
           aria-label={hideIgnored ? t('file.showIgnored') : t('file.hideIgnored')} title={hideIgnored ? t('file.showIgnored') : t('file.hideIgnored')} onClick={() => setHideIgnored(!hideIgnored)}>
