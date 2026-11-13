@@ -357,6 +357,8 @@ export const zh = {
     noChanges: '没有可显示的变更',
     emptyStaged: '暂存区没有变更',
     emptyWorktree: '工作区没有未提交的变更',
+    noChangesTitle: '没有更改',
+    noChangesDescription: '你或你的智能体在此工作树中所做的编辑会显示在这里。',
     watchFailed: '无法监听工作区变更：{error}',
     groupsAria: '变更列表分组方式',
     group: '分组',

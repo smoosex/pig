@@ -360,6 +360,8 @@ export const en: Messages = {
     noChanges: 'Nothing to show',
     emptyStaged: 'Nothing is staged',
     emptyWorktree: 'The worktree has no uncommitted changes',
+    noChangesTitle: 'No changes',
+    noChangesDescription: 'Edits you or your agent make in this worktree will appear here.',
     watchFailed: 'Cannot watch the worktree for changes: {error}',
     groupsAria: 'How the change list is grouped',
     group: 'Grouped',

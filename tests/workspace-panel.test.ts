@@ -321,12 +321,25 @@ async function runFixture(name: string): Promise<void> {
     }
     await render('/broken')
     assert.match(container.textContent ?? '', /Git 不可用/)
+    assert.equal(container.querySelector('[data-slot="empty"]'), null)
 
     await render('/plain')
     assert.match(container.textContent ?? '', /当前目录不是 Git 仓库/)
+    assert.equal(container.querySelector('[data-slot="empty"]'), null)
 
     await render('/clean')
-    assert.match(container.textContent ?? '', /工作区没有未提交的变更/)
+    const empty = container.querySelector('[data-slot="empty"]')!
+    assert.ok(empty, 'a clean worktree has a dedicated empty state')
+    assert.equal(empty.querySelector('[data-slot="empty-title"]')!.textContent, '没有更改')
+    assert.equal(empty.querySelector('[data-slot="empty-description"]')!.textContent, '你或你的智能体在此工作树中所做的编辑会显示在这里。')
+    const icon = empty.querySelector('[data-slot="empty-icon"]')!
+    assert.ok(icon.classList.contains('rounded-full'))
+    assert.ok(icon.querySelector('svg.lucide-file-diff'))
+    assert.ok(empty.classList.contains('justify-center'))
+    assert.ok(empty.parentElement!.classList.contains('min-h-full'), 'the empty state fills the list viewport to center vertically')
+    await click(container.querySelector('button[aria-label="以树状显示"]'))
+    assert.ok(container.querySelector('[data-slot="empty"]'), 'the tree view keeps the same clean state')
+    await click(container.querySelector('button[aria-label="以树状显示"]'))
 
     // An unknown file must not hide known counts on files, groups or directories.
     api.readWorktreeDiff = async () =>
@@ -464,6 +477,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(row('src/staged.ts'), null)
     await filter('筛选变更文件', 'absent')
     assert.match(container.textContent!, /没有匹配的文件/)
+    assert.equal(container.querySelector('[data-slot="empty"]'), null, 'filtering never presents a dirty worktree as clean')
     await filter('筛选变更文件', '')
 
     await click(switcher('文件'))

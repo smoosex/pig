@@ -8,9 +8,10 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { scopeLabel } from '../../stores/diff'
 import { useT } from '../../hooks/useT'
-import { ChevronRight, Folder, FolderOpen, ListTree } from 'lucide-react'
+import { ChevronRight, FileDiff, Folder, FolderOpen, ListTree } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Separator } from '../ui/separator'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '../ui/empty'
 import type { DiffFileEntry, DiffScope } from '../../ipc/api'
 import { useDiffStore } from '../../stores/diff'
 import { useSessionsStore } from '../../stores/sessions'
@@ -189,7 +190,17 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     if (state.status === 'loading' && !state.diff) return <Notice>{t('diff.reading')}</Notice>
     if (state.status === 'error') return <Notice>{state.error}</Notice>
     if (!diff?.git) return <Notice>{t('diff.notGit')}</Notice>
-    if (!diff.all.length) return <Notice>{t('diff.emptyWorktree')}</Notice>
+    if (!diff.all.length) return (
+      <Empty className="px-4">
+        <EmptyHeader>
+          <EmptyMedia className="size-12 rounded-full border border-glass-border bg-glass-button-background text-sidebar-foreground shadow-xs solid:border-border solid:bg-background">
+            <FileDiff className="size-5" aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>{t('diff.noChangesTitle')}</EmptyTitle>
+          <EmptyDescription>{t('diff.noChangesDescription')}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    )
     if (!flatEntries.length) return <Notice>{t('file.noMatch')}</Notice>
     if (flat) return rows(flatEntries, 'all', false)
     return groups.map((group) => {
@@ -228,7 +239,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
           against the content box, so padding there both leaves an uncovered band that rows scroll
           through and makes the group label travel before it pins to the top. */}
       <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <SidebarHoverHighlight className="flex flex-col gap-0.5">{list()}</SidebarHoverHighlight>
+        <SidebarHoverHighlight className="flex min-h-full flex-col gap-0.5">{list()}</SidebarHoverHighlight>
       </div>
 
       {state?.countError && <Notice>{t('diff.countFailed', { error: state.countError })}</Notice>}
