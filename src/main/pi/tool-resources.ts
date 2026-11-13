@@ -10,6 +10,7 @@ import {
 import { pigPath } from '../pig-dir'
 import { sessionMcpConfig } from '../mcp/settings'
 import { readSessionCapabilities } from './session-capabilities'
+import { registerFileChangeRecorder } from './session-file-change-records'
 import type { SessionCapabilityOverrides } from '../../shared/session-capabilities'
 import { mcpCredentials, mcpSdk } from '../mcp/sdk'
 import { createMcpConnections } from '../mcp/connections'
@@ -26,6 +27,7 @@ export function sessionToolFactory(
   permissions?: PermissionOptions
 ): ExtensionFactory {
   return async (pi) => {
+    registerFileChangeRecorder(pi)
     const preferences = inherited ?? readSessionCapabilities(sessionId)
     const snapshot = await sessionMcpConfig(cwd, preferences.mcp)
     const codemode = preferences.tools.codemode !== false

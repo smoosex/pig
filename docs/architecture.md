@@ -70,6 +70,13 @@ src/
 新增跨进程字段时先改共享契约，再改 main 的生产端和 renderer 的消费端。
 不要在 preload 声明、renderer 或 main 各复制一份接口。
 
+## 文件修改记录
+
+- `src/main/pi/session-file-changes.ts` 从当前分支的原始 JSONL 条目累计成功的 edit／write 操作，不等同于 Git 净差异，不读取文件当前内容来重建历史。
+- 直接调用使用 toolResult 的 `details.patch`／`diff`。嵌套调用由 `session-file-change-records.ts` 在工具完成时捕获最终结果，将操作 ID、最外层调用 ID、实际路径和差异写入 `pig-file-change-v1` custom entry；只存文件操作证据，不存任意子工具结果，也不进入模型上下文。
+- 这些条目跟随会话分支持久化，不依赖 SDK 有界 nestedCalls 是否保留参数；聚合时与 nestedCalls 去重。父脚本之后失败或未留下结果，不抹掉已经成功的文件操作。已识别的 `pig-file-change-v1` 记录校验失败时抛出 `ERR_INVALID_FILE_CHANGE_RECORD`，不静默忽略或返回貌似完整的统计。
+- write 只记录本次写入内容，沿用整份内容计为新增的语义，不推断被覆盖的旧内容。旧会话未记录的 edit 差异继续显示不可用，不用当前 Git 状态或替换参数补造。
+
 ## 会话树与分支切换
 
 - 会话树左键点击节点直接跳转（不总结），右键菜单提供「直接跳转 / 总结并跳转 / 自定义提示词总结」，只有自定义提示词会弹出输入框。

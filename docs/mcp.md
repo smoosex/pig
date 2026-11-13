@@ -41,7 +41,7 @@ API keys go in the HTTP form's header rows, for example `Authorization: Bearer <
 
 QuickJS has no Node, filesystem, network or timer APIs. Scripts access tools through the SDK pipeline and available models through Pi's model runtime. Finished side effects are not rolled back if a script fails.
 
-Nested calls appear in a collapsed list under the parent tool, not as synthetic transcript messages. Live events show parameters, state, duration and errors; replay uses Pi's bounded `nestedCalls` records and indicates omitted/incomplete metadata. Child result bodies are not persisted in those records.
+Nested calls appear in a collapsed list under the parent tool, not as synthetic transcript messages. Live events show parameters, state, duration and errors; replay uses Pi's bounded `nestedCalls` records and indicates omitted/incomplete metadata. Child result bodies are not persisted in those records. Pig separately persists nested file-operation evidence for historical diffs; see [File change records](architecture.md#文件修改记录).
 
 Validation covers configuration isolation and global enablement, serial writes, input/reload races, cancellation, real SDK discovery/direct MCP invocation and QuickJS execution without an external model. A macOS packaged-SDK smoke check also executes QuickJS from ASAR. Real-provider OAuth and UI end-to-end flows require manual verification.
 

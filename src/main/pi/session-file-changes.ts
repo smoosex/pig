@@ -9,6 +9,7 @@ import type {
   SessionFileChanges
 } from '../../shared/session-file-changes'
 import { displayTurnOwners } from './session-display-model'
+import { FILE_CHANGE_ENTRY, readFileChangeRecord, writtenPatch } from './session-file-change-records'
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -72,19 +73,6 @@ function operation(id: string, tool: 'edit' | 'write', details?: unknown): FileC
   return result
 }
 
-/**
- * `write` records only what it wrote, so its change is shown as the whole content added. Whatever the
- * file held before is deliberately ignored: an overwrite reads as a new file.
- */
-function writtenPatch(path: string, content: string): string {
-  const lines = content.split(/\r?\n/)
-  const newline = lines.at(-1) === ''
-  if (newline) lines.pop()
-  const body = lines.map((line) => `+${line}`)
-  if (!newline) body.push('\\ No newline at end of file')
-  return [`--- /dev/null`, `+++ b/${path}`, `@@ -0,0 +1,${lines.length} @@`, ...body, ''].join('\n')
-}
-
 function append(files: Map<string, SessionFileChange>, path: string, op: FileChangeOperation): void {
   let file = files.get(path)
   if (!file) {
@@ -101,7 +89,7 @@ function append(files: Map<string, SessionFileChange>, path: string, op: FileCha
 export function summarizeSessionFileChanges(entries: readonly SessionEntry[], cwd: string): SessionFileChanges {
   const files = new Map<string, SessionFileChange>()
   const turns = new Map<string, Map<string, SessionFileChange>>()
-  const calls = new Map<string, { name: string; arguments: unknown; turnId: string | undefined }>()
+  const calls = new Map<string, { name: string; arguments: unknown; turnId: string | undefined; recorded: Set<string> }>()
   const add = (id: string, name: string, args: unknown, owner: string | undefined, details?: unknown): void => {
     if (name !== 'edit' && name !== 'write') return
     const path = object(args)?.path
@@ -120,12 +108,20 @@ export function summarizeSessionFileChanges(entries: readonly SessionEntry[], cw
   const owners = displayTurnOwners([...entries])
   for (const id of new Set(owners.values())) turns.set(id, new Map())
   for (const entry of entries) {
+    if (entry.type === 'custom' && entry.customType === FILE_CHANGE_ENTRY) {
+      const data = readFileChangeRecord(entry.data)
+      const parent = calls.get(data.parentToolCallId)
+      if (parent && !parent.recorded.has(data.toolCallId)) {
+        add(data.toolCallId, data.tool, { path: data.path }, parent.turnId, data)
+        parent.recorded.add(data.toolCallId)
+      }
+    }
     if (entry.type !== 'message') continue
     const message = entry.message
     const turnId = owners.get(entry.id)
     if (message.role === 'assistant') {
       for (const block of message.content) {
-        if (block.type === 'toolCall') calls.set(block.id, { name: block.name, arguments: block.arguments, turnId })
+        if (block.type === 'toolCall') calls.set(block.id, { name: block.name, arguments: block.arguments, turnId, recorded: new Set() })
       }
     } else if (message.role === 'toolResult') {
       const call = calls.get(message.toolCallId)
@@ -135,7 +131,7 @@ export function summarizeSessionFileChanges(entries: readonly SessionEntry[], cw
       // A parent script can fail after a nested write has already succeeded.
       const seen = new Set<string>()
       for (const nested of message.nestedCalls?.calls ?? []) {
-        if (nested.status !== 'ok' || seen.has(nested.id)) continue
+        if (nested.status !== 'ok' || seen.has(nested.id) || call.recorded.has(nested.id)) continue
         seen.add(nested.id)
         add(nested.id, nested.name, nested.arguments, call.turnId)
       }

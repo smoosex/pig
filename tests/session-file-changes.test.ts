@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import assert from 'node:assert/strict'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
@@ -62,7 +63,7 @@ test('write counts its whole content as added; missing or malformed edit diffs a
   expect(bare.files[0]).toMatchObject({ added: 1, removed: 0, unknownOperations: 0 })
 })
 
-test('nested successful calls are unknown even if the parent fails; missing arguments are not guessed', () => {
+test('legacy nested calls without records remain unknown; missing arguments are not guessed', () => {
   const summary = summarizeSessionFileChanges([user('t'), call('parent', 'codemode', {}), result('parent', {
     toolName: 'codemode', isError: true, nestedCalls: { complete: false, calls: [
       { id: 'n1', name: 'write', status: 'ok', arguments: { path: 'a.ts' } },
@@ -77,6 +78,66 @@ test('nested successful calls are unknown even if the parent fails; missing argu
   expect(summary.files).toHaveLength(1)
   expect(summary.files[0]?.unknownOperations).toBe(2)
   expect(summary.files[0]?.operations.map((op) => op.id)).toEqual(['n1', 'n2'])
+})
+
+function recorded(id: string, data: Record<string, unknown>): SessionEntry {
+  return { type: 'custom', customType: 'pig-file-change-v1', id, parentId: null, timestamp: '', data }
+}
+
+test('recorded nested diffs survive a failed parent and are not counted twice', () => {
+  const entries = [user('t'), call('parent', 'codemode', {}), recorded('saved', {
+    parentToolCallId: 'parent', toolCallId: 'parent/1', tool: 'edit', path: 'a.ts', patch
+  }), result('parent', { toolName: 'codemode', isError: true, nestedCalls: { complete: true, calls: [
+    { id: 'parent/1', name: 'edit', status: 'ok', arguments: { path: 'a.ts' } }
+  ] } })]
+  const summary = summarizeSessionFileChanges(JSON.parse(JSON.stringify(entries)), cwd)
+  expect(summary.files[0]).toMatchObject({ added: 2, removed: 1, unknownOperations: 0 })
+  expect(summary.files[0]?.operations).toHaveLength(1)
+  expect(summary.files[0]?.operations[0]?.patch).toBe(patch)
+  expect(summary.turns.t).toEqual(summary.files)
+})
+
+test('records retain paths when nested arguments are omitted or the parent result is missing', () => {
+  const base = [user('t'), call('parent', 'codemode', {}), recorded('saved', {
+    parentToolCallId: 'parent', toolCallId: 'parent/1', tool: 'edit', path: 'a.ts', patch
+  })]
+  expect(summarizeSessionFileChanges(base, cwd).files[0]).toMatchObject({ added: 2, removed: 1, unknownOperations: 0 })
+  const summary = summarizeSessionFileChanges([...base, result('parent', {
+    toolName: 'codemode', nestedCalls: { complete: false, calls: [
+      { id: 'parent/1', name: 'edit', status: 'ok', argumentsBytes: 10000 }
+    ] }
+  })], cwd)
+  expect(summary.files[0]?.operations).toHaveLength(1)
+  expect(summarizeSessionFileChanges(base.slice(2), cwd).files).toEqual([])
+})
+
+test('deduplicates records within a parent invocation, not across later turns reusing its id', () => {
+  const entries = ['first', 'second'].flatMap(turn => [user(turn), call('parent', 'codemode', {}),
+    recorded(`saved-${turn}`, {
+      parentToolCallId: 'parent', toolCallId: 'parent/1', tool: 'edit', path: 'a.ts', patch
+    }), result('parent', { toolName: 'codemode', nestedCalls: { complete: true, calls: [
+      { id: 'parent/1', name: 'edit', status: 'ok', arguments: { path: 'a.ts' } }
+    ] } })])
+  const uniqueEntries = entries.map((item, index) => item.type === 'message' && item.message.role !== 'user'
+    ? { ...item, id: `${item.id}-${index}` } : item)
+  const summary = summarizeSessionFileChanges(uniqueEntries, cwd)
+  expect(summary.files[0]?.operations).toHaveLength(2)
+  expect(summary.turns.first?.[0]?.operations).toHaveLength(1)
+  expect(summary.turns.second?.[0]?.operations).toHaveLength(1)
+})
+
+test('malformed recognized records throw even when nested metadata or the parent result is missing', () => {
+  const base = [user('t'), call('parent', 'codemode', {}),
+    recorded('invalid', { parentToolCallId: 'parent', toolCallId: 'parent/1', tool: 'edit', path: 'a.ts', patch: 1 })]
+  for (const tail of [[], [result('parent', { toolName: 'codemode', nestedCalls: { complete: true, calls: [
+    { id: 'parent/1', name: 'edit', status: 'ok', arguments: { path: 'a.ts' } }
+  ] } })], [result('parent', { toolName: 'codemode', nestedCalls: { complete: false, calls: [
+    { id: 'parent/1', name: 'edit', status: 'ok', argumentsBytes: 10000 }
+  ] } })]]) {
+    assert.throws(() => summarizeSessionFileChanges([...base, ...tail], cwd), {
+      code: 'ERR_INVALID_FILE_CHANGE_RECORD'
+    })
+  }
 })
 
 test('normalizes tilde, at prefix, absolute paths and unicode spaces without filesystem reads', () => {
