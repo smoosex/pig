@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SpawnRequest } from '../src/main/plugins/pig-subagent-host'
+import { SPAWN_GUIDELINES, SPAWN_SNIPPET } from '../src/main/plugins/pig-subagent/prompts'
 
 test('the jiti-loaded spawn tool reaches the host registered by main', async () => {
   const root = await mkdtemp(join(tmpdir(), 'pig-subagent-ext-'))
@@ -20,7 +21,8 @@ test('the jiti-loaded spawn tool reaches the host registered by main', async () 
     const extension = loader.getExtensions().extensions.find((item) => item.path === path)!
     const spawn = extension.tools.get('spawn')!.definition
     expect(spawn.executionMode).toBe('parallel')
-    expect(spawn.promptGuidelines?.some((line) => line.includes('Never guess or fabricate'))).toBe(true)
+    expect(spawn.promptGuidelines).toEqual(SPAWN_GUIDELINES)
+    expect(spawn.promptSnippet).toBe(SPAWN_SNIPPET)
 
     const requests: SpawnRequest[] = []
     registerSubagentHost({
