@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import type { BrowserPopupRequest } from '../../../../shared/browser'
 import type {
   ForkPosition,
   BashExecutionResult,
@@ -234,6 +235,7 @@ export interface SessionsStore {
   /** Shows one turn's recorded changes in a pane beside the session. */
   openTurnDiffTab: (sessionId: string, turnId: string) => Promise<void>
   /** Resolves the new tab's id. `background` keeps the current selection (agent-opened tabs). */
+  adoptBrowserPopup: (request: BrowserPopupRequest) => Promise<void>
   openBrowserTab: (cwd?: string | null, options?: { background?: boolean; targetSessionId?: string }) => Promise<string>
   /** Opens a terminal in the worktree, or the home directory when `cwd` is null; returns its tab id. */
   openTerminalTab: (cwd: string | null, options?: { background?: boolean }) => string

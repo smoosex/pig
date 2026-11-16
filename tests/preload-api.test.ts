@@ -104,6 +104,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onHistoryChanged(() => {})()
   await api.browser.releaseAgent('browser:one', 'session:one')
   await api.browser.answerAgentOpen('request-1', { browserId: 'browser:one' })
+  await api.browser.acceptPopup('browser:popup', 'browser:one')
+  api.browser.onPopupRequest(() => {})()
   api.browser.onAgentOpenRequest(() => {})()
   await api.browser.close('session-1')
   api.browser.onCloseRequested(() => {})()
@@ -210,6 +212,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:history-set-recording', args: [false] },
     { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
+    { channel: 'browser:accept-popup', args: ['browser:popup', 'browser:one'] },
     { channel: 'browser:close', args: ['session-1'] },
     { channel: 'persona:get', args: [] },
     { channel: 'persona:save-file', args: [{ name: 'SOUL.md', content: 'persona', revision: null }] },
@@ -244,6 +247,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('system-plugins:ui'))
   assert.ok(listeners.includes('browser:close-tab-requested'))
   assert.ok(listeners.includes('browser:devtools-resize'))
+  assert.ok(listeners.includes('browser:popup-request'))
   assert.ok(listeners.includes('browser:agent-open-request'))
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('permissions:changed'))

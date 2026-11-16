@@ -70,6 +70,8 @@ async function fixture() {
     setHistoryRecording: async () => {},
     onHistoryChanged: () => () => {},
     releaseAgent: async (id, expected) => { controlActions.push(['release', id, expected]) },
+    onPopupRequest: () => () => {},
+    acceptPopup: async id => state(id),
     onAgentOpenRequest: () => () => {},
     answerAgentOpen: async () => {},
     onShortcutRequested: () => () => {},

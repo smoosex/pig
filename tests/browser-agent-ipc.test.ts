@@ -30,7 +30,7 @@ async function fixture(): Promise<void> {
     WebContentsView: class {}
   }))
   mock.module('../src/main/browser/favicon', () => ({ fetchFavicon: async () => null }))
-  mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {} }))
+  mock.module('../src/main/open-project-sessions', () => ({ saveBrowserTabUrl: async () => {}, forgetBrowserTabUrl: async () => {} }))
   mock.module('../src/main/browser/host', () => ({
     BrowserHost: class {
       allowFocus() {}

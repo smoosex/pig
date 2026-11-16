@@ -41,10 +41,12 @@ async function fixture() {
   const piCalls: string[] = []
   const answers: unknown[][] = []
   let create: (id: string) => Promise<unknown> = async () => ({})
+  let acceptPopup: (id: string) => Promise<{ title: string }> = async () => ({ title: 'Popup' })
   const api = new Proxy({
     browser: {
       create: async (id: string, cwd: string) => { browserCreates.push(id); browserScopes.push(cwd); return create(id) },
       close: async (id: string) => { browserCloses.push(id) },
+      acceptPopup: (id: string) => acceptPopup(id),
       answerAgentOpen: async (...args: unknown[]) => { answers.push(args) }
     },
     saveOpenProjectTabOrder: async (...args: unknown[]) => { writes.push(args) },
@@ -158,6 +160,29 @@ async function fixture() {
   assert.ok(JSON.stringify(toolWrites).includes(chatBrowser.id), 'a chat browser is saved while open')
   assert.ok(!JSON.stringify(toolWrites.at(-1)).includes(chatBrowser.id), 'and dropped once closed')
   assert.equal(new Set(browserCreates).size, browserCreates.length)
+
+  const source = { ...tab('browser:source', 'browser'), browserTargetSessionId: 'real' }
+  store.setState({ openTabs: [source], activeTabId: source.id, currentProjectCwd: '/project' })
+  const createsBefore = browserCreates.length
+  await state().adoptBrowserPopup({ browserId: 'browser:popup', sourceBrowserId: source.id, background: false })
+  assert.equal(state().activeTabId, 'browser:popup')
+  assert.equal(state().openTabs.at(-1)?.browserTargetSessionId, 'real')
+  assert.equal(state().openTabs.at(-1)?.cwd, '/project')
+  assert.equal(browserCreates.length, createsBefore, 'adopt the existing native view, never create/replay its navigation')
+  await state().adoptBrowserPopup({ browserId: 'browser:bg', sourceBrowserId: source.id, background: false })
+  assert.equal(state().activeTabId, 'browser:popup', 'a non-active source cannot steal selection')
+  store.setState({ activeTabId: source.id })
+  await state().adoptBrowserPopup({ browserId: 'browser:bg-explicit', sourceBrowserId: source.id, background: true })
+  assert.equal(state().activeTabId, source.id)
+  let finishPopup!: (value: { title: string }) => void
+  acceptPopup = () => new Promise(resolve => { finishPopup = resolve })
+  const late = state().adoptBrowserPopup({ browserId: 'browser:late', sourceBrowserId: source.id, background: false })
+  state().closeTab(source.id)
+  finishPopup({ title: 'Late' })
+  await late
+  assert.ok(browserCloses.includes('browser:late'))
+  assert.ok(!state().openTabs.some(tab => tab.id === 'browser:late'))
+  assert.deepEqual(state().runtime, {}, 'popups never create or inherit a Pi runtime')
 
   const terminal = state().openTerminalTab('/project')
   assert.match(terminal, /^terminal:/)

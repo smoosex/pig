@@ -1,3 +1,4 @@
+/** Serializes workspace/tab restoration state and main-owned browser URL commits into one atomic file. */
 import { mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { writeFileAtomic } from './atomic-write'
@@ -237,12 +238,13 @@ async function writeState(state: OpenProjectSessionsState): Promise<void> {
 
 let mutationQueue: Promise<void> = Promise.resolve()
 
-function mutate(update: (state: OpenProjectSessionsState) => void): Promise<void> {
+function mutate(update: (state: OpenProjectSessionsState) => void | (() => void)): Promise<void> {
   const result = mutationQueue.then(async () => {
     // A read that failed for any reason other than a missing file must not turn into a write.
     const state = await readState()
-    update(state)
+    const committed = update(state)
     await writeState(state)
+    committed?.()
   })
   mutationQueue = result.catch(() => {})
   return result
@@ -378,8 +380,10 @@ export function removeOpenProjectWorkspaces(cwds: Iterable<string>): Promise<voi
   const targets = new Set([...cwds].map((cwd) => resolve(cwd)))
   return mutate((state) => {
     state.workspaces = state.workspaces.filter((workspace) => !targets.has(workspace.cwd))
+    const removed = state.tools.filter(tool => tool.kind === 'browser' && targets.has(tool.cwd))
     state.tools = state.tools.filter((tool) => !targets.has(tool.cwd))
     if (state.currentCwd && targets.has(state.currentCwd)) state.currentCwd = null
+    return () => { for (const tool of removed) discardBrowserUrl(tool.id) }
   })
 }
 
@@ -393,7 +397,9 @@ export function saveOpenToolTabs(tabs: OpenToolTabMembership[]): Promise<void> {
   if (!Array.isArray(tabs) || next.length !== tabs.length) throw new Error('Invalid open tool tabs')
   return mutate((state) => {
     const previous = new Map(state.tools.map((tool) => [tool.id, tool]))
-    state.tools = next.map((tool) => {
+    const members = new Set(next.map((tool) => tool.id))
+    const removed = state.tools.filter(tool => tool.kind === 'browser' && !members.has(tool.id))
+    state.tools = next.filter((tool) => !forgottenBrowserIds.has(tool.id)).map((tool) => {
       const url = previous.get(tool.id)?.url
       return url ? { ...tool, url } : tool
     })
@@ -414,26 +420,63 @@ export function saveOpenToolTabs(tabs: OpenToolTabMembership[]): Promise<void> {
       workspace.tabOrder = normalizeOrder(workspace.tabOrder, workspaceMembers(workspace, state.tools))
     }
     Object.assign(state, chatStateFor(state, state.tools))
+    const committed = applyPendingBrowserUrls(state)
+    return () => {
+      committed()
+      for (const tool of removed) discardBrowserUrl(tool.id)
+    }
   })
 }
 
 // Pages can commit faster than the file is rewritten (in-page routes, hash updates): the latest URL per
-// browser waits here and every pending one lands in the next single write.
-const pendingBrowserUrls = new Map<string, string>()
+// browser waits here until membership exists and the corresponding write succeeds.
+const pendingBrowserUrls = new Map<string, string | null>()
+// Browser IDs identify one lifetime; closed IDs must reject late commits and membership snapshots.
+const forgottenBrowserIds = new Set<string>()
 let browserUrlWrite: Promise<void> | null = null
 
-/** Records a browser's committed page; a browser the renderer has not recorded as open is ignored. */
-export function saveBrowserTabUrl(browserId: string, url: string): Promise<void> {
+function discardBrowserUrl(browserId: string): void {
+  forgottenBrowserIds.add(browserId)
+  pendingBrowserUrls.delete(browserId)
+}
+
+function applyPendingBrowserUrls(state: OpenProjectSessionsState): () => void {
+  const applied = new Map<string, string | null>()
+  for (const tool of state.tools) {
+    if (tool.kind !== 'browser' || !pendingBrowserUrls.has(tool.id)) continue
+    const url = pendingBrowserUrls.get(tool.id)!
+    if (url === null) delete tool.url
+    else tool.url = url
+    applied.set(tool.id, url)
+  }
+  return () => {
+    for (const [id, url] of applied) {
+      if (pendingBrowserUrls.get(id) === url) pendingBrowserUrls.delete(id)
+    }
+  }
+}
+
+/** Closes an ID's persistence lifetime, including commits arriving before membership or after close. */
+export function forgetBrowserTabUrl(browserId: string): Promise<void> {
+  if (!BROWSER_ID_PATTERN.test(browserId)) throw new Error('Invalid browser ID')
+  discardBrowserUrl(browserId)
+  return mutate((state) => {
+    const tool = state.tools.find((item) => item.id === browserId && item.kind === 'browser')
+    if (tool) delete tool.url
+  })
+}
+
+/** Records a committed HTTP(S) page, or clears it for about:blank; membership may arrive later. */
+export function saveBrowserTabUrl(browserId: string, url: string | null): Promise<void> {
+  if (!BROWSER_ID_PATTERN.test(browserId)) throw new Error('Invalid browser ID')
+  if (url !== null && !isBrowserUrl(url)) throw new Error('Invalid browser URL')
+  if (forgottenBrowserIds.has(browserId)) return Promise.resolve()
   pendingBrowserUrls.set(browserId, url)
   if (browserUrlWrite) return browserUrlWrite
   const write = mutate((state) => {
     // From here a new commit needs a later write; this one has already taken what is pending.
     browserUrlWrite = null
-    for (const tool of state.tools) {
-      const pending = pendingBrowserUrls.get(tool.id)
-      if (tool.kind === 'browser' && pending && isBrowserUrl(pending)) tool.url = pending
-    }
-    pendingBrowserUrls.clear()
+    return applyPendingBrowserUrls(state)
   })
   browserUrlWrite = write
   // The failure still reaches every caller through `write`. A read that failed before the update ran

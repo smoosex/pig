@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import * as atomicWrite from '../src/main/atomic-write'
 
 mock.module('electron', () => ({ app: { isPackaged: false } }))
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
@@ -339,7 +340,7 @@ describe('open project sessions', () => {
       { id: 'browser:b', kind: 'browser', cwd, targetSessionId: 'one' },
       { id: 'terminal:t', kind: 'terminal', cwd: '' }
     ])
-    // Pages commit in bursts; the latest one wins and a browser nobody recorded gets nothing written.
+    // Pages commit in bursts; the latest one wins and an unregistered browser is not a member yet.
     await Promise.all([
       state.saveBrowserTabUrl('browser:b', 'https://a.test/1'),
       state.saveBrowserTabUrl('browser:b', 'https://a.test/2'),
@@ -366,23 +367,132 @@ describe('open project sessions', () => {
     await state.forgetOpenProjectSession('two')
     expect((await state.loadOpenProjectSessions()).workspaces.map((item) => item.tabOrder)).toEqual([['browser:b']])
     await state.removeOpenProjectWorkspaces([cwd])
+    await state.forgetBrowserTabUrl('browser:unknown')
     expect(await state.loadOpenProjectSessions()).toMatchObject({ workspaces: [], tools: [] })
   })
 
   test('a failed read does not stop later browser pages from being saved', async () => {
     const path = join(root, 'open-project-sessions.json')
-    await state.saveOpenToolTabs([{ id: 'browser:b', kind: 'browser', cwd: '' }])
+    await state.saveOpenToolTabs([{ id: 'browser:read-retry', kind: 'browser', cwd: '' }])
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     const saved = await readFile(path, 'utf8')
     await rm(path)
     await mkdir(path)
-    await expect(state.saveBrowserTabUrl('browser:b', 'https://a.test/lost')).rejects.toThrow()
+    await expect(state.saveBrowserTabUrl('browser:read-retry', 'https://a.test/lost')).rejects.toThrow()
     await rm(path, { recursive: true })
     await writeFile(path, saved)
-    await state.saveBrowserTabUrl('browser:b', 'https://a.test/kept')
+    await state.saveOpenToolTabs([{ id: 'browser:read-retry', kind: 'browser', cwd: '' }])
+    expect((await state.loadOpenProjectSessions()).tools[0].url).toBe('https://a.test/lost')
+    await state.saveBrowserTabUrl('browser:read-retry', 'https://a.test/kept')
     expect((await state.loadOpenProjectSessions()).tools).toEqual([
-      { id: 'browser:b', kind: 'browser', cwd: '', url: 'https://a.test/kept', targetSessionId: null }
+      { id: 'browser:read-retry', kind: 'browser', cwd: '', url: 'https://a.test/kept', targetSessionId: null }
     ])
+  })
+
+  test('a popup page committed before membership survives unrelated snapshots and restores on registration', async () => {
+    const tab = { id: 'browser:popup', kind: 'browser' as const, cwd: '' }
+    await state.saveBrowserTabUrl(tab.id, 'https://a.test/popup?q=1#section')
+    await state.saveOpenToolTabs([])
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([])
+    await state.saveOpenToolTabs([tab])
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([
+      { ...tab, targetSessionId: null, url: 'https://a.test/popup?q=1#section' }
+    ])
+  })
+
+  test('an explicit null clears the saved URL without persisting a null field', async () => {
+    const tab = { id: 'browser:blank', kind: 'browser' as const, cwd: '' }
+    await state.saveOpenToolTabs([tab])
+    await state.saveBrowserTabUrl(tab.id, 'https://a.test/old')
+    await state.saveBrowserTabUrl(tab.id, null)
+    await state.saveOpenToolTabs([tab])
+    expect((await state.loadOpenProjectSessions()).tools[0]).not.toHaveProperty('url')
+    expect(JSON.parse(await readFile(join(root, 'open-project-sessions.json'), 'utf8')).tools[0]).not.toHaveProperty('url')
+
+    const early = { ...tab, id: 'browser:early-blank' }
+    await state.saveBrowserTabUrl(early.id, 'https://a.test/obsolete')
+    await state.saveBrowserTabUrl(early.id, null)
+    await state.saveOpenToolTabs([tab, early])
+    expect((await state.loadOpenProjectSessions()).tools[1]).not.toHaveProperty('url')
+    expect(() => state.saveBrowserTabUrl(tab.id, 'about:blank')).toThrow('Invalid browser URL')
+    expect(() => state.saveBrowserTabUrl(tab.id, 'file:///etc/passwd')).toThrow('Invalid browser URL')
+  })
+
+  for (const removal of ['workspace', 'membership'] as const) {
+    test(`failed ${removal} removal preserves browser membership and future URL writes`, async () => {
+      const tab = { id: `browser:failed-${removal}-removal`, kind: 'browser' as const, cwd: join(root, removal), targetSessionId: null }
+      await state.saveOpenToolTabs([tab])
+      await state.saveBrowserTabUrl(tab.id, 'https://example.test/before')
+      const failure = Object.assign(new Error('Injected persistence failure'), { code: 'EIO' })
+      const write = spyOn(atomicWrite, 'writeFileAtomic').mockRejectedValueOnce(failure)
+      try {
+        await expect(removal === 'workspace'
+          ? state.removeOpenProjectWorkspaces([tab.cwd])
+          : state.saveOpenToolTabs([])).rejects.toMatchObject({ code: 'EIO' })
+      } finally {
+        write.mockRestore()
+      }
+      expect((await state.loadOpenProjectSessions()).tools).toEqual([{ ...tab, url: 'https://example.test/before' }])
+      await state.saveBrowserTabUrl(tab.id, 'https://example.test/after')
+      await state.saveOpenToolTabs([tab])
+      expect((await state.loadOpenProjectSessions()).tools).toEqual([{ ...tab, url: 'https://example.test/after' }])
+    })
+  }
+
+  test('pending pages and clears remain retryable after an atomic write fails', async () => {
+    const tab = { id: 'browser:write-retry', kind: 'browser' as const, cwd: '' }
+    await state.saveOpenToolTabs([tab])
+    for (const url of ['https://a.test/retry', null]) {
+      const before = await readFile(join(root, 'open-project-sessions.json'), 'utf8')
+      const write = spyOn(atomicWrite, 'writeFileAtomic').mockRejectedValueOnce(new Error('write failed'))
+      try {
+        await expect(state.saveBrowserTabUrl(tab.id, url)).rejects.toThrow('write failed')
+      } finally {
+        write.mockRestore()
+      }
+      expect(await readFile(join(root, 'open-project-sessions.json'), 'utf8')).toBe(before)
+      await state.saveOpenToolTabs([tab])
+      const restored = (await state.loadOpenProjectSessions()).tools[0]
+      if (url === null) expect(restored).not.toHaveProperty('url')
+      else expect(restored.url).toBe(url)
+    }
+  })
+
+  test('forgetting a popup before registration rejects queued and late commits and stale membership', async () => {
+    const tab = { id: 'browser:closed-popup', kind: 'browser' as const, cwd: '' }
+    const commit = state.saveBrowserTabUrl(tab.id, 'https://a.test/queued')
+    const membership = state.saveOpenToolTabs([tab])
+    const closed = state.forgetBrowserTabUrl(tab.id)
+    await Promise.all([commit, membership, closed])
+    await state.saveBrowserTabUrl(tab.id, 'https://a.test/late')
+    await state.saveOpenToolTabs([tab])
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([])
+  })
+
+  test('forget clears an existing URL and membership or project removal rejects late persistence', async () => {
+    const tab = { id: 'browser:closed-member', kind: 'browser' as const, cwd: '' }
+    await state.saveOpenToolTabs([tab])
+    await state.saveBrowserTabUrl(tab.id, 'https://a.test/old')
+    await state.forgetBrowserTabUrl(tab.id)
+    await state.saveBrowserTabUrl(tab.id, 'https://a.test/late')
+    expect((await state.loadOpenProjectSessions()).tools[0]).not.toHaveProperty('url')
+    await state.saveOpenToolTabs([])
+
+    const removed = { ...tab, id: 'browser:removed-member' }
+    await state.saveOpenToolTabs([removed])
+    await state.saveOpenToolTabs([])
+    await state.saveBrowserTabUrl(removed.id, 'https://a.test/late')
+    await state.saveOpenToolTabs([removed])
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([])
+
+    const project = { ...tab, id: 'browser:removed-project', cwd: join(root, 'removed-project') }
+    await state.saveOpenToolTabs([project])
+    await state.saveBrowserTabUrl(project.id, 'https://a.test/old')
+    const removal = state.removeOpenProjectWorkspaces([project.cwd])
+    const late = state.saveBrowserTabUrl(project.id, 'https://a.test/late')
+    await Promise.all([removal, late])
+    await state.saveOpenToolTabs([project])
+    expect((await state.loadOpenProjectSessions()).tools).toEqual([])
   })
 
   test('the split groups are written whole, cleared when unsplit, and refused when malformed', async () => {

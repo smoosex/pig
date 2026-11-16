@@ -54,6 +54,13 @@ export type BrowserAgentOpenRequest = { requestId: string; sessionId: string } &
   | { action: 'activate' | 'close'; browserId: string }
 )
 
+/** A native popup already created by main; UI adopts it without replaying its navigation. */
+export interface BrowserPopupRequest {
+  browserId: string
+  sourceBrowserId: string
+  background: boolean
+}
+
 /** One page in the global browser history, deduplicated by exact URL. */
 export interface BrowserHistoryEntry {
   url: string
@@ -214,6 +221,8 @@ export interface BrowserApi {
   onShortcutRequested(listener: (action: BrowserHostShortcut) => void): () => void
   /** Ends agent control of the page; the agent must call browser_open again to resume. */
   releaseAgent(browserId: string, expectedSessionId?: string): Promise<void>
+  onPopupRequest(listener: (request: BrowserPopupRequest) => void): () => void
+  acceptPopup(browserId: string, sourceBrowserId: string): Promise<BrowserState>
   onAgentOpenRequest(listener: (request: BrowserAgentOpenRequest) => void): () => void
   /** Answers an agent open request with the created tab, or the reason it could not be created. */
   answerAgentOpen(requestId: string, result: { browserId: string } | { error: string }): Promise<void>

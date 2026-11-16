@@ -77,6 +77,12 @@ const api: SessionApi = {
       return () => ipcRenderer.off('browser:host-shortcut-requested', handler)
     },
     releaseAgent: (browserId, expectedSessionId) => ipcRenderer.invoke('browser:release-agent', browserId, expectedSessionId),
+    acceptPopup: (browserId, sourceBrowserId) => ipcRenderer.invoke('browser:accept-popup', browserId, sourceBrowserId),
+    onPopupRequest: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/browser').BrowserPopupRequest) => listener(request)
+      ipcRenderer.on('browser:popup-request', handler)
+      return () => ipcRenderer.off('browser:popup-request', handler)
+    },
     onAgentOpenRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/browser').BrowserAgentOpenRequest) => listener(request)
       ipcRenderer.on('browser:agent-open-request', handler)

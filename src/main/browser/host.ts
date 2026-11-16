@@ -2,6 +2,8 @@
  * document tokens invalidate delayed guest selections on every main-frame navigation. */
 import { randomUUID } from 'node:crypto'
 import { BrowserFocusGuard } from './focus-guard'
+import { registerBrowserDownloads } from './downloads'
+import { t } from '../i18n'
 import type { Debugger, View, WebContentsView, BrowserWindow, IpcMainEvent, Session } from 'electron'
 import {
   BROWSER_SHORTCUT_CHANNEL, BROWSER_CLOSE_TAB_CHANNEL, BROWSER_DEVTOOLS_RESIZE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_CHANNEL, BROWSER_DEVTOOLS_PAGE_EDGE_STATE_CHANNEL, BROWSER_PICKER_CHANNEL, BROWSER_SELECTION_CHANNEL, BROWSER_PICKER_CANCEL_CHANNEL, BROWSER_MARKER_REMOVE_CHANNEL, BROWSER_MARKER_UPDATE_CHANNEL,
@@ -30,8 +32,17 @@ export interface BrowserPageEvents {
   icon?(browserId: string, url: string, icons: string[]): void
 }
 
+export interface BrowserPopupOptions {
+  webPreferences: Electron.WebPreferences
+  opened(win: BrowserWindow, sourceId: string, browserId: string, background: boolean): void
+  closed(win: BrowserWindow, browserId: string): void
+}
+
 interface Page {
   view: WebContentsView
+  popup?: boolean
+  awaitingPopup?: boolean
+  disposeDownloads?: () => void
   devtools?: WebContentsView
   clip?: View
   /** The one view inside `clip`: whichever of the page and DevTools sits at the bottom. */
@@ -102,7 +113,6 @@ function secureSession(session: Session): void {
   session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   session.setPermissionCheckHandler(() => false)
   session.setDevicePermissionHandler(() => false)
-  session.on('will-download', event => event.preventDefault())
 }
 
 /** Electron drops `view.webContents` once it is destroyed, including inside its own 'destroyed' listeners. */
@@ -129,11 +139,12 @@ export class BrowserHost {
    * `onCommit` hears every main-frame URL a page commits, which is what a restart reopens.
    */
   constructor(
-    private createView: (kind: 'page' | 'devtools') => WebContentsView,
+    private createView: (kind: 'page' | 'devtools', contents?: Electron.WebContents) => WebContentsView,
     private isAgentLive: (sessionId: string) => boolean,
     private createClip: () => View,
-    private onCommit: (browserId: string, url: string) => void,
-    private events?: BrowserPageEvents
+    private onCommit: (browserId: string, url: string | null) => void,
+    private events?: BrowserPageEvents,
+    private popupOptions?: BrowserPopupOptions
   ) {}
 
   private owner(win: BrowserWindow): WindowPages {
@@ -335,6 +346,7 @@ export class BrowserHost {
   private dispose(owner: WindowPages, page: Page): void {
     if (page.disposed) return
     page.disposed = true
+    page.disposeDownloads?.()
     cancelUploads(page, 'Browser page closed; upload approval cancelled')
     // Removing a focused native view does not return keyboard input to the host renderer.
     this.restoreHostFocus(owner, liveContents(page.view))
@@ -348,7 +360,7 @@ export class BrowserHost {
     liveContents(page.view)?.close({ waitForBeforeUnload: false })
   }
 
-  private page(win: BrowserWindow, browserId: string, create = true): { owner: WindowPages; page: Page | undefined } {
+  private page(win: BrowserWindow, browserId: string, create = true, popup?: { contents: Electron.WebContents; sourceId: string }): { owner: WindowPages; page: Page | undefined } {
     const owner = this.owner(win)
     let page = owner.pages.get(browserId)
     if (page && (page.disposed || !liveContents(page.view))) {
@@ -358,15 +370,16 @@ export class BrowserHost {
     }
     if (!page && create) {
       if (owner.pages.size >= 4) {
-        const candidate = [...owner.pages.entries()].filter(([id, p]) => !p.bounds && !this.pinned(owner, id)).sort((a, b) => a[1].used - b[1].used)[0]
+        const candidate = [...owner.pages.entries()].filter(([id, p]) => id !== popup?.sourceId && !p.bounds && !this.pinned(owner, id)).sort((a, b) => a[1].used - b[1].used)[0]
         if (!candidate) throw new Error('No hidden browser preview to evict')
         this.dispose(owner, candidate[1])
         owner.pages.delete(candidate[0])
       }
-      const view = this.createView('page')
+      const view = this.createView('page', popup?.contents)
       const agentSessionId = owner.agents.get(browserId) ?? null
       page = {
         view, state: { ...emptyBrowserState(browserId), url: owner.urls.get(browserId) ?? '', documentId: randomUUID(), agentSessionId },
+        popup: !!popup, awaitingPopup: !!popup,
         bounds: null, used: ++this.clock, disposed: false, console: [], network: attachBrowserNetwork(view.webContents), pendingUploads: new Set()
       }
       owner.pages.set(browserId, page)
@@ -465,7 +478,43 @@ export class BrowserHost {
   private bind(owner: WindowPages, page: Page): void {
     const wc = page.view.webContents
     this.bindHostShortcuts(owner, page, wc)
-    wc.setWindowOpenHandler(() => ({ action: 'deny' }))
+    page.disposeDownloads = registerBrowserDownloads(wc, {
+      isAlive: () => this.alive(owner, page),
+      errorMessage: t('browser.downloadFailed'),
+      report: error => { page.state.error = error; this.push(owner, page) }
+    })
+    wc.setWindowOpenHandler(details => {
+      if (!this.popupOptions || !this.alive(owner, page) ||
+        !(isBrowserUrl(details.url) || details.url === 'about:blank')) return { action: 'deny' }
+      if (owner.pages.size >= 4 && ![...owner.pages].some(([id, candidate]) =>
+        candidate !== page && !candidate.bounds && !this.pinned(owner, id))) {
+        page.state.error = t('browser.popupLimit')
+        this.push(owner, page)
+        return { action: 'deny' }
+      }
+      return {
+        action: 'allow', outlivesOpener: true,
+        overrideBrowserWindowOptions: { webPreferences: this.popupOptions.webPreferences },
+        createWindow: options => {
+          if (!this.alive(owner, page)) throw new Error('Browser popup source is closed')
+          const id = `browser:${randomUUID()}`
+          // Electron 44 has already created the guest; returning a different WebContents is rejected.
+          const contents = (options as Electron.BrowserWindowConstructorOptions & { webContents: Electron.WebContents }).webContents
+          if (!contents || contents.isDestroyed()) throw new Error('Browser popup guest is unavailable')
+          const popup = this.page(owner.win, id, true, { contents, sourceId: page.state.browserId }).page!
+          popup.state.url = details.url
+          if (isBrowserUrl(details.url)) owner.urls.set(id, details.url)
+          try {
+            this.popupOptions!.opened(owner.win, page.state.browserId, id,
+              details.disposition === 'background-tab' || !owner.win.isFocused() || !page.view.getVisible())
+          } catch (error) {
+            this.close(owner.win, id)
+            throw error
+          }
+          return popup.view.webContents
+        }
+      }
+    })
     owner.focus.register(wc, () => this.alive(owner, page) && page.view.getVisible(), () => {
       this.push(owner, page, owner.win.isFocused())
     })
@@ -480,14 +529,15 @@ export class BrowserHost {
       this.picker(owner, page, page.state.selecting)
       this.syncDevtoolsPageEdge(owner, page, true)
     })
+    const allowedNavigation = (url: string) => isBrowserUrl(url) || (page.popup && url === 'about:blank')
     wc.on('will-frame-navigate', event => {
-      if (!isBrowserUrl(event.url)) event.preventDefault()
+      if (!allowedNavigation(event.url)) event.preventDefault()
     })
     wc.on('will-navigate', (event, url) => {
-      if (!isBrowserUrl(url)) event.preventDefault()
+      if (!allowedNavigation(url)) event.preventDefault()
     })
     wc.on('will-redirect', (event, url) => {
-      if (!isBrowserUrl(url)) event.preventDefault()
+      if (!allowedNavigation(url)) event.preventDefault()
     })
     wc.on('will-attach-webview', event => event.preventDefault())
     wc.on('console-message', (event) => {
@@ -533,9 +583,14 @@ export class BrowserHost {
     wc.on('did-navigate', (_event, url, status) => {
       cancelUploads(page, 'Browser page changed; upload approval cancelled')
       page.state.url = url
-      owner.urls.set(page.state.browserId, url)
-      this.onCommit(page.state.browserId, url)
-      this.events?.commit(page.state.browserId, url, status ?? 0)
+      if (isBrowserUrl(url)) {
+        owner.urls.set(page.state.browserId, url)
+        this.onCommit(page.state.browserId, url)
+        this.events?.commit(page.state.browserId, url, status ?? 0)
+      } else {
+        owner.urls.delete(page.state.browserId)
+        this.onCommit(page.state.browserId, null)
+      }
       this.syncDevtoolsPageEdge(owner, page, true)
       this.push(owner, page)
     })
@@ -544,9 +599,14 @@ export class BrowserHost {
         page.agentScreenshotId = undefined
         cancelUploads(page, 'Browser page changed; upload approval cancelled')
         page.state.url = url
-        owner.urls.set(page.state.browserId, url)
-        this.onCommit(page.state.browserId, url)
-        this.events?.commit(page.state.browserId, url, null)
+        if (isBrowserUrl(url)) {
+          owner.urls.set(page.state.browserId, url)
+          this.onCommit(page.state.browserId, url)
+          this.events?.commit(page.state.browserId, url, null)
+        } else {
+          owner.urls.delete(page.state.browserId)
+          this.onCommit(page.state.browserId, null)
+        }
         this.push(owner, page)
       }
     })
@@ -577,6 +637,10 @@ export class BrowserHost {
     wc.on('ipc-message', (event, channel, ...args) => this.guestMessage(owner, page, event, channel, args[0]))
     wc.once('destroyed', () => {
       if (page.disposed) return
+      if (page.popup && !owner.disposed && !owner.win.isDestroyed() && !owner.win.webContents.isDestroyed()) {
+        this.popupOptions!.closed(owner.win, page.state.browserId)
+        return
+      }
       page.state.loading = false
       page.state.selecting = false
       page.state.error = 'Browser page was destroyed'
@@ -846,7 +910,15 @@ export class BrowserHost {
     this.push(owner, page)
   }
 
+  acceptPopup(win: BrowserWindow, id: string): BrowserState {
+    const { owner, page } = this.page(win, id, false)
+    if (!page?.awaitingPopup || !this.alive(owner, page)) throw new Error('Browser popup is no longer available')
+    page.awaitingPopup = false
+    return this.getState(win, id)
+  }
+
   private pinned(owner: WindowPages, id: string): boolean {
+    if (owner.pages.get(id)?.awaitingPopup) return true
     const sessionId = owner.agents.get(id)
     return !!sessionId && this.isAgentLive(sessionId)
   }

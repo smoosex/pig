@@ -33,6 +33,15 @@ export async function answerBrowserAgentOpen(request: BrowserAgentOpenRequest): 
 
 /** Main requests open, activation or close; tabs are UI state, so the strip acknowledges each change. */
 export function useBrowserAgentRequests(): void {
+  useEffect(() => api.browser.onCloseRequested(id => {
+    const store = useSessionsStore.getState()
+    if (store.openTabs.some(tab => tab.id === id && tab.kind === 'browser')) store.closeTab(id)
+  }), [])
+  useEffect(() => api.browser.onPopupRequest(request => {
+    void useSessionsStore.getState().adoptBrowserPopup(request).catch((error: unknown) => {
+      useSessionsStore.setState({ workspaceError: failureMessage(error) })
+    })
+  }), [])
   useEffect(() => api.browser.onAgentOpenRequest((request) => {
     // A failed answer means the window or request is gone; nobody else is waiting for it.
     void answerBrowserAgentOpen(request).catch((error: unknown) => console.error('Failed to answer the agent browser request:', error))

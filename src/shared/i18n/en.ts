@@ -460,6 +460,8 @@ export const en: Messages = {
     historyRestoreFailed: 'Could not restore the previous output: {message}'
   },
   browser: {
+    downloadFailed: 'Download failed or was interrupted. Please try again.',
+    popupLimit: 'Browser preview limit reached. Close a browser tab and try again.',
     history: 'History',
     topSites: 'Top sites',
     historyDescription: 'Shared by every built-in browser tab and kept only on this device.',

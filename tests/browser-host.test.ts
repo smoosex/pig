@@ -40,7 +40,8 @@ class FakeContents extends EventEmitter {
   async removeInsertedCSS(key: string) { this.removedCss.push(key) }
   getURL() { return this.url }
   isLoading() { return this.loading }
-  setWindowOpenHandler() {}
+  windowOpen!: (details: Electron.HandlerDetails) => Electron.WindowOpenHandlerResponse
+  setWindowOpenHandler(handler: typeof this.windowOpen) { this.windowOpen = handler }
   openDevTools(options: unknown) { this.devTools.push(options); this.devToolsOpen = true }
   devToolsHost: unknown = null
   devToolsOpen = false
@@ -76,7 +77,7 @@ class FakeContents extends EventEmitter {
   }
 }
 class FakeView {
-  webContents = new FakeContents()
+  constructor(public webContents = new FakeContents()) {}
   visible = false
   bounds: unknown
   setVisible(value: boolean) { this.visible = value }
@@ -96,11 +97,12 @@ class FakeClip {
   addChildView(view: unknown) { this.children.push(view) }
   removeChildView(view: unknown) { this.children = this.children.filter((child) => child !== view) }
 }
-function fixture(live: (sessionId: string) => boolean = () => true) {
+function fixture(live: (sessionId: string) => boolean = () => true, onPopup?: (win: BrowserWindow, sourceId: string, id: string, background: boolean) => void) {
   const views: FakeView[] = []
   const clips: FakeClip[] = []
   const removed: unknown[] = []
-  const commits: [string, string][] = []
+  const commits: [string, string | null][] = []
+  const popupCloses: string[] = []
   const win = Object.assign(new EventEmitter(), {
     webContents: new FakeContents(), dead: false, focused: true,
     isDestroyed() { return this.dead },
@@ -112,17 +114,69 @@ function fixture(live: (sessionId: string) => boolean = () => true) {
       removeChildView(view: unknown) { removed.push(view); this.children = this.children.filter((child) => child !== view) }
     }
   })
-  const host = new BrowserHost(() => {
-    const view = new FakeView()
+  const host = new BrowserHost((_kind, contents) => {
+    const view = new FakeView(contents as unknown as FakeContents | undefined)
     views.push(view)
     return view as unknown as WebContentsView
-  }, live, () => { const clip = new FakeClip(); clips.push(clip); return clip as unknown as View }, (id, url) => { commits.push([id, url]) })
-  return { host, win, owner: win as unknown as BrowserWindow, views, clips, removed, commits }
+  }, live, () => { const clip = new FakeClip(); clips.push(clip); return clip as unknown as View }, (id, url) => { commits.push([id, url]) }, undefined, onPopup ? {
+    webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true }, opened: onPopup,
+    closed: (win, id) => { popupCloses.push(id); host.close(win, id) }
+  } : undefined)
+  return { host, win, owner: win as unknown as BrowserWindow, views, clips, removed, commits, popupCloses }
 }
 const bounds = { x: 10, y: 20, width: 300, height: 200 }
 const element = { selector: '#x', tagName: 'button', role: 'button', name: 'X', text: 'X', bounds, styles: {} }
 
 describe('browser host', () => {
+  test('native popup creation adopts a managed view without replaying POST or blank-page navigation', () => {
+    const opened: Array<{ sourceId: string; id: string; background: boolean }> = []
+    const { host, owner, views, commits, popupCloses } = fixture(() => true, (_win, sourceId, id, background) => opened.push({ sourceId, id, background }))
+    host.setBounds(owner, 'source', bounds)
+    const source = views[0].webContents
+    const details = (url: string, disposition = 'foreground-tab') => ({
+      url, disposition, frameName: '', features: '', referrer: { url: 'https://example.test', policy: 'default' },
+      postBody: { data: [{ type: 'rawData', bytes: Buffer.from('form=value') }], contentType: 'application/x-www-form-urlencoded' }
+    }) as Electron.HandlerDetails
+    for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,x', 'https://user:password@example.test']) {
+      expect(source.windowOpen(details(url))).toEqual({ action: 'deny' })
+    }
+    const response = source.windowOpen(details('https://example.test/post'))
+    expect(response.action).toBe('allow')
+    expect(response.outlivesOpener).toBe(true)
+    expect(response.overrideBrowserWindowOptions?.webPreferences?.sandbox).toBe(true)
+    const guest = new FakeContents()
+    const contents = response.createWindow!({ webContents: guest } as unknown as Electron.BrowserWindowConstructorOptions)
+    expect(contents).toBe(guest as unknown as Electron.WebContents)
+    expect(contents).toBe(views[1].webContents as unknown as Electron.WebContents)
+    expect(views[1].webContents.url).toBe('')
+    expect(opened[0].sourceId).toBe('source')
+    expect(opened[0].background).toBe(false)
+    expect(host.acceptPopup(owner, opened[0].id).browserId).toBe(opened[0].id)
+    expect(() => host.acceptPopup(owner, opened[0].id)).toThrow('no longer available')
+    const blank = source.windowOpen(details('about:blank', 'background-tab'))
+    const blankGuest = new FakeContents()
+    blank.createWindow!({ webContents: blankGuest } as unknown as Electron.BrowserWindowConstructorOptions)
+    const blankPage = views[2].webContents
+    // document.write on the initial blank document need not emit did-navigate.
+    expect(host.acceptPopup(owner, opened[1].id).url).toBe('about:blank')
+    expect(host.getState(owner, opened[1].id).url).toBe('about:blank')
+    expect(commits).toEqual([])
+    blankPage.emit('did-navigate', {}, 'about:blank', 0)
+    expect(commits).toEqual([[opened[1].id, null]])
+    let blocked = false
+    blankPage.emit('will-navigate', { preventDefault: () => { blocked = true } }, 'file:///etc/passwd')
+    expect(blocked).toBe(true)
+    expect(opened[1].background).toBe(true)
+    blankGuest.close()
+    expect(popupCloses).toEqual([opened[1].id])
+    expect(host.getState(owner, opened[1].id).url).toBe('')
+    host.close(owner, 'source')
+    expect(views[1].webContents.dead).toBe(false)
+    expect(source.windowOpen(details('https://example.test/stale'))).toEqual({ action: 'deny' })
+    host.closeWindow(owner)
+    expect(views.every(view => view.webContents.dead)).toBe(true)
+  })
+
   test('occluded panes resize and recapture both native views without showing or focusing them', async () => {
     const { host, owner, views } = fixture()
     host.setBounds(owner, 'overlay', bounds)

@@ -457,6 +457,8 @@ export const zh = {
     historyRestoreFailed: '无法恢复上次的输出：{message}'
   },
   browser: {
+    downloadFailed: '下载失败或中断，请重试。',
+    popupLimit: '浏览器预览已达上限，请关闭一个浏览器标签后重试。',
     history: '历史记录',
     topSites: '常用网站',
     historyDescription: '所有内置浏览器标签共用，只保存在本机。',

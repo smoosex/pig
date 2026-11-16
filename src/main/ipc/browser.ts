@@ -8,12 +8,13 @@ import { BrowserCookieImporter } from '../browser/cookies/importer'
 import { BrowserAgentController } from '../browser/agent'
 import { registerBrowserAgentHost, registerBrowserSessionCleanup } from '../plugins/pig-browser-host'
 import { assertBrowserSender, isBrowserUrl, normalizeBrowserUrl } from '../browser/validation'
-import { saveBrowserTabUrl } from '../open-project-sessions'
+import { saveBrowserTabUrl, forgetBrowserTabUrl } from '../open-project-sessions'
 import { browserHistory as history, BrowserHistoryRecorder } from '../browser/history'
 import { fetchFavicon } from '../browser/favicon'
 import { windowForEvent } from './window'
 import { requestReply, type PendingReply } from './pending-reply'
-import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest } from '../../shared/browser'
+import { BROWSER_CLOSE_TAB_CHANNEL } from '../../shared/browser'
+import type { BrowserBounds, BrowserPickerOptions, BrowserCookieScope, BrowserAgentOpenRequest, BrowserPopupRequest } from '../../shared/browser'
 
 /** Live Pi sessions, for agent browser control. Without it the browser tools report the browser unavailable. */
 export interface BrowserSessions {
@@ -35,18 +36,57 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   const owners = new Map<string, BrowserWindow>()
   const scopes = new Map<string, string>()
   const pendingOpens = new Map<string, PendingOpen>()
+  const pendingPopups = new Map<string, { win: BrowserWindow; sourceId: string; timer: ReturnType<typeof setTimeout> }>()
   const watched = new WeakSet<BrowserWindow>()
   const reloading = new WeakSet<BrowserWindow>()
   const cookies = new BrowserCookieImporter(session.fromPartition('persist:pig-browser').cookies)
   // DevTools front-end gets a default sandboxed view; only the inspected page uses the guest preload.
-  const host = new BrowserHost((kind) => kind === 'devtools' ? new WebContentsView() : new WebContentsView({ webPreferences: {
+  const webPreferences: Electron.WebPreferences = {
     preload: join(dirname(fileURLToPath(import.meta.url)), '../preload/browser-guest.cjs'),
     partition: 'persist:pig-browser', sandbox: true, contextIsolation: true,
     nodeIntegration: false, webSecurity: true, webviewTag: false
-  } }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View(), (browserId, url) => {
+  }
+  const host = new BrowserHost((kind, contents) => kind === 'devtools' ? new WebContentsView()
+    : new WebContentsView(contents ? { webContents: contents } : { webPreferences }), (sessionId) => sessions?.isSessionLive(sessionId) ?? false, () => new View(), (browserId, url) => {
     // Page events have no caller to hand a failed write to; navigation goes on and main logs it.
     void saveBrowserTabUrl(browserId, url).catch((error) => console.error('Browser URL persistence failed:', error))
-  }, visits)
+  }, visits, { webPreferences, opened: (win, sourceId, browserId, background) => {
+    if (reloading.has(win) || owners.get(sourceId) !== win || !scopes.has(sourceId)) {
+      throw new Error('Browser popup source is no longer available')
+    }
+    owners.set(browserId, win)
+    scopes.set(browserId, scopes.get(sourceId)!)
+    const timer = setTimeout(() => discardPopup(browserId), 15_000)
+    pendingPopups.set(browserId, { win, sourceId, timer })
+    const request: BrowserPopupRequest = { browserId, sourceBrowserId: sourceId, background }
+    try { win.webContents.send('browser:popup-request', request) }
+    catch (error) { discardPopup(browserId); throw error }
+  }, closed: (win, id) => {
+    closeBrowser(win, id)
+    win.webContents.send(BROWSER_CLOSE_TAB_CHANNEL, id)
+  } })
+  function discardPopup(id: string): void {
+    const pending = pendingPopups.get(id)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pendingPopups.delete(id)
+    if (pending.win.isDestroyed() || pending.win.webContents.isDestroyed()) host.closeWindow(pending.win)
+    else host.close(pending.win, id)
+    owners.delete(id)
+    scopes.delete(id)
+    visits.forget(id)
+    void forgetBrowserTabUrl(id).catch(error => console.error('Browser URL cleanup failed:', error))
+  }
+  function closeBrowser(win: BrowserWindow, id: string): void {
+    for (const [popupId, pending] of pendingPopups) {
+      if (popupId === id || (pending.win === win && pending.sourceId === id)) discardPopup(popupId)
+    }
+    host.close(win, id)
+    owners.delete(id)
+    scopes.delete(id)
+    visits.forget(id)
+    void forgetBrowserTabUrl(id).catch(error => console.error('Browser URL cleanup failed:', error))
+  }
   registerBrowserSessionCleanup((sessionId) => {
     for (const [id, win] of owners) {
       if (!win.isDestroyed() && host.agentOf(win, id) === sessionId) host.setAgent(win, id, null)
@@ -70,10 +110,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
         signal?.throwIfAborted()
         // Retire main ownership before asking UI to remove the tab: no other agent can acquire it
         // while the renderer round-trip is pending. A late UI close remains idempotent.
-        host.close(win, browserId)
-        owners.delete(browserId)
-        scopes.delete(browserId)
-        visits.forget(browserId)
+        closeBrowser(win, browserId)
         await requestTab(win, sessionId, signal, { action: 'close', browserId })
       },
       sessionWindow: sessions.sessionWindow,
@@ -115,6 +152,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
           scopes.delete(id)
           visits.forget(id)
         }
+        for (const [id, pending] of pendingPopups) if (pending.win === win) discardPopup(id)
         for (const pending of [...pendingOpens.values()]) if (pending.win === win) pending.fail(new Error('Browser UI was reloaded or closed'))
         host.closeWindow(win)
       }
@@ -143,6 +181,18 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   ipcMain.handle('browser:preview-cookies', (event, id: string, sourceId: string, scope: BrowserCookieScope) => cookies.preview(cookieContext(event, id), sourceId, scope))
   ipcMain.handle('browser:import-cookies', (event, id: string, sourceId: string, scope: BrowserCookieScope, expectedSite: string | null) => cookies.import(cookieContext(event, id), sourceId, scope, expectedSite))
   ipcMain.handle('browser:clear-site-cookies', (event, id: string, expectedSite: string) => cookies.clear(cookieContext(event, id), expectedSite))
+  ipcMain.handle('browser:accept-popup', (event, id: string, sourceId: string) => {
+    const win = owner(event, id)
+    const pending = pendingPopups.get(id)
+    if (!pending || pending.win !== win || pending.sourceId !== sourceId ||
+      owners.get(sourceId) !== win || scopes.get(id) !== scopes.get(sourceId)) {
+      throw new Error('Browser popup is no longer available')
+    }
+    const state = host.acceptPopup(win, id)
+    clearTimeout(pending.timer)
+    pendingPopups.delete(id)
+    return state
+  })
   ipcMain.handle('browser:get-state', (event, id: string) => host.getState(owner(event, id), id))
   ipcMain.handle('browser:navigate', async (event, id: string, url: string, fromAddressBar?: unknown) => {
     const win = owner(event, id)
@@ -206,10 +256,7 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
   ipcMain.handle('browser:close', (event, id: string) => {
     const win = ui(event, id)
     if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
-    host.close(win, id)
-    owners.delete(id)
-    scopes.delete(id)
-    visits.forget(id)
+    closeBrowser(win, id)
   })
   ipcMain.handle('browser:history-query', (event, text: unknown, limit: unknown) => {
     assertBrowserSender(event, windowForEvent(event))

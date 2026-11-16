@@ -70,6 +70,7 @@ export const createTabsSlice: SessionSlice<
   | 'openFileTab'
   | 'openTurnDiffTab'
   | 'openBrowserTab'
+  | 'adoptBrowserPopup'
   | 'openTerminalTab'
   | 'setBrowserTarget'
   | 'moveFileTab'
@@ -752,6 +753,31 @@ export const createTabsSlice: SessionSlice<
       const pane = paneOfTab(useSplitLayoutStore.getState().groups, id)
       if (pane) useSplitLayoutStore.getState().setActivePane(pane.id)
       await get().activateTab(id)
+    },
+
+    adoptBrowserPopup: async (request) => {
+      const { browserId, sourceBrowserId, background } = request
+      const selection = selectionVersion
+      const source = get().openTabs.find(tab => tab.id === sourceBrowserId && tab.kind === 'browser')
+      if (!source) { await api.browser.close(browserId); return }
+      try {
+        const page = await api.browser.acceptPopup(browserId, sourceBrowserId)
+        if (!get().openTabs.some(tab => tab.id === sourceBrowserId && tab.kind === 'browser' && tab.cwd === source.cwd)) { await api.browser.close(browserId); return }
+        const selected = !background && selection === selectionVersion && get().activeTabId === sourceBrowserId
+        const tab: OpenTab = {
+          id: browserId, kind: 'browser', cwd: source.cwd, loadState: 'ready',
+          title: page.title || t('tabBar.newBrowser'), browserTargetSessionId: source.browserTargetSessionId
+        }
+        if (selected) ++selectionVersion
+        set(current => ({
+          openTabs: [...current.openTabs, tab],
+          ...(selected ? { ...activeTabPatch(current, browserId, source.cwd || null), currentProjectCwd: source.cwd || null } : {})
+        }))
+        if (selected) persistToolSelection(tab)
+      } catch (error) {
+        await api.browser.close(browserId)
+        throw error
+      }
     },
 
     openBrowserTab: async (cwd, options) => {

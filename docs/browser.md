@@ -9,7 +9,15 @@
 - 浏览器使用 `browser:<uuid>` 独立身份，不创建 Pi session/runtime，也不随目标会话关闭；跨重启恢复见 [工作区](workspace.md)。
 - 宿主 UI 主 frame 跨文档导航（含刷新）、renderer 退出及窗口关闭时，由 main 统一销毁该窗口的预览与 DevTools，清空地址、标注和归属登记；重载期间拒绝浏览器控制与创建，宿主 `dom-ready` 后允许重新创建，不依赖 React 卸载，子 frame／同文档导航及网页 guest 自身导航不触发清理。
 - `src/shared/browser.ts` 是唯一 IPC 契约；`browser:create(id, cwd, url?)` 由 UI 注册所属窗口及 worktree（Chat 为 `''`），同 ID 不可重绑 scope；后续控制请求只接受同一窗口的 UI 主 frame，页面 guest 不能创建或控制预览；不通过 Pi session 校验身份。
-- 页面启用 sandbox/contextIsolation、禁用 Node 和宿主 API，使用独立 `persist:pig-browser` partition；仅允许无凭据的 HTTP(S)，拒绝权限、下载及新窗口；证书校验失败一律拒绝（Chromium 在这里没有警告页），主文档失败时在状态里记下 `certificate`（站点、错误、签发者、主体、有效期、指纹），面板在网页区域显示与 Chrome 类似的拦截页（隐藏原生视图，可返回或「仍要继续」），经 `browser:allow-certificate` 按指纹校验后把「host + 指纹」加入 main 内存里的放行集合并重新加载；放行所有标签共用、不落盘，换证书或换站点需重新确认，子资源从不弹确认，Agent 只在自己的导航错误里看到需用户放行的提示（不进共享的 navigate 错误，避免英文 Agent 文案出现在面板），没有工具可绕过。
+- 页面启用 sandbox/contextIsolation、禁用 Node 和宿主 API，使用独立 `persist:pig-browser` partition；普通导航仅允许无凭据的 HTTP(S)，拒绝网页权限；网页新标签与下载走下述受管通道，不直接放开独立原生窗口或静默保存；证书校验失败一律拒绝（Chromium 在这里没有警告页），主文档失败时在状态里记下 `certificate`（站点、错误、签发者、主体、有效期、指纹），面板在网页区域显示与 Chrome 类似的拦截页（隐藏原生视图，可返回或「仍要继续」），经 `browser:allow-certificate` 按指纹校验后把「host + 指纹」加入 main 内存里的放行集合并重新加载；放行所有标签共用、不落盘，换证书或换站点需重新确认，子资源从不弹确认，Agent 只在自己的导航错误里看到需用户放行的提示（不进共享的 navigate 错误，避免英文 Agent 文案出现在面板），没有工具可绕过。
+
+## 网页弹窗与下载
+
+- `window.open`、`target="_blank"` 和新窗口表单通过 Electron `createWindow` 将其已创建的 guest WebContents 接入受管 WebContentsView，由 Chromium 执行原始导航（不重放成 GET），保留其 POST／referrer／opener 语义；`noopener` 等关系仍由 Chromium 决定，不承诺绕过网站自身的 COOP 或弹窗限制。允许初始 HTTP(S) 及弹窗的 `about:blank` 文档；其他协议仍拒绝，空白页不写入历史／恢复地址。
+- 新标签由 main 同步登记原窗口和来源 worktree／Chat scope，随后通知该窗口 UI 接纳现有 browserId；不借用 Pi session，不继承 Agent 控制权。前台来源可激活新标签，后台来源、窗口失焦或后台 disposition 不抢选中；标注目标继承来源。原生页面等待接纳时豁免 LRU，15 秒未接纳、来源关闭、UI 重载／退出或窗口关闭则回收；已接纳标签独立于 opener 生命周期。导航早于标签成员落盘时保留待写地址，登记成员后写入；about:blank 显式清除恢复地址，关闭的 browserId 拒绝迟到地址和成员快照；工作区／成员移除仅在写盘成功后作废对应 ID，写盘失败仍保留原标签及后续地址保存能力，显式关闭标签则立即失效。仍受每窗口 4 个原生预览上限约束，满且无可淘汰项时在来源显示错误。
+- 接纳 IPC 仅所属 UI 主 frame 可调用，核对请求、来源、窗口及 scope，单次消费；renderer 不重新创建或导航新页。在原生 guest 创建之前，通过 overrideBrowserWindowOptions 固定 guest preload、partition、sandbox 和隔离配置；createWindow 必须接管 options.webContents，不能另造 WebContents，不信任网页提供的窗口 features。网页自行 window.close 时同步清理 main 归属并通知全局 UI 关闭标签，后台未挂载面板也不会残留可复活标签。
+- 下载由浏览器 Session 的单一监听按发起 WebContents 分发，只允许已登记且存活的网页。使用 Electron 系统保存对话框选择目的地，不静默写默认路径、不自动打开下载文件；用户取消不报错，中断／失败显示通用错误，不暴露下载地址、路径或原生错误内容。页面关闭／原生视图淘汰、UI 重载或宿主关闭会取消未完成下载；未知来源一律阻止。Agent 触发下载也需要人在系统保存对话框确认，没有无人值守下载工具或下载管理器。
+- 系统保存对话框及原生 popup 的网站兼容性仍需真实界面验证，单元测试不替代这一交接验证。
 
 ## 原生视图与 guest 构建
 
