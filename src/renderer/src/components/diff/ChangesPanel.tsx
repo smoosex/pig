@@ -45,6 +45,7 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
   // Keyed by scope and path, so the same directory folds separately under 已暂存 and 未暂存.
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const [pinnedKey, setPinnedKey] = useState<Group['key']>('staged')
 
   const diff = state?.diff
   const needle = query.trim().toLocaleLowerCase()
@@ -54,33 +55,35 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     { key: 'unstaged', entries: (diff?.unstaged ?? []).filter(matches) }
   ]
   const flatEntries = (diff?.all ?? []).filter(matches)
+  const grouped = !flat && !state?.watchError && state?.status !== 'error' && diff?.git && flatEntries.length > 0
+  const shownGroups = grouped ? groups.filter(group => group.entries.length > 0) : []
+  const pinnedGroup = shownGroups.find(group => group.key === pinnedKey) ?? shownGroups[0]
 
   useLayoutEffect(() => {
     const area = scrollAreaRef.current!
     const sections = [...area.querySelectorAll<HTMLElement>('[data-change-group]')]
-    // Headers expose the column surface and shared hover layer; bottom padding keeps the gap inside the clip boundary.
-    // Read all bounds before clipping; this does not change layout or rerender React on scroll.
-    const updateClips = () => {
-      const clips = sections.flatMap((section) => {
-        const header = section.firstElementChild as HTMLElement
-        const list = header.nextElementSibling as HTMLElement | null
-        if (!list) return []
-        return [{
-          list,
-          top: Math.max(0, header.getBoundingClientRect().bottom - list.getBoundingClientRect().top)
-        }]
-      })
-      for (const { list, top } of clips) {
-        list.style.clipPath = top > 0 ? `inset(${top}px 0 0)` : ''
+    if (!sections.length) return
+    // JS only selects the title; no scrolling content shares its paint area. Even a
+    // delayed scroll notification can change only the label, never expose rows behind it.
+    const updateTitle = () => {
+      const bounds = area.getBoundingClientRect()
+      if (!bounds.height) return
+      const top = bounds.top
+      let key = sections[0].dataset.changeGroup as Group['key']
+      for (const section of sections.slice(1)) {
+        const header = section.querySelector<HTMLElement>('[data-change-heading]')!
+        if (header.getBoundingClientRect().bottom > top) break
+        key = section.dataset.changeGroup as Group['key']
       }
+      setPinnedKey(key)
     }
-    const observer = new ResizeObserver(updateClips)
+    const observer = new ResizeObserver(updateTitle)
     observer.observe(area)
     for (const section of sections) observer.observe(section)
-    area.addEventListener('scroll', updateClips, { passive: true })
-    updateClips()
+    area.addEventListener('scroll', updateTitle, { passive: true })
+    updateTitle()
     return () => {
-      area.removeEventListener('scroll', updateClips)
+      area.removeEventListener('scroll', updateTitle)
       observer.disconnect()
     }
   }, [collapsed, cwd, flat, query, state, tree, treeCollapsed])
@@ -183,6 +186,30 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     )
   }
 
+  function groupHeader(group: Group, pinned = false) {
+    const open = !collapsed[group.key]
+    return (
+      <div data-change-heading={group.key} className={cn('px-1', (pinned || open) && 'pb-0.5')}>
+        <button
+          type="button"
+          aria-expanded={open}
+          data-sidebar-hover-row
+          onClick={() => setCollapsed(current => ({ ...current, [group.key]: open }))}
+          className={cn(
+            'relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap',
+            sidebarRowSurface(false)
+          )}
+        >
+          <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
+          <span>{scopeLabel(t, group.key)}</span>
+          <span className="tabular-nums text-muted-foreground">({group.entries.length})</span>
+          <span className="flex-1" />
+          <DiffCounts entries={group.entries} />
+        </button>
+      </div>
+    )
+  }
+
   function list() {
     // A refresh keeps the list that is already there: the loading text is only for the first read.
     if (!state) return <Notice>{t('diff.reading')}</Notice>
@@ -203,43 +230,26 @@ export function ChangesPanel({ cwd }: { cwd: string }) {
     )
     if (!flatEntries.length) return <Notice>{t('file.noMatch')}</Notice>
     if (flat) return rows(flatEntries, 'all', false)
-    return groups.map((group) => {
-      if (!group.entries.length) return null
-      const open = !collapsed[group.key]
-      return (
-        <div key={group.key} data-change-group={group.key}>
-          <div data-sidebar-hover-occlusion className={cn('sticky top-0 z-10 bg-transparent px-1', open && 'pb-0.5')}>
-            <button
-              type="button"
-              aria-expanded={open}
-              data-sidebar-hover-row
-              onClick={() => setCollapsed((current) => ({ ...current, [group.key]: open }))}
-              className={cn(
-                'relative flex w-full items-center gap-1.5 rounded-sm px-1 py-1.5 text-xs font-medium whitespace-nowrap',
-                sidebarRowSurface(false)
-              )}
-            >
-              <ChevronRight className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
-              <span>{scopeLabel(t, group.key)}</span>
-              <span className="tabular-nums text-muted-foreground">({group.entries.length})</span>
-              <span className="flex-1" />
-              <DiffCounts entries={group.entries} />
-            </button>
-          </div>
-          {open ? rows(group.entries, group.key, true) : null}
-        </div>
-      )
-    })
+    return shownGroups.map((group, index) => (
+      <div key={group.key} data-change-group={group.key}>
+        {index > 0 ? groupHeader(group) : null}
+        {!collapsed[group.key] ? rows(group.entries, group.key, true) : null}
+      </div>
+    ))
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <WorkspaceFilter label={t('panel.filterChanges')} value={query} onChange={setQuery} />
-      {/* The 4px of air above the list lives here, not on the scroll region: sticky offsets resolve
-          against the content box, so padding there both leaves an uncovered band that rows scroll
-          through and makes the group label travel before it pins to the top. */}
-      <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <SidebarHoverHighlight className="flex min-h-full flex-col gap-0.5">{list()}</SidebarHoverHighlight>
+      {pinnedGroup ? (
+        <SidebarHoverHighlight data-change-pinned-header className="shrink-0">
+          {groupHeader(pinnedGroup, true)}
+        </SidebarHoverHighlight>
+      ) : null}
+      <div data-change-viewport className="flex min-h-0 flex-1 overflow-hidden">
+        <div ref={scrollAreaRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-none pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <SidebarHoverHighlight className="flex min-h-full flex-col gap-0.5">{list()}</SidebarHoverHighlight>
+        </div>
       </div>
 
       {state?.countError && <Notice>{t('diff.countFailed', { error: state.countError })}</Notice>}

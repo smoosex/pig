@@ -253,66 +253,79 @@ async function runFixture(name: string): Promise<void> {
       }
     })
     await render(CWD)
-    const groups = [...container.querySelectorAll<HTMLElement>('[data-change-group]')]
-    assert.equal(groups.length, 2)
-    assert.ok(groups[0].parentElement!.classList.contains('flex-col'))
-    assert.ok(groups[0].parentElement!.classList.contains('gap-0.5'), 'group titles have the same gap above them as file rows')
-    const [{ header: stagedHeader, list: stagedList }, { header: unstagedHeader, list: unstagedList }] =
-      groups.map((group) => ({
-        header: group.firstElementChild as HTMLElement,
-        list: group.lastElementChild as HTMLElement
-      }))
-    for (const header of [stagedHeader, unstagedHeader]) {
-      assert.ok(header.classList.contains('sticky'), 'group titles still pin while scrolling')
-      assert.ok(header.classList.contains('bg-transparent'))
-      assert.ok(header.classList.contains('pb-0.5'), 'the transparent padding separates the title background from the first row')
-      assert.ok(!header.classList.contains('bg-sidebar'))
-      assert.ok(!header.classList.contains('solid:bg-sidebar'), 'the opaque column backs solid titles without hiding their shared hover layer')
-      assert.ok(!header.className.includes('backdrop-blur'))
-      const button = header.querySelector('button')!
-      assert.ok(button.classList.contains('hover:bg-transparent!'))
-      assert.ok(header.hasAttribute('data-sidebar-hover-occlusion'), 'sticky titles also clip the shared hover layer')
-      assert.ok(!button.classList.contains('bg-sidebar-foreground/12'), 'expanded groups are not selections')
+    const viewport = container.querySelector<HTMLElement>('[data-change-viewport]')!
+    const area = viewport.firstElementChild as HTMLElement
+    const pinned = () => container.querySelector<HTMLElement>('[data-change-pinned-header]')!
+    const heading = () => pinned().querySelector<HTMLElement>('[data-change-heading]')!
+    const sections = [...area.querySelectorAll<HTMLElement>('[data-change-group]')]
+    const inline = sections[1].querySelector<HTMLElement>('[data-change-heading]')!
+    assert.equal(heading().dataset.changeHeading, 'staged')
+    assert.equal(sections[0].querySelector('[data-change-heading]'), null, 'first title is moved, not duplicated in the scrolling content')
+    assert.equal(inline.dataset.changeHeading, 'unstaged')
+    assert.equal(viewport.previousElementSibling, pinned())
+    assert.ok(pinned().previousElementSibling!.hasAttribute('data-workspace-filter'))
+    assert.ok(pinned().classList.contains('shrink-0'))
+    assert.ok(!viewport.contains(pinned()), 'title, its padding and filter are all outside the scrolling paint area')
+    assert.ok(viewport.classList.contains('overflow-hidden'))
+    assert.ok(area.classList.contains('overflow-y-auto'))
+    assert.equal(area.querySelector('.sticky'), null, 'no transparent sticky overlay remains in the scrolling region')
+    assert.equal(area.querySelector('[data-sidebar-hover-occlusion]'), null)
+    assert.equal(area.querySelector('[style*="clip-path"]'), null)
+
+    // Model a real viewport and the next group's inline heading crossing its top.
+    let nextBottom = 180
+    area.getBoundingClientRect = () => new window.DOMRect(0, 100, 320, 400)
+    inline.getBoundingClientRect = () => new window.DOMRect(0, nextBottom - 30, 320, 30)
+    const observer = observers.find(item => item.targets.has(sections[0]))!
+    assert.ok(observer.targets.has(area))
+    const scroll = async (bottom: number) => {
+      nextBottom = bottom
+      await act(async () => { area.dispatchEvent(new window.Event('scroll')) })
     }
+    await scroll(101)
+    assert.equal(heading().dataset.changeHeading, 'staged', 'next title stays inline until it has passed out of the viewport')
+    await scroll(-500)
+    assert.equal(heading().dataset.changeHeading, 'unstaged', 'a fast jump switches the separate title')
+    assert.ok(pinned().textContent!.includes('未提交(2)+6-1'))
+    assert.equal(area.querySelectorAll('button[title]').length, 3, 'handoff does not remount or hide file rows')
+    await scroll(100)
+    assert.equal(heading().dataset.changeHeading, 'unstaged')
+    await scroll(180)
+    assert.equal(heading().dataset.changeHeading, 'staged', 'reverse scrolling restores the previous title')
 
-    // happy-dom has no layout: 28px title + 2px bottom padding, 24px rows, 2px row/group gaps.
-    const area = groups[0].parentElement!.parentElement!
-    let scroll = 0
-    stagedHeader.getBoundingClientRect = () => new window.DOMRect(0, Math.min(0, 24 - scroll), 320, 30)
-    stagedList.getBoundingClientRect = () => new window.DOMRect(0, 30 - scroll, 320, 24)
-    unstagedHeader.getBoundingClientRect = () => new window.DOMRect(0, Math.max(0, 56 - scroll), 320, 30)
-    unstagedList.getBoundingClientRect = () => new window.DOMRect(0, 86 - scroll, 320, 50)
-    const observer = observers.find((item) => item.targets.has(area))!
-    assert.ok(observer)
-    observer.update()
-    assert.equal(stagedList.style.clipPath, '')
-    assert.equal(unstagedList.style.clipPath, '')
+    await scroll(80)
+    await click(heading().querySelector('button'))
+    assert.equal(row('src/work.ts'), null, 'the external control collapses only its current group')
+    assert.ok(row('src/staged.ts'))
+    assert.equal(heading().querySelector('button')!.getAttribute('aria-expanded'), 'false')
+    await click(heading().querySelector('button'))
+    assert.ok(row('src/work.ts'))
+    assert.ok(row('src/new.ts'))
 
-    scroll = 12
-    area.dispatchEvent(new window.Event('scroll'))
-    assert.equal(stagedList.style.clipPath, 'inset(12px 0 0)', 'the pinned title keeps its 2px gap below the background')
-    assert.equal(unstagedList.style.clipPath, '', 'a header still in normal flow clips nothing')
+    // A filter can remove the current group; no stale external title survives.
+    const filter = container.querySelector<HTMLInputElement>('input')!
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(filter, 'staged')
+      filter.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    assert.equal(heading().dataset.changeHeading, 'staged')
+    assert.equal(row('src/work.ts'), null)
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(filter, 'work')
+      filter.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    assert.equal(heading().dataset.changeHeading, 'unstaged', 'a lone unstaged group uses the external title too')
+    assert.equal(area.querySelector('[data-change-heading]'), null)
+    assert.ok(row('src/work.ts'))
 
-    scroll = 60
-    area.dispatchEvent(new window.Event('scroll'))
-    assert.equal(stagedList.style.clipPath, 'inset(24px 0 0)')
-    assert.equal(unstagedList.style.clipPath, 'inset(4px 0 0)', 'each group clips below its own sticky title and gap')
-
-    scroll = 0
-    observer.update()
-    assert.equal(stagedList.style.clipPath, '', 'resize updates also remove an obsolete clip')
-    assert.equal(unstagedList.style.clipPath, '')
-
-    await click([...container.querySelectorAll('footer button[role="radio"]')].find((button) => button.textContent === '全部'))
+    await click([...container.querySelectorAll('footer button[role="radio"]')].find(button => button.textContent === '全部'))
+    assert.equal(container.querySelector('[data-change-pinned-header]'), null, 'flat mode has no reserved title area')
     assert.equal(container.querySelector('[data-change-group]'), null)
-    assert.equal(observer.targets.size, 0, 'changing list shape disconnects the old observer')
-    const flatList = row('src/work.ts')!.parentElement!
-    assert.equal(flatList.style.clipPath, '', 'flat rows do not inherit a group clip')
-    stagedList.style.clipPath = 'inset(1px 0 0)'
-    scroll = 12
-    area.dispatchEvent(new window.Event('scroll'))
-    assert.equal(flatList.style.clipPath, '')
-    assert.equal(stagedList.style.clipPath, 'inset(1px 0 0)', 'the old scroll listener is removed')
+    assert.equal(observer.targets.size, 0, 'switching modes disconnects observers of the old sections')
+    await scroll(-500)
+    assert.equal(container.querySelector('[data-change-pinned-header]'), null, 'old scroll listeners cannot restore a title')
   } else if (name === 'states') {
     api.readWorktreeDiff = async (cwd: string) => {
       if (cwd === '/broken') throw new Error('Git 不可用')
@@ -369,7 +382,7 @@ async function runFixture(name: string): Promise<void> {
     api.countUntrackedFiles = async () => { throw new Error('EIO: count read failed') }
     await render('/count-failed')
     assert.match(container.textContent ?? '', /部分行数统计失败：EIO: count read failed/)
-    assert.match(container.querySelector('[data-change-group="staged"] button[aria-expanded]')!.textContent ?? '', /已暂存\(1\)\+3-0$/)
+    assert.match(container.querySelector('[data-change-pinned-header] button[aria-expanded]')!.textContent ?? '', /已暂存\(1\)\+3-0$/)
     assert.match(container.querySelector('[data-change-group="unstaged"] button[aria-expanded]')!.textContent ?? '', /未提交\(2\)\+2-1$/)
     assert.match(container.textContent ?? '', /src\/new\.ts|new\.ts/)
   } else if (name === 'refresh') {
@@ -582,7 +595,7 @@ if (process.argv[2] === '--review-panel-fixture') {
     'prefs-failure': 'a preference that could not be read or saved is reported, and the queue survives it',
     'prefs-race': 'toggle writes remain ordered and a later success clears a prior failure',
     grouped: 'grouped rows list both stages and a click reveals the file in the changes tab',
-    sticky: 'transparent sticky titles clip scrolled rows without painting another surface',
+    sticky: 'group titles stay outside the scrolling viewport through jumps, reverse scrolling, collapse and filtering',
     shell: 'the column has animated footer modes and a divider without outer borders or duplicate collapse actions',
     states: 'a broken read, a non-git folder and a clean worktree each say so',
     refresh: 'a refresh keeps the list while only a first read shows the loading text',
