@@ -1,8 +1,9 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { formatPastedTextSize } from '../../../shared/pasted-text'
 import { useT } from '../hooks/useT'
 import { Button } from './ui/button'
+import { useWorkspaceVisible } from './WorkspaceLayout'
 import {
   Popover,
   PopoverContent,
@@ -25,6 +26,15 @@ export function PastedTextPreview({
   const t = useT()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const visible = useWorkspaceVisible()
+  const visibility = useRef(visible)
+  visibility.current = visible
+  useEffect(() => {
+    if (!visible) {
+      setOpen(false)
+      setCopied(false)
+    }
+  }, [visible])
 
   const copy = async () => {
     await navigator.clipboard.writeText(text)
@@ -33,14 +43,18 @@ export function PastedTextPreview({
 
   return (
     <Popover
-      open={open}
+      open={visible && open}
       onOpenChange={(next) => {
-        setOpen(next)
+        setOpen(visible && next)
         if (!next) setCopied(false)
       }}
     >
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent
+      {visible ? <PopoverContent
+        onCloseAutoFocus={(event) => {
+          // The unmount callback can outlive the render that hid the workspace.
+          if (!visibility.current) event.preventDefault()
+        }}
         side="top"
         align="end"
         collisionPadding={12}
@@ -72,7 +86,7 @@ export function PastedTextPreview({
         <pre className="min-h-0 max-h-[max(0px,min(20rem,calc(var(--radix-popover-content-available-height,32rem)-10rem)))] overflow-auto rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-xs leading-snug whitespace-pre-wrap break-words [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {text}
         </pre>
-      </PopoverContent>
+      </PopoverContent> : null}
     </Popover>
   )
 }

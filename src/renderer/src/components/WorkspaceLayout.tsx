@@ -1,6 +1,9 @@
-/** Settings replace workspace content immediately; only shared sidebar widths animate. */
-import { useState, type ReactNode } from 'react'
+/** Settings swap visibility without destroying workspace editors; only sidebar widths animate. */
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { cn } from '../lib/utils'
+
+const WorkspaceVisibility = createContext(true)
+export const useWorkspaceVisible = () => useContext(WorkspaceVisibility)
 
 export function WorkspaceLayout({
   settingsOpen, leftCollapsed, rightCollapsed, leftFloating, rightFloating,
@@ -42,7 +45,13 @@ export function WorkspaceLayout({
         />
       </div>
       <div data-workspace-center className="relative flex min-h-0 min-w-0 flex-1">
-        {settingsOpen ? renderSettings(navigationTarget, true) : children}
+        <WorkspaceVisibility value={!settingsOpen}>
+          <div data-workspace-content inert={settingsOpen} aria-hidden={settingsOpen}
+            className={cn('min-h-0 min-w-0 flex-1', settingsOpen ? 'hidden' : 'flex')}>
+            {children}
+          </div>
+        </WorkspaceVisibility>
+        {settingsOpen ? renderSettings(navigationTarget, true) : null}
       </div>
       <div
         data-workspace-right-rail

@@ -1,5 +1,5 @@
 /** Native preview with guest-owned comments and explicit batch delivery to real Pi sessions. */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { Activity, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { ArrowLeft, ArrowRight, Bot, Camera, Check, ChevronDown, Cookie, Copy, Crosshair, ExternalLink, History, LoaderCircle, MessageSquareShare, MousePointer2, RotateCw, Send, ShieldAlert, Trash2 } from 'lucide-react'
 import type { BrowserFrame, BrowserScreenshot, BrowserState } from '../../../../shared/browser'
@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from '../ui/alert'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from '../ui/alert-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { appendBrowserScreenshotDraft } from './browser-draft'
+import { useWorkspaceVisible } from '../WorkspaceLayout'
 import { useBrowserBounds } from './useBrowserBounds'
 import { decodeBrowserFrame, waitForBrowserPaint } from './browser-frame'
 import { CookieImportDialog } from './CookieImportDialog'
@@ -56,7 +57,9 @@ export function BrowserPanel({ browserId, ...props }: BrowserPanelProps) {
   return <IndependentBrowserPanel key={browserId} browserId={browserId} {...props} />
 }
 
-function IndependentBrowserPanel({ browserId, targetSessionId, active = true, onFocus }: BrowserPanelProps) {
+function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActive = true, onFocus }: BrowserPanelProps) {
+  const workspaceVisible = useWorkspaceVisible()
+  const active = paneActive && workspaceVisible
   const t = useT()
   const [state, setState] = useState<BrowserState | null>(null)
   const [address, setAddress] = useState('')
@@ -295,6 +298,7 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
   )
 
   return (
+    <Activity mode={workspaceVisible ? 'visible' : 'hidden'}>
     <section className="flex min-h-0 flex-1 flex-col" aria-label={t('tabBar.newBrowser')} hidden={!active}>
       <form className="flex shrink-0 items-center gap-0.5 border-b border-glass-card-border bg-glass-card-background px-2 py-1.5 text-xs text-glass-prompt-foreground solid:border-border solid:bg-muted/50 solid:text-foreground" onSubmit={(event) => {
         event.preventDefault()
@@ -413,5 +417,6 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active = true, on
           style={{ '--devtools-ratio': ratio, bottom: DOCK_BOTTOM } as CSSProperties} className="pointer-events-none absolute inset-x-0 h-0" /> : null}
       </div>
     </section>
+    </Activity>
   )
 }

@@ -10,7 +10,7 @@ async function fixture() {
   const { act, createElement: h, useState } = await import('react')
   const { createPortal } = await import('react-dom')
   const { createRoot } = await import('react-dom/client')
-  const { WorkspaceLayout } = await import('../src/renderer/src/components/WorkspaceLayout')
+  const { WorkspaceLayout, useWorkspaceVisible } = await import('../src/renderer/src/components/WorkspaceLayout')
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -20,12 +20,18 @@ async function fixture() {
     const [value, setValue] = useState(0)
     return h('button', { 'data-sidebar-state': '', onClick: () => setValue(value + 1) }, value)
   }
+  let workspaceMounts = 0
+  function Workspace() {
+    const [value, setValue] = useState(() => { workspaceMounts++; return 0 })
+    const visible = useWorkspaceVisible()
+    return h('main', { 'data-workspace-visible': String(visible) }, h('button', { onClick: () => setValue(value + 1) }, value))
+  }
   const render = async (leftCollapsed: boolean, rightCollapsed: boolean, settingsOpen: boolean, floating = false) => {
     await act(async () => root.render(h(WorkspaceLayout, {
       settingsOpen, leftCollapsed, rightCollapsed,
       leftFloating: floating && leftCollapsed, rightFloating: floating && rightCollapsed,
       left: h(Sidebar), right: h('aside', { 'data-right-sidebar': '' }, 'Files'), renderSettings,
-      children: h('main', null, 'Workspace')
+      children: h(Workspace)
     })))
   }
   const rail = (side: string) => host.querySelector<HTMLElement>(`[data-workspace-${side}-rail]`)!
@@ -50,6 +56,10 @@ async function fixture() {
         const rightSidebar = host.querySelector('[data-right-sidebar]')!
         const navigation = host.querySelector<HTMLElement>('[data-settings-navigation]')!
         const center = host.querySelector<HTMLElement>('[data-workspace-center]')!
+        const content = center.querySelector<HTMLElement>('[data-workspace-content]')!
+        const workspace = content.querySelector('main')!
+        await act(async () => workspace.querySelector('button')!.click())
+        const workspaceValue = workspace.textContent
         await act(async () => sidebar.click())
         const value = sidebar.textContent
         width('left', !leftCollapsed)
@@ -69,8 +79,11 @@ async function fixture() {
         assert.ok(left.classList.contains('overflow-hidden'), 'the expanding left rail reveals its stationary menu')
         assert.ok(navigation.querySelector('nav'), 'the menu uses the existing left rail, not a second column')
         assert.equal(center.querySelector('nav'), null)
-        assert.equal(center.querySelector('main'), null, 'main switches to settings immediately')
-        assert.equal(center.firstElementChild, host.querySelector('[data-settings-body]'), 'settings participate in main flex layout rather than an animated overlay')
+        assert.equal(center.querySelector('main'), workspace, 'settings never unmount workspace state or editor hosts')
+        assert.ok(content.classList.contains('hidden') && content.inert)
+        assert.equal(content.getAttribute('aria-hidden'), 'true')
+        assert.equal(workspace.getAttribute('data-workspace-visible'), 'false', 'consumers pause their visibility-dependent work')
+        assert.equal(host.querySelector('[data-settings-body]')!.parentElement, center, 'settings participate in main flex layout rather than an animated overlay')
         assert.ok(right.inert)
         widthOnly()
 
@@ -78,7 +91,12 @@ async function fixture() {
         width('left', !leftCollapsed)
         width('right', !rightCollapsed)
         assert.equal(right.inert, false)
-        assert.ok(center.querySelector('main'), 'the workspace returns immediately while rail widths restore')
+        assert.equal(center.querySelector('main'), workspace, 'the same DOM returns while rail widths restore')
+        assert.equal(workspace.textContent, workspaceValue)
+        assert.equal(workspace.getAttribute('data-workspace-visible'), 'true')
+        assert.ok(content.classList.contains('flex') && !content.inert)
+        assert.equal(content.getAttribute('aria-hidden'), 'false')
+        assert.equal(workspaceMounts, 1)
         assert.equal(host.querySelector('[data-settings-body]'), null)
         assert.equal(navigation.querySelector('nav'), null, 'no outgoing settings menu remains over the workspace')
         assert.ok(navigation.classList.contains('hidden'))
@@ -109,7 +127,7 @@ async function fixture() {
 }
 
 if (process.argv.includes('--fixture')) await fixture()
-else test('settings replace main immediately and animate only rail widths across all four sidebar combinations', async () => {
+else test('settings retain workspace state, signal visibility and animate only rail widths across all four sidebar combinations', async () => {
   const { exitCode, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 8000 })
   assert.equal(exitCode, 0, stderr || stdout)
 }, 10000)

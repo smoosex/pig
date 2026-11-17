@@ -26,6 +26,7 @@ import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { computeSplitPosition } from '../use-tab-strip-dnd'
+import { useWorkspaceVisible } from '../WorkspaceLayout'
 import { SplitPaneOverlay } from './SplitPaneOverlay'
 import { TabContextMenu } from '../TabContextMenu'
 import { TabKindIcon } from '../TabKindIcon'
@@ -56,7 +57,9 @@ export function SplitPaneContainer({
   const topology = group ? JSON.stringify(group.root, (key, value) => key === 'sizes' ? undefined : value) : tabId
   const [scene, setScene] = useState<PaneScene>({ rects: {}, previous: {}, topology: '', animate: false })
   const reduced = useReducedMotion()
+  const visible = useWorkspaceVisible()
   useLayoutEffect(() => {
+    if (!visible) return
     const element = area.current!
     const slots = [...element.querySelectorAll<HTMLElement>('[data-pane-slot]')]
     let active = true
@@ -89,7 +92,7 @@ export function SplitPaneContainer({
     for (const slot of slots) observer.observe(slot)
     schedule()
     return () => { active = false; observer.disconnect() }
-  }, [group?.root, tabId, topology])
+  }, [group?.root, tabId, topology, visible])
   useLayoutEffect(() => {
     if (scene.topology === topology) measuredPanes.current = panes
   })
@@ -98,7 +101,7 @@ export function SplitPaneContainer({
     () => () => {
       cancelDrag.current?.()
     },
-    []
+    [visible]
   )
 
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>, pane: PaneNode) => {

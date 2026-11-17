@@ -99,8 +99,13 @@ async function fixture() {
   document.body.append(container)
   const root = createRoot(container)
   const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 35)) }) }
-  const render = async (browserId = 'a', active = true, targetSessionId: string | null = 'session-a') => {
-    await act(async () => { root.render(createElement(TooltipProvider, null, createElement(BrowserPanel, { browserId, active, targetSessionId }))) })
+  const { WorkspaceLayout } = await import('../src/renderer/src/components/WorkspaceLayout')
+  const render = async (browserId = 'a', active = true, targetSessionId: string | null = 'session-a', settingsOpen = false) => {
+    await act(async () => { root.render(createElement(TooltipProvider, null, createElement(WorkspaceLayout, {
+      settingsOpen, leftCollapsed: false, rightCollapsed: false, leftFloating: false, rightFloating: false,
+      left: null, right: null, renderSettings: () => createElement('div', null, 'Settings'),
+      children: createElement(BrowserPanel, { browserId, active, targetSessionId })
+    }))) })
     const viewport = container.querySelector('[data-browser-viewport]')!
     viewport.getBoundingClientRect = () => new DOMRect(400, 100, 500, 600)
     window.dispatchEvent(new Event('resize'))
@@ -126,6 +131,14 @@ async function fixture() {
   await act(async () => { pushState(state('a', 'fresh')); initial(state('a', 'old')) })
   await flush()
   assert.equal(container.querySelector('[role="status"]')?.textContent, 'fresh')
+  const beforeSettings = container.querySelector('[data-browser-viewport]')
+  const readsBeforeSettings = reads
+  await render('a', true, 'session-a', true)
+  assert.equal(bounds.filter(item => item.browserId === 'a').at(-1)?.bounds, null, 'settings hide the native view, not only its DOM wrapper')
+  await render('a', true, 'session-a', false)
+  assert.equal(container.querySelector('[data-browser-viewport]'), beforeSettings, 'returning retains the browser DOM and state')
+  assert.equal(reads, readsBeforeSettings, 'returning does not remount and re-read the browser')
+  assert.ok(bounds.filter(item => item.browserId === 'a').at(-1)?.bounds, 'returning restores native bounds')
   const address = container.querySelector('input')!
   const toolbar = address.closest('form')!
   assert.equal(container.querySelector('button[type="submit"]'), null)

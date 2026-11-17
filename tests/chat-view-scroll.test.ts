@@ -310,8 +310,13 @@ async function runFixture(name: string): Promise<void> {
     }
     assert.fail(`scroll did not settle: frames=${frames.size}, timers=${timers.size}, events=${scrollEvents.size}`)
   }
+  const { WorkspaceLayout } = await import('../src/renderer/src/components/WorkspaceLayout')
+  let settingsOpen = false
   const render = async (flush = true) => {
-    await act(async () => { root.render(h(ChatView, null)) })
+    await act(async () => { root.render(name === 'settings-return' ? h(WorkspaceLayout, {
+      settingsOpen, leftCollapsed: false, rightCollapsed: false, leftFloating: false, rightFloating: false,
+      left: null, right: null, renderSettings: () => h('div', null, 'Settings'), children: h(ChatView, null)
+    }) : h(ChatView, null)) })
     if (flush) await settle()
   }
   const viewport = () => {
@@ -759,6 +764,21 @@ async function runFixture(name: string): Promise<void> {
       await render()
       near(viewport().scrollTop, paused + 120, 'an above-viewport growth pushes the viewport down')
       assert.deepEqual(topRow(), anchored, 'the reading row keeps its offset')
+    } else if (name === 'settings-return') {
+      await render()
+      const original = viewport()
+      const paused = await leaveEnd(2000)
+      const anchored = topRow()
+      settingsOpen = true
+      await render()
+      const afterHide = writes.length
+      await settle()
+      assert.ok(writes.slice(afterHide).every(write => write.element !== original), 'settings pause hidden transcript scrolling')
+      settingsOpen = false
+      await render()
+      assert.equal(viewport(), original, 'returning keeps the original transcript DOM')
+      near(viewport().scrollTop, paused, 'returning preserves the reading scroll position')
+      assert.deepEqual(topRow(), anchored)
     } else if (name === 'switch-unmount-cleanup') {
       await render()
       const idle = viewport()
@@ -811,6 +831,7 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'empty-window-error': 'an empty window with a failed read still shows the failure',
     'remote-history': 'a windowed history loads older turns on demand and keeps the reading position',
     'page-above-reachable': 'a page arriving above a reader remains reachable without losing the reading position',
+    'settings-return': 'settings pause transcript work and preserve its DOM and reading position',
     'switch-unmount-cleanup': 'hidden panes stay quiet and unmount cancels detached work'
   }
   for (const [name, title] of Object.entries(fixtures)) {

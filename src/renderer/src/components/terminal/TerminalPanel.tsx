@@ -1,8 +1,9 @@
 /** The tab owns xterm and its shell; this panel only attaches the view and exposes Agent release. */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Activity, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Bot, LoaderCircle } from 'lucide-react'
 import type { TerminalAgentState } from '../../../../shared/terminal-agent'
 import { attachTerminal, ensureTerminal, setTerminalActive } from '../../terminal/runtime'
+import { useWorkspaceVisible } from '../WorkspaceLayout'
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -19,15 +20,21 @@ export default function TerminalPanel({ terminalId, cwd, active, onFocus }: {
   onFocus: () => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => attachTerminal(terminalId, cwd, hostRef.current!), [terminalId, cwd])
+  const visible = useWorkspaceVisible()
   useLayoutEffect(() => {
-    setTerminalActive(terminalId, active)
+    if (!visible) return
+    return attachTerminal(terminalId, cwd, hostRef.current!)
+  }, [terminalId, cwd, visible])
+  useLayoutEffect(() => {
+    setTerminalActive(terminalId, active && visible)
     return () => setTerminalActive(terminalId, false)
-  }, [active, terminalId, cwd])
+  }, [active, terminalId, cwd, visible])
   return (
     <div data-terminal-panel className="relative flex min-h-0 min-w-0 flex-1 flex-col px-3 pt-2 pb-1">
       <div ref={hostRef} className="min-h-0 min-w-0 flex-1 overflow-hidden" onFocusCapture={onFocus} />
-      <TerminalAgentControl key={terminalId} terminalId={terminalId} cwd={cwd} />
+      <Activity mode={visible ? 'visible' : 'hidden'}>
+        <TerminalAgentControl key={terminalId} terminalId={terminalId} cwd={cwd} />
+      </Activity>
     </div>
   )
 }

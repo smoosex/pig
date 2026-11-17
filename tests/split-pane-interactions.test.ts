@@ -278,18 +278,25 @@ async function fixture(scenario: string): Promise<void> {
       })
       assert.equal(requests, 2, 'only the explicit retry performs another load')
     } else if (scenario === 'drafts') {
+      const { WorkspaceLayout, useWorkspaceVisible } = await import('../src/renderer/src/components/WorkspaceLayout')
+      let settingsOpen = false
       const { EditorContent } = await import('@tiptap/react')
       const { useComposer } = await import('../src/renderer/src/components/composer/useComposer')
       const drafts: Record<string, ReturnType<typeof useComposer>> = {}
       function DraftPane({ node, isActive }: { node: PaneNode; isActive: boolean }) {
-        const state = useComposer(undefined, undefined, node.tabId, isActive)
+        const visible = useWorkspaceVisible()
+        const state = useComposer(undefined, undefined, node.tabId, isActive && visible)
         drafts[node.tabId] = state
         return h('div', { 'data-editor': node.tabId }, h(EditorContent, { editor: state.editor }))
       }
       const render = () =>
         root.render(
-          h(SplitPaneContainer, { tabId: 'A',
-            renderPane: (node, isActive) => h(DraftPane, { node, isActive })
+          h(WorkspaceLayout, { settingsOpen, leftCollapsed: false, rightCollapsed: false,
+            leftFloating: false, rightFloating: false, left: null, right: null,
+            renderSettings: () => h('div', { 'data-settings': '' }),
+            children: h(SplitPaneContainer, { tabId: 'A',
+              renderPane: (node, isActive) => h(DraftPane, { node, isActive })
+            })
           })
         )
       await act(async () => {
@@ -307,6 +314,37 @@ async function fixture(scenario: string): Promise<void> {
         ])
       })
       const original = drafts.A.editor
+      const beforeSettingsB = drafts.B.editor
+      const editorNode = host.querySelector('[data-editor="A"]')
+      await act(async () => { original!.commands.insertContentAt(1, {
+        type: 'pastedText', attrs: { id: 'preview', text: 'Long attachment preview', byteSize: 23, filename: 'draft-preview.txt' }
+      }) })
+      const documentBeforeSettings = original!.getJSON()
+      const previewTrigger = editorNode!.querySelector<HTMLButtonElement>('button[aria-label="draft-preview.txt"]')!
+      assert.ok(previewTrigger, 'use the real Tiptap node view, not an isolated preview component')
+      await act(async () => { previewTrigger.click() })
+      const preview = document.querySelector('[data-slot="popover-content"]')!
+      assert.ok(preview && !host.contains(preview), 'the attachment preview is portalled outside the workspace')
+      const copyButton = preview.querySelector('button')!
+      settingsOpen = true
+      await act(async () => { render(); await new Promise(resolve => setTimeout(resolve, 20)) })
+      assert.ok(host.querySelector('[data-workspace-content]')!.classList.contains('hidden'))
+      assert.equal(original!.isDestroyed, false, 'settings must not run Tiptap destruction cleanup')
+      assert.ok(!document.querySelector('[data-slot="popover-content"]'), 'settings remove the editor-node Portal immediately')
+      assert.equal(copyButton.isConnected, false, 'the old preview is not interactive over settings')
+      assert.notEqual(document.activeElement, previewTrigger, 'closing a preview must not focus its hidden editor trigger')
+      settingsOpen = false
+      await act(async () => { render() })
+      assert.equal(drafts.A.editor, original)
+      assert.equal(drafts.B.editor, beforeSettingsB)
+      assert.equal(host.querySelector('[data-editor="A"]'), editorNode)
+      assert.deepEqual(original!.getJSON(), documentBeforeSettings, 'closing the Portal leaves the draft untouched')
+      assert.ok(!document.querySelector('[data-slot="popover-content"]'), 'returning does not reopen the preview')
+      await act(async () => { previewTrigger.click() })
+      assert.ok(document.querySelector('[data-slot="popover-content"]'), 'the preview can be explicitly opened again')
+      await act(async () => { original!.commands.deleteRange({ from: 1, to: 2 }) })
+      assert.equal(drafts.A.editor!.getText(), 'unsent A')
+      assert.equal(drafts.B.editor!.getText(), 'unsent B')
       await act(async () => {
         split.getState().splitPane(a, 'C', 'bottom')
       })

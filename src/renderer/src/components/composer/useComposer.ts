@@ -89,11 +89,11 @@ export function useComposer(
   const hasDraft = Boolean(draft.text.trim() || draft.attachments.length > 0 || attachments.images.length > 0)
 
   useEffect(() => {
-    if (!editor || !sessionId || queuedEditText == null) return
+    if (!isActive || !editor || !sessionId || queuedEditText == null) return
     replaceText(queuedEditText)
     clearQueuedEditText(sessionId)
     editor.commands.focus()
-  }, [sessionId, clearQueuedEditText, editor, queuedEditText, replaceText])
+  }, [isActive, sessionId, clearQueuedEditText, editor, queuedEditText, replaceText])
 
   function handleKeyDown(event: KeyboardEvent): boolean {
     if (inputDisabled) return false

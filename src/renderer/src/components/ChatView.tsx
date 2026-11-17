@@ -1,3 +1,4 @@
+import { useWorkspaceVisible } from './WorkspaceLayout'
 import { Activity, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { showsInTranscript } from '../chat/compactions'
 import { toTurn } from '../chat/display-turns'
@@ -202,6 +203,7 @@ function RetainedChatPanes({
 
 /** Projects open conversations while retaining a bounded set of mounted panes. */
 export function ChatView({ explicitSessionId }: { explicitSessionId?: string } = {}) {
+  const visible = useWorkspaceVisible()
   const openTabs = useSessionsStore((s) => s.openTabs)
   const storeActiveSessionId = useSessionsStore(selectActiveSessionId)
   const snapshots = useRef<SnapshotCache>(new Map()).current
@@ -224,6 +226,7 @@ export function ChatView({ explicitSessionId }: { explicitSessionId?: string } =
   }, [openIds, snapshots])
 
   return (
+    <Activity mode={visible ? 'visible' : 'hidden'}>
     <div className="relative flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden">
       {explicitSessionId ? (
         <SessionChatPane
@@ -241,5 +244,6 @@ export function ChatView({ explicitSessionId }: { explicitSessionId?: string } =
         />
       )}
     </div>
+    </Activity>
   )
 }

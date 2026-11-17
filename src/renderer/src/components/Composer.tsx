@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, useEffect, useMemo, useRef, useState } from 'react'
 import { BorderBeam } from '@smoose/border-beam'
 import { EditorContent } from '@tiptap/react'
 import { motion, useReducedMotion } from 'motion/react'
@@ -22,6 +22,7 @@ import { ReviewFeedback } from './composer/ReviewFeedback'
 import { RetryNotice } from './composer/RetryNotice'
 import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
+import { useWorkspaceVisible } from './WorkspaceLayout'
 import { useComposer } from './composer/useComposer'
 import { useComposerAppearance } from './composer/useComposerAppearance'
 import { TAB_REFERENCE_DROP } from './composer/tab-reference'
@@ -33,7 +34,7 @@ export function Composer({
   draftCwd,
   draftSessionId,
   explicitSessionId,
-  isActive = true,
+  isActive: paneActive = true,
   centered = false,
   workspace
 }: {
@@ -45,6 +46,8 @@ export function Composer({
   workspace?: { project: string; branch: string } | null
 } = {}) {
   const t = useT()
+  const visible = useWorkspaceVisible()
+  const isActive = paneActive && visible
   const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
   const appearance = useComposerAppearance()
   const mentionContext = useMemo(() => ({ cwd: mentions.cwd, sessionId: sessionId ?? null }), [mentions.cwd, sessionId])
@@ -91,18 +94,20 @@ export function Composer({
       transition={{ duration: reducedMotion || switchedSession ? 0 : 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn(chatColumn, '@container/composer-column relative isolate shrink-0 pb-3.5')}
     >
+      <Activity mode={visible ? 'visible' : 'hidden'}>
       <FollowUpQueue key={sessionId ?? 'none'} sessionId={sessionId} />
       <CompactionStatus sessionId={sessionId} />
       <RetryNotice sessionId={sessionId} />
       <ReviewFeedback sessionId={sessionId} />
       <ApprovalPrompt sessionId={sessionId} autoFocus={isActive} />
+      </Activity>
       {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
-      <Popover open={!approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
+      <Popover open={visible && !approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
           <div ref={boxRef} data-tab-reference-target hidden={approval !== undefined} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
             <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
             <div className="relative z-10">
-              <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
+              <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={visible && beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
                 <InputGroup
                   className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl solid:bg-composer-input-background text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none"
                   onFocus={() => setFocused(true)}
@@ -133,6 +138,7 @@ export function Composer({
                       </Button>
                     ) : null}
                   </div>
+                  <Activity mode={visible ? 'visible' : 'hidden'}>
                   <ComposerToolbar
                     sessionId={sessionId}
                     isStreaming={isStreaming}
@@ -144,6 +150,7 @@ export function Composer({
                     onSend={send}
                     onAbort={abort}
                   />
+                  </Activity>
                 </InputGroup>
               </BorderBeam>
             </div>
@@ -165,7 +172,7 @@ export function Composer({
           </span>
         </div>
       ) : null}
-      <ImagePreview src={attachments.preview} onClose={() => attachments.setPreview(null)} />
+      <ImagePreview src={visible ? attachments.preview : null} onClose={() => attachments.setPreview(null)} />
     </motion.div>
   )
 }
