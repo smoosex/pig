@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '../../lib/i18n'
 import { useComposerDraftsStore, type DraftImage } from '../../stores/composer-drafts'
 
@@ -83,15 +83,21 @@ export function useComposerImages(sessionId: string | null) {
     setError(null)
   }, [release])
 
-  useEffect(() => {
-    const saved = sessionId ? useComposerDraftsStore.getState().drafts[sessionId]?.images : undefined
-    currentImages.current = (saved ?? []).map((image) => ({
-      ...image, url: `data:${image.mimeType};base64,${image.data}`
-    }))
-    setImages(currentImages.current)
-    setPreview(null)
+  useLayoutEffect(() => release, [sessionId, release])
+
+  useLayoutEffect(() => {
+    const saved = sessionId ? useComposerDraftsStore.getState().drafts[sessionId] : undefined
+    // A promotion removes submitted IDs, not reads still in flight for the next draft.
+    if (saved?.focusOnRestore) release()
+    const previous = currentImages.current
+    const next = (saved?.images ?? []).map(image => previous.find(item =>
+      item.id === image.id && item.mimeType === image.mimeType && item.data === image.data
+    ) ?? { ...image, url: `data:${image.mimeType};base64,${image.data}` })
+    for (const image of previous) if (!next.includes(image)) URL.revokeObjectURL(image.url)
+    currentImages.current = next
+    setImages(next)
+    setPreview(url => next.some(image => image.url === url) ? url : null)
     setError(null)
-    return release
   }, [sessionId, release, restoreVersion])
 
   const add = useCallback(async (files: File[]) => {

@@ -78,6 +78,11 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     }
 
     const saved = { content: command !== null ? textToComposerDocument(`!${serialized.text}`) : document.editor.getJSON(), images: images.map(({ id, mimeType, data }) => ({ id, mimeType, data })) }
+    const submittedContent = useComposerDraftsStore.getState().drafts[target]?.content
+    const consumePromotedDraft = () => useComposerDraftsStore.getState().consumeDraft(
+      target, submittedContent, saved.images.map(image => image.id), command !== null,
+      useSessionsStore.getState().activeTabId === target
+    )
     const payload = images.map(({ mimeType, data }) => ({ mimeType, data }))
     const prompt = trimComposer(serialized)
     const titleText = hasAttachments ? stripPastedTextAttachments(prompt.text, prompt.attachments).trim() : trimmed
@@ -138,7 +143,9 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
         }
         useSessionsStore.getState().beginBash(target, id, command)
         begun = true
-        if (document.getDraft() === serialized) {
+        if (isDraftSession) {
+          cleared = consumePromotedDraft()
+        } else if (document.getDraft() === serialized) {
           document.clear()
           onBashSubmitted?.()
           cleared = true
@@ -180,8 +187,12 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const optimistic = composerUserMessage(text, payload, prompt.attachments, prompt.mentions)
     if (!streaming) state.beginPrompt(target, optimistic)
     if (title) state.previewSessionTitle(target, title, fallback)
-    document.clear()
-    attachments.clear()
+    // The home editor can already be gone; clear the submitted session and rehydrate its new editor.
+    if (isDraftSession) consumePromotedDraft()
+    else {
+      document.clear()
+      attachments.clear()
+    }
 
     const startedAt = stopEpoch(target)
     let cwd: string

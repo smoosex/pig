@@ -21,6 +21,7 @@ import { isComposingKey, isShortcutRecording, matchesShortcut, shortcutText, use
 interface ComposerEditorOptions {
   sessionId: string | null
   isActive?: boolean
+  receivePromotionFocus?: boolean
   disabled?: boolean
   /** The worktree `@` paths are relative to; a dragged row from any other one is refused. */
   cwd?: string | null
@@ -258,16 +259,17 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     ? state.drafts[options.sessionId]?.restoreVersion ?? 0 : 0)
   const appliedRestore = useRef({ sessionId: options.sessionId, version: restoreVersion })
   useLayoutEffect(() => {
-    const content = (options.sessionId
-      ? useComposerDraftsStore.getState().drafts[options.sessionId]?.content
-      : undefined) ?? textToComposerDocument('')
-    editor?.commands.setContent(content, { emitUpdate: false })
+    const saved = options.sessionId ? useComposerDraftsStore.getState().drafts[options.sessionId] : undefined
+    const content = saved?.content ?? textToComposerDocument('')
+    if (editor && !editor.state.doc.eq(editor.schema.nodeFromJSON(content))) {
+      editor.commands.setContent(content, { emitUpdate: false })
+    }
     const next = serializeComposerDocument(content)
     currentDraft.current = next
     setDraft(next)
     // Only a new external restoration in this active editor moves focus, not ordinary tab hydration.
     const previous = appliedRestore.current
-    if (previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false && !options.disabled) {
+    if (saved?.focusOnRestore && previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false && !options.disabled) {
       editor?.commands.focus('end')
     }
     appliedRestore.current = { sessionId: options.sessionId, version: restoreVersion }
@@ -277,6 +279,25 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   useLayoutEffect(() => {
     editor?.setEditable(Boolean(options.sessionId) && !options.disabled, false)
   }, [editor, options.sessionId, options.disabled])
+
+  useLayoutEffect(() => {
+    const sessionId = options.sessionId
+    if (!options.receivePromotionFocus || !sessionId || !editor || editor.isDestroyed ||
+      !useComposerDraftsStore.getState().drafts[sessionId]?.focusAfterPromotion) return
+    // Only the tab's editor may take the request, after the outgoing home has committed its removal.
+    const frame = requestAnimationFrame(() => {
+      const current = callbacks.current
+      if (editor.isDestroyed || current.sessionId !== sessionId || !current.receivePromotionFocus) return
+      const dom = editor.view.dom
+      if (!dom.isConnected || !useComposerDraftsStore.getState().takePromotionFocus(sessionId)) return
+      if (current.isActive === false || current.disabled || !editor.isEditable || dom.closest('[hidden], [inert]')) return
+      const { activeElement, body, documentElement } = dom.ownerDocument
+      if (!activeElement || activeElement === body || activeElement === documentElement || !activeElement.isConnected) {
+        editor.view.focus()
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [editor, options.sessionId, options.receivePromotionFocus, restoreVersion])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

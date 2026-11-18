@@ -3,6 +3,7 @@ import { createCatalogSlice } from './sessions/catalog-slice'
 import { createConversationSlice } from './sessions/conversation-slice'
 import { createTabsSlice } from './sessions/tabs-slice'
 import { useSettingsStore } from './settings'
+import { useComposerDraftsStore } from './composer-drafts'
 import { api } from '../ipc/api'
 import type { SessionsStore } from './sessions/types'
 import { toolTabMemberships } from './sessions/tab-order'
@@ -30,6 +31,13 @@ useSettingsStore.subscribe((state, previous) => {
 useSessionsStore.subscribe((state) => {
   const sessionId = selectActiveSessionId(state)
   if (sessionId && state.runtime[sessionId]?.unread) state.markRead(sessionId)
+})
+
+// A promotion can still be waiting for its editor to mount when the user leaves the tab.
+useSessionsStore.subscribe((state, previous) => {
+  if (previous.activeTabId && state.activeTabId !== previous.activeTabId) {
+    useComposerDraftsStore.getState().takePromotionFocus(previous.activeTabId)
+  }
 })
 
 // Browser tabs own native resources even when a project removal bypasses closeTab.

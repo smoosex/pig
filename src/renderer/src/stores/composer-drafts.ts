@@ -19,6 +19,8 @@ type FailedDrafts = Record<string, FailedDraft[] | undefined>
 interface ComposerDraft {
   /** External replacements rehydrate mounted editors without replaying their own keystrokes. */
   restoreVersion?: number
+  focusOnRestore?: boolean
+  focusAfterPromotion?: boolean
   content?: JSONContent
   images?: DraftImage[]
   bashMode?: boolean
@@ -33,6 +35,8 @@ interface ComposerDraftsState {
   setFailedDrafts: (update: (current: FailedDrafts) => FailedDrafts) => void
   setContent: (sessionId: string, content: JSONContent) => void
   setImages: (sessionId: string, images: DraftImage[]) => void
+  consumeDraft: (sessionId: string, content: JSONContent | undefined, imageIds: string[], bash: boolean, focus: boolean) => boolean
+  takePromotionFocus: (sessionId: string) => boolean
   restoreDraft: (sessionId: string, draft: FailedDraft) => void
   setBashMode: (sessionId: string, bashMode: boolean, bashDismissed?: boolean) => void
   discard: (sessionId: string) => void
@@ -52,6 +56,34 @@ export const useComposerDraftsStore = create<ComposerDraftsState>((set) => ({
     set((state) => ({
       drafts: { ...state.drafts, [sessionId]: { ...state.drafts[sessionId], images } }
     })),
+  consumeDraft: (sessionId, content, imageIds, bash, focus) => {
+    let consumed = false
+    set((state) => {
+      const draft = state.drafts[sessionId]
+      if (!draft) return state
+      consumed = draft.content === content
+      const images = draft.images?.filter(image => !imageIds.includes(image.id))
+      if (!focus && !consumed && images?.length === draft.images?.length) return state
+      return { drafts: { ...state.drafts, [sessionId]: {
+        ...draft, images,
+        ...(consumed ? { content: undefined, ...(bash ? { bashMode: false, bashDismissed: false } : {}) } : {}),
+        restoreVersion: (draft.restoreVersion ?? 0) + 1,
+        focusOnRestore: false,
+        focusAfterPromotion: focus
+      } } }
+    })
+    return consumed
+  },
+  takePromotionFocus: (sessionId) => {
+    let requested = false
+    set(state => {
+      const draft = state.drafts[sessionId]
+      if (!draft?.focusAfterPromotion) return state
+      requested = true
+      return { drafts: { ...state.drafts, [sessionId]: { ...draft, focusAfterPromotion: false } } }
+    })
+    return requested
+  },
   restoreDraft: (sessionId, draft) =>
     set((state) => ({
       drafts: {
@@ -59,6 +91,7 @@ export const useComposerDraftsStore = create<ComposerDraftsState>((set) => ({
         [sessionId]: {
           ...draft,
           restoreVersion: (state.drafts[sessionId]?.restoreVersion ?? 0) + 1,
+          focusOnRestore: true,
           bashMode: false,
           bashDismissed: true
         }

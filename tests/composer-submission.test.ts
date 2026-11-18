@@ -18,8 +18,16 @@ async function fixture(scenario: string): Promise<void> {
   Object.assign(window, { api: {} })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
+  const { EditorContent } = await import('@tiptap/react')
   const { mock } = await import('bun:test')
   const prepared = deferred()
+  const promoted = deferred()
+  const leaveBeforeMount = scenario === 'draft-leave-before-mount'
+  const leaveBeforeFrame = scenario === 'draft-leave-before-frame'
+  const newerBash = scenario === 'bash-draft-newer'
+  const handoff = ['draft-create', 'draft-newer', 'draft-late-mount', 'bash-draft'].includes(scenario) || leaveBeforeMount || leaveBeforeFrame || newerBash
+  let finishImage!: () => void
+  let readingImage: Promise<void> | undefined
   let promptCalls = 0
   let abortCalls = 0
   let rollbackCalls = 0
@@ -51,6 +59,7 @@ async function fixture(scenario: string): Promise<void> {
     },
     promoteDraft: async () => {
       promoteCalls++
+      if (handoff) await promoted.promise
       store.activeTabId = 'one'
       return true
     },
@@ -114,9 +123,9 @@ async function fixture(scenario: string): Promise<void> {
   let editor!: ReturnType<typeof useComposerEditor>
   let images!: ReturnType<typeof useComposerImages>
   function Probe({ sessionId, draft = false }: { sessionId: string | null; draft?: boolean }) {
-    const draftKey = draft ? 'draft:/project' : sessionId
+    const draftKey = sessionId
     images = useComposerImages(draftKey)
-    editor = useComposerEditor({ sessionId: draftKey, onKeyDown: () => false, onPasteImages: images.add })
+    editor = useComposerEditor({ sessionId: draftKey, receivePromotionFocus: !draft, onKeyDown: () => false, onPasteImages: images.add })
     state = useComposerSubmission({
       sessionId,
       draftCwd: draft ? '/project' : undefined,
@@ -125,7 +134,7 @@ async function fixture(scenario: string): Promise<void> {
       attachments: images,
       bashMode: scenario.startsWith('bash')
     })
-    return null
+    return handoff ? createElement(EditorContent, { editor: editor.editor }) : null
   }
   const container = document.createElement('div')
   document.body.append(container)
@@ -136,7 +145,7 @@ async function fixture(scenario: string): Promise<void> {
   }
 
   try {
-    await render('one', scenario.startsWith('draft-') || scenario === 'bash-draft')
+    await render('one', scenario.startsWith('draft-') || scenario.startsWith('bash-draft'))
     await act(async () => {
       if (scenario !== 'duplicate-images') {
         editor.restore({ type: 'doc', content: [{ type: 'paragraph', content: [
@@ -186,11 +195,85 @@ async function fixture(scenario: string): Promise<void> {
     let sending!: Promise<void>
     let duplicate!: Promise<void>
     await act(async () => {
+      if (handoff) editor.editor!.view.focus()
       sending = state.send()
       if (scenario === 'duplicate-images' || scenario === 'bash') duplicate = state.send()
     })
     if (scenario === 'newer-draft') await act(async () => { editor.replaceText('新输入') })
     if (scenario === 'bash-busy') store.runtime.one.isStreaming = true
+    if (scenario === 'draft-late-mount' || leaveBeforeMount) {
+      // Promotion publishes the selection before React replaces the home editor.
+      await act(async () => { promoted.resolve() })
+      const { useComposerDraftsStore } = await import('../src/renderer/src/stores/composer-drafts')
+      assert.ok(useComposerDraftsStore.getState().drafts.one?.focusAfterPromotion, 'the outgoing editor cannot take the request')
+      if (leaveBeforeMount) {
+        await render('two')
+        assert.equal(useComposerDraftsStore.getState().drafts.one?.focusAfterPromotion, false)
+      }
+      await act(async () => { root.render(null) })
+      await render('one')
+    } else if (handoff) {
+      const oldEditor = editor.editor
+      await act(async () => { root.render(null) })
+      await render('one')
+      assert.notEqual(editor.editor, oldEditor)
+      assert.equal(editor.getDraft().text, scenario.startsWith('bash-draft') ? 'echo done' : '原文附件')
+      if (scenario === 'draft-newer') await act(async () => {
+        const otherControl = document.createElement('button')
+        container.after(otherControl)
+        otherControl.id = 'other-control'
+        otherControl.focus()
+        editor.replaceText('交接期间的新输入')
+        images.restore([{ id: 'new-image', mimeType: 'image/png', data: 'AQ==' }])
+      })
+      if (scenario === 'draft-create' || leaveBeforeFrame) {
+        const outgoingControl = document.createElement('button')
+        container.after(outgoingControl)
+        outgoingControl.focus()
+        const frames = new Map<number, FrameRequestCallback>()
+        const request = globalThis.requestAnimationFrame
+        const cancel = globalThis.cancelAnimationFrame
+        let frameId = 0
+        globalThis.requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId }
+        globalThis.cancelAnimationFrame = id => { frames.delete(id) }
+        try {
+          await act(async () => { promoted.resolve() })
+          assert.ok(document.activeElement === outgoingControl, 'focus is not moved during the commit')
+          outgoingControl.remove()
+          if (leaveBeforeFrame) {
+            await render('two')
+            await render('one')
+          }
+          await act(async () => { for (const callback of frames.values()) callback(performance.now()) })
+          assert.equal(document.activeElement === editor.editor!.view.dom, !leaveBeforeFrame, 'focus is handed off only if the user did not leave the tab')
+        } finally {
+          globalThis.requestAnimationFrame = request
+          globalThis.cancelAnimationFrame = cancel
+        }
+      } else {
+        await act(async () => { promoted.resolve() })
+      }
+    }
+    if (newerBash) {
+      const Reader = globalThis.FileReader
+      try {
+        globalThis.FileReader = class extends Reader {
+          override readAsDataURL() {
+            finishImage = () => {
+              Object.defineProperty(this, 'result', { value: 'data:image/png;base64,AQ==' })
+              this.dispatchEvent(new Event('load'))
+            }
+          }
+        }
+        await act(async () => {
+          editor.replaceText('next draft')
+          editor.editor!.commands.setTextSelection({ from: 2, to: 5 })
+          readingImage = images.add([new File(['x'], 'next.png', { type: 'image/png' })])
+        })
+      } finally {
+        globalThis.FileReader = Reader
+      }
+    }
     if (scenario === 'draft-failure') await render('one')
     if (scenario === 'stopped') await act(async () => { await state.abort() })
     if (scenario === 'switch') await render('two')
@@ -273,10 +356,29 @@ async function fixture(scenario: string): Promise<void> {
       assert.equal(editor.getDraft().text, '原文附件')
       assert.equal(editor.getDraft().attachments.length, 1)
       assert.equal(images.images.length, 1)
-    } else if (scenario === 'draft-create') {
+    } else if (newerBash) {
+      assert.equal(bashCalls, 1)
+      assert.equal(editor.getDraft().text, 'next draft')
+      const { from, to } = editor.editor!.state.selection
+      assert.deepEqual([from, to], [2, 5])
+      await act(async () => { finishImage(); await readingImage })
+      assert.deepEqual(images.images.map(image => image.data), ['AQ=='])
+    } else if (leaveBeforeMount || leaveBeforeFrame) {
+      await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
+      assert.equal(promptCalls, 1)
+      assert.notEqual(document.activeElement, editor.editor!.view.dom)
+    } else if (scenario === 'draft-create' || scenario === 'draft-newer' || scenario === 'draft-late-mount') {
+      if (scenario === 'draft-late-mount') await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())) })
       assert.equal(promoteCalls, 1)
       assert.equal(promptCalls, 1)
-      assert.equal(editor.getDraft().text, '')
+      assert.equal(sentPrompt, '原文附件')
+      assert.equal(editor.getDraft().text, scenario === 'draft-newer' ? '交接期间的新输入' : '')
+      assert.deepEqual(images.images.map(image => image.id), scenario === 'draft-newer' ? ['new-image'] : [])
+      const expectedFocus = scenario === 'draft-newer' ? document.getElementById('other-control') : editor.editor!.view.dom
+      assert.ok(document.activeElement === expectedFocus, 'promotion restores lost focus but does not steal focus from another control')
+      await act(async () => { root.render(null) })
+      await render('one')
+      assert.ok(document.activeElement !== editor.editor!.view.dom, 'the focus handoff is not replayed on another mount')
       assert.equal(state.error, undefined)
     } else if (scenario === 'draft-failure') {
       assert.equal(promoteCalls, 1)
@@ -339,7 +441,7 @@ async function fixture(scenario: string): Promise<void> {
 if (process.argv[2] === '--submission-fixture') {
   await fixture(process.argv[3])
 } else {
-  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-busy', 'bash-attachments', 'escaped-bash', 'review-returning', 'branch-navigating']) {
+  for (const scenario of ['newer-draft', 'switch', 'remount', 'refresh', 'accepted-error', 'reopened', 'duplicate-images', 'command-only', 'command-started', 'command-delayed', 'command-error', 'stopped', 'draft-create', 'draft-newer', 'draft-late-mount', 'draft-leave-before-mount', 'draft-leave-before-frame', 'draft-failure', 'bash', 'bash-error', 'bash-draft', 'bash-draft-newer', 'bash-busy', 'bash-attachments', 'escaped-bash', 'review-returning', 'branch-navigating']) {
     test(`composer submission recovery: ${scenario}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--submission-fixture', scenario], { timeoutMs: 10_000 })
       assert.equal(code, 0, stderr || stdout)

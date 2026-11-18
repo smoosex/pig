@@ -43,6 +43,7 @@ export function useComposer(
   const bashModeRef = useRef(false)
   const document = useComposerEditor({
     sessionId: draftKey, isActive, disabled: inputDisabled, cwd: mentionCwd,
+    receivePromotionFocus: Boolean(explicitSessionId),
     isBashMode: () => bashModeRef.current, onKeyDown: handleKeyDown, onPasteImages: attachments.add
   })
   const { editor, draft, replaceText } = document
