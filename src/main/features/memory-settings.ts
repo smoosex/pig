@@ -2,8 +2,8 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { readSettingsObject, saveNamespacedSettings } from '../settings/json-file'
-import type { MemorySettings, MemorySettingsPatch } from '../../shared/api'
-import { memorySettingsPath } from './memory/paths'
+import type { FileMemorySettings, FileMemorySettingsPatch } from '../../shared/api'
+import { fileMemorySettingsPath } from './memory/paths'
 import { validateLongTermSettings } from './memory/long-term/settings'
 
 let mutation: Promise<unknown> = Promise.resolve()
@@ -13,14 +13,14 @@ function serialize<T>(action: () => Promise<T>): Promise<T> {
   return result
 }
 
-function validate(value: unknown): asserts value is MemorySettings {
+function validate(value: unknown): asserts value is FileMemorySettings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid memory settings')
   if (Object.keys(value).some(key => key !== 'fileMemory')) throw new Error('Unknown memory setting')
   if ('fileMemory' in value && value.fileMemory !== undefined) validateLongTermSettings(value.fileMemory)
 }
 
-async function read(): Promise<MemorySettings> {
-  const path = memorySettingsPath()
+async function read(): Promise<FileMemorySettings> {
+  const path = fileMemorySettingsPath()
   let value: unknown
   try { value = JSON.parse(await readFile(path, 'utf8')) }
   catch (error) {
@@ -28,7 +28,7 @@ async function read(): Promise<MemorySettings> {
     // Carry over only file-memory enablement once; never load the retired worker settings.
     const old = (await readSettingsObject(join(dirname(path), 'plugins', 'observational-memory', 'settings.json')))['observational-memory']
     if (old !== undefined && (!old || typeof old !== 'object' || Array.isArray(old))) throw new Error('Invalid previous memory settings')
-    const fileMemory = (old as MemorySettings | undefined)?.fileMemory
+    const fileMemory = (old as FileMemorySettings | undefined)?.fileMemory
     value = fileMemory === undefined ? {} : { fileMemory }
     validate(value)
     await saveNamespacedSettings(path, { ...value })
@@ -37,11 +37,11 @@ async function read(): Promise<MemorySettings> {
   return value
 }
 
-export function getMemorySettings(): Promise<MemorySettings> {
+export function getMemorySettings(): Promise<FileMemorySettings> {
   return serialize(read)
 }
 
-export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySettings> {
+export function setMemorySettings(patch: FileMemorySettingsPatch): Promise<FileMemorySettings> {
   return serialize(async () => {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid memory settings')
     if (Object.keys(patch).some(key => key !== 'fileMemory')) throw new Error('Unknown memory setting')
@@ -49,7 +49,7 @@ export function setMemorySettings(patch: MemorySettingsPatch): Promise<MemorySet
     const next = await read()
     if (patch.fileMemory === null) delete next.fileMemory
     else if (patch.fileMemory !== undefined) next.fileMemory = patch.fileMemory
-    await saveNamespacedSettings(memorySettingsPath(), { ...next })
+    await saveNamespacedSettings(fileMemorySettingsPath(), { ...next })
     return next
   })
 }

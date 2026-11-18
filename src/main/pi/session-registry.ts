@@ -643,11 +643,12 @@ function downgradeFileSession(session: SessionFileSession): SessionManager | nul
  * can only prove a line's shape, so a row that parses to nothing means its counts are not the file's.
  * The retry goes through the SDK manager, which is the source of truth.
  */
-async function retryAfterIndexFallback<T>(sessionId: string, read: () => T | Promise<T>): Promise<T> {
+async function retryAfterIndexFallback<T>(sessionId: string, read: () => T | Promise<T>, assertAccess?: () => void): Promise<T> {
   try {
     return await read()
   } catch (error) {
     if (!(error instanceof UnsupportedSessionFile)) throw error
+    assertAccess?.()
     const session = pending.get(sessionId)
     if (!session || session.kind !== 'file' || !downgradeFileSession(session)) throw error
     return await read()
@@ -660,8 +661,15 @@ function readControls(sessionId: string): Promise<SessionControls> {
 }
 
 /** The same retry for the readers that work off a `SessionSource`. */
-export function withSource<T>(sessionId: string, read: (source: SessionSource) => T | Promise<T>): Promise<T> {
-  return retryAfterIndexFallback(sessionId, async () => read(await sessionSourceFor(sessionId)))
+export function withSource<T>(sessionId: string, read: (source: SessionSource) => T | Promise<T>, assertAccess?: () => void): Promise<T> {
+  return retryAfterIndexFallback(sessionId, async () => {
+    assertAccess?.()
+    const session = sessionState(sessionId)
+    const source = await sourceFor(session)
+    assertAccess?.()
+    if (assertAccess && sessionState(sessionId) !== session) throw new Error('Session changed while reading')
+    return read(source)
+  }, assertAccess)
 }
 
 function sendWindow(session: SessionFileSession, message: Omit<SessionWindowMessage, 'sessionId'>): void {

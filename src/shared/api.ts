@@ -712,14 +712,40 @@ export interface ReviewFeedback {
 export type SystemUIEvent =
   | { kind: 'review-prompt'; id: string; sessionId: string; method: 'choose' | 'edit'; step: ReviewStep; options?: ReviewOption[]; prefill?: string; error?: string }
   | { kind: 'dismiss'; id: string; sessionId: string }
-  | { kind: 'notify'; sessionId: string; plugin: 'review' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
+  | { kind: 'notify'; sessionId: string; plugin: 'review' | 'memory' | 'host'; message: string; level: 'info' | 'warning' | 'error' }
   | { kind: 'review-state'; sessionId: string; active: boolean }
   | { kind: 'review-returning'; sessionId: string; returning: boolean; phase?: ReviewReturnPhase }
   | { kind: 'review-feedback'; sessionId: string; feedback: ReviewFeedback | null }
   | { kind: 'reset'; sessionId: string }
 
+export interface FileMemorySettings {
+  fileMemory?: import('./long-term-memory').LongTermSettings
+}
+export type FileMemorySettingsPatch = { fileMemory?: FileMemorySettings['fileMemory'] | null }
+
 export interface MemorySettings {
   fileMemory?: import('./long-term-memory').LongTermSettings
+  observeAfterTokens?: number
+  reflectAfterTokens?: number
+  observerChunkMaxTokens?: number
+  compactAfterTokens?: number
+  compactAfterTokensMode?: 'calibrated' | 'ratio'
+  compactAfterTokensRatio?: number
+  compactionMaxRetainedTokens?: number
+  compactionSummaryMaxTokens?: number
+  compactionCatchUpMaxChunks?: number
+  workerMemoryMaxTokens?: number
+  observationsPoolMaxTokens?: number
+  observationsPoolTargetTokens?: number
+  agentMaxTurns?: number
+  agentMaxTokens?: number
+  model?: { provider: string; id: string; thinking?: ThinkingLevel }
+  fallbackModel?: { provider: string; id: string; thinking?: ThinkingLevel }
+  showWorkerNotifications?: boolean
+  showCompactionNotifications?: boolean
+  consolidateWhenIdle?: boolean
+  passive?: boolean
+  debugLog?: boolean
 }
 
 export type MemorySettingsPatch = { [K in keyof MemorySettings]?: MemorySettings[K] | null }
@@ -1032,8 +1058,13 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   setPluginScopes: (id: string, scopes: PluginScope[]) => Promise<PluginInfo[]>
   updatePlugin: (id: string) => Promise<PluginInfo[]>
   removePlugin: (id: string) => Promise<PluginInfo[]>
-  getMemorySettings: () => Promise<MemorySettings>
-  setMemorySettings: (patch: MemorySettingsPatch) => Promise<MemorySettings>
+  isMemoryEnabled: (sessionId: string) => Promise<boolean>
+  getMemorySettings: () => Promise<FileMemorySettings>
+  setMemorySettings: (patch: FileMemorySettingsPatch) => Promise<FileMemorySettings>
+  getMemoryDefaults: () => Promise<Record<string, number>>
+  getObservationalMemorySettings: () => Promise<MemorySettings>
+  setObservationalMemorySettings: (patch: MemorySettingsPatch) => Promise<MemorySettings>
+  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => Promise<string>
   getPluginSettings: (id: string) => Promise<Record<string, string | number | boolean>>
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => Promise<Record<string, string | number | boolean>>
   getWebSearchSettings: () => Promise<WebSearchSettingsState>

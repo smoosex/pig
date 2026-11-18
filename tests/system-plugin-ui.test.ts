@@ -64,6 +64,7 @@ async function fixture(scenario: Scenario): Promise<void> {
     Object.assign(window.api, {
       getCommands: async () => [], onPluginsChanged: () => () => {},
     conversationFeatures: { onChanged: () => () => {} },
+      isMemoryEnabled: async () => false,
       prepareSession: async (sessionId: string) => ({ sessionId, cwd: '/project', created: false })
     })
   }
@@ -226,7 +227,7 @@ async function fixture(scenario: Scenario): Promise<void> {
     }
     if (scenario === 'bounds') {
       await act(async () => {
-        for (let index = 0; index < 100; index++) listener!({ kind: 'notify', sessionId: 'two', plugin: 'host', level: 'info', message: `Background ${index}` })
+        for (let index = 0; index < 100; index++) listener!({ kind: 'notify', sessionId: 'two', plugin: 'memory', level: 'info', message: `Background ${index}` })
       })
       assert.equal(shown.length, 0)
       await render('two')
@@ -235,7 +236,7 @@ async function fixture(scenario: Scenario): Promise<void> {
       await render('one')
       shown.length = 0
       await act(async () => {
-        for (let index = 0; index < 100; index++) listener!({ kind: 'notify', sessionId: `session-${index}`, plugin: 'host', level: 'info', message: `Session ${index}` })
+        for (let index = 0; index < 100; index++) listener!({ kind: 'notify', sessionId: `session-${index}`, plugin: 'memory', level: 'info', message: `Session ${index}` })
       })
       for (let index = 0; index < 100; index++) await render(`session-${index}`)
       assert.deepEqual(shown.map((item) => item.message), Array.from({ length: 20 }, (_, index) => `Session ${80 + index}`))
@@ -248,7 +249,7 @@ async function fixture(scenario: Scenario): Promise<void> {
           for (const timer of [...timers.values()]) if (timer.at <= now) timer.run()
         })
       }
-      await emit({ kind: 'notify', sessionId: 'two', plugin: 'host', level: 'info', message: 'Still fresh' })
+      await emit({ kind: 'notify', sessionId: 'two', plugin: 'memory', level: 'info', message: 'Still fresh' })
       assert.equal(timers.size, 1)
       assert.equal([...timers.values()][0].at, 9_000)
       await advance(8_500)
@@ -260,7 +261,7 @@ async function fixture(scenario: Scenario): Promise<void> {
       await render('one')
       await render('two')
       assert.equal(shown.length, 1)
-      await emit({ kind: 'notify', sessionId: 'three', plugin: 'host', level: 'info', message: 'Never activated' })
+      await emit({ kind: 'notify', sessionId: 'three', plugin: 'memory', level: 'info', message: 'Never activated' })
       await advance(17_000)
       assert.equal(timers.size, 0)
       await render('three')
@@ -282,7 +283,7 @@ async function fixture(scenario: Scenario): Promise<void> {
         ])
       document.head.append(styles)
       const message = `Observer failed\n${'detail '.repeat(60)}`
-      await emit({ kind: 'notify', sessionId: 'one', plugin: 'host', level: 'error', message })
+      await emit({ kind: 'notify', sessionId: 'one', plugin: 'memory', level: 'error', message })
       const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 25)) }) }
       await flush()
       const channels = (color: string) => color.startsWith('#')
@@ -384,10 +385,10 @@ async function fixture(scenario: Scenario): Promise<void> {
     assert.match(document.body.textContent ?? '', /Select a base branch/)
     await emit({ kind: 'dismiss', id: 'background', sessionId: 'two' })
     await render('one')
-    await emit({ kind: 'notify', sessionId: 'two', plugin: 'host', message: 'Other session', level: 'warning' })
+    await emit({ kind: 'notify', sessionId: 'two', plugin: 'memory', message: 'Other session', level: 'warning' })
     assert.equal(shown.length, 0)
     const message = `Observer failed\n${'detail '.repeat(60)}`
-    await emit({ kind: 'notify', sessionId: 'one', plugin: 'host', message, level: 'error' })
+    await emit({ kind: 'notify', sessionId: 'one', plugin: 'memory', message, level: 'error' })
     assert.equal(shown.length, 1)
     assert.equal(document.querySelector('[role="dialog"]'), null)
     await act(async () => shown[0].options.action!.onClick())

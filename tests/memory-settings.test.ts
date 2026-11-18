@@ -1,10 +1,10 @@
-/** File-memory preferences survive removal of the session-memory workers. */
+/** File-memory preferences stay independent of session-memory workers. */
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { MemorySettingsPatch } from '../src/shared/api'
+import type { FileMemorySettingsPatch } from '../src/shared/api'
 import { runSelf } from './helpers/subprocess'
 
 async function fixture(): Promise<void> {
@@ -27,7 +27,14 @@ async function fixture(): Promise<void> {
     assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { fileMemory: { enabled: false } })
     assert.equal(await readFile(legacy, 'utf8'), old, 'the old file remains untouched')
 
+    const om = await import('../src/main/features/observational-memory-settings')
+    assert.deepEqual(await om.getMemorySettings(), { model: { provider: 'unused', id: 'unused' }, passive: true })
+    await om.setMemorySettings({ consolidateWhenIdle: true })
+    assert.deepEqual(await getMemorySettings(), { fileMemory: { enabled: false } })
+    assert.deepEqual(JSON.parse(await readFile(legacy, 'utf8'))['observational-memory'].fileMemory, { enabled: false })
     await writeFile(legacy, '{broken')
+    await assert.rejects(om.setMemorySettings({ consolidateWhenIdle: false }), SyntaxError)
+    assert.equal(await readFile(legacy, 'utf8'), '{broken')
     assert.deepEqual(await getMemorySettings(), { fileMemory: { enabled: false } }, 'new settings never consult old worker config')
     await Promise.all([
       setMemorySettings({ fileMemory: { enabled: true } }),
@@ -40,7 +47,7 @@ async function fixture(): Promise<void> {
     for (const patch of [
       { observeAfterTokens: 900 }, { model: { provider: 'x', id: 'y' } },
       { fileMemory: { enabled: true, model: {} } }, { fileMemory: { enabled: 'false' } }
-    ]) await assert.rejects(setMemorySettings(patch as MemorySettingsPatch), /Unknown memory setting|Invalid/)
+    ]) await assert.rejects(setMemorySettings(patch as FileMemorySettingsPatch), /Unknown memory setting|Invalid/)
     const broken = '{broken'
     await writeFile(path, broken)
     await assert.rejects(getMemorySettings(), SyntaxError)

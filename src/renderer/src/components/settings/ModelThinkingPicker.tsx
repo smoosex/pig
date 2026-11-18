@@ -26,6 +26,7 @@ export function ModelThinkingPicker({
   model,
   models,
   label,
+  disabled = false,
   thinking,
   onModelChange,
   onThinkingChange,
@@ -35,6 +36,7 @@ export function ModelThinkingPicker({
   models: SessionModelInfo[]
   /** Shown for a configured model that is missing from the catalog. */
   label?: string
+  disabled?: boolean
   thinking: ThinkingLevel | null
   onModelChange: (model: SessionModelInfo) => void
   onThinkingChange: (level: ThinkingLevel) => void
@@ -57,7 +59,7 @@ export function ModelThinkingPicker({
       `${item.name} ${item.providerName} ${item.provider} ${item.id}`.toLowerCase().includes(q)
     )
   }, [models, query])
-  const navigation = useModelNavigation(locked ? [] : filtered, open, onModelChange)
+  const navigation = useModelNavigation(locked || disabled ? [] : filtered, open, onModelChange)
   const levels = model?.thinkingLevels ?? []
   const name = defaultOption?.active ? t('model.default') : model?.name ?? label ?? t('model.select')
 
@@ -73,7 +75,7 @@ export function ModelThinkingPicker({
       }}
     >
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="max-w-64 font-normal">
+        <Button type="button" variant="outline" size="sm" disabled={disabled} className="max-w-64 font-normal">
           <span className="truncate">{name}</span>
           {!defaultOption?.active && thinking ? (
             <span className="shrink-0 text-muted-foreground">{t(thinkingLevelKeys[thinking])}</span>
@@ -94,7 +96,7 @@ export function ModelThinkingPicker({
             autoFocus
             aria-label={t('model.search')}
             value={query}
-            disabled={locked}
+            disabled={locked || disabled}
             placeholder={t('model.search')}
             className="h-7 md:text-xs"
             onChange={(e) => setQuery(e.target.value)}
@@ -109,6 +111,7 @@ export function ModelThinkingPicker({
                     size="sm"
                     aria-label={t('model.default')}
                     checked={locked}
+                    disabled={disabled}
                     onCheckedChange={(checked) => {
                       setUnlocked(!checked)
                       if (checked) defaultOption.onSelect()
@@ -138,7 +141,7 @@ export function ModelThinkingPicker({
                   key={modelKey(item)}
                   type="button"
                   variant="ghost"
-                  disabled={locked}
+                  disabled={locked || disabled}
                   data-hover-highlight-row
                   data-hover-highlight-active={navigation.index === index ? '' : undefined}
                   ref={navigation.index === index ? navigation.activeRef : undefined}
@@ -168,7 +171,7 @@ export function ModelThinkingPicker({
           ) : levels.length === 0 ? (
             <span className="py-1 text-xs text-muted-foreground">{t('model.thinkingUnsupported')}</span>
           ) : (
-            <ThinkingSlider levels={levels} value={thinking} onChange={onThinkingChange} />
+            <ThinkingSlider disabled={disabled} levels={levels} value={thinking} onChange={onThinkingChange} />
           )}
         </div>
       </PopoverContent>
@@ -183,9 +186,11 @@ const THUMB_INSET = '0.5rem'
 function ThinkingSlider({
   levels,
   value,
+  disabled,
   onChange
 }: {
   levels: ThinkingLevel[]
+  disabled: boolean
   value: ThinkingLevel | null
   onChange: (level: ThinkingLevel) => void
 }) {
@@ -205,9 +210,10 @@ function ThinkingSlider({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
       <Button type="button" variant="ghost" size="icon-xs" aria-label={t('model.thinkingDown')}
-        disabled={index <= 0} onClick={() => step(index - 1)}><ChevronLeft /></Button>
+        disabled={disabled || index <= 0} onClick={() => step(index - 1)}><ChevronLeft /></Button>
       {last > 0 ? (
         <SliderPrimitive.Root
+          disabled={disabled}
           min={0}
           max={last}
           step={1}
@@ -255,7 +261,7 @@ function ThinkingSlider({
         <span className="min-w-0 flex-1" />
       )}
       <Button type="button" variant="ghost" size="icon-xs" aria-label={t('model.thinkingUp')}
-        disabled={index >= last} onClick={() => step(index + 1)}><ChevronRight /></Button>
+        disabled={disabled || index >= last} onClick={() => step(index + 1)}><ChevronRight /></Button>
       <span className={cn('w-10 shrink-0 text-right text-xs font-medium', index >= 0 ? 'text-primary' : 'text-muted-foreground')}>
         {label}
       </span>

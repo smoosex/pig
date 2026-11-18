@@ -1,14 +1,14 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
 import { runSelf } from './helpers/subprocess'
-import type { MemorySettings, MemorySettingsPatch } from '../src/shared/api'
+import type { FileMemorySettings, FileMemorySettingsPatch } from '../src/shared/api'
 import type { MemoryFile } from '../src/shared/long-term-memory'
 
 async function fixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  let config: MemorySettings = {}
+  let config: FileMemorySettings = {}
   let file: MemoryFile | undefined = { path: 'global/MEMORY.md', content: '[Build](build.md)', revision: 'a'.repeat(64) }
   const otherFile: MemoryFile = { path: 'global/other.md', content: 'Another note', revision: 'c'.repeat(64) }
   const project = 'a'.repeat(64)
@@ -33,9 +33,9 @@ async function fixture(): Promise<void> {
       if (settingsReadFailure) throw Object.assign(new Error('Configuration reload unavailable'), { code: 'RELOAD_FAILED' })
       return config
     },
-    setMemorySettings: async (patch: MemorySettingsPatch) => {
+    setMemorySettings: async (patch: FileMemorySettingsPatch) => {
       settingsWrites++
-      config = { ...config, ...patch } as MemorySettings
+      config = { ...config, ...patch } as FileMemorySettings
       if (settingsSaveFailure) throw Object.assign(new Error('Configuration saved but application failed'), { code: 'APPLY_FAILED' })
       return config
     },

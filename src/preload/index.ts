@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
-import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, MemorySettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
+import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, FileMemorySettingsPatch, MemorySettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
 
 /** Keep the IPC channel allowlist here; the renderer never receives ipcRenderer itself. */
 const api: SessionApi = {
@@ -425,8 +425,13 @@ const api: SessionApi = {
   setPluginScopes: (id: string, scopes: PluginScope[]) => ipcRenderer.invoke('plugins:scopes', id, scopes),
   updatePlugin: (id: string) => ipcRenderer.invoke('plugins:update', id),
   removePlugin: (id: string) => ipcRenderer.invoke('plugins:remove', id),
+  isMemoryEnabled: (sessionId: string) => ipcRenderer.invoke('memory:enabled', sessionId),
   getMemorySettings: () => ipcRenderer.invoke('memory:get'),
-  setMemorySettings: (patch: MemorySettingsPatch) => ipcRenderer.invoke('memory:set', patch),
+  setMemorySettings: (patch: FileMemorySettingsPatch) => ipcRenderer.invoke('memory:set', patch),
+  getMemoryDefaults: () => ipcRenderer.invoke('memory:defaults'),
+  getObservationalMemorySettings: () => ipcRenderer.invoke('memory:observational:get'),
+  setObservationalMemorySettings: (patch: MemorySettingsPatch) => ipcRenderer.invoke('memory:observational:set', patch),
+  getMemoryDetail: (sessionId: string, kind: 'status' | 'view', full?: boolean) => ipcRenderer.invoke('memory:detail', sessionId, kind, full),
   getPluginSettings: (id: string) => ipcRenderer.invoke('plugins:config-get', id),
   setPluginSettings: (id: string, patch: Record<string, string | number | boolean | null>) => ipcRenderer.invoke('plugins:config-set', id, patch),
   getWebSearchSettings: () => ipcRenderer.invoke('plugins:web-search-get'),

@@ -20,16 +20,27 @@ async function fixture(): Promise<void> {
     dialog: {},
     ipcMain: { handle: (channel: string, handler: (...args: any[]) => unknown) => handlers.set(channel, handler) }
   }))
+  const sessions = new Map([
+    ['project', { win, cwd: join(root, 'project') }],
+    ['chat', { win, cwd: join(process.env.PIG_DIR!, 'chats', 'chat') }],
+    ['other-window', { win: { ...win }, cwd: root }]
+  ])
   mock.module(fileURLToPath(new URL('../src/main/pi/session-registry.ts', import.meta.url)), () => ({
     getLive: () => undefined,
     hasBusyPluginSessions: () => false,
     refreshConversationFeatures: async () => { refreshes++ },
-    sessionCwd: (sessionId: string) => {
-      if (sessionId === 'project') return join(root, 'project')
-      if (sessionId === 'chat') return join(process.env.PIG_DIR!, 'chats', 'chat')
-      throw new Error('Unknown session')
+    sessionState: (sessionId: string) => {
+      const session = sessions.get(sessionId)
+      if (!session) throw new Error('Unknown session')
+      return session
     },
-    sessionSourceFor: async () => ({ branch: () => [] })
+    withSource: async (_sessionId: string, read: (source: { branch: () => never[] }) => unknown, assertAccess?: () => void) => {
+      assertAccess?.()
+      return read({ branch: () => [] })
+    }
+  }))
+  mock.module(fileURLToPath(new URL('../src/main/pi/session-controls.ts', import.meta.url)), () => ({
+    controlsFor: async () => ({ model: { contextWindow: 200_000 } })
   }))
   const invoke = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({ sender: webContents, senderFrame: webContents.mainFrame }, ...args)
   try {
@@ -41,11 +52,18 @@ async function fixture(): Promise<void> {
     for (const channel of handlers.keys()) {
       await assert.rejects(Promise.resolve().then(() => handlers.get(channel)!({ sender: webContents, senderFrame: {} })), /owning UI main frame/)
     }
-    for (const removed of ['memory:enabled', 'memory:detail', 'memory:defaults']) assert.equal(handlers.has(removed), false)
-    await assert.rejects(invoke('memory:set', { observeAfterTokens: 900 }), /Unknown memory setting/)
-    assert.equal(refreshes, 0)
+    for (const sessionId of ['project', 'chat']) {
+      assert.equal(await invoke('memory:enabled', sessionId), true)
+      assert.match(await invoke('memory:detail', sessionId, 'view') as string, /No visible observations/)
+    }
+    await assert.rejects(invoke('memory:detail', 'other-window', 'view'), /another window/)
+    const memorySettings = { observeAfterTokens: 900, compactAfterTokensMode: 'ratio' }
+    await invoke('memory:observational:set', memorySettings)
+    assert.deepEqual(await invoke('memory:observational:get'), memorySettings)
+    assert.match(await invoke('memory:detail', 'chat', 'status') as string, /136,000/)
+    assert.equal(refreshes, 1, 'memory settings still reload idle sessions')
     await invoke('memory:set', { fileMemory: { enabled: true } })
-    assert.equal(refreshes, 1, 'file-memory settings still reload idle sessions')
+    assert.equal(refreshes, 2)
     assert.deepEqual((await invoke('memory:get') as { fileMemory: unknown }).fileMemory, { enabled: true })
     await assert.rejects(invoke('memory:set', { longTerm: { enabled: true } }), /Unknown memory setting/)
     await assert.rejects(invoke('memory:set', { fileMemory: { enabled: true, model: {} } }), /Invalid/)
@@ -86,6 +104,8 @@ async function fixture(): Promise<void> {
     assert.equal(named(plainProject).projectName, 'plain-project', 'non-Git memory uses its real cwd')
     assert.equal(named(gitProject).projectName, undefined, 'a matching name cannot override a different project identity')
     assert.equal(named(missingProject).projectName, undefined, 'missing projects retain their ID without a guessed name')
+    await assert.rejects(invoke('memory:enabled'), /Session id is required/)
+    await assert.rejects(invoke('memory:enabled', 'unknown'), /Unknown session/)
   } finally {
     if (previousPig === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previousPig
@@ -94,7 +114,7 @@ async function fixture(): Promise<void> {
 }
 
 if (process.argv.includes('--fixture')) await fixture()
-else test('file-memory IPC retains scoped editing and accepts only the owning UI', async () => {
+else test('built-in memory IPC is enabled in project and chat sessions and only accepts the owning UI', async () => {
   const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--fixture'], { timeoutMs: 10_000 })
   assert.equal(code, 0, stderr || stdout)
 }, 12_000)
