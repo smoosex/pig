@@ -34,6 +34,7 @@ const VisibleTurnRow = memo(function VisibleTurnRow({
   turn,
   turnKey,
   turnIndex,
+  leadingUserTurn,
   registerTurn,
   onNeedProcess,
   onAbortBash
@@ -42,6 +43,7 @@ const VisibleTurnRow = memo(function VisibleTurnRow({
   turn: Turn
   turnKey: string
   turnIndex: number
+  leadingUserTurn: boolean
   registerTurn: (key: string, element: HTMLDivElement | null) => void
   onNeedProcess: (turnId: string) => Promise<void>
   onAbortBash: () => Promise<void>
@@ -53,7 +55,7 @@ const VisibleTurnRow = memo(function VisibleTurnRow({
       ref={ref}
       data-turn-key={turnKey}
       data-turn-index={turnIndex}
-      className={cn(measuredItem, chatColumn)}
+      className={cn(measuredItem, chatColumn, leadingUserTurn && 'pt-(--chat-edge-fade)')}
     >
       <TurnView sessionId={sessionId} turn={turn} onNeedProcess={onNeedProcess} onAbortBash={onAbortBash} />
     </MessageScrollerItem>
@@ -186,7 +188,7 @@ export function ConversationViewport({
       <MessageScrollerViewport
         ref={viewportRef}
         preserveScrollOnPrepend={false}
-        className="mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_1rem,rgb(0_0_0)_calc(100%-1rem),rgb(0_0_0/0.0))]"
+        className="[--chat-edge-fade:1rem] mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_var(--chat-edge-fade),rgb(0_0_0)_calc(100%-var(--chat-edge-fade)),rgb(0_0_0/0.0))]"
         onScroll={onScroll}
         onWheel={unpin}
         onTouchMove={unpin}
@@ -256,6 +258,7 @@ export function ConversationViewport({
               turn={turn}
               turnKey={key}
               turnIndex={windowStart + index}
+              leadingUserTurn={indexTrusted && windowStart === 0 && index === 0 && Boolean(turn.user)}
               registerTurn={registerTurn}
               onNeedProcess={onNeedProcess}
               onAbortBash={onAbortBash}

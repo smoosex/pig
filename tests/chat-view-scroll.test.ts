@@ -67,8 +67,20 @@ async function runFixture(name: string): Promise<void> {
     }
     return cached.values.get(prefix) ?? 0
   }
-  const paddingTop = (element: HTMLElement) =>
-    Number.parseFloat(element.style.paddingTop) || spacing(element, 'pt') || spacing(element, 'py')
+  // Happy DOM does not run Tailwind or lay out inherited CSS lengths.
+  const edgeFadePx = (viewport: HTMLElement) => {
+    const value = /\[--chat-edge-fade:([\d.]+)rem\]/.exec(viewport.className)
+    assert.ok(value, 'the viewport defines its fade height in rem')
+    return Number(value[1]) * 16
+  }
+  const paddingTop = (element: HTMLElement) => {
+    if (element.classList.contains('pt-(--chat-edge-fade)')) {
+      const viewport = element.closest<HTMLElement>('[data-slot="message-scroller-viewport"]')
+      assert.ok(viewport, 'the inset row inherits its viewport fade height')
+      return edgeFadePx(viewport)
+    }
+    return Number.parseFloat(element.style.paddingTop) || spacing(element, 'pt') || spacing(element, 'py')
+  }
   const paddingBottom = (element: HTMLElement) =>
     Number.parseFloat(element.style.paddingBottom) || spacing(element, 'pb') || spacing(element, 'py')
   const children = (element: HTMLElement) => [...element.children] as HTMLElement[]
@@ -486,6 +498,29 @@ async function runFixture(name: string): Promise<void> {
       await growLive(560)
       near(viewport().scrollTop, paused, 'returning to a paused tab must not resume following')
       assert.equal(bottomButton().dataset.active, 'true')
+    } else if (name === 'first-prompt-position') {
+      const promptOffset = (index: number) => {
+        const prompt = row(index)?.querySelector('[data-turn-user]')
+        assert.ok(prompt, 'missing user prompt')
+        return prompt.getBoundingClientRect().top - VIEWPORT_TOP
+      }
+      change({ turns: [] })
+      await render()
+      await startLive()
+      assert.match(viewport().className, /_var\(--chat-edge-fade\),/, 'the top mask stop uses the shared fade height')
+      const inset = edgeFadePx(viewport())
+      assert.equal(promptOffset(0), inset, 'the first live prompt clears the top fade')
+      await growLive(160)
+      assert.equal(promptOffset(0), inset, 'the inset remains while replying')
+      change({ isStreaming: false })
+      await render()
+      assert.equal(promptOffset(0), inset, 'the settled live reply keeps the prompt in place before history arrives')
+      change({ liveMessages: [], turns: [archivedTurn(0, 'hello', 10_000)] })
+      await render()
+      assert.equal(promptOffset(0), inset, 'history takes over without moving the prompt')
+      assert.equal(viewport().scrollTop, 0, 'a short reply never needs scroll compensation')
+      await startLive('hello again', 20_000)
+      assert.equal(promptOffset(1), rowOffset(1), 'later prompts get no extra inset')
     } else if (name === 'archive-identity') {
       await render()
       await startLive()
@@ -819,6 +854,7 @@ if (process.argv[2] === '--chat-view-scroll-fixture') {
     'release-touch': 'touch input releases following until the bottom control resumes it',
     'release-key': 'keyboard input releases following until the bottom control resumes it',
     'paused-live-across-tabs': 'a paused live turn keeps its position across tabs',
+    'first-prompt-position': 'the first prompt stays put through streaming, settlement, and history takeover',
     'archive-identity': 'archiving reuses the live row and a later prompt follows again',
     'resize-history': 'an above-viewport size change keeps a paused reader in place',
     paging: 'long histories mount one page and paging keeps the reading position',

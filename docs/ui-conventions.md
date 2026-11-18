@@ -10,7 +10,7 @@
 - 普通 UI 字体为 Geist Variable，中文引号使用 LXGW WenKai Lite；代码等宽字体为 Lilex Variable，终端另用 Lilex Nerd Font Mono，详见 [终端](terminal.md)。
 - IPC 错误使用 `lib/ipc-error.ts` 的 failureMessage，不在组件里另写原始错误转换。
 - IME 组字时 Enter 不能发送，工作耗时那一行不添加 hover／aria-expanded 高亮。
-- 消息滚动复用现有 MessageScroller 和显式锚定，不建立平行滚动状态机；补丁维护见 [SDK](sdk-maintenance.md)。
+- 消息滚动复用现有 MessageScroller 和显式锚定，不建立平行滚动状态机；补丁维护见 [SDK](sdk-maintenance.md)。对话从用户消息开始时，首轮顶部留白与视口淡出区共用 `--chat-edge-fade`；实时、已结束未归档和历史投影共用同一位置，后续轮次不单独加留白。
 
 ## 对话框
 
