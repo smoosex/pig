@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SessionManager, type ExtensionAPI, type BeforeAgentStartEventResult } from '@earendil-works/pi-coding-agent'
+import { convertToLlm, createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { createAssistantMessageEventStream, type AssistantMessage, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai'
 import personaExtension from '../src/main/features/persona'
 import { completedMoodRounds } from '../src/main/features/persona/conversation'
@@ -42,7 +42,8 @@ function runtime() {
   const requestOptions: (SimpleStreamOptions | undefined)[] = []
   const streams: ReturnType<typeof createAssistantMessageEventStream>[] = []
   const sent: unknown[] = []
-  const ctx: { model: Model<any> } & Record<string, unknown> = { sessionManager: session, model, hasPendingMessages: () => false,
+  let systemPrompt = ''
+  const ctx: { model: Model<any> } & Record<string, unknown> = { sessionManager: session, model, getSystemPrompt: () => systemPrompt,
     modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true, apiKey: 'fixture' }),
       streamSimple(_model: unknown, context: unknown, options?: SimpleStreamOptions) {
         requests.push(context)
@@ -57,11 +58,11 @@ function runtime() {
     sendMessage: (message: unknown) => { sent.push(message) },
   } as unknown as ExtensionAPI)
   const emit = async (name: string, event: any = {}) => hooks.get(name)?.(event, ctx)
-  const start = async () => {
+  const start = async (customPrompt?: string) => {
     const sections: Record<string, string> = {}
-    const result = await emit('before_agent_start', { messageType: 'user', prompt: 'hello', systemPromptOptions: { sections } }) as BeforeAgentStartEventResult
-    if (result?.message) session.appendCustomMessageEntry(result.message.customType, result.message.content, false)
-    return { result, sections }
+    await emit('before_agent_start', { messageType: 'user', prompt: 'hello', systemPromptOptions: { sections, customPrompt } })
+    systemPrompt = customPrompt ?? sections.preamble ?? ''
+    return sections
   }
   const round = (user = '谢谢，帮大忙了') => { session.appendMessage({ role: 'user', content: user, timestamp: 0 }); return session.appendMessage(answer()) }
   cleanups.push(() => emit('session_shutdown'))
@@ -118,22 +119,78 @@ test('disabling the observer immediately cancels an idle background request', as
   expect(run.requests).toHaveLength(1)
 })
 
-test('style snapshots are append-only, restored after compaction, and old work triggers no longer affect mood', async () => {
+test('tool continuations preserve the style prefix and task mood without persisting the reminder', async () => {
   const run = runtime(); await run.emit('session_start')
-  const first = await run.start()
-  expect(first.sections.preamble).toStartWith('YOU ARE A REAL PERSON — not an assistant, not a chatbot, not a tool.')
-  expect(first.sections.preamble).toContain('never cruel')
-  expect(first.result.message?.content).toBe('[Expressive tone, relative to your personality: even-toned, steady, rested]')
-  expect(first.sections.preamble).toContain('inserted by Pig, not written by the user')
-  expect((await run.start()).result.message).toBeUndefined()
-  const history = (await getPersona()).mood.history
-  await run.emit('tool_result', { toolName: 'bash', isError: true, structuredContent: { exit_code: 1 } })
-  expect((await getPersona()).mood.history).toEqual(history)
-  const moodEntry = run.session.getLeafId()!
-  run.session.branch(run.rootId)
-  expect((await run.start()).result.message).toBeDefined()
-  run.session.branch(moodEntry)
-  expect((await run.start()).result.message).toBeUndefined()
+  const sections = await run.start()
+  expect(sections.preamble).toContain('never cruel')
+  expect(sections.preamble).not.toContain('expressive-tone snapshot')
+  expect(sections.preamble).toContain('Mood and energy affect wording only')
+  run.session.appendCustomMessageEntry('persona-mood', 'OLD MOOD', false)
+  run.session.appendMessage({ role: 'user', content: 'hello', timestamp: 0 })
+  const saved = run.session.buildSessionProjection().messages
+  const head = { role: 'system', content: '', sections, timestamp: 0 } as const
+  const request = [head, ...saved]
+  const first = await run.emit('context_with_system', { messages: request })
+  const hint = first.messages.at(-1)
+  expect(hint.content).toBe('[Style reminder: Let your SOUL set the tone, and let your current mood (even-toned, steady, rested) color it. Keep speaking in your own voice, even when working through a task or sharing results, rather than falling back into a generic assistant voice.]')
+  expect(first.messages[0]).toBe(head)
+  expect(first.messages).toHaveLength(3)
+  const tool = { role: 'toolResult', toolCallId: 'call', toolName: 'read', content: [{ type: 'text', text: 'result' }], isError: false, timestamp: 0 } as const
+  const patch = { role: 'system', content: '', sections: { rules: 'new rules' }, timestamp: 0 } as const
+  await setPersonaAutomatic(false)
+  await setPersonaMood({ pleasantness: -0.7, activation: 0.2, energy: 0.6 })
+  const call = { ...answer('', 'toolUse'), content: [{ type: 'toolCall', id: 'call', name: 'read', arguments: {} }] }
+  const next = await run.emit('context_with_system', { messages: [...request, call, tool, patch, hint] })
+  expect(next.messages).toEqual([...first.messages, call, tool, patch])
+  const continuation = convertToLlm(next.messages)
+  expect(continuation.slice(0, 3)).toEqual(convertToLlm(first.messages))
+  expect(continuation.slice(3).map(message => message.role)).toEqual(['assistant', 'toolResult', 'system'])
+  expect(run.session.buildSessionProjection().messages).toEqual(saved)
+  await run.emit('session_compact', { willRetry: true })
+  expect(run.sent).toHaveLength(0)
+  const summary = { role: 'compactionSummary', summary: 'Compacted', tokensBefore: 100, timestamp: 1 }
+  const compacted = await run.emit('context_with_system', { messages: [head, summary, call, tool] })
+  expect(compacted.messages).toEqual([head, summary, hint, call, tool])
+  const updatedHead = { ...head, sections: await run.start() }
+  const updated = await run.emit('context_with_system', { messages: [updatedHead, saved.at(-1)] })
+  expect(updated.messages.at(-1).content).toContain('noticeably subdued, calmer, balanced')
+  expect(await run.start('custom identity')).toEqual({})
+  expect((await run.emit('context_with_system', { messages: request })).messages).toEqual([head, saved.at(-1)])
+})
+test('a later extension that forces a system prompt suppresses the SOUL reminder', async () => {
+  let override = false
+  const settingsManager = SettingsManager.inMemory()
+  const loader = new DefaultResourceLoader({
+    cwd: root, agentDir: root, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionFactories: [personaExtension, (pi) => {
+      pi.on('before_agent_start', () => override ? { systemPrompt: 'Only the replacement prompt' } : undefined)
+    }]
+  })
+  await loader.reload()
+  const { session } = await createAgentSession({
+    cwd: root, agentDir: root, settingsManager, resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(root),
+    modelRuntime: await ModelRuntime.create({ refreshOnCreate: false, modelsPath: null })
+  })
+  await session.bindExtensions({ mode: 'rpc', onError: error => { throw new Error(error.error) } })
+  try {
+    const run = session as unknown as {
+      _prepareRun(trigger: { messageType: 'user'; prompt: string; images: [] }): Promise<Parameters<typeof convertToLlm>[0]>
+    }
+    const request = async () => {
+      const messages = await run._prepareRun({ messageType: 'user', prompt: 'hello', images: [] })
+      return convertToLlm(await session.agent.transformContext!(messages))
+    }
+    expect((await request()).at(-1)?.content).toMatchObject([{ type: 'text', text: expect.stringContaining('Style reminder:') }])
+    override = true
+    const messages = await request()
+    expect(messages[0]?.content).toBe('Only the replacement prompt')
+    expect(messages.at(-1)?.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(messages).toHaveLength(2)
+  } finally {
+    session.dispose()
+  }
 })
 
 test('three completed rounds are observed in background, applied once, and never start a main turn', async () => {
@@ -204,6 +261,6 @@ test('late observer results cannot overwrite manual changes or survive branch na
   expect((await getPersona()).mood.history.map(entry => entry.trigger)).toEqual(['manual_set'])
   run.session.branch(run.rootId); await run.emit('session_tree')
   await setPersonaAutomatic(false)
-  expect((await run.start()).result.message).toBeDefined()
+  expect((await run.start()).preamble).toContain('never cruel')
   expect((await getPersona()).mood.feeling).not.toBe('stale')
 })

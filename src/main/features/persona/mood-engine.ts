@@ -98,9 +98,4 @@ export class MoodEngine {
     const energy = e < 0.2 ? 'quite tired' : e < 0.4 ? 'a little tired' : e <= 0.7 ? 'balanced' : e <= 0.85 ? 'rested' : 'fully refreshed'
     return `${tone}, ${pace}, ${energy}`
   }
-
-  getEmotionPrompt(): string {
-    // One line: the invariant rules live in the system preamble. Feeling is untrusted text and never injected.
-    return `[Expressive tone, relative to your personality: ${this.getEmotionDesc()}]`
-  }
 }

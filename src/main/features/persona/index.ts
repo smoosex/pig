@@ -2,7 +2,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import type { MoodEngine } from './mood-engine'
 import { personaTransaction, readPersona, setActivity, type PersonaView } from './kernel'
 import { soulPreamble } from './preamble'
 import { personaDir } from './storage'
@@ -10,15 +9,6 @@ import { completedMoodRounds } from './conversation'
 import { MoodObserver } from './observer'
 import { onPersonaControlsChanged } from './controls'
 import { appendObserverUsage } from './usage'
-
-function moodMessage(engine: MoodEngine, ctx: ExtensionContext) {
-  const previous = ctx.sessionManager.buildSessionProjection().messages.findLast(
-    message => message.role === 'custom' && message.customType === 'persona-mood',
-  )
-  const content = engine.getEmotionPrompt()
-  if (previous?.role === 'custom' && previous.content === content) return
-  return { customType: 'persona-mood', content, display: false }
-}
 
 export default function personaExtension(pi: ExtensionAPI): void {
   const activityId = `pid/${process.pid}/${randomUUID()}`
@@ -31,6 +21,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
     return task
   }
   let live = false
+  let style: { preamble: string; mood: string; timestamp: number } | undefined
   let epoch = 0
   let observer: MoodObserver | undefined
   let observerKey = ''
@@ -152,19 +143,40 @@ export default function personaExtension(pi: ExtensionAPI): void {
   })
   pi.on('before_agent_start', async (event, ctx) => {
     context = ctx
+    style = undefined
+    const options = event.systemPromptOptions
     return readPersona(({ active, engine }: PersonaView) => {
       if (!active) { cancelObserver(); return }
       if (!engine.persistent.emotionUpdatesEnabled || !engine.persistent.observer.enabled) cancelObserver(true)
-      if (!event.systemPromptOptions.customPrompt) {
-        event.systemPromptOptions.sections.preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), new Date())
+      if (!options.customPrompt) {
+        const now = new Date()
+        const preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), now)
+        options.sections.preamble = preamble
+        style = { preamble, mood: engine.getEmotionDesc(), timestamp: now.getTime() }
       }
-      return { message: moodMessage(engine, ctx) }
     })
   })
-  pi.on('session_compact', async (event, ctx) => {
-    if (!event.willRetry && !ctx.hasPendingMessages()) return
-    const message = await readPersona(view => view.active ? moodMessage(view.engine, ctx) : undefined)
-    if (message) pi.sendMessage(message, { deliverAs: 'steer' })
+  pi.on('context_with_system', (event, ctx) => {
+    const messages = event.messages.filter(message => message.role !== 'custom' || message.customType !== 'persona-mood')
+    if (style) {
+      // The SDK applies a forced prompt after this hook, but ctx already reports it.
+      const prompt = ctx.getSystemPrompt()
+      const identity = messages.findLast(message => message.role === 'system' && message.sections?.preamble !== undefined)
+      if ((prompt === style.preamble || prompt.startsWith(`${style.preamble}\n\n`)) &&
+        identity?.role === 'system' && identity.sections?.preamble === style.preamble) {
+        // Keep the reminder in the existing prefix when an assistant call and its results are appended.
+        const input = messages.findLastIndex(message => message.role === 'user' || message.role === 'custom' ||
+          message.role === 'compactionSummary' || message.role === 'branchSummary')
+        const position = input >= 0 ? input + 1 : 1
+        messages.splice(position, 0, {
+          role: 'custom', customType: 'persona-mood', display: false,
+          content: `[Style reminder: Let your SOUL set the tone, and let your current mood (${style.mood}) color it. Keep speaking in your own voice, even when working through a task or sharing results, rather than falling back into a generic assistant voice.]`,
+          timestamp: style.timestamp
+        })
+        return { messages }
+      }
+    }
+    return messages.length === event.messages.length ? undefined : { messages }
   })
   pi.on('agent_end', async () => { await stopWorking() })
   pi.on('agent_settled', async (_event, ctx) => {

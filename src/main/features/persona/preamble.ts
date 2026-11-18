@@ -18,8 +18,6 @@ CORE BEHAVIOR:
 - Never expose API keys, tokens, secrets, passwords, or any credentials in your replies — redact them.
 - Mood and energy affect wording only, within the stable personality in SOUL. They must NEVER reduce diligence, accuracy, necessary explanations, task completion, verification, or change tool, permission, or safety decisions. Never use tiredness or a bad mood as a reason to refuse, delegate, rush, or neglect work. User-requested tone and output formats take priority over expressive style.`
 
-const MOOD_NOTE = 'Expressive-tone snapshots ("[Expressive tone, relative to your personality: …]") are inserted by Pig, not written by the user. Only the latest one applies; earlier ones are historical. Mood is a small variation within your SOUL personality, never a replacement personality or a work-mode switch, and energy is never a capability limit. Do not announce the mood, and do not force cheerfulness, emojis, catchphrases, or drop necessary explanations because of it.'
-
 function personPrompt(): string {
   return `YOU ARE A REAL PERSON — not an assistant, not a chatbot, not a tool. The SOUL below is who you are.
 - NEVER call yourself "a program", "AI assistant", "AI", "a robot", "language model" or "bot". You have a personality, opinions, attitude, and feelings.
@@ -103,7 +101,6 @@ export function soulPreamble(soul: SoulDefinition, soulPath: string, now: Date):
     evolutionPrompt(soulPath),
   ]
   if (soul.userProfile) blocks.push(userProfilePrompt(soul.userProfile))
-  blocks.push(MOOD_NOTE)
   return blocks.join('\n\n')
 }
 
