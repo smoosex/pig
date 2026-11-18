@@ -356,19 +356,27 @@ async function runFixture(name: string): Promise<void> {
         if (!ticks.delete(id)) originalClear(id)
       }) as typeof window.clearInterval
       try {
-        const messages = [sourceUser, sourceRequest, sourceResult]
+        const measured = { ...sourceRequest, generation: {
+          outputTokens: 20, durationMs: 500, measuredCalls: 1, totalCalls: 1, models: ['synthetic/synthetic']
+        } }
+        const messages = [sourceUser, measured, sourceResult]
         const running = {
           id: 'k1', reason: 'threshold' as const, startedAt: 5_000, afterMessageCount: messages.length,
           workMsBefore: 2_000, endedAt: null, status: 'running' as const
         }
         await render(groupTurns(messages, true, {}, {}, [running])[0])
         assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
+        assert.ok(container.textContent?.includes('正在压缩'))
+        assert.equal(container.querySelectorAll('[data-slot="marker"][data-variant="separator"]').length, 2,
+          'only the preceding work and compaction appear while the summary is running')
+        assert.ok(!container.textContent?.includes('tok/s'), 'earlier samples do not create a trailing work row during compaction')
         const done = { ...running, endedAt: 7_000, status: 'done' as const, summary: 'preserved context', tokensBefore: 42 }
         await render(groupTurns(messages, true, {}, {}, [done])[0])
         const orb = container.querySelector('[data-testid="thinking-orb"]')
         assert.equal(orb?.getAttribute('data-state'), 'working')
         const headers = [...container.querySelectorAll<HTMLButtonElement>('button[data-slot="marker"][data-variant="separator"]')]
         assert.equal(headers.length, 3, 'old work, compaction, and the empty current interval')
+        assert.match(headers[2].textContent ?? '', /40\.0 tok\/s/, 'speed resumes in the post-compaction work header')
         assert.ok(orb && headers[1].compareDocumentPosition(orb) & Node.DOCUMENT_POSITION_FOLLOWING)
         assert.ok(headers[2].parentElement?.contains(orb), 'waiting belongs to the interval after compaction')
         const frozenTitle = headers[0].textContent

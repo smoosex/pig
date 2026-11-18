@@ -160,8 +160,8 @@ function AgentTurnView({
   const hasWork = blocks.some((segment) => segment.kind === 'work')
   const showHeader = hasWork || turn.streaming || (!turn.workBlocks && Boolean(turn.hasProcess) && turn.process.length === 0)
   const showBody = showHeader || blocks.length > 0
-  const modelActive = turn.streaming && !turn.errorMessage &&
-    !landmarks.some((item) => item.live?.status === 'running')
+  const compacting = landmarks.some((item) => item.live?.status === 'running')
+  const modelActive = turn.streaming && !turn.errorMessage && !compacting
   let activeWorkIndex = -1
   if (modelActive) {
     // An empty current interval still owns the live clock; never resume work before a landmark.
@@ -173,7 +173,7 @@ function AgentTurnView({
   } else if (showHeader && !hasWork && blocks.length === 0) {
     blocks.push({ kind: 'work', items: [], block: 0 })
   }
-  const needsTrailingTps = Boolean(turnTps(turn)) && !blocks.some(
+  const needsTrailingTps = !compacting && Boolean(turnTps(turn)) && !blocks.some(
     (segment) => segment.kind === 'work' && segment.block === landmarks.length
   )
   const [open, setOpen] = useState<Record<number, boolean>>({})

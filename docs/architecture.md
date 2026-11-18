@@ -100,6 +100,7 @@ main 向 UI 发起的浏览器、终端和会话控制请求共用 `src/main/ipc
 
 - 手动压缩不再是斜杠命令，入口在输入框的上下文用量弹窗：用量数字右侧「压缩」直接压缩，下拉箭头展开自定义压缩说明。
 - 会话运行中（Pi 的 `compact` 会中止当前任务）、切换分支中、已有压缩（含自动压缩）进行中或尚无上下文时禁用并用 tooltip 说明原因；压缩失败由 Pi 的 compaction 事件显示在对话中，弹窗只显示 IPC 拒绝。
+- 自动压缩期间保留前一段工作和压缩标记，不显示下一段工作或补位的速率统计行；压缩结束后按正常规则恢复。
 - 进度条标出自动压缩阈值：`SessionContextUsage.autoCompactAt` 由 main 按 Pi `getCompactionSettings(model)` 计算（窗口减 `reserveTokens`，关闭自动压缩时为 null），live 会话用自身的 settingsManager，未构建会话用全局设置。
 
 ## 相关入口
