@@ -47,7 +47,8 @@ async function fixture(): Promise<void> {
     enabled = true
     assert.equal(memoryRoot(), join(root, 'memory'), 'global and project scopes live directly under memory/')
     assert.deepEqual([...tools.keys()], ['memory_read', 'memory_add', 'memory_edit', 'memory_delete'])
-    assert.deepEqual([...events.keys()], ['before_agent_start'], 'no per-request context injection')
+    assert.ok(events.has('before_agent_start'))
+    assert.ok(!events.has('context') && !events.has('context_with_system'), 'no per-request context injection')
     for (const tool of tools.values()) assert.equal(tool.exposure, 'deferred')
     assert.match(MEMORY_GUIDANCE, /global and current project memories/)
     assert.match(MEMORY_GUIDANCE, /tool_search.*names start with memory_/)

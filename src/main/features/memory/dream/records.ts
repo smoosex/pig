@@ -1,15 +1,21 @@
 /** Read-only receipts, separate from Dream's live runtime and private JSONL transcripts. */
 import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { arr, bool, compile, num, obj, oneOf, opt, str } from '@earendil-works/pi-schema'
+import { arr, bool, compile, lit, num, obj, oneOf, opt, str, union } from '@earendil-works/pi-schema'
 import type { DreamRecord, DreamRecordPage } from '../../../../shared/dream'
 import { pigPath } from '../../../pig-dir'
 
 const runId = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const nonnegative = num({ minimum: 0 })
 const budgetKind = oneOf(['tokens', 'cost'] as const)
+const auditScopeSchema = union([
+  obj({ kind: lit('all') }),
+  obj({ kind: lit('global') }),
+  obj({ kind: lit('project'), projectId: str({ pattern: '^[a-f0-9]{64}$' }) })
+])
 const recordSchema = compile(obj({
   id: str({ pattern: runId.source }), topic: opt(str()), repair: opt(bool()),
+  audit: opt(bool()), auditScope: opt(auditScopeSchema), auditProjectName: opt(str()),
   state: oneOf(['done', 'limited', 'cancelled', 'error'] as const),
   phase: opt(oneOf(['preparing', 'searching', 'reading', 'maintaining', 'wrappingUp', 'publishing'] as const)),
   wrappingUp: opt(budgetKind), budgetStop: opt(obj({ kind: budgetKind, used: nonnegative, limit: nonnegative })),
@@ -40,9 +46,9 @@ export function readDreamRecord(id: string): DreamRecord {
     const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(fd)))
     if (!recordSchema.check(value) || value.id !== id) throw invalid()
     // Unknown legacy receipt fields are not exposed across IPC.
-    const { topic, repair, state, phase, wrappingUp, budgetStop, current, report, changes,
+    const { topic, repair, audit, auditScope, auditProjectName, state, phase, wrappingUp, budgetStop, current, report, changes,
       input, cacheRead, cacheWrite, output, cost, costKnown, requests, error, startedAt, endedAt } = value
-    return { id, topic, repair, state, phase, wrappingUp, budgetStop, current, report, changes,
+    return { id, topic, repair, audit, auditScope, auditProjectName, state, phase, wrappingUp, budgetStop, current, report, changes,
       input, cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output, cost, costKnown: costKnown ?? false,
       usageIncomplete: cacheRead === undefined || cacheWrite === undefined,
       requests, error, startedAt, endedAt }
@@ -69,8 +75,8 @@ export function listDreamRecords(offset = 0): DreamRecordPage {
   const page = files.slice(offset, offset + 30)
   return {
     items: page.map(({ id }) => {
-      const { topic, repair, state, startedAt, endedAt } = readDreamRecord(id)
-      return { id, topic, repair, state, startedAt, endedAt }
+      const { topic, repair, audit, auditScope, auditProjectName, state, startedAt, endedAt } = readDreamRecord(id)
+      return { id, topic, repair, audit, auditScope, auditProjectName, state, startedAt, endedAt }
     }),
     nextOffset: offset + page.length < files.length ? offset + page.length : undefined
   }

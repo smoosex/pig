@@ -12,3 +12,5 @@ export const memorySettingsPath = (): string => memoryDataPath('settings.json')
 /** Markdown memory is separate from OM's session compaction data. */
 export const fileMemorySettingsPath = (): string => join(process.env.PIG_DIR || join(process.cwd(), '.pig'), 'memory-settings.json')
 export const fileMemoryPath = (): string => join(process.env.PIG_DIR || join(process.cwd(), '.pig'), 'memory')
+export const memoryTelemetryPath = (...parts: string[]): string =>
+  join(process.env.PIG_DIR || join(process.cwd(), '.pig'), 'memory-telemetry', ...parts)

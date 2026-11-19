@@ -105,7 +105,8 @@ const api: SessionApi = {
     read: id => ipcRenderer.invoke('memory:dream:read', id),
     start: request => ipcRenderer.invoke('memory:dream:start', request),
     status: () => ipcRenderer.invoke('memory:dream:status'),
-    stop: () => ipcRenderer.invoke('memory:dream:stop')
+    stop: () => ipcRenderer.invoke('memory:dream:stop'),
+    auditProjects: () => ipcRenderer.invoke('memory:dream:audit-projects')
   },
   longTermMemory: {
     list: () => ipcRenderer.invoke('memory:files:list'),

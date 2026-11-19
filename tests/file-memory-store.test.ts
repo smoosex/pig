@@ -1,6 +1,6 @@
 import { test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, mkdirSync, statSync, linkSync, readFileSync, readdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, mkdirSync, statSync, linkSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MemoryFiles, MAX_MEMORY_BYTES, resolveMemoryLink } from '../src/main/features/memory/long-term/files'
@@ -54,6 +54,24 @@ test('Markdown memory rejects traversal, links, invalid UTF-8, secrets and overs
   assert.equal(readFileSync(join(root, 'outside.md'), 'utf8'), 'OUTSIDE')
   writeFileSync(join(files.root, 'bad.md'), Buffer.from([0xff]))
   assert.throws(() => files.read('bad.md'))
+}))
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('writer cleanup failure preserves the save/delete commit point', () => fixture(files => {
+  const scope = new MemoryFiles(join(files.root, 'global'), files.root)
+  const lock = join(files.root, '.writer')
+  const failRelease = () => chmodSync(lock, 0o500)
+  const restore = () => {
+    chmodSync(lock, 0o700)
+    rmSync(lock, { recursive: true, force: true })
+  }
+  const committed = { code: 'MEMORY_CLEANUP_FAILED', committed: true }
+  try { assert.throws(() => scope.save('note.md', 'new', null, failRelease), committed) }
+  finally { restore() }
+  const note = scope.read('note.md')
+  assert.equal(note.content, 'new')
+  try { assert.throws(() => scope.delete(note.path, note.revision, failRelease), committed) }
+  finally { restore() }
+  assert.equal(scope.optional(note.path), undefined)
 }))
 
 test('missing memory reads preserve ENOENT without exposing the storage path', () => fixture((files, root) => {

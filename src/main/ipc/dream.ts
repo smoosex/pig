@@ -24,6 +24,7 @@ export function registerDreamIpc(): void {
   ipcMain.handle('memory:dream:list', (event, offset?: number) => { owner(event); return listDreamRecords(offset) })
   ipcMain.handle('memory:dream:read', (event, id: string) => { owner(event); return readDreamRecord(id) })
   ipcMain.handle('memory:dream:status', event => { owner(event); return dreamService.status() })
+  ipcMain.handle('memory:dream:audit-projects', event => { owner(event); return dreamService.auditProjects() })
   ipcMain.handle('memory:dream:start', (event, request: unknown) => {
     const id = owner(event)
     validateDreamRequest(request)

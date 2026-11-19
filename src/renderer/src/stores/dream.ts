@@ -2,7 +2,7 @@
  * request revisions prevent an old poll from replacing a start/stop response. */
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import type { DreamRecord, DreamRecordSummary, DreamStatus } from '../../../shared/dream'
+import type { DreamAuditProject, DreamAuditScope, DreamRecord, DreamRecordSummary, DreamStatus } from '../../../shared/dream'
 import { api } from '../ipc/api'
 import { failureMessage } from '../lib/ipc-error'
 
@@ -13,6 +13,11 @@ interface DreamState {
   busy: boolean
   open: boolean
   compose: boolean
+  composeMode: 'topic' | 'audit'
+  auditScope: DreamAuditScope
+  auditProjects: DreamAuditProject[]
+  auditProjectsBusy: boolean
+  auditProjectsError?: string
   enabled?: boolean
   draft: string
   view: 'history' | 'detail'
@@ -30,10 +35,15 @@ interface DreamState {
   readRecord: (id: string) => Promise<void>
   refresh: () => Promise<void>
   openDialog: (enabled?: boolean) => void
+  openAudit: (enabled?: boolean) => void
   closeDialog: () => void
   newTopic: () => void
+  newAudit: (scope?: DreamAuditScope) => void
   setDraft: (draft: string) => void
+  setAuditScope: (scope: DreamAuditScope) => void
+  loadAuditProjects: () => Promise<void>
   start: () => Promise<void>
+  startAudit: () => Promise<void>
   stop: () => Promise<void>
   repair: () => Promise<void>
 }
@@ -42,9 +52,10 @@ function viewedResult(state: DreamState): string | undefined {
   return state.open && state.view === 'detail' && !state.compose && state.status?.state !== 'running' && viewedId === state.status?.id
     ? viewedId : state.viewedResultId
 }
-let revision = 0, enabledRevision = 0, historyRevision = 0, recordRevision = 0
+let revision = 0, enabledRevision = 0, historyRevision = 0, recordRevision = 0, auditProjectsRevision = 0
 export const useDreamStore = create<DreamState>((set, get) => ({
-  busy: false, open: false, compose: false, draft: '', view: 'detail', records: [], historyBusy: false,
+  busy: false, open: false, compose: false, composeMode: 'topic', auditScope: { kind: 'all' },
+  auditProjects: [], auditProjectsBusy: false, draft: '', view: 'detail', records: [], historyBusy: false,
   refresh: async () => {
     if (get().busy) return
     const request = ++revision
@@ -53,19 +64,42 @@ export const useDreamStore = create<DreamState>((set, get) => ({
       if (request === revision) set({ status, loadError: undefined })
     } catch (error) { if (request === revision) set({ loadError: failureMessage(error) }) }
   },
+  loadAuditProjects: async () => {
+    const request = ++auditProjectsRevision
+    const loader = api.dream.auditProjects
+    if (!loader) {
+      if (request === auditProjectsRevision) set({ auditProjects: [], auditProjectsBusy: false, auditProjectsError: undefined })
+      return
+    }
+    set({ auditProjectsBusy: true, auditProjectsError: undefined })
+    try {
+      const projects = await loader()
+      if (request === auditProjectsRevision) set({ auditProjects: projects })
+    } catch (error) {
+      if (request === auditProjectsRevision) set({ auditProjectsError: failureMessage(error) })
+    } finally {
+      if (request === auditProjectsRevision) set({ auditProjectsBusy: false })
+    }
+  },
   openDialog: enabled => {
     const request = ++enabledRevision
     recordRevision++
-    set({ open: true, enabled, compose: false, view: 'detail', recordId: undefined, record: undefined, recordError: undefined, actionError: undefined })
+    set({ open: true, enabled, compose: false, composeMode: 'topic', view: 'detail', recordId: undefined, record: undefined, recordError: undefined, actionError: undefined })
     if (enabled !== undefined) return
     void api.getMemorySettings().then(value => {
       if (request === enabledRevision) set({ enabled: value.fileMemory?.enabled ?? true })
     }, error => { if (request === enabledRevision) set({ actionError: failureMessage(error) }) })
   },
+  openAudit: enabled => {
+    get().openDialog(enabled)
+    if (get().status?.state === 'running') return
+    set({ compose: true, composeMode: 'audit', auditScope: { kind: 'all' } })
+    void get().loadAuditProjects()
+  },
   closeDialog: () => {
-    enabledRevision++; recordRevision++; historyRevision++
+    enabledRevision++; recordRevision++; historyRevision++; auditProjectsRevision++
     const viewedId = viewedResult(get())
-    set({ open: false, historyBusy: false, ...(get().status?.state !== 'running' && viewedId && viewedId === get().status?.id ? { dismissedId: viewedId } : {}) })
+    set({ open: false, historyBusy: false, auditProjectsBusy: false, ...(get().status?.state !== 'running' && viewedId && viewedId === get().status?.id ? { dismissedId: viewedId } : {}) })
   },
   openHistory: enabled => {
     const viewedResultId = viewedResult(get())
@@ -86,7 +120,7 @@ export const useDreamStore = create<DreamState>((set, get) => ({
   },
   readRecord: async id => {
     const request = ++recordRevision
-    set({ view: 'detail', compose: false, recordId: id, record: undefined, recordError: undefined })
+    set({ view: 'detail', compose: false, composeMode: 'topic', recordId: id, record: undefined, recordError: undefined })
     try {
       const record = await api.dream.read(id)
       if (request === recordRevision) set({ record })
@@ -94,9 +128,15 @@ export const useDreamStore = create<DreamState>((set, get) => ({
   },
   newTopic: () => {
     recordRevision++
-    set({ viewedResultId: viewedResult(get()), view: 'detail', recordId: undefined, record: undefined, compose: true, draft: '', actionError: undefined })
+    set({ viewedResultId: viewedResult(get()), view: 'detail', recordId: undefined, record: undefined, compose: true, composeMode: 'topic', draft: '', actionError: undefined })
+  },
+  newAudit: (auditScope = { kind: 'all' }) => {
+    recordRevision++
+    set({ viewedResultId: viewedResult(get()), view: 'detail', recordId: undefined, record: undefined, compose: true, composeMode: 'audit', auditScope, actionError: undefined })
+    void get().loadAuditProjects()
   },
   setDraft: draft => set({ draft }),
+  setAuditScope: auditScope => set({ auditScope }),
   start: async () => {
     const topic = get().draft.trim()
     if (get().busy || get().status?.state === 'running' || !topic) return
@@ -105,10 +145,19 @@ export const useDreamStore = create<DreamState>((set, get) => ({
     catch (error) { set({ actionError: failureMessage(error) }) }
     finally { set({ busy: false }) }
   },
+  startAudit: async () => {
+    const scope = get().auditScope
+    if (get().busy || get().status?.state === 'running') return
+    if (scope.kind === 'project' && !scope.projectId) return
+    revision++; set({ busy: true, actionError: undefined })
+    try { const status = await api.dream.start({ audit: true, scope }); revision++; set({ status, compose: false }) }
+    catch (error) { set({ actionError: failureMessage(error) }) }
+    finally { set({ busy: false }) }
+  },
   repair: async () => {
     if (get().busy || get().status?.state === 'running') return
     recordRevision++
-    revision++; set({ busy: true, open: true, view: 'detail', recordId: undefined, record: undefined, compose: false, actionError: undefined })
+    revision++; set({ busy: true, open: true, view: 'detail', recordId: undefined, record: undefined, compose: false, composeMode: 'topic', actionError: undefined })
     try { const status = await api.dream.start({ repair: true }); revision++; set({ status }) }
     catch (error) { set({ actionError: failureMessage(error) }) }
     finally { set({ busy: false }) }

@@ -17,7 +17,8 @@ export function DreamStatusButton() {
   if (!status || status.state === 'idle' || (status.state !== 'running' && dismissedId !== undefined && status.id === dismissedId)) return null
   const running = status.state === 'running'
   const failed = status.state === 'error' || Boolean(loadError)
-  const summary = `${t(status.repair ? 'longTerm.repair' : 'dream.title')} · ${t(`dream.${status.state}`)}${running && status.phase ? ` · ${t(`dream.${status.phase}`)}` : ''}`
+  const titleKey = status.repair ? 'longTerm.repair' : status.audit ? 'dream.auditTitle' : 'dream.title'
+  const summary = `${t(titleKey)} · ${t(`dream.${status.state}`)}${running && status.phase ? ` · ${t(`dream.${status.phase}`)}` : ''}`
   return <Tooltip>
     <TooltipTrigger asChild>
       <Button variant="outline" size="icon-xs" data-dream-status data-running={running}

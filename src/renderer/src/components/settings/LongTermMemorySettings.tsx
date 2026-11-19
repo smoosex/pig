@@ -12,7 +12,7 @@ import { Switch } from '../ui/switch'
 import { Textarea } from '../ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { SettingsCard, SettingsRow } from './SettingsFields'
-import { DreamSettings } from './DreamSettings'
+import { DreamAuditSettings, DreamSettings } from './DreamSettings'
 import { MemoryFileTree } from './MemoryFileTree'
 
 export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void }) {
@@ -55,6 +55,7 @@ export function LongTermMemorySettings({ onBusyChange, onDirtyChange }: { onBusy
         <Button variant="outline" size="sm" onClick={() => setOpen(true)}>{t('longTerm.browse')}</Button>
       </SettingsRow>
       <DreamSettings enabled={enabled === true} />
+      <DreamAuditSettings enabled={enabled === true} />
     </SettingsCard>
     <LongTermInspector open={open} onOpenChange={setOpen} onBusyChange={setEditorBusy} onDirtyChange={onDirtyChange} />
   </div>

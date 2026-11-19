@@ -142,6 +142,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.terminal.getAgentState('terminal:one')
   await api.terminal.releaseAgent('terminal:one', 'session-1')
   await api.terminal.answerAgentOpen('request-1', { terminalId: 'terminal:two' })
+  await api.dream.auditProjects()
+  await api.dream.start({ audit: true, scope: { kind: 'global' } })
   api.terminal.onAgentOpenRequest(() => {})()
   api.terminal.onAgentState(() => {})()
   api.terminal.onEvent(() => {})()
@@ -239,7 +241,9 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'terminal:close', args: ['terminal:one'] },
     { channel: 'terminal:get-agent-state', args: ['terminal:one'] },
     { channel: 'terminal:release-agent', args: ['terminal:one', 'session-1'] },
-    { channel: 'terminal:agent-open-answer', args: ['request-1', { terminalId: 'terminal:two' }] }
+    { channel: 'terminal:agent-open-answer', args: ['request-1', { terminalId: 'terminal:two' }] },
+    { channel: 'memory:dream:audit-projects', args: [] },
+    { channel: 'memory:dream:start', args: [{ audit: true, scope: { kind: 'global' } }] }
   ])
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')

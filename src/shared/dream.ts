@@ -1,5 +1,18 @@
-/** UI-only, topic-driven Dream. No history queue, time ranges or completion checkpoints. */
-export type DreamRequest = { topic: string } | { repair: true }
+/** UI-only, topic-driven Dream and manual memory audit. No history queue, time ranges or completion checkpoints. */
+export type DreamAuditScope =
+  | { kind: 'all' }
+  | { kind: 'global' }
+  | { kind: 'project'; projectId: string }
+
+export interface DreamAuditProject {
+  id: string
+  name?: string
+}
+
+export type DreamRequest =
+  | { topic: string }
+  | { repair: true }
+  | { audit: true; scope: DreamAuditScope }
 export type DreamBudgetKind = 'tokens' | 'cost'
 export interface DreamUsage {
   input: number
@@ -17,6 +30,9 @@ export interface DreamStatus {
   id?: string
   topic?: string
   repair?: boolean
+  audit?: boolean
+  auditScope?: DreamAuditScope
+  auditProjectName?: string
   state: 'idle' | 'running' | 'done' | 'limited' | 'cancelled' | 'error'
   phase?: 'preparing' | 'searching' | 'reading' | 'maintaining' | 'wrappingUp' | 'publishing'
   wrappingUp?: DreamBudgetKind
@@ -42,7 +58,7 @@ export interface DreamRecord extends DreamStatus {
   startedAt: number
   endedAt: number
 }
-export type DreamRecordSummary = Pick<DreamRecord, 'id' | 'topic' | 'repair' | 'state' | 'startedAt' | 'endedAt'>
+export type DreamRecordSummary = Pick<DreamRecord, 'id' | 'topic' | 'repair' | 'audit' | 'auditScope' | 'auditProjectName' | 'state' | 'startedAt' | 'endedAt'>
 export interface DreamRecordPage {
   items: DreamRecordSummary[]
   nextOffset?: number
@@ -53,4 +69,5 @@ export interface DreamApi {
   start(request: DreamRequest): Promise<DreamStatus>
   status(): Promise<DreamStatus>
   stop(): Promise<DreamStatus>
+  auditProjects(): Promise<DreamAuditProject[]>
 }

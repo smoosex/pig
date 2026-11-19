@@ -17,6 +17,7 @@ if (process.argv.includes('--dream-ipc-fixture')) {
     validateDreamRequest: (request: { topic?: string }) => { if (!request || !request.topic) throw new Error('Invalid Dream request') },
     dreamService: {
       status: () => ({ state: 'idle' }),
+      auditProjects: async () => [{ id: 'a'.repeat(64), name: 'Proj A' }],
       start: (...args: unknown[]) => { calls.push(['start', ...args]); return { state: 'running' } },
       stop: async (...args: unknown[]) => { calls.push(['stop', ...args]); return { state: 'cancelled' } },
       cancelOwner: (...args: unknown[]) => { calls.push(['cancel', ...args]) }
@@ -48,9 +49,11 @@ if (process.argv.includes('--dream-ipc-fixture')) {
   assert.deepEqual(calls.at(-1), ['list', 30])
   handlers.get('memory:dream:read')!(event, 'record-id')
   assert.deepEqual(calls.at(-1), ['read', 'record-id'])
-  for (const channel of ['memory:dream:list', 'memory:dream:read']) {
+  for (const channel of ['memory:dream:list', 'memory:dream:read', 'memory:dream:audit-projects']) {
     assert.throws(() => handlers.get(channel)!({ ...event, main: false }), /main frame/)
   }
+  const projects = await handlers.get('memory:dream:audit-projects')!(event)
+  assert.deepEqual(projects, [{ id: 'a'.repeat(64), name: 'Proj A' }])
   owned = false
   assert.throws(() => handlers.get('memory:dream:status')!(event), /owning/)
 } else test('Dream IPC rejects foreign/guest senders and cancels only on owning document teardown', async () => {
