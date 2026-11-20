@@ -377,7 +377,7 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
           // Subscribe before checking again and before the async catalog lookup; returning to the
           // original mode must not resurrect an approval invalidated in the meantime.
           assertMode()
-          const display = await waitForApproval(settingsApproval(event.input, tool!.parameters, options.sessionId), changed.signal)
+          const display = await waitForApproval(settingsApproval(event.input, tool!.parameters, options.sessionId, ctx.sessionManager), changed.signal)
           changed.signal.throwIfAborted()
           await confirm(ctx, options, [], t('permissions.settingsTitle'), t('permissions.settingsMessage', display), changed.signal)
           changed.signal.throwIfAborted()

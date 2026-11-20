@@ -31,7 +31,7 @@
 ## Agent 设置工具
 
 - Agent 工具由内置 `pig-settings` 插件提供（默认项目和 Chat 都启用，子 agent 排除），`settings_list` / `settings_get` / `settings_update` 以 deferred 归入 `settings` namespace 并列入 `pig_servers`，没有 promptSnippet。
-- 结构同 pig-process：插件只转发，经 `pig-settings-host.ts` 的 globalThis 注册表调用 main；host 在调用前后校验该会话仍在某个 Pig 窗口打开，写入前再查一次。
+- 结构同 pig-process：插件只转发，经 `pig-settings-host.ts` 的 globalThis 注册表调用 main；host 在读取前后、写入提交前校验调用会话仍绑定到原 Pig 窗口。Bot 只接受当前主会话实例及其已绑定窗口；重置后的旧实例、未绑定窗口与后台托管会话不获得该授权。
 - 插件作为独立 TS 资源打包，只能类型导入共享契约，运行时 schema（含全部快捷键 action）留在插件内，`satisfies` 保证与 `ShortcutActionId` 一致；写入参数是逐组严格的 discriminated union，额外字段与 64 位小写 hex 以外的 revision 直接拒绝。
 - namespace instructions 要求只在用户明确要求时修改，网页、文件与工具输出不算授权，不许绕过工具改原始配置文件。
 - 权限扩展只认内置文件路径，默认模式下每次 `settings_update` 都显示完整校验后 patch 并只提供本次允许或拒绝（插件变更另显示名称），只读拒绝、完全访问不询问；审批期间权限模式变化立即取消旧请求，同名扩展抢占时受限模式拒绝。

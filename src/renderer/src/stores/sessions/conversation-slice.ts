@@ -7,7 +7,7 @@ import { api, type SessionBranchOptions } from '../../ipc/api'
 import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument } from '../../components/composer/document'
 import { useComposerDraftsStore } from '../composer-drafts'
 import { renderKeyForDisplayTurn } from '../../chat/display-turns'
-import { buildTurn, groupTurns, thinkingTimingKey } from '../../chat/turns'
+import { buildTurn, groupTurns, thinkingTimingKey, type ToolUpdates } from '../../chat/turns'
 import { isPiMessage, type PiMessage } from '../../pi/types'
 import { createBranchViewId, patchRuntime, sameMessage } from './runtime'
 import type { RuntimeState, SessionSlice } from './types'
@@ -198,6 +198,9 @@ export const createConversationSlice: SessionSlice<
             rt.turnStart + rt.turns.length >= result.startIndex
               ? rt.turns.slice(0, result.startIndex - rt.turnStart)
               : null
+          const seedLive = options?.live && !rt.isStreaming && rt.liveMessages.length === 0
+            ? options.live
+            : null
           return {
             turns: heldTurns ? [...heldTurns, ...result.turns] : result.turns,
             turnStart: heldTurns ? rt.turnStart : result.startIndex,
@@ -209,14 +212,30 @@ export const createConversationSlice: SessionSlice<
             leafId: result.leafId,
             branchViewId,
             branchViews,
-            liveMessages: rt.isStreaming ? rt.liveMessages : [],
-            toolUpdates: rt.isStreaming ? rt.toolUpdates : {},
-            // Only a summary that was written is already in history; a failure never gets one.
-            liveCompactions: rt.isStreaming
-              ? rt.liveCompactions
-              : rt.liveCompactions.filter((mark) => mark.status !== 'done'),
-            pendingUserMessage: rt.isStreaming && rt.pendingUserMessage,
-            processByTurnId: rt.isStreaming ? rt.processByTurnId : {},
+            ...(seedLive
+              ? {
+                  agentRunRevision: rt.agentRunRevision + 1,
+                  isStreaming: true,
+                  streamStartedAt: seedLive.streamStartedAt,
+                  streamElapsedMs: null,
+                  liveMessages: seedLive.messages.filter(isPiMessage),
+                  toolUpdates: seedLive.toolUpdates as ToolUpdates,
+                  liveCompactions: seedLive.liveCompactions,
+                  retryNotice: seedLive.retryNotice,
+                  thinkingDurations: { ...rt.thinkingDurations, ...seedLive.thinkingDurations },
+                  pendingUserMessage: false,
+                  processByTurnId: rt.processByTurnId
+                }
+              : {
+                  liveMessages: rt.isStreaming ? rt.liveMessages : [],
+                  toolUpdates: rt.isStreaming ? rt.toolUpdates : {},
+                  // Only a summary that was written is already in history; a failure never gets one.
+                  liveCompactions: rt.isStreaming
+                    ? rt.liveCompactions
+                    : rt.liveCompactions.filter((mark) => mark.status !== 'done'),
+                  pendingUserMessage: rt.isStreaming && rt.pendingUserMessage,
+                  processByTurnId: rt.isStreaming ? rt.processByTurnId : {}
+                }),
             elapsedByTurnId,
             generationByTurnId
           }

@@ -593,6 +593,7 @@ export const zh = {
       sidebar: { toggleLeft: '切换左侧栏', toggleRight: '切换右侧栏' },
       settings: { toggle: '打开或关闭设置' },
       project: { add: '添加项目' },
+      bot: { toggle: '进入或退出 Bot 页面', toggleTasks: '展开或收起任务抽屉' },
       tab: {
         new: '新建会话',
         close: '关闭当前标签页',
@@ -1276,6 +1277,91 @@ export const zh = {
     seconds: '{n} 秒',
     minutes: '{n} 分',
     minutesSeconds: '{m} 分 {r} 秒'
+  },
+  bot: {
+    title: 'Bot',
+    enter: '进入 Bot 对话',
+    backToWorkspace: '返回工作区',
+    orbAriaIdle: 'Bot 对话入口',
+    orbAriaRunning: 'Bot 对话入口（{count} 个任务进行中）',
+    orbAriaApproval: 'Bot 对话入口（{count} 个待审批）',
+    orbAriaUnread: 'Bot 对话入口（{count} 条未读）',
+    statusIdle: '随时待命',
+    statusBusy: '正在忙 {count} 件事',
+    statusApproval: '{count} 项需要确认',
+    statusThinking: '正在琢磨…',
+    statusApprovalContinuing: '已提交审批决定，后台任务「{title}」正在继续执行…',
+    tasksButton: '{count} 进行中',
+    tasksButtonAll: '任务列表',
+    tasksDrawerTitle: '后台任务',
+    tasksEmpty: '还没有委派过后台任务',
+    tasksFilterActive: '进行中',
+    tasksFilterAll: '全部',
+    tasksMoreCount: '+{count} 个任务',
+    taskStatus: {
+      starting: '准备中…',
+      running: '运行中',
+      blocked_approval: '待确认',
+      completed: '已完成',
+      failed: '失败',
+      stopped: '已停止',
+      stoppedByUser: '已由你停止',
+      taken_over: '已接管',
+      interrupted: '已中断'
+    },
+    actions: {
+      openSession: '打开会话',
+      viewChanges: '查看变更',
+      stop: '停止',
+      stopping: '正在停止…',
+      takeOver: '停止并接管',
+      continue: '继续 / 重试',
+      cleanupWorktree: '清理工作树',
+      retry: '重试',
+      dismiss: '关闭',
+      resetContext: '新起一段',
+      resetContextTitle: '要新起一段对话吗？',
+      resetContextDescription: '当前对话上下文会被归档，开始一段全新的对话。正在运行的后台任务、任务账本和长期记忆都会保留，不会中断。',
+      resetContextConfirm: '确认新起一段',
+      cleanupDirtyTitle: '工作树仍有未保存或未合并的改动',
+      cleanupDirtyDescription: '分支 {branch} 还有未提交改动或未合并提交，确定要永久删除吗？',
+      cleanupConfirm: '永久删除'
+    },
+    peek: {
+      unreadMore: '+{count} 条未读',
+      approvalNeeded: '需要确认',
+      clickToOpen: '点击进入查看'
+    },
+    managedBanner: {
+      label: '由 Bot 托管',
+      returnToBot: '返回 Bot',
+      stop: '停止',
+      takeOver: '停止并接管'
+    },
+    worktreeBadge: 'Bot',
+    composer: {
+      placeholder: '跟搭档说点什么，或直接交代要干的活…',
+      mentionProject: '提及项目',
+      send: '发送',
+      stopTurn: '停止当前思考',
+      permissionLabel: 'Bot 权限模式',
+      defaultHint: 'Enter 发送，Shift+Enter 换行'
+    },
+    empty: {
+      greeting: '有什么事直接交给我吧！',
+      subtitle: '随口聊、查问题、或者让我开个隔离分支去改代码都行。',
+      suggestionCheck: '帮我看看 {project} 最近的改动和状态',
+      suggestionFix: '帮我排查 {project} 里待解决的问题',
+      suggestionChat: '先聊聊今天的计划'
+    },
+    fallback: {
+      noMessageLabel: '系统提示',
+      deliveryLabel: '系统回执兜底'
+    },
+    approvalSource: '后台任务 · {project} · {title}',
+    followupPlaceholder: '输入补充说明，让后台继续执行…',
+    followupSubmit: '继续执行',
+    filesSummary: '{count} 个文件'
   }
 }
 

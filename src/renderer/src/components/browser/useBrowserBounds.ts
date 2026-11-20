@@ -7,8 +7,8 @@ import { waitForBrowserPaint } from './browser-frame'
 let writes: Promise<void> = Promise.resolve()
 const owners = new Map<string, object>()
 
-const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview], [data-sidebar-overlay]'
-const REVEAL = '[data-surface-reveal]'
+const OVERLAY = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="hover-card-content"], [data-split-drop-preview], [data-sidebar-overlay], [data-bot-overlay]'
+const REVEAL = '[data-surface-reveal], [data-bot-reveal]'
 /** Zero-height marker at the top of docked DevTools; everything below it is DevTools. */
 const DIVIDER = '[data-devtools-divider]'
 // Positioning wrappers trigger remeasurement, but their boxes are not visible occluders.
@@ -148,15 +148,15 @@ export function useBrowserBounds(
     // Ignore streaming text and unrelated panes; inspect overlays and the viewport's own frame.
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === 'attributes'
-        ? record.attributeName === 'data-surface-reveal' || record.attributeName === 'data-sidebar-overlay' ||
+        ? record.attributeName === 'data-surface-reveal' || record.attributeName === 'data-bot-reveal' || record.attributeName === 'data-sidebar-overlay' ||
           (record.attributeName === 'style' && movesViewport(record.target)) ||
           (record.target instanceof Element && record.target.matches(RELEVANT))
         : [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
           (node.matches(RELEVANT) || node.querySelector(RELEVANT))))) schedule()
     })
     mutations.observe(document.body, { subtree: true, childList: true, attributes: true,
-      attributeFilter: ['data-state', 'hidden', 'style', 'data-surface-reveal', 'data-sidebar-overlay'] })
-    mutations.observe(document.documentElement, { attributes: true, attributeFilter: ['data-surface-reveal', 'style'] })
+      attributeFilter: ['data-state', 'hidden', 'style', 'data-surface-reveal', 'data-bot-reveal', 'data-sidebar-overlay'] })
+    mutations.observe(document.documentElement, { attributes: true, attributeFilter: ['data-surface-reveal', 'data-bot-reveal', 'style'] })
     window.addEventListener('resize', schedule)
     window.addEventListener('scroll', schedule, true)
     schedule()

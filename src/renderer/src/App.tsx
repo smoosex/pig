@@ -31,7 +31,10 @@ import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
 import { DreamDialogHost } from './components/settings/DreamSettings'
-import { GooglyEyesButton } from './components/ui/googly-eyes-button'
+import { useBotStore } from './stores/bot'
+import { BotOrbButton } from './components/bot/BotOrbButton'
+import { BotPeekBubble } from './components/bot/BotPeekBubble'
+import { BotPage } from './components/bot/BotPage'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
 import type { SidebarTab } from '../../shared/api'
@@ -287,6 +290,8 @@ export default function App() {
   }, [])
   const { tab: sidebarTab, setTab: setSidebarTab, ready: sidebarReady, error: sidebarPrefsError } = useSidebarPreferences()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const botOpen = useBotStore((s) => s.open)
+  const initBot = useBotStore((s) => s.init)
   const toggleLeftSidebar = () => {
     if (autoCollapsed.left) {
       floatingSidebar.toggle('left')
@@ -328,7 +333,7 @@ export default function App() {
   }), [])
 
   const notificationVisibilityKey = JSON.stringify(visibleNotificationSessions(
-    openTabs, activeTabId, splitPaneNodes.map((pane) => pane.tabId), settingsOpen
+    openTabs, activeTabId, splitPaneNodes.map((pane) => pane.tabId), settingsOpen || botOpen
   ))
   useEffect(() => {
     void api.setVisibleNotificationSessions(JSON.parse(notificationVisibilityKey) as string[]).catch((error: unknown) => {
@@ -337,6 +342,7 @@ export default function App() {
   }, [notificationVisibilityKey])
 
   useEffect(() => api.onNotificationClick((sessionId) => {
+    useBotStore.getState().closeBot()
     openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
 
@@ -356,7 +362,12 @@ export default function App() {
       // The picker handles close requests itself, including its in-flight save lock.
       if (useSessionsStore.getState().projectPickerOpen) return
       switch (action) {
-        case 'tab.close': if (activeTabId) closeTab(activeTabId); break
+        case 'tab.close': {
+          if (settingsOpen) setSettingsOpen(false)
+          else if (useBotStore.getState().open) useBotStore.getState().closeBot()
+          else if (activeTabId) closeTab(activeTabId)
+          break
+        }
         case 'tab.new':
           setSettingsOpen(false)
           newStripSession(sidebarTab).catch((error: unknown) => {
@@ -364,6 +375,13 @@ export default function App() {
           })
           break
         case 'project.add': void openProject(); break
+        case 'bot.toggle':
+          setSettingsOpen(false)
+          useBotStore.getState().toggleBot()
+          break
+        case 'bot.toggleTasks':
+          if (useBotStore.getState().open) useBotStore.getState().toggleDrawer()
+          break
         case 'sidebar.toggleLeft': toggleLeftSidebar(); break
         case 'settings.toggle': setSettingsOpen((open) => !open); break
         case 'sidebar.toggleRight': {
@@ -389,7 +407,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown, true)
       offBrowserShortcut()
     }
-  }, [activeTabId, closeTab, currentProjectCwd, openProject, sidebarTab, autoCollapsed.left, autoCollapsed.right])
+  }, [activeTabId, closeTab, currentProjectCwd, openProject, settingsOpen, sidebarTab, autoCollapsed.left, autoCollapsed.right])
 
   useEffect(() => {
     if (!sidebarReady || requestedWorkspaceRestore.current) return
@@ -401,7 +419,8 @@ export default function App() {
     void loadChats()
     void loadSettings()
     void loadReviewPrefs()
-  }, [loadChats, loadSettings, loadReviewPrefs])
+    void initBot()
+  }, [loadChats, loadSettings, loadReviewPrefs, initBot])
 
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
   useEffect(() => {
@@ -511,21 +530,57 @@ export default function App() {
       <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
+      <BotPeekBubble />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
+        {botOpen && !settingsOpen ? (
+          <BotPage
+            onJumpToWorkspace={({ cwd, sessionId, openChanges }) => {
+              setSettingsOpen(false)
+              if (sidebarTab !== 'projects') switchSidebarTab('projects')
+              void selectProjectCwd(cwd).then(async () => {
+                const store = useSessionsStore.getState()
+                if (openChanges) {
+                  await store.openChangesTab(cwd)
+                  useDiffStore.getState().setReviewOpen(true)
+                  return
+                }
+                if (sessionId) {
+                  if (store.openTabs.some((tab) => tab.id === sessionId)) {
+                    await store.activateTab(sessionId)
+                    return
+                  }
+                  const findMeta = () => {
+                    for (const proj of useSessionsStore.getState().projects) {
+                      const found = proj.sessions.find((item) => item.id === sessionId)
+                      if (found) return found
+                    }
+                    return undefined
+                  }
+                  let meta = findMeta()
+                  if (!meta) {
+                    await useSessionsStore.getState().refreshCwd(cwd).catch(() => {})
+                    meta = findMeta()
+                  }
+                  if (meta) {
+                    await useSessionsStore.getState().openExisting(meta, 'project')
+                  }
+                }
+              })
+            }}
+          />
+        ) : null}
+        <div
+          data-workspace-shell
+          inert={botOpen && !settingsOpen}
+          aria-hidden={botOpen && !settingsOpen}
+          className={cn('min-h-0 flex-1 flex-col', botOpen && !settingsOpen ? 'hidden' : 'flex')}
+        >
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
           <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20 transition-[width] duration-200 ease-in-out motion-reduce:transition-none', !leftCollapsed || settingsOpen ? 'w-62' : 'w-38')}>
             {settingsOpen ? null : (
               <>
                 <SidebarToggle onClick={toggleLeftSidebar} />
-                <GooglyEyesButton
-                  label={t(sidebarTab === 'projects' ? 'sidebar.projects' : 'sidebar.chats')}
-                  alternateLabel={t(sidebarTab === 'projects' ? 'sidebar.chats' : 'sidebar.projects')}
-                  pressed={sidebarTab === 'chats'}
-                  ariaLabel={t('sidebar.tabsAria')}
-                  // The toolbar's icon buttons are h-7; match the button, not its icon.
-                  height={28}
-                  onClick={() => switchSidebarTab(sidebarTab === 'projects' ? 'chats' : 'projects')}
-                />
+                <BotOrbButton registerAnchor={!botOpen} />
               </>
             )}
           </div>
@@ -609,6 +664,7 @@ export default function App() {
                       hidden={leftCollapsed && hoverSidebar !== 'left'}
                       onOpenSettings={() => setSettingsOpen(true)}
                       tab={sidebarTab}
+                      onSwitchTab={switchSidebarTab}
                       preferencesError={sidebarPrefsError}
                     />
                   </div>
@@ -710,6 +766,7 @@ export default function App() {
               </div>
             </div>
           </WorkspaceLayout>
+        </div>
         </div>
       </div>
       <DreamDialogHost />

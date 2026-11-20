@@ -32,6 +32,7 @@ src/
 - 会话真相在 `~/.pi/agent/sessions/` 的 JSONL。
 - UI 状态跟 Pi messages/turns，不要另做一套扁平 ChatMessage。
 - 普通会话通过 `createSessionRuntime` 构造，注册与释放由 `src/main/pi/session-registry.ts` 及会话生命周期模块协调；内置功能的状态归属和清理见对应专题。
+- 后台已运行的 live 会话被标签页中途打开时，`event-bridge` 维护的活跃运行快照（`SessionLiveState`）随 `session:open` 一并返回，同时 `display` 只截取本次运行前的分支前缀，避免持久化半截历史与后续流式事件分裂或丢失流式状态。Renderer 打开期间暂存同会话事件，快照游标之前的事件不重放，之后的事件在快照装载后按序应用（包括已在途中结束的运行）。
 
 ## 数据目录与 SDK 文档注入
 

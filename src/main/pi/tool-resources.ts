@@ -9,7 +9,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { pigPath } from '../pig-dir'
 import { sessionMcpConfig } from '../mcp/settings'
-import { readSessionCapabilities } from './session-capabilities'
+import { runtimeSessionCapabilities } from './managed-overlay'
 import { registerFileChangeRecorder } from './session-file-change-records'
 import type { SessionCapabilityOverrides } from '../../shared/session-capabilities'
 import { mcpCredentials, mcpSdk } from '../mcp/sdk'
@@ -28,7 +28,7 @@ export function sessionToolFactory(
 ): ExtensionFactory {
   return async (pi) => {
     registerFileChangeRecorder(pi)
-    const preferences = inherited ?? readSessionCapabilities(sessionId)
+    const preferences = inherited ?? runtimeSessionCapabilities(sessionId)
     const snapshot = await sessionMcpConfig(cwd, preferences.mcp)
     const codemode = preferences.tools.codemode !== false
     let context: ExtensionContext | undefined

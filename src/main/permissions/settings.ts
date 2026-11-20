@@ -22,7 +22,7 @@ function safeValue(value: unknown): boolean {
   return value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
 }
 
-export async function settingsApproval(input: unknown, schema: JsonSchema, sessionId: string): Promise<{ group: string; patch: string }> {
+export async function settingsApproval(input: unknown, schema: JsonSchema, sessionId: string, sessionInstance?: object): Promise<{ group: string; patch: string }> {
   if (!compile(schema).check(input)) throw new Error('Invalid settings update; no approval was requested')
   const { group, patch } = input as { group: string; patch: Record<string, unknown> }
   if (!safeValue(patch)) throw new Error('Settings update contains values that cannot be safely displayed for approval')
@@ -30,7 +30,7 @@ export async function settingsApproval(input: unknown, schema: JsonSchema, sessi
   if (group === 'plugins' && patch.scopes && Object.keys(patch.scopes).length) {
     const host = settingsAgentHost()
     if (!host) throw new Error('Settings are unavailable; plugin names cannot be shown for approval')
-    const catalog = await host.list(sessionId, { group: 'plugins' })
+    const catalog = await host.list(sessionId, { group: 'plugins' }, sessionInstance)
     const plugins = new Map(catalog.plugins?.map(({ id, name }) => [id, name]))
     names = Object.fromEntries(Object.keys(patch.scopes).map((id) => {
       const name = plugins.get(id)

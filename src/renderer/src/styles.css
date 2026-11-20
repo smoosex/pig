@@ -75,6 +75,13 @@
   --shadow-glass-switch-track: var(--glass-switch-track-shadow);
   --color-glass-orb-background: var(--glass-orb-background);
   --shadow-glass-orb: var(--glass-orb-shadow);
+  --color-bot-orb-surface: var(--bot-orb-surface);
+  --color-bot-orb-ring: var(--bot-orb-ring);
+  --color-bot-orb-glow: var(--bot-orb-glow);
+  --color-bot-orb-bezel: var(--bot-orb-bezel);
+  --shadow-bot-orb-bezel: var(--bot-orb-bezel-shadow);
+  --shadow-bot-orb-disc: var(--bot-orb-disc-shadow);
+  --color-bot-orb-glyph: var(--bot-orb-glyph);
   --shadow-glass-button: var(--glass-button-shadow);
   --shadow-glass-primary-button: var(--glass-primary-button-shadow);
   --shadow-glass-button-hover: var(--glass-button-hover-shadow);
@@ -367,6 +374,73 @@ html[data-surface-reveal='glass']::view-transition-old(root) {
 html[data-surface-reveal='solid']::view-transition-old(root),
 html[data-surface-reveal='glass']::view-transition-new(root) {
   mask-image: radial-gradient(circle at var(--surface-reveal-x) var(--surface-reveal-y), transparent var(--surface-reveal-radius), #000 calc(var(--surface-reveal-radius) + 1px));
+}
+
+@property --bot-reveal-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Complementary clip and mask remove the underlying snapshot inside the reveal circle so
+   translucent glass surfaces never double-expose and jump when the view transition finishes. */
+html[data-bot-reveal]::view-transition-old(root),
+html[data-bot-reveal]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-bot-reveal='expand']::view-transition-new(root),
+html[data-bot-reveal='collapse']::view-transition-old(root) {
+  clip-path: circle(var(--bot-reveal-radius) at var(--bot-reveal-x) var(--bot-reveal-y));
+  z-index: 2;
+}
+
+html[data-bot-reveal='expand']::view-transition-old(root),
+html[data-bot-reveal='collapse']::view-transition-new(root) {
+  mask-image: radial-gradient(circle at var(--bot-reveal-x) var(--bot-reveal-y), transparent var(--bot-reveal-radius), #000 calc(var(--bot-reveal-radius) + 1px));
+  z-index: 1;
+}
+
+@keyframes bot-orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bot-orb-spin {
+  animation: bot-orb-spin 6s linear infinite;
+}
+
+@keyframes bot-orb-pulse {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.bot-orb-pulse {
+  animation: bot-orb-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes bot-orb-bounce {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.bot-orb-bounce {
+  animation: bot-orb-bounce 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Glass modals blur the app itself: backdrop-filter cannot see the native vibrancy and ghosts over

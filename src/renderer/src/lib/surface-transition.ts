@@ -7,6 +7,7 @@
  * glass is enabled before its reveal starts, and solid removes it only after the reveal finished.
  */
 import type { SurfaceStyle } from '../../../shared/api'
+import { dropNonEditableSelection } from './radial-reveal'
 
 const REVEAL_MS = 500
 
@@ -60,18 +61,7 @@ export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle): void 
   transition.finished.then(settle, settle)
 }
 
-/**
- * The renderer crashes (a Chromium CHECK, SIGTRAP) when a view transition snapshots a selection that
- * covers a non-editable island inside an editor, such as a chip the composer selected on click. The
- * editor keeps its own selection state and restores it on focus, so only the DOM range is dropped.
- */
-function dropNonEditableSelection(): void {
-  const selection = getSelection()
-  if (!selection?.rangeCount) return
-  const range = selection.getRangeAt(0)
-  const islands = document.querySelectorAll('[contenteditable="true"] [contenteditable="false"]')
-  if ([...islands].some((island) => range.intersectsNode(island))) selection.removeAllRanges()
-}
+
 
 function backgroundTransitions(surface: HTMLElement): CSSTransition[] {
   return surface.getAnimations().filter((animation): animation is CSSTransition =>

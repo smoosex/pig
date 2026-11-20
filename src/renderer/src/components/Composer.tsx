@@ -1,13 +1,10 @@
-import { Activity, useEffect, useMemo, useRef, useState } from 'react'
-import { BorderBeam } from '@smoose/border-beam'
+import { Activity, useEffect, useMemo, useRef } from 'react'
 import { EditorContent } from '@tiptap/react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Folder, GitBranch } from 'lucide-react'
 import { chatColumn } from '../chat/layout'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
-import { useSettingsStore } from '../stores/settings'
-import { InputGroup } from './ui/input-group'
 import { Button } from './ui/button'
 import { Popover, PopoverAnchor } from './ui/popover'
 import { FollowUpQueue } from './FollowUpQueue'
@@ -24,7 +21,7 @@ import { SlashSuggestions } from './composer/SlashSuggestions'
 import { SteerHint } from './composer/SteerHint'
 import { useWorkspaceVisible } from './WorkspaceLayout'
 import { useComposer } from './composer/useComposer'
-import { useComposerAppearance } from './composer/useComposerAppearance'
+import { ComposerSurface, composerTextLayout } from './composer/ComposerSurface'
 import { TAB_REFERENCE_DROP } from './composer/tab-reference'
 import { tabMentions, type TabMention } from './composer/tab-mentions'
 import { useSessionsStore } from '../stores/sessions'
@@ -49,10 +46,7 @@ export function Composer({
   const visible = useWorkspaceVisible()
   const isActive = paneActive && visible
   const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
-  const appearance = useComposerAppearance()
   const mentionContext = useMemo(() => ({ cwd: mentions.cwd, sessionId: sessionId ?? null }), [mentions.cwd, sessionId])
-  const beamBorderEnabled = useSettingsStore((s) => s.beamBorderEnabled)
-  const [focused, setFocused] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const reducedMotion = useReducedMotion()
   const approval = useApprovalPrompt(sessionId)
@@ -104,57 +98,50 @@ export function Composer({
       {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
       <Popover open={visible && !approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
-          <div ref={boxRef} data-tab-reference-target hidden={approval !== undefined} className="relative rounded-2xl shadow-glass-card solid:shadow-md">
-            <SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
-            <div className="relative z-10">
-              <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={visible && beamBorderEnabled && (bashMode || focused || isStreaming)} className="w-full">
-                <InputGroup
-                  className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl solid:bg-composer-input-background text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none"
-                  onFocus={() => setFocused(true)}
-                  onBlur={(event) => {
-                    const next = event.relatedTarget
-                    if (next instanceof Node && event.currentTarget.contains(next)) return
-                    setFocused(false)
-                  }}
-                >
-                  <div className="min-h-0 w-full flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {bashMode ? (
-                      <p role="status" className="px-3.5 pt-3 text-xs text-muted-foreground">
-                        {t('composer.bashModeHint')}
-                      </p>
-                    ) : null}
-                    <FileMentionContext.Provider value={mentionContext}>
-                      <EditorContent
-                        editor={editor}
-                        className={cn('min-h-16 w-full shrink-0 px-3.5 pt-3 text-sm leading-snug [&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', bashMode && 'font-mono')}
-                      />
-                    </FileMentionContext.Provider>
-                    <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} disabled={inputDisabled} />
-                    {attachments.error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{attachments.error}</p> : null}
-                    {error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{error}</p> : null}
-                    {canRestore ? (
-                      <Button type="button" variant="link" size="xs" className="mx-2.5 mb-1.5" disabled={inputDisabled} onClick={restore}>
-                        {t('composer.restoreDraft')}
-                      </Button>
-                    ) : null}
-                  </div>
-                  <Activity mode={visible ? 'visible' : 'hidden'}>
-                  <ComposerToolbar
-                    sessionId={sessionId}
-                    isStreaming={isStreaming}
-                    bashMode={bashMode}
-                    canRunBash={canRunBash}
-                    hasDraft={hasDraft}
-                    isDraftSession={isDraftSession}
-                    inputDisabled={inputDisabled}
-                    onSend={send}
-                    onAbort={abort}
-                  />
-                  </Activity>
-                </InputGroup>
-              </BorderBeam>
-            </div>
-          </div>
+          <ComposerSurface
+            ref={boxRef}
+            data-tab-reference-target
+            hidden={approval !== undefined}
+            visible={visible}
+            bashMode={bashMode}
+            streaming={isStreaming}
+            before={<SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />}
+            toolbar={(
+              <Activity mode={visible ? 'visible' : 'hidden'}>
+                <ComposerToolbar
+                  sessionId={sessionId}
+                  isStreaming={isStreaming}
+                  bashMode={bashMode}
+                  canRunBash={canRunBash}
+                  hasDraft={hasDraft}
+                  isDraftSession={isDraftSession}
+                  inputDisabled={inputDisabled}
+                  onSend={send}
+                  onAbort={abort}
+                />
+              </Activity>
+            )}
+          >
+            {bashMode ? (
+              <p role="status" className="px-3.5 pt-3 text-xs text-muted-foreground">
+                {t('composer.bashModeHint')}
+              </p>
+            ) : null}
+            <FileMentionContext.Provider value={mentionContext}>
+              <EditorContent
+                editor={editor}
+                className={cn(composerTextLayout, '[&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', bashMode && 'font-mono')}
+              />
+            </FileMentionContext.Provider>
+            <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} disabled={inputDisabled} />
+            {attachments.error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{attachments.error}</p> : null}
+            {error ? <p role="alert" className="px-3.5 pb-1.5 text-xs text-destructive">{error}</p> : null}
+            {canRestore ? (
+              <Button type="button" variant="link" size="xs" className="mx-2.5 mb-1.5" disabled={inputDisabled} onClick={restore}>
+                {t('composer.restoreDraft')}
+              </Button>
+            ) : null}
+          </ComposerSurface>
         </PopoverAnchor>
         {!approval && commands.open ? <SlashSuggestions commands={commands} anchorRef={boxRef} /> : null}
         {!approval && mentions.open ? <MentionSuggestions mentions={mentions} anchorRef={boxRef} /> : null}

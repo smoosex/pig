@@ -5,6 +5,7 @@ import { MAX_LIVE_BASH_CHARS } from '../stores/sessions/conversation-slice'
 import { sameMessage } from '../stores/sessions/runtime'
 import { createThinkingTracker } from './thinking-tracker'
 import { nestedCallsForEvent } from './nested-tools'
+import { holdSessionOpenEvent } from './session-open-events'
 
 const HYDRATE_DELAY_MS = 320
 
@@ -155,10 +156,7 @@ export function subscribeSessionEvents(): () => void {
     cancelFrame()
     void store.syncBranch(sessionId).catch(reportError('refresh the session branch'))
   })
-  const off = api.onEvent((raw) => {
-    const payload = raw as { sessionId: string; event: PiSessionEvent }
-    if (typeof payload?.sessionId !== 'string' || typeof payload?.event?.type !== 'string') return
-    const { sessionId, event } = payload
+  function applyEvent(sessionId: string, event: PiSessionEvent) {
     const current = useSessionsStore.getState().runtime[sessionId]
     if (!current) return
     switch (event.type) {
@@ -383,6 +381,13 @@ export function subscribeSessionEvents(): () => void {
         }
         break
     }
+  }
+  const off = api.onEvent((raw) => {
+    const payload = raw as { sessionId: string; event: PiSessionEvent; cursor?: number }
+    if (typeof payload?.sessionId !== 'string' || typeof payload?.event?.type !== 'string') return
+    const { sessionId, event, cursor } = payload
+    if (cursor !== undefined && holdSessionOpenEvent(sessionId, cursor, () => applyEvent(sessionId, event))) return
+    applyEvent(sessionId, event)
   })
   return () => {
     off()

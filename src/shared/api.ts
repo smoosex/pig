@@ -13,6 +13,8 @@ import type { SettingsEventsApi, SettingsReply } from './settings'
 import type { QuitApi } from './quit'
 import type { BookmarksApi } from './bookmarks'
 import type { SessionAgentUiApi } from './session-agent'
+import type { BotApi } from './bot'
+export type * from './bot'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -58,6 +60,11 @@ export interface SessionMeta {
   previewFallback?: SessionPreviewFallback
 }
 
+export interface WorktreeOwner {
+  kind: 'bot'
+  taskId: string
+}
+
 export interface WorktreeGroup {
   cwd: string
   branch: string
@@ -66,6 +73,7 @@ export interface WorktreeGroup {
   locked: boolean
   missing: boolean
   managed: boolean
+  owner?: WorktreeOwner
   naming?: 'pending' | 'naming' | 'failed'
   namingError?: string
   sessions: SessionMeta[]
@@ -99,6 +107,7 @@ export interface WorktreeDeletionJob {
 }
 
 export interface WorktreeDeletionInfo {
+  snapshot?: string
   cwd: string
   branch: string
   dirty: boolean
@@ -184,8 +193,67 @@ export interface SessionRef {
   created?: boolean
 }
 
+export type CompactionReason = 'manual' | 'threshold' | 'overflow'
+
+export interface LiveCompaction {
+  id: string
+  reason: CompactionReason
+  startedAt: number
+  /** Boundary in the renderer's liveMessages array, captured when compaction starts. */
+  afterMessageCount: number
+  /** Work time the turn had reached when the summary began: where the next block picks up. */
+  workMsBefore: number
+  endedAt: number | null
+  status: 'running' | 'done' | 'failed'
+  /** Present once the summary landed, so the landmark can be read without waiting for history. */
+  summary?: string
+  tokensBefore?: number
+  errorMessage?: string
+}
+
+/**
+ * A failure the session is recovering from. It is never part of the transcript: the retried request
+ * either replaces it with an answer, or leaves the last failed attempt as the turn's own outcome.
+ */
+export type RetryNotice =
+  | {
+      kind: 'request'
+      attempt: number
+      maxAttempts: number
+      errorMessage: string
+      /** Backoff deadline. Past it the retried request is already in flight and only the count is left. */
+      endsAt: number
+    }
+  | {
+      kind: 'summary'
+      /**
+       * Compaction and branch summaries share one retry budget and one payload shape. Only the
+       * attempt-start event says which of them is being retried.
+       */
+      source: 'summary' | 'compaction' | 'branchSummary'
+      attempt: number
+      maxAttempts: number
+      errorMessage: string
+      endsAt: number
+    }
+
+/** Snapshot of an active run in main, attached when a tab opens a session already streaming. */
+export interface SessionLiveState {
+  isStreaming: true
+  streamStartedAt: number
+  messages: unknown[]
+  toolUpdates: Record<string, unknown>
+  liveCompactions: LiveCompaction[]
+  retryNotice: RetryNotice | null
+  thinkingDurations: Record<string, number>
+}
+
 export interface OpenSessionRef extends SessionRef {
   display: DisplayTurnsResult
+  /** Last main-process event included in the open snapshot. */
+  eventCursor?: number
+  /** Present when main is already running an active turn for this session. */
+  live?: SessionLiveState
 }
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -900,6 +968,7 @@ export type * from './processes'
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
   bookmarks: BookmarksApi
   sessionAgent: SessionAgentUiApi
+  bot: BotApi
   browser: import('./browser').BrowserApi
   persona: import('./persona').PersonaApi
   dream: import('./dream').DreamApi
@@ -934,7 +1003,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>
   /** Returns after validation, session shutdown and durable enqueue, not directory cleanup. */
-  deleteWorktree: (projectCwd: string, cwd: string) => Promise<{ cwd: string } | null>
+  deleteWorktree: (projectCwd: string, cwd: string, confirmation?: string) => Promise<{ cwd: string } | null>
   listWorktreeDeletions: () => Promise<WorktreeDeletionJob[]>
   retryWorktreeDeletion: (cwd: string) => Promise<void>
   onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void) => () => void

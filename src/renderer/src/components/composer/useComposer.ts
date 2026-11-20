@@ -10,6 +10,7 @@ import { useSlashCommands } from './useSlashCommands'
 import { useComposerSubmission } from './useComposerSubmission'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { useSystemUIStore } from '../../stores/system-ui'
+import { useBotStore } from '../../stores/bot'
 
 /** Coordinates session-owned drafts with pane-local editors and attachment previews. */
 export function useComposer(
@@ -25,7 +26,10 @@ export function useComposer(
   const reviewReturning = useSystemUIStore((state) => !!sessionId && !!state.returningReviewSessions[sessionId])
   // Sending into a branch while Pi summarizes or switches it would race the new leaf.
   const navigating = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isNavigatingBranch ?? false) : false)
-  const inputDisabled = reviewReturning || navigating
+  const managedRun = useBotStore((s) => Boolean(sessionId && s.tasks.some((task) =>
+    task.activeRunId && task.runs.some((run) => run.runId === task.activeRunId && run.sessionId === sessionId)
+  )))
+  const inputDisabled = reviewReturning || navigating || managedRun
   const isStreaming = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.isStreaming ?? false) : false)
   const queuedEditText = useSessionsStore((s) => sessionId ? (s.runtime[sessionId]?.queuedEditText ?? null) : null)
   const clearQueuedEditText = useSessionsStore((s) => s.clearQueuedEditText)

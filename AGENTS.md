@@ -80,6 +80,7 @@ bun run build
 | 非交互长任务、进程组、退出通知 | [后台进程](docs/processes.md) |
 | 模式、沙箱、文件／网络门控、审批和授权 | [权限](docs/permissions.md) |
 | 独立会话控制、项目移除、任务跟踪与审批委派 | [会话控制](docs/session-control.md) |
+| 单 Bot 入口、异步任务委派、Notice 队列与 Bot 页面交互 | [Bot 编排](docs/bot-plan.md) · [Bot UI](docs/bot-ui-design.md) |
 | MCP、OAuth、Codemode、Open Computer Use | [MCP](docs/mcp.md) |
 | 网页供应商、凭据、读取回退与页面缓存 | [Web](docs/pig-web.md) |
 | SDK／schema 升级、补丁、资源 alias 与滚动补丁 | [SDK 维护](docs/sdk-maintenance.md) |

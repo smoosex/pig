@@ -10,7 +10,9 @@ import type {
   GenerationStats,
   PromptStreamingBehavior,
   ProjectGroup,
+  RetryNotice,
   SessionControls,
+  SessionLiveState,
   SessionRef,
   SessionBranchOptions,
   SessionMeta,
@@ -25,31 +27,7 @@ import type { LiveCompaction } from '../../chat/compactions'
 import type { ProcessItem, ThinkingDurations, ToolUpdates } from '../../chat/turns'
 import type { BashExecutionMessage, PiMessage } from '../../pi/types'
 
-/**
- * A failure the session is recovering from. It is never part of the transcript: the retried request
- * either replaces it with an answer, or leaves the last failed attempt as the turn's own outcome.
- */
-export type RetryNotice =
-  | {
-      kind: 'request'
-      attempt: number
-      maxAttempts: number
-      errorMessage: string
-      /** Backoff deadline. Past it the retried request is already in flight and only the count is left. */
-      endsAt: number
-    }
-  | {
-      kind: 'summary'
-      /**
-       * Compaction and branch summaries share one retry budget and one payload shape. Only the
-       * attempt-start event says which of them is being retried.
-       */
-      source: 'summary' | 'compaction' | 'branchSummary'
-      attempt: number
-      maxAttempts: number
-      errorMessage: string
-      endsAt: number
-    }
+export type { RetryNotice }
 
 export interface RuntimeState extends SessionControls {
   instanceId: number
@@ -195,6 +173,8 @@ export interface SessionsStore {
       expectedBranchRequest?: number
       branchViewId?: string
       display?: DisplayTurnsResult
+      /** Active run snapshot captured when opening a session already streaming in main. */
+      live?: SessionLiveState
       /** A refresh of the same branch keeps the history the reader already paged in. */
       keepOlderTurns?: boolean
     }
@@ -260,7 +240,7 @@ export interface SessionsStore {
   forkSession: (sessionId: string, entryId: string, position: ForkPosition) => Promise<void>
   newChat: () => Promise<string>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
-  deleteWorktree: (projectCwd: string, cwd: string) => Promise<void>
+  deleteWorktree: (projectCwd: string, cwd: string, confirmation?: string) => Promise<void>
   applyWorktreeDeletions: (cwds: string[]) => void
   deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>

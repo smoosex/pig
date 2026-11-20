@@ -64,10 +64,11 @@ export function secretPaths(env: PolicyEnvironment): string[] {
 function reopenedPaths(env: PolicyEnvironment, workspace: Workspace): string[] {
   // Reopen only this task's scratch/worktree, never every project's worktrees or arbitrary secrets
   // just because the user opened one as a workspace. A workspace equal to Pig's directory is unsafe.
+  const botWorkspace = join(env.pigDir, 'bot', 'workspace')
   const taskDirectory = ['worktrees', 'chats'].some((kind) => {
     const root = join(env.pigDir, kind)
     return workspace.cwd !== root && within(root, workspace.cwd)
-  })
+  }) || within(botWorkspace, workspace.cwd)
   const paths = [join(env.home, '.ssh', 'known_hosts'), join(env.home, '.ssh', 'config'), ...(taskDirectory ? [workspace.cwd] : [])]
   return paths.flatMap((path) => env.canonical?.[path] ? [path, env.canonical[path]] : [path])
 }

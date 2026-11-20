@@ -1,5 +1,5 @@
 /** Builds the SDK runtime of a Pig session: approved plugins, Pig tools, and Chat's restricted resources. */
-import { createAgentSession, getAgentDir, type AgentSession, type ExtensionUIContext, type ResourceLoader, type SessionManager } from '@earendil-works/pi-coding-agent'
+import { createAgentSession, getAgentDir, type AgentSession, type ExtensionFactory, type ExtensionUIContext, type InlineExtension, type ResourceLoader, type SessionManager } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
 import { createChatResourceLoader, createNoExtensionsResourceLoader, sessionResourceSettings } from './chat-resources'
 import { startModelRuntime } from './model-settings'
@@ -7,7 +7,7 @@ import { pigDocsExtension } from './pig-docs'
 import { pigIdentityExtension } from './pig-identity'
 import { conversationFeatureFactories } from '../features/runtime'
 import { permissionsExtension, type PermissionOptions } from '../permissions/extension'
-import { sessionPermission } from '../permissions/store'
+import { runtimePermissionMode } from './managed-overlay'
 import { restrictPermissionMode } from '../permissions/mode'
 import type { PermissionMode } from '../../shared/permissions'
 import { sessionToolFactory } from './tool-resources'
@@ -29,6 +29,10 @@ export async function createSessionRuntime(
     toolPreferences?: Parameters<typeof sessionToolFactory>[2]
     /** Subagents exclude human-conversation identity, persona and observational memory. */
     identity?: boolean
+    /** Re-evaluated when the loader constructs extensions, including after takeover. */
+    conversationFeatures?: () => boolean
+    /** Extra inline extensions injected into this session runtime (e.g. Bot tools & prompt). */
+    extraExtensions?: Array<ExtensionFactory | InlineExtension>
     /** Subagents share the parent's grants, but may never exceed their launch mode. */
     permissions?: { sessionId: string; mode: PermissionMode; approvalUI?: Pick<ExtensionUIContext, 'select'>; signal?: AbortSignal }
   } = {}
@@ -44,8 +48,8 @@ export async function createSessionRuntime(
     mcpAtExecution: true,
     // A child retains its launch-time ceiling and also follows later parent restrictions.
     mode: inherited
-      ? () => restrictPermissionMode(inherited.mode, sessionPermission(inherited.sessionId).mode)
-      : () => sessionPermission(sessionId).mode
+      ? () => restrictPermissionMode(inherited.mode, runtimePermissionMode(inherited.sessionId))
+      : () => runtimePermissionMode(sessionId)
   }
   const permissions = permissionsExtension(permissionOptions)
   const resources = { onSkillBase: options.onSkillBase, settingsManager, sessionId,
@@ -53,10 +57,16 @@ export async function createSessionRuntime(
       pigDocsExtension,
       permissions,
       ...(options.identity === false ? [] : [
-        ...conversationFeatureFactories(),
+        ...conversationFeatureFactories().map((extension) => {
+          const { name, factory } = typeof extension === 'function' ? { name: extension.name, factory: extension } : extension
+          return { name, factory: async (pi: Parameters<ExtensionFactory>[0]) => {
+            if (options.conversationFeatures?.() !== false) await factory(pi)
+          } }
+        }),
         pigIdentityExtension
       ]),
-      { name: SESSION_TOOLS_EXTENSION, factory: sessionToolFactory(cwd, sessionId, options.toolPreferences, permissionOptions) }
+      { name: SESSION_TOOLS_EXTENSION, factory: sessionToolFactory(cwd, sessionId, options.toolPreferences, permissionOptions) },
+      ...(options.extraExtensions ?? [])
     ], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)
     ? await createChatResourceLoader(cwd, pluginPaths, resources)

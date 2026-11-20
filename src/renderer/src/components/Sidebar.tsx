@@ -1,4 +1,4 @@
-import { FolderPlus, Plus, Settings } from 'lucide-react'
+import { FolderPlus, Settings } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { useDiffStore } from '../stores/diff'
 import { useSettingsStore } from '../stores/settings'
@@ -12,7 +12,8 @@ import { useT } from '../hooks/useT'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
-import { sidebarButtonSurface, sidebarSurfaceHover } from './sidebar/sidebar-surface'
+import { sidebarSurfaceHover } from './sidebar/sidebar-surface'
+import { SidebarModeSwitch } from './sidebar/SidebarModeSwitch'
 import { SurfaceStyleToggle } from './sidebar/SurfaceStyleToggle'
 import { DreamStatusButton } from './sidebar/DreamStatus'
 import { useProjectAction } from './sidebar/project-action'
@@ -22,12 +23,14 @@ export function Sidebar({
   hidden = false,
   floating = false,
   tab,
+  onSwitchTab = () => {},
   preferencesError
 }: {
   onOpenSettings: () => void
   hidden?: boolean
   floating?: boolean
   tab: SidebarTab
+  onSwitchTab?: (next: SidebarTab) => void
   preferencesError: string | null
 }) {
   const openProject = useSessionsStore((s) => s.openProject)
@@ -57,25 +60,12 @@ export function Sidebar({
       )}
     >
       <div className="flex w-62 shrink-0 flex-col pl-2">
-        {tab === 'chats' ? (
-          <div className="group/header flex h-8 shrink-0 items-center pr-1 pl-2">
-            <span className="text-xs font-medium text-muted-foreground">{t('sidebar.chats')}</span>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={cn(
-                'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/header:pointer-events-auto group-hover/header:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
-                sidebarButtonSurface
-              )}
-              aria-label={t('sidebar.newChat')}
-              disabled={projectPending !== null}
-              onClick={() => void runProjectAction('new-chat', newChat)}
-            >
-              <Plus />
-            </Button>
-          </div>
-        ) : null}
+        <SidebarModeSwitch
+          tab={tab}
+          onSelect={onSwitchTab}
+          onNewChat={() => void runProjectAction('new-chat', newChat)}
+          actionDisabled={projectPending !== null}
+        />
         <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <SidebarHoverHighlight className="pt-1">
             {tab === 'projects' ? <ProjectList /> : <ChatList />}

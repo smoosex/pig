@@ -23,6 +23,32 @@ const api: SessionApi = {
     },
     answer: (requestId, answer) => ipcRenderer.invoke('session:agent-answer', requestId, answer)
   },
+  bot: {
+    getSnapshot: () => ipcRenderer.invoke('bot:snapshot'),
+    setSurface: (surface) => ipcRenderer.invoke('bot:set-surface', surface),
+    sendMessage: (input) => ipcRenderer.invoke('bot:send', input),
+    retryLastMessage: () => ipcRenderer.invoke('bot:retry-last'),
+    abortCurrentTurn: () => ipcRenderer.invoke('bot:abort'),
+    setPermissionMode: (mode) => ipcRenderer.invoke('bot:set-permission', mode),
+    setModel: (provider, id) => ipcRenderer.invoke('bot:set-model', provider, id),
+    setThinking: (level) => ipcRenderer.invoke('bot:set-thinking', level),
+    resetContext: () => ipcRenderer.invoke('bot:reset-context'),
+    listTasks: (filter) => ipcRenderer.invoke('bot:list-tasks', filter),
+    getTask: (taskId) => ipcRenderer.invoke('bot:get-task', taskId),
+    stopTask: (taskId) => ipcRenderer.invoke('bot:stop-task', taskId),
+    takeOverTask: (taskId) => ipcRenderer.invoke('bot:takeover-task', taskId),
+    followupTask: (taskId, instruction) => ipcRenderer.invoke('bot:followup-task', taskId, instruction),
+    checkWorktreeCleanup: (taskId) => ipcRenderer.invoke('bot:check-worktree-cleanup', taskId),
+    cleanupWorktree: (taskId, confirmation) => confirmation === undefined
+      ? ipcRenderer.invoke('bot:cleanup-worktree', taskId)
+      : ipcRenderer.invoke('bot:cleanup-worktree', taskId, confirmation),
+    getManagedSessionInfo: (sessionId) => ipcRenderer.invoke('bot:managed-session', sessionId),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, event: import('../shared/bot').BotEvent) => listener(event)
+      ipcRenderer.on('bot:event', handler)
+      return () => ipcRenderer.off('bot:event', handler)
+    }
+  },
   browser: {
     create: (browserId, cwd, url) => url === undefined
       ? ipcRenderer.invoke('browser:create', browserId, cwd)
@@ -217,8 +243,9 @@ const api: SessionApi = {
     ipcRenderer.invoke('project:create-worktree', projectCwd, options),
   worktreeDeletionInfo: (projectCwd: string, cwd: string) =>
     ipcRenderer.invoke('project:worktree-deletion-info', projectCwd, cwd),
-  deleteWorktree: (projectCwd: string, cwd: string) =>
-    ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd),
+  deleteWorktree: (projectCwd, cwd, confirmation) => confirmation === undefined
+    ? ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd)
+    : ipcRenderer.invoke('project:delete-worktree', projectCwd, cwd, confirmation),
   listWorktreeDeletions: () => ipcRenderer.invoke('project:list-worktree-deletions'),
   retryWorktreeDeletion: (cwd: string) => ipcRenderer.invoke('project:retry-worktree-deletion', cwd),
   onWorktreeDeletionsChanged: (listener: (jobs: WorktreeDeletionJob[]) => void): (() => void) => {

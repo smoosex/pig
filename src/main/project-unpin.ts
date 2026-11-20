@@ -21,7 +21,7 @@ export async function unpinProjectDirectory(cwd: string, options: {
         for (const path of cwds) {
           options.check?.()
           changed = true
-          await closeSessionsForCwd(path)
+          await closeSessionsForCwd(path, 'project_removed')
         }
         options.check?.()
         await removeOpenProjectWorkspaces(cwds)

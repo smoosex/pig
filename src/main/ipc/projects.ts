@@ -85,7 +85,7 @@ export function registerProjectIpc(): void {
       const cwds = new Set([project, ...(await worktrees.discover(project)).map((w) => w.cwd)])
       await worktrees.withBlockedCwds([...cwds], async () => {
         for (const path of cwds) {
-          await closeSessionsForCwd(path)
+          await closeSessionsForCwd(path, 'project_removed')
           await removeProjectSessions(path)
         }
         await removeOpenProjectWorkspaces(cwds)

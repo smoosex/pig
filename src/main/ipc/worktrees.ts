@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { basename, resolve } from 'node:path'
 import { isChatCwd, isChatsRoot } from '../chats'
 import { loadWorktreeProject, requireOpenedProject, worktrees } from '../project-worktrees'
-import { git, isGitProject } from '../worktrees'
+import { git, isGitProject, resolveGitHead } from '../worktrees'
 import { nameWorktreeBranch } from '../pi/branch-namer'
 import { closeSessionsForCwd } from '../pi/session-registry'
 import { readProjectNamingText } from '../pi/session-loader'
@@ -31,7 +31,7 @@ async function retryWorktreeNaming(projectCwd: string, cwd: string): Promise<voi
 
 async function createInfo(project: string): Promise<{ hasGit: boolean; hasHead: boolean }> {
   const hasGit = await isGitProject(project)
-  const hasHead = hasGit && await git(project, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
+  const hasHead = hasGit && (await resolveGitHead(project)) !== undefined
   return { hasGit, hasHead }
 }
 
@@ -69,7 +69,8 @@ export function registerWorktreeIpc(): void {
       branch: info.worktree.branch || basename(cwd),
       dirty: info.dirty,
       unmerged: info.unmerged,
-      missing: info.worktree.missing
+      missing: info.worktree.missing,
+      ...(info.worktree.owner?.kind === 'bot' ? { snapshot: info.snapshot } : {})
     }
   })
 
@@ -79,12 +80,15 @@ export function registerWorktreeIpc(): void {
     await worktrees.retryDeletion(cwd)
   })
 
-  ipcMain.handle('project:delete-worktree', async (_event, projectCwd: string, cwd: string) => {
+  ipcMain.handle('project:delete-worktree', async (_event, projectCwd: string, cwd: string, confirmation?: unknown) => {
     const project = await requireOpenedProject(projectCwd)
     if (typeof cwd !== 'string' || !cwd || isChatCwd(cwd) || isChatsRoot(cwd)) throw new Error('Invalid worktree cwd')
     const info = await worktrees.deletionInfo(project, cwd)
+    if (confirmation !== undefined && (typeof confirmation !== 'string' || !/^[a-f0-9]{64}$/.test(confirmation))) {
+      throw new Error('Invalid worktree deletion confirmation')
+    }
     await worktrees.remove(project, cwd,
-      () => closeSessionsForCwd(cwd), () => removeProjectSessions(cwd), { background: true })
+      () => closeSessionsForCwd(cwd, 'worktree_deleted'), () => removeProjectSessions(cwd), { background: true, confirmation })
     await removeOpenProjectWorkspaces([info.worktree.cwd])
     return { cwd: info.worktree.cwd }
   })

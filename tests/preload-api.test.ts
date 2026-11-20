@@ -113,6 +113,24 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onShortcutRequested(() => {})()
   api.browser.onState(() => {})()
   api.browser.onSelection(() => {})()
+  await api.bot.getSnapshot()
+  await api.bot.setSurface('bot')
+  await api.bot.sendMessage({ text: 'hello' })
+  await api.bot.retryLastMessage()
+  await api.bot.abortCurrentTurn()
+  await api.bot.setPermissionMode('full-access')
+  await api.bot.setModel('openai', 'gpt-5')
+  await api.bot.setThinking('medium')
+  await api.bot.resetContext()
+  await api.bot.listTasks({ status: 'active' })
+  await api.bot.getTask('task-1')
+  await api.bot.stopTask('task-1')
+  await api.bot.takeOverTask('task-1')
+  await api.bot.followupTask('task-1', 'continue')
+  await api.bot.checkWorktreeCleanup('task-1')
+  await api.bot.cleanupWorktree('task-1')
+  await api.bot.getManagedSessionInfo('session-1')
+  api.bot.onEvent(() => {})()
   await api.persona.get()
   await api.persona.saveFile({ name: 'SOUL.md', content: 'persona', revision: null })
   await api.persona.setMood({ pleasantness: 0.6, activation: 0.4, energy: 0.8 })
@@ -216,6 +234,23 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:agent-open-answer', args: ['request-1', { browserId: 'browser:one' }] },
     { channel: 'browser:accept-popup', args: ['browser:popup', 'browser:one'] },
     { channel: 'browser:close', args: ['session-1'] },
+    { channel: 'bot:snapshot', args: [] },
+    { channel: 'bot:set-surface', args: ['bot'] },
+    { channel: 'bot:send', args: [{ text: 'hello' }] },
+    { channel: 'bot:retry-last', args: [] },
+    { channel: 'bot:abort', args: [] },
+    { channel: 'bot:set-permission', args: ['full-access'] },
+    { channel: 'bot:set-model', args: ['openai', 'gpt-5'] },
+    { channel: 'bot:set-thinking', args: ['medium'] },
+    { channel: 'bot:reset-context', args: [] },
+    { channel: 'bot:list-tasks', args: [{ status: 'active' }] },
+    { channel: 'bot:get-task', args: ['task-1'] },
+    { channel: 'bot:stop-task', args: ['task-1'] },
+    { channel: 'bot:takeover-task', args: ['task-1'] },
+    { channel: 'bot:followup-task', args: ['task-1', 'continue'] },
+    { channel: 'bot:check-worktree-cleanup', args: ['task-1'] },
+    { channel: 'bot:cleanup-worktree', args: ['task-1'] },
+    { channel: 'bot:managed-session', args: ['session-1'] },
     { channel: 'persona:get', args: [] },
     { channel: 'persona:save-file', args: [{ name: 'SOUL.md', content: 'persona', revision: null }] },
     { channel: 'persona:set-mood', args: [{ pleasantness: 0.6, activation: 0.4, energy: 0.8 }] },
@@ -255,6 +290,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   assert.ok(listeners.includes('browser:agent-open-request'))
   assert.ok(listeners.includes('browser:state'))
   assert.ok(listeners.includes('permissions:changed'))
+  assert.ok(listeners.includes('bot:event'))
   assert.ok(listeners.includes('persona:changed'), 'open persona settings learn about conversation changes')
   assert.ok(listeners.includes('browser:selection'))
   assert.ok(listeners.includes('terminal:event'))

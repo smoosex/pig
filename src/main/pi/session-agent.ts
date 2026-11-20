@@ -28,6 +28,7 @@ import { promptSession } from './session-prompt'
 import { reserveSessionControl } from './session-control-lock'
 import { startModelRuntime, thinkingLevelsFor } from './model-settings'
 import { SessionTaskTracker } from './session-agent-tasks'
+import { sessionStopCoordinator, stopSessionExecution } from './session-stop'
 
 export type SessionUiAction = SessionAgentUiRequest extends infer R ? R extends SessionAgentUiRequest ? Omit<R, 'requestId' | 'callerSessionId'> : never : never
 export interface SessionAgentUiTransport {
@@ -45,7 +46,22 @@ export class SessionAgentController implements SessionAgentHost {
     busy: id => this.busy(id),
     waitingApproval: id => hasPendingApproval(id),
   })
-  constructor(private ui: SessionAgentUiTransport) {}
+  private unregisterStopParticipant: () => void
+  constructor(private ui: SessionAgentUiTransport) {
+    sessionStopCoordinator.setRuntimeDeps({
+      getAgent: (sessionId) => getLive(sessionId)?.agentSession,
+      prepareAgent: async (sessionId) => (await prepareSession(sessionId)).agentSession,
+      abortSubagents: (sessionId) => subagents.abortAllAndWait(sessionId)
+    })
+    this.unregisterStopParticipant = sessionStopCoordinator.registerParticipant({
+      onBeforeStop: (sessionId, origin) => this.tasks.markStopping(sessionId, origin)
+    })
+  }
+
+  dispose(): void {
+    this.unregisterStopParticipant()
+    this.tasks.dispose()
+  }
 
   private window(caller: string): BrowserWindow {
     const win = getLive(caller)?.win
@@ -367,18 +383,22 @@ export class SessionAgentController implements SessionAgentHost {
     const guard = await this.authorize(caller, 'Stop session and its active subagents; sent actions cannot be undone', { sessionId: target }, context, target)
     try {
       guard.check()
-      const agent = getLive(target)?.agentSession
-      if (!agent) return
-      const submissions = this.tasks.markStopping(target)
-      const children = subagents.abortAllAndWait(target)
-      await Promise.all([agent.abort(), children, submissions])
-      await agent.abort()
+      if (!getLive(target)?.agentSession) return
+      await stopSessionExecution(target, 'agent')
     } finally { guard.dispose() }
   }
 }
 
+let activeController: SessionAgentController | undefined
+
+export function getSessionAgentController(): SessionAgentController | undefined {
+  return activeController
+}
+
 export function registerSessionController(ui: SessionAgentUiTransport): SessionAgentController {
+  activeController?.dispose()
   const controller = new SessionAgentController(ui)
+  activeController = controller
   registerSessionAgentHost(controller)
   return controller
 }

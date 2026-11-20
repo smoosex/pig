@@ -90,9 +90,9 @@ export interface SettingsCatalog {
 }
 
 export interface SettingsAgentHost {
-  list(sessionId: string, options: SettingsListOptions): Promise<SettingsCatalog>
-  get(sessionId: string, group: SettingsGroup): Promise<SettingsGroupSnapshot>
-  update(sessionId: string, request: SettingsUpdateRequest, signal?: AbortSignal): Promise<SettingsMutationResult>
+  list(sessionId: string, options: SettingsListOptions, sessionInstance?: object): Promise<SettingsCatalog>
+  get(sessionId: string, group: SettingsGroup, sessionInstance?: object): Promise<SettingsGroupSnapshot>
+  update(sessionId: string, request: SettingsUpdateRequest, signal?: AbortSignal, sessionInstance?: object): Promise<SettingsMutationResult>
 }
 
 /** Each value keeps its revision in renderer, so a late reply cannot undo a newer change to another field. */

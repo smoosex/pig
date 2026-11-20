@@ -7,25 +7,10 @@
  * landmarks arrive with the session projection instead, and carry the same two numbers estimated
  * from the entries written either side of them.
  */
+import type { CompactionReason, LiveCompaction } from '../../../shared/api'
 import type { MessageKey } from '../../../shared/i18n'
 
-export type CompactionReason = 'manual' | 'threshold' | 'overflow'
-
-export interface LiveCompaction {
-  id: string
-  reason: CompactionReason
-  startedAt: number
-  /** Boundary in the renderer's liveMessages array, captured when compaction starts. */
-  afterMessageCount: number
-  /** Work time the turn had reached when the summary began: where the next block picks up. */
-  workMsBefore: number
-  endedAt: number | null
-  status: 'running' | 'done' | 'failed'
-  /** Present once the summary landed, so the landmark can be read without waiting for history. */
-  summary?: string
-  tokensBefore?: number
-  errorMessage?: string
-}
+export type { CompactionReason, LiveCompaction }
 
 /**
  * A mark belongs to the run it happened in while that run has somewhere to put it. A summary written

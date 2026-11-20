@@ -176,12 +176,11 @@ function summaryOfTurn(turn: DisplayTurn, entry: unknown): TurnSummary {
 
 const managerSources = new WeakMap<SessionManager, { leafId: string | null; source: SessionSource }>()
 
-export function managerSource(sessionManager: SessionManager): SessionSource {
-  const leafId = sessionManager.getLeafId()
-  const cached = managerSources.get(sessionManager)
-  if (cached?.leafId === leafId) return cached.source
-
-  const branch = sessionManager.getBranch()
+function buildManagerSource(
+  sessionManager: SessionManager,
+  leafId: string | null,
+  branch: SessionEntry[]
+): SessionSource {
   let projection: DisplayTurn[] | null = null
   const turns = () => {
     projection ??= displayTurnsFromEntries(sessionManager.getSessionId(), branch)
@@ -195,7 +194,7 @@ export function managerSource(sessionManager: SessionManager): SessionSource {
     return summaryCache
   }
   let messagesByTurnId: Map<string, unknown[]> | null = null
-  const source: SessionSource = {
+  return {
     sessionId: sessionManager.getSessionId(),
     leafId: () => leafId,
     branch: () => branch,
@@ -213,8 +212,31 @@ export function managerSource(sessionManager: SessionManager): SessionSource {
       return messages
     }
   }
+}
+
+export function managerSource(sessionManager: SessionManager): SessionSource {
+  const leafId = sessionManager.getLeafId()
+  const cached = managerSources.get(sessionManager)
+  if (cached?.leafId === leafId) return cached.source
+
+  const source = buildManagerSource(sessionManager, leafId, sessionManager.getBranch())
   managerSources.set(sessionManager, { leafId, source })
   return source
+}
+
+/**
+ * Branch prefix strictly before an active run started, so a tab opened mid-run renders completed
+ * history in `turns` and the active run solely through `liveMessages` without duplicating turns.
+ */
+export function managerSourceBeforeLeaf(
+  sessionManager: SessionManager,
+  baseLeafId: string | null
+): SessionSource | null {
+  if (baseLeafId === null) return buildManagerSource(sessionManager, null, [])
+  const branch = sessionManager.getBranch()
+  const index = branch.findIndex((entry) => entry.id === baseLeafId)
+  if (index < 0) return null
+  return buildManagerSource(sessionManager, baseLeafId, branch.slice(0, index + 1))
 }
 
 export function fileSource(index: SessionFileIndex): SessionSource {

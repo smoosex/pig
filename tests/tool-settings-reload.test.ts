@@ -262,6 +262,31 @@ async function fixture(): Promise<void> {
     })
     extensionErrors = []
     await registry.refreshToolSessions()
+
+    // Managed paths are a project-scoped bundle allowlist, not a post-load tool filter.
+    const { managedOverlays } = await import('../src/main/pi/managed-overlay')
+    const { saveSessionPermission, sessionPermission } = await import('../src/main/permissions/store')
+    const { readSessionCapabilities, saveSessionCapability } = await import('../src/main/pi/session-capabilities')
+    const managed = registry.createPendingSession(cwds[0], win)
+    managedOverlays.set(managed.sessionId, { mode: 'read', browser: true })
+    await saveSessionPermission(managed.sessionId, 'read-only')
+    saveSessionCapability(managed.sessionId, 'tools', 'bash', false)
+    await registry.prepareSession(managed.sessionId)
+    const managedRuntime = sessions.at(-1)!
+    managedRuntime.isIdle = true
+    const bundleNames = () => managedRuntime.paths.map(path => path.split('/').at(-2))
+    assert.deepEqual(bundleNames(), ['pig-subagent'], 'read runs cannot load process/browser, even with browser opt-in')
+    await plugins.setPluginScopes('pig-settings', ['project'])
+    await plugins.setPluginScopes('pig-subagent', [])
+    await registry.refreshPluginSessions()
+    assert.deepEqual(bundleNames(), [], 'reload applies the same allowlist and project scope')
+    const restore = registry.restoreManagedOverlay(managed.sessionId)
+    const prepared = registry.prepareSession(managed.sessionId)
+    await restore
+    await prepared
+    assert.ok(bundleNames().includes('pig-settings'), 'takeover awaits ordinary resource reload')
+    assert.equal(sessionPermission(managed.sessionId).mode, 'read-only')
+    assert.equal(readSessionCapabilities(managed.sessionId).tools.bash, false)
   } finally {
     release()
     await registry.disposeAll()

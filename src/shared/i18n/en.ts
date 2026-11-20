@@ -596,6 +596,7 @@ export const en: Messages = {
       sidebar: { toggleLeft: 'Toggle left sidebar', toggleRight: 'Toggle right sidebar' },
       settings: { toggle: 'Open or close settings' },
       project: { add: 'Add project' },
+      bot: { toggle: 'Toggle Bot view', toggleTasks: 'Toggle Bot task drawer' },
       tab: {
         new: 'New session',
         close: 'Close current tab',
@@ -1279,5 +1280,90 @@ export const en: Messages = {
     seconds: '{n}s',
     minutes: '{n}m',
     minutesSeconds: '{m}m {r}s'
+  },
+  bot: {
+    title: 'Bot',
+    enter: 'Open Bot',
+    backToWorkspace: 'Back to workspace',
+    orbAriaIdle: 'Bot conversation',
+    orbAriaRunning: 'Bot conversation ({count} running)',
+    orbAriaApproval: 'Bot conversation ({count} waiting for approval)',
+    orbAriaUnread: 'Bot conversation ({count} unread)',
+    statusIdle: 'Ready',
+    statusBusy: 'Working on {count} tasks',
+    statusApproval: '{count} awaiting approval',
+    statusThinking: 'Thinking…',
+    statusApprovalContinuing: 'Approval submitted — "{title}" is continuing in the background…',
+    tasksButton: '{count} active',
+    tasksButtonAll: 'Tasks',
+    tasksDrawerTitle: 'Background tasks',
+    tasksEmpty: 'No background tasks yet',
+    tasksFilterActive: 'Active',
+    tasksFilterAll: 'All',
+    tasksMoreCount: '+{count} more',
+    taskStatus: {
+      starting: 'Preparing…',
+      running: 'Running',
+      blocked_approval: 'Needs approval',
+      completed: 'Completed',
+      failed: 'Failed',
+      stopped: 'Stopped',
+      stoppedByUser: 'Stopped by you',
+      taken_over: 'Taken over',
+      interrupted: 'Interrupted'
+    },
+    actions: {
+      openSession: 'Open session',
+      viewChanges: 'View changes',
+      stop: 'Stop',
+      stopping: 'Stopping…',
+      takeOver: 'Stop & take over',
+      continue: 'Continue / Retry',
+      cleanupWorktree: 'Clean up worktree',
+      retry: 'Retry',
+      dismiss: 'Dismiss',
+      resetContext: 'Start fresh',
+      resetContextTitle: 'Start a fresh Bot context?',
+      resetContextDescription: 'The current conversation context will be archived and a fresh timeline will start. Running background tasks, the task ledger, and long-term memory remain untouched.',
+      resetContextConfirm: 'Start fresh',
+      cleanupDirtyTitle: 'Worktree has uncommitted or unmerged changes',
+      cleanupDirtyDescription: 'Branch {branch} still has uncommitted changes or unmerged commits. Permanently delete it?',
+      cleanupConfirm: 'Delete permanently'
+    },
+    peek: {
+      unreadMore: '+{count} unread',
+      approvalNeeded: 'Approval needed',
+      clickToOpen: 'Click to open'
+    },
+    managedBanner: {
+      label: 'Managed by Bot',
+      returnToBot: 'Back to Bot',
+      stop: 'Stop',
+      takeOver: 'Stop & take over'
+    },
+    worktreeBadge: 'Bot',
+    composer: {
+      placeholder: 'Chat with your Bot, or delegate work in any project…',
+      mentionProject: 'Mention project',
+      send: 'Send',
+      stopTurn: 'Stop current turn',
+      permissionLabel: 'Bot permission mode',
+      defaultHint: 'Enter to send, Shift+Enter for newline'
+    },
+    empty: {
+      greeting: 'Tell me what you need!',
+      subtitle: 'Chat directly, ask quick questions, or let me work on isolated branches in the background.',
+      suggestionCheck: 'Check recent changes and status in {project}',
+      suggestionFix: 'Investigate open issues in {project}',
+      suggestionChat: 'Let’s plan today’s work'
+    },
+    fallback: {
+      noMessageLabel: 'System notice',
+      deliveryLabel: 'System delivery fallback'
+    },
+    approvalSource: 'Background task · {project} · {title}',
+    followupPlaceholder: 'Add follow-up instructions to continue…',
+    followupSubmit: 'Continue',
+    filesSummary: '{count} files'
   }
 }

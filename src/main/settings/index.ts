@@ -43,24 +43,37 @@ export function createSettingsRuntime(sessions?: SettingsSessions) {
     }
   })
   if (sessions) {
-    const authorize = (sessionId: string) => {
-      const win = sessions.sessionWindow(sessionId)
-      if (!sessions.isSessionLive(sessionId) || !win || win.isDestroyed() || win.webContents.isDestroyed()) throw new Error('The requesting session is no longer open in a Pig window')
+    const authorize = async (sessionId: string, instance?: object) => {
+      const ordinary = sessions.isSessionLive(sessionId)
+      const liveBotSettingsWindow = !ordinary && instance ? (await import('../bot/service')).liveBotSettingsWindow : undefined
+      const getWindow = ordinary
+        ? () => sessions.isSessionLive(sessionId) ? sessions.sessionWindow(sessionId) : undefined
+        : () => liveBotSettingsWindow?.(sessionId, instance)
+      const win = getWindow()
+      const check = () => {
+        if (!win || win.isDestroyed() || win.webContents.isDestroyed() || getWindow() !== win) {
+          throw new Error('The requesting session is no longer open in a Pig window')
+        }
+      }
+      check()
+      return check
     }
     registerSettingsAgentHost({
-      async list(sessionId, options) {
-        authorize(sessionId)
+      async list(sessionId, options, instance) {
+        const check = await authorize(sessionId, instance)
         const result = await service.list(options)
-        authorize(sessionId)
+        check()
         return result
       },
-      async get(sessionId, group) {
-        authorize(sessionId)
+      async get(sessionId, group, instance) {
+        const check = await authorize(sessionId, instance)
         const result = await service.get(group)
-        authorize(sessionId)
+        check()
         return result
       },
-      update: (sessionId, request, signal) => service.update(request, signal, () => authorize(sessionId))
+      async update(sessionId, request, signal, instance) {
+        return service.update(request, signal, await authorize(sessionId, instance))
+      }
     })
   }
   return { service, surface }

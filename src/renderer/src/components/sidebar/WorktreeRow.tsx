@@ -64,6 +64,11 @@ export function WorktreeRow({
         )}
       />
       <span className="min-w-0 truncate">{worktree.branch}</span>
+      {worktree.owner?.kind === 'bot' ? (
+        <span className="shrink-0 rounded bg-primary/15 px-1 py-px text-[10px] font-medium text-primary">
+          {t('bot.worktreeBadge')}
+        </span>
+      ) : null}
       {worktree.locked && <LockKeyhole className="text-muted-foreground" />}
       {worktree.missing && <AlertCircle className="text-destructive" />}
       {namingLabel && <span className="shrink-0 text-muted-foreground">{namingLabel}</span>}
@@ -121,7 +126,7 @@ export function WorktreeRow({
               disabled={pending !== null}
               busy={pending === `delete:${worktree.cwd}`}
               runAction={runAction}
-              onConfirm={() => deleteWorktree(projectCwd, worktree.cwd)}
+              onConfirm={(confirmation) => deleteWorktree(projectCwd, worktree.cwd, confirmation)}
             />
           )}
           <SessionHistoryPopover

@@ -109,19 +109,19 @@ export function WorktreeDeleteButton({
   disabled: boolean
   busy: boolean
   runAction: RunProjectAction
-  onConfirm: () => Promise<void>
+  onConfirm: (confirmation?: string) => Promise<void>
 }) {
-  // The dialog only describes what gets lost; the confirm button always deletes.
-  const [prompt, setPrompt] = useState<{ title: string; body: string } | null>(null)
+  const [prompt, setPrompt] = useState<{ title: string; body: string; snapshot?: string } | null>(null)
   const t = useT()
   const confirm = async () => {
     setPrompt(null)
-    await onConfirm()
+    await onConfirm(prompt?.snapshot)
   }
 
   const prepareDeletion = async () => {
     const info = await api.worktreeDeletionInfo(projectCwd, cwd)
     setPrompt({
+      snapshot: info.snapshot,
       title: info.unmerged
         ? t('worktree.deleteTitleUnmerged', { branch })
         : t('worktree.deleteTitle', { branch }),

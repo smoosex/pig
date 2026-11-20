@@ -58,6 +58,31 @@ const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-web', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pig-web', 'index.js')
 
+/** Built-in plugins permitted for the main Bot session per §5.2 matrix (pig-web + pig-settings only). */
+export function botMainPluginPaths(): string[] {
+  const paths: string[] = []
+  const web = webAccessPath()
+  if (existsSync(web)) paths.push(web)
+  const settings = settingsToolPath()
+  if (existsSync(settings)) paths.push(settings)
+  return paths
+}
+
+/** Resolve the intersection of the managed allowlist and enabled project bundles only. */
+export async function botManagedPluginPaths(overlay: { mode: 'read' | 'write'; browser?: boolean }): Promise<string[]> {
+  await mutation
+  const registry = await readRegistry()
+  const allowed = [
+    { path: webAccessPath(), scopes: registry.webAccessScopes },
+    { path: subagentPath(), scopes: registry.subagentScopes },
+    ...(overlay.mode === 'write' ? [
+      { path: processPath(), scopes: registry.processScopes },
+      ...(overlay.browser ? [{ path: browserPath(), scopes: registry.browserScopes }] : [])
+    ] : [])
+  ]
+  return allowed.filter(({ path, scopes }) => scopes.includes('project') && existsSync(path)).map(({ path }) => path)
+}
+
 let mutation: Promise<void> = Promise.resolve()
 function serialize<T>(action: () => Promise<T>): Promise<T> {
   const result = mutation.then(action)
@@ -238,7 +263,7 @@ function settingsSchema(source: string): PluginSettingsSchema | undefined {
 }
 
 /** The plugin behind each extension file a scope's sessions load, keyed by resolved path, named as in plugin settings. */
-export async function toolProvidersByPath(scope: PluginScope): Promise<Map<string, SessionToolProvider>> {
+export async function toolProvidersByPath(scope: PluginScope, bundledOnly = false): Promise<Map<string, SessionToolProvider>> {
   await mutation
   const registry = await readRegistry()
   const providers = new Map<string, SessionToolProvider>([
@@ -251,6 +276,7 @@ export async function toolProvidersByPath(scope: PluginScope): Promise<Map<strin
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
     [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }]
   ])
+  if (bundledOnly) return providers
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
   for (const item of registry.installed.filter((plugin) => plugin.scopes.includes(scope))) {
     for (const path of await resourcesFor(item.source)) providers.set(resolve(path), { kind: 'plugin', id: item.id, name: displayName(item.source) })

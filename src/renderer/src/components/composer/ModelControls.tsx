@@ -78,14 +78,20 @@ export function ModelPicker({
   models,
   refreshing,
   actions,
+  onSelectModel,
+  pending,
+  error,
   disabled
 }: {
-  sessionId: string | null
+  sessionId?: string | null
   model: SessionModelInfo | null
   models: SessionModelInfo[]
   /** A catalog refresh is running, wherever it was started from. */
   refreshing: boolean
-  actions: ModelControlActions
+  actions?: ModelControlActions
+  onSelectModel?: (item: SessionModelInfo) => Promise<boolean>
+  pending?: boolean
+  error?: string | null
   disabled?: boolean
 }) {
   const t = useT()
@@ -94,6 +100,8 @@ export function ModelPicker({
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const scope = useScopedModels(open)
   const scopeId = useId()
+  const isPending = pending ?? actions?.pending ?? false
+  const actionError = error ?? actions?.error ?? null
   const visibleModels = scope.mode === 'scoped' && scope.patterns.length ? scope.models : models
 
   const filtered = useMemo(() => {
@@ -107,11 +115,15 @@ export function ModelPicker({
   // The switch applies to the next request, not to the turn already streaming: say so, since the
   // toolbar alone gives no sign that the running turn keeps its previous model.
   const select = async (item: SessionModelInfo) => {
+    if (isPending) return
     if (model?.provider === item.provider && model.id === item.id) {
       setOpen(false)
       return
     }
-    if (sessionId && await actions.run(() => api.setModel(sessionId, item.provider, item.id))) {
+    const switched = onSelectModel
+      ? await onSelectModel(item)
+      : (sessionId && actions ? await actions.run(() => api.setModel(sessionId, item.provider, item.id)) : false)
+    if (switched) {
       setOpen(false)
       toast.success(t('model.switched', { name: item.name }), { description: t('model.appliesNextRequest') })
     }
@@ -182,9 +194,9 @@ export function ModelPicker({
           </Button>
         </div>
         {scope.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{scope.error}</p> : null}
-        {refreshError ?? actions.error ? (
+        {refreshError ?? actionError ? (
           <p role="alert" className="px-3 py-1.5 text-xs text-destructive">
-            {refreshError ?? actions.error}
+            {refreshError ?? actionError}
           </p>
         ) : null}
         <div className="max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -208,7 +220,7 @@ export function ModelPicker({
                   ref={navigation.index === index ? navigation.activeRef : undefined}
                   onPointerMove={() => navigation.hover(index)}
                   aria-current={selected || undefined}
-                  disabled={actions.pending}
+                  disabled={isPending}
                   className="relative h-auto w-full items-baseline justify-start gap-3 whitespace-normal rounded-lg px-3 py-2 transition-none hover:bg-transparent!"
                   onClick={() => void select(item)}
                 >
@@ -237,31 +249,43 @@ export function ThinkingPicker({
   thinkingLevel,
   thinkingLevels,
   actions,
+  onSelectThinking,
+  pending,
+  error,
   disabled
 }: {
-  sessionId: string | null
+  sessionId?: string | null
   thinkingLevel: ThinkingLevel
   thinkingLevels: ThinkingLevel[]
-  actions: ModelControlActions
+  actions?: ModelControlActions
+  onSelectThinking?: (level: ThinkingLevel) => Promise<boolean>
+  pending?: boolean
+  error?: string | null
   disabled?: boolean
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
+  const isPending = pending ?? actions?.pending ?? false
+  const actionError = error ?? actions?.error ?? null
+  const canRemember = Boolean(sessionId && actions)
   const remembered = useSessionsStore((state) =>
     sessionId ? state.runtime[sessionId]?.modelThinkingLevel != null : false)
-  const preferenceDisabled = disabled || actions.pending || !sessionId
+  const preferenceDisabled = disabled || isPending || !canRemember
 
   const remember = async (checked: boolean) => {
-    if (sessionId) await actions.run(() => api.setModelThinkingPreference(sessionId, checked))
+    if (sessionId && actions) await actions.run(() => api.setModelThinkingPreference(sessionId, checked))
   }
 
   const select = async (level: ThinkingLevel) => {
-    if (actions.pending) return
+    if (isPending) return
     if (level === thinkingLevel) {
       setOpen(false)
       return
     }
-    if (sessionId && await actions.run(() => api.setThinking(sessionId, level))) {
+    const switched = onSelectThinking
+      ? await onSelectThinking(level)
+      : (sessionId && actions ? await actions.run(() => api.setThinking(sessionId, level)) : false)
+    if (switched) {
       setOpen(false)
       toast.success(t('model.thinkingSwitched', { level: t(thinkingLevelKeys[level]) }), {
         description: t('model.appliesNextRequest')
@@ -301,26 +325,28 @@ export function ThinkingPicker({
       >
         <div className="flex items-center justify-between gap-2 py-1 pr-1 pl-3">
           <p className="text-xs text-muted-foreground">{t('model.thinking')}</p>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t('model.rememberThinking')}
-                aria-pressed={remembered}
-                disabled={disabled || !sessionId}
-                aria-disabled={preferenceDisabled}
-                className={cn('rounded-full', remembered && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary solid:bg-primary/10 solid:text-primary solid:hover:bg-primary/15 solid:hover:text-primary')}
-                onKeyDown={(event) => event.stopPropagation()}
-                onClick={() => void remember(!remembered)}
-              >
-                <Pin />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t(remembered ? 'model.forgetThinkingTooltip' : 'model.rememberThinkingTooltip')}</TooltipContent>
-          </Tooltip>
+          {canRemember ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t('model.rememberThinking')}
+                  aria-pressed={remembered}
+                  disabled={disabled || !sessionId}
+                  aria-disabled={preferenceDisabled}
+                  className={cn('rounded-full', remembered && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary solid:bg-primary/10 solid:text-primary solid:hover:bg-primary/15 solid:hover:text-primary')}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  onClick={() => void remember(!remembered)}
+                >
+                  <Pin />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t(remembered ? 'model.forgetThinkingTooltip' : 'model.rememberThinkingTooltip')}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
-        {actions.error ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actions.error}</p> : null}
+        {actionError ? <p role="alert" className="px-3 py-1.5 text-xs text-destructive">{actionError}</p> : null}
         <SmoothHoverHighlight
           activeKey={navigation.index}
           className="flex flex-col gap-0.5"
@@ -334,7 +360,7 @@ export function ThinkingPicker({
                 type="button"
                 variant="ghost"
                 disabled={disabled}
-                aria-disabled={actions.pending}
+                aria-disabled={isPending}
                 data-hover-highlight-row
                 data-hover-highlight-active={navigation.index === index ? '' : undefined}
                 className="relative h-8 w-full justify-start gap-3 rounded-lg px-3 font-normal transition-none hover:bg-transparent!"

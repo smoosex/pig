@@ -5,9 +5,9 @@ import { canonicalProject } from './worktrees'
 import { isChatCwd, isChatsRoot } from './chats'
 import { loadWorktreeProject } from './project-worktrees'
 
-export async function openProjectDirectory(path: string) {
+export async function openProjectDirectory(path: string, check?: () => void) {
   const picked = await resolveProjectDirectory(path)
   if (isChatCwd(picked) || isChatsRoot(picked)) throw new Error('Chat directories cannot be opened as projects')
-  const cwd = await addOpenedProject(await canonicalProject(picked))
+  const cwd = await addOpenedProject(await canonicalProject(picked), check)
   return loadWorktreeProject(cwd)
 }

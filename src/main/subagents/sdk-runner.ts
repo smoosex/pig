@@ -7,11 +7,12 @@
  */
 import { SessionManager, type AgentSession, type ExtensionUIContext } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
-import { enabledPluginPaths, subagentPluginPaths } from '../pi/plugins'
+import { botManagedPluginPaths, enabledPluginPaths, subagentPluginPaths } from '../pi/plugins'
 import { synchronizeModelCatalog } from '../pi/model-catalog'
 import { startModelRuntime } from '../pi/model-settings'
 import { createSessionRuntime } from '../pi/session-runtime'
-import { applySessionTools, readSessionCapabilities } from '../pi/session-capabilities'
+import { applySessionTools } from '../pi/session-capabilities'
+import { managedOverlays, runtimeSessionCapabilities } from '../pi/managed-overlay'
 import { SUBAGENT_SYSTEM_PROMPT } from '../plugins/pig-subagent/prompts'
 import { worktrees } from '../project-worktrees'
 import { sessionPermission } from '../permissions/store'
@@ -56,10 +57,13 @@ export function createSdkRunner(approvalUI?: (spec: RunSpec) => Pick<ExtensionUI
       const sessionManager = spec.resumeFile
         ? openResumeSession(spec.resumeFile, spec.sessionDir)
         : SessionManager.create(spec.cwd, spec.sessionDir)
-      const pluginPaths = subagentPluginPaths(await enabledPluginPaths(isChatCwd(spec.cwd) ? 'chat' : 'project'))
+      const overlay = managedOverlays.get(spec.parentSessionId)
+      const pluginPaths = subagentPluginPaths(await (overlay
+        ? botManagedPluginPaths(overlay)
+        : enabledPluginPaths(isChatCwd(spec.cwd) ? 'chat' : 'project')))
       spec.signal?.throwIfAborted()
       // Snapshot at launch: later parent edits must not mutate a running child's capabilities.
-      const parentPreferences = readSessionCapabilities(spec.parentSessionId)
+      const parentPreferences = runtimeSessionCapabilities(spec.parentSessionId)
       const toolPreferences = { tools: { ...parentPreferences.tools, spawn: false }, mcp: { ...parentPreferences.mcp } }
       const permissions = { sessionId: spec.parentSessionId, mode: sessionPermission(spec.parentSessionId).mode, approvalUI: approvalUI?.(spec), signal: spec.signal }
       const session = await createSessionRuntime(spec.cwd, sessionManager, pluginPaths, [SUBAGENT_SYSTEM_PROMPT], { toolPreferences, identity: false, permissions })

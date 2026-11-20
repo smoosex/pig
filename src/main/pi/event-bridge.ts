@@ -2,14 +2,19 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { BrowserWindow } from 'electron'
 import type { AssistantMessage, ImageContent } from '@earendil-works/pi-ai'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
-import type { GenerationStats } from '../../shared/api'
+import type { GenerationStats, SessionLiveState } from '../../shared/api'
 import { GenerationSampler } from './generation-stats'
+import { LiveRunTracker } from './live-run-state'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
 import { notificationTitle } from './session-preview'
 
+let eventCursor = 0
+export const currentSessionEventCursor = () => eventCursor
+
 const bridged = new WeakSet<AgentSession>()
 const activeRuns = new WeakSet<AgentSession>()
+const activeRunTrackers = new WeakMap<AgentSession, LiveRunTracker>()
 const activeInputs = new WeakMap<AgentSession, number>()
 // Pi remains idle during async input hooks/auth checks; a host input lease covers that preflight.
 export function beginSessionInput(session: AgentSession): () => void {
@@ -22,6 +27,12 @@ export function beginSessionInput(session: AgentSession): () => void {
 }
 export function isSessionRunActive(session: AgentSession): boolean {
   return activeRuns.has(session) || (activeInputs.get(session) ?? 0) > 0
+}
+export function getSessionLiveRun(session: AgentSession): { baseLeafId: string | null; live: SessionLiveState } | null {
+  return activeRunTrackers.get(session)?.snapshot() ?? null
+}
+export function noteSessionBranchChanged(session: AgentSession): void {
+  activeRunTrackers.get(session)?.noteBranchChanged(session.sessionManager?.getLeafId?.() ?? null)
 }
 
 async function notifyOnCompletion(
@@ -308,8 +319,9 @@ export function bridgeEvents(
   const forward = (event: AgentSessionEvent, metadataChanged = false) => {
     if (!subscribed) return
     if (event.type === 'queue_update') applyQueueUpdate(session, event, metadataChanged)
-    if (event.type === 'agent_start') {
+    if (event.type === 'agent_start' && !runActive) {
       activeRuns.add(session)
+      activeRunTrackers.set(session, new LiveRunTracker(session.sessionManager?.getLeafId?.() ?? null, Date.now()))
       runActive = true
       lastAnswerSucceeded = false
       lastReply = ''
@@ -363,7 +375,6 @@ export function bridgeEvents(
         }
       }
     }
-    if (win.isDestroyed() || win.webContents.isDestroyed()) return
     let enriched: object = event
     if (event.type === 'message_end' && message?.role === 'assistant' && generation) {
       enriched = { ...event, message: { ...message, generation } }
@@ -381,10 +392,17 @@ export function bridgeEvents(
         }
       }
     }
-    win.webContents.send('pi:event', { sessionId, event: enriched })
+    if (event.type !== 'agent_settled') {
+      activeRunTrackers.get(session)?.record(enriched, Date.now(), now())
+    }
+    const windowReady = !win.isDestroyed() && !win.webContents.isDestroyed()
+    if (windowReady) {
+      win.webContents.send('pi:event', { sessionId, event: enriched, cursor: ++eventCursor })
+    }
     if (event.type === 'agent_settled') {
       activeRuns.delete(session)
-      if (runActive && lastAnswerSucceeded && !event.aborted) {
+      activeRunTrackers.delete(session)
+      if (windowReady && runActive && lastAnswerSucceeded && !event.aborted) {
         void notify(sessionId, win, lifetime.signal, { title: notificationTitle(session), reply: lastReply }).catch((error: unknown) => {
           console.error('Could not send completion notification:', error)
         })
@@ -407,6 +425,8 @@ export function bridgeEvents(
     lifetime.abort()
     unsubscribe()
     if (session.agent.streamFunction === timedStreamFunction) session.agent.streamFunction = streamFunction
+    activeRuns.delete(session)
+    activeRunTrackers.delete(session)
     bridged.delete(session)
   }
 }

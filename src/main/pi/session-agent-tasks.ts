@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentSession, SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { SubagentInfo, TurnUsage } from '../../shared/api'
-import type { SessionAgentTask } from '../../shared/session-agent'
+import type { SessionAgentTask, SessionStopOrigin } from '../../shared/session-agent'
 import { addUsage } from '../../shared/turn-usage'
 
 export interface SessionTaskDeps {
@@ -23,6 +23,7 @@ interface Record {
   promptDone: boolean
   settled: boolean
   aborted: boolean
+  stopOrigin?: SessionStopOrigin
   submissionAbort: AbortController
   submission?: Promise<void>
   unsubscribe: () => void
@@ -49,8 +50,20 @@ function usageIn(entries: readonly SessionEntry[]) {
 
 export class SessionTaskTracker {
   private records = new Map<string, Record>()
+  private finishListeners = new Set<(task: SessionAgentTask) => void>()
   private now: () => number
   constructor(private deps: SessionTaskDeps) { this.now = deps.now ?? (() => performance.now()) }
+
+  subscribeFinished(listener: (task: SessionAgentTask) => void): () => void {
+    this.finishListeners.add(listener)
+    return () => { this.finishListeners.delete(listener) }
+  }
+
+  activeTasks(sessionId?: string): SessionAgentTask[] {
+    return [...this.records.values()]
+      .filter(record => record.value.status === 'running' && (!sessionId || record.value.sessionId === sessionId))
+      .map(record => structuredClone(record.value))
+  }
 
   active(sessionId: string): boolean {
     return [...this.records.values()].some(record => record.value.sessionId === sessionId && record.value.status === 'running')
@@ -139,6 +152,7 @@ export class SessionTaskTracker {
   private tick(record: Record): void {
     if (this.deps.current(record.value.sessionId) !== record.agent) {
       record.value.error = 'Target session was closed or replaced'
+      record.stopOrigin ??= 'session_closed'
       this.finish(record, 'aborted')
       return
     }
@@ -161,6 +175,7 @@ export class SessionTaskTracker {
     if (record.value.status !== 'running') return
     clearTimeout(record.timer)
     record.value.status = status
+    if (status === 'aborted' && record.stopOrigin) record.value.stopOrigin = record.stopOrigin
     record.value.endedAt = Date.now()
     record.value.durationMs = Math.max(0, this.now() - record.started)
     try { record.unsubscribe() } finally {
@@ -171,6 +186,10 @@ export class SessionTaskTracker {
         record.release = () => {}
         record.childBaseline.clear()
       }
+    }
+    const snapshot = structuredClone(record.value)
+    for (const listener of [...this.finishListeners]) {
+      try { listener(snapshot) } catch (error) { console.error('SessionTaskTracker finish listener error:', error) }
     }
   }
 
@@ -188,11 +207,12 @@ export class SessionTaskTracker {
     record.submissionAbort.signal.throwIfAborted()
   }
 
-  async markStopping(sessionId: string): Promise<void> {
+  async markStopping(sessionId: string, origin?: SessionStopOrigin): Promise<void> {
     const records = [...this.records.values()].filter(record => record.value.sessionId === sessionId && record.value.status === 'running')
     // Invalidate all preflights synchronously before waiting for any active run to abort.
     for (const record of records) {
       record.aborted = true
+      if (origin && !record.stopOrigin) record.stopOrigin = origin
       record.submissionAbort.abort(new DOMException('Session task stopped', 'AbortError'))
     }
     const results = await Promise.allSettled(records.map(record => record.submission))

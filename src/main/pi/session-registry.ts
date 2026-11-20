@@ -18,6 +18,7 @@ import type {
   PromptStreamingBehavior,
   SessionControls,
   SessionBranchOptions,
+  SessionLiveState,
   SessionTokenStats,
   SessionTreeRow,
   SessionTreeView,
@@ -29,7 +30,7 @@ import { createChatDir, isChatCwd } from '../chats'
 import { worktrees } from '../project-worktrees'
 import { sessionSkillChoices } from './chat-resources'
 import {
-  applySessionTools, capability, copySessionCapabilities, defaultToolNames, readSessionCapabilities,
+  applySessionTools, capability, copySessionCapabilities, defaultToolNames,
   groupPluginTools, removeSessionCapabilities, saveSessionCapability, saveSessionCapabilityGroup, sessionTools
 } from './session-capabilities'
 import { configuredServers } from '../mcp/settings'
@@ -41,10 +42,20 @@ import { forgetSessionHosts } from '../sandbox/service'
 import { forgetSessionGrants } from '../permissions/grants'
 import { closeSessionBrowserControl } from '../plugins/pig-browser-host'
 import { closeSubagents } from '../subagents/service'
+import { sessionStopCoordinator, stopSessionExecution } from './session-stop'
+import type { SessionStopOrigin } from '../../shared/session-agent'
 import { cancelExtensionUI, createExtensionUI } from '../extension-ui'
 import { emitToolSettingsChanged } from '../mcp/events'
-import { beginSessionInput, bridgeEvents, isSessionRunActive } from './event-bridge'
-import { enabledPluginPaths, reviewPath, toolProvidersByPath } from './plugins'
+import {
+  beginSessionInput,
+  bridgeEvents,
+  currentSessionEventCursor,
+  getSessionLiveRun,
+  isSessionRunActive,
+  noteSessionBranchChanged
+} from './event-bridge'
+import { botManagedPluginPaths, enabledPluginPaths, reviewPath, toolProvidersByPath } from './plugins'
+import { managedOverlays, runtimeSessionCapabilities } from './managed-overlay'
 import { attachSystemUI, detachSystemUI, reportReviewError, resetSystemUI } from './system-plugin-ui'
 import { synchronizeModelCatalog } from './model-catalog'
 import {
@@ -67,6 +78,7 @@ import {
   displayWindow,
   fileSource,
   managerSource,
+  managerSourceBeforeLeaf,
   openTail,
   sessionIndex,
   windowUpdate,
@@ -119,6 +131,8 @@ export interface OpenSessionPreview {
   sessionId: string
   cwd: string
   display: DisplayTurnsResult
+  eventCursor?: number
+  live?: SessionLiveState
 }
 
 const live = new Map<string, LiveSession>()
@@ -147,7 +161,7 @@ async function reloadSessionResources(session: LiveSession): Promise<void> {
   try {
     await session.agentSession.reload({ beforeSessionStart: async () => assertExtensionResources(session.agentSession.resourceLoader) })
     assertExtensionResources(session.agentSession.resourceLoader)
-    await applySessionTools(session.agentSession, readSessionCapabilities(session.sessionId).tools, true)
+    await applySessionTools(session.agentSession, runtimeSessionCapabilities(session.sessionId).tools, true)
     resourceFailures.delete(session.sessionId)
   } catch (error) {
     // SDK IO failures and loader-recorded factory errors both leave a replaced, unusable runtime.
@@ -189,6 +203,11 @@ function trackPreparation(
   return promise
 }
 
+function runtimePluginPaths(sessionId: string, cwd: string): Promise<string[]> {
+  const overlay = managedOverlays.get(sessionId)
+  return overlay ? botManagedPluginPaths(overlay) : enabledPluginPaths(isChatCwd(cwd) ? 'chat' : 'project')
+}
+
 async function build(
   sessionManager: SessionManager,
   cwd: string,
@@ -197,10 +216,12 @@ async function build(
 ): Promise<LiveSession> {
   worktrees.assertAvailable(cwd)
   const chat = isChatCwd(cwd)
-  const pluginPaths = await enabledPluginPaths(chat ? 'chat' : 'project')
+  const sessionId = sessionManager.getSessionId()
+  const pluginPaths = await runtimePluginPaths(sessionId, cwd)
   let skillBase: Parameters<typeof sessionSkillChoices>[0] = { skills: [], diagnostics: [] }
   const session = await createSessionRuntime(cwd, sessionManager, pluginPaths, undefined, {
-    onSkillBase: (base) => { skillBase = base }
+    onSkillBase: (base) => { skillBase = base },
+    conversationFeatures: () => !managedOverlays.has(sessionId)
   })
   const created: LiveSession = {
     sessionId: session.sessionId,
@@ -231,8 +252,11 @@ async function build(
         fork: async () => unsupportedAction('Forking the session'),
         navigateTree: async (targetId, options) => {
           const result = await session.navigateTree(targetId, options)
-          if (!result.cancelled && !win.isDestroyed()) {
-            win.webContents.send('session:branch-changed', session.sessionId, session.sessionManager.getLeafId())
+          if (!result.cancelled) {
+            noteSessionBranchChanged(session)
+            if (!win.isDestroyed()) {
+              win.webContents.send('session:branch-changed', session.sessionId, session.sessionManager.getLeafId())
+            }
           }
           return { cancelled: result.cancelled }
         },
@@ -250,7 +274,7 @@ async function build(
     synchronizeModelCatalog()
     worktrees.assertAvailable(cwd)
     await configure?.(session)
-    await applySessionTools(session, readSessionCapabilities(session.sessionId).tools, true)
+    await applySessionTools(session, runtimeSessionCapabilities(session.sessionId).tools, true)
     worktrees.assertAvailable(cwd)
     created.unsubscribe = bridgeEvents(session, session.sessionId, win)
     return created
@@ -458,7 +482,7 @@ export async function activateSession(
 export async function activateSessionInput(sessionId: string, token?: symbol) {
   assertSessionBranchAvailable(sessionId, token)
   const activated = await activateSession(sessionId)
-  while (resourceReloads.has(sessionId)) await prepareSession(sessionId)
+  while (resourceReloads.has(sessionId) || overlayRestorations.has(sessionId)) await prepareSession(sessionId)
   if (closing.has(sessionId) || live.get(sessionId) !== activated.session) throw new Error(`Session is closing: ${sessionId}`)
   const failure = resourceFailures.get(sessionId)
   if (failure) throw failure
@@ -472,7 +496,7 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
   const existing = live.get(sessionId)
   if (existing) {
     worktrees.assertAvailable(existing.cwd)
-    return (resourceReloads.get(sessionId) ?? Promise.resolve()).then(() => {
+    return (overlayRestorations.get(sessionId) ?? resourceReloads.get(sessionId) ?? Promise.resolve()).then(() => {
       if (closing.has(sessionId) || live.get(sessionId) !== existing) throw new Error(`Session is closing: ${sessionId}`)
       const failure = resourceFailures.get(sessionId)
       if (failure) throw failure
@@ -497,7 +521,18 @@ export function prepareSession(sessionId: string): Promise<LiveSession> {
 }
 
 function previewFor(source: SessionSource, cwd: string): OpenSessionPreview {
-  return { sessionId: source.sessionId, cwd, display: displayWindow(source) }
+  return { sessionId: source.sessionId, cwd, display: displayWindow(source), eventCursor: currentSessionEventCursor() }
+}
+
+function previewForLive(ls: LiveSession): OpenSessionPreview {
+  const active = getSessionLiveRun(ls.agentSession)
+  if (!active) return previewFor(managerSource(ls.agentSession.sessionManager), ls.cwd)
+  const preRun = managerSourceBeforeLeaf(ls.agentSession.sessionManager, active.baseLeafId)
+  if (!preRun) return previewFor(managerSource(ls.agentSession.sessionManager), ls.cwd)
+  return {
+    ...previewFor(preRun, ls.cwd),
+    live: active.live
+  }
 }
 
 /**
@@ -510,7 +545,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
     if (ls.agentSession.sessionFile && resolve(ls.agentSession.sessionFile) === target) {
       if (closing.has(ls.sessionId)) throw new Error(`Session is closing: ${ls.sessionId}`)
       worktrees.assertAvailable(ls.cwd)
-      return previewFor(managerSource(ls.agentSession.sessionManager), ls.cwd)
+      return previewForLive(ls)
     }
   }
 
@@ -529,7 +564,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
     worktrees.assertAvailable(cwd)
     if (closing.has(sessionId)) throw new Error(`Session is closing: ${sessionId}`)
     const opened = live.get(sessionId) ?? pending.get(sessionId)
-    if (opened) return previewFor(await sourceFor(opened), cwd)
+    if (opened) return 'agentSession' in opened ? previewForLive(opened) : previewFor(await sourceFor(opened), cwd)
     const session: PendingSession = {
       kind: 'memory',
       sessionId,
@@ -548,6 +583,7 @@ export async function openSession(path: string, win: BrowserWindow): Promise<Ope
 
   const opened = live.get(sessionId) ?? pending.get(sessionId)
   if (opened) {
+    if ('agentSession' in opened) return previewForLive(opened)
     // A file whose index is still building answers with its tail rather than waiting for the index.
     if ('path' in opened && !opened.index) {
       scheduleIndex(opened)
@@ -694,20 +730,21 @@ export function sessionCwd(sessionId: string): string {
   return sessionState(sessionId).cwd
 }
 
-const refreshingPlugins = new Set<string>()
+const refreshingPlugins = new Map<string, Promise<void>>()
 const queuedPluginRefresh = new Map<string, boolean>()
 
 const resourceReloads = new Map<string, Promise<void>>()
+const overlayRestorations = new Map<string, Promise<void>>()
 const pendingToolRefresh = new Set<string>()
 
 export async function getSessionCapabilities(sessionId: string): Promise<SessionCapabilities> {
   const session = await prepareSession(sessionId)
-  const preferences = readSessionCapabilities(sessionId)
+  const preferences = runtimeSessionCapabilities(sessionId)
   return {
     tools: groupPluginTools(sessionTools(session.agentSession, preferences.tools, {
       defaults: await defaultToolNames(session.agentSession),
       captureDefaults: !Object.hasOwn(preferences.tools, 'tool_search'),
-      plugins: await toolProvidersByPath(isChatCwd(session.cwd) ? 'chat' : 'project')
+      plugins: await toolProvidersByPath(isChatCwd(session.cwd) ? 'chat' : 'project', managedOverlays.has(sessionId))
     })),
     mcp: (await configuredServers()).map((server) => {
       const descriptionKey = featuredRecipe(server.config)?.descriptionKey
@@ -722,6 +759,7 @@ export async function getSessionCapabilities(sessionId: string): Promise<Session
 export async function setSessionCapability(sessionId: string, group: CapabilityGroup, id: string | null, enabled: boolean | null, token?: symbol): Promise<SessionCapabilities> {
   if (token === undefined) return withSessionControl(sessionId, token => setSessionCapability(sessionId, group, id, enabled, token))
   assertSessionControlAvailable(sessionId, token)
+  if (managedOverlays.has(sessionId)) throw new Error('Take over the Bot task before changing session capabilities')
   if (!['tools', 'mcp', 'skills'].includes(group) || (id !== null && typeof id !== 'string') || (enabled !== null && typeof enabled !== 'boolean'))
     throw new Error('Invalid session capability')
   const state = await getSessionCapabilities(sessionId)
@@ -764,13 +802,36 @@ export async function refreshToolSessions(): Promise<void> {
   }))
 }
 
+/** Keep input gated until the live runtime has been rebuilt with ordinary session resources. */
+export async function restoreManagedOverlay(sessionId: string): Promise<void> {
+  const existing = overlayRestorations.get(sessionId)
+  if (existing) return existing
+  const overlay = managedOverlays.get(sessionId)
+  if (!overlay) return
+  const restoring = Promise.resolve().then(async () => {
+    const session = live.get(sessionId) ?? await preparing.get(sessionId)?.promise.catch(() => undefined)
+    // Existing refreshes may have resolved the old allowlist; let them finish before detaching it.
+    while (refreshingPlugins.has(sessionId)) await refreshingPlugins.get(sessionId)
+    managedOverlays.delete(sessionId)
+    if (session && live.get(sessionId) === session) {
+      try { await refreshLivePlugins(session, true) } catch (error) {
+        managedOverlays.set(sessionId, overlay)
+        throw error
+      }
+    }
+  }).finally(() => overlayRestorations.delete(sessionId))
+  overlayRestorations.set(sessionId, restoring)
+  await restoring
+}
+
 async function refreshLivePlugins(session: LiveSession, force = false): Promise<void> {
   const paths = session.pluginPaths
   if (refreshingPlugins.has(session.sessionId)) {
     queuedPluginRefresh.set(session.sessionId, force || queuedPluginRefresh.get(session.sessionId) === true)
     return
   }
-  refreshingPlugins.add(session.sessionId)
+  let finishRefresh!: () => void
+  refreshingPlugins.set(session.sessionId, new Promise<void>((resolve) => { finishRefresh = resolve }))
   let releaseReload: (() => void) | undefined
   try {
     let delay = 300
@@ -780,7 +841,8 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
         delay = Math.min(delay * 2, 2000)
         continue
       }
-      const next = await enabledPluginPaths(isChatCwd(session.cwd) ? 'chat' : 'project')
+      const next = await runtimePluginPaths(session.sessionId, session.cwd)
+      if (live.get(session.sessionId) !== session || closing.has(session.sessionId)) return
       if (!force && paths.length === next.length && paths.every((path, i) => path === next[i])) return
       // Filesystem awaits above may let a prompt start. Once published, the reload promise gates
       // prepareSession so a new prompt cannot enter an extension runtime being replaced.
@@ -818,6 +880,7 @@ async function refreshLivePlugins(session: LiveSession, force = false): Promise<
         resourceReloads.delete(session.sessionId)
         releaseReload()
       }
+      finishRefresh()
     }
   }
 }
@@ -1009,7 +1072,16 @@ async function disposeLiveSession(session: LiveSession): Promise<void> {
   if (shutdownErrors.length > 1) throw new AggregateError(shutdownErrors, 'Session shutdown failed')
 }
 
-export function closeSession(sessionId: string): Promise<void> {
+sessionStopCoordinator.setRuntimeDeps({
+  getAgent: (sessionId) => live.get(sessionId)?.agentSession,
+  prepareAgent: async (sessionId) => (await prepareSession(sessionId)).agentSession,
+  abortSubagents: async (sessionId) => {
+    const mod = await import('../subagents/service')
+    await mod.manager?.abortAllAndWait(sessionId)
+  }
+})
+
+export function closeSession(sessionId: string, origin: SessionStopOrigin = 'session_closed'): Promise<void> {
   const existing = closing.get(sessionId)
   if (existing) return existing.promise
   drafts.delete(sessionId)
@@ -1028,6 +1100,7 @@ export function closeSession(sessionId: string): Promise<void> {
     }
     const created = live.get(sessionId)
     if (!created) return
+    await stopSessionExecution(sessionId, origin).catch(() => {})
     live.delete(sessionId)
     await disposeLiveSession(created)
   })().finally(() => closing.delete(sessionId))
@@ -1035,21 +1108,21 @@ export function closeSession(sessionId: string): Promise<void> {
   return promise
 }
 
-export async function closeSessionsForCwd(cwd: string): Promise<void> {
+export async function closeSessionsForCwd(cwd: string, origin: SessionStopOrigin = 'session_closed'): Promise<void> {
   const target = resolve(cwd)
   const sessionIds = new Set<string>()
   for (const [id, session] of [...pending, ...live, ...preparing, ...closing]) {
     if (resolve(session.cwd) === target) sessionIds.add(id)
   }
   await Promise.all([...sessionIds].map((sessionId) =>
-    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId)
+    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId, origin)
   ))
 }
 
 export async function disposeAll(): Promise<void> {
   const sessionIds = new Set([...pending.keys(), ...live.keys(), ...preparing.keys(), ...closing.keys()])
   await Promise.all([...sessionIds].map((sessionId) =>
-    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId)
+    drafts.has(sessionId) ? discardDraftSession(sessionId) : closeSession(sessionId, 'app_shutdown')
   ))
 }
 

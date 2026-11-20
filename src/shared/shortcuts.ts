@@ -19,6 +19,7 @@ export const TAB_SELECT_ACTIONS = [
 
 export const SHORTCUT_ACTIONS = [
   'sidebar.toggleLeft', 'sidebar.toggleRight', 'settings.toggle', 'project.add',
+  'bot.toggle', 'bot.toggleTasks',
   'tab.new', 'tab.close', ...TAB_SELECT_ACTIONS,
   'composer.focus',
   'file.save',
@@ -41,6 +42,8 @@ export const SHORTCUT_DEFINITIONS: Record<ShortcutActionId, ShortcutDefinition> 
   'sidebar.toggleRight': { group: 'global', default: 'Mod+Shift+KeyE' },
   'settings.toggle': { group: 'global', default: 'Mod+Comma' },
   'project.add': { group: 'global', default: 'Mod+Shift+KeyA' },
+  'bot.toggle': { group: 'global', default: 'Mod+Shift+KeyB' },
+  'bot.toggleTasks': { group: 'global', default: 'Mod+Shift+KeyT' },
   'tab.new': { group: 'tabs', default: 'Mod+KeyT' },
   'tab.close': { group: 'tabs', default: 'Mod+KeyW' },
   'tab.select1': { group: 'tabs', default: 'Mod+Digit1' },

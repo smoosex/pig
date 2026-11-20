@@ -48,7 +48,8 @@ async function runFixture(): Promise<void> {
   }))
   mock.module(modulePath('../src/main/worktrees.ts'), () => ({
     git: async () => '',
-    isGitProject: async () => true
+    isGitProject: async () => true,
+    resolveGitHead: async () => undefined
   }))
   mock.module(modulePath('../src/main/chats.ts'), () => ({
     isChatCwd: () => false,

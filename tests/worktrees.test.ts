@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { GitExecError, isNotARepoError } from '../src/main/git/exec'
 import { canonicalProject, git, isGitProject, parseWorktrees, validateBranchName, WorktreeService } from '../src/main/worktrees'
+import { collectWorkspaceReceipt, prepareGitWriteWorkspace } from '../src/main/bot/worktree-policy'
 import { applyLocaleSetting } from '../src/main/i18n'
 import type { WorktreeDeletionJob } from '../src/shared/api'
 
@@ -284,6 +285,105 @@ describe('first prompt naming', () => {
   test('validates conventional prefixes and short kebab-case slug', () => {
     for (const name of ['feat/new-ui', 'fix/login-regression', 'docs/readme', 'ci/test-build', 'build/deps']) expect(validateBranchName(name)).toBe(name)
     for (const name of ['main', '-D', 'fix/MixedCase', 'feat/a/b', 'feat/a--b', 'feat/' + 'a'.repeat(80)]) expect(() => validateBranchName(name)).toThrow()
+  })
+})
+
+describe('Bot workspace safety', () => {
+  const owner = { kind: 'bot', taskId: '112233-task' } as const
+
+  test('allocation skips both orphan disk entries and missing ledger reservations', async () => {
+    const { project, service } = await fixture()
+    const first = await service.create(project, { owner })
+    await rm(first.cwd, { recursive: true })
+    await git(project, ['worktree', 'prune', '--expire=now'])
+    const orphan = `${first.cwd}-2`
+    await symlink(`${first.cwd}-missing-target`, orphan)
+    const allocated = await service.create(project, { owner })
+    expect(allocated.cwd).toBe(`${first.cwd}-3`)
+    expect((await service.discover(project)).filter((item) => item.owner).map((item) => item.cwd)).toEqual([allocated.cwd])
+    const ledger = JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8'))
+    expect(ledger.worktrees.map((item: { cwd: string }) => item.cwd)).toEqual([first.cwd, allocated.cwd])
+  })
+
+  test('failed allocation rolls back only its reservation and leaves the conflicting ref lock intact', async () => {
+    const { project, service } = await fixture()
+    const lockDir = join(project, '.git', 'refs', 'heads', 'bot')
+    await mkdir(lockDir)
+    const lockPath = join(lockDir, 'task-112233.lock')
+    await writeFile(lockPath, 'another Git writer')
+    await expect(service.create(project, { owner })).rejects.toThrow()
+    expect(await readFile(lockPath, 'utf8')).toBe('another Git writer')
+    expect(JSON.parse(await readFile(join(service.root, '.state.json'), 'utf8')).worktrees).toEqual([])
+    expect(await stat(join(service.root, 'project-with-spaces', 'bot-112233')).catch(() => null)).toBeNull()
+  })
+
+  test('Git write retry from the project creates a checkout; only the owning task can reuse it', async () => {
+    const { project, service } = await fixture()
+    const task = { projectCwd: project, taskId: owner.taskId, workspace: { kind: 'project' as const, cwd: project } }
+    const workspace = await prepareGitWriteWorkspace(service, task, 'retry', true)
+    expect(workspace).toMatchObject({ kind: 'worktree', branch: 'bot/retry-112233' })
+    expect(workspace.cwd).not.toBe(project)
+    expect(await prepareGitWriteWorkspace(service, { ...task, workspace }, 'retry', true)).toEqual(workspace)
+    await expect(prepareGitWriteWorkspace(service, { ...task, workspace, taskId: 'other' }, 'retry', true)).rejects.toThrow('unverified')
+    await git(workspace.cwd, ['switch', '-c', 'other-branch'])
+    await expect(prepareGitWriteWorkspace(service, { ...task, workspace }, 'retry', true)).rejects.toThrow('unverified')
+    await git(workspace.cwd, ['switch', 'bot/retry-112233'])
+    await rm(workspace.cwd, { recursive: true })
+    await expect(prepareGitWriteWorkspace(service, { ...task, workspace }, 'retry', true)).rejects.toThrow('unverified')
+  })
+
+  test('dirty cleanup requires current confirmation, including changes while closing sessions', async () => {
+    const { project, service } = await fixture()
+    const tree = await service.create(project, { owner })
+    const filename = join(tree.cwd, 'tracked.txt')
+    await writeFile(filename, 'dirty before confirmation')
+    const info = await service.deletionInfo(project, tree.cwd)
+    await expect(service.remove(project, tree.cwd, noop, noop)).rejects.toMatchObject({ code: 'ERR_WORKTREE_DELETION_UNCONFIRMED_CHANGES' })
+    await expect(service.remove(project, tree.cwd, async () => {
+      await writeFile(filename, 'same status, different contents')
+    }, noop, { bot: { taskId: owner.taskId, confirmation: info.snapshot } })).rejects.toThrow()
+    expect(await readFile(filename, 'utf8')).toBe('same status, different contents')
+    const fresh = await service.deletionInfo(project, tree.cwd)
+    await service.remove(project, tree.cwd, noop, noop, { bot: { taskId: owner.taskId, confirmation: fresh.snapshot } })
+    expect((await service.discover(project)).map((w) => w.cwd)).toEqual([project])
+  })
+
+  test('durable clean removal refuses when the primary moves and a commit is no longer merged', async () => {
+    const { project, service } = await fixture(true, [])
+    const blocker = await service.create(project)
+    const target = await service.create(project, { owner })
+    const index = (await git(project, ['write-tree'])).trim()
+    const unrelated = (await git(project, ['-c', 'user.name=Pig Test', '-c', 'user.email=test@localhost', 'commit-tree', index, '-m', 'unrelated'])).trim()
+    const started = deferred<void>()
+    const release = deferred<void>()
+    await service.startDeletionWorker(async (cwd) => {
+      if (cwd === blocker.cwd) { started.resolve(); await release.promise }
+    })
+    try {
+      await service.remove(project, blocker.cwd, noop, noop, { background: true })
+      await started.promise
+      await service.remove(project, target.cwd, noop, noop, { background: true, bot: { taskId: owner.taskId } })
+      await git(project, ['update-ref', 'HEAD', unrelated])
+    } finally {
+      release.resolve()
+    }
+    await waitForDeletions(service, (jobs) => jobs.some((job) => job.cwd === target.cwd && job.status === 'failed'))
+    expect((await git(project, ['rev-parse', target.branch])).trim()).toBe(target.head!)
+    expect(await readFile(join(target.cwd, 'tracked.txt'), 'utf8')).toBe('initial\n')
+  })
+
+  test('receipt distinguishes unborn HEAD from a failed HEAD probe and preserves task errors', async () => {
+    const { project } = await fixture(false)
+    await writeFile(join(project, 'new.txt'), 'first\n')
+    await git(project, ['add', 'new.txt'])
+    const unborn = await collectWorkspaceReceipt(project, 'new repository')
+    expect(unborn).toMatchObject({ changedFiles: [{ path: 'new.txt', status: 'added', added: 1 }], totalAdded: 1 })
+    expect(unborn.errorCode).toBeUndefined()
+    await writeFile(join(project, '.git', 'refs', 'heads', 'main'), `${'1'.repeat(40)}\n`)
+    const broken = await collectWorkspaceReceipt(project, 'failed run', { errorCode: 'TASK_FAILED', errorMessage: 'original failure' })
+    expect(broken).toMatchObject({ errorCode: 'TASK_FAILED', errorMessage: expect.stringContaining('original failure Could not collect Git') })
+    const missing = await collectWorkspaceReceipt(join(project, 'missing'), 'missing workspace')
+    expect(missing).toMatchObject({ errorCode: 'ERR_GIT_RECEIPT_COLLECTION' })
   })
 })
 

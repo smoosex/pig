@@ -20,6 +20,7 @@ import { registerProcessIpc } from './processes'
 import { registerPermissionsIpc } from './permissions'
 import { registerSessionReader } from '../pi/session-read'
 import { registerSessionAgentIpc } from './session-agent'
+import { registerBotIpc } from './bot'
 
 export function registerIpc(): void {
   registerProjectIpc()
@@ -27,6 +28,7 @@ export function registerIpc(): void {
   registerBookmarksIpc()
   registerSessionReader()
   registerSessionAgentIpc()
+  registerBotIpc()
   registerSystemIpc()
   registerDiffIpc()
   registerFilesIpc()

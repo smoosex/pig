@@ -1,11 +1,11 @@
 /** Own Git topology, branch naming and deletion tombstones; cleanup retries live in the same atomic state file. */
 import { createHash, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
-import { mkdir, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, rmdir, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { execGit, GitExecError, isNotARepoError, type GitExecOptions } from './git/exec'
 import { t } from './i18n'
-import type { WorktreeDeletionJob } from '../shared/api'
+import type { WorktreeDeletionJob, WorktreeOwner } from '../shared/api'
 import { writeFileAtomic } from './atomic-write'
 
 function resolve(path: string): string {
@@ -29,17 +29,33 @@ export interface GitWorktree {
   locked: boolean
   missing: boolean
   managed: boolean
+  owner?: WorktreeOwner
   naming?: 'pending' | 'naming' | 'failed'
   namingError?: string
 }
 
+export interface CreateWorktreeOptions {
+  owner?: WorktreeOwner
+  slug?: string
+}
+
+export interface WorktreeDeletionInfo {
+  worktree: GitWorktree
+  dirty: boolean
+  unmerged: boolean
+  snapshot: string
+}
+
 interface WorktreeRecord {
+  allocationId?: string
+  directoryIdentity?: string
   projectCwd: string
   cwd: string
   initialBranch: string
   branch: string
   head?: string
   detached?: boolean
+  owner?: WorktreeOwner
   naming?: 'pending' | 'naming' | 'failed'
   namingError?: string
   /** The task the attempt was given, kept so a retry is given the same one. */
@@ -48,6 +64,7 @@ interface WorktreeRecord {
   backgroundDeletion?: {
     /** Only explicit true authorizes discarding files; legacy jobs may omit this field. */
     force?: boolean
+    guard?: { snapshot: string; confirmed: boolean }
     attempts: number
     error?: string
     retryAt?: number
@@ -56,6 +73,37 @@ interface WorktreeRecord {
 
 export function git(cwd: string, args: string[], options?: GitExecOptions): Promise<string> {
   return execGit(cwd, args, options)
+}
+
+function gitExit(error: unknown, code: number): boolean {
+  return error instanceof GitExecError && error.code === code
+}
+
+/** Only a symbolic HEAD with a missing target is unborn. Broken refs and Git failures propagate. */
+export async function resolveGitHead(cwd: string): Promise<string | undefined> {
+  try {
+    return (await git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+  } catch (error) {
+    if (!gitExit(error, 128)) throw error
+    const ref = (await git(cwd, ['symbolic-ref', '--quiet', 'HEAD'])).trim()
+    try {
+      await git(cwd, ['show-ref', '--exists', ref])
+    } catch (refError) {
+      if (gitExit(refError, 2)) return undefined
+      throw refError
+    }
+    throw error
+  }
+}
+
+async function directoryIdentity(cwd: string): Promise<string | undefined> {
+  try {
+    const info = await lstat(cwd, { bigint: true })
+    return info.isDirectory() ? `${info.dev}:${info.ino}` : undefined
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
 }
 
 export function parseWorktrees(output: string): GitWorktree[] {
@@ -121,6 +169,43 @@ export function validateBranchName(value: string): string {
   return name
 }
 
+const BOT_SLUG_MAX_LEN = 32
+const BOT_BRANCH_MAX_LEN = 80
+
+export function formatBotWorktreeSlug(raw?: string): string {
+  const normalized = (raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, BOT_SLUG_MAX_LEN)
+    .replace(/-+$/g, '')
+  return normalized || 'task'
+}
+
+export function formatBotShortId(taskId: string): string {
+  const hex = taskId.toLowerCase().replace(/[^0-9a-f]/g, '')
+  if (hex.length >= 6) return hex.slice(0, 6)
+  return createHash('sha256').update(taskId).digest('hex').slice(0, 6)
+}
+
+export function buildBotWorktreeBranch(slug: string | undefined, taskId: string, collisionSuffix?: number): string {
+  const shortId = formatBotShortId(taskId)
+  const suffix = collisionSuffix && collisionSuffix > 1 ? `-${collisionSuffix}` : ''
+  const tail = `-${shortId}${suffix}`
+  const maxSlugLen = Math.min(BOT_SLUG_MAX_LEN, BOT_BRANCH_MAX_LEN - 'bot/'.length - tail.length)
+  const cleanSlug = formatBotWorktreeSlug(slug).slice(0, Math.max(1, maxSlugLen)).replace(/-+$/g, '') || 'task'
+  const branch = `bot/${cleanSlug}${tail}`
+  return validateBotBranchName(branch)
+}
+
+export function validateBotBranchName(value: string): string {
+  const name = value.trim()
+  if (name.length > BOT_BRANCH_MAX_LEN || !/^bot\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+    throw new Error(t('naming.invalidBranch'))
+  }
+  return name
+}
+
 export class WorktreeService {
   private locks = new Map<string, Promise<unknown>>()
   private stateLock: Promise<unknown> = Promise.resolve()
@@ -167,9 +252,9 @@ export class WorktreeService {
     return preferred
   }
 
-  private update(fn: (records: WorktreeRecord[]) => WorktreeRecord[]): Promise<void> {
+  private update(fn: (records: WorktreeRecord[]) => WorktreeRecord[] | Promise<WorktreeRecord[]>): Promise<void> {
     const task = this.stateLock.then(async () => {
-      const records = fn(await this.records())
+      const records = await fn(await this.records())
       await mkdir(this.root, { recursive: true })
       await writeFileAtomic(join(this.root, '.state.json'), `${JSON.stringify({ version: 1, worktrees: records }, null, 2)}\n`)
     })
@@ -222,6 +307,7 @@ export class WorktreeService {
       }
       if (!item) continue
       item.managed = true
+      if (record.owner) item.owner = record.owner
       if (record.deleting) {
         item.namingError = t('error.deleteIncomplete')
       } else if (item.branch === record.initialBranch) {
@@ -233,50 +319,184 @@ export class WorktreeService {
     return items.filter((item) => !deleting.has(item.cwd))
   }
 
-  async create(projectCwd: string): Promise<GitWorktree> {
+  async create(projectCwd: string, options?: CreateWorktreeOptions): Promise<GitWorktree> {
     return this.exclusive(projectCwd, async () => {
       this.assertAvailable(projectCwd)
       const project = await canonicalProject(projectCwd)
       if (project !== resolve(projectCwd)) throw new Error(t('error.worktreeFromProject'))
       if (!(await isGitProject(project))) throw new Error(t('error.gitRequired'))
-      const id = randomUUID()
       const name = basename(project).replace(/[^\p{L}\p{N}._-]/gu, '-').replace(/^\.+/, '') || 'project'
-      const hasHead = await git(project, ['rev-parse', '--verify', 'HEAD']).then(() => true).catch(() => false)
-      let cwd = ''
-      await this.update((records) => {
-        cwd = join(this.storageParent(project, records, name), id)
-        return [...records, { projectCwd: project, cwd, initialBranch: id, branch: id, naming: 'pending' }]
-      })
+      const head = await resolveGitHead(project)
+      const owner = options?.owner
+      const allocationId = randomUUID()
+      const items = await repositoryWorktrees(project)
+      let reservation: { cwd: string; identity: string } | undefined
+      let branch = ''
+      let refCreated = false
       try {
-        await mkdir(dirname(cwd), { recursive: true })
-        const args = hasHead
-          ? ['worktree', 'add', '-b', id, cwd, 'HEAD']
-          : ['worktree', 'add', '--orphan', '-b', id, cwd]
-        await git(project, args)
+        await this.update(async (records) => {
+          const reserved = records.filter((r) => r.projectCwd === project)
+          for (let suffix = 1; ; suffix++) {
+            branch = owner ? buildBotWorktreeBranch(options?.slug, owner.taskId, suffix) : randomUUID()
+            if (items.some((w) => w.branch === branch) || reserved.some((r) => r.branch === branch || r.initialBranch === branch)) continue
+            if (await this.branchExists(project, branch)) continue
+            break
+          }
+          const parent = resolve(this.storageParent(project, records, name))
+          await mkdir(parent, { recursive: true })
+          const stem = owner ? `bot-${formatBotShortId(owner.taskId)}` : branch
+          for (let suffix = 1; ; suffix++) {
+            const cwd = join(parent, suffix === 1 ? stem : `${stem}-${suffix}`)
+            if (records.some((r) => resolve(r.cwd) === cwd) || items.some((w) => w.cwd === cwd)) continue
+            try {
+              await mkdir(cwd)
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+              throw error
+            }
+            const identity = await directoryIdentity(cwd)
+            if (!identity) throw new Error('Worktree allocation directory changed')
+            reservation = { cwd, identity }
+            return [...records, {
+              allocationId, directoryIdentity: identity, projectCwd: project, cwd,
+              initialBranch: branch, branch, owner, naming: owner ? undefined : 'pending'
+            }]
+          }
+        })
+        const { cwd, identity } = reservation!
+        if (await directoryIdentity(cwd) !== identity) throw new Error('Worktree allocation directory changed')
+        if (head) {
+          // Claim the ref with compare-and-swap so a failed add cannot delete a pre-existing branch.
+          await git(project, ['update-ref', `refs/heads/${branch}`, head, '0'.repeat(head.length)])
+          refCreated = true
+          await git(project, ['worktree', 'add', cwd, branch])
+        } else {
+          await git(project, ['worktree', 'add', '--orphan', '-b', branch, cwd])
+        }
       } catch (error) {
-        await this.update((records) => records.filter((record) => record.cwd !== cwd))
-        await git(project, ['worktree', 'remove', '--force', cwd]).catch(() => {})
-        await rm(cwd, { recursive: true, force: true }).catch(() => {})
-        if (hasHead) await git(project, ['branch', '-D', id]).catch(() => {})
+        if (reservation) {
+          const { cwd, identity } = reservation
+          try {
+            const current = await repositoryWorktrees(project)
+            // Keep a partial registered checkout discoverable, including any hook-created files.
+            if (!current.some((item) => item.cwd === cwd)) {
+              if (await directoryIdentity(cwd) === identity) {
+                await rmdir(cwd).catch((error: NodeJS.ErrnoException) => {
+                  if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code ?? '')) throw error
+                })
+              }
+              if (refCreated && !current.some((item) => item.branch === branch)) {
+                await git(project, ['update-ref', '-d', `refs/heads/${branch}`, head!])
+              }
+              await this.update((records) => records.filter((record) => record.allocationId !== allocationId))
+            }
+          } catch (rollbackError) {
+            throw new AggregateError([error, rollbackError], 'Worktree creation failed and could not be fully rolled back')
+          } finally {
+            this.onChange(project)
+          }
+        }
         throw error
       }
       this.onChange(project)
-      return { cwd, branch: id, isPrimary: false, locked: false, missing: false, managed: true, naming: 'pending' }
+      return {
+        cwd: reservation!.cwd, branch, head, isPrimary: false, locked: false, missing: false,
+        managed: true, owner, ...(owner ? {} : { naming: 'pending' })
+      }
     })
   }
 
-  async deletionInfo(projectCwd: string, cwd: string): Promise<{ worktree: GitWorktree; dirty: boolean; unmerged: boolean }> {
+  private async branchExists(projectCwd: string, branch: string): Promise<boolean> {
+    try {
+      await git(projectCwd, ['show-ref', '--exists', `refs/heads/${branch}`])
+      return true
+    } catch (error) {
+      if (gitExit(error, 2)) return false
+      throw error
+    }
+  }
+
+  async verifyBotWorktree(projectCwd: string, cwd: string, taskId: string): Promise<GitWorktree> {
+    return this.exclusive(projectCwd, async () => {
+      const path = resolve(cwd)
+      this.assertAvailable(path)
+      const record = (await this.records()).find((r) => r.cwd === path && r.projectCwd === resolve(projectCwd))
+      const worktree = (await this.discover(projectCwd)).find((item) => item.cwd === path)
+      if (!record || record.deleting || record.owner?.taskId !== taskId || worktree?.owner?.kind !== 'bot'
+        || worktree.isPrimary || worktree.missing || worktree.locked || worktree.detached || record.branch !== worktree.branch
+        || (record.directoryIdentity && await directoryIdentity(path) !== record.directoryIdentity)) {
+        throw new Error('Cannot reuse a missing or unverified Bot worktree')
+      }
+      return worktree
+    })
+  }
+
+  async deletionInfo(projectCwd: string, cwd: string): Promise<WorktreeDeletionInfo> {
     const items = await this.discover(projectCwd)
     const worktree = items.find((item) => item.cwd === resolve(cwd))
     if (!worktree || worktree.isPrimary || worktree.cwd === resolve(projectCwd)) throw new Error(t('error.worktreeDeletePrimary'))
     if (worktree.locked) throw new Error(t('error.worktreeLocked'))
     if (!worktree.detached && items.some((w) => w.cwd !== worktree.cwd && !w.detached && w.branch === worktree.branch)) throw new Error(t('error.worktreeBranchInUse'))
-    const dirty = !worktree.missing && (await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0
-    const ref = `refs/heads/${worktree.branch}`
-    const hasBranch = !worktree.detached && await git(projectCwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true).catch(() => false)
-    const head = worktree.head && !/^0+$/.test(worktree.head) ? worktree.head : hasBranch ? ref : undefined
-    const unmerged = Boolean(head) && !(await git(projectCwd, ['merge-base', '--is-ancestor', head!, 'HEAD']).then(() => true).catch(() => false))
-    return { worktree, dirty, unmerged }
+    return this.inspectDeletion(projectCwd, worktree)
+  }
+
+  private async isUnmerged(projectCwd: string, head?: string): Promise<boolean> {
+    if (!head || /^0+$/.test(head)) return false
+    const base = await resolveGitHead(projectCwd)
+    if (!base) return true
+    try {
+      await git(projectCwd, ['merge-base', '--is-ancestor', head, base])
+      return false
+    } catch (error) {
+      if (gitExit(error, 1)) return true
+      throw error
+    }
+  }
+
+  private async inspectDeletion(projectCwd: string, worktree: GitWorktree, bindChanges = worktree.owner?.kind === 'bot'): Promise<WorktreeDeletionInfo> {
+    const identity = worktree.missing ? null : await directoryIdentity(worktree.cwd)
+    if (identity === undefined) throw new Error(t('error.worktreeDeletionChanged'))
+    const unmerged = await this.isUnmerged(projectCwd, worktree.head)
+    const status = worktree.missing ? '' : await git(worktree.cwd, [
+      'status', '--porcelain=v1', '-z', '--untracked-files=all', bindChanges ? '--ignored=traditional' : '--ignored=matching', '--ignore-submodules=none'
+    ], { optionalLocks: false })
+    const snapshot = createHash('sha256').update(JSON.stringify([
+      resolve(projectCwd), worktree.cwd, identity, worktree.branch, worktree.head, Boolean(worktree.detached), status, unmerged
+    ]))
+    if (bindChanges && status) {
+      // Status letters alone do not notice another edit to an already dirty file or index entry.
+      snapshot.update(await git(worktree.cwd, ['diff', '--cached', '--raw', '--no-abbrev', '-z', '--']))
+      const entries = status.split('\0')
+      for (let i = 0; i < entries.length - 1; i++) {
+        const entry = entries[i]
+        const path = entry.slice(3)
+        if (/[RC]/.test(entry.slice(0, 2))) i++ // -z supplies the source path next; the destination is first.
+        if (!path || path.startsWith('/') || path.split('/').includes('..')) throw new Error(t('error.worktreeDeletionChanged'))
+        try {
+          const info = await lstat(join(worktree.cwd, path), { bigint: true })
+          snapshot.update([info.dev, info.ino, info.mode, info.size, info.mtimeNs, info.ctimeNs].join(':') + '\0')
+          // Nested repositories/submodules can be represented by one entry. Do not force-remove
+          // that opaque directory based on its status alone.
+          if (info.isDirectory()) throw new Error('Cannot confirm deletion of an opaque dirty worktree directory')
+        } catch (error) {
+          if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+          snapshot.update('missing\0')
+        }
+      }
+    }
+    return {
+      worktree, dirty: status.length > 0, unmerged,
+      snapshot: snapshot.digest('hex')
+    }
+  }
+
+  private checkDeletion(info: WorktreeDeletionInfo, guard: { snapshot?: string; confirmed: boolean }): void {
+    if (guard.snapshot !== undefined && guard.snapshot !== info.snapshot) {
+      throw new Error(t('error.worktreeDeletionChanged'))
+    }
+    if (!guard.confirmed && (info.dirty || info.unmerged)) {
+      throw Object.assign(new Error(t('error.worktreeDeletionUnconfirmedChanges')), { code: 'ERR_WORKTREE_DELETION_UNCONFIRMED_CHANGES' })
+    }
   }
 
   async remove(
@@ -284,31 +504,43 @@ export class WorktreeService {
     cwd: string,
     close: () => Promise<void>,
     cleanSessions: () => Promise<void>,
-    options: { background?: boolean } = {}
+    options: { background?: boolean; bot?: { taskId: string; confirmation?: string }; confirmation?: string; check?: () => void } = {}
   ): Promise<void> {
     const { background = false } = options
+    const project = resolve(projectCwd)
     const path = resolve(cwd)
-    return this.exclusive(projectCwd, async () => {
+    return this.exclusive(project, async () => {
       this.assertAvailable(path)
       if (background && !this.cleanDeletedSessions) {
         throw Object.assign(new Error('Worktree deletion worker is not ready'), { code: 'ERR_WORKTREE_DELETION_WORKER_NOT_READY' })
       }
-      // The dialog already stated what gets lost; deleting is unconditional from here on.
-      await this.deletionInfo(projectCwd, path)
+      const initial = await this.deletionInfo(project, path)
+      if (options.bot && initial.worktree.owner?.taskId !== options.bot.taskId) {
+        throw new Error('Target worktree is not owned by this Bot task')
+      }
+      const confirmation = options.bot ? options.bot.confirmation : initial.worktree.owner ? options.confirmation : undefined
+      const guarded = Boolean(initial.worktree.owner || options.bot || confirmation !== undefined)
+      const guard = guarded ? { snapshot: confirmation ?? initial.snapshot, confirmed: confirmation !== undefined } : undefined
+      if (guard) this.checkDeletion(initial, guard)
+      options.check?.()
       this.blocked.add(path)
       this.namingJobs.get(path)?.controller.abort()
       let queued = false
       try {
         await close()
-        const { worktree: current } = await this.deletionInfo(projectCwd, path)
+        const final = await this.deletionInfo(project, path)
+        if (guard) this.checkDeletion(final, guard)
+        const { worktree: current } = final
+        const force = guard ? guard.confirmed && final.dirty : true
         await this.update((records) => {
+          options.check?.()
           const record = records.find((r) => r.cwd === path)
           const deletion = {
             branch: current.branch, head: current.head, detached: current.detached, deleting: true,
-            backgroundDeletion: background ? { force: true, attempts: 0 } : undefined
+            backgroundDeletion: background ? { force, guard, attempts: 0 } : undefined
           }
           if (record) return records.map((r) => r === record ? { ...r, ...deletion } : r)
-          return [...records, { projectCwd, cwd: path, initialBranch: current.branch, ...deletion }]
+          return [...records, { projectCwd: project, cwd: path, initialBranch: current.branch, ...deletion }]
         })
         if (background) {
           queued = true
@@ -319,11 +551,19 @@ export class WorktreeService {
             this.scheduleDeletion(path, 0)
           }
         } else {
-          await this.cleanWorktree(projectCwd, current, true, cleanSessions)
+          try {
+            await this.cleanWorktree(project, current, force, cleanSessions, guard)
+          } catch (error) {
+            // Keep the recovery record if Git already removed the registration.
+            if (guard && (await repositoryWorktrees(project)).some((item) => item.cwd === path)) {
+              await this.update((records) => records.map((r) => r.cwd === path ? { ...r, deleting: undefined } : r))
+            }
+            throw error
+          }
         }
       } finally {
         if (!queued) this.blocked.delete(path)
-        this.onChange(projectCwd)
+        this.onChange(project)
       }
     })
   }
@@ -333,30 +573,46 @@ export class WorktreeService {
     worktree: Pick<GitWorktree, 'cwd' | 'branch' | 'head' | 'detached'>,
     force: boolean,
     cleanSessions: () => Promise<void>,
-    authorized = false
+    guard?: { snapshot?: string; confirmed: boolean },
+    durable = false
   ): Promise<void> {
     const path = worktree.cwd
-    const registered = (await repositoryWorktrees(projectCwd)).find((w) => w.cwd === path)
+    const tracked = durable || guard !== undefined
+    const items = await repositoryWorktrees(projectCwd)
+    const registered = items.find((w) => w.cwd === path)
+    const branch = worktree.branch
+    if (!worktree.detached && items.some((w) => w.cwd !== path && !w.detached && w.branch === branch)) {
+      throw new Error(t('error.worktreeBranchInUse'))
+    }
     if (registered) {
-      if (authorized && (registered.branch !== worktree.branch || registered.head !== worktree.head || Boolean(registered.detached) !== Boolean(worktree.detached))) {
+      if (tracked && (registered.isPrimary || registered.branch !== branch || registered.head !== worktree.head || Boolean(registered.detached) !== Boolean(worktree.detached))) {
         throw new Error(t('error.worktreeDeletionChanged'))
       }
-      if (!force && !registered.missing && (await git(path, ['status', '--porcelain=v1', '--untracked-files=all', '--ignored=matching'])).length > 0) {
-        throw Object.assign(new Error(t('error.worktreeDeletionUnconfirmedChanges')), { code: 'ERR_WORKTREE_DELETION_UNCONFIRMED_CHANGES' })
-      }
+      if (guard || !force) await this.checkDeletion(await this.inspectDeletion(projectCwd, registered, Boolean(guard?.snapshot)), guard ?? { confirmed: false })
       await git(projectCwd, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    } else if (guard) {
+      // A retry after partial cleanup can delete the same branch, but not a replacement path.
+      try {
+        await lstat(path)
+        throw new Error(t('error.worktreeDeletionChanged'))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
     }
-    const branch = worktree.branch
-    if (!worktree.detached && branch) {
+    if (!worktree.detached && branch && await this.branchExists(projectCwd, branch)) {
       const ref = `refs/heads/${branch}`
-      const exists = await git(projectCwd, ['show-ref', '--verify', '--quiet', ref]).then(() => true).catch((error: unknown) => {
-        if (error instanceof GitExecError && error.code === 1) return false
-        throw error
-      })
-      if (exists) {
-        if (authorized && worktree.head && (await git(projectCwd, ['rev-parse', ref])).trim() !== worktree.head) {
-          throw new Error(t('error.worktreeDeletionChanged'))
+      const head = (await git(projectCwd, ['rev-parse', '--verify', ref])).trim()
+      if (tracked && worktree.head && head !== worktree.head) throw new Error(t('error.worktreeDeletionChanged'))
+      if (guard || !force) {
+        if (head !== worktree.head) throw new Error(t('error.worktreeDeletionChanged'))
+        if (!guard?.confirmed && await this.isUnmerged(projectCwd, head)) {
+          throw Object.assign(new Error(t('error.worktreeDeletionUnconfirmedChanges')), { code: 'ERR_WORKTREE_DELETION_UNCONFIRMED_CHANGES' })
         }
+        if ((await repositoryWorktrees(projectCwd)).some((w) => !w.detached && w.branch === branch)) {
+          throw new Error(t('error.worktreeBranchInUse'))
+        }
+        await git(projectCwd, ['update-ref', '-d', ref, head])
+      } else {
         await git(projectCwd, ['branch', '-D', branch])
       }
     }
@@ -445,7 +701,9 @@ export class WorktreeService {
       // Preparation alone holds the project lock. Cleanup uses its frozen tombstone and Git's
       // own locks, so a slow directory removal cannot block creating or queuing another worktree.
       // Recovery and retries retain the original consent; old jobs must not gain force implicitly.
-      await this.cleanWorktree(record.projectCwd, record, deletion.force === true, () => this.cleanDeletedSessions!(path), true)
+      const guard = deletion.guard ?? (record.owner?.kind === 'bot' ? { confirmed: false } : undefined)
+      const force = deletion.force === true && (!guard || (guard.confirmed && 'snapshot' in guard))
+      await this.cleanWorktree(record.projectCwd, record, force, () => this.cleanDeletedSessions!(path), guard, true)
       this.blocked.delete(path)
     } catch (error) {
       // This task boundary translates Git/cleanup failures into durable retry state and UI notices.
@@ -507,6 +765,7 @@ export class WorktreeService {
     if (running) return { attempt: running.done }
     const record = (await this.records()).find((r) => r.cwd === path && !r.deleting)
     if (!record) throw new Error(t('error.worktreeNotOpen'))
+    if (record.owner) throw new Error(t('error.worktreeNotRenamable'))
     // A `naming` record without a live job is one a crashed run left behind, and `discover()` already
     // shows it as failed, so it is retryable too. `pending` is not: that name has not been lost yet.
     if (record.naming !== 'failed' && record.naming !== 'naming') {
@@ -531,7 +790,7 @@ export class WorktreeService {
   }
 
   private async name(cwd: string, text: string, generate: (text: string, signal: AbortSignal) => Promise<string>, signal: AbortSignal): Promise<void> {
-    const record = (await this.records()).find((r) => r.cwd === cwd && r.naming === 'pending' && !r.deleting)
+    const record = (await this.records()).find((r) => r.cwd === cwd && r.naming === 'pending' && !r.deleting && !r.owner)
     if (!record || signal.aborted) return
     const task = text.slice(0, NAMING_TASK_CHARS)
     try {

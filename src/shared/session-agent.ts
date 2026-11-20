@@ -17,10 +17,21 @@ export interface SessionAgentCreate extends SessionAgentConfig {
   cwd: string
   title?: string
 }
+export type SessionStopOrigin =
+  | 'user'
+  | 'bot'
+  | 'takeover'
+  | 'agent'
+  | 'project_removed'
+  | 'worktree_deleted'
+  | 'session_closed'
+  | 'app_shutdown'
+
 export interface SessionAgentTask {
   taskId: string
   sessionId: string
   status: 'running' | 'completed' | 'failed' | 'aborted'
+  stopOrigin?: SessionStopOrigin
   blockedBy?: 'approval'
   startedAt: number
   endedAt?: number

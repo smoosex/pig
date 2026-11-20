@@ -35,6 +35,7 @@ import { isChatCwd, isChatsRoot } from '../chats'
 import { forgetOpenProjectSession, rememberOpenProjectSession } from '../open-project-sessions'
 import { promptSession } from '../pi/session-prompt'
 import { assertSessionControlAvailable } from '../pi/session-control-lock'
+import { stopSessionExecution } from '../pi/session-stop'
 import { windowForEvent } from './window'
 
 /** One window request never reads more than this, however the caller phrases it. */
@@ -133,19 +134,23 @@ export function registerSessionIpc(): void {
   ipcMain.handle(
     'session:prompt',
     async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown, fileMentions?: unknown) => {
+      const { notifyBotUserPromptInSessionIfActive } = await import('../bot/service')
+      await notifyBotUserPromptInSessionIfActive(sessionId)
       await promptSession(sessionId, { text, images, textAttachments, fileMentions, streamingBehavior })
     }
   )
 
   ipcMain.handle('session:abort', async (_event, sessionId: string) => {
-    const ls = await prepareSession(sessionId)
-    await ls.agentSession.abort()
+    if (!sessionId) throw new Error('Session id is required')
+    await stopSessionExecution(sessionId, 'user', { prepare: true })
   })
 
   ipcMain.handle('session:execute-bash', async (_event, sessionId: string, command: string, id: string) => {
     if (!sessionId || typeof command !== 'string' || !command.trim() || typeof id !== 'string' || !id) {
       throw new Error('Session id, command and execution id are required')
     }
+    const { assertBotUserInputAvailable } = await import('../bot/service')
+    await assertBotUserInputAvailable(sessionId)
     assertSessionControlAvailable(sessionId)
     if (isNavigatingSessionBranch(sessionId)) throw new Error('Session tree navigation is in progress')
     const { agentSession } = (await activateSession(sessionId)).session

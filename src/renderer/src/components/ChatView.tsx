@@ -10,6 +10,7 @@ import { useSystemUIStore } from '../stores/system-ui'
 import type { RuntimeState } from '../stores/sessions/types'
 import { ConversationViewport } from './chat/ConversationViewport'
 import { SessionGreeting } from './SessionGreeting'
+import { BotManagedBanner } from './bot/BotManagedBanner'
 import { MessageScrollerProvider } from './ui/message-scroller'
 
 const emptyTurns: RuntimeState['turns'] = []
@@ -137,6 +138,7 @@ const SessionChatPane = memo(function SessionChatPane({
 
   return (
     <div className="absolute inset-0 flex min-h-0 flex-col">
+      <BotManagedBanner sessionId={sessionId} />
       {empty && !reviewReturning ? (
         <SessionGreeting />
       ) : (

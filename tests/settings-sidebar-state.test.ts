@@ -970,6 +970,9 @@ async function runFixture(name: string): Promise<void> {
       assert.deepEqual(retried, [['/project', '/project-worktree']], 'no retry was sent for it')
       assert.equal(action.error, null, 'the retry never failed')
     } else if (name === 'reveal-active-session' || name === 'project-expansion-switch-chat') {
+      // This fixture checks retained expansion, not the switch's native animation lifecycle.
+      const { MotionGlobalConfig } = await import('motion/react')
+      MotionGlobalConfig.skipAnimations = true
       class NoopResizeObserver {
         observe() {}
         unobserve() {}

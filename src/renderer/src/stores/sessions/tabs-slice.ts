@@ -11,6 +11,7 @@ import { changesTabId } from '../../../../shared/tab-ids'
 import { t } from '../../lib/i18n'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
+import { captureSessionOpenEvents } from '../../chat/session-open-events'
 import { fallbackTitle, isPlaceholderSessionTitle, sessionTitle } from './session-title'
 import { restorePromptDraft } from './restore-prompt'
 import { applyVisibleOrder, neighbourAmong, neighbourTab, persistableIds, sameScopeTabs, isChatScope } from './tab-order'
@@ -277,7 +278,7 @@ export const createTabsSlice: SessionSlice<
   }
 
   async function hydrateReady(ref: OpenSessionRef): Promise<void> {
-    await get().hydrateTurns(ref.sessionId, { display: ref.display })
+    await get().hydrateTurns(ref.sessionId, { display: ref.display, live: ref.live })
     await get().loadControls(ref.sessionId)
   }
 
@@ -627,6 +628,7 @@ export const createTabsSlice: SessionSlice<
       }
 
       const sessionId = tab.id
+      const releaseEvents = captureSessionOpenEvents(sessionId)
       try {
         const ref = await openRef(tab.meta)
         const current = get().openTabs.find((item) => item.id === sessionId)
@@ -637,7 +639,8 @@ export const createTabsSlice: SessionSlice<
         set((state) => state.runtime[sessionId] ? state : {
           runtime: { ...state.runtime, [sessionId]: emptyRuntime() }
         })
-        await get().hydrateTurns(ref.sessionId, { display: ref.display })
+        await get().hydrateTurns(ref.sessionId, { display: ref.display, live: ref.live })
+        releaseEvents(ref.eventCursor)
         set((state) => ({
           openTabs: state.openTabs.map((item) => item.id === sessionId
             ? { ...item, loadState: 'ready', loadError: undefined }
@@ -654,6 +657,8 @@ export const createTabsSlice: SessionSlice<
             : item)
         }))
         return
+      } finally {
+        releaseEvents()
       }
       try {
         await get().loadControls(sessionId)
@@ -869,19 +874,28 @@ export const createTabsSlice: SessionSlice<
         return
       }
       const selection = ++selectionVersion
-      const ref = await openRef(meta)
-      const added = addReadyTab({
-        id: ref.sessionId,
-        cwd: ref.cwd,
-        title: sessionTitle(meta),
-        kind,
-        loadState: 'ready',
-        meta
-      }, selection)
-      if (kind === 'project' && selection === selectionVersion) {
-        persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
+      const releaseEvents = captureSessionOpenEvents(meta.id)
+      try {
+        const ref = await openRef(meta)
+        const added = addReadyTab({
+          id: ref.sessionId,
+          cwd: ref.cwd,
+          title: sessionTitle(meta),
+          kind,
+          loadState: 'ready',
+          meta
+        }, selection)
+        if (kind === 'project' && selection === selectionVersion) {
+          persistSelection(ref.cwd, ref.sessionId, ref.sessionId)
+        }
+        if (added) {
+          await get().hydrateTurns(ref.sessionId, { display: ref.display, live: ref.live })
+          releaseEvents(ref.eventCursor)
+          await get().loadControls(ref.sessionId)
+        }
+      } finally {
+        releaseEvents()
       }
-      if (added) await hydrateReady(ref)
     },
 
     acquireProjectDraft: (cwd) => {

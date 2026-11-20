@@ -24,6 +24,8 @@ const bindings = obj({
   'sidebar.toggleRight': optionalBinding,
   'settings.toggle': optionalBinding,
   'project.add': optionalBinding,
+  'bot.toggle': optionalBinding,
+  'bot.toggleTasks': optionalBinding,
   'tab.new': optionalBinding,
   'tab.close': optionalBinding,
   'tab.select1': optionalBinding,
@@ -164,7 +166,7 @@ export default function settingsExtension(pi: ExtensionAPI) {
     outputSchema: catalogOutput,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, _signal, _update, ctx) {
-      return result(await host().list(ctx.sessionManager.getSessionId(), params))
+      return result(await host().list(ctx.sessionManager.getSessionId(), params, ctx.sessionManager))
     }
   }))
   pi.registerTool(defineTool({
@@ -174,7 +176,7 @@ export default function settingsExtension(pi: ExtensionAPI) {
     outputSchema: snapshotOutput,
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, _signal, _update, ctx) {
-      return result(await host().get(ctx.sessionManager.getSessionId(), params.group))
+      return result(await host().get(ctx.sessionManager.getSessionId(), params.group, ctx.sessionManager))
     }
   }))
   pi.registerTool(defineTool({
@@ -189,7 +191,7 @@ export default function settingsExtension(pi: ExtensionAPI) {
     outputSchema: mutationOutput,
     annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
     async execute(_id, params, signal, _update, ctx) {
-      const value = await host().update(ctx.sessionManager.getSessionId(), params, signal)
+      const value = await host().update(ctx.sessionManager.getSessionId(), params, signal, ctx.sessionManager)
       return result(value, !value.ok)
     }
   }))

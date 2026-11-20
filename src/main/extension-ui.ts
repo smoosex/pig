@@ -10,10 +10,41 @@ import { approvalDelegation, onApprovalDelegationEnded } from './permissions/del
 
 type Scope = 'extension' | 'process' | 'subagent'
 type ApprovalSource = Extract<ExtensionUIEvent, { kind: 'prompt' }>['approvalSource']
+export interface PendingApprovalRecord {
+  id: string
+  owner: string
+  controller?: string
+  title: string
+  message?: string
+  options?: string[]
+  createdAt: number
+}
+
+export type ApprovalLifecycleEvent =
+  | { type: 'created'; record: PendingApprovalRecord }
+  | { type: 'resolved'; id: string; owner: string }
+
+const approvalListeners = new Set<(event: ApprovalLifecycleEvent) => void>()
+
+export function onApprovalLifecycle(listener: (event: ApprovalLifecycleEvent) => void): () => void {
+  approvalListeners.add(listener)
+  return () => { approvalListeners.delete(listener) }
+}
+
+function emitApprovalLifecycle(event: ApprovalLifecycleEvent): void {
+  for (const listener of [...approvalListeners]) {
+    try { listener(event) } catch (error) { console.error('Approval lifecycle listener error:', error) }
+  }
+}
+
 const requests = new Map<
   string,
-  { owner: string; controller?: string; approval: boolean; scope: Scope; sender: WebContents; finish(value: string | null, reason?: string): void }
+  { owner: string; controller?: string; approval: boolean; scope: Scope; sender: WebContents; meta?: PendingApprovalRecord; finish(value: string | null, reason?: string): void }
 >()
+
+export function listPendingApprovals(): PendingApprovalRecord[] {
+  return [...requests.values()].filter((r) => r.approval && r.meta).map((r) => ({ ...r.meta! }))
+}
 
 onApprovalDelegationEnded(owner => {
   for (const request of requests.values()) if (request.owner === owner && request.controller) request.finish(null)
@@ -121,13 +152,26 @@ export async function createExtensionUI(
         if (timer) clearTimeout(timer)
         opts?.signal?.removeEventListener('abort', cancel)
         send({ kind: 'dismiss', id })
-        if (fields.approval) approvalNotifications((module) => module.retireApproval(noticeOwner, id))
+        if (fields.approval) {
+          approvalNotifications((module) => module.retireApproval(noticeOwner, id))
+          emitApprovalLifecycle({ type: 'resolved', id, owner })
+        }
         if (value !== null && reason?.trim()) onDeny?.(reason.trim())
         resolve(
           value !== null && (!fields.options || fields.options.includes(value)) ? value : undefined
         )
       }
-      requests.set(id, { owner, controller: delegated?.controllerId, approval: !!fields.approval, scope, sender, finish })
+      const meta: PendingApprovalRecord | undefined = fields.approval ? {
+        id,
+        owner,
+        controller: delegated?.controllerId,
+        title: fields.title,
+        message: fields.message,
+        options: fields.options,
+        createdAt: Date.now()
+      } : undefined
+      requests.set(id, { owner, controller: delegated?.controllerId, approval: !!fields.approval, scope, sender, meta, finish })
+      if (meta) emitApprovalLifecycle({ type: 'created', record: meta })
       opts?.signal?.addEventListener('abort', cancel, { once: true })
       if (opts?.timeout !== undefined) timer = setTimeout(cancel, opts.timeout)
       send({ kind: 'prompt', id, owner, ...fields, ...(delegated ? { approvalController: delegated.controllerId } : {}) })

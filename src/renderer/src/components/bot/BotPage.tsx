@@ -1,0 +1,542 @@
+/**
+ * Sidebarless full-window Bot conversation stage:
+ * - Minimal h-10 draggable top bar (SidebarToggle-sized spacer + BotOrbButton in place, status, Tasks drawer button, emergency Reset menu)
+ * - Floating BotLiveTaskBar (renders only while active tasks exist)
+ * - Centered max-w-3xl MessageScroller projecting ONLY user messages, send_message bubbles (+ delivery cards),
+ *   mirrored approval prompts, and system fallback cards — never internal thinking or QueuedMessageRow.
+ */
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertCircle,
+  FileText,
+  Layers,
+  MoreHorizontal,
+  RotateCcw
+} from 'lucide-react'
+import { BotAvatar } from 'bot-avatars'
+import { toast } from 'sonner'
+import { baseName } from '../../../../shared/paths'
+import { isBotTaskActive, type BotTask, type BotTimelineItem } from '../../../../shared/bot'
+import { useT } from '../../hooks/useT'
+import { failureMessage } from '../../lib/ipc-error'
+import { cn } from '../../lib/utils'
+import { useBotStore } from '../../stores/bot'
+import { useSessionsStore } from '../../stores/sessions'
+import { ApprovalPrompt, useApprovalPrompt } from '../composer/ApprovalPrompt'
+import { SCROLL_END } from '../../chat/scroll-state'
+import { MarkdownText } from '../MarkdownText'
+import { ShortcutKbd } from '../ShortcutKbd'
+import { Button } from '../ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '../ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '../ui/alert-dialog'
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller
+} from '../ui/message-scroller'
+import { BotOrbButton } from './BotOrbButton'
+import { BotLiveTaskBar } from './BotLiveTaskBar'
+import { BotTaskCard, type BotTaskNavigation } from './BotTaskCard'
+import { BotTaskDrawer } from './BotTaskDrawer'
+import { BotComposer } from './BotComposer'
+
+export function BotPage({
+  onJumpToWorkspace
+}: {
+  onJumpToWorkspace: (options: { cwd: string; sessionId?: string; openChanges?: boolean }) => void
+}) {
+  const t = useT()
+  const state = useBotStore((s) => s.state)
+  const timeline = useBotStore((s) => s.timeline)
+  const tasks = useBotStore((s) => s.tasks)
+  const streaming = useBotStore((s) => s.streaming)
+  const approvals = useBotStore((s) => s.approvals)
+  const drawerOpen = useBotStore((s) => s.drawerOpen)
+  const closeBot = useBotStore((s) => s.closeBot)
+  const toggleDrawer = useBotStore((s) => s.toggleDrawer)
+  const setDraftInput = useBotStore((s) => s.setDraftInput)
+  const retryLastMessage = useBotStore((s) => s.retryLastMessage)
+  const resetContext = useBotStore((s) => s.resetContext)
+
+  const projects = useSessionsStore((s) => s.projects)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
+
+  const botSessionId = state?.sessionId ?? null
+  const directApprovalPrompt = useApprovalPrompt(botSessionId)
+  const fallbackApprovalSessionId = directApprovalPrompt ? null : (approvals[0]?.sessionId ?? null)
+  const fallbackApprovalPrompt = useApprovalPrompt(fallbackApprovalSessionId)
+  const activeApprovalPrompt = directApprovalPrompt ?? fallbackApprovalPrompt
+  const approvalSessionId = directApprovalPrompt ? botSessionId : fallbackApprovalSessionId
+
+  const activeTaskCount = useMemo(() => tasks.filter((item) => isBotTaskActive(item.status)).length, [tasks])
+  const tasksById = useMemo(() => new Map(tasks.map((item) => [item.taskId, item])), [tasks])
+
+  // Show each task's full card only under the latest timeline entry that references it, avoiding duplicate stacked cards.
+  const latestCardItemByTaskId = useMemo(() => {
+    const owners = new Map<string, string>()
+    for (const item of timeline) {
+      if (item.kind === 'user' || !item.taskIds?.length) continue
+      for (const id of item.taskIds) {
+        owners.set(id, item.id)
+      }
+    }
+    return owners
+  }, [timeline])
+
+  // Preserve calm inline feedback right at the user's gaze point after answering a mirrored background-task approval,
+  // bridging the quiet window while the background task finishes its remaining work before Bot replies.
+  const prevApprovalsRef = useRef(approvals)
+  const [resumedApproval, setResumedApproval] = useState<{ taskId: string; timelineLen: number } | null>(null)
+
+  useEffect(() => {
+    const prev = prevApprovalsRef.current
+    prevApprovalsRef.current = approvals
+    const currentIds = new Set(approvals.map((a) => a.requestId))
+    const resolvedWithTask = prev.find((a) => a.taskId && !currentIds.has(a.requestId))
+    if (resolvedWithTask?.taskId) {
+      const task = tasksById.get(resolvedWithTask.taskId)
+      if (task && isBotTaskActive(task.status)) {
+        setResumedApproval({ taskId: task.taskId, timelineLen: timeline.length })
+      }
+    }
+  }, [approvals, tasksById, timeline.length])
+
+  useEffect(() => {
+    if (!resumedApproval) return
+    const task = tasksById.get(resumedApproval.taskId)
+    if (
+      activeApprovalPrompt ||
+      timeline.length > resumedApproval.timelineLen ||
+      !task ||
+      !isBotTaskActive(task.status)
+    ) {
+      setResumedApproval(null)
+    }
+  }, [resumedApproval, activeApprovalPrompt, timeline.length, tasksById])
+
+  const resumedApprovalTask = resumedApproval ? tasksById.get(resumedApproval.taskId) ?? null : null
+
+  const navigation: BotTaskNavigation = useMemo(
+    () => ({
+      onOpenSession: (task: BotTask) => {
+        const latestRun = [...task.runs].reverse().find((r) => r.sessionId)
+        closeBot()
+        onJumpToWorkspace({
+          cwd: task.workspace.cwd,
+          sessionId: latestRun?.sessionId,
+          openChanges: false
+        })
+      },
+      onViewChanges: (task: BotTask) => {
+        const latestRun = [...task.runs].reverse().find((r) => r.sessionId)
+        closeBot()
+        onJumpToWorkspace({
+          cwd: task.workspace.cwd,
+          sessionId: latestRun?.sessionId,
+          openChanges: true
+        })
+      }
+    }),
+    [closeBot, onJumpToWorkspace]
+  )
+
+  // Esc inside BotPage returns to workspace when no modal/drawer is open and composer is not focused
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (resetDialogOpen || drawerOpen) return
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [data-slot="popover-content"], [role="menu"]')) {
+        return
+      }
+      const active = document.activeElement
+      if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement || (active instanceof HTMLElement && active.isContentEditable)) {
+        return
+      }
+      event.preventDefault()
+      closeBot()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [resetDialogOpen, drawerOpen, closeBot])
+
+  const handleConfirmReset = useCallback(async () => {
+    setResetting(true)
+    try {
+      await resetContext()
+      setResetDialogOpen(false)
+    } catch (error) {
+      toast.error(failureMessage(error))
+    } finally {
+      setResetting(false)
+    }
+  }, [resetContext])
+
+  const statusLine =
+    approvals.length > 0
+      ? t('bot.statusApproval', { count: approvals.length })
+      : activeTaskCount > 0
+        ? t('bot.statusBusy', { count: activeTaskCount })
+        : streaming
+          ? t('bot.statusThinking')
+          : t('bot.statusIdle')
+
+  const mirroredApprovalMeta = useMemo(() => {
+    if (!activeApprovalPrompt) return null
+    return approvals.find((item) => item.requestId === activeApprovalPrompt.id) ?? null
+  }, [activeApprovalPrompt, approvals])
+
+  const emptySuggestions = useMemo(() => {
+    const first = projects[0]
+    if (first) {
+      return [
+        t('bot.empty.suggestionCheck', { project: first.name }),
+        t('bot.empty.suggestionFix', { project: first.name }),
+        t('bot.empty.suggestionChat')
+      ]
+    }
+    return [t('bot.empty.suggestionChat')]
+  }, [projects, t])
+
+  const isEmpty = timeline.length === 0 && !streaming && !activeApprovalPrompt
+
+  return (
+    <div
+      data-bot-page
+      data-bot-overlay
+      className="flex h-full min-h-0 flex-1 flex-col"
+    >
+      {/* Minimal h-10 draggable top bar */}
+      <header data-bot-header className="drag relative flex h-10 shrink-0 items-center justify-between pr-3 pl-20">
+        {/* Reserve SidebarToggle's exact size-7 slot + gap-1 so BotOrbButton stays pixel-aligned with Workspace */}
+        <div className="flex h-full shrink-0 items-center gap-1">
+          <span aria-hidden="true" className="size-7 shrink-0" />
+          <BotOrbButton registerAnchor />
+        </div>
+
+        <div className="pointer-events-none absolute inset-x-48 flex items-center justify-center">
+          <span className="truncate text-xs font-medium text-muted-foreground">
+            {statusLine}
+          </span>
+        </div>
+
+        <div className="no-drag flex items-center gap-1">
+          <Button
+            type="button"
+            variant={drawerOpen ? 'secondary' : 'ghost'}
+            size="xs"
+            data-bot-tasks-trigger
+            onClick={() => toggleDrawer()}
+            className="gap-1.5 text-xs"
+          >
+            <Layers className="size-3.5" />
+            <span>
+              {activeTaskCount > 0 ? t('bot.tasksButton', { count: activeTaskCount }) : t('bot.tasksButtonAll')}
+            </span>
+            <span className="hidden md:inline-flex"><ShortcutKbd action="bot.toggleTasks" /></span>
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t('bot.actions.resetContext')}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setResetDialogOpen(true)}>
+                <RotateCcw className="size-3.5" />
+                {t('bot.actions.resetContext')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {/* Main single-axis content surface matching Workspace glass/solid vibrancy */}
+      <div
+        data-content-surface
+        className="relative m-2 mt-0 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-glass-content-background bg-(image:--glass-content-sheen) shadow-glass-content ring-1 ring-glass-content-border solid:bg-chat-background solid:bg-none solid:shadow-md solid:ring-0"
+      >
+        <BotLiveTaskBar onOpenSession={navigation.onOpenSession} />
+
+        {isEmpty ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-10">
+            <div className="flex w-full max-w-2xl flex-col items-center text-center">
+              <div className="mb-3 flex items-center justify-center">
+                <BotAvatar type="clover" size={96} />
+              </div>
+              <h1 className="text-lg font-semibold text-foreground">{t('bot.empty.greeting')}</h1>
+              <p className="mt-1.5 max-w-md text-sm text-muted-foreground">{t('bot.empty.subtitle')}</p>
+
+              <div className="mt-6 w-full">
+                <BotComposer autoFocus />
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {emptySuggestions.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setDraftInput(prompt)}
+                    className="rounded-full border border-glass-card-border bg-glass-pane-background/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground solid:border-border solid:bg-card"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={SCROLL_END}>
+                <BotFollowNewSend timeline={timeline} />
+                <MessageScroller>
+                  <MessageScrollerViewport className="px-4 [--chat-edge-fade:1rem] mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_var(--chat-edge-fade),rgb(0_0_0)_calc(100%-var(--chat-edge-fade)),rgb(0_0_0/0.0))]">
+                    <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-3 py-6">
+                      {timeline.map((item, idx) => (
+                        <BotTimelineRow
+                          key={item.id}
+                          item={item}
+                          grouped={idx > 0 && timeline[idx - 1].kind === 'assistant' && item.kind === 'assistant'}
+                          tasksById={tasksById}
+                          latestCardItemByTaskId={latestCardItemByTaskId}
+                          navigation={navigation}
+                          onRetry={() => void retryLastMessage()}
+                        />
+                      ))}
+
+                      {(streaming || (!activeApprovalPrompt && resumedApprovalTask)) ? (
+                        <MessageScrollerItem
+                          messageId="bot-working-hint"
+                          data-bot-post-approval-hint={!streaming ? resumedApprovalTask?.taskId : undefined}
+                          className="flex items-center gap-2.5 py-2 pl-2"
+                        >
+                          <BotAvatar type="clover" size={24} state="working" interactive={false} className="shrink-0" />
+                          <span className="text-xs text-muted-foreground motion-safe:animate-pulse">
+                            {streaming ? t('bot.statusThinking') : t('bot.statusApprovalContinuing', { title: resumedApprovalTask!.title })}
+                          </span>
+                        </MessageScrollerItem>
+                      ) : null}
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
+            </div>
+
+            <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 pb-4">
+              {activeApprovalPrompt && approvalSessionId ? (
+                <div className="mb-2">
+                  {mirroredApprovalMeta?.taskTitle ? (
+                    <div className="mb-1 flex items-center gap-1.5 px-1 text-xs font-medium text-warning">
+                      <span className="size-1.5 rounded-full bg-warning" />
+                      <span>
+                        {t('bot.approvalSource', {
+                          project: mirroredApprovalMeta.projectName ?? '',
+                          title: mirroredApprovalMeta.taskTitle
+                        })}
+                      </span>
+                    </div>
+                  ) : null}
+                  <ApprovalPrompt sessionId={approvalSessionId} />
+                </div>
+              ) : (
+                <BotComposer autoFocus />
+              )}
+            </div>
+          </>
+        )}
+
+        <BotTaskDrawer navigation={navigation} />
+      </div>
+
+      {/* Emergency "Start fresh" confirmation dialog (cancel is ghost; destructive never auto-focused) */}
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('bot.actions.resetContextTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('bot.actions.resetContextDescription')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="ghost" disabled={resetting}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction disabled={resetting} onClick={() => void handleConfirmReset()}>
+              {t('bot.actions.resetContextConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
+
+function BotFollowNewSend({ timeline }: { timeline: BotTimelineItem[] }) {
+  const scroller = useMessageScroller()
+  const lastUserId = timeline.findLast((item) => item.kind === 'user')?.id
+  const previousUserId = useRef(lastUserId)
+  useLayoutEffect(() => {
+    if (lastUserId && lastUserId !== previousUserId.current) scroller.scrollToEnd()
+    previousUserId.current = lastUserId
+  }, [lastUserId, scroller])
+  return null
+}
+
+function BotTimelineRow({
+  item,
+  grouped,
+  tasksById,
+  latestCardItemByTaskId,
+  navigation,
+  onRetry
+}: {
+  item: BotTimelineItem
+  grouped: boolean
+  tasksById: Map<string, BotTask>
+  latestCardItemByTaskId: Map<string, string>
+  navigation: BotTaskNavigation
+  onRetry: () => void
+}) {
+  const t = useT()
+
+  if (item.kind === 'user') {
+    return (
+      <MessageScrollerItem messageId={item.id} className="flex justify-end">
+        <div
+          data-bot-user-bubble
+          className="max-w-[82%] rounded-2xl bg-user-message-background px-3.5 py-2.5 text-sm leading-relaxed text-user-message-foreground shadow-2xs"
+        >
+          {item.projectMentions?.length ? (
+            <div className="mb-1 flex flex-wrap gap-1">
+              {item.projectMentions.map((cwd) => (
+                <span
+                  key={cwd}
+                  className="rounded bg-foreground/10 px-1.5 py-0.5 text-[11px] font-medium"
+                >
+                  @{baseName(cwd)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <p className="whitespace-pre-wrap break-words">{item.text}</p>
+        </div>
+      </MessageScrollerItem>
+    )
+  }
+
+  if (item.kind === 'system_fallback') {
+    const label =
+      item.reason === 'delivery_fallback'
+        ? t('bot.fallback.deliveryLabel')
+        : t('bot.fallback.noMessageLabel')
+    const relatedTasks = [...new Set(item.taskIds ?? [])]
+      .filter((id) => latestCardItemByTaskId.get(id) === item.id)
+      .map((id) => tasksById.get(id))
+      .filter((task): task is BotTask => task !== undefined)
+
+    return (
+      <MessageScrollerItem messageId={item.id} className="flex justify-center">
+        <div
+          data-bot-fallback-card={item.reason}
+          className="w-full max-w-2xl rounded-xl border border-warning/40 bg-warning-background/40 px-3.5 py-2.5 text-xs text-foreground"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="size-3.5 shrink-0 text-warning" />
+            <span className="font-medium text-warning">{label}</span>
+            {item.retryable ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={onRetry}
+                className="ml-auto h-6 px-2 text-xs"
+              >
+                {t('bot.actions.retry')}
+              </Button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-foreground/90 break-words">{item.text}</p>
+          {relatedTasks.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-2">
+              {relatedTasks.map((task) => (
+                <BotTaskCard key={task.taskId} task={task} compact navigation={navigation} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </MessageScrollerItem>
+    )
+  }
+
+  // item.kind === 'assistant' (strictly produced by send_message)
+  const linkedTasks = [...new Set(item.taskIds ?? [])]
+    .filter((id) => latestCardItemByTaskId.get(id) === item.id)
+    .map((id) => tasksById.get(id))
+    .filter((task): task is BotTask => task !== undefined)
+
+  return (
+    <MessageScrollerItem
+      messageId={item.id}
+      className={cn('flex items-start gap-2.5', grouped ? '-mt-1.5' : '')}
+    >
+      <div className="w-6 shrink-0 pt-0.5">
+        {!grouped ? (
+          <BotAvatar type="clover" size={24} paused interactive={false} />
+        ) : null}
+      </div>
+
+      <div data-bot-assistant-bubble className="min-w-0 flex-1 space-y-2">
+        <div className="rounded-2xl border border-glass-card-border bg-glass-pane-background/60 px-3.5 py-2.5 text-sm leading-relaxed text-foreground solid:border-border/70 solid:bg-card">
+          <MarkdownText text={item.content} />
+        </div>
+
+        {item.attachments?.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {item.attachments.map((att) => (
+              <span
+                key={att.path}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1 text-xs text-foreground"
+              >
+                <FileText className="size-3.5 text-muted-foreground" />
+                <span className="font-medium">{att.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {linkedTasks.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {linkedTasks.map((task) => (
+              <BotTaskCard key={task.taskId} task={task} compact navigation={navigation} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </MessageScrollerItem>
+  )
+}

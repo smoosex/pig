@@ -47,10 +47,11 @@ export async function listOpenedCwds(): Promise<string[]> {
   return (await read()).map((item) => item.cwd)
 }
 
-export async function addOpenedProject(cwd: string): Promise<string> {
+export async function addOpenedProject(cwd: string, check?: () => void): Promise<string> {
   const resolved = resolve(cwd)
   return serialize(async () => {
     const projects = await read()
+    check?.()
     if (!projects.some((item) => item.cwd === resolved)) {
       projects.push({ cwd: resolved, openedAt: new Date().toISOString() })
       await write(projects)

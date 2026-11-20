@@ -82,7 +82,7 @@ async function fixture() {
     sessionId = 'session-2'
     const updated = await tool('settings_update').execute('3', request, signal, undefined, ctx as never)
     expect(calls.splice(0)).toEqual([
-      ['list', 'session-1', options], ['get', 'session-1', 'theme'], ['update', 'session-2', request, signal]
+      ['list', 'session-1', options, ctx.sessionManager], ['get', 'session-1', 'theme', ctx.sessionManager], ['update', 'session-2', request, signal, ctx.sessionManager]
     ])
     for (const [name, response, expected] of [
       ['settings_list', listed, catalog], ['settings_get', read, before], ['settings_update', updated, mutation]
@@ -95,7 +95,7 @@ async function fixture() {
     }
     const empty = {}
     await tool('settings_list').execute('4', empty, undefined, undefined, ctx as never)
-    expect(calls.pop()).toEqual(['list', 'session-2', empty])
+    expect(calls.pop()).toEqual(['list', 'session-2', empty, ctx.sessionManager])
 
     mutation = { ok: false, changed: false, before, after: before, application: 'failed', error: 'Revision conflict: read the group again' }
     const failed = await tool('settings_update').execute('5', request, undefined, undefined, ctx as never)
@@ -103,7 +103,7 @@ async function fixture() {
     expect(failed.structuredContent).toBe(mutation)
     expect(failed.content).toEqual([{ type: 'text', text: JSON.stringify(mutation) }])
     expect(compile(tool('settings_update').outputSchema!).check(failed.structuredContent)).toBe(true)
-    expect(calls.pop()).toEqual(['update', 'session-2', request, undefined])
+    expect(calls.pop()).toEqual(['update', 'session-2', request, undefined, ctx.sessionManager])
     hostError = new Error('Configuration read failed')
     for (const [name, params] of [['settings_list', {}], ['settings_get', { group: 'theme' }], ['settings_update', request]] as const) {
       await expect(tool(name).execute('6', params, signal, undefined, ctx as never)).rejects.toBe(hostError)
@@ -116,7 +116,7 @@ async function fixture() {
     const cancelled = new Error('User cancelled settings update')
     controller.abort(cancelled)
     await expect(pending).rejects.toBe(cancelled)
-    expect(calls.pop()).toEqual(['update', 'session-2', request, controller.signal])
+    expect(calls.pop()).toEqual(['update', 'session-2', request, controller.signal, ctx.sessionManager])
     waitForAbort = false
 
     for (const { definition } of extension.tools.values()) {
@@ -233,7 +233,7 @@ async function fixture() {
     const packagedExtension = packagedLoader.getExtensions().extensions.find(item => item.path === packagedPath)!
     const packagedResult = await (packagedExtension.tools.get('settings_get')!.definition as any).execute('8', { group: 'theme' }, signal, undefined, ctx as never)
     expect(packagedResult.structuredContent).toBe(before)
-    expect(calls.pop()).toEqual(['get', 'session-2', 'theme'])
+    expect(calls.pop()).toEqual(['get', 'session-2', 'theme', ctx.sessionManager])
   } finally {
     if (previous) registry[key] = previous
     else delete registry[key]
