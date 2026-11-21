@@ -45,6 +45,22 @@ let modelRuntimePromise: Promise<ModelRuntime> | undefined
 let settingsManager: SettingsManager | undefined
 let thinkingSettingsNeedValidation = false
 let settingsQueue: Promise<void> = Promise.resolve()
+const defaultSettingsListeners = new Set<() => void>()
+
+export function onDefaultSettingsChanged(listener: () => void): () => void {
+  defaultSettingsListeners.add(listener)
+  return () => { defaultSettingsListeners.delete(listener) }
+}
+
+function notifyDefaultSettingsChanged(): void {
+  for (const listener of [...defaultSettingsListeners]) {
+    try {
+      listener()
+    } catch (error) {
+      console.error('Default settings listener error:', error)
+    }
+  }
+}
 
 function withSettingsQueue<T>(operation: () => Promise<T>): Promise<T> {
   const result = settingsQueue.then(operation)
@@ -346,7 +362,9 @@ export async function updateDefaultSettings(
       if (patch.model) settings.setDefaultModelAndProvider(model.provider, model.id)
       persistDefaultThinking(settings, model, next.thinkingLevel)
     }, 'Could not save default settings')
-    return defaultSettingsSnapshot(await reloadSettings('Could not reread default settings'))
+    const updated = defaultSettingsSnapshot(await reloadSettings('Could not reread default settings'))
+    notifyDefaultSettingsChanged()
+    return updated
   })
 }
 

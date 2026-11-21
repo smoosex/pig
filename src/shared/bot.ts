@@ -245,7 +245,7 @@ export type BotEvent = { cursor?: number } & (
   | { type: 'tasks_replaced'; tasks: BotTask[] }
   | { type: 'approvals_changed'; approvals: BotMirroredApproval[] }
   | { type: 'peek'; message: BotPeekMessage }
-  | { type: 'controls_changed'; controls: SessionControls }
+  | { type: 'controls_changed'; controls: SessionControls | null }
   | { type: 'permission_changed'; mode: PermissionMode }
   | { type: 'state_changed'; state: BotState }
 )

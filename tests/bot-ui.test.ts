@@ -402,6 +402,17 @@ async function fixture() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   assert.deepEqual(setThinkingCalls, ['high'])
 
+  // Receiving controls_changed(null) clears BotComposer's selected model and resets/disables thinking.
+  await act(async () => {
+    useBotStore.getState().applyEvent({ type: 'controls_changed', controls: null })
+  })
+  assert.equal(composerHost.querySelector('button[aria-label="Claude Sonnet 4.5"]'), null, 'clears previous model button when controls become null')
+  const clearedModelTrigger = composerHost.querySelector<HTMLButtonElement>('button[aria-label="Model"]')
+  assert.ok(clearedModelTrigger, 'renders fallback model label when controls become null')
+  const clearedThinkingTrigger = composerHost.querySelector<HTMLButtonElement>('button[aria-label="Off"]')
+  assert.ok(clearedThinkingTrigger, 'resets thinking picker to Off when controls become null')
+  assert.equal(clearedThinkingTrigger.disabled, true, 'disables thinking picker when controls become null')
+
   const input = composerHost.querySelector('textarea')!
   const surface = input.closest('[data-slot="input-group"]')
   assert.ok(surface, 'Bot uses the workspace prompt surface')
@@ -562,13 +573,91 @@ async function fixture() {
   })
 }
 
+async function staleSnapshotFixture() {
+  const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  GlobalRegistrator.register({ url: 'http://localhost' })
+
+  let snapshotCalls = 0
+  let resolveSecond!: (snapshot: BotSnapshot) => void
+  const staleWorkspaceSnapshot = (cursor: number): BotSnapshot => ({
+    eventCursor: cursor,
+    state: {
+      version: 1,
+      sessionId: 'bot-session-race',
+      cwd: '/pig/bot/workspace',
+      lastSurface: 'workspace',
+      archivedSessions: [],
+      createdAt: 1000,
+      updatedAt: 1000
+    },
+    timeline: [],
+    tasks: [],
+    streaming: false,
+    unreadCount: 0,
+    approvals: [],
+    controls: null,
+    permissionMode: 'full-access'
+  })
+
+  Object.assign(window, {
+    api: {
+      bot: {
+        getSnapshot: async () => {
+          snapshotCalls += 1
+          if (snapshotCalls === 1) throw new Error('Initial snapshot failed')
+          return new Promise<BotSnapshot>((resolve) => { resolveSecond = resolve })
+        },
+        setSurface: async (surface: 'workspace' | 'bot') => ({
+          version: 1 as const,
+          sessionId: 'bot-session-race',
+          cwd: '/pig/bot/workspace',
+          lastSurface: surface,
+          archivedSessions: [],
+          createdAt: 1000,
+          updatedAt: 2000
+        }),
+        onEvent: () => () => {}
+      }
+    }
+  })
+
+  const { useBotStore } = await import('../src/renderer/src/stores/bot')
+
+  // 1. Initial boot snapshot fails; store stays unloaded & closed.
+  await useBotStore.getState().init()
+  assert.equal(useBotStore.getState().loaded, false)
+  assert.equal(useBotStore.getState().open, false)
+  assert.ok(useBotStore.getState().error)
+
+  // 2. User manually opens Bot, triggering a retry init() whose stale snapshot still says lastSurface='workspace'.
+  useBotStore.getState().openBot()
+  assert.equal(useBotStore.getState().open, true)
+  assert.equal(snapshotCalls, 2)
+
+  resolveSecond(staleWorkspaceSnapshot(1))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(useBotStore.getState().loaded, true)
+  assert.equal(useBotStore.getState().open, true, 'stale workspace snapshot must not close Bot after user opened it')
+}
+
 if (process.argv[2] === '--bot-ui-fixture') {
   await fixture()
+} else if (process.argv[2] === '--bot-stale-snapshot-fixture') {
+  await staleSnapshotFixture()
 } else {
   test('Bot UI store, live task bar, peek bubble, managed banner, and reset context preserve invariants', async () => {
     const { exitCode, stdout, stderr } = await runSelf(
       import.meta.path,
       ['--bot-ui-fixture'],
+      { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 15_000 }
+    )
+    assert.equal(exitCode, 0, stderr || stdout)
+  })
+
+  test('manual openBot after initial snapshot failure is not reverted by stale workspace snapshot', async () => {
+    const { exitCode, stdout, stderr } = await runSelf(
+      import.meta.path,
+      ['--bot-stale-snapshot-fixture'],
       { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 15_000 }
     )
     assert.equal(exitCode, 0, stderr || stdout)

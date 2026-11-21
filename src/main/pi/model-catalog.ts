@@ -21,6 +21,22 @@ let loaded = false
 let revision = 0
 let inFlight = false
 let running: Promise<ModelCatalog> | undefined
+const catalogListeners = new Set<(catalog: ModelCatalog) => void>()
+
+export function onModelCatalogChanged(listener: (catalog: ModelCatalog) => void): () => void {
+  catalogListeners.add(listener)
+  return () => { catalogListeners.delete(listener) }
+}
+
+function notifyCatalogListeners(catalog: ModelCatalog): void {
+  for (const listener of [...catalogListeners]) {
+    try {
+      listener(catalog)
+    } catch (error) {
+      console.error('Model catalog listener error:', error)
+    }
+  }
+}
 
 function snapshot(): ModelCatalog {
   return { models, revision, refreshing: inFlight }
@@ -52,8 +68,13 @@ function readFromRuntime(): boolean {
   const next = availableModels()
   const changed = !loaded || !sameModels(next)
   if (loaded && changed) revision += 1
-  if (changed) models = next
-  loaded = true
+  if (changed) {
+    models = next
+    loaded = true
+    notifyCatalogListeners(snapshot())
+  } else {
+    loaded = true
+  }
   return changed
 }
 

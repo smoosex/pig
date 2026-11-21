@@ -64,7 +64,7 @@ export interface BotStoreState {
   draftInput: string
   draftRevision: number
 
-  init: () => Promise<void>
+  init: (options?: { restoreSurface?: boolean }) => Promise<void>
   applySnapshot: (snapshot: BotSnapshot, restoreSurface?: boolean) => void
   applyEvent: (event: BotEvent) => void
   openBot: (originEl?: Element | null) => void
@@ -97,6 +97,7 @@ let orbAnchorElement: HTMLElement | null = null
 let unsubscribeBotEvents: (() => void) | null = null
 let initPromise: Promise<void> | null = null
 let initializingEvents: BotEvent[] | null = null
+let surfaceRevision = 0
 
 export function registerBotOrbAnchor(element: HTMLElement | null): void {
   orbAnchorElement = element
@@ -139,10 +140,12 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
   draftInput: '',
   draftRevision: 0,
 
-  init: async () => {
+  init: async (options) => {
     if (get().loaded) return
     if (!api?.bot) return
     if (initPromise) return initPromise
+    const shouldRestoreSurface = options?.restoreSurface ?? true
+    const startSurfaceRevision = surfaceRevision
     set({ loading: true, error: null })
     initializingEvents = []
     initPromise = (async () => {
@@ -152,7 +155,7 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
           else get().applyEvent(event)
         })
         const snapshot = await api.bot.getSnapshot()
-        get().applySnapshot(snapshot, true)
+        get().applySnapshot(snapshot, shouldRestoreSurface && surfaceRevision === startSurfaceRevision)
         for (const event of initializingEvents ?? []) {
           if (event.cursor === undefined || event.cursor > (snapshot.eventCursor ?? -1)) get().applyEvent(event)
         }
@@ -241,10 +244,12 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
 
   openBot: (originEl) => {
     if (get().open) return
+    surfaceRevision += 1
     const origin = elementCenterOrigin(originEl ?? orbAnchorElement)
     runBotRadialReveal('expand', origin, () => {
       set({ open: true, unreadCount: 0, peek: null })
     })
+    if (!get().loaded) void get().init({ restoreSurface: false })
     void api.bot.setSurface('bot').catch((error) => {
       console.error('Could not persist bot surface:', error)
     })
@@ -252,6 +257,7 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
 
   closeBot: (originEl) => {
     if (!get().open) return
+    surfaceRevision += 1
     const origin = elementCenterOrigin(originEl ?? orbAnchorElement)
     runBotRadialReveal('collapse', origin, () => {
       set({ open: false, drawerOpen: false, focusedTaskId: null })

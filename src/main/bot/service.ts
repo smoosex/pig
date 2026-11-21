@@ -53,7 +53,20 @@ import { closeSessionProcesses } from '../processes'
 import { onPermissionsChanged, saveSessionPermission, sessionPermission } from '../permissions/store'
 import { delegateApprovals } from '../permissions/delegation'
 import { createExtensionUI, listPendingApprovals, onApprovalLifecycle } from '../extension-ui'
-import { startModelRuntime, toModelInfo, thinkingLevelsFor, modelThinkingFromSettings, defaultThinkingFromSettings, defaultModelFromSettings, clampThinking } from '../pi/model-settings'
+import {
+  startModelRuntime,
+  toModelInfo,
+  thinkingLevelsFor,
+  pickerThinkingLevels,
+  modelThinkingFromSettings,
+  defaultThinkingFromSettings,
+  readDefaultSettings,
+  onDefaultSettingsChanged,
+  clampThinking
+} from '../pi/model-settings'
+import { onModelCatalogChanged } from '../pi/model-catalog'
+import { indexSessionFile, UnsupportedSessionFile } from '../pi/session-jsonl'
+import { fileSettings } from '../pi/session-controls'
 import { registerBotShutdown } from './lifecycle'
 import { BotStore } from './store'
 import { BotNoticeQueue } from './notice-queue'
@@ -91,6 +104,7 @@ export class BotService {
   private backendTracker = this.fallbackTasks
   private launchingSessions = new Set<string>()
   private lastUserMessage: { text: string; images?: BotImageAttachment[]; textAttachments?: BotTextAttachment[]; projectMentions?: string[] } | null = null
+  private lastEmittedControlsKey: string | undefined = undefined
 
   constructor(private readonly botDir = pigPath('bot')) {
     this.store = new BotStore(this.botDir)
@@ -221,6 +235,10 @@ export class BotService {
       })
     )
 
+    // Keep Bot's uninitialized/default model controls in sync when global defaults or available models change.
+    this.cleanups.push(onDefaultSettingsChanged(() => { void this.syncControls() }))
+    this.cleanups.push(onModelCatalogChanged(() => { void this.syncControls() }))
+
     this.backendTracker = getSessionAgentController()?.tasks ?? this.fallbackTasks
     this.cleanups.push(this.backendTracker.subscribeFinished(task => this.onManagedTaskFinished(task)))
   }
@@ -299,47 +317,47 @@ export class BotService {
         }
       })
 
-      const session = await createSessionRuntime(
-        this.workspaceDir,
-        sessionManager,
-        botMainPluginPaths(),
-        undefined,
-        {
-          identity: true,
-          extraExtensions: [{ name: 'pig-bot', factory: botExtension }]
+      let session: AgentSession | null = null
+      try {
+        session = await createSessionRuntime(
+          this.workspaceDir,
+          sessionManager,
+          botMainPluginPaths(),
+          undefined,
+          {
+            identity: true,
+            extraExtensions: [{ name: 'pig-bot', factory: botExtension }]
+          }
+        )
+
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+          const ui = await createExtensionUI(win, state.sessionId, 'extension')
+          await session.bindExtensions({ uiContext: ui })
         }
-      )
+        this.sessionWindow = win ?? null
 
-      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-        const ui = await createExtensionUI(win, state.sessionId, 'extension')
-        await session.bindExtensions({ uiContext: ui })
-      }
-      this.sessionWindow = win ?? null
+        const controls = await this.applyResolvedControlsToSession(session, true)
 
-      // Apply persisted Bot-specific model & thinking preferences when resuming or starting fresh.
-      if (state.model) {
-        const savedModel = (await startModelRuntime()).getModel(state.model.provider, state.model.id)
-        if (savedModel && (session.model?.provider !== savedModel.provider || session.model?.id !== savedModel.id)) {
-          await session.setModel(savedModel).catch(() => {})
+        this.sessionUnsub?.()
+        this.sessionUnsub = session.subscribe((event) => {
+          if (event.type === 'tool_execution_start') {
+            this.dispatcher.markToolActivity(event.toolName)
+          }
+        })
+
+        this.agentSession = session
+        this.publishControls(controls)
+        return session
+      } catch (error) {
+        this.sessionWindow = null
+        this.sessionUnsub?.()
+        this.sessionUnsub = null
+        if (session && this.agentSession !== session) {
+          try { session.dispose() } catch {}
         }
+        throw error
       }
-      if (state.thinkingLevel && session.thinkingLevel !== state.thinkingLevel) {
-        const allowed = thinkingLevelsFor(session.model ?? null)
-        session.setThinkingLevel(clampThinking(state.thinkingLevel, allowed))
-      }
-
-      this.sessionUnsub?.()
-      this.sessionUnsub = session.subscribe((event) => {
-        if (event.type === 'tool_execution_start') {
-          this.dispatcher.markToolActivity(event.toolName)
-        }
-      })
-
-      this.agentSession = session
-      const controls = await this.readBotControls(session)
-      if (controls) this.emit({ type: 'controls_changed', controls })
-      return session
     })().finally(() => {
       this.sessionInitPromise = null
     })
@@ -349,6 +367,19 @@ export class BotService {
 
   private async sendToBotSession(req: BotPromptRequest): Promise<void> {
     const session = await this.ensureBotSession()
+    const runtime = await startModelRuntime()
+    const hasAvailableModel = Boolean(
+      session.model &&
+      runtime.getAvailableSnapshot().some(
+        (candidate) => candidate.provider === session.model!.provider && candidate.id === session.model!.id
+      )
+    )
+    if (!hasAvailableModel) {
+      const controls = await this.applyResolvedControlsToSession(session, true)
+      if (this.controlsKey(controls) !== this.lastEmittedControlsKey) {
+        this.publishControls(controls)
+      }
+    }
     const images = req.images?.map((img) => ({
       type: 'image' as const,
       data: img.data,
@@ -583,33 +614,149 @@ export class BotService {
     return mirrored
   }
 
-  private async readBotControls(session?: AgentSession | null): Promise<SessionControls | null> {
+  private controlsKey(controls: SessionControls | null): string {
+    if (!controls) return 'null'
+    return JSON.stringify([
+      controls.model?.provider ?? null,
+      controls.model?.id ?? null,
+      controls.model?.name ?? null,
+      controls.model?.providerName ?? null,
+      controls.thinkingLevel,
+      controls.modelThinkingLevel,
+      controls.thinkingLevels
+    ])
+  }
+
+  private publishControls(controls: SessionControls | null): void {
+    this.lastEmittedControlsKey = this.controlsKey(controls)
+    this.emit({ type: 'controls_changed', controls })
+  }
+
+  private async syncControls(): Promise<void> {
     try {
-      const runtime = await startModelRuntime()
-      const current = session ?? this.agentSession
-      const state = await this.store.readState().catch(() => null)
-      const savedModel = state?.model ? runtime.getModel(state.model.provider, state.model.id) : undefined
-      const defaultRef = defaultModelFromSettings()
-      const defaultModel = defaultRef ? runtime.getModel(defaultRef.provider, defaultRef.id) : undefined
-      const model = current?.model ?? savedModel ?? defaultModel ?? runtime.getAvailable()[0]
-      if (!model) return null
-      const modelInfo = toModelInfo(model)
-      const modelThinkingLevel = modelThinkingFromSettings(model)
-      const thinkingLevels = thinkingLevelsFor(model)
-      const rawThinking = (current?.thinkingLevel ?? state?.thinkingLevel ?? modelThinkingLevel ?? defaultThinkingFromSettings(model) ?? 'medium') as ThinkingLevel
-      const thinkingLevel = clampThinking(rawThinking, thinkingLevels)
+      const controls = await this.readBotControls()
+      const key = this.controlsKey(controls)
+      if (key === this.lastEmittedControlsKey) return
+      this.lastEmittedControlsKey = key
+      this.emit({ type: 'controls_changed', controls })
+    } catch (error) {
+      console.error('Failed to refresh Bot model controls:', error)
+    }
+  }
+
+  private readPersistedSessionSettings(sessionId: string): {
+    model: { provider: string; modelId: string } | null
+    thinkingLevel: ThinkingLevel | undefined
+  } | null {
+    const existingFile = SessionManager.findById(this.workspaceDir, sessionId, this.sessionsDir)
+    if (!existingFile) return null
+    try {
+      const index = indexSessionFile(existingFile)
+      return fileSettings({ path: existingFile, index })
+    } catch (error) {
+      if (!(error instanceof UnsupportedSessionFile)) throw error
+      const sm = SessionManager.open(existingFile, this.sessionsDir, this.workspaceDir)
+      const context = sm.buildSessionContext()
+      const hasThinking = sm.getBranch().some((entry) => entry.type === 'thinking_level_change')
       return {
+        model: context.model,
+        thinkingLevel: hasThinking ? (context.thinkingLevel as ThinkingLevel) : undefined
+      }
+    }
+  }
+
+  /**
+   * Single source of truth for Bot model & thinking resolution shared by preview (`readBotControls`)
+   * and live session materialization (`ensureBotSession` / `sendToBotSession`).
+   * Only falls back when preferences are genuinely absent; read/parse errors propagate explicitly.
+   */
+  private async resolveBotSelection(
+    session?: AgentSession | null,
+    options?: { ignoreSessionDefaults?: boolean }
+  ): Promise<{
+    model: ReturnType<Awaited<ReturnType<typeof startModelRuntime>>['getAvailableSnapshot']>[number] | undefined
+    controls: SessionControls | null
+  }> {
+    const runtime = await startModelRuntime()
+    const [state, defaults] = await Promise.all([
+      this.store.readState(),
+      readDefaultSettings()
+    ])
+    const available = runtime.getAvailableSnapshot()
+    const findAvailable = (provider: string, id: string) =>
+      available.find((candidate) => candidate.provider === provider && candidate.id === id)
+
+    const current = session ?? this.agentSession
+    const useSession = !options?.ignoreSessionDefaults
+    const currentModel = useSession && current?.model
+      ? findAvailable(current.model.provider, current.model.id)
+      : undefined
+    const savedModel = state?.model ? findAvailable(state.model.provider, state.model.id) : undefined
+    // Read persisted JSONL history lazily only when not already resolved by a live session or explicit Bot preference.
+    const persisted = !currentModel && !savedModel && state?.sessionId
+      ? this.readPersistedSessionSettings(state.sessionId)
+      : null
+    const persistedModel = persisted?.model
+      ? findAvailable(persisted.model.provider, persisted.model.modelId)
+      : undefined
+    const defaultRef = defaults.effective.model
+    const defaultModel = defaultRef ? findAvailable(defaultRef.provider, defaultRef.id) : undefined
+    const model = currentModel ?? savedModel ?? persistedModel ?? defaultModel ?? available[0]
+    if (!model) return { model: undefined, controls: null }
+
+    const modelInfo = toModelInfo(model)
+    const modelThinkingLevel = modelThinkingFromSettings(model)
+    const supported = thinkingLevelsFor(model)
+    const picker = pickerThinkingLevels(supported)
+    const defaultThinking = defaultThinkingFromSettings(model)
+    const sessionThinking = useSession && currentModel ? current?.thinkingLevel : undefined
+    const persistedThinking = !savedModel ? persisted?.thinkingLevel : undefined
+    const rawThinking = (
+      sessionThinking ??
+      state?.thinkingLevel ??
+      persistedThinking ??
+      modelThinkingLevel ??
+      defaultThinking ??
+      picker[0] ??
+      supported[0] ??
+      'off'
+    ) as ThinkingLevel
+    const thinkingLevel = clampThinking(rawThinking, supported)
+    return {
+      model,
+      controls: {
         model: modelInfo,
         thinkingLevel,
         modelThinkingLevel,
-        thinkingLevels,
+        thinkingLevels: picker,
         contextUsage: null,
         steeringMessages: [],
         followUpMessages: []
       }
-    } catch {
-      return null
     }
+  }
+
+  private async applyResolvedControlsToSession(
+    session: AgentSession,
+    ignoreSessionDefaults: boolean
+  ): Promise<SessionControls | null> {
+    const resolved = await this.resolveBotSelection(session, { ignoreSessionDefaults })
+    if (!resolved.model || !resolved.controls) return null
+    if (
+      !session.model ||
+      session.model.provider !== resolved.model.provider ||
+      session.model.id !== resolved.model.id
+    ) {
+      await session.setModel(resolved.model)
+    }
+    if (session.thinkingLevel !== resolved.controls.thinkingLevel) {
+      session.setThinkingLevel(resolved.controls.thinkingLevel)
+    }
+    return this.readBotControls(session)
+  }
+
+  async readBotControls(session?: AgentSession | null): Promise<SessionControls | null> {
+    return (await this.resolveBotSelection(session)).controls
   }
 
   async getSnapshot(): Promise<BotSnapshot> {
@@ -647,6 +794,9 @@ export class BotService {
     }
     const next = await this.store.updateState((s) => ({ ...s, lastSurface: surface }))
     this.emit({ type: 'state_changed', state: next })
+    if (surface === 'bot') {
+      void this.syncControls()
+    }
     return next
   }
 
@@ -691,16 +841,19 @@ export class BotService {
       thinkingLevel: clampedThinking
     }))
     const controls = await this.readBotControls(session)
-    if (controls) this.emit({ type: 'controls_changed', controls })
+    this.publishControls(controls)
     return controls
   }
 
   async setThinking(level: ThinkingLevel): Promise<SessionControls | null> {
     const session = await this.ensureBotSession()
+    if (!session.model) {
+      await this.applyResolvedControlsToSession(session, true)
+    }
     session.setThinkingLevel(level)
     await this.store.updateState((s) => ({ ...s, thinkingLevel: level }))
     const controls = await this.readBotControls(session)
-    if (controls) this.emit({ type: 'controls_changed', controls })
+    this.publishControls(controls)
     return controls
   }
 
@@ -837,6 +990,7 @@ export class BotService {
     await this.initialization?.catch(() => undefined)
     await this.sessionInitPromise?.catch(() => undefined)
     this.sessionWindow = null
+    this.lastEmittedControlsKey = undefined
     this.noticeQueue.dispose()
     this.fallbackTasks.dispose()
     for (const cleanup of this.cleanups.splice(0)) cleanup()
