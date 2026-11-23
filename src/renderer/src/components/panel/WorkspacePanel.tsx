@@ -72,7 +72,7 @@ export function WorkspacePanel({ cwd, hidden = false, floating = false }: { cwd:
           </ToggleGroup>
         </header>
 
-        {tab === 'files' ? <FileTree cwd={cwd} /> : <ChangesPanel cwd={cwd} />}
+        {tab === 'files' ? <FileTree cwd={cwd} hidden={hidden} /> : <ChangesPanel cwd={cwd} />}
       </div>
     </aside>
   )

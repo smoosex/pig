@@ -29,12 +29,13 @@ import { useFileFilter } from './useFileFilter'
 import { WorkspaceFilter } from '../panel/WorkspaceFilter'
 import { fileDragProps } from '../composer/file-drag'
 
-export function FileTree({ cwd }: { cwd: string }) {
+export function FileTree({ cwd, hidden = false }: { cwd: string; hidden?: boolean }) {
   const t = useT()
   const reduced = useReducedMotion()
   const [query, setQuery] = useState('')
   const [locate, setLocate] = useState<string | null>(null)
   const scrollArea = useRef<HTMLDivElement>(null)
+  const hiddenCwdRef = useRef<string | null>(hidden ? cwd : null)
   const trees = useFilesStore((state) => state.trees[cwd])
   const expanded = useFilesStore((state) => state.expanded[cwd])
   const hideIgnored = useFilesStore((state) => state.hideIgnored)
@@ -56,6 +57,22 @@ export function FileTree({ cwd }: { cwd: string }) {
     setQuery(''); setLocate(null)
     void loadDirectory(cwd, '')
   }, [cwd, loadDirectory])
+
+  // While the panel was hidden, the worktree watcher may have been released with no other holder.
+  // Refresh the directory snapshot (without clearing search or expansion state) when returning to the same cwd.
+  useEffect(() => {
+    if (hidden) {
+      hiddenCwdRef.current = cwd
+      return
+    }
+    if (hiddenCwdRef.current !== cwd) return
+    hiddenCwdRef.current = null
+    if (useFilesStore.getState().trees[cwd]?.['']) {
+      useFilesStore.getState().refreshWorktree(cwd)
+    } else {
+      void loadDirectory(cwd, '')
+    }
+  }, [cwd, hidden, loadDirectory])
 
   // Search hits may have no loaded ancestors; naming must reveal the parent chain too.
   const draft = drafts.draft

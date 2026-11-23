@@ -579,6 +579,73 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(panel.classList.contains('w-62'))
     assert.equal(panel.firstElementChild, content)
     assert.deepEqual(writes, [], 'mounting and collapsing do not write a width preference')
+  } else if (name === 'hidden-refresh') {
+    let watchCalls = 0
+    let unwatchCalls = 0
+    let rootEntries = [
+      { name: 'src', path: 'src', kind: 'directory' as const, ignored: false },
+      { name: 'readme.md', path: 'readme.md', kind: 'file' as const, ignored: false }
+    ]
+    api.watchWorktreeDiff = async () => {
+      watchCalls += 1
+      return `lease-${watchCalls}`
+    }
+    api.unwatchWorktreeDiff = async () => { unwatchCalls += 1 }
+    api.readDirectory = async (_cwd: string, path: string) => {
+      if (path === '') return { path, entries: rootEntries }
+      return { path, entries: [{ name: 'work.ts', path: 'src/work.ts', kind: 'file' as const, ignored: false }] }
+    }
+    api.searchFiles = async (_cwd: string, query: string) => ({
+      entries: rootEntries.filter((entry) => entry.name.includes(query)),
+      truncated: false
+    })
+    api.cancelFileSearch = async () => {}
+
+    const switcher = (label: string) =>
+      [...container.querySelectorAll('header button[role="radio"]')].find((button) =>
+        (button.textContent ?? '').startsWith(label)
+      )
+
+    await render(CWD, false)
+    await click(switcher('文件'))
+    await click(row('src'))
+    assert.deepEqual(rowTexts(), ['src', 'work.ts', 'readme.md'])
+    assert.equal(watchCalls, 1)
+    assert.equal(unwatchCalls, 0)
+
+    // Type a search query to ensure returning from hidden preserves search input and expanded folders.
+    const filterInput = container.querySelector<HTMLInputElement>('input[aria-label="筛选文件"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(filterInput, 'fresh')
+      filterInput.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 230)) })
+    assert.equal(row('fresh.ts'), null)
+
+    // Hide the right panel with no other watch holder: watcher is released.
+    await render(CWD, true)
+    assert.equal(unwatchCalls, 1, 'hiding the panel with no other holder releases the worktree watcher')
+
+    // External root change happens while hidden; no watcher event arrives.
+    rootEntries = [
+      ...rootEntries,
+      { name: 'fresh.ts', path: 'fresh.ts', kind: 'file' as const, ignored: false }
+    ]
+
+    // Returning to the same cwd proactively refreshes directory snapshots without waiting for a watcher event,
+    // while keeping search input and expanded directory state intact.
+    await render(CWD, false)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 230)) })
+    assert.equal(watchCalls, 2, 're-acquires worktree watcher when visible again')
+    assert.equal(filterInput.value, 'fresh', 'preserves existing file search query')
+    assert.ok(row('fresh.ts'), 'refreshed search sees the file added while hidden without a new watcher event')
+
+    // Clearing the query confirms both the refreshed root entry and the previously expanded folder are intact.
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(filterInput, '')
+      filterInput.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    assert.deepEqual(rowTexts(), ['src', 'work.ts', 'readme.md', 'fresh.ts'])
   }
 
   await act(async () => {
@@ -600,7 +667,8 @@ if (process.argv[2] === '--review-panel-fixture') {
     states: 'a broken read, a non-git folder and a clean worktree each say so',
     refresh: 'a refresh keeps the list while only a first read shows the loading text',
     views: 'the column switches between the changes list and the file tree',
-    width: 'the fixed rail matches the left sidebar and retains its contents while collapsing'
+    width: 'the fixed rail matches the left sidebar and retains its contents while collapsing',
+    'hidden-refresh': 'returning to the same cwd refreshes Files snapshots after hidden watcher release without clearing state'
   })) {
     test(`review panel: ${title}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--review-panel-fixture', name], {

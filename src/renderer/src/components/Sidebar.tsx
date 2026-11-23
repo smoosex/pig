@@ -1,3 +1,4 @@
+import { Activity, useState } from 'react'
 import { FolderPlus, Settings } from 'lucide-react'
 import { useSessionsStore } from '../stores/sessions'
 import { useDiffStore } from '../stores/diff'
@@ -48,6 +49,15 @@ export function Sidebar({
   // The right sidebar keeps its own preferences in the same file, so its failures belong on this same line.
   const reviewPrefsError = useDiffStore((s) => s.prefsError)
   const error = projectError ?? preferencesError ?? reviewPrefsError ?? settingsError
+  // Mount each sidebar list lazily on first visit, then retain it via Activity so switching
+  // between Projects and Chats does not tear down and rebuild Radix/dnd-kit trees every time.
+  const [mountedTabs, setMountedTabs] = useState<{ projects: boolean; chats: boolean }>(() => ({
+    projects: tab === 'projects',
+    chats: tab === 'chats'
+  }))
+  if (!mountedTabs[tab]) {
+    setMountedTabs((previous) => (previous[tab] ? previous : { ...previous, [tab]: true }))
+  }
 
   return (
     <aside
@@ -68,7 +78,16 @@ export function Sidebar({
         />
         <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
           <SidebarHoverHighlight className="pt-1">
-            {tab === 'projects' ? <ProjectList /> : <ChatList />}
+            {mountedTabs.projects ? (
+              <Activity mode={tab === 'projects' ? 'visible' : 'hidden'}>
+                <ProjectList />
+              </Activity>
+            ) : null}
+            {mountedTabs.chats ? (
+              <Activity mode={tab === 'chats' ? 'visible' : 'hidden'}>
+                <ChatList />
+              </Activity>
+            ) : null}
           </SidebarHoverHighlight>
         </ScrollArea>
         {error && (

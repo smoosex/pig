@@ -104,7 +104,7 @@ async function fixture(scenario: string): Promise<void> {
   const frameHistory: { id: string; animate: HTMLMotionProps<'div'>['animate'] }[] = []
   let scene: unknown
   let reduced = false
-  if (scenario === 'animation') {
+  if (scenario === 'animation' || scenario === 'detach-retain') {
     Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class {
       constructor(private callback: () => void) {}
       observe() { resizeCallbacks.add(this.callback) }
@@ -1003,6 +1003,225 @@ async function fixture(scenario: string): Promise<void> {
       } finally {
         Date.now = originalNow
       }
+    } else if (scenario === 'retain-chat-panes') {
+      const { useEffect } = await import('react')
+      const { useWorkspaceVisible } = await import('../src/renderer/src/components/WorkspaceLayout')
+      const mounts = new Map<string, number>()
+      const unmounts = new Map<string, number>()
+      const observed = new Map<string, { visible: boolean; isActive: boolean }>()
+
+      const Probe = ({ id, isActive }: { id: string; isActive: boolean }) => {
+        const visible = useWorkspaceVisible()
+        observed.set(id, { visible, isActive })
+        useEffect(() => {
+          mounts.set(id, (mounts.get(id) ?? 0) + 1)
+          return () => { unmounts.set(id, (unmounts.get(id) ?? 0) + 1) }
+        }, [id])
+        return h('div', { 'data-probe': id, 'data-visible': String(visible), 'data-active': String(isActive) }, id)
+      }
+
+      const mixedTabs: OpenTab[] = [
+        { id: 'proj-1', cwd: '/p', kind: 'project', title: 'P1', loadState: 'ready' },
+        { id: 'chat-1', cwd: '/c', kind: 'chat', title: 'C1', loadState: 'ready' },
+        { id: 'file-1', cwd: '/p', kind: 'file', path: 'a.ts', title: 'a.ts', loadState: 'ready' }
+      ]
+      sessions.setState({ openTabs: mixedTabs, activeTabId: 'proj-1', currentProjectCwd: '/p' })
+      const renderTab = async (tabId: string | null, visible = true) => {
+        await act(async () => {
+          root.render(h(SplitPaneContainer, {
+            tabId,
+            visible,
+            renderPane: (node, isActive) => h(Probe, { id: node.tabId, isActive })
+          }))
+        })
+        await act(async () => { await Promise.resolve() })
+      }
+
+      await renderTab('proj-1', true)
+      assert.equal(mounts.get('proj-1'), 1)
+      assert.deepEqual(observed.get('proj-1'), { visible: true, isActive: true })
+
+      // Switching from project session to chat session retains proj-1 mounted offscreen with WorkspaceVisibility=false.
+      await renderTab('chat-1', true)
+      assert.equal(mounts.get('proj-1'), 1)
+      assert.equal(unmounts.get('proj-1') ?? 0, 0, 'project chat pane stays mounted when switching to chat')
+      assert.equal(mounts.get('chat-1'), 1)
+      assert.deepEqual(observed.get('proj-1'), { visible: false, isActive: false })
+      assert.deepEqual(observed.get('chat-1'), { visible: true, isActive: true })
+      const projFrame = host.querySelector<HTMLElement>('[data-pane-id="proj-1"]')!
+      assert.equal(projFrame.dataset.paneRetained, 'true')
+      assert.ok(projFrame.classList.contains('hidden'))
+      assert.ok(projFrame.hasAttribute('inert'))
+
+      // Switching to a home view (tabId=null, visible=false) retains both chat panes without unmounting.
+      await renderTab(null, false)
+      assert.equal(unmounts.get('proj-1') ?? 0, 0)
+      assert.equal(unmounts.get('chat-1') ?? 0, 0)
+      assert.deepEqual(observed.get('proj-1'), { visible: false, isActive: false })
+      assert.deepEqual(observed.get('chat-1'), { visible: false, isActive: false })
+
+      // Switching back to proj-1 reuses the mounted instance (mount count stays 1).
+      await renderTab('proj-1', true)
+      assert.equal(mounts.get('proj-1'), 1, 'returning to project pane does not remount it')
+      assert.deepEqual(observed.get('proj-1'), { visible: true, isActive: true })
+
+      // Non-chat tabs (file) unmount immediately when switched away rather than being retained.
+      await renderTab('file-1', true)
+      assert.equal(mounts.get('file-1'), 1)
+      await renderTab('proj-1', true)
+      assert.equal(unmounts.get('file-1'), 1, 'non-chat tab unmounts when leaving view')
+
+      // Closing a retained chat tab unmounts it immediately.
+      await act(async () => {
+        sessions.setState({ openTabs: mixedTabs.filter((tab) => tab.id !== 'chat-1') })
+      })
+      assert.equal(unmounts.get('chat-1'), 1, 'closed retained chat pane unmounts immediately')
+    } else if (scenario === 'detach-retain') {
+      const { useEffect, useRef } = await import('react')
+      const { useWorkspaceVisible } = await import('../src/renderer/src/components/WorkspaceLayout')
+      const original = HTMLElement.prototype.getBoundingClientRect
+      HTMLElement.prototype.getBoundingClientRect = function () {
+        const tab = this.dataset.paneSlot
+        if (!tab || !split.getState().groups.length) return new DOMRect(0, 0, 1000, 800)
+        return tab === 'A' ? new DOMRect(8, 8, 488, 784) : new DOMRect(504, 8, 488, 784)
+      }
+
+      const mounts = new Map<string, number>()
+      const unmounts = new Map<string, number>()
+      const editors = new Map<string, object>()
+      const visibleByTab = new Map<string, boolean>()
+
+      const EditorProbe = ({ id }: { id: string }) => {
+        const visible = useWorkspaceVisible()
+        visibleByTab.set(id, visible)
+        const editorRef = useRef<{ tab: string } | null>(null)
+        if (!editorRef.current) editorRef.current = { tab: id }
+        editors.set(id, editorRef.current)
+        useEffect(() => {
+          mounts.set(id, (mounts.get(id) ?? 0) + 1)
+          return () => { unmounts.set(id, (unmounts.get(id) ?? 0) + 1) }
+        }, [id])
+        return h('div', { 'data-editor-probe': id }, id)
+      }
+
+      const renderTab = async (tabId: string) => {
+        await act(async () => {
+          root.render(h(SplitPaneContainer, {
+            tabId,
+            renderPane: (node) => h(EditorProbe, { id: node.tabId })
+          }))
+        })
+        await act(async () => { await Promise.resolve() })
+      }
+
+      try {
+        // 1. Normal motion: split [A, B], drag B back to the tab strip -> B collapses toward its edge,
+        // settles into retained state on onAnimationComplete, and reselecting B reuses the exact same instance/editor.
+        reduced = false
+        const bPaneId = split.getState().splitTab('A', 'B', 'right')
+        await renderTab('A')
+        assert.equal(mounts.get('A'), 1)
+        assert.equal(mounts.get('B'), 1)
+        const editorBBeforeDetach = editors.get('B')!
+
+        const header = document.createElement('header')
+        header.dataset.appHeader = ''
+        document.elementsFromPoint = () => [header]
+        await act(async () => {
+          host.querySelector(`[data-pane-id="${bPaneId}"] [data-pane-header]`)!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, clientX: 600, clientY: 20 })
+          )
+          window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 600, clientY: 10 }))
+          window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 600, clientY: 10 }))
+        })
+        await act(async () => { await Promise.resolve() })
+
+        assert.deepEqual(split.getState().groups, [])
+        assert.equal(sessions.getState().activeTabId, 'A', 'detaching B keeps survivor A focused')
+        assert.equal(unmounts.get('B') ?? 0, 0, 'B stays mounted during collapse animation')
+        assert.equal(visibleByTab.get('B'), false, 'collapsing B receives WorkspaceVisibility=false')
+        const collapsingProps = frames.get(bPaneId)!
+        assert.equal(
+          (collapsingProps as Record<string, unknown>)['data-pane-collapsing'],
+          'true',
+          'B enters collapsing mode instead of unmounting via AnimatePresence exit'
+        )
+        assert.deepEqual(
+          collapsingProps.animate,
+          { left: 992, top: 8, width: 0, height: 784, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] } },
+          'collapsing B retracts toward its outer edge without scaling'
+        )
+
+        // Complete the collapse animation via motion callback (no timer guessing).
+        await act(async () => {
+          collapsingProps.onAnimationComplete?.({})
+        })
+        assert.equal(unmounts.get('B') ?? 0, 0, 'B transitions from collapsing to retained without unmounting')
+        assert.equal(
+          (frames.get(bPaneId) as Record<string, unknown>)['data-pane-retained'],
+          'true',
+          'B settles into retained hidden state once collapse finishes'
+        )
+
+        // Select B back from the tab strip after collapse has completed -> same instance and editor reference!
+        await renderTab('B')
+        assert.equal(mounts.get('B'), 1, 'reselecting B after collapse does not remount it')
+        assert.equal(unmounts.get('B') ?? 0, 0)
+        assert.equal(editors.get('B'), editorBBeforeDetach, 'reselecting B keeps the exact same editor instance')
+        assert.equal(visibleByTab.get('B'), true)
+
+        // Add B back into A+B split and detach B a second time (landing on the same target topology 'A'):
+        // completion state from the first transition must NOT skip the second collapse animation.
+        const bSecondPaneId = split.getState().splitTab('A', 'B', 'right')
+        await renderTab('A')
+        assert.equal(mounts.get('B'), 1)
+        await act(async () => {
+          host.querySelector(`[data-pane-id="${bSecondPaneId}"] [data-pane-header]`)!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 2, clientX: 600, clientY: 20 })
+          )
+          window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: 600, clientY: 10 }))
+          window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, clientX: 600, clientY: 10 }))
+        })
+        await act(async () => { await Promise.resolve() })
+        const secondCollapseProps = frames.get(bSecondPaneId)!
+        assert.equal(
+          (secondCollapseProps as Record<string, unknown>)['data-pane-collapsing'],
+          'true',
+          'second detach back to the same target topology still plays the collapse animation'
+        )
+        assert.deepEqual(
+          secondCollapseProps.animate,
+          { left: 992, top: 8, width: 0, height: 784, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] } }
+        )
+        await act(async () => { secondCollapseProps.onAnimationComplete?.({}) })
+        assert.equal((frames.get(bSecondPaneId) as Record<string, unknown>)['data-pane-retained'], 'true')
+        assert.equal(mounts.get('B'), 1)
+        assert.equal(unmounts.get('B') ?? 0, 0)
+        assert.equal(editors.get('B'), editorBBeforeDetach)
+
+        // 2. Reduced motion: detaching B from a split goes straight to retained without waiting on collapse animation.
+        reduced = true
+        const bReducedId = split.getState().splitTab('A', 'B', 'right')
+        await renderTab('A')
+        await act(async () => { split.getState().closePane(bReducedId) })
+        await act(async () => { await Promise.resolve() })
+        assert.equal(unmounts.get('B') ?? 0, 0)
+        assert.equal((frames.get(bReducedId) as Record<string, unknown>)['data-pane-retained'], 'true')
+        await renderTab('B')
+        assert.equal(editors.get('B'), editorBBeforeDetach)
+
+        // 3. Bounded cache & closed tab cleanup still apply.
+        const extraTab: OpenTab = { id: 'E', cwd: '/p', kind: 'project', title: 'E', loadState: 'ready' }
+        sessions.setState({ openTabs: [...tabs, extraTab] })
+        await renderTab('C')
+        await renderTab('D')
+        await renderTab('E')
+        await renderTab('A')
+        // MRU capacity is 4 (A, E, D, C) -> B is evicted and unmounted cleanly.
+        assert.equal(unmounts.get('B'), 1, 'oldest retained chat pane is evicted beyond capacity 4')
+      } finally {
+        HTMLElement.prototype.getBoundingClientRect = original
+      }
     } else throw new Error(`Unknown fixture: ${scenario}`)
   } finally {
     await act(async () => {
@@ -1032,7 +1251,9 @@ else
     'close-diff',
     'tab-dnd',
     'menus',
-    'timers'
+    'timers',
+    'retain-chat-panes',
+    'detach-retain'
   ]) {
     test(`split pane regressions: ${scenario}`, async () => {
       const { exitCode: code, stdout: out, stderr: err } = await runSelf(

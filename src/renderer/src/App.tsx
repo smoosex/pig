@@ -468,6 +468,16 @@ export default function App() {
         branch: currentWorktree?.branch ?? currentProject.name
       }
     : null
+  // Keep the last active project's right sidebar mounted while visiting Chats so switching back
+  // does not rebuild FileTree / ChangesPanel from scratch; drop it once that project is removed.
+  const [retainedRightCwd, setRetainedRightCwd] = useState<string | null>(null)
+  if (currentProjectCwd && retainedRightCwd !== currentProjectCwd) {
+    setRetainedRightCwd(currentProjectCwd)
+  } else if (retainedRightCwd && !currentProjectCwd && !knownProjectCwds.has(retainedRightCwd)) {
+    setRetainedRightCwd(null)
+  }
+  const rightPanelCwd = currentProjectCwd ?? retainedRightCwd
+  const hasRetainableChatTabs = openTabs.some((tab) => tab.kind === 'project' || tab.kind === 'chat')
 
   useEffect(() => {
     if (!projectHome || !currentProjectCwd) return
@@ -671,20 +681,24 @@ export default function App() {
                 </div>
               </>
             }
-            right={currentProjectCwd ? (
+            right={rightPanelCwd ? (
               <>
                 <div
                   className={cn('flex shrink-0', rightCollapsed && 'absolute inset-y-0 right-0 z-30',
-                    rightCollapsed && hoverSidebar === 'right' && 'p-2',
-                    rightCollapsed && hoverSidebar !== 'right' && 'pointer-events-none')}
+                    currentProjectCwd && rightCollapsed && hoverSidebar === 'right' && 'p-2',
+                    (!currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')) && 'pointer-events-none')}
                   onMouseMoveCapture={(event) => floatingSidebar.trackPointer('right', event)}
                 >
                   <div
-                    data-sidebar-overlay={!settingsOpen && rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
-                    className={cn('flex', !settingsOpen && rightCollapsed && hoverSidebar === 'right' &&
+                    data-sidebar-overlay={!settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
+                    className={cn('flex', !settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar === 'right' &&
                       'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
                   >
-                    <WorkspacePanel cwd={currentProjectCwd} floating={rightCollapsed} hidden={settingsOpen || (rightCollapsed && hoverSidebar !== 'right')} />
+                    <WorkspacePanel
+                      cwd={rightPanelCwd}
+                      floating={rightCollapsed}
+                      hidden={settingsOpen || !currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')}
+                    />
                   </div>
                 </div>
               </>
@@ -702,15 +716,17 @@ export default function App() {
                 <div
                   className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                 >
-                  {activeTab ? (
+                  {activeTab || hasRetainableChatTabs ? (
                     <SplitPaneContainer
-                      tabId={activeTabId!}
-                      className="flex-1 min-h-0 min-w-0"
+                      tabId={activeTab ? activeTabId! : null}
+                      visible={Boolean(activeTab)}
+                      className={cn('min-h-0 min-w-0 flex-1', !activeTab && 'hidden')}
                       renderPane={(node: PaneNode, isActive) => (
                         <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
                       )}
                     />
-                  ) : projectHome || chatHome ? (
+                  ) : null}
+                  {activeTab ? null : projectHome || chatHome ? (
                     <>
                       <SessionGreeting />
                       {chatHome && (chatDraftError || workspaceError) ? (

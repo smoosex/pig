@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { cn } from '../lib/utils'
 
-const WorkspaceVisibility = createContext(true)
+export const WorkspaceVisibility = createContext(true)
 export const useWorkspaceVisible = () => useContext(WorkspaceVisibility)
 
 export function WorkspaceLayout({

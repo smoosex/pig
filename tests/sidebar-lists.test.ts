@@ -4,8 +4,11 @@
  */
 import { afterEach, describe, mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
 import type { SurfaceStyle } from '../src/shared/api'
+
+let projectListInstances = 0
+let chatListInstances = 0
 
 // The store graph reads window.api the first time it is evaluated and that evaluation is shared
 // across test files, so this one pins the module rather than freezing `undefined` for everyone.
@@ -13,10 +16,16 @@ mock.module('../src/renderer/src/ipc/api', () => ({
   api: { supportsGlass: true }
 }))
 mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({
-  ProjectList: () => createElement('div', { 'data-stub': 'project-list' })
+  ProjectList: () => {
+    const [instance] = useState(() => ++projectListInstances)
+    return createElement('div', { 'data-stub': 'project-list', 'data-instance': String(instance) })
+  }
 }))
 mock.module('../src/renderer/src/components/sidebar/ChatList', () => ({
-  ChatList: () => createElement('div', { 'data-stub': 'chat-list' })
+  ChatList: () => {
+    const [instance] = useState(() => ++chatListInstances)
+    return createElement('div', { 'data-stub': 'chat-list', 'data-instance': String(instance) })
+  }
 }))
 mock.module('../src/renderer/src/components/diff/ChangesPanel', () => ({
   ChangesPanel: () => createElement('div', { 'data-stub': 'changes-panel' })
@@ -35,6 +44,8 @@ async function ensureDom(): Promise<void> {
     domOurs = false
   }
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  // Happy DOM rejects cancelled WAAPI promises; use Motion's JS fallback.
+  Reflect.deleteProperty(Element.prototype, 'animate')
   domReady = true
 }
 
@@ -153,5 +164,46 @@ describe('sidebar list per half', () => {
       supportsGlass: originalSettings.supportsGlass,
       surfaceStyle: originalSettings.surfaceStyle
     })
+  })
+
+  test('switching between projects and chats lazily mounts once and retains both lists via Activity', async () => {
+    await ensureDom()
+    const { act, createElement: h } = await import('react')
+    const { createRoot } = await import('react-dom/client')
+    const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
+    const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const startProjectInstances = projectListInstances
+    const startChatInstances = chatListInstances
+    try {
+      await act(async () => {
+        root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'projects', preferencesError: null })))
+      })
+      assert.equal(projectListInstances, startProjectInstances + 1)
+      assert.equal(chatListInstances, startChatInstances, 'chats list stays unmounted until first visit')
+
+      await act(async () => {
+        root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'chats', preferencesError: null })))
+      })
+      assert.equal(projectListInstances, startProjectInstances + 1, 'projects list stays retained when switching to chats')
+      assert.equal(chatListInstances, startChatInstances + 1, 'chats list mounts lazily on first visit')
+      const projectNode = container.querySelector<HTMLElement>('[data-stub="project-list"]')!
+      const chatNode = container.querySelector<HTMLElement>('[data-stub="chat-list"]')!
+      assert.equal(projectNode.style.display, 'none', 'inactive projects list is hidden by Activity')
+      assert.notEqual(chatNode.style.display, 'none', 'active chats list is visible')
+
+      await act(async () => {
+        root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'projects', preferencesError: null })))
+      })
+      assert.equal(projectListInstances, startProjectInstances + 1, 'returning to projects reuses the mounted instance')
+      assert.equal(chatListInstances, startChatInstances + 1, 'leaving chats retains its mounted instance')
+      assert.notEqual(projectNode.style.display, 'none')
+      assert.equal(chatNode.style.display, 'none')
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+    }
   })
 })

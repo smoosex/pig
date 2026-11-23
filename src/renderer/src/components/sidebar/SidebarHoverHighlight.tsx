@@ -10,19 +10,22 @@ function clipHighlight(area: HTMLElement, target: HTMLElement | null): string {
   const bounds = area.getBoundingClientRect()
   const occlusions = [...area.querySelectorAll<HTMLElement>('[data-sidebar-hover-occlusion]')]
     .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-  const selections = [...area.querySelectorAll<HTMLElement>('[data-sidebar-selected]')].map((row) => {
-    const rect = row.getBoundingClientRect()
-    // Selected file backgrounds are only painted below their own transparent sticky title.
-    const headers = occlusions.filter(({ element }) =>
-      element.parentElement!.contains(row) && !element.contains(row)
-    )
-    return {
-      left: rect.left,
-      top: Math.max(rect.top, ...headers.map(({ rect: header }) => header.bottom)),
-      right: rect.right,
-      bottom: rect.bottom
-    }
-  })
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+  const selections = [...area.querySelectorAll<HTMLElement>('[data-sidebar-selected]')]
+    .map((row) => ({ row, rect: row.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+    .map(({ row, rect }) => {
+      // Selected file backgrounds are only painted below their own transparent sticky title.
+      const headers = occlusions.filter(({ element }) =>
+        element.parentElement!.contains(row) && !element.contains(row)
+      )
+      return {
+        left: rect.left,
+        top: Math.max(rect.top, ...headers.map(({ rect: header }) => header.bottom)),
+        right: rect.right,
+        bottom: rect.bottom
+      }
+    })
   const headers = occlusions.flatMap(({ element, rect }) =>
     target && element.contains(target)
       ? subtractHighlightRect(rect, target.getBoundingClientRect())

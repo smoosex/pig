@@ -9,6 +9,7 @@ import { isSessionEmpty } from '../chat/session-empty'
 import { useSystemUIStore } from '../stores/system-ui'
 import type { RuntimeState } from '../stores/sessions/types'
 import { ConversationViewport } from './chat/ConversationViewport'
+import { updateRecentIds } from './chat/retained-ids'
 import { SessionGreeting } from './SessionGreeting'
 import { BotManagedBanner } from './bot/BotManagedBanner'
 import { MessageScrollerProvider } from './ui/message-scroller'
@@ -26,11 +27,6 @@ const MAX_RETAINED_PANES = 3
 
 type SnapshotCache = Map<string, ScrollSnapshot>
 
-function sameIds(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index])
-}
-
-
 /** Keep the active pane and the two most recently visited panes mounted. */
 function useRetainedSessionIds(openTabs: OpenTab[], activeSessionId: string | null): string[] {
   const openIds = useMemo(
@@ -40,16 +36,9 @@ function useRetainedSessionIds(openTabs: OpenTab[], activeSessionId: string | nu
   const [recentIds, setRecentIds] = useState<string[]>([])
 
   useEffect(() => {
-    setRecentIds((previous) => {
-      const next = previous.filter((id) => openIds.has(id))
-      if (activeSessionId && openIds.has(activeSessionId)) {
-        const existing = next.indexOf(activeSessionId)
-        if (existing !== -1) next.splice(existing, 1)
-        next.unshift(activeSessionId)
-      }
-      const limited = next.slice(0, MAX_RETAINED_PANES)
-      return sameIds(previous, limited) ? previous : limited
-    })
+    setRecentIds((previous) =>
+      updateRecentIds(previous, openIds, activeSessionId ? [activeSessionId] : [], MAX_RETAINED_PANES)
+    )
   }, [activeSessionId, openIds])
 
   return useMemo(() => {

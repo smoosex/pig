@@ -287,6 +287,105 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'settings-roundtrip') {
+    const { WorkspaceLayout, useWorkspaceVisible } = await import('../src/renderer/src/components/WorkspaceLayout')
+    const { SplitPaneContainer } = await import('../src/renderer/src/components/chat/SplitPaneContainer')
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    const { emptyRuntime } = await import('../src/renderer/src/stores/sessions/runtime')
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () { return new window.DOMRect(0, 0, 900, 600) }
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        observe() {}
+        disconnect() {}
+      }
+    })
+    let childVisible = true
+    function VisibilityProbe() {
+      childVisible = useWorkspaceVisible()
+      return null
+    }
+    const fileTab = { id: 'file:README.md', cwd, kind: 'file' as const, path: 'README.md', title: 'README.md', loadState: 'ready' as const }
+    const chatTab = { id: 'chat-1', cwd: '/c', kind: 'chat' as const, title: 'Chat', loadState: 'ready' as const }
+    useSessionsStore.setState({
+      openTabs: [fileTab, chatTab],
+      activeTabId: fileTab.id,
+      currentProjectCwd: cwd,
+      runtime: { [chatTab.id]: emptyRuntime() }
+    })
+
+    const renderLayout = async (settingsOpen: boolean, tabId: string) => {
+      await React.act(async () => {
+        root.render(React.createElement(WorkspaceLayout, {
+          settingsOpen,
+          leftCollapsed: false,
+          rightCollapsed: true,
+          leftFloating: false,
+          rightFloating: false,
+          left: React.createElement('aside'),
+          right: null,
+          renderSettings: () => React.createElement('div', { 'data-settings': '' }, 'Settings'),
+          children: React.createElement(SplitPaneContainer, {
+            tabId,
+            renderPane: (node) => node.tabId === fileTab.id
+              ? React.createElement(React.Fragment, null,
+                  React.createElement(VisibilityProbe),
+                  React.createElement(FileView, { cwd, path: 'README.md' }))
+              : React.createElement('div', { 'data-chat-tab': node.tabId }, 'chat')
+          })
+        }))
+      })
+      await React.act(async () => { await Promise.resolve() })
+    }
+
+    try {
+      await renderLayout(false, fileTab.id)
+      await settle('README.md')
+      const preview = () => container.querySelector('[data-markdown-preview]')
+      const editorHidden = () => container.querySelector('[data-virtualizer]')!.classList.contains('invisible')
+      const toggle = () => container.querySelector<HTMLButtonElement>('[data-markdown-view-toggle]')!
+
+      assert.ok(preview(), 'markdown starts in preview mode')
+      await React.act(async () => { toggle().click() })
+      assert.equal(preview(), null, 'switched to source mode')
+      assert.ok(!editorHidden())
+      const surfaceNode = container.querySelector<HTMLElement>('[data-file="README.md"]')!
+      const textNode = surfaceNode.firstChild!
+      const range = document.createRange()
+      range.setStart(textNode, 2)
+      range.setEnd(textNode, 7)
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      const mountsBeforeSettings = mounted.length
+
+      // Entering Settings hides the workspace and signals WorkspaceVisibility=false without unmounting FileView.
+      await renderLayout(true, fileTab.id)
+      assert.equal(childVisible, false, 'workspace children receive WorkspaceVisibility=false while Settings is open')
+      assert.equal(container.querySelector('[data-file="README.md"]'), surfaceNode, 'FileView stays mounted while Settings covers the workspace')
+      assert.equal(mounted.length, mountsBeforeSettings)
+
+      // Returning from Settings preserves source mode, the same editor DOM node, and its text selection.
+      await renderLayout(false, fileTab.id)
+      assert.equal(childVisible, true)
+      assert.equal(preview(), null, 'returns in source mode instead of falling back to preview')
+      assert.ok(!editorHidden())
+      assert.equal(container.querySelector('[data-file="README.md"]'), surfaceNode, 'same FileView instance returns')
+      assert.equal(mounted.length, mountsBeforeSettings, 'editor was never remounted across Settings roundtrip')
+      assert.equal(window.getSelection()!.toString(), 'Title', 'text selection survives Settings roundtrip')
+
+      // Switching to another tab still unmounts the file tab (no cross-tab caching expansion for files).
+      await renderLayout(false, chatTab.id)
+      assert.equal(container.querySelector('[data-file="README.md"]'), null, 'file tab unmounts when switching to another tab')
+      await renderLayout(false, fileTab.id)
+      assert.ok(mounted.length > mountsBeforeSettings, 'returning from another tab mounts FileView freshly')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+    return
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -298,7 +397,8 @@ if (process.argv[2] === '--file-view-fixture') {
     reload: 'an external change replaces the surface rather than editing the one already on screen',
     'refresh-failure': 'a refresh that could not read says so and offers only a retry',
     'open-failure': 'a file the desktop will not open reports the reason on the tab',
-    markdown: 'markdown toggles between a preview of the draft and the mounted source editor'
+    markdown: 'markdown toggles between a preview of the draft and the mounted source editor',
+    'settings-roundtrip': 'settings roundtrip preserves markdown source mode and selection without caching files across tabs'
   })) {
     test(`file view: ${description}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--file-view-fixture', name])
