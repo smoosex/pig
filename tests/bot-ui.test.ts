@@ -594,7 +594,28 @@ async function fixture() {
   assert.equal(orbBtn.innerHTML.includes('ring-bot-orb-ring'), false, 'BotOrbButton does not draw a ring around itself in Bot mode')
   await act(async () => { orbRoot.unmount() })
 
-  const { BotPage } = await import('../src/renderer/src/components/bot/BotPage')
+  const { BotPage, resolveWorkspaceFileTarget } = await import('../src/renderer/src/components/bot/BotPage')
+  const jumpCalls: Array<import('../src/renderer/src/components/bot/BotPage').BotWorkspaceJumpOptions> = []
+  let copiedClipboard = ''
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (value: string) => {
+        copiedClipboard = value
+      }
+    }
+  })
+  useSessionsStore.setState({
+    projects: [{
+      cwd: '/repo/pig',
+      name: 'Pig',
+      sessions: [],
+      worktrees: [
+        { cwd: '/wt/perm-1', branch: 'bot/fix-perm-1', head: 'abc', isPrimary: false, locked: false, missing: false, managed: true, sessions: [] },
+        { cwd: '/wt/gone', branch: 'bot/gone', head: 'def', isPrimary: false, locked: false, missing: true, managed: true, sessions: [] }
+      ]
+    }]
+  })
   const runningPermTask = makeTask({ taskId: 'perm-1', status: 'blocked_approval', title: 'Perm check' })
   await act(async () => {
     useBotStore.setState({
@@ -614,7 +635,19 @@ async function fixture() {
       timeline: [
         { id: 'u-0', kind: 'user', text: '这个项目做了什么工作', projectMentions: ['/repo/lumina'], createdAt: 500 },
         { id: 'm-1', kind: 'assistant', messageType: 'delivery', content: '卡在审批上', taskIds: ['perm-1'], createdAt: 1000 },
-        { id: 'm-2', kind: 'assistant', messageType: 'delivery', content: '审批说明补充', taskIds: ['perm-1'], createdAt: 2000 }
+        {
+          id: 'm-2',
+          kind: 'assistant',
+          messageType: 'delivery',
+          content: '审批说明 **重点**',
+          taskIds: ['perm-1'],
+          attachments: [
+            { path: '/wt/perm-1/src/export.ts', name: 'export.ts', exists: true, size: 2048 },
+            { path: '/tmp/external.md', name: 'external.md', exists: true, size: 512 },
+            { path: '/repo/pig/deleted.ts', name: 'deleted.ts', exists: false }
+          ],
+          createdAt: 2000
+        }
       ]
     })
   })
@@ -622,7 +655,7 @@ async function fixture() {
   document.body.append(pageHost)
   const pageRoot = createRoot(pageHost)
   await act(async () => {
-    pageRoot.render(h(TooltipProvider, null, h(BotPage, { onJumpToWorkspace: () => {} })))
+    pageRoot.render(h(TooltipProvider, null, h(BotPage, { onJumpToWorkspace: (opts) => jumpCalls.push(opts) })))
   })
   assert.equal(
     pageHost.querySelectorAll('[data-bot-task-card="perm-1"]').length,
@@ -710,7 +743,50 @@ async function fixture() {
   for (const bubbleEl of assistantBubbles) {
     assert.ok(bubbleEl.classList.contains('w-full'), 'assistant reply stretches full column width beneath avatar')
     assert.ok(bubbleEl.parentElement?.classList.contains('flex-col'), 'stacks avatar above assistant reply instead of left-indenting')
+    const bodyEl = bubbleEl.querySelector<HTMLElement>('[data-bot-assistant-body]')!
+    assert.ok(bodyEl, 'renders frameless assistant Markdown body')
+    assert.equal(bodyEl.className.includes('border-glass-card-border'), false, 'omits heavy outer card border around assistant text')
   }
+
+  // Message hover toolbars expose copy + timestamp on both user and assistant messages.
+  const userActions = pageHost.querySelector<HTMLElement>('[data-bot-message-actions="end"]')!
+  const assistantActions = pageHost.querySelectorAll<HTMLElement>('[data-bot-message-actions="start"]')
+  assert.ok(userActions && assistantActions.length === 3, 'renders message action bars with timestamps for user and assistant rows')
+  assert.ok(userActions.querySelector('time'), 'renders formatted timestamp on user message')
+  const secondReplyCopyBtn = assistantActions[1].querySelector<HTMLButtonElement>('[data-bot-copy-button]')!
+  await act(async () => { secondReplyCopyBtn.click() })
+  assert.equal(copiedClipboard, '审批说明 **重点**', 'copies assistant reply Markdown on click')
+
+  // Interactive attachment chips: longest-prefix workspace file jump, external path copy fallback, and missing file state.
+  assert.deepEqual(
+    resolveWorkspaceFileTarget('/repo/pig/.worktrees/sub/a.ts', ['/repo/pig/.worktrees/sub'], useSessionsStore.getState().projects, []),
+    { cwd: '/repo/pig/.worktrees/sub', relativePath: 'a.ts' },
+    'prefers longest matching worktree root over parent project root'
+  )
+  assert.equal(
+    resolveWorkspaceFileTarget('/wt/gone/x.ts', [], useSessionsStore.getState().projects, []),
+    null,
+    'skips missing worktrees when resolving attachment targets'
+  )
+
+  const worktreeAttBtn = pageHost.querySelector<HTMLButtonElement>('[data-bot-attachment="/wt/perm-1/src/export.ts"]')!
+  const externalAttBtn = pageHost.querySelector<HTMLButtonElement>('[data-bot-attachment="/tmp/external.md"]')!
+  const missingAttBtn = pageHost.querySelector<HTMLButtonElement>('[data-bot-attachment="/repo/pig/deleted.ts"]')!
+  assert.ok(worktreeAttBtn && externalAttBtn && missingAttBtn, 'renders interactive attachment chips')
+  assert.ok(worktreeAttBtn.textContent?.includes('2 KB'), 'formats attachment byte size')
+  assert.equal(missingAttBtn.getAttribute('aria-disabled'), 'true', 'marks missing attachment aria-disabled')
+  assert.ok(missingAttBtn.innerHTML.includes('line-through'), 'strikes through missing attachment filename')
+
+  await act(async () => { missingAttBtn.click() })
+  assert.equal(jumpCalls.length, 0, 'clicking missing attachment does not navigate')
+
+  await act(async () => { externalAttBtn.click() })
+  assert.equal(copiedClipboard, '/tmp/external.md', 'clicking attachment outside workspace copies its path')
+  assert.equal(jumpCalls.length, 0)
+
+  await act(async () => { worktreeAttBtn.click() })
+  assert.equal(useBotStore.getState().open, false, 'clicking workspace attachment closes Bot overlay')
+  assert.deepEqual(jumpCalls, [{ cwd: '/wt/perm-1', openFilePath: 'src/export.ts' }], 'jumps to workspace and opens target file tab')
 
   await act(async () => {
     cardRoot.unmount()

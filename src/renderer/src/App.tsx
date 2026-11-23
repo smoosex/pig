@@ -544,11 +544,15 @@ export default function App() {
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         {botOpen && !settingsOpen ? (
           <BotPage
-            onJumpToWorkspace={({ cwd, sessionId, openChanges }) => {
+            onJumpToWorkspace={({ cwd, sessionId, openChanges, openFilePath }) => {
               setSettingsOpen(false)
               if (sidebarTab !== 'projects') switchSidebarTab('projects')
               void selectProjectCwd(cwd).then(async () => {
                 const store = useSessionsStore.getState()
+                if (openFilePath) {
+                  await store.openFileTab(cwd, openFilePath)
+                  return
+                }
                 if (openChanges) {
                   await store.openChangesTab(cwd)
                   useDiffStore.getState().setReviewOpen(true)

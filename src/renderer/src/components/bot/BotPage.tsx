@@ -8,6 +8,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
+  ArrowUpRight,
+  Check,
+  Copy,
   FileText,
   FolderKanban,
   Layers,
@@ -16,17 +19,28 @@ import {
 } from 'lucide-react'
 import { BotAvatar } from 'bot-avatars'
 import { toast } from 'sonner'
-import { formatPastedTextSize, utf8ByteLength } from '../../../../shared/pasted-text'
+import { composePromptText, formatPastedTextSize, utf8ByteLength } from '../../../../shared/pasted-text'
 import { baseName } from '../../../../shared/paths'
-import { DEFAULT_BOT_AVATAR, isBotTaskActive, type BotAvatarId, type BotTask, type BotTimelineItem } from '../../../../shared/bot'
+import {
+  DEFAULT_BOT_AVATAR,
+  isBotTaskActive,
+  type BotAttachmentItem,
+  type BotAvatarId,
+  type BotTask,
+  type BotTimelineItem
+} from '../../../../shared/bot'
+import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
+import { markdownToPlainText } from '../../lib/markdown-plain-text'
 import { cn } from '../../lib/utils'
 import { useBotStore } from '../../stores/bot'
 import { useSessionsStore } from '../../stores/sessions'
+import { useSettingsStore } from '../../stores/settings'
 import { ApprovalPrompt, useApprovalPrompt } from '../composer/ApprovalPrompt'
 import { botColumn } from '../../chat/layout'
 import { SCROLL_END } from '../../chat/scroll-state'
+import { FileTypeIcon } from '../files/FileTypeIcon'
 import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
 import { PastedTextPreview } from '../PastedTextPreview'
@@ -39,6 +53,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
@@ -67,10 +82,69 @@ import { BotTaskCard, type BotTaskNavigation } from './BotTaskCard'
 import { BotTaskDrawer } from './BotTaskDrawer'
 import { BotComposer } from './BotComposer'
 
+const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+
+export interface BotWorkspaceJumpOptions {
+  cwd: string
+  sessionId?: string
+  openChanges?: boolean
+  openFilePath?: string
+}
+
+/**
+ * Resolves an absolute attachment file path to the most specific active workspace or opened project root
+ * so clicking an attachment opens its file tab directly inside Pig's workspace.
+ */
+export function resolveWorkspaceFileTarget(
+  filePath: string,
+  preferredCwds: readonly string[],
+  projects: readonly { cwd: string; worktrees?: readonly { cwd: string; missing: boolean }[] }[],
+  tasks: readonly BotTask[]
+): { cwd: string; relativePath: string } | null {
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const push = (cwd: string | undefined) => {
+    if (!cwd) return
+    const trimmed = cwd.replace(/[\\/]+$/, '')
+    if (!trimmed || seen.has(trimmed)) return
+    seen.add(trimmed)
+    candidates.push(trimmed)
+  }
+
+  for (const cwd of preferredCwds) push(cwd)
+  for (const task of tasks) {
+    if (!task.workspace.cleanedUpAt) push(task.workspace.cwd)
+    push(task.projectCwd)
+  }
+  for (const proj of projects) {
+    push(proj.cwd)
+    for (const wt of proj.worktrees ?? []) {
+      if (!wt.missing) push(wt.cwd)
+    }
+  }
+
+  const normalizedFile = filePath.replace(/\\/g, '/')
+  let best: { cwd: string; relativePath: string; rootLen: number } | null = null
+  for (const cwd of candidates) {
+    const normalizedRoot = cwd.replace(/\\/g, '/')
+    const prefix = normalizedRoot === '' ? '/' : `${normalizedRoot}/`
+    if (normalizedFile.startsWith(prefix) && normalizedFile.length > prefix.length) {
+      if (!best || normalizedRoot.length > best.rootLen) {
+        best = {
+          cwd,
+          relativePath: normalizedFile.slice(prefix.length),
+          rootLen: normalizedRoot.length
+        }
+      }
+    }
+  }
+  return best ? { cwd: best.cwd, relativePath: best.relativePath } : null
+}
+
 export function BotPage({
   onJumpToWorkspace
 }: {
-  onJumpToWorkspace: (options: { cwd: string; sessionId?: string; openChanges?: boolean }) => void
+  onJumpToWorkspace: (options: BotWorkspaceJumpOptions) => void
 }) {
   const t = useT()
   const state = useBotStore((s) => s.state)
@@ -166,6 +240,14 @@ export function BotPage({
         })
       }
     }),
+    [closeBot, onJumpToWorkspace]
+  )
+
+  const handleOpenAttachmentFile = useCallback(
+    (cwd: string, relativePath: string) => {
+      closeBot()
+      onJumpToWorkspace({ cwd, openFilePath: relativePath })
+    },
     [closeBot, onJumpToWorkspace]
   )
 
@@ -357,9 +439,12 @@ export function BotPage({
                           item={item}
                           avatar={avatar}
                           grouped={idx > 0 && timeline[idx - 1].kind === 'assistant' && item.kind === 'assistant'}
+                          tasks={tasks}
+                          projects={projects}
                           tasksById={tasksById}
                           latestCardItemByTaskId={latestCardItemByTaskId}
                           navigation={navigation}
+                          onOpenAttachmentFile={handleOpenAttachmentFile}
                           onRetry={() => void retryLastMessage()}
                         />
                       ))}
@@ -445,17 +530,23 @@ function BotTimelineRow({
   item,
   avatar,
   grouped,
+  tasks,
+  projects,
   tasksById,
   latestCardItemByTaskId,
   navigation,
+  onOpenAttachmentFile,
   onRetry
 }: {
   item: BotTimelineItem
   avatar: BotAvatarId
   grouped: boolean
+  tasks: readonly BotTask[]
+  projects: readonly { cwd: string; worktrees?: readonly { cwd: string; missing: boolean }[] }[]
   tasksById: Map<string, BotTask>
   latestCardItemByTaskId: Map<string, string>
   navigation: BotTaskNavigation
+  onOpenAttachmentFile: (cwd: string, relativePath: string) => void
   onRetry: () => void
 }) {
   const t = useT()
@@ -509,15 +600,18 @@ function BotTimelineRow({
   }
 
   // item.kind === 'assistant' (strictly produced by send_message)
-  const linkedTasks = [...new Set(item.taskIds ?? [])]
-    .filter((id) => latestCardItemByTaskId.get(id) === item.id)
+  const referencedTasks = [...new Set(item.taskIds ?? [])]
     .map((id) => tasksById.get(id))
     .filter((task): task is BotTask => task !== undefined)
+  const linkedTasks = referencedTasks.filter((task) => latestCardItemByTaskId.get(task.taskId) === item.id)
+  const preferredCwds = referencedTasks.flatMap((task) =>
+    task.workspace.cleanedUpAt ? [task.projectCwd] : [task.workspace.cwd, task.projectCwd]
+  )
 
   return (
     <MessageScrollerItem
       messageId={item.id}
-      className={cn('flex flex-col items-start gap-1.5', grouped ? '-mt-1.5' : '')}
+      className={cn('group/bot-reply flex flex-col items-start gap-1.5', grouped ? '-mt-2' : '')}
     >
       {!grouped ? (
         <div data-bot-assistant-header className="flex items-center">
@@ -526,20 +620,19 @@ function BotTimelineRow({
       ) : null}
 
       <div data-bot-assistant-bubble className="w-full min-w-0 space-y-2">
-        <div className="rounded-2xl border border-glass-card-border bg-glass-pane-background/60 px-3.5 py-2.5 text-sm leading-relaxed text-foreground solid:border-border/70 solid:bg-card">
+        <div data-bot-assistant-body className="text-sm leading-relaxed text-foreground">
           <MarkdownText text={item.content} />
         </div>
 
         {item.attachments?.length ? (
           <div className="flex flex-wrap gap-1.5">
             {item.attachments.map((att) => (
-              <span
+              <BotAttachmentChip
                 key={att.path}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1 text-xs text-foreground"
-              >
-                <FileText className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">{att.name}</span>
-              </span>
+                attachment={att}
+                target={resolveWorkspaceFileTarget(att.path, preferredCwds, projects, tasks)}
+                onOpenFile={onOpenAttachmentFile}
+              />
             ))}
           </div>
         ) : null}
@@ -551,8 +644,198 @@ function BotTimelineRow({
             ))}
           </div>
         ) : null}
+
+        <BotMessageActions align="start" text={item.content} timestamp={item.createdAt} />
       </div>
     </MessageScrollerItem>
+  )
+}
+
+function BotAttachmentChip({
+  attachment,
+  target,
+  onOpenFile
+}: {
+  attachment: BotAttachmentItem
+  target: { cwd: string; relativePath: string } | null
+  onOpenFile: (cwd: string, relativePath: string) => void
+}) {
+  const t = useT()
+  const { copied, copy } = useCopyFeedback(attachment.path)
+  const missing = !attachment.exists
+  const tooltipText = missing
+    ? `${t('fileMention.missing')} · ${attachment.path}`
+    : target
+      ? `${t('turnChanges.openFile')} · ${attachment.path}`
+      : copied
+        ? t('common.copied')
+        : `${t('fileMention.copyPath')} · ${attachment.path}`
+
+  const handleClick = async () => {
+    if (missing) return
+    if (target) {
+      onOpenFile(target.cwd, target.relativePath)
+      return
+    }
+    try {
+      await copy(attachment.path)
+    } catch (error) {
+      toast.error(t('turn.messageActionFailed'), { description: failureMessage(error) })
+    }
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="xs"
+          data-bot-attachment={attachment.path}
+          aria-disabled={missing || undefined}
+          aria-label={attachment.name}
+          onClick={() => void handleClick()}
+          className="h-6 max-w-72 gap-1.5 rounded-lg px-2 text-xs font-normal aria-disabled:cursor-default aria-disabled:opacity-60"
+        >
+          {copied ? (
+            <Check className="size-3.5 shrink-0 text-success" aria-hidden="true" />
+          ) : (
+            <FileTypeIcon path={attachment.name} className="size-3.5 shrink-0" />
+          )}
+          <span className={cn('min-w-0 truncate font-medium', missing && 'text-muted-foreground line-through')}>
+            {attachment.name}
+          </span>
+          {attachment.size !== undefined ? (
+            <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">
+              {formatPastedTextSize(attachment.size)}
+            </span>
+          ) : null}
+          {!missing && target ? (
+            <ArrowUpRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          ) : null}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={4} className="max-w-md break-all">
+        {tooltipText}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function BotMessageActions({
+  text,
+  timestamp,
+  align
+}: {
+  text: string
+  timestamp: number
+  align: 'start' | 'end'
+}) {
+  const t = useT()
+  const locale = useSettingsStore((state) => state.locale)
+  const timestampFormat = useMemo(
+    () =>
+      new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+      }),
+    [locale]
+  )
+  const fullTimestamp = timestampFormat.format(timestamp)
+  const { copied, copy } = useCopyFeedback(text)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  async function copyContent(format: 'markdown' | 'plain' = 'markdown'): Promise<void> {
+    try {
+      await copy(format === 'plain' ? markdownToPlainText(text) : text)
+    } catch (error) {
+      toast.error(t('turn.messageActionFailed'), { description: failureMessage(error) })
+    }
+  }
+
+  const timeNode = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <time
+          dateTime={new Date(timestamp).toISOString()}
+          tabIndex={0}
+          aria-label={fullTimestamp}
+          className={cn(
+            'rounded-sm text-xs tabular-nums outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring',
+            align === 'start' ? 'ml-1.5' : 'mr-1.5'
+          )}
+        >
+          {clock.format(timestamp)}
+        </time>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={4} className="max-w-none whitespace-nowrap">
+        {fullTimestamp}
+      </TooltipContent>
+    </Tooltip>
+  )
+
+  return (
+    <div
+      data-bot-message-actions={align}
+      className={cn(
+        '-mt-1 flex h-6 items-center gap-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 motion-reduce:transition-none',
+        align === 'end'
+          ? 'justify-end group-hover/user-message:opacity-100 group-focus-within/user-message:opacity-100'
+          : 'justify-start group-hover/bot-reply:opacity-100 group-focus-within/bot-reply:opacity-100',
+        (menuOpen || copied) && 'opacity-100'
+      )}
+    >
+      {align === 'end' ? timeNode : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            data-bot-copy-button
+            aria-label={t(copied ? 'common.copied' : 'common.copy')}
+            disabled={!text}
+            onClick={() => void copyContent()}
+          >
+            {copied ? <Check /> : <Copy />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          {t(copied ? 'common.copied' : 'common.copy')}
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={t('turn.moreActions')}>
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>{t('turn.moreActions')}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align={align} side="bottom">
+          <DropdownMenuGroup>
+            <DropdownMenuItem disabled={!text} onSelect={() => void copyContent('markdown')}>
+              <Copy />
+              {t('turn.copyMarkdown')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!text} onSelect={() => void copyContent('plain')}>
+              <Copy />
+              {t('turn.copyPlainText')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {align === 'start' ? timeNode : null}
+    </div>
   )
 }
 
@@ -566,6 +849,7 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
   const textAttachments = item.textAttachments ?? []
   const projectMentions = item.projectMentions ?? []
   const hasTextBubble = projectMentions.length > 0 || textAttachments.length > 0 || item.text.length > 0
+  const copyText = textAttachments.length > 0 ? composePromptText(item.text, textAttachments) : item.text
 
   return (
     <MessageScrollerItem messageId={item.id}>
@@ -648,6 +932,7 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
               </BubbleContent>
             </Bubble>
           ) : null}
+          <BotMessageActions align="end" text={copyText} timestamp={item.createdAt} />
           <ImagePreview src={preview} onClose={() => setPreview(null)} />
         </MessageContent>
       </Message>
