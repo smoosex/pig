@@ -93,7 +93,7 @@ export function BotOrbButton({
               statusKind === 'approval' && 'ring-2 ring-warning/85 shadow-[0_0_12px_var(--warning)] bot-orb-pulse motion-reduce:animate-none',
               statusKind === 'attention' && 'ring-2 ring-destructive/85',
               statusKind === 'unread' && 'shadow-[0_0_10px_var(--bot-orb-glow)]',
-              statusKind === 'idle' && (open ? 'ring-1 ring-bot-orb-ring shadow-[0_0_10px_var(--bot-orb-glow)]' : 'group-hover:shadow-[0_0_10px_var(--bot-orb-glow)]')
+              statusKind === 'idle' && 'group-hover:shadow-[0_0_10px_var(--bot-orb-glow)]'
             )}
           />
           {/* Animated Bot avatar: 22px body with 1.5x overscan (33px canvas) stays unclipped inside the 40px header */}

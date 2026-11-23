@@ -1,5 +1,5 @@
 /**
- * On-demand slide-over task ledger drawer inside BotPage (360px wide).
+ * On-demand left slide-over task ledger drawer inside BotPage (360px wide).
  * Supports Active / All filtering, Esc dismissal, and direct actions on every BotTask.
  */
 import { useEffect, useMemo, useState } from 'react'
@@ -49,12 +49,12 @@ export function BotTaskDrawer({ navigation }: { navigation: BotTaskNavigation })
           data-bot-task-drawer
           role="dialog"
           aria-label={t('bot.tasksDrawerTitle')}
-          initial={prefersReduced ? { opacity: 0 } : { opacity: 0, x: 24 }}
+          initial={prefersReduced ? { opacity: 0 } : { opacity: 0, x: -24 }}
           animate={prefersReduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
-          exit={prefersReduced ? { opacity: 0 } : { opacity: 0, x: 24 }}
+          exit={prefersReduced ? { opacity: 0 } : { opacity: 0, x: -24 }}
           transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
           className={cn(
-            'absolute top-2 right-2 bottom-2 z-30 flex w-90 max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-xl',
+            'absolute top-2 bottom-2 left-2 z-30 flex w-90 max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-xl',
             'bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border',
             'solid:border solid:border-border solid:bg-popover solid:bg-none solid:shadow-xl solid:ring-0'
           )}

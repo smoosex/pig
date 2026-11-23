@@ -588,6 +588,10 @@ async function fixture() {
   await act(async () => { orbBtn.click() })
   assert.equal(useBotStore.getState().open, true, 'clicking BotOrbButton toggles Bot open')
   assert.equal(orbBtn.getAttribute('aria-expanded'), 'true')
+  await act(async () => {
+    useBotStore.setState({ tasks: [], approvals: [], unreadCount: 0, streaming: false })
+  })
+  assert.equal(orbBtn.innerHTML.includes('ring-bot-orb-ring'), false, 'BotOrbButton does not draw a ring around itself in Bot mode')
   await act(async () => { orbRoot.unmount() })
 
   const { BotPage } = await import('../src/renderer/src/components/bot/BotPage')
@@ -624,6 +628,29 @@ async function fixture() {
     1,
     'renders only one task card in the timeline under the latest referencing bubble'
   )
+
+  // Header tasks orb button sits immediately to the left of BotOrbButton, uses glass-orb styling, and opens the left-anchored drawer.
+  const tasksTrigger = pageHost.querySelector<HTMLButtonElement>('[data-bot-tasks-trigger]')!
+  const pageOrbBtn = pageHost.querySelector<HTMLButtonElement>('[data-bot-orb-button]')!
+  assert.ok(tasksTrigger && pageOrbBtn, 'renders both tasks trigger and BotOrbButton in BotPage header')
+  assert.equal(
+    Boolean(tasksTrigger.compareDocumentPosition(pageOrbBtn) & Node.DOCUMENT_POSITION_FOLLOWING),
+    true,
+    'places tasks trigger button to the left of BotOrbButton'
+  )
+  assert.equal(tasksTrigger.textContent?.trim(), '', 'renders compact icon-only tasks trigger button')
+  assert.ok(tasksTrigger.className.includes('shadow-glass-orb') && tasksTrigger.className.includes('rounded-full'), 'uses glass-orb style matching SurfaceStyleToggle')
+  assert.ok(tasksTrigger.getAttribute('aria-label'), 'exposes accessible label for tasks trigger')
+  assert.equal(tasksTrigger.querySelector('[data-bot-tasks-badge]')?.getAttribute('data-bot-tasks-badge'), 'approval')
+  assert.equal(tasksTrigger.getAttribute('aria-expanded'), 'false')
+  await act(async () => { tasksTrigger.click() })
+  assert.equal(useBotStore.getState().drawerOpen, true, 'clicking tasks trigger opens task drawer')
+  assert.equal(tasksTrigger.getAttribute('aria-expanded'), 'true')
+  const taskDrawer = pageHost.querySelector<HTMLElement>('[data-bot-task-drawer]')
+  assert.ok(taskDrawer, 'renders task drawer when opened')
+  assert.ok(taskDrawer.className.includes('left-2') && !taskDrawer.className.includes('right-2'), 'anchors task drawer on the left side')
+  await act(async () => { tasksTrigger.click() })
+  assert.equal(useBotStore.getState().drawerOpen, false, 'clicking tasks trigger again closes task drawer')
 
   // Resolving the mirrored approval while task keeps running shows post-approval continuation hint
   await act(async () => {

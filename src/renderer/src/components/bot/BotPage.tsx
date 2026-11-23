@@ -1,6 +1,6 @@
 /**
  * Sidebarless full-window Bot conversation stage:
- * - Minimal h-10 draggable top bar (SidebarToggle-sized spacer + BotOrbButton in place, status, Tasks drawer button, emergency Reset menu)
+ * - Minimal h-10 draggable top bar (glass-orb Tasks button + BotOrbButton aligned with Workspace, status, emergency Reset menu)
  * - Floating BotLiveTaskBar (renders only while active tasks exist)
  * - Centered max-w-3xl MessageScroller projecting ONLY user messages, send_message bubbles (+ delivery cards),
  *   mirrored approval prompts, and system fallback cards — never internal thinking or QueuedMessageRow.
@@ -27,6 +27,7 @@ import { SCROLL_END } from '../../chat/scroll-state'
 import { MarkdownText } from '../MarkdownText'
 import { ShortcutKbd } from '../ShortcutKbd'
 import { Button } from '../ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -218,6 +219,9 @@ export function BotPage({
   }, [projects, t])
 
   const isEmpty = timeline.length === 0 && !streaming && !activeApprovalPrompt
+  const tasksButtonLabel = activeTaskCount > 0
+    ? `${t('bot.tasksButtonAll')} · ${t('bot.tasksButton', { count: activeTaskCount })}`
+    : t('bot.tasksButtonAll')
 
   return (
     <div
@@ -227,9 +231,44 @@ export function BotPage({
     >
       {/* Minimal h-10 draggable top bar */}
       <header data-bot-header className="drag relative flex h-10 shrink-0 items-center justify-between pr-3 pl-20">
-        {/* Reserve SidebarToggle's exact size-7 slot + gap-1 so BotOrbButton stays pixel-aligned with Workspace */}
+        {/* Occupy SidebarToggle's exact size-7 slot + gap-1 so BotOrbButton stays pixel-aligned with Workspace */}
         <div className="flex h-full shrink-0 items-center gap-1">
-          <span aria-hidden="true" className="size-7 shrink-0" />
+          <div className="flex size-7 shrink-0 items-center justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  data-bot-tasks-trigger
+                  aria-label={tasksButtonLabel}
+                  aria-expanded={drawerOpen}
+                  onClick={() => toggleDrawer()}
+                  className={cn(
+                    'no-drag relative flex size-5.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-glass-orb-background bg-[image:var(--glass-orb-sheen)] text-glass-prompt-foreground shadow-glass-orb outline-none transition-transform duration-150 hover:scale-105 active:scale-95 focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring motion-reduce:transition-none solid:bg-background solid:bg-none solid:text-foreground solid:shadow-none solid:ring-1 solid:ring-sidebar-border',
+                    drawerOpen && 'text-primary solid:ring-primary/50'
+                  )}
+                >
+                  <Layers className="size-3" aria-hidden="true" />
+                  {approvals.length > 0 || activeTaskCount > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      data-bot-tasks-badge={approvals.length > 0 ? 'approval' : 'running'}
+                      className={cn(
+                        'pointer-events-none absolute -top-0.5 -right-0.5 size-1.5 rounded-full ring-2 ring-background',
+                        approvals.length > 0 ? 'bg-warning' : 'bg-primary'
+                      )}
+                    />
+                  ) : null}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <span>{t('bot.tasksButtonAll')}</span>
+                {activeTaskCount > 0 ? (
+                  <span className="ml-1.5 text-muted-foreground">· {t('bot.tasksButton', { count: activeTaskCount })}</span>
+                ) : null}
+                <span className="ml-1.5 inline-flex"><ShortcutKbd action="bot.toggleTasks" /></span>
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <BotOrbButton registerAnchor />
         </div>
 
@@ -240,21 +279,6 @@ export function BotPage({
         </div>
 
         <div className="no-drag flex items-center gap-1">
-          <Button
-            type="button"
-            variant={drawerOpen ? 'secondary' : 'ghost'}
-            size="xs"
-            data-bot-tasks-trigger
-            onClick={() => toggleDrawer()}
-            className="gap-1.5 text-xs"
-          >
-            <Layers className="size-3.5" />
-            <span>
-              {activeTaskCount > 0 ? t('bot.tasksButton', { count: activeTaskCount }) : t('bot.tasksButtonAll')}
-            </span>
-            <span className="hidden md:inline-flex"><ShortcutKbd action="bot.toggleTasks" /></span>
-          </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
