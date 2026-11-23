@@ -192,7 +192,8 @@ export function BotComposer({
   }
 
   const ModeIcon = MODE_ICONS[permissionMode]
-  const canSend = draft.trim().length > 0 && !sending
+  const hasDraft = draft.trim().length > 0
+  const canSend = hasDraft && !sending
 
   const editor = (
     <>
@@ -338,24 +339,23 @@ export function BotComposer({
             </Tooltip>
           ) : null}
       </>}
-      trailing={<>
-          {streaming ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <InputGroupButton
-                  variant="secondary"
-                  size="icon-xs"
-                  aria-label={t('bot.composer.stopTurn')}
-                  onClick={() => void abortCurrentTurn()}
-                  className="rounded-full"
-                >
-                  <span aria-hidden className="size-2.5 rounded-xs bg-destructive bg-(image:--glass-badge-sheen) shadow-glass-badge" />
-                </InputGroupButton>
-              </TooltipTrigger>
-              <TooltipContent side="top">{t('bot.composer.stopTurn')}</TooltipContent>
-            </Tooltip>
-          ) : null}
-
+      trailing={
+        streaming && !hasDraft ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <InputGroupButton
+                variant="secondary"
+                size="icon-xs"
+                aria-label={t('bot.composer.stopTurn')}
+                onClick={() => void abortCurrentTurn()}
+                className="rounded-full"
+              >
+                <span aria-hidden className="size-2.5 rounded-xs bg-destructive bg-(image:--glass-badge-sheen) shadow-glass-badge" />
+              </InputGroupButton>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t('bot.composer.stopTurn')}</TooltipContent>
+          </Tooltip>
+        ) : (
           <InputGroupButton
             size="icon-xs"
             variant="default"
@@ -366,7 +366,8 @@ export function BotComposer({
           >
             <ArrowUp />
           </InputGroupButton>
-      </>}
+        )
+      }
     />
   )
 

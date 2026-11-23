@@ -48,6 +48,7 @@ async function fixture() {
   const setModelCalls: Array<{ provider: string; id: string }> = []
   const setThinkingCalls: string[] = []
   const sends: Array<{ text: string; projectMentions?: string[] }> = []
+  let abortTurnCalls = 0
   let push: ((event: import('../src/shared/bot').BotEvent) => void) | undefined
   let rejectSend: ((error: Error) => void) | undefined
   let deferSend = false
@@ -144,7 +145,7 @@ async function fixture() {
       return { id: `u-${Date.now()}`, kind: 'user' as const, text: input.text, createdAt: Date.now() }
     },
     retryLastMessage: async () => null,
-    abortCurrentTurn: async () => {},
+    abortCurrentTurn: async () => { abortTurnCalls++ },
     setPermissionMode: async (mode: 'read-only' | 'default' | 'full-access') => mode,
     setModel: async (provider: string, id: string) => {
       setModelCalls.push({ provider, id })
@@ -490,6 +491,33 @@ async function fixture() {
   await act(async () => { useBotStore.getState().setDraftInput('next draft') })
   await act(async () => { rejectSend!(new Error('send failed')) })
   assert.equal(input.value, 'next draft')
+  deferSend = false
+
+  // Single-slot send/stop replacement matching workspace ComposerToolbar:
+  // streaming + empty draft -> stop button; streaming + non-empty draft -> send button; idle + empty -> disabled send button.
+  const trailingButtons = () => surface.querySelectorAll<HTMLButtonElement>('[data-slot="input-group-addon"][data-align="block-end"] button[data-size="icon-xs"]')
+  await act(async () => {
+    useBotStore.setState({ streaming: false, draftInput: '' })
+  })
+  assert.equal(trailingButtons().length, 1, 'renders a single trailing action slot when idle')
+  assert.equal(trailingButtons()[0].dataset.variant, 'default')
+  assert.equal(trailingButtons()[0].disabled, true)
+
+  await act(async () => {
+    useBotStore.setState({ streaming: true, draftInput: '' })
+  })
+  assert.equal(trailingButtons().length, 1, 'replaces send with stop instead of rendering both buttons side by side')
+  assert.equal(trailingButtons()[0].dataset.variant, 'secondary')
+  assert.equal(trailingButtons()[0].disabled, false)
+  await act(async () => { trailingButtons()[0].click() })
+  assert.equal(abortTurnCalls, 1, 'clicking stop slot aborts current Bot turn')
+
+  await act(async () => {
+    useBotStore.setState({ streaming: true, draftInput: '追问一句' })
+  })
+  assert.equal(trailingButtons().length, 1, 'keeps a single trailing action slot while typing during streaming')
+  assert.equal(trailingButtons()[0].dataset.variant, 'default', 'switches back to send button once draft has text')
+  assert.equal(trailingButtons()[0].disabled, false)
 
   await act(async () => {
     barRoot.unmount()
