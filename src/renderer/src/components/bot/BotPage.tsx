@@ -9,12 +9,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   AlertCircle,
   FileText,
+  FolderKanban,
   Layers,
   MoreHorizontal,
   RotateCcw
 } from 'lucide-react'
 import { BotAvatar } from 'bot-avatars'
 import { toast } from 'sonner'
+import { formatPastedTextSize, utf8ByteLength } from '../../../../shared/pasted-text'
 import { baseName } from '../../../../shared/paths'
 import { DEFAULT_BOT_AVATAR, isBotTaskActive, type BotAvatarId, type BotTask, type BotTimelineItem } from '../../../../shared/bot'
 import { useT } from '../../hooks/useT'
@@ -23,10 +25,16 @@ import { cn } from '../../lib/utils'
 import { useBotStore } from '../../stores/bot'
 import { useSessionsStore } from '../../stores/sessions'
 import { ApprovalPrompt, useApprovalPrompt } from '../composer/ApprovalPrompt'
+import { botColumn } from '../../chat/layout'
 import { SCROLL_END } from '../../chat/scroll-state'
+import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
+import { PastedTextPreview } from '../PastedTextPreview'
 import { ShortcutKbd } from '../ShortcutKbd'
+import { userBubbleSurface } from '../turn/TurnMessages'
+import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
+import { Message, MessageContent } from '../ui/message'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import {
   DropdownMenu,
@@ -340,9 +348,9 @@ export function BotPage({
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={SCROLL_END}>
                 <BotFollowNewSend timeline={timeline} />
-                <MessageScroller>
-                  <MessageScrollerViewport className="px-4 [--chat-edge-fade:1rem] mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_var(--chat-edge-fade),rgb(0_0_0)_calc(100%-var(--chat-edge-fade)),rgb(0_0_0/0.0))]">
-                    <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-3 py-6">
+                <MessageScroller className="min-h-0 flex-1 py-2">
+                  <MessageScrollerViewport className="[--chat-edge-fade:1rem] mask-[linear-gradient(to_bottom,rgb(0_0_0/0.0),rgb(0_0_0)_var(--chat-edge-fade),rgb(0_0_0)_calc(100%-var(--chat-edge-fade)),rgb(0_0_0/0.0))]">
+                    <MessageScrollerContent className={cn(botColumn, 'gap-3 py-(--chat-edge-fade)')}>
                       {timeline.map((item, idx) => (
                         <BotTimelineRow
                           key={item.id}
@@ -360,7 +368,7 @@ export function BotPage({
                         <MessageScrollerItem
                           messageId="bot-working-hint"
                           data-bot-post-approval-hint={!streaming ? resumedApprovalTask?.taskId : undefined}
-                          className="flex items-center gap-2.5 py-2 pl-2"
+                          className="flex items-center gap-2 py-1"
                         >
                           <BotAvatar type={avatar} size={24} state="working" interactive={false} className="shrink-0" />
                           <span className="text-xs text-muted-foreground motion-safe:animate-pulse">
@@ -370,12 +378,12 @@ export function BotPage({
                       ) : null}
                     </MessageScrollerContent>
                   </MessageScrollerViewport>
-                  <MessageScrollerButton />
+                  <MessageScrollerButton behavior="smooth" />
                 </MessageScroller>
               </MessageScrollerProvider>
             </div>
 
-            <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pt-2 pb-4">
+            <div className={cn(botColumn, 'shrink-0 pb-3.5')}>
               {activeApprovalPrompt && approvalSessionId ? (
                 <div className="mb-2">
                   {mirroredApprovalMeta?.taskTitle ? (
@@ -453,28 +461,7 @@ function BotTimelineRow({
   const t = useT()
 
   if (item.kind === 'user') {
-    return (
-      <MessageScrollerItem messageId={item.id} className="flex justify-end">
-        <div
-          data-bot-user-bubble
-          className="max-w-[82%] rounded-2xl bg-user-message-background px-3.5 py-2.5 text-sm leading-relaxed text-user-message-foreground shadow-2xs"
-        >
-          {item.projectMentions?.length ? (
-            <div className="mb-1 flex flex-wrap gap-1">
-              {item.projectMentions.map((cwd) => (
-                <span
-                  key={cwd}
-                  className="rounded bg-foreground/10 px-1.5 py-0.5 text-[11px] font-medium"
-                >
-                  @{baseName(cwd)}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <p className="whitespace-pre-wrap break-words">{item.text}</p>
-        </div>
-      </MessageScrollerItem>
-    )
+    return <BotUserRow item={item} />
   }
 
   if (item.kind === 'system_fallback') {
@@ -530,15 +517,15 @@ function BotTimelineRow({
   return (
     <MessageScrollerItem
       messageId={item.id}
-      className={cn('flex items-start gap-2.5', grouped ? '-mt-1.5' : '')}
+      className={cn('flex flex-col items-start gap-1.5', grouped ? '-mt-1.5' : '')}
     >
-      <div className="w-6 shrink-0 pt-0.5">
-        {!grouped ? (
+      {!grouped ? (
+        <div data-bot-assistant-header className="flex items-center">
           <BotAvatar type={avatar} size={24} paused interactive={false} />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
-      <div data-bot-assistant-bubble className="min-w-0 flex-1 space-y-2">
+      <div data-bot-assistant-bubble className="w-full min-w-0 space-y-2">
         <div className="rounded-2xl border border-glass-card-border bg-glass-pane-background/60 px-3.5 py-2.5 text-sm leading-relaxed text-foreground solid:border-border/70 solid:bg-card">
           <MarkdownText text={item.content} />
         </div>
@@ -565,6 +552,105 @@ function BotTimelineRow({
           </div>
         ) : null}
       </div>
+    </MessageScrollerItem>
+  )
+}
+
+function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }> }) {
+  const t = useT()
+  const [preview, setPreview] = useState<string | null>(null)
+  const images = (item.images ?? []).flatMap((image, i) => {
+    const src = image.data && image.mimeType ? `data:${image.mimeType};base64,${image.data}` : null
+    return src ? [{ key: i, src }] : []
+  })
+  const textAttachments = item.textAttachments ?? []
+  const projectMentions = item.projectMentions ?? []
+  const hasTextBubble = projectMentions.length > 0 || textAttachments.length > 0 || item.text.length > 0
+
+  return (
+    <MessageScrollerItem messageId={item.id}>
+      <Message align="end" className="group/user-message">
+        <MessageContent className="w-fit max-w-9/10 gap-1.5">
+          {images.length > 0 ? (
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {images.map(({ key, src }) => (
+                <Button
+                  key={key}
+                  type="button"
+                  variant="ghost"
+                  className="block h-auto rounded-md p-0 hover:bg-transparent"
+                  aria-label={t('composer.previewImage')}
+                  onClick={() => setPreview(src)}
+                >
+                  <img
+                    src={src}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-10 max-w-16 cursor-pointer rounded-md object-cover"
+                  />
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          {hasTextBubble ? (
+            <Bubble align="end" data-bot-user-bubble className={userBubbleSurface}>
+              <BubbleContent
+                className={cn(
+                  'flex max-w-full flex-col gap-1.5',
+                  textAttachments.length > 0 && 'border-border'
+                )}
+              >
+                {projectMentions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {projectMentions.map((cwd) => (
+                      <span
+                        key={cwd}
+                        className="inline-flex h-5 max-w-60 items-center gap-1 rounded-md border border-glass-button-border bg-glass-button-background bg-[image:var(--glass-button-sheen)] px-1.5 text-xs font-medium text-glass-prompt-foreground shadow-glass-button solid:border-transparent solid:bg-secondary solid:bg-none solid:text-secondary-foreground solid:shadow-none"
+                      >
+                        <FolderKanban className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="min-w-0 truncate">@{baseName(cwd)}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {textAttachments.map((attachment) => {
+                  const byteSize = attachment.byteSize ?? utf8ByteLength(attachment.text)
+                  return (
+                    <PastedTextPreview
+                      key={attachment.id}
+                      text={attachment.text}
+                      byteSize={byteSize}
+                      title={attachment.filename}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-auto w-full min-w-0 max-w-full justify-start gap-2 rounded-lg px-2.5 py-2 text-left font-normal whitespace-normal"
+                      >
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5 text-xs font-medium">
+                            <FileText data-icon="inline-start" />
+                            <span>{attachment.filename ?? t('composer.pastedText')}</span>
+                          </span>
+                          <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                            {attachment.text}
+                          </span>
+                          <span className="mt-1 block text-[10px] text-muted-foreground">
+                            UTF-8 {formatPastedTextSize(byteSize)}
+                          </span>
+                        </span>
+                      </Button>
+                    </PastedTextPreview>
+                  )
+                })}
+                {item.text ? <div className="whitespace-pre-wrap break-words">{item.text}</div> : null}
+              </BubbleContent>
+            </Bubble>
+          ) : null}
+          <ImagePreview src={preview} onClose={() => setPreview(null)} />
+        </MessageContent>
+      </Message>
     </MessageScrollerItem>
   )
 }

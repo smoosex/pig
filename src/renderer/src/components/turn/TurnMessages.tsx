@@ -54,6 +54,9 @@ function InlinePastedText({
   )
 }
 
+export const userBubbleSurface =
+  'max-w-full *:data-[slot=bubble-content]:bg-glass-popover-background *:data-[slot=bubble-content]:bg-[image:var(--glass-popover-sheen)] *:data-[slot=bubble-content]:text-glass-prompt-foreground *:data-[slot=bubble-content]:shadow-glass-bubble *:data-[slot=bubble-content]:transition-[background-color,box-shadow] *:data-[slot=bubble-content]:duration-200 *:data-[slot=bubble-content]:motion-reduce:transition-none solid:*:data-[slot=bubble-content]:bg-user-message-background solid:*:data-[slot=bubble-content]:bg-none solid:*:data-[slot=bubble-content]:text-user-message-foreground solid:*:data-[slot=bubble-content]:shadow-none'
+
 export const UserBubble = memo(function UserBubble({
   message,
   sessionId,
@@ -107,7 +110,7 @@ export const UserBubble = memo(function UserBubble({
           </div>
         ) : null}
         {hasTextBubble ? (
-          <Bubble align="end" className="max-w-full *:data-[slot=bubble-content]:bg-glass-popover-background *:data-[slot=bubble-content]:bg-[image:var(--glass-popover-sheen)] *:data-[slot=bubble-content]:text-glass-prompt-foreground *:data-[slot=bubble-content]:shadow-glass-bubble *:data-[slot=bubble-content]:transition-[background-color,box-shadow] *:data-[slot=bubble-content]:duration-200 *:data-[slot=bubble-content]:motion-reduce:transition-none solid:*:data-[slot=bubble-content]:bg-user-message-background solid:*:data-[slot=bubble-content]:bg-none solid:*:data-[slot=bubble-content]:text-user-message-foreground solid:*:data-[slot=bubble-content]:shadow-none">
+          <Bubble align="end" className={userBubbleSurface}>
             <BubbleContent
               className={cn(
                 'flex max-w-full flex-col gap-2',

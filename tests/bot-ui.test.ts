@@ -612,6 +612,7 @@ async function fixture() {
         createdAt: 1000
       }],
       timeline: [
+        { id: 'u-0', kind: 'user', text: '这个项目做了什么工作', projectMentions: ['/repo/lumina'], createdAt: 500 },
         { id: 'm-1', kind: 'assistant', messageType: 'delivery', content: '卡在审批上', taskIds: ['perm-1'], createdAt: 1000 },
         { id: 'm-2', kind: 'assistant', messageType: 'delivery', content: '审批说明补充', taskIds: ['perm-1'], createdAt: 2000 }
       ]
@@ -671,6 +672,45 @@ async function fixture() {
     })
   })
   assert.equal(pageHost.querySelector('[data-bot-post-approval-hint="perm-1"]'), null, 'clears post-approval hint once Bot replies')
+
+  const { botColumn } = await import('../src/renderer/src/chat/layout')
+  const scrollerRoot = pageHost.querySelector<HTMLElement>('[data-slot="message-scroller"]')!
+  const scrollerViewport = pageHost.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')!
+  const scrollerContent = pageHost.querySelector<HTMLElement>('[data-slot="message-scroller-content"]')!
+  const liveTaskBar = pageHost.querySelector<HTMLElement>('[data-bot-live-task-bar]')!
+  const composerColumn = pageHost.querySelector<HTMLElement>('[data-bot-composer]')?.parentElement
+  assert.ok(scrollerRoot && scrollerViewport && scrollerContent && liveTaskBar && composerColumn, 'renders live task bar, message column, and composer column')
+  assert.ok(scrollerRoot.classList.contains('py-2'), 'matches workspace vertical scroller breathing room')
+  assert.equal(scrollerViewport.classList.contains('px-4'), false, 'keeps horizontal padding off the full-width viewport so border-box max-w matches')
+  assert.ok(scrollerViewport.className.includes('[--chat-edge-fade:1rem]'), 'applies workspace edge-fade mask')
+  assert.ok(scrollerContent.classList.contains('py-(--chat-edge-fade)'), 'binds top/bottom content inset to --chat-edge-fade')
+  assert.ok(composerColumn.classList.contains('pb-3.5'), 'matches workspace composer bottom spacing')
+  for (const token of botColumn.split(' ')) {
+    assert.ok(liveTaskBar.classList.contains(token), `live task bar includes ${token}`)
+    assert.ok(scrollerContent.classList.contains(token), `message scroller content includes ${token}`)
+    assert.ok(composerColumn.classList.contains(token), `composer column includes ${token}`)
+  }
+
+  // User bubble reuses workspace Bubble glass/solid surface; assistant stacks avatar above full-width reply card and deduplicates grouped headers.
+  const userBubble = pageHost.querySelector<HTMLElement>('[data-bot-user-bubble]')!
+  assert.ok(userBubble, 'renders workspace-style user bubble')
+  assert.equal(userBubble.getAttribute('data-slot'), 'bubble')
+  assert.ok(userBubble.classList.contains('*:data-[slot=bubble-content]:bg-glass-popover-background'))
+  assert.ok(userBubble.classList.contains('*:data-[slot=bubble-content]:shadow-glass-bubble'))
+  assert.ok(userBubble.classList.contains('solid:*:data-[slot=bubble-content]:bg-user-message-background'))
+  assert.ok(userBubble.textContent?.includes('@lumina') && userBubble.textContent?.includes('这个项目做了什么工作'))
+
+  const assistantBubbles = pageHost.querySelectorAll<HTMLElement>('[data-bot-assistant-bubble]')
+  assert.equal(assistantBubbles.length, 3, 'renders all three consecutive assistant bubbles')
+  assert.equal(
+    pageHost.querySelectorAll('[data-bot-assistant-header]').length,
+    1,
+    'renders avatar above only the first assistant message in a consecutive run'
+  )
+  for (const bubbleEl of assistantBubbles) {
+    assert.ok(bubbleEl.classList.contains('w-full'), 'assistant reply stretches full column width beneath avatar')
+    assert.ok(bubbleEl.parentElement?.classList.contains('flex-col'), 'stacks avatar above assistant reply instead of left-indenting')
+  }
 
   await act(async () => {
     cardRoot.unmount()

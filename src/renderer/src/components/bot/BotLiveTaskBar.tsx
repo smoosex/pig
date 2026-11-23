@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { baseName } from '../../../../shared/paths'
 import type { BotTask } from '../../../../shared/bot'
 import { useT } from '../../hooks/useT'
+import { botColumn } from '../../chat/layout'
 import { failureMessage } from '../../lib/ipc-error'
 import { cn } from '../../lib/utils'
 import { sortLiveBotTasks, useBotStore } from '../../stores/bot'
@@ -58,7 +59,7 @@ export function BotLiveTaskBar({
   return (
     <div
       data-bot-live-task-bar
-      className="mx-auto flex w-full max-w-3xl shrink-0 items-center gap-2 overflow-hidden px-4 pt-2 pb-1"
+      className={cn(botColumn, 'flex shrink-0 items-center gap-2 overflow-hidden pt-2 pb-1')}
     >
       {visible.map((task) => {
         const stopping = Boolean(stoppingTaskIds[task.taskId])
