@@ -4,18 +4,40 @@
  * worktree cleanup even in `full-access` mode.
  */
 import { randomUUID } from 'node:crypto'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { arr, bool, compile, obj, oneOf, opt, str, type Schema } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { THINKING_LEVELS } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import { restrictPermissionMode } from '../permissions/mode'
+import { realTarget } from '../sandbox/path'
+import { within } from '../sandbox/policy'
 import type { BotDelegateTaskInput, BotTask, BotTimelineItem } from '../../shared/bot'
 import { BOT_SYSTEM_PROMPT } from './prompt'
 import { resolveBotAttachments, stripHiddenBotTags } from './projection'
 import type { BotTaskManager } from './task-manager'
 
+export const BOT_MAIN_DISABLED_TOOLS = {
+  bash: false,
+  powershell: false,
+  grep: false,
+  find: false,
+  ls: false
+} as const satisfies Record<string, boolean>
+
+const BOT_DISABLED_MAIN_TOOL_NAMES = new Set<string>(Object.keys(BOT_MAIN_DISABLED_TOOLS))
+
+type PathUtils = { resolveToCwd(path: string, cwd: string): string }
+let pathUtils: Promise<PathUtils> | undefined
+const sdkPaths = () => (pathUtils ??= import(
+  pathToFileURL(join(dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))), 'core/tools/path-utils.js')).href
+))
+
 export interface BotToolsHost {
   taskManager: BotTaskManager
+  workspaceDir?: string
+  soulPath?: string
   getPermissionMode: () => PermissionMode
   onPermissionsChanged?: (listener: () => void) => () => void
   listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean }>>
@@ -28,15 +50,18 @@ export interface BotToolsHost {
 
 const sendMessageSchema = obj({
   type: oneOf(['text', 'delivery', 'attachment'] as const),
-  content: str({ minLength: 1 }),
+  content: str({
+    minLength: 1,
+    description: 'Visible reply written strictly in your SOUL’s character, mood, catchphrases, and form of address for the user — even right after technical tool calls like bot_start_task, never slip into a dry engineer/assistant status-report voice.'
+  }),
   taskIds: opt(arr(str({ minLength: 1 }))),
   attachments: opt(arr(str({ minLength: 1 })))
 })
 
-const delegateSchema = obj({
+const startTaskSchema = obj({
   projectCwd: str({ minLength: 1 }),
   title: str({ minLength: 1 }),
-  intent: str({ minLength: 1 }),
+  intent: str({ minLength: 1, description: 'Clear, self-contained specification of what to investigate, run, or change in the project workspace.' }),
   mode: oneOf(['read', 'write'] as const),
   slug: opt(str({ minLength: 1 })),
   capabilities: opt(obj({ browser: opt(bool()) })),
@@ -46,7 +71,7 @@ const delegateSchema = obj({
 
 const followupSchema = obj({
   taskId: str({ minLength: 1 }),
-  instruction: str({ minLength: 1 }),
+  instruction: str({ minLength: 1, description: 'Clear specification of what to continue, fix, or verify next in this task’s workspace.' }),
   modelOverride: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
   thinkingOverride: opt(oneOf(THINKING_LEVELS))
 })
@@ -73,8 +98,6 @@ function jsonResult(data: unknown) {
   }
 }
 
-const BOT_BASH_MAX_TIMEOUT_SEC = 30
-
 function guardPermission(host: BotToolsHost, signal?: AbortSignal) {
   const mode = host.getPermissionMode()
   const downgraded = new AbortController()
@@ -93,20 +116,41 @@ function guardPermission(host: BotToolsHost, signal?: AbortSignal) {
 
 export function createBotExtension(host: BotToolsHost) {
   return function botExtension(pi: ExtensionAPI): void {
+    pi.on('session_start', () => {
+      pi.setActiveTools(pi.getActiveTools().filter((name) => !BOT_DISABLED_MAIN_TOOL_NAMES.has(name)))
+    })
+
     pi.on('before_agent_start', (event) => {
       event.systemPromptOptions.sections.bot = BOT_SYSTEM_PROMPT
     })
 
-    // Cap Bot main-session bash timeout so long tasks go through bot_delegate_task instead of hanging chat.
-    pi.on('tool_call', (event) => {
-      if (event.toolName === 'edit' || event.toolName === 'write' || event.toolName === 'bash') {
-        host.onSideEffect(event.toolName)
-      }
-      if (event.toolName === 'bash' && event.input && typeof event.input === 'object') {
-        const input = event.input as { timeout?: number }
-        if (typeof input.timeout !== 'number' || input.timeout > BOT_BASH_MAX_TIMEOUT_SEC) {
-          input.timeout = BOT_BASH_MAX_TIMEOUT_SEC
+    // Enforce Bot main-session boundary: disable shell/search tools and confine edit/write to Bot workspace + SOUL.md.
+    pi.on('tool_call', async (event, ctx) => {
+      if (BOT_DISABLED_MAIN_TOOL_NAMES.has(event.toolName)) {
+        return {
+          block: true,
+          reason: 'Shell and repository search tools are disabled in the Bot main session. Start a project run via bot_start_task instead.'
         }
+      }
+      if (event.toolName === 'edit' || event.toolName === 'write') {
+        const rawPath = event.input && typeof event.input === 'object'
+          ? (event.input as { path?: unknown }).path
+          : undefined
+        if (typeof rawPath !== 'string' || !rawPath.trim()) {
+          return { block: true, reason: 'Invalid file path' }
+        }
+        const workspaceRoot = host.workspaceDir ?? ctx?.cwd ?? process.cwd()
+        const soulFile = host.soulPath ?? resolve(workspaceRoot, '..', '..', 'persona', 'SOUL.md')
+        const paths = await sdkPaths()
+        const resolved = paths.resolveToCwd(rawPath, workspaceRoot)
+        const target = realTarget(resolved)
+        if (!within(realTarget(workspaceRoot), target) && target !== realTarget(soulFile)) {
+          return {
+            block: true,
+            reason: 'Direct file writes outside the Bot workspace and SOUL.md are forbidden. Use bot_start_task so project changes run in an isolated worktree.'
+          }
+        }
+        host.onSideEffect(event.toolName)
       }
       return undefined
     })
@@ -114,7 +158,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'send_message',
       label: 'Send message to user',
-      description: 'Send a visible message bubble to the user in the Bot conversation. Plain assistant text is hidden; this tool is the ONLY user-visible channel.',
+      description: 'Send a visible message bubble to the user in the Bot conversation. Plain assistant text is hidden; this tool is the ONLY user-visible channel. Always stay fully in your SOUL’s personality, mood, and how you address the user — never fall back into a stiff, generic assistant or checklist tone after calling technical tools.',
       parameters: sendMessageSchema,
       async execute(_id, rawParams) {
         const params = assertValid(sendMessageSchema, rawParams, 'send_message')
@@ -157,7 +201,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'bot_list_projects',
       label: 'List open projects',
-      description: 'List currently opened Pig project directories available for Bot delegation.',
+      description: 'List currently opened Pig project directories available for your project runs.',
       parameters: emptySchema,
       annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
       async execute() {
@@ -197,17 +241,17 @@ export function createBotExtension(host: BotToolsHost) {
     }))
 
     pi.registerTool(defineTool({
-      name: 'bot_delegate_task',
-      label: 'Delegate task asynchronously',
-      description: 'Fast Ack (<50ms) async delegation to a background project session (Git write tasks automatically get an isolated bot/<slug>-<shortId> worktree). Returns immediately with status="starting"; do not poll. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
-      parameters: delegateSchema,
+      name: 'bot_start_task',
+      label: 'Start project task',
+      description: 'Start working on a project task asynchronously (<50ms Fast Ack; Git write runs automatically use an isolated bot/<slug>-<shortId> worktree). Returns immediately with status="starting"; tell the user in first person that YOU are looking into / working on it now (never say "background" or "delegating") and end your turn without polling. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
+      parameters: startTaskSchema,
       async execute(_id, rawParams, signal, _update, ctx) {
-        const params = assertValid(delegateSchema, rawParams, 'bot_delegate_task')
+        const params = assertValid(startTaskSchema, rawParams, 'bot_start_task')
         const guard = guardPermission(host, signal)
         try {
           guard.check()
           if (params.mode === 'write' && guard.mode === 'read-only') {
-            throw new Error('Read-only mode cannot delegate write tasks')
+            throw new Error('Read-only mode cannot start write tasks')
           }
           const projects = await host.listOpenedProjects()
           guard.check()
@@ -224,7 +268,7 @@ export function createBotExtension(host: BotToolsHost) {
             if (!ok) throw new Error('User declined writing in non-Git directory')
             confirmSharedNonGitWrite = true
           }
-          host.onSideEffect('bot_delegate_task')
+          host.onSideEffect('bot_start_task')
           const input: BotDelegateTaskInput = {
             projectCwd: params.projectCwd,
             title: params.title,
@@ -306,8 +350,8 @@ export function createBotExtension(host: BotToolsHost) {
 
     pi.registerTool(defineTool({
       name: 'bot_followup_task',
-      label: 'Follow up on Bot task',
-      description: 'Start a new run on an existing stopped, failed, interrupted, or completed Bot task using its preserved worktree. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
+      label: 'Follow up on project task',
+      description: 'Continue or retry your work on an existing stopped, failed, interrupted, or completed project task in its preserved worktree (<50ms Fast Ack). Tell the user in first person that YOU are continuing/retrying it now without mentioning "background" or "delegating". Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
       parameters: followupSchema,
       async execute(_id, rawParams) {
         const params = assertValid(followupSchema, rawParams, 'bot_followup_task')

@@ -105,7 +105,7 @@ export class BotDispatcher {
    */
   markToolActivity(toolName: string): void {
     if (!this.activeTurn || this.activeTurn.preempted) return
-    if (toolName === 'send_message' || toolName === 'bot_delegate_task') return
+    if (toolName === 'send_message' || toolName === 'bot_start_task' || toolName === 'bot_followup_task') return
     this.setVisibleStreaming(true)
   }
 

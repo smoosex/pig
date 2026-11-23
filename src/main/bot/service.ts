@@ -33,6 +33,7 @@ import { openProjectDirectory } from '../project-open'
 import { isGitProject } from '../worktrees'
 import { worktrees as projectWorktrees } from '../project-worktrees'
 import { createSessionRuntime } from '../pi/session-runtime'
+import { applySessionTools } from '../pi/session-capabilities'
 import { botMainPluginPaths } from '../pi/plugins'
 import {
   createPendingSession,
@@ -73,7 +74,7 @@ import { BotStore } from './store'
 import { BotNoticeQueue } from './notice-queue'
 import { BotTaskManager, type BotBackendLaunchParams, type BotBackendLaunchResult } from './task-manager'
 import { BotDispatcher, type BotPromptRequest } from './dispatcher'
-import { createBotExtension } from './tools'
+import { BOT_MAIN_DISABLED_TOOLS, createBotExtension } from './tools'
 import { projectTimelineItemToPeek } from './projection'
 
 export class BotService {
@@ -262,6 +263,8 @@ export class BotService {
 
       const botExtension = createBotExtension({
         taskManager: this.taskManager,
+        workspaceDir: this.workspaceDir,
+        soulPath: pigPath('persona', 'SOUL.md'),
         getPermissionMode: () => sessionPermission(state.sessionId).mode,
         onPermissionsChanged,
         listOpenedProjects: async () => {
@@ -332,9 +335,12 @@ export class BotService {
           undefined,
           {
             identity: true,
+            isolatedWorkspace: true,
+            toolPreferences: { tools: { ...BOT_MAIN_DISABLED_TOOLS }, mcp: {} },
             extraExtensions: [{ name: 'pig-bot', factory: botExtension }]
           }
         )
+        await applySessionTools(session, BOT_MAIN_DISABLED_TOOLS, true)
 
         const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
         if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {

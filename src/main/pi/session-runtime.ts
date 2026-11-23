@@ -33,6 +33,8 @@ export async function createSessionRuntime(
     conversationFeatures?: () => boolean
     /** Extra inline extensions injected into this session runtime (e.g. Bot tools & prompt). */
     extraExtensions?: Array<ExtensionFactory | InlineExtension>
+    /** Non-project scratch workspace (e.g. Bot main session): exclude ancestor repo AGENTS.md and project skills. */
+    isolatedWorkspace?: boolean
     /** Subagents share the parent's grants, but may never exceed their launch mode. */
     permissions?: { sessionId: string; mode: PermissionMode; approvalUI?: Pick<ExtensionUIContext, 'select'>; signal?: AbortSignal }
   } = {}
@@ -70,7 +72,9 @@ export async function createSessionRuntime(
     ], appendSystemPrompt }
   const resourceLoader = isChatCwd(cwd)
     ? await createChatResourceLoader(cwd, pluginPaths, resources)
-    : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
+    : options.isolatedWorkspace
+      ? await createChatResourceLoader(cwd, pluginPaths, { ...resources, includeChatPrompt: false })
+      : await createNoExtensionsResourceLoader(cwd, pluginPaths, resources)
   assertExtensionResources(resourceLoader)
   const result = await createAgentSession({
     cwd,

@@ -136,6 +136,11 @@ async function fixture() {
       return {
         sessionId: sessionManager.getSessionId(),
         sessionManager,
+        settingsManager: createSettings(),
+        getAllTools: () => [],
+        getActiveToolNames: () => [],
+        getToolDefinition: () => undefined,
+        setActiveToolsByName: () => {},
         get model() { return currentModel },
         get thinkingLevel() { return currentThinking },
         setModel: async (next: FakeModel) => {

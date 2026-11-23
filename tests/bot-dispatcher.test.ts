@@ -92,7 +92,7 @@ describe('BotDispatcher', () => {
       sendPrompt: async (req) => {
         prompts.push(req)
         if (!req.streamingBehavior) {
-          dispatcher.markSideEffect('bot_delegate_task')
+          dispatcher.markSideEffect('bot_start_task')
           dispatcher.markSideEffect('send_message')
           await turn.promise
         }
@@ -221,7 +221,7 @@ describe('BotDispatcher', () => {
     let dispatcher!: BotDispatcher
     dispatcher = new BotDispatcher({
       sendPrompt: async () => {
-        dispatcher.markSideEffect('bot_delegate_task')
+        dispatcher.markSideEffect('bot_start_task')
         dispatcher.markSideEffect('send_message')
         // Simulate LLM taking extra time to emit its empty end-of-turn completion after send_message
         expect(dispatcher.isStreaming()).toBe(false)
@@ -237,9 +237,9 @@ describe('BotDispatcher', () => {
     expect(streamingEvents).toEqual([true, false])
     expect(dispatcher.isStreaming()).toBe(false)
     // Fast-ack delegation does not flicker thinking back on; substantive tool activity does.
-    dispatcher.markToolActivity('bot_delegate_task')
+    dispatcher.markToolActivity('bot_start_task')
     expect(dispatcher.isStreaming()).toBe(false)
-    dispatcher.markToolActivity('bash')
+    dispatcher.markToolActivity('read')
     expect(dispatcher.isStreaming()).toBe(true)
     windDown.resolve()
     await dispatcher.waitForIdle()
