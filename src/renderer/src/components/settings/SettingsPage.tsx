@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BookOpen, Brain, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
+import { BookOpen, Bot, Brain, ChevronLeft, Component, GamepadDirectional, Keyboard, Rainbow, ShieldCheck, Snowflake, Webhook } from 'lucide-react'
 import { useT } from '../../hooks/useT'
 import { useSettingsStore } from '../../stores/settings'
 import { cn } from '../../lib/utils'
@@ -10,6 +10,7 @@ import { ScrollArea } from '../ui/scroll-area'
 import { sidebarRowSurface, sidebarSurfaceHover } from '../sidebar/sidebar-surface'
 import { SidebarHoverHighlight } from '../sidebar/SidebarHoverHighlight'
 import { GeneralPane } from './GeneralPane'
+import { BotPane } from './BotPane'
 import { ThemePane } from './ThemePane'
 import { ShortcutsPane, ShortcutsResetAll } from './ShortcutsPane'
 import { ProvidersPane } from './ProvidersPane'
@@ -27,6 +28,13 @@ const sections = [
     description: 'settings.sectionGeneralDescription',
     icon: Snowflake,
     component: GeneralPane
+  },
+  {
+    id: 'bot',
+    title: 'settings.sectionBot',
+    description: 'settings.sectionBotDescription',
+    icon: Bot,
+    component: BotPane
   },
   {
     id: 'persona-memory',
@@ -208,7 +216,9 @@ export function SettingsPage({ onClose, navigationTarget, active = true }: {
               <div key={id} className={section === id ? 'contents' : 'hidden'}>
                 {id === 'persona-memory'
                   ? <PersonaMemoryPane onDirtyChange={setFeatureDirty} onBusyChange={setFeatureBusy} />
-                  : <Pane /> }
+                  : id === 'bot'
+                    ? <BotPane active={active && section === 'bot'} />
+                    : <Pane /> }
               </div>
             ))}
           </div>

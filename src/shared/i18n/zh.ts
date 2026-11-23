@@ -630,6 +630,8 @@ export const zh = {
     back: '返回',
     sectionGeneral: '通用设置',
     sectionGeneralDescription: '核心行为',
+    sectionBot: 'Bot',
+    sectionBotDescription: '图标与默认执行模型',
     sectionInterface: '界面',
     sectionTheme: '外观',
     sectionThemeDescription: '主题与字体',
@@ -1361,7 +1363,40 @@ export const zh = {
     approvalSource: '后台任务 · {project} · {title}',
     followupPlaceholder: '输入补充说明，让后台继续执行…',
     followupSubmit: '继续执行',
-    filesSummary: '{count} 个文件'
+    filesSummary: '{count} 个文件',
+    settings: {
+      appearance: '外观',
+      avatar: 'Bot 图标',
+      avatarDescription: '选择顶栏与 Bot 页面中展示的动态形象',
+      backgroundTasks: '后台任务',
+      delegateModel: '默认执行模型',
+      delegateModelDescription: 'Bot 委派或继续/重试项目任务时默认使用的模型与思考强度，不影响 Bot 主会话聊天模型、Pig 全局默认或正在运行的任务。也可以直接对 Bot 说：“这次用某某模型执行”。',
+      delegateModelDefault: '未设置时继承 Pig 全局默认模型与思考强度',
+      delegateModelDefaultWith: '未设置时继承 Pig 全局默认（{model}）',
+      loadError: '读取 Bot 设置失败',
+      loading: '正在读取 Bot 设置…',
+      saveError: '保存 Bot 设置失败',
+      avatars: {
+        clover: '四叶草',
+        flower: '小花',
+        triangle: '三角',
+        square: '方块',
+        blob: '团子',
+        ghost: '幽灵',
+        circle: '圆球',
+        drop: '水滴',
+        star: '星星',
+        droid: '机器人',
+        mech: '机甲',
+        alien: '外星人',
+        hexagon: '六边形',
+        cat: '小猫',
+        cloud: '云朵',
+        pill: '胶囊',
+        pebble: '鹅卵石',
+        puddle: '水洼'
+      }
+    }
   }
 }
 

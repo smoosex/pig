@@ -375,6 +375,20 @@ export class BotTaskManager {
       this.deps.onTaskUpdated?.(preparedTask)
       if (this.stopRequests.has(runId)) return
 
+      const botState = await this.deps.store.readState()
+      // Re-check after awaiting readState(): a stop requested during the read must never launch a backend session.
+      if (this.stopRequests.has(runId)) {
+        if (heldNonGitCwd) this.nonGitMutex.release(heldNonGitCwd, taskId)
+        return
+      }
+      // Precedence for every newly launched run:
+      // 1) Explicit per-run modelOverride / thinkingOverride
+      // 2) Bot settings default execution model & thinking (only apply Bot's thinking when Bot's model is used)
+      // 3) Pig global default model & thinking
+      const effectiveModelOverride = options.modelOverride ?? botState?.delegateModel
+      const effectiveThinkingOverride = options.thinkingOverride ??
+        (!options.modelOverride && botState?.delegateModel ? botState.delegateThinkingLevel : undefined)
+
       const runSnapshot = preparedTask.runs.find((r) => r.runId === runId)!
       const launched = await this.deps.launchBackendSession({
         task: preparedTask,
@@ -383,8 +397,8 @@ export class BotTaskManager {
         prompt: options.prompt,
         permissionMode: options.permissionMode,
         capabilities: options.capabilities,
-        modelOverride: options.modelOverride,
-        thinkingOverride: options.thinkingOverride
+        modelOverride: effectiveModelOverride,
+        thinkingOverride: effectiveThinkingOverride
       })
 
       const runningTask = await this.deps.store.updateTasks((tasks) => {

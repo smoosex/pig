@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { arr, bool, compile, obj, oneOf, opt, str, type Schema } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent'
-import type { ThinkingLevel } from '../../shared/api'
+import { THINKING_LEVELS } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import { restrictPermissionMode } from '../permissions/mode'
 import type { BotDelegateTaskInput, BotTask, BotTimelineItem } from '../../shared/bot'
@@ -25,8 +25,6 @@ export interface BotToolsHost {
   onSendMessage: (item: Extract<BotTimelineItem, { kind: 'assistant' }>) => Promise<void>
   onSideEffect: (toolName: string) => void
 }
-
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly ThinkingLevel[]
 
 const sendMessageSchema = obj({
   type: oneOf(['text', 'delivery', 'attachment'] as const),
@@ -201,7 +199,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'bot_delegate_task',
       label: 'Delegate task asynchronously',
-      description: 'Fast Ack (<50ms) async delegation to a background project session (Git write tasks automatically get an isolated bot/<slug>-<shortId> worktree). Returns immediately with status="starting"; do not poll.',
+      description: 'Fast Ack (<50ms) async delegation to a background project session (Git write tasks automatically get an isolated bot/<slug>-<shortId> worktree). Returns immediately with status="starting"; do not poll. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
       parameters: delegateSchema,
       async execute(_id, rawParams, signal, _update, ctx) {
         const params = assertValid(delegateSchema, rawParams, 'bot_delegate_task')
@@ -309,7 +307,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'bot_followup_task',
       label: 'Follow up on Bot task',
-      description: 'Start a new run on an existing stopped, failed, interrupted, or completed Bot task using its preserved worktree.',
+      description: 'Start a new run on an existing stopped, failed, interrupted, or completed Bot task using its preserved worktree. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
       parameters: followupSchema,
       async execute(_id, rawParams) {
         const params = assertValid(followupSchema, rawParams, 'bot_followup_task')

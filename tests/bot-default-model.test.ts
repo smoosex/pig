@@ -569,6 +569,85 @@ async function fixture() {
         rmSync(dir, { recursive: true, force: true })
       }
     }
+    // 11. BotService.updatePreferences validates inputs, persists avatar & delegateModel without touching
+    //     Bot's own chat model or Pig's global default, and broadcasts state_changed.
+    {
+      const dir = mkdtempSync(join(process.env.PIG_DIR!, 'bot-preferences-'))
+      const service = new BotService(dir)
+      const prefEvents: BotEvent[] = []
+      const unsub = service.subscribe((event) => prefEvents.push(event))
+      try {
+        stored = JSON.stringify({ defaultProvider: 'anthropic', defaultModel: 'alpha' })
+        available = [...models]
+        synchronizeModelCatalog()
+
+        const initial = await service.getSnapshot()
+        assert.equal(initial.controls?.model?.id, 'alpha')
+        assert.equal(initial.state.avatar, undefined)
+        assert.equal(initial.state.delegateModel, undefined)
+
+        // Rejects empty patch, unknown avatar, missing/unavailable delegate models, and thinking without model.
+        await assert.rejects(() => service.updatePreferences({}), /empty/)
+        await assert.rejects(
+          () => service.updatePreferences({ avatar: 'bogus' as unknown as 'clover' }),
+          /Invalid bot avatar/
+        )
+        await assert.rejects(
+          () => service.updatePreferences({ delegateThinkingLevel: 'high' }),
+          /default execution model must be set/
+        )
+        await assert.rejects(
+          () => service.updatePreferences({ delegateModel: null, delegateThinkingLevel: 'high' }),
+          /without a default execution model/
+        )
+        await assert.rejects(
+          () => service.updatePreferences({ delegateModel: { provider: 'google', id: 'nonexistent' } }),
+          /Model not found/
+        )
+        available = [models[0]!]
+        await assert.rejects(
+          () => service.updatePreferences({ delegateModel: { provider: 'google', id: 'beta' } }),
+          /Model not available/
+        )
+
+        // Valid avatar, delegateModel & delegateThinkingLevel (including off) persist and broadcast without changing Bot chat controls or Pig global default.
+        available = [...models]
+        prefEvents.length = 0
+        const updated = await service.updatePreferences({
+          avatar: 'cat',
+          delegateModel: { provider: 'google', id: 'beta' },
+          delegateThinkingLevel: 'high'
+        })
+        assert.equal(updated.avatar, 'cat')
+        assert.deepEqual(updated.delegateModel, { provider: 'google', id: 'beta' })
+        assert.equal(updated.delegateThinkingLevel, 'high')
+        assert.ok(
+          prefEvents.some((e) => e.type === 'state_changed' && e.state.avatar === 'cat' && e.state.delegateModel?.id === 'beta' && e.state.delegateThinkingLevel === 'high'),
+          'broadcasts state_changed with updated avatar, delegateModel, and delegateThinkingLevel'
+        )
+        const afterControls = await service.readBotControls()
+        assert.equal(afterControls?.model?.id, 'alpha', 'Bot chat model remains unchanged when delegateModel is set')
+        assert.equal(JSON.parse(stored).defaultModel, 'alpha', 'Pig global default remains unchanged')
+
+        // Updating thinking level alone works even for off/minimal and rejects unsupported levels.
+        const offThinking = await service.updatePreferences({ delegateThinkingLevel: 'off' })
+        assert.equal(offThinking.delegateThinkingLevel, 'off')
+        await assert.rejects(
+          () => service.updatePreferences({ delegateThinkingLevel: 'xhigh' }),
+          /Thinking level not supported/
+        )
+
+        // Clearing delegateModel removes both delegateModel and delegateThinkingLevel while keeping avatar intact.
+        const cleared = await service.updatePreferences({ delegateModel: null })
+        assert.equal(cleared.avatar, 'cat')
+        assert.equal(cleared.delegateModel, undefined)
+        assert.equal(cleared.delegateThinkingLevel, undefined)
+      } finally {
+        unsub()
+        await service.shutdown()
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
   } finally {
     console.error = originalConsoleError
   }

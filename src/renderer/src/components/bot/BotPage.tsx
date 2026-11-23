@@ -16,7 +16,7 @@ import {
 import { BotAvatar } from 'bot-avatars'
 import { toast } from 'sonner'
 import { baseName } from '../../../../shared/paths'
-import { isBotTaskActive, type BotTask, type BotTimelineItem } from '../../../../shared/bot'
+import { DEFAULT_BOT_AVATAR, isBotTaskActive, type BotAvatarId, type BotTask, type BotTimelineItem } from '../../../../shared/bot'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { cn } from '../../lib/utils'
@@ -81,6 +81,7 @@ export function BotPage({
   const [resetting, setResetting] = useState(false)
 
   const botSessionId = state?.sessionId ?? null
+  const avatar = state?.avatar ?? DEFAULT_BOT_AVATAR
   const directApprovalPrompt = useApprovalPrompt(botSessionId)
   const fallbackApprovalSessionId = directApprovalPrompt ? null : (approvals[0]?.sessionId ?? null)
   const fallbackApprovalPrompt = useApprovalPrompt(fallbackApprovalSessionId)
@@ -287,7 +288,7 @@ export function BotPage({
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-10">
             <div className="flex w-full max-w-2xl flex-col items-center text-center">
               <div className="mb-3 flex items-center justify-center">
-                <BotAvatar type="clover" size={96} />
+                <BotAvatar type={avatar} size={96} />
               </div>
               <h1 className="text-lg font-semibold text-foreground">{t('bot.empty.greeting')}</h1>
               <p className="mt-1.5 max-w-md text-sm text-muted-foreground">{t('bot.empty.subtitle')}</p>
@@ -322,6 +323,7 @@ export function BotPage({
                         <BotTimelineRow
                           key={item.id}
                           item={item}
+                          avatar={avatar}
                           grouped={idx > 0 && timeline[idx - 1].kind === 'assistant' && item.kind === 'assistant'}
                           tasksById={tasksById}
                           latestCardItemByTaskId={latestCardItemByTaskId}
@@ -336,7 +338,7 @@ export function BotPage({
                           data-bot-post-approval-hint={!streaming ? resumedApprovalTask?.taskId : undefined}
                           className="flex items-center gap-2.5 py-2 pl-2"
                         >
-                          <BotAvatar type="clover" size={24} state="working" interactive={false} className="shrink-0" />
+                          <BotAvatar type={avatar} size={24} state="working" interactive={false} className="shrink-0" />
                           <span className="text-xs text-muted-foreground motion-safe:animate-pulse">
                             {streaming ? t('bot.statusThinking') : t('bot.statusApprovalContinuing', { title: resumedApprovalTask!.title })}
                           </span>
@@ -409,6 +411,7 @@ function BotFollowNewSend({ timeline }: { timeline: BotTimelineItem[] }) {
 
 function BotTimelineRow({
   item,
+  avatar,
   grouped,
   tasksById,
   latestCardItemByTaskId,
@@ -416,6 +419,7 @@ function BotTimelineRow({
   onRetry
 }: {
   item: BotTimelineItem
+  avatar: BotAvatarId
   grouped: boolean
   tasksById: Map<string, BotTask>
   latestCardItemByTaskId: Map<string, string>
@@ -506,7 +510,7 @@ function BotTimelineRow({
     >
       <div className="w-6 shrink-0 pt-0.5">
         {!grouped ? (
-          <BotAvatar type="clover" size={24} paused interactive={false} />
+          <BotAvatar type={avatar} size={24} paused interactive={false} />
         ) : null}
       </div>
 

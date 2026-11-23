@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BotAvatar } from 'bot-avatars'
 
-import { isBotTaskActive } from '../../../../shared/bot'
+import { DEFAULT_BOT_AVATAR, isBotTaskActive } from '../../../../shared/bot'
 import { useT } from '../../hooks/useT'
 import { registerBotOrbAnchor, useBotStore } from '../../stores/bot'
 import { cn } from '../../lib/utils'
@@ -23,6 +23,7 @@ export function BotOrbButton({
   const t = useT()
 
   const open = useBotStore((s) => s.open)
+  const avatar = useBotStore((s) => s.state?.avatar ?? DEFAULT_BOT_AVATAR)
   const tasks = useBotStore((s) => s.tasks)
   const approvals = useBotStore((s) => s.approvals)
   const unreadCount = useBotStore((s) => s.unreadCount)
@@ -95,9 +96,9 @@ export function BotOrbButton({
               statusKind === 'idle' && (open ? 'ring-1 ring-bot-orb-ring shadow-[0_0_10px_var(--bot-orb-glow)]' : 'group-hover:shadow-[0_0_10px_var(--bot-orb-glow)]')
             )}
           />
-          {/* Animated clover avatar: 22px body with 1.5x overscan (33px canvas) stays unclipped inside the 40px header */}
+          {/* Animated Bot avatar: 22px body with 1.5x overscan (33px canvas) stays unclipped inside the 40px header */}
           <BotAvatar
-            type="clover"
+            type={avatar}
             size={22}
             state={avatarState}
             paused={!registerAnchor}

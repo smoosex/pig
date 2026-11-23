@@ -633,6 +633,8 @@ export const en: Messages = {
     back: 'Back',
     sectionGeneral: 'General',
     sectionGeneralDescription: 'Core behaviour',
+    sectionBot: 'Bot',
+    sectionBotDescription: 'Avatar and default execution model',
     sectionInterface: 'Interface',
     sectionTheme: 'Appearance',
     sectionThemeDescription: 'Theme and font',
@@ -1364,6 +1366,39 @@ export const en: Messages = {
     approvalSource: 'Background task · {project} · {title}',
     followupPlaceholder: 'Add follow-up instructions to continue…',
     followupSubmit: 'Continue',
-    filesSummary: '{count} files'
+    filesSummary: '{count} files',
+    settings: {
+      appearance: 'Appearance',
+      avatar: 'Bot avatar',
+      avatarDescription: 'Choose the animated avatar shown in the header and Bot page',
+      backgroundTasks: 'Background tasks',
+      delegateModel: 'Default execution model',
+      delegateModelDescription: 'Default model and thinking effort used when Bot delegates, continues, or retries project tasks. Does not change Bot’s chat model, Pig’s global default, or running tasks. You can also tell Bot directly: “Use <model> for this task”.',
+      delegateModelDefault: 'Inherits Pig’s global default model and thinking effort when unset',
+      delegateModelDefaultWith: 'Inherits Pig default ({model}) when unset',
+      loadError: 'Could not load Bot settings',
+      loading: 'Loading Bot settings…',
+      saveError: 'Could not save Bot settings',
+      avatars: {
+        clover: 'Clover',
+        flower: 'Flower',
+        triangle: 'Triangle',
+        square: 'Square',
+        blob: 'Blob',
+        ghost: 'Ghost',
+        circle: 'Circle',
+        drop: 'Drop',
+        star: 'Star',
+        droid: 'Droid',
+        mech: 'Mech',
+        alien: 'Alien',
+        hexagon: 'Hexagon',
+        cat: 'Cat',
+        cloud: 'Cloud',
+        pill: 'Pill',
+        pebble: 'Pebble',
+        puddle: 'Puddle'
+      }
+    }
   }
 }

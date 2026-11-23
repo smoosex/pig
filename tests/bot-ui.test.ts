@@ -41,6 +41,10 @@ async function fixture() {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
   let surfacePersisted: string | null = null
+  const preferencePatches: Array<import('../src/shared/bot').BotPreferencesPatch> = []
+  let failPreferenceSave: Error | null = null
+  let deferPreferenceSave = false
+  let resolvePreferenceSave: (() => void) | undefined
   const setModelCalls: Array<{ provider: string; id: string }> = []
   const setThinkingCalls: string[] = []
   const sends: Array<{ text: string; projectMentions?: string[] }> = []
@@ -99,6 +103,40 @@ async function fixture() {
         createdAt: 1000,
         updatedAt: 2000
       }
+    },
+    updatePreferences: async (patch: import('../src/shared/bot').BotPreferencesPatch) => {
+      preferencePatches.push(patch)
+      if (deferPreferenceSave) {
+        await new Promise<void>((resolve) => { resolvePreferenceSave = resolve })
+      }
+      if (failPreferenceSave) {
+        const err = failPreferenceSave
+        failPreferenceSave = null
+        throw err
+      }
+      const prev = useBotStore.getState().state ?? {
+        version: 1 as const,
+        sessionId: 'bot-session-1',
+        cwd: '/pig/bot/workspace',
+        lastSurface: 'bot' as const,
+        archivedSessions: [],
+        createdAt: 1000,
+        updatedAt: 1000
+      }
+      const next = {
+        ...prev,
+        ...(patch.avatar !== undefined ? { avatar: patch.avatar } : {}),
+        updatedAt: Date.now()
+      }
+      if (patch.delegateModel === null) {
+        delete next.delegateModel
+        delete next.delegateThinkingLevel
+      } else if (patch.delegateModel !== undefined) {
+        next.delegateModel = patch.delegateModel
+      }
+      if (patch.delegateThinkingLevel === null) delete next.delegateThinkingLevel
+      else if (patch.delegateThinkingLevel !== undefined) next.delegateThinkingLevel = patch.delegateThinkingLevel
+      return next
     },
     sendMessage: async (input: { text: string; projectMentions?: string[] }) => {
       sends.push(input)
@@ -611,6 +649,160 @@ async function fixture() {
     cardRoot.unmount()
     pageRoot.unmount()
   })
+
+  // 10. BotPane saves avatar & delegateModel (without thinking picker), propagates avatar across header & BotPage, and surfaces errors.
+  const { botAvatarTypes } = await import('bot-avatars')
+  const { BotPane } = await import('../src/renderer/src/components/settings/BotPane')
+  const settingsHost = document.createElement('div')
+  document.body.append(settingsHost)
+  const settingsRoot = createRoot(settingsHost)
+  const syncOrbHost = document.createElement('div')
+  document.body.append(syncOrbHost)
+  const syncOrbRoot = createRoot(syncOrbHost)
+  const syncPageHost = document.createElement('div')
+  document.body.append(syncPageHost)
+  const syncPageRoot = createRoot(syncPageHost)
+
+  await act(async () => {
+    useBotStore.setState({
+      loaded: true,
+      loading: false,
+      error: null,
+      open: true,
+      streaming: true,
+      approvals: [],
+      tasks: [],
+      timeline: [{ id: 'a-avatar', kind: 'assistant', messageType: 'text', content: 'hi', createdAt: 1000 }],
+      state: {
+        version: 1,
+        sessionId: 'bot-session-1',
+        cwd: '/pig/bot/workspace',
+        lastSurface: 'bot',
+        archivedSessions: [],
+        createdAt: 1000,
+        updatedAt: 1000
+      }
+    })
+    settingsRoot.render(h(TooltipProvider, null, h(BotPane, { active: true })))
+    syncOrbRoot.render(h(TooltipProvider, null, h(BotOrbButton, { registerAnchor: true })))
+    syncPageRoot.render(h(TooltipProvider, null, h(BotPage, { onJumpToWorkspace: () => {} })))
+  })
+
+  const avatarOptions = settingsHost.querySelectorAll<HTMLButtonElement>('[data-bot-avatar-option]')
+  assert.equal(avatarOptions.length, botAvatarTypes.length, 'lists every avatar supported by bot-avatars')
+  assert.equal(
+    settingsHost.querySelector('[data-bot-avatar-option="clover"]')?.getAttribute('aria-checked'),
+    'true',
+    'defaults Bot avatar to clover'
+  )
+  // Standard radiogroup keyboard semantics: single Tab stop, arrow key move+select, focus preserved and duplicate writes prevented during async save.
+  const tabbableAvatars = Array.from(avatarOptions).filter((btn) => btn.tabIndex === 0)
+  assert.equal(tabbableAvatars.length, 1, 'avatar radiogroup exposes a single Tab stop')
+  assert.equal(tabbableAvatars[0].dataset.botAvatarOption, 'clover', 'selected avatar holds tabIndex=0')
+  assert.ok(
+    Array.from(avatarOptions).filter((btn) => btn.tabIndex === -1).length === avatarOptions.length - 1,
+    'non-selected avatars use roving tabIndex=-1'
+  )
+
+  const cloverOption = settingsHost.querySelector<HTMLButtonElement>('[data-bot-avatar-option="clover"]')!
+  const secondAvatarId = avatarOptions[1].dataset.botAvatarOption!
+  const thirdAvatarId = avatarOptions[2].dataset.botAvatarOption!
+  deferPreferenceSave = true
+  const patchesBeforeArrow = preferencePatches.length
+  cloverOption.focus()
+  await act(async () => {
+    cloverOption.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+  })
+  assert.equal(preferencePatches.length, patchesBeforeArrow + 1, 'ArrowRight selects and saves next avatar')
+  assert.deepEqual(preferencePatches.at(-1), { avatar: secondAvatarId })
+  assert.equal(
+    document.activeElement,
+    avatarOptions[1],
+    'ArrowRight moves focus to the next avatar and keeps focus during async save'
+  )
+  assert.equal(avatarOptions[1].getAttribute('aria-disabled'), 'true', 'marks options aria-disabled instead of dropping focus')
+
+  // While async save is pending, additional arrow keys or clicks must not trigger duplicate writes or lose focus.
+  await act(async () => {
+    avatarOptions[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+    settingsHost.querySelector<HTMLButtonElement>(`[data-bot-avatar-option="${thirdAvatarId}"]`)!.click()
+  })
+  assert.equal(preferencePatches.length, patchesBeforeArrow + 1, 'blocks duplicate writes while async avatar save is pending')
+  assert.equal(document.activeElement, avatarOptions[1], 'preserves focus on active radio option during async save')
+
+  deferPreferenceSave = false
+  await act(async () => {
+    resolvePreferenceSave?.()
+    resolvePreferenceSave = undefined
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  assert.equal(avatarOptions[1].getAttribute('aria-checked'), 'true', 'updates checked state after async save settles')
+  assert.equal(avatarOptions[1].tabIndex, 0, 'moves roving tabIndex=0 to newly selected avatar')
+  assert.equal(cloverOption.tabIndex, -1, 'sets previous avatar back to tabIndex=-1')
+  assert.equal(document.activeElement, avatarOptions[1], 'keeps focus on the selected avatar after save completes')
+
+  assert.ok(
+    settingsHost.textContent?.includes('Use <model> for this task') || settingsHost.textContent?.includes('这次用某某模型执行'),
+    'documents per-turn model override hint in Bot settings UI'
+  )
+
+  // Switch avatar to 'cat' -> saves and updates header BotOrbButton & BotPage (both paused history and working row).
+  const catOption = settingsHost.querySelector<HTMLButtonElement>('[data-bot-avatar-option="cat"]')!
+  await act(async () => { catOption.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.deepEqual(preferencePatches.at(-1), { avatar: 'cat' })
+  assert.equal(catOption.getAttribute('aria-checked'), 'true')
+  assert.ok(syncOrbHost.querySelector('[data-bot-avatar="cat"]'), 'header BotOrbButton follows saved avatar')
+  const pageCatAvatars = syncPageHost.querySelectorAll<HTMLCanvasElement>('[data-bot-avatar="cat"]')
+  assert.ok(pageCatAvatars.length >= 2, 'BotPage history & working rows follow saved avatar')
+  assert.ok(
+    Array.from(pageCatAvatars).some((el) => el.dataset.state === 'working'),
+    'preserves working animation state on BotPage status row'
+  )
+
+  // Open default execution model picker: unlocks default switch, saves model and thinking level, then resets to default.
+  const modelPickerBtn = Array.from(settingsHost.querySelectorAll<HTMLButtonElement>('button'))
+    .find((btn) => btn.textContent?.includes('Default'))!
+  assert.ok(modelPickerBtn, 'renders model picker defaulting to Pig global default')
+  await act(async () => { modelPickerBtn.click() })
+  const defaultSwitch = document.querySelector<HTMLButtonElement>('button[role="switch"][aria-label="Default"]')!
+  assert.ok(defaultSwitch, 'exposes Default toggle inside model picker')
+  await act(async () => { defaultSwitch.click() })
+  const geminiChoice = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-hover-highlight-row]'))
+    .find((btn) => btn.textContent?.includes('Gemini 2.5 Pro'))!
+  assert.ok(geminiChoice, 'unlocks available models after turning off Default toggle')
+  await act(async () => { geminiChoice.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.deepEqual(preferencePatches.at(-1), {
+    delegateModel: { provider: 'google', id: 'gemini-2.5-pro' },
+    delegateThinkingLevel: null
+  })
+
+  // Step thinking level up inside ModelThinkingPicker and verify delegateThinkingLevel persists.
+  const thinkingUpBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Raise thinking effort"]')!
+  assert.ok(thinkingUpBtn, 'renders thinking-level controls for Bot default execution model')
+  await act(async () => { thinkingUpBtn.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.deepEqual(preferencePatches.at(-1), { delegateThinkingLevel: 'off' })
+
+  // Turning Default switch back on clears both delegateModel and delegateThinkingLevel.
+  await act(async () => { defaultSwitch.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.deepEqual(preferencePatches.at(-1), { delegateModel: null, delegateThinkingLevel: null })
+
+  // Save failure preserves store error and surfaces alert in BotPane.
+  failPreferenceSave = new Error('Disk full while saving Bot state')
+  const starOption = settingsHost.querySelector<HTMLButtonElement>('[data-bot-avatar-option="star"]')!
+  await act(async () => { starOption.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.ok(useBotStore.getState().error?.includes('Disk full'), 'preserves failure message in store error')
+  assert.ok(settingsHost.querySelector('[role="alert"]')?.textContent?.includes('Disk full'), 'displays save error alert in BotPane')
+
+  await act(async () => {
+    settingsRoot.unmount()
+    syncOrbRoot.unmount()
+    syncPageRoot.unmount()
+  })
 }
 
 async function staleSnapshotFixture() {
@@ -680,10 +872,126 @@ async function staleSnapshotFixture() {
   assert.equal(useBotStore.getState().open, true, 'stale workspace snapshot must not close Bot after user opened it')
 }
 
+async function botPaneLoadRetryFixture() {
+  const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
+  GlobalRegistrator.register({ url: 'http://localhost' })
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+
+  let snapshotCalls = 0
+  const savedSnapshot: BotSnapshot = {
+    eventCursor: 3,
+    state: {
+      version: 1,
+      sessionId: 'bot-session-saved',
+      cwd: '/pig/bot/workspace',
+      lastSurface: 'bot',
+      avatar: 'cat',
+      delegateModel: { provider: 'google', id: 'gemini-2.5-pro' },
+      delegateThinkingLevel: 'high',
+      archivedSessions: [],
+      createdAt: 1000,
+      updatedAt: 2000
+    },
+    timeline: [],
+    tasks: [],
+    streaming: false,
+    unreadCount: 0,
+    approvals: [],
+    controls: null,
+    permissionMode: 'full-access'
+  }
+
+  Object.assign(window, {
+    api: {
+      bot: {
+        getSnapshot: async () => {
+          snapshotCalls += 1
+          if (snapshotCalls === 1) throw new Error('Snapshot store unavailable')
+          return savedSnapshot
+        },
+        onEvent: () => () => {}
+      },
+      getScopedModels: async () => ({
+        patterns: [],
+        selections: [],
+        missingProviderPatterns: [],
+        models: [],
+        warnings: []
+      }),
+      onScopedModelsChanged: () => () => {}
+    }
+  })
+
+  const { act, createElement: h } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
+  const { useBotStore } = await import('../src/renderer/src/stores/bot')
+  const { useModelCatalogStore } = await import('../src/renderer/src/stores/model-catalog')
+  const { BotPane } = await import('../src/renderer/src/components/settings/BotPane')
+
+  useModelCatalogStore.setState({
+    models: [{
+      provider: 'google',
+      id: 'gemini-2.5-pro',
+      name: 'Gemini 2.5 Pro',
+      providerName: 'Google',
+      contextWindow: 1_000_000,
+      reasoning: true,
+      thinkingLevels: ['off', 'low', 'medium', 'high']
+    }]
+  })
+
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+
+  await act(async () => {
+    root.render(h(TooltipProvider, null, h(BotPane, { active: true })))
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  // 1. Initial load failure surfaces alert + visible retry action, hides default editable controls, and does not auto-retry loop.
+  assert.equal(snapshotCalls, 1, 'initial BotPane load does not enter an automatic retry loop on failure')
+  assert.equal(useBotStore.getState().loaded, false)
+  assert.ok(host.querySelector('[role="alert"]')?.textContent?.includes('Snapshot store unavailable'))
+  assert.equal(host.querySelectorAll('[data-bot-avatar-option]').length, 0, 'does not render default avatar options before load succeeds')
+  assert.equal(host.querySelector('[role="radiogroup"]'), null, 'hides avatar editor while snapshot is unloaded')
+
+  const retryBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+    .find((btn) => btn.textContent?.includes('Retry') || btn.textContent?.includes('重试'))
+  assert.ok(retryBtn, 'exposes a visible retry button when initial snapshot fails')
+
+  // 2. Manual retry loads saved settings without restoring lastSurface='bot' to navigate away from Settings.
+  await act(async () => { retryBtn.click() })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  assert.equal(snapshotCalls, 2, 'manual retry calls getSnapshot once')
+  assert.equal(useBotStore.getState().loaded, true)
+  assert.equal(useBotStore.getState().open, false, 'retrying from BotPane must not restore lastSurface=bot and navigate away')
+  assert.equal(host.querySelector('[role="alert"]'), null, 'clears load error alert after retry succeeds')
+  assert.equal(
+    host.querySelector('[data-bot-avatar-option="cat"]')?.getAttribute('aria-checked'),
+    'true',
+    'renders saved avatar after retry succeeds'
+  )
+  assert.ok(host.textContent?.includes('Gemini 2.5 Pro'), 'renders saved delegateModel after retry succeeds')
+  assert.ok(
+    host.textContent?.includes('High') || host.textContent?.includes('高'),
+    'renders saved delegateThinkingLevel after retry succeeds'
+  )
+
+  await act(async () => { root.unmount() })
+}
+
 if (process.argv[2] === '--bot-ui-fixture') {
   await fixture()
 } else if (process.argv[2] === '--bot-stale-snapshot-fixture') {
   await staleSnapshotFixture()
+} else if (process.argv[2] === '--bot-pane-load-retry-fixture') {
+  await botPaneLoadRetryFixture()
 } else {
   test('Bot UI store, live task bar, peek bubble, managed banner, and reset context preserve invariants', async () => {
     const { exitCode, stdout, stderr } = await runSelf(
@@ -698,6 +1006,15 @@ if (process.argv[2] === '--bot-ui-fixture') {
     const { exitCode, stdout, stderr } = await runSelf(
       import.meta.path,
       ['--bot-stale-snapshot-fixture'],
+      { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 15_000 }
+    )
+    assert.equal(exitCode, 0, stderr || stdout)
+  })
+
+  test('BotPane hides defaults on initial load failure, retries without restoring surface, and shows saved settings', async () => {
+    const { exitCode, stdout, stderr } = await runSelf(
+      import.meta.path,
+      ['--bot-pane-load-retry-fixture'],
       { cwd: new URL('..', import.meta.url).pathname, timeoutMs: 15_000 }
     )
     assert.equal(exitCode, 0, stderr || stdout)

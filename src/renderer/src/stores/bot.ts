@@ -11,6 +11,7 @@ import {
   type BotImageAttachment,
   type BotMirroredApproval,
   type BotPeekMessage,
+  type BotPreferencesPatch,
   type BotSnapshot,
   type BotState,
   type BotTask,
@@ -86,6 +87,7 @@ export interface BotStoreState {
   setPermissionMode: (mode: PermissionMode) => Promise<void>
   setModel: (provider: string, id: string) => Promise<void>
   setThinking: (level: ThinkingLevel) => Promise<void>
+  updatePreferences: (patch: BotPreferencesPatch) => Promise<BotState>
   resetContext: () => Promise<void>
   stopTask: (taskId: string) => Promise<void>
   takeOverTask: (taskId: string) => Promise<BotTask>
@@ -330,6 +332,17 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
   setThinking: async (level) => {
     const controls = await api.bot.setThinking(level)
     if (controls) set({ controls })
+  },
+
+  updatePreferences: async (patch) => {
+    try {
+      const next = await api.bot.updatePreferences(patch)
+      set({ state: next, error: null })
+      return next
+    } catch (error) {
+      set({ error: failureMessage(error) })
+      throw error
+    }
   },
 
   resetContext: async () => {

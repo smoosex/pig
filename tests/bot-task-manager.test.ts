@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BotStore } from '../src/main/bot/store'
@@ -720,17 +720,173 @@ describe('BotTaskManager and BotNoticeQueue', () => {
     await expect(manager.followupTask(ack.taskId, 'more work', 'full-access')).rejects.toThrow('cleaned up')
   })
 
-  test('BotStore preserves persisted model and thinkingLevel across reads', async () => {
+  test('BotStore preserves persisted model, avatar, delegateModel, delegateThinkingLevel, and thinkingLevel and rejects invalid fields', async () => {
     const { store } = await makeFixture()
     await store.ensureState('bot-test-persist')
     await store.updateState((s) => ({
       ...s,
+      avatar: 'cat',
       model: { provider: 'anthropic', id: 'claude-sonnet-4-5' },
-      thinkingLevel: 'high'
+      thinkingLevel: 'high',
+      delegateModel: { provider: 'google', id: 'gemini-2.5-pro' },
+      delegateThinkingLevel: 'medium'
     }))
     const reloaded = await store.readState()
     expect(reloaded?.sessionId).toBe('bot-test-persist')
+    expect(reloaded?.avatar).toBe('cat')
     expect(reloaded?.model).toEqual({ provider: 'anthropic', id: 'claude-sonnet-4-5' })
     expect(reloaded?.thinkingLevel).toBe('high')
+    expect(reloaded?.delegateModel).toEqual({ provider: 'google', id: 'gemini-2.5-pro' })
+    expect(reloaded?.delegateThinkingLevel).toBe('medium')
+
+    // Invalid avatar, delegateModel, or delegateThinkingLevel fails fast instead of silently resetting.
+    const statePath = join(store.dir, 'state.json')
+    const valid = JSON.parse(await readFile(statePath, 'utf8'))
+    await writeFile(statePath, JSON.stringify({ ...valid, avatar: 'not-a-real-avatar' }))
+    await expect(store.readState()).rejects.toThrow('Invalid bot state.json')
+    await writeFile(statePath, JSON.stringify({ ...valid, delegateModel: { provider: 'google', id: '' } }))
+    await expect(store.readState()).rejects.toThrow('Invalid bot state.json')
+    await writeFile(statePath, JSON.stringify({ ...valid, delegateThinkingLevel: 'ultra' }))
+    await expect(store.readState()).rejects.toThrow('Invalid bot state.json')
+  })
+
+  test('delegation and followup follow model & thinking precedence: per-run override > Bot settings > Pig global default', async () => {
+    const launchedRuns: Array<{ runId: string; modelOverride?: { provider: string; id: string }; thinkingOverride?: string }> = []
+    let counter = 0
+    const { manager, store, projectCwd } = await makeFixture({
+      launchBackendSession: async (params) => {
+        launchedRuns.push({ runId: params.run.runId, modelOverride: params.modelOverride, thinkingOverride: params.thinkingOverride })
+        counter += 1
+        return { sessionId: `sess-${counter}`, sessionTaskId: `st-${counter}` }
+      }
+    })
+    await store.ensureState('bot-model-precedence')
+
+    // 1. Neither Bot setting nor per-run override -> passes undefined so backend inherits Pig global default.
+    const ackGlobal = await manager.delegateTask({
+      projectCwd, title: 'Global default', intent: 'Use Pig global default', mode: 'read'
+    }, 'full-access')
+    await manager.waitForLaunch(ackGlobal.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toBeUndefined()
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBeUndefined()
+
+    // Finish first task so we can test followup later.
+    const run1 = (await manager.getTask(ackGlobal.taskId))!.runs[0]
+    await manager.handleSessionTaskFinished({
+      taskId: run1.sessionTaskId!, sessionId: run1.sessionId!, status: 'completed',
+      startedAt: run1.startedAt, endedAt: Date.now(), durationMs: 10, reply: 'done',
+      cost: 0, usageIncomplete: false, children: 0
+    })
+
+    // 2. Configure Bot default execution model & thinking -> applies to new delegations and followups.
+    await store.updateState((s) => ({
+      ...s,
+      delegateModel: { provider: 'google', id: 'gemini-2.5-pro' },
+      delegateThinkingLevel: 'high'
+    }))
+    const ackBotDefault = await manager.delegateTask({
+      projectCwd, title: 'Bot setting default', intent: 'Use Bot setting', mode: 'read'
+    }, 'full-access')
+    await manager.waitForLaunch(ackBotDefault.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toEqual({ provider: 'google', id: 'gemini-2.5-pro' })
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBe('high')
+
+    const ackFollowupDefault = await manager.followupTask(ackGlobal.taskId, 'Continue with Bot setting', 'full-access')
+    await manager.waitForLaunch(ackFollowupDefault.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toEqual({ provider: 'google', id: 'gemini-2.5-pro' })
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBe('high')
+
+    const run2 = (await manager.getTask(ackGlobal.taskId))!.runs[1]
+    await manager.handleSessionTaskFinished({
+      taskId: run2.sessionTaskId!, sessionId: run2.sessionId!, status: 'completed',
+      startedAt: run2.startedAt, endedAt: Date.now(), durationMs: 10, reply: 'done',
+      cost: 0, usageIncomplete: false, children: 0
+    })
+
+    // 3. Explicit per-run modelOverride beats Bot setting and does NOT leak Bot's old-model thinking level.
+    const ackExplicitModelOnly = await manager.delegateTask({
+      projectCwd, title: 'Explicit model override', intent: 'Use Claude for this task', mode: 'read',
+      modelOverride: { provider: 'anthropic', id: 'claude-sonnet-4-5' }
+    }, 'full-access')
+    await manager.waitForLaunch(ackExplicitModelOnly.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toEqual({ provider: 'anthropic', id: 'claude-sonnet-4-5' })
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBeUndefined()
+
+    // Explicit per-run modelOverride + thinkingOverride both win on followup too.
+    const ackFollowupExplicit = await manager.followupTask(ackGlobal.taskId, 'Retry with Claude low', 'full-access', {
+      modelOverride: { provider: 'anthropic', id: 'claude-sonnet-4-5' },
+      thinkingOverride: 'low'
+    })
+    await manager.waitForLaunch(ackFollowupExplicit.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toEqual({ provider: 'anthropic', id: 'claude-sonnet-4-5' })
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBe('low')
+
+    // 4. Clearing Bot delegateModel reverts future runs to Pig global default (even if a stale thinking field existed).
+    await store.updateState((s) => {
+      const next = { ...s }
+      delete next.delegateModel
+      return next
+    })
+    const ackCleared = await manager.delegateTask({
+      projectCwd, title: 'Back to global', intent: 'Use global again', mode: 'read'
+    }, 'full-access')
+    await manager.waitForLaunch(ackCleared.runId)
+    expect(launchedRuns.at(-1)?.modelOverride).toBeUndefined()
+    expect(launchedRuns.at(-1)?.thinkingOverride).toBeUndefined()
+  })
+
+  test('stopTask during launchRunAsync store.readState aborts before launchBackendSession and settles as stopped', async () => {
+    let launchCalls = 0
+    let enteredStopping!: () => void
+    const stoppingEntered = new Promise<void>((resolve) => { enteredStopping = resolve })
+    const { manager, store, projectCwd } = await makeFixture({
+      onTaskUpdated: (task) => {
+        if (task.runs[0]?.status === 'stopping') enteredStopping()
+      },
+      launchBackendSession: async () => {
+        launchCalls += 1
+        return { sessionId: 'sess-should-not-start', sessionTaskId: 'st-should-not-start' }
+      }
+    })
+    await store.ensureState('bot-stop-during-readstate')
+
+    let enteredReadState!: () => void
+    const readStateEntered = new Promise<void>((resolve) => { enteredReadState = resolve })
+    let releaseReadState!: () => void
+    const readStateGate = new Promise<void>((resolve) => { releaseReadState = resolve })
+
+    const origReadState = store.readState.bind(store)
+    let intercepted = false
+    store.readState = async () => {
+      if (!intercepted) {
+        intercepted = true
+        enteredReadState()
+        await readStateGate
+      }
+      return origReadState()
+    }
+
+    const ack = await manager.delegateTask({
+      projectCwd,
+      title: 'Stop while reading Bot state',
+      intent: 'Should not launch after stop',
+      mode: 'read'
+    }, 'full-access')
+
+    await readStateEntered
+    const stopPromise = manager.stopTask(ack.taskId, 'user')
+    await stoppingEntered
+    releaseReadState()
+
+    const stopped = await stopPromise
+    await manager.waitForLaunch(ack.runId)
+
+    expect(launchCalls).toBe(0)
+    expect(stopped.status).toBe('stopped')
+    expect(stopped.runs[0].status).toBe('stopped')
+    const finalTask = await manager.getTask(ack.taskId)
+    expect(finalTask?.status).toBe('stopped')
+    expect(finalTask?.runs[0].status).toBe('stopped')
+    expect(finalTask?.runs[0].sessionId).toBeUndefined()
   })
 })

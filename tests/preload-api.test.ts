@@ -115,6 +115,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   api.browser.onSelection(() => {})()
   await api.bot.getSnapshot()
   await api.bot.setSurface('bot')
+  await api.bot.updatePreferences({ avatar: 'cat', delegateModel: { provider: 'openai', id: 'gpt-5' }, delegateThinkingLevel: 'high' })
   await api.bot.sendMessage({ text: 'hello' })
   await api.bot.retryLastMessage()
   await api.bot.abortCurrentTurn()
@@ -236,6 +237,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:close', args: ['session-1'] },
     { channel: 'bot:snapshot', args: [] },
     { channel: 'bot:set-surface', args: ['bot'] },
+    { channel: 'bot:update-preferences', args: [{ avatar: 'cat', delegateModel: { provider: 'openai', id: 'gpt-5' }, delegateThinkingLevel: 'high' }] },
     { channel: 'bot:send', args: [{ text: 'hello' }] },
     { channel: 'bot:retry-last', args: [] },
     { channel: 'bot:abort', args: [] },

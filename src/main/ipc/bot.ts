@@ -3,16 +3,15 @@
  * browser views or untrusted subframes can never invoke Bot controls or read Bot state.
  */
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { ThinkingLevel } from '../../shared/api'
+import { isThinkingLevel } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
-import type { BotEvent, BotImageAttachment, BotSurface, BotTextAttachment } from '../../shared/bot'
+import { isBotAvatarId, type BotEvent, type BotImageAttachment, type BotPreferencesPatch, type BotSurface, type BotTextAttachment } from '../../shared/bot'
 import { assertBrowserSender } from '../browser/validation'
 import { windowForEvent } from './window'
 import { botService } from '../bot/service'
 
 const VALID_SURFACES = new Set<BotSurface>(['workspace', 'bot'])
 const VALID_MODES = new Set<PermissionMode>(['read-only', 'default', 'full-access'])
-const VALID_THINKING = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
 function assertUiMainFrame(event: IpcMainInvokeEvent): BrowserWindow {
   const win = windowForEvent(event)
@@ -49,6 +48,54 @@ export function registerBotIpc(): void {
       throw new Error('Invalid bot surface')
     }
     return botService().setSurface(surface as BotSurface)
+  })
+
+  ipcMain.handle('bot:update-preferences', async (event, rawPatch: unknown) => {
+    assertUiMainFrame(event)
+    ensureSubscribed()
+    if (!rawPatch || typeof rawPatch !== 'object' || Array.isArray(rawPatch)) {
+      throw new Error('Invalid bot preferences patch')
+    }
+    const record = rawPatch as Record<string, unknown>
+    const keys = Object.keys(record)
+    if (keys.length === 0) throw new Error('Bot preferences patch must not be empty')
+    const patch: BotPreferencesPatch = {}
+    for (const key of keys) {
+      if (key === 'avatar') {
+        if (!isBotAvatarId(record.avatar)) throw new Error('Invalid bot avatar')
+        patch.avatar = record.avatar
+      } else if (key === 'delegateModel') {
+        const value = record.delegateModel
+        if (value === null) {
+          patch.delegateModel = null
+        } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+          const modelRecord = value as Record<string, unknown>
+          const modelKeys = Object.keys(modelRecord)
+          if (
+            modelKeys.some((k) => k !== 'provider' && k !== 'id') ||
+            typeof modelRecord.provider !== 'string' || !modelRecord.provider.trim() ||
+            typeof modelRecord.id !== 'string' || !modelRecord.id.trim()
+          ) {
+            throw new Error('Invalid bot delegate model')
+          }
+          patch.delegateModel = { provider: modelRecord.provider.trim(), id: modelRecord.id.trim() }
+        } else {
+          throw new Error('Invalid bot delegate model')
+        }
+      } else if (key === 'delegateThinkingLevel') {
+        const value = record.delegateThinkingLevel
+        if (value === null) {
+          patch.delegateThinkingLevel = null
+        } else if (isThinkingLevel(value)) {
+          patch.delegateThinkingLevel = value
+        } else {
+          throw new Error('Invalid bot delegate thinking level')
+        }
+      } else {
+        throw new Error(`Unknown bot preference: ${key}`)
+      }
+    }
+    return botService().updatePreferences(patch)
   })
 
   ipcMain.handle('bot:send', async (event, input: unknown) => {
@@ -105,10 +152,10 @@ export function registerBotIpc(): void {
   ipcMain.handle('bot:set-thinking', async (event, level: unknown) => {
     assertUiMainFrame(event)
     ensureSubscribed()
-    if (typeof level !== 'string' || !VALID_THINKING.has(level as ThinkingLevel)) {
+    if (!isThinkingLevel(level)) {
       throw new Error('Invalid thinking level')
     }
-    return botService().setThinking(level as ThinkingLevel)
+    return botService().setThinking(level)
   })
 
   ipcMain.handle('bot:reset-context', async (event) => {

@@ -5,10 +5,11 @@
  */
 import { createHash } from 'node:crypto'
 import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent'
-import type {
-  DefaultSessionSettings,
-  SessionModelInfo,
-  ThinkingLevel as SessionThinkingLevel
+import {
+  THINKING_LEVELS as SHARED_THINKING_LEVELS,
+  type DefaultSessionSettings,
+  type SessionModelInfo,
+  type ThinkingLevel as SessionThinkingLevel
 } from '../../shared/api'
 
 export type { DefaultSessionSettings, ThinkingLevel as SessionThinkingLevel } from '../../shared/api'
@@ -28,15 +29,7 @@ export interface DefaultSettingsPatch {
   thinkingLevel?: SessionThinkingLevel
 }
 
-export const THINKING_LEVELS: SessionThinkingLevel[] = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max'
-]
+export const THINKING_LEVELS: SessionThinkingLevel[] = [...SHARED_THINKING_LEVELS]
 
 export const HIDDEN_THINKING_LEVELS = new Set<SessionThinkingLevel>(['off', 'minimal'])
 

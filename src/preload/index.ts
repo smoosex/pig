@@ -26,6 +26,7 @@ const api: SessionApi = {
   bot: {
     getSnapshot: () => ipcRenderer.invoke('bot:snapshot'),
     setSurface: (surface) => ipcRenderer.invoke('bot:set-surface', surface),
+    updatePreferences: (patch) => ipcRenderer.invoke('bot:update-preferences', patch),
     sendMessage: (input) => ipcRenderer.invoke('bot:send', input),
     retryLastMessage: () => ipcRenderer.invoke('bot:retry-last'),
     abortCurrentTurn: () => ipcRenderer.invoke('bot:abort'),

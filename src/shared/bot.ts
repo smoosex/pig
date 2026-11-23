@@ -78,6 +78,42 @@ export interface BotModelOverride {
   id: string
 }
 
+/** Avatar styles supported by the bundled `bot-avatars` package. */
+export const BOT_AVATAR_TYPES = [
+  'clover',
+  'flower',
+  'triangle',
+  'square',
+  'blob',
+  'ghost',
+  'circle',
+  'drop',
+  'star',
+  'droid',
+  'mech',
+  'alien',
+  'hexagon',
+  'cat',
+  'cloud',
+  'pill',
+  'pebble',
+  'puddle'
+] as const
+
+export type BotAvatarId = (typeof BOT_AVATAR_TYPES)[number]
+
+export const DEFAULT_BOT_AVATAR: BotAvatarId = 'clover'
+
+export function isBotAvatarId(value: unknown): value is BotAvatarId {
+  return typeof value === 'string' && (BOT_AVATAR_TYPES as readonly string[]).includes(value)
+}
+
+export interface BotPreferencesPatch {
+  avatar?: BotAvatarId
+  delegateModel?: BotModelOverride | null
+  delegateThinkingLevel?: ThinkingLevel | null
+}
+
 export interface BotRun {
   runId: string
   taskId: string
@@ -195,8 +231,11 @@ export interface BotState {
   sessionId: string
   cwd: string
   lastSurface: BotSurface
+  avatar?: BotAvatarId
   model?: BotModelOverride
   thinkingLevel?: ThinkingLevel
+  delegateModel?: BotModelOverride
+  delegateThinkingLevel?: ThinkingLevel
   archivedSessions: BotArchivedSession[]
   createdAt: number
   updatedAt: number
@@ -291,6 +330,7 @@ export interface BotWorktreeCleanupSafety {
 export interface BotApi {
   getSnapshot: () => Promise<BotSnapshot>
   setSurface: (surface: BotSurface) => Promise<BotState>
+  updatePreferences: (patch: BotPreferencesPatch) => Promise<BotState>
   sendMessage: (input: {
     text: string
     images?: BotImageAttachment[]

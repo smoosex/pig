@@ -13,6 +13,7 @@ async function fixture(): Promise<void> {
   let featureCallbacks: { onDirtyChange?(value: boolean): void; onBusyChange?(value: boolean): void } = {}
   const panes = [
     ['GeneralPane', 'settings.sectionGeneral', 'settings.sectionGeneralDescription'],
+    ['BotPane', 'settings.sectionBot', 'settings.sectionBotDescription'],
     ['PersonaMemoryPane', 'features.title', 'features.description'],
     ['ShortcutsPane', 'shortcuts.title', 'shortcuts.description'],
     ['ThemePane', 'settings.sectionTheme', 'settings.sectionThemeDescription'],

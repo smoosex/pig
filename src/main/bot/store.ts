@@ -5,7 +5,8 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, appendFile, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BotState, BotSurface, BotTask, BotTimelineItem } from '../../shared/bot'
+import { isThinkingLevel } from '../../shared/api'
+import { isBotAvatarId, type BotState, type BotSurface, type BotTask, type BotTimelineItem } from '../../shared/bot'
 import { writeFileAtomic } from '../atomic-write'
 
 interface TasksFile {
@@ -49,15 +50,36 @@ export class BotStore {
       }
       const lastSurface: BotSurface = raw.lastSurface === 'bot' ? 'bot' : 'workspace'
       const archivedSessions = Array.isArray(raw.archivedSessions) ? raw.archivedSessions : []
+      if (raw.avatar !== undefined && !isBotAvatarId(raw.avatar)) {
+        throw new Error('Invalid bot state.json')
+      }
+      if (raw.delegateModel !== undefined) {
+        const dm = raw.delegateModel as unknown
+        if (
+          !dm || typeof dm !== 'object' || Array.isArray(dm) ||
+          typeof (dm as { provider?: unknown }).provider !== 'string' || !(dm as { provider: string }).provider.trim() ||
+          typeof (dm as { id?: unknown }).id !== 'string' || !(dm as { id: string }).id.trim()
+        ) {
+          throw new Error('Invalid bot state.json')
+        }
+      }
+      if (raw.delegateThinkingLevel !== undefined && !isThinkingLevel(raw.delegateThinkingLevel)) {
+        throw new Error('Invalid bot state.json')
+      }
       return {
         version: 1,
         sessionId: raw.sessionId,
         cwd: typeof raw.cwd === 'string' && raw.cwd ? raw.cwd : this.dir,
         lastSurface,
+        ...(raw.avatar !== undefined ? { avatar: raw.avatar } : {}),
         ...(raw.model && typeof raw.model.provider === 'string' && typeof raw.model.id === 'string'
           ? { model: { provider: raw.model.provider, id: raw.model.id } }
           : {}),
         ...(typeof raw.thinkingLevel === 'string' ? { thinkingLevel: raw.thinkingLevel } : {}),
+        ...(raw.delegateModel
+          ? { delegateModel: { provider: raw.delegateModel.provider, id: raw.delegateModel.id } }
+          : {}),
+        ...(raw.delegateThinkingLevel !== undefined ? { delegateThinkingLevel: raw.delegateThinkingLevel } : {}),
         archivedSessions,
         createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
         updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now()

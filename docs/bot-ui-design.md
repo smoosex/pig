@@ -74,9 +74,9 @@
 | **空闲（`idle`）** | 5 | 悬停微放大 + 柔和微光 | 无角标，四叶草保持 `default` 态 |
 | **已在 Bot 页（`active`）** | 叠加态 | `--bot-orb-ring` 细环 + `--bot-orb-glow` 柔光，悬停提示「返回工作区」 | 进入 Bot 页即清零未读点 |
 
-### 3.3 Bot 页面头像（`bot-avatars`）
+### 3.3 Bot 页面头像与 Bot 设置页（`bot-avatars`）
 
-Bot 页面（空状态主头像与消息流头像）使用轻量零依赖的 `bot-avatars` 2D Canvas 头像组件（默认仅双眸）：空态使用 `<BotAvatar type="clover" size={96} />` 启用完整动态与交互，思考和审批放行后的继续运行提示共用 `size={24}` 的 `working` 状态行，行内留出头像跳动空间；历史消息行保持 `size={24}` 静态（`paused`）以避免列表同时晃动。组件免 WebGL、自动适配亮暗表面，且在滚出视口、窗口隐藏或开启 `prefers-reduced-motion` 时自动暂停。后续如在 Persona 设置支持自定义头像，可按配置覆盖默认形象。
+顶栏 `BotOrbButton` 与 Bot 页面（空状态主头像、思考/审批继续行、历史消息行）统一读取 `$PIG_DIR/bot/state.json` 中的 `avatar` 配置（默认 `clover` 四叶草），并在设置页「Bot」分区提供图形化切换（支持当前 `bot-avatars` 全部款式），同时保留各处原有动画/静态语义：顶栏 `size={22}` 随运行态切 `working`；空态 `size={96}` 启用完整动态与交互；思考和审批放行后的继续运行提示共用 `size={24}` 的 `working` 状态行；历史消息行保持 `size={24}` 静态（`paused`）以避免列表同时晃动。组件免 WebGL、自动适配亮暗表面，且在滚出视口、窗口隐藏或开启 `prefers-reduced-motion` 时自动暂停。设置页「Bot」分区同时提供「默认执行模型」配置（复用 `ModelThinkingPicker`，支持模型与思考强度选择），未设置时继承 Pig 全局默认，并提示用户可直接通过对话指令单次指定模型覆盖。
 
 ---
 

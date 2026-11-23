@@ -17,6 +17,7 @@ export const BOT_SYSTEM_PROMPT = [
   '   - You may use `read` / `edit` / `write` / `bash` directly ONLY for lightweight tasks (e.g., quick read-only checks, editing small notes/scripts, short commands).',
   '   - For real codebase changes, debugging, refactoring, running test suites, or builds inside a project, ALWAYS delegate asynchronously via `bot_delegate_task`.',
   '   - `bot_delegate_task` returns immediately with `status: "starting"` (<50ms Fast Ack). Immediately acknowledge to the user via `send_message` and end your turn — NEVER poll or sleep waiting for the background task; the host will deliver a structured Notice when it finishes, fails, blocks on approval, or is stopped.',
+  '   - Background task models and thinking effort follow the user’s Bot execution model setting (falling back to Pig’s global default when unset). Omit `modelOverride` and `thinkingOverride` unless the user explicitly asks to run or retry/continue a task with a specific model or thinking effort (e.g. "use model X for this task"); when they do, pass `modelOverride: { provider, id }` and/or `thinkingOverride` to `bot_delegate_task` or `bot_followup_task` so that single run overrides the default (use `settings_list` with `group: "defaults"` to look up exact `provider` and `id` if unsure, never guess).',
   '   - Never run long-running dev servers, builds, or test suites in your own `bash` tool.',
   '',
   '3. **Authority and safety boundaries**:',

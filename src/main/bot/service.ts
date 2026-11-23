@@ -8,16 +8,18 @@ import { mkdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import { SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
-import type { SessionControls, ThinkingLevel } from '../../shared/api'
+import { isThinkingLevel, type SessionControls, type ThinkingLevel } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import type { SessionAgentTask } from '../../shared/session-agent'
 import {
+  isBotAvatarId,
   isBotTaskActive,
   type BotEvent,
   type BotImageAttachment,
   type BotManagedSessionInfo,
   type BotMirroredApproval,
   type BotPeekMessage,
+  type BotPreferencesPatch,
   type BotSnapshot,
   type BotState,
   type BotSurface,
@@ -38,8 +40,7 @@ import {
   prepareSession,
   renameSession,
   restoreManagedOverlay,
-  setSessionModel,
-  setSessionThinking
+  setSessionModel
 } from '../pi/session-registry'
 import { promptSession } from '../pi/session-prompt'
 import { isSessionRunActive } from '../pi/event-bridge'
@@ -464,12 +465,18 @@ export class BotService {
     const title = attempt > 1 ? `[Bot #${attempt}] ${params.task.title}` : `[Bot] ${params.task.title}`
     await renameSession(sessionId, title).catch(() => {})
 
-    // Model inheritance: default follows Pig's global default model/thinking; allow per-task overrides.
+    // Model & thinking inheritance: TaskManager resolves per-run override -> Bot settings default -> Pig global default.
     if (params.modelOverride) {
       await setSessionModel(sessionId, params.modelOverride.provider, params.modelOverride.id)
     }
     if (params.thinkingOverride) {
-      await setSessionThinking(sessionId, params.thinkingOverride)
+      // Apply directly on the managed AgentSession so settings-supported levels (including off/minimal)
+      // work without rejecting hidden composer levels or mutating global remembered model preferences.
+      const supported = thinkingLevelsFor(live.agentSession.model ?? null)
+      if (!supported.includes(params.thinkingOverride)) {
+        throw new Error(`Thinking level not supported: ${params.thinkingOverride}`)
+      }
+      live.agentSession.setThinkingLevel(params.thinkingOverride)
     }
 
     // Notify renderer project tree so new Bot worktree / session appears immediately.
@@ -803,6 +810,90 @@ export class BotService {
     if (surface === 'bot') {
       void this.syncControls()
     }
+    return next
+  }
+
+  async updatePreferences(patch: BotPreferencesPatch): Promise<BotState> {
+    await this.initialize()
+    if (patch.avatar === undefined && patch.delegateModel === undefined && patch.delegateThinkingLevel === undefined) {
+      throw new Error('Bot preferences update is empty')
+    }
+    if (patch.avatar !== undefined && !isBotAvatarId(patch.avatar)) {
+      throw new Error(`Invalid bot avatar: ${String(patch.avatar)}`)
+    }
+    if (patch.delegateThinkingLevel !== undefined && patch.delegateThinkingLevel !== null && !isThinkingLevel(patch.delegateThinkingLevel)) {
+      throw new Error(`Invalid thinking level: ${String(patch.delegateThinkingLevel)}`)
+    }
+
+    const runtime = (patch.delegateModel !== undefined && patch.delegateModel !== null) ||
+      (patch.delegateThinkingLevel !== undefined && patch.delegateThinkingLevel !== null)
+      ? await startModelRuntime()
+      : null
+
+    let validatedDelegateModel: { provider: string; id: string } | null | undefined
+    if (patch.delegateModel !== undefined) {
+      if (patch.delegateModel === null) {
+        if (patch.delegateThinkingLevel !== undefined && patch.delegateThinkingLevel !== null) {
+          throw new Error('Cannot set delegate thinking level without a default execution model')
+        }
+        validatedDelegateModel = null
+      } else {
+        const provider = patch.delegateModel.provider.trim()
+        const id = patch.delegateModel.id.trim()
+        if (!provider || !id) {
+          throw new Error('Model provider and id are required')
+        }
+        const model = runtime!.getModel(provider, id)
+        if (!model) {
+          throw new Error(`Model not found: ${provider}/${id}`)
+        }
+        const available = runtime!.getAvailableSnapshot().some(
+          (candidate) => candidate.provider === model.provider && candidate.id === model.id
+        )
+        if (!available) {
+          throw new Error(`Model not available: ${model.provider}/${model.id}`)
+        }
+        validatedDelegateModel = { provider: model.provider, id: model.id }
+      }
+    }
+
+    const next = await this.store.updateState((current) => {
+      const updated: BotState = { ...current }
+      if (patch.avatar !== undefined) {
+        updated.avatar = patch.avatar
+      }
+      if (validatedDelegateModel === null) {
+        delete updated.delegateModel
+        delete updated.delegateThinkingLevel
+      } else if (validatedDelegateModel !== undefined) {
+        updated.delegateModel = validatedDelegateModel
+        if (patch.delegateThinkingLevel === undefined && updated.delegateThinkingLevel) {
+          const supported = thinkingLevelsFor(validatedDelegateModel)
+          if (!supported.includes(updated.delegateThinkingLevel)) {
+            delete updated.delegateThinkingLevel
+          }
+        }
+      }
+      if (patch.delegateThinkingLevel === null) {
+        delete updated.delegateThinkingLevel
+      } else if (patch.delegateThinkingLevel !== undefined) {
+        const targetModel = updated.delegateModel
+        if (!targetModel) {
+          throw new Error('A default execution model must be set before choosing a thinking level')
+        }
+        const resolvedModel = runtime!.getModel(targetModel.provider, targetModel.id)
+        if (!resolvedModel) {
+          throw new Error(`Model not found: ${targetModel.provider}/${targetModel.id}`)
+        }
+        const supported = thinkingLevelsFor(resolvedModel)
+        if (!supported.includes(patch.delegateThinkingLevel)) {
+          throw new Error(`Thinking level not supported: ${patch.delegateThinkingLevel}`)
+        }
+        updated.delegateThinkingLevel = patch.delegateThinkingLevel
+      }
+      return updated
+    })
+    this.emit({ type: 'state_changed', state: next })
     return next
   }
 

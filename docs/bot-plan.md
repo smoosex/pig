@@ -232,7 +232,7 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 
 2. **模型与思考强度分工**
    - **Bot 主会话**：拥有独立的模型与思考强度选择（在 `BotComposer` 底部切换），可自由选用低延迟模型聊天，不影响 Pig 全局默认。
-   - **后台执行 Session**：默认继承 Pig 全局默认模型与思考强度（`~/.pi/agent/settings.json`），不在设置页额外增加第三套“后台默认模型”配置；支持在 `bot_delegate_task` / `bot_followup_task` 中按单次任务可选覆写模型或思考强度。
+   - **后台执行 Session**：在设置页「Bot → 默认执行模型」中可配置 Bot 委派与继续/重试任务时的默认模型及思考强度（持久化于 `$PIG_DIR/bot/state.json` 的 `delegateModel` 与 `delegateThinkingLevel`），未设置时继承 Pig 全局默认模型与思考强度（`~/.pi/agent/settings.json`）；生效范围为之后的新委派与重试/继续产生的新 Run，不影响 Bot 主会话模型、Pig 全局默认或正在运行的任务。优先级固定为：**单次显式 `modelOverride` / `thinkingOverride` > Bot 默认执行模型与思考强度设置 > Pig 全局默认**（单次仅覆盖模型时，不套用旧默认模型的 `delegateThinkingLevel`）；用户在对话中明确指定模型或思考强度时，Bot 通过 `bot_delegate_task` / `bot_followup_task` 的对应参数单次覆盖。
 
 3. **单条常驻时间线与启动落点**
    - **单时间线**：Bot 始终沿一条常驻时间线对话，不设多 Bot 会话列表，长历史交由 OM 与自动压缩延续；顶栏菜单提供低调的应急「新起一段 / 重置当前上下文」入口（二次确认后归档旧 JSONL 并开启新会话文件，保留全部 `BotTask` 账本与长期记忆，不中断正在运行的后台任务）。
