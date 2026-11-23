@@ -317,6 +317,11 @@ export class BotService {
         }
       })
 
+      // Resolve and freeze the target model & thinking level before creating the SDK runtime:
+      // Pi SDK appends a default thinking_level_change (medium) to existing JSONL files that lack one,
+      // so re-reading history after createSessionRuntime() would mistake that synthetic default for user intent.
+      const desiredSelection = await this.resolveBotSelection(null, { ignoreSessionDefaults: true })
+
       let session: AgentSession | null = null
       try {
         session = await createSessionRuntime(
@@ -337,7 +342,7 @@ export class BotService {
         }
         this.sessionWindow = win ?? null
 
-        const controls = await this.applyResolvedControlsToSession(session, true)
+        const controls = await this.applyResolvedControlsToSession(session, true, desiredSelection)
 
         this.sessionUnsub?.()
         this.sessionUnsub = session.subscribe((event) => {
@@ -738,9 +743,10 @@ export class BotService {
 
   private async applyResolvedControlsToSession(
     session: AgentSession,
-    ignoreSessionDefaults: boolean
+    ignoreSessionDefaults: boolean,
+    preResolved?: Awaited<ReturnType<BotService['resolveBotSelection']>>
   ): Promise<SessionControls | null> {
-    const resolved = await this.resolveBotSelection(session, { ignoreSessionDefaults })
+    const resolved = preResolved ?? await this.resolveBotSelection(session, { ignoreSessionDefaults })
     if (!resolved.model || !resolved.controls) return null
     if (
       !session.model ||

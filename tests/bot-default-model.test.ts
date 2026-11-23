@@ -96,6 +96,8 @@ async function fixture() {
         getSessionId: () => string
         buildSessionContext?: () => { model: { provider: string; modelId: string } | null; thinkingLevel: string }
         getBranch?: () => Array<{ type: string }>
+        getEntries?: () => Array<{ type: string }>
+        appendThinkingLevelChange?: (level: string) => void
       },
       _plugins: string[],
       _appendPrompt: unknown,
@@ -117,11 +119,19 @@ async function fixture() {
       const restoredModel = persistedContext?.model
         ? models.find((m) => m.provider === persistedContext.model!.provider && m.id === persistedContext.model!.modelId)
         : undefined
+      const hasExistingSession = (sessionManager.getEntries?.().length ?? 0) > 0
       const hasPersistedThinking = sessionManager.getBranch?.().some((entry) => entry.type === 'thinking_level_change') ?? false
       let currentModel: FakeModel | undefined = restoredModel ?? initialSdkModel
       let currentThinking: ThinkingLevel = hasPersistedThinking
         ? (persistedContext!.thinkingLevel as ThinkingLevel)
         : initialSdkThinking
+
+      // Mirror Pi SDK core/sdk.js: when resuming an existing session that lacks a thinking_level_change entry,
+      // the SDK appends its default thinking level ('medium') to the JSONL during runtime creation.
+      if (hasExistingSession && !hasPersistedThinking && currentModel) {
+        currentThinking = 'medium'
+        sessionManager.appendThinkingLevelChange?.('medium')
+      }
 
       return {
         sessionId: sessionManager.getSessionId(),
@@ -454,6 +464,74 @@ async function fixture() {
         unsubOverride()
         await overridden.shutdown()
         rmSync(dir, { recursive: true, force: true })
+      }
+      // Subcase C: legacy persisted JSONL WITHOUT thinking_level_change.
+      // Simulated SDK appends 'medium' to the JSONL during createSessionRuntime(),
+      // yet both cold-start preview and the first prompt must stay on 'low' (frozen before SDK mutation).
+      const legacyDir = mkdtempSync(join(process.env.PIG_DIR!, 'bot-jsonl-no-thinking-'))
+      const legacyWorkspaceDir = join(legacyDir, 'workspace')
+      const legacySessionsDir = join(legacyDir, 'sessions')
+      mkdirSync(legacyWorkspaceDir, { recursive: true })
+      mkdirSync(legacySessionsDir, { recursive: true })
+
+      const legacySeed = new BotService(legacyDir)
+      const legacyState = await legacySeed.store.ensureState()
+      await legacySeed.shutdown()
+
+      const legacySm = sdk.SessionManager.create(legacyWorkspaceDir, legacySessionsDir, { id: legacyState.sessionId })
+      legacySm.appendModelChange('google', 'beta')
+      legacySm.appendMessage({ role: 'user', content: 'legacy turn without thinking', timestamp: 1000 })
+      legacySm.appendMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'legacy reply' }],
+        api: 'google-generative-ai',
+        provider: 'google',
+        model: 'beta',
+        usage: {
+          input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+        },
+        stopReason: 'stop',
+        timestamp: 2000
+      })
+      const legacyFile = sdk.SessionManager.findById(legacyWorkspaceDir, legacyState.sessionId, legacySessionsDir)
+      assert.ok(legacyFile, 'legacy history JSONL without thinking_level_change must exist on disk')
+
+      const legacyResumed = new BotService(legacyDir)
+      const legacyEvents: BotEvent[] = []
+      const unsubLegacy = legacyResumed.subscribe((event) => legacyEvents.push(event))
+      try {
+        promptCalls.length = 0
+        stored = JSON.stringify({})
+        available = [...models]
+        initialSdkModel = models[0]
+        initialSdkThinking = 'medium'
+
+        const sessionsBeforePreview = createdSessions
+        const snap = await legacyResumed.getSnapshot()
+        assert.equal(createdSessions, sessionsBeforePreview, 'legacy preview must not materialize full AgentSession')
+        assert.equal(snap.controls?.model?.provider, 'google')
+        assert.equal(snap.controls?.model?.id, 'beta')
+        assert.equal(snap.controls?.thinkingLevel, 'low', 'preview without thinking_level_change picks first visible level (low)')
+
+        await legacyResumed.sendMessage({ text: 'first prompt after legacy restart' })
+        await waitUntil(
+          () => promptCalls.length >= 1 && legacyEvents.some((e) => e.type === 'timeline_item' && e.item.kind === 'assistant'),
+          'legacy resumed session first prompt'
+        )
+
+        // Confirm the simulated SDK really appended a synthetic thinking_level_change='medium' to the JSONL.
+        const reopened = sdk.SessionManager.open(legacyFile, legacySessionsDir, legacyWorkspaceDir)
+        assert.ok(
+          reopened.getBranch().some((entry) => entry.type === 'thinking_level_change' && entry.thinkingLevel === 'medium'),
+          'simulated SDK appended synthetic medium thinking_level_change during runtime creation'
+        )
+        assert.deepEqual(promptCalls[0]?.model, { provider: 'google', id: 'beta' })
+        assert.equal(promptCalls[0]?.thinkingLevel, 'low', 'first prompt keeps pre-creation frozen low instead of synthetic SDK medium')
+      } finally {
+        unsubLegacy()
+        await legacyResumed.shutdown()
+        rmSync(legacyDir, { recursive: true, force: true })
       }
     }
 
