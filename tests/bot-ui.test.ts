@@ -49,6 +49,9 @@ async function fixture() {
   const setThinkingCalls: string[] = []
   const sends: Array<{ text: string; projectMentions?: string[] }> = []
   let abortTurnCalls = 0
+  let exportCalls = 0
+  let deferExport = false
+  let resolveExport: (() => void) | undefined
   let push: ((event: import('../src/shared/bot').BotEvent) => void) | undefined
   let rejectSend: ((error: Error) => void) | undefined
   let deferSend = false
@@ -164,6 +167,13 @@ async function fixture() {
       setThinkingCalls.push(level)
       const current = useBotStore.getState().controls
       return current ? { ...current, thinkingLevel: level } : null
+    },
+    exportSession: async () => {
+      exportCalls += 1
+      if (deferExport) {
+        await new Promise<void>((resolve) => { resolveExport = resolve })
+      }
+      return { path: '/tmp/bot-session.html' }
     },
     resetContext: async (): Promise<BotSnapshot> => ({
       state: {
@@ -815,6 +825,31 @@ async function fixture() {
   await act(async () => { worktreeAttBtn.click() })
   assert.equal(useBotStore.getState().open, false, 'clicking workspace attachment closes Bot overlay')
   assert.deepEqual(jumpCalls, [{ cwd: '/wt/perm-1', openFilePath: 'src/export.ts' }], 'jumps to workspace and opens target file tab')
+
+  // Top-right export session button sits to the left of MoreHorizontal, guards against duplicate clicks, and disables when timeline is empty.
+  const exportBtn = pageHost.querySelector<HTMLButtonElement>('[data-bot-export-session]')!
+  const headerTrailingButtons = pageHost.querySelectorAll<HTMLButtonElement>('[data-bot-header] > .no-drag button')
+  assert.equal(headerTrailingButtons.length, 2, 'renders export button and more-actions menu button in top-right header')
+  assert.equal(headerTrailingButtons[0], exportBtn, 'places export session button to the left of MoreHorizontal menu')
+  assert.equal(exportBtn.disabled, false, 'enables export button when timeline has items')
+  deferExport = true
+  await act(async () => { exportBtn.click() })
+  assert.equal(exportCalls, 1, 'invokes api.bot.exportSession on click')
+  assert.equal(exportBtn.disabled, true, 'disables export button while save dialog / export is in progress')
+  await act(async () => { exportBtn.click() })
+  assert.equal(exportCalls, 1, 'prevents duplicate export invocations while pending')
+  deferExport = false
+  await act(async () => {
+    resolveExport?.()
+    resolveExport = undefined
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  assert.equal(exportBtn.disabled, false, 're-enables export button once export finishes')
+
+  await act(async () => {
+    useBotStore.setState({ timeline: [] })
+  })
+  assert.equal(exportBtn.disabled, true, 'disables export button when Bot timeline is empty')
 
   await act(async () => {
     cardRoot.unmount()

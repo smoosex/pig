@@ -342,6 +342,7 @@ export interface BotApi {
   setPermissionMode: (mode: PermissionMode) => Promise<PermissionMode>
   setModel: (provider: string, id: string) => Promise<SessionControls | null>
   setThinking: (level: ThinkingLevel) => Promise<SessionControls | null>
+  exportSession: () => Promise<{ path: string } | null>
   resetContext: () => Promise<BotSnapshot>
   listTasks: (filter?: { status?: 'active' | 'all' | 'completed' | 'failed' | 'stopped' }) => Promise<BotTask[]>
   getTask: (taskId: string) => Promise<BotTask | null>

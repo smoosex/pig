@@ -2,11 +2,12 @@
  * IPC boundary for Pig Bot. All endpoints verify the owning Pig UI main frame so guest
  * browser views or untrusted subframes can never invoke Bot controls or read Bot state.
  */
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, dialog, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron'
 import { isThinkingLevel } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import { isBotAvatarId, type BotEvent, type BotImageAttachment, type BotPreferencesPatch, type BotSurface, type BotTextAttachment } from '../../shared/bot'
 import { assertBrowserSender } from '../browser/validation'
+import { t } from '../i18n'
 import { windowForEvent } from './window'
 import { botService } from '../bot/service'
 
@@ -156,6 +157,26 @@ export function registerBotIpc(): void {
       throw new Error('Invalid thinking level')
     }
     return botService().setThinking(level)
+  })
+
+  ipcMain.handle('bot:export', async (event) => {
+    const win = assertUiMainFrame(event)
+    ensureSubscribed()
+    const result = await dialog.showSaveDialog(win, {
+      title: t('sessions.export'),
+      defaultPath: 'bot-session.html',
+      filters: [
+        { name: 'HTML', extensions: ['html'] },
+        { name: 'JSONL', extensions: ['jsonl'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    return {
+      path: await botService().exportSession(
+        result.filePath,
+        nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+      )
+    }
   })
 
   ipcMain.handle('bot:reset-context', async (event) => {

@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   Check,
   Copy,
+  Download,
   FileText,
   FolderKanban,
   Layers,
@@ -31,6 +32,7 @@ import {
 } from '../../../../shared/bot'
 import { useCopyFeedback } from '../../hooks/useCopyFeedback'
 import { useT } from '../../hooks/useT'
+import { api } from '../../ipc/api'
 import { failureMessage } from '../../lib/ipc-error'
 import { markdownToPlainText } from '../../lib/markdown-plain-text'
 import { cn } from '../../lib/utils'
@@ -162,6 +164,14 @@ export function BotPage({
   const projects = useSessionsStore((s) => s.projects)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportingRef = useRef(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const botSessionId = state?.sessionId ?? null
   const avatar = state?.avatar ?? DEFAULT_BOT_AVATAR
@@ -282,6 +292,20 @@ export function BotPage({
     }
   }, [resetContext])
 
+  const handleExportSession = useCallback(async () => {
+    if (exportingRef.current) return
+    exportingRef.current = true
+    setExporting(true)
+    try {
+      await api.bot.exportSession()
+    } catch (error) {
+      toast.error(failureMessage(error))
+    } finally {
+      exportingRef.current = false
+      if (mountedRef.current) setExporting(false)
+    }
+  }, [])
+
   const statusLine =
     approvals.length > 0
       ? t('bot.statusApproval', { count: approvals.length })
@@ -369,6 +393,25 @@ export function BotPage({
         </div>
 
         <div className="no-drag flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                data-bot-export-session
+                disabled={exporting || timeline.length === 0}
+                aria-label={t('sessions.export')}
+                onClick={() => void handleExportSession()}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Download className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              {t('sessions.export')}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

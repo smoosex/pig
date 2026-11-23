@@ -33,6 +33,7 @@ const api: SessionApi = {
     setPermissionMode: (mode) => ipcRenderer.invoke('bot:set-permission', mode),
     setModel: (provider, id) => ipcRenderer.invoke('bot:set-model', provider, id),
     setThinking: (level) => ipcRenderer.invoke('bot:set-thinking', level),
+    exportSession: () => ipcRenderer.invoke('bot:export'),
     resetContext: () => ipcRenderer.invoke('bot:reset-context'),
     listTasks: (filter) => ipcRenderer.invoke('bot:list-tasks', filter),
     getTask: (taskId) => ipcRenderer.invoke('bot:get-task', taskId),

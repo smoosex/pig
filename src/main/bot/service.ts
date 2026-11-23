@@ -33,6 +33,7 @@ import { openProjectDirectory } from '../project-open'
 import { isGitProject } from '../worktrees'
 import { worktrees as projectWorktrees } from '../project-worktrees'
 import { createSessionRuntime } from '../pi/session-runtime'
+import { exportSession as exportAgentSession } from '../pi/session-actions'
 import { applySessionTools } from '../pi/session-capabilities'
 import { botMainPluginPaths } from '../pi/plugins'
 import {
@@ -958,6 +959,11 @@ export class BotService {
     const controls = await this.readBotControls(session)
     this.publishControls(controls)
     return controls
+  }
+
+  async exportSession(outputPath: string, themeName: 'light' | 'dark'): Promise<string> {
+    const session = await this.ensureBotSession()
+    return exportAgentSession(session, outputPath, themeName)
   }
 
   /**

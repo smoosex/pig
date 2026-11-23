@@ -122,6 +122,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.bot.setPermissionMode('full-access')
   await api.bot.setModel('openai', 'gpt-5')
   await api.bot.setThinking('medium')
+  await api.bot.exportSession()
   await api.bot.resetContext()
   await api.bot.listTasks({ status: 'active' })
   await api.bot.getTask('task-1')
@@ -244,6 +245,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'bot:set-permission', args: ['full-access'] },
     { channel: 'bot:set-model', args: ['openai', 'gpt-5'] },
     { channel: 'bot:set-thinking', args: ['medium'] },
+    { channel: 'bot:export', args: [] },
     { channel: 'bot:reset-context', args: [] },
     { channel: 'bot:list-tasks', args: [{ status: 'active' }] },
     { channel: 'bot:get-task', args: ['task-1'] },
