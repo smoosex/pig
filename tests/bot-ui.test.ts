@@ -512,6 +512,46 @@ async function fixture() {
   assert.ok(!readCard.textContent?.includes('View changes'), 'hides view-changes button on read-only task')
 
   // 9. BotPage deduplicates stacked task cards across multiple timeline bubbles & shows post-approval continuation hint
+  const { BotOrbButton } = await import('../src/renderer/src/components/bot/BotOrbButton')
+  const { getBotOrbAnchor } = await import('../src/renderer/src/stores/bot')
+  const orbHost = document.createElement('div')
+  document.body.append(orbHost)
+  const orbRoot = createRoot(orbHost)
+  await act(async () => {
+    useBotStore.setState({ open: false, tasks: [], approvals: [], unreadCount: 0, streaming: false })
+    orbRoot.render(h(TooltipProvider, null, h(BotOrbButton, { registerAnchor: true })))
+  })
+  const orbBtn = orbHost.querySelector<HTMLButtonElement>('[data-bot-orb-button]')
+  assert.ok(orbBtn, 'renders BotOrbButton trigger')
+  assert.ok(orbBtn.classList.contains('size-7'), 'preserves 28px (size-7) click target')
+  assert.equal(orbBtn.getAttribute('aria-expanded'), 'false')
+  assert.equal(getBotOrbAnchor(), orbBtn, 'registers BotOrbButton as radial-reveal anchor')
+  const orbAvatar = orbBtn.querySelector<HTMLCanvasElement>('[data-bot-avatar="clover"]')
+  assert.ok(orbAvatar, 'renders bot-avatars clover canvas inside BotOrbButton')
+  assert.equal(orbAvatar.dataset.state, 'default')
+  assert.equal(orbAvatar.getAttribute('aria-hidden'), 'true', 'hides decorative canvas from screen readers')
+  assert.ok(orbAvatar.classList.contains('pointer-events-none'), 'prevents 1.5x overscan canvas from expanding hit area')
+  assert.equal(orbBtn.querySelector('svg'), null, 'no longer renders pixel-pig SVG icon')
+  assert.equal(orbBtn.querySelector('[data-bot-orb-badge]'), null, 'omits corner badge when idle')
+
+  await act(async () => {
+    useBotStore.setState({ streaming: true, unreadCount: 2 })
+  })
+  assert.equal(orbBtn.querySelector<HTMLCanvasElement>('[data-bot-avatar="clover"]')?.dataset.state, 'working', 'switches clover avatar to working state while streaming')
+  assert.equal(orbBtn.querySelector('[data-bot-orb-badge]')?.getAttribute('data-bot-orb-badge'), 'unread')
+
+  await act(async () => {
+    useBotStore.setState({
+      streaming: false,
+      approvals: [{ requestId: 'req-orb', sessionId: 's-orb', summary: 'Approve?', createdAt: 1000 }]
+    })
+  })
+  assert.equal(orbBtn.querySelector('[data-bot-orb-badge]')?.getAttribute('data-bot-orb-badge'), 'approval', 'approval badge takes priority over unread')
+  await act(async () => { orbBtn.click() })
+  assert.equal(useBotStore.getState().open, true, 'clicking BotOrbButton toggles Bot open')
+  assert.equal(orbBtn.getAttribute('aria-expanded'), 'true')
+  await act(async () => { orbRoot.unmount() })
+
   const { BotPage } = await import('../src/renderer/src/components/bot/BotPage')
   const runningPermTask = makeTask({ taskId: 'perm-1', status: 'blocked_approval', title: 'Perm check' })
   await act(async () => {

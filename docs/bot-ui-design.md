@@ -52,17 +52,16 @@
 
 ---
 
-## 3. Bot 圆形灵珠按钮（`BotOrbButton`）与动态头像
+## 3. Bot 顶栏四叶草入口（`BotOrbButton`）与动态头像
 
-### 3.1 彩虹环徽章质感
+### 3.1 顶栏动态四叶草入口
 
-采用深色微边外框 + 虹彩圆锥渐变环 + 深色径向内盘 + Pig 像素小猪剪影（`BotPigIcon`，直接复用 `resources/icon.svg` 的 `18×14` 像素网格）的分层徽章结构，字面色统一收口在 `theme-pig.css` / `theme-everforest.css` 的 `--bot-orb-*` 语义 token 中：
+工作区顶栏与 Bot 页面顶栏共用同一 `BotOrbButton` 入口，直接复用 `bot-avatars` 的 `<BotAvatar type="clover" size={22} />`（与 Bot 页面形象统一，不再使用彩虹环、暗底盘或像素小猪徽章）：
 
-1. **状态光晕层（Outer Aura）**：位于徽章外缘的非占位柔光与告警环（`approval` 呼吸告警环、`attention` 失败细环、`open`/`unread` 微光）。
-2. **金属深色外框层（Outer Bezel）**：深色细边外环搭配上下高光微边与柔和投影（`--bot-orb-bezel` / `--bot-orb-bezel-shadow`）。
-3. **虹彩流光环（Iridescent Ring）**：`conic-gradient` 虹彩渐变环（`--bot-orb-rainbow`），空闲时保持静谧流光质感，后台任务运行或 Bot 思考回复时缓慢旋转（`prefers-reduced-motion` 下静态呈现）。
-4. **深色径向内盘与像素猪标（Inner Disc & Pig Mark）**：深邃径向渐变内盘（`--bot-orb-disc` / `--bot-orb-disc-shadow`）居中嵌入高对比度浅白 `BotPigIcon`（`--bot-orb-glyph`），眼睛与鼻孔镂空。
-5. **状态微标层（Corner Badge）**：仅在有未读、运行数或需审批时于右下角浮出极小实心点，不遮挡猪猪图标。
+1. **命中区与不裁切布局**：外层按钮维持 `size-7`（28×28px）圆形命中区，不加 `overflow-hidden`；`size={22}` 配合 `bot-avatars` 的 `1.5×` overscan（33×33px 画布，上方预留 `7.7px` 跳动余量）可完整落在 `h-10`（40px）顶栏内，动画不被裁切也不挤占顶栏；画布设置 `pointer-events-none` 与 `aria-hidden="true"`，确保命中区严格保持 28px 且无障碍名称由外层按钮统一提供。
+2. **动态与省电**：后台任务运行或 Bot 思考回复时切换为 `state="working"`，空闲保持 `state="default"`；`registerAnchor={false}`（隐藏壳层内的副本）自动 `paused`，并尊重 `prefers-reduced-motion` 自动停在静态帧。
+3. **状态光晕层（Outer Aura）**：位于按钮外缘的非占位柔光与告警环（`approval` 呼吸告警环、`attention` 失败细环、`open`/`unread`/悬停微光，复用 `--bot-orb-ring` / `--bot-orb-glow`）。
+4. **状态微标层（Corner Badge）**：仅在有未读、运行中、失败或需审批时于右下角浮出极小实心点，不遮挡四叶草面部。
 
 ### 3.2 按钮状态矩阵
 
@@ -70,10 +69,10 @@
 | --- | --- | --- | --- |
 | **待审批（`blocked_approval`）** | 1（最高） | `warning` 柔呼吸光晕（2.2s 慢脉动） | 右下角 `warning` 实心点 |
 | **需关注 / 失败（`attention`）** | 2 | `destructive` 静态细环（不闪烁） | 右下角 `destructive` 小点 |
-| **后台任务运行中（`running`）** | 3 | `primary` 柔和流光环旋转（缓慢、克制） | 右下角极小活跃点（悬停 tooltip 显示具体运行数） |
-| **有未读 Bot 消息（`unread`）** | 4 | 新消息到达瞬间轻弹一次（spring `scale 1 → 1.1 → 1`） | 右下角 `primary` 未读圆点 |
-| **空闲（`idle`）** | 5 | 极淡中性常驻微光 + 立体玻璃边 | 无角标 |
-| **已在 Bot 页（`active`）** | 叠加态 | 边框加亮为聚焦态，悬停微显「返回工作区」提示 | 进入 Bot 页即清零未读点 |
+| **后台任务运行中（`running`）** | 3 | 无额外强环，避免喧宾夺主 | 四叶草切为 `working` 态 + 右下角 `primary` 活跃点（悬停 tooltip 显示具体运行数） |
+| **有未读 Bot 消息（`unread`）** | 4 | `--bot-orb-glow` 柔光 + 新消息到达轻弹一次（不重挂画布） | 右下角 `primary` 未读圆点 |
+| **空闲（`idle`）** | 5 | 悬停微放大 + 柔和微光 | 无角标，四叶草保持 `default` 态 |
+| **已在 Bot 页（`active`）** | 叠加态 | `--bot-orb-ring` 细环 + `--bot-orb-glow` 柔光，悬停提示「返回工作区」 | 进入 Bot 页即清零未读点 |
 
 ### 3.3 Bot 页面头像（`bot-avatars`）
 
@@ -290,7 +289,7 @@ Bot 页面收到关闭标签快捷键时返回工作区，不关闭隐藏标签�
 
 ### 8.2 主题与无障碍契约
 
-- **语义 Token 增量**：仅在 `src/renderer/src/themes/theme-pig.css`、`theme-everforest.css` 的 light / dark 四个 selector 及 `styles.css` 中注册少量 Bot 灵珠语义变量（`--bot-orb-glow`、`--bot-orb-ring`、`--bot-orb-surface`），其余状态色全部复用现有 `primary`、`warning`、`destructive`、`popover`、`chat-background`、`user-message-*`。
+- **语义 Token 增量**：仅在 `src/renderer/src/themes/theme-pig.css`、`theme-everforest.css` 的 light / dark 四个 selector 及 `styles.css` 中注册少量 Bot 入口语义变量（`--bot-orb-glow`、`--bot-orb-ring`），其余状态色全部复用现有 `primary`、`warning`、`destructive`、`popover`、`chat-background`、`user-message-*`。
 - **对比度**：所有文字、状态胶囊、按钮标签在 `pig` / `everforest` × `light` / `dark` × `glass` / `solid` 下均需验证 ≥ 4.5:1（非文字指示 ≥ 3:1）。
 - **键盘与读屏**：`BotOrbButton` 暴露 `aria-expanded`、`aria-label`（动态包含进行中/待审批/未读计数）；`BotPeekBubble` 使用 `role="status"`（审批提醒使用 `role="alert"`）且不强抢当前编辑器焦点；任务抽屉支持 `Esc` 关闭与焦点回收。
 
@@ -299,7 +298,7 @@ Bot 页面收到关闭标签快捷键时返回工作区，不关闭隐藏标签�
 | 模块 | 规划位置 | 职责 |
 | --- | --- | --- |
 | 通用径向转场 | `src/renderer/src/lib/radial-reveal.ts`（由 `surface-transition.ts` 抽离复用） | `BotOrbButton` 圆心扩散 / 收缩 + `dropNonEditableSelection()` + 取消保护 |
-| 顶栏灵珠与页面头像 | `src/renderer/src/components/bot/BotOrbButton.tsx`、`bot-avatars` | 顶栏立体光晕圆珠与状态外环；Bot 页采用 `BotAvatar`（`clover`） |
+| 顶栏入口与页面头像 | `src/renderer/src/components/bot/BotOrbButton.tsx`、`bot-avatars` | 顶栏复用 `BotAvatar`（`clover`，`size={22}`）+ 状态光晕与角标；Bot 页采用 `BotAvatar`（`clover`） |
 | 非 Bot 页弹出气泡 | `src/renderer/src/components/bot/BotPeekBubble.tsx` | 锚定圆珠下方、2 行截断、防堆叠、原生浏览器遮挡注册 |
 | 左侧栏模式切换轨 | `src/renderer/src/components/sidebar/SidebarModeSwitch.tsx` | 承接原顶栏「项目 / 对话」切换器，对齐顶部动作位 |
 | Bot 全景页与任务视图 | `src/renderer/src/components/bot/BotPage.tsx`、`BotLiveTaskBar.tsx`、`BotTaskDrawer.tsx`、`BotTaskCard.tsx`、`BotComposer.tsx` | 无侧栏单中轴剧场、`send_message` 气泡投影、活态任务条与按需抽屉 |
