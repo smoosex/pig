@@ -105,6 +105,64 @@ test('aborted and failed requests keep the user message with a marker, never a l
     ['取消前的问题', '[Reply interrupted by the user]'], ['失败的问题', '[Reply failed]'], ['新问题', '新回复']])
 })
 
+test('Bot sessions project verified send_message bubbles, strip hidden reminders, skip host notices, and ignore plain-text thinking', () => {
+  const session = SessionManager.create(root, root, { id: 'bot-test-session' })
+  const sendCall = (id: string, content: string): AssistantMessage => ({
+    ...answer('', 'toolUse'),
+    content: [{ type: 'toolCall', id, name: 'send_message', arguments: { type: 'text', content } }]
+  })
+  const sendResult = (toolCallId: string, isError = false) => ({
+    role: 'toolResult' as const,
+    toolCallId,
+    toolName: 'send_message',
+    content: [{ type: 'text' as const, text: isError ? 'invalid taskId' : '{"ok":true}' }],
+    isError,
+    timestamp: 0
+  })
+
+  // 1. Normal Bot turn: strips <system_reminder>, uses send_message bubble, ignores trailing plain-text monologue & failed send_message
+  session.appendMessage({ role: 'user', content: '帮我翻下仓库\n\n<system_reminder>\nhidden rule\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(sendCall('c-err', '错误气泡不应计入'))
+  session.appendMessage(sendResult('c-err', true))
+  session.appendMessage(sendCall('c-ok', '我去翻下这个仓库，看完跟你说。'))
+  session.appendMessage(sendResult('c-ok', false))
+  session.appendMessage(answer('INTERNAL MONOLOGUE NOT SHOWN TO USER', 'stop'))
+
+  // 2. Standalone <host_notice> wake-up turn: no new user message, never fabricates or leaks into next round
+  session.appendMessage({ role: 'user', content: '<host_notice>\nsettled\n</host_notice>\n\n<system_reminder>\nreport\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(sendCall('c-notice', '刚把仓库翻完了，是个桌面端项目。'))
+  session.appendMessage(sendResult('c-notice', false))
+  session.appendMessage(answer('', 'stop'))
+
+  // 3. Zero-message turn recovered via 1 hidden reprompt
+  session.appendMessage({ role: 'user', content: '辛苦啦\n\n<system_reminder>\nhidden\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(answer('FORGOT TO CALL SEND_MESSAGE', 'stop'))
+  session.appendMessage({ role: 'user', content: '<system_reminder>\nMake a real send_message tool call now\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(sendCall('c-reprompt', '小事，接着搞哪个？'))
+  session.appendMessage(sendResult('c-reprompt', false))
+  session.appendMessage(answer('', 'stop'))
+
+  // 4. Zero-message turn where reprompt also failed -> marked [Reply failed], never paired with later turn
+  session.appendMessage({ role: 'user', content: '这句没回出来\n\n<system_reminder>\nhidden\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(answer('SILENT 1', 'stop'))
+  session.appendMessage({ role: 'user', content: '<system_reminder>\nreprompt\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(answer('SILENT 2', 'stop'))
+
+  session.appendMessage({ role: 'user', content: '下一句正常聊\n\n<system_reminder>\nhidden\n</system_reminder>', timestamp: 0 })
+  session.appendMessage(sendCall('c-next', '在呢！'))
+  session.appendMessage(sendResult('c-next', false))
+  session.appendMessage(answer('', 'stop'))
+
+  const rounds = completedMoodRounds(session.buildSessionProjection().entries, session)
+  expect(rounds.map(r => [r.user, r.assistant])).toEqual([
+    ['帮我翻下仓库', '我去翻下这个仓库，看完跟你说。'],
+    ['辛苦啦', '小事，接着搞哪个？'],
+    ['这句没回出来', '[Reply failed]'],
+    ['下一句正常聊', '在呢！']
+  ])
+  expect(JSON.stringify(rounds)).not.toMatch(/INTERNAL MONOLOGUE|FORGOT|hidden|错误气泡|刚把仓库翻完了/)
+})
+
 test('disabling the observer immediately cancels an idle background request', async () => {
   const run = runtime(); run.hold(); await run.emit('session_start')
   for (let i = 0; i < 3; i++) run.round()
