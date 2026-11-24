@@ -14,9 +14,17 @@ import { restrictPermissionMode } from '../permissions/mode'
 import { realTarget } from '../sandbox/path'
 import { within } from '../sandbox/policy'
 import type { BotDelegateTaskInput, BotTask, BotTimelineItem } from '../../shared/bot'
-import { BOT_SYSTEM_PROMPT } from './prompt'
+import { BOT_SYSTEM_PROMPT, buildBotStyleReminder } from './prompt'
 import { resolveBotAttachments, stripHiddenBotTags } from './projection'
 import type { BotTaskManager } from './task-manager'
+
+const PERSONA_MOOD_RE = /^\[Style reminder: Let your SOUL set the tone, and let your current mood \((.+)\) color it\./
+
+export const SEND_MESSAGE_PROMPT_SNIPPET =
+  'Send a visible message to the user (the ONLY user-visible output channel in this session)'
+export const SEND_MESSAGE_PROMPT_GUIDELINES = [
+  'Plain assistant text is private internal reasoning and is NEVER visible to the user; only content sent with `send_message` can be seen by the user.'
+]
 
 export const BOT_MAIN_DISABLED_TOOLS = {
   bash: false,
@@ -116,12 +124,44 @@ function guardPermission(host: BotToolsHost, signal?: AbortSignal) {
 
 export function createBotExtension(host: BotToolsHost) {
   return function botExtension(pi: ExtensionAPI): void {
+    let turnTimestamp = 0
+
     pi.on('session_start', () => {
       pi.setActiveTools(pi.getActiveTools().filter((name) => !BOT_DISABLED_MAIN_TOOL_NAMES.has(name)))
     })
 
     pi.on('before_agent_start', (event) => {
+      turnTimestamp = Date.now()
       event.systemPromptOptions.sections.bot = BOT_SYSTEM_PROMPT
+    })
+
+    // Consolidate into a single dynamic style reminder pinned right after the latest user/summary input:
+    // merges live SOUL mood (when personaExtension injected `persona-mood`) with the Bot `send_message` channel rule,
+    // and still supplies the reminder when no SOUL.md is active.
+    pi.on('context_with_system', (event) => {
+      const existingMood = event.messages.findLast(
+        (m): m is Extract<typeof m, { role: 'custom' }> => m.role === 'custom' && m.customType === 'persona-mood'
+      )
+      const rawMoodText = typeof existingMood?.content === 'string' ? existingMood.content : ''
+      const mood = PERSONA_MOOD_RE.exec(rawMoodText)?.[1]
+      const messages = event.messages.filter(
+        (m) => m.role !== 'custom' || m.customType !== 'persona-mood'
+      )
+      const input = messages.findLastIndex(
+        (m) => m.role === 'user' || m.role === 'custom' || m.role === 'compactionSummary' || m.role === 'branchSummary'
+      )
+      if (input < 0 && !existingMood) {
+        return messages.length === event.messages.length ? undefined : { messages }
+      }
+      const position = input >= 0 ? input + 1 : messages[0]?.role === 'system' ? 1 : 0
+      messages.splice(position, 0, {
+        role: 'custom',
+        customType: 'persona-mood',
+        display: false,
+        content: buildBotStyleReminder(mood),
+        timestamp: existingMood?.timestamp ?? (turnTimestamp || Date.now())
+      })
+      return { messages }
     })
 
     // Enforce Bot main-session boundary: disable shell/search tools and confine edit/write to Bot workspace + SOUL.md.
@@ -158,7 +198,9 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'send_message',
       label: 'Send message to user',
-      description: 'Send a visible message bubble to the user in the Bot conversation. Plain assistant text is hidden; this tool is the ONLY user-visible channel. Always stay fully in your SOUL’s personality, mood, and how you address the user — never fall back into a stiff, generic assistant or checklist tone after calling technical tools.',
+      description: 'Send a visible message bubble to the user in the Bot conversation. Plain assistant text is hidden; this tool is the ONLY user-visible channel. Always stay fully in your character, mood, and how you address the user — never fall back into a stiff, generic assistant or checklist tone after calling technical tools.',
+      promptSnippet: SEND_MESSAGE_PROMPT_SNIPPET,
+      promptGuidelines: SEND_MESSAGE_PROMPT_GUIDELINES,
       parameters: sendMessageSchema,
       async execute(_id, rawParams) {
         const params = assertValid(sendMessageSchema, rawParams, 'send_message')

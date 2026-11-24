@@ -9,7 +9,7 @@
 | 维度 | 约定 |
 | --- | --- |
 | **唯一对外身份** | 只有 Bot 在 Bot 页面向用户发言，且始终维持**单一主体认知**——对用户而言从头到尾只有 Bot 自己在动手（通过 `bot_start_task` 异步启动自身在项目工作区/worktree 中的执行），**严禁出现“让后台去…”、“派了后台任务”、“根据回执显示”等包工头/传声筒黑话**；同时不允许为了口吻自然而虚报「已改好」「已测过」——开始时说“我去查/我去改，弄完跟你说”，落定后按真实产出汇报。 |
-| **消息机制（参考 Grok Bot `SendMessage`）** | Bot 会话中，`send_message` 是**唯一用户可见出口**；模型普通文本输出视为内部思考，不在 Bot 页渲染成气泡。宿主通过「每轮隐藏 `<system_reminder>` 防漏 + 零发言 1 次运行时补调 + 最终系统提示/系统交付卡兜底」三层机制保障绝不静默丢回复。现有普通 Chat 与项目 Session 不受影响。审批卡继续由宿主 `approvalController` 生成，模型不能伪造。 |
+| **消息机制（参考 Grok Bot `SendMessage`）** | Bot 会话中，`send_message` 是**唯一用户可见出口**；模型普通文本输出视为内部思考，不在 Bot 页渲染成气泡。宿主通过「`send_message` 工具规则 + `context_with_system` 单一动态 `persona-mood` 风格/出口提醒 + 零发言 1 次运行时补调 + 最终系统提示/系统交付卡兜底」三层机制保障绝不静默丢回复。现有普通 Chat 与项目 Session 不受影响。审批卡继续由宿主 `approvalController` 生成，模型不能伪造。 |
 | **路由机制（参考 `dsh-superagent-prototype`）** | 宿主负责任务账本、Session 绑定、事件路由与回执投递。`bot_start_task` 异步秒返（`<50ms` Fast Ack），Bot 派活后即结束当前轮，不靠 `session_wait` 挂起轮询；普通进度只更新宿主状态，不频繁唤醒 Bot；仅在完成、失败、手动停止、接管、等待审批等关键节点把结构化 Notice 送回 Bot。 |
 | **无吊起对话体验** | Bot 页采取「落流即收 + 异步派活 + 未落地思考抢占合并 + 副作用后 `steer` 衔接」，彻底消除普通会话的排队条与同步卡顿；坚持单模型单人格，不引入双模型快慢嘴。 |
 | **页面与生命周期** | Bot 维护**单条常驻对话时间线**（不设多会话列表，顶栏藏应急「新起一段」归档口），重启记住上次所在视图（工作区 / Bot 页，首次升级默认工作区）。离开 Bot 页面后后台任务继续执行、回执照收；仅在用户显式停止、项目被移除或应用退出时按对应规则中断。 |
@@ -126,7 +126,7 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
        - `type: 'attachment'`：本地文件路径列表（宿主校验路径合法与可读，独立文件卡片渲染，不混入正文）
    - 每次 `send_message` 调用经校验后持久化为 Bot 聊天时间线的结构化消息记录（可独立于内部推理日志投影，确保刷新/重启后 Bot 页只呈现真实发出的气泡、真实审批卡与必要的系统兜底卡）。
    - **三层防漏与兜底（参考 Grok Bot）**：
-     1. **事前防漏**：不仅在 System Prompt 声明，宿主在每轮用户消息与后台 Notice 末尾附带一段隐藏 `<system_reminder>`（仅送入模型，UI 隐藏），持续提醒“普通文本用户不可见，向用户表达必须调用 `send_message`”。
+     1. **事前防漏**：`send_message` 工具通过 `promptSnippet` / `promptGuidelines` 在 `<tools>` 与 `<rules>` 中声明“仅有 `send_message` 发送的内容对用户可见”，同时 Bot 扩展在 `context_with_system` 中将最后一条用户输入后的 `persona-mood` 动态收口为唯一一条融合了实时心情（若有 `SOUL.md`）与 `send_message` / `bot_start_task` 约束的 `[Style reminder: ...]`（不污染持久化的用户消息 JSONL）。
      2. **事中纠偏**：若一整轮彻底结束（不再调用任何工具）时 `send_message` 调用次数为 `0`（模型忘了调工具或只在内部写了文本），宿主立刻注入一次内部纠偏提醒（*"make a real `send_message` tool call, not plain text"*），**最多补调 1 次**，严防死循环。
      3. **最终保底**：补调 1 次后仍零 `send_message` 或模型接口报错时——用户发起的对话在消息流中插入一条明确标示的系统兜底提示/错误卡（绝不把内部思考草稿伪装成普通气泡）；后台任务终结 Notice（含停止、接管）由宿主直接插入一条轻量**系统交付卡**并将 `delivery.state` 标记为 `'fallback'`，既不无限重试，也保证任务结果绝不被悄悄吞掉，且**绝不重跑后台任务**。
    - 审批仍走现有 `approvalController` 镜像机制，在 Bot 页渲染真审批卡片；绝不通过 `send_message` 模拟审批。

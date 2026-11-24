@@ -21,7 +21,7 @@ function harness(opts: {
 }) {
   let mode: PermissionMode = opts.mode ?? 'full-access'
   let activeTools = [...(opts.activeTools ?? ['read', 'bash', 'powershell', 'edit', 'write', 'grep', 'find', 'ls', 'send_message'])]
-  const tools = new Map<string, { execute: Function }>()
+  const tools = new Map<string, { execute: Function; promptSnippet?: string; promptGuidelines?: string[] }>()
   const hooks = new Map<string, Function[]>()
   const sent: Array<Extract<BotTimelineItem, { kind: 'assistant' }>> = []
   const sideEffects: string[] = []
@@ -69,7 +69,7 @@ function harness(opts: {
   }
 
   const fakePi = {
-    registerTool: (def: { name: string; execute: Function }) => { tools.set(def.name, def) },
+    registerTool: (def: { name: string; execute: Function; promptSnippet?: string; promptGuidelines?: string[] }) => { tools.set(def.name, def) },
     getActiveTools: () => [...activeTools],
     setActiveTools: (next: string[]) => { activeTools = [...next] },
     on: (name: string, fn: Function) => {
@@ -106,6 +106,57 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     expect(options.sections.bot).toContain('persistent single-timeline Bot space')
     expect(options.sections.bot).toContain('"Bot" names the surface, NOT your persona')
     expect(options.sections.bot).toContain('## Pig Bot Operating Rules')
+
+    const sendDef = h.tools.get('send_message')!
+    expect(sendDef.promptSnippet).toContain('ONLY user-visible output channel')
+    expect(sendDef.promptGuidelines?.[0]).toContain('only content sent with `send_message` can be seen by the user')
+  })
+
+  test('context_with_system consolidates into a single Bot style reminder with or without SOUL mood', async () => {
+    const h = harness({})
+    const runContext = async (messages: Array<Record<string, unknown>>) => {
+      let current = messages
+      for (const fn of h.hooks.get('context_with_system') ?? []) {
+        const res = await fn({ messages: current })
+        if (res?.messages) current = res.messages
+      }
+      return current
+    }
+
+    // 1. With active SOUL mood from personaExtension: replaces in place without leaving two reminders.
+    const withSoul = await runContext([
+      { role: 'system', content: '' },
+      { role: 'user', content: '你好', timestamp: 100 },
+      {
+        role: 'custom',
+        customType: 'persona-mood',
+        display: false,
+        content: '[Style reminder: Let your SOUL set the tone, and let your current mood (pleasant, calm, rested) color it. Keep speaking in your own voice, even when working through a task or sharing results, rather than falling back into a generic assistant voice.]',
+        timestamp: 200
+      },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'bot_list_projects', arguments: {} }] },
+      { role: 'toolResult', toolCallId: 'c1', toolName: 'bot_list_projects', content: [] }
+    ])
+    const soulReminders = withSoul.filter((m) => m.role === 'custom' && m.customType === 'persona-mood')
+    expect(soulReminders).toHaveLength(1)
+    expect(withSoul[2]).toBe(soulReminders[0]) // stays pinned right after user message across intra-turn tool calls
+    expect(soulReminders[0].content).toBe(
+      '[Style reminder: Let your SOUL set the tone, and let your current mood (pleasant, calm, rested) color it. Plain text is hidden — reply to the user ONLY via `send_message` (and use `bot_start_task` for project edits, commands, or multi-file checks). Keep speaking in your own natural voice rather than falling back into a generic assistant report or mentioning background delegation.]'
+    )
+
+    // 2. Without SOUL (personaExtension inactive): still injects the single Bot style reminder right after the latest user message.
+    const withoutSoul = await runContext([
+      { role: 'system', content: '' },
+      { role: 'user', content: '帮我查一下', timestamp: 300 },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'c2', name: 'read', arguments: {} }] },
+      { role: 'toolResult', toolCallId: 'c2', toolName: 'read', content: [] }
+    ])
+    const defaultReminders = withoutSoul.filter((m) => m.role === 'custom' && m.customType === 'persona-mood')
+    expect(defaultReminders).toHaveLength(1)
+    expect(withoutSoul[2]).toBe(defaultReminders[0])
+    expect(defaultReminders[0].content).toBe(
+      '[Style reminder: Plain text is hidden — reply to the user ONLY via `send_message` (and use `bot_start_task` for project edits, commands, or multi-file checks). Keep speaking in your own natural voice rather than falling back into a generic assistant report or mentioning background delegation.]'
+    )
   })
 
   test('send_message strips hidden tags, validates attachments, and records visible assistant item', async () => {

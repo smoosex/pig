@@ -11,7 +11,7 @@ function deferred<T = void>() {
 }
 
 describe('BotDispatcher', () => {
-  test('lands user bubble immediately, injects hidden <system_reminder>, and skips reprompt when send_message is called', async () => {
+  test('lands user bubble immediately with clean prompt text and skips reprompt when send_message is called', async () => {
     const timeline: BotTimelineItem[] = []
     const prompts: BotPromptRequest[] = []
     let streamingEvents: boolean[] = []
@@ -35,8 +35,7 @@ describe('BotDispatcher', () => {
     await dispatcher.waitForIdle()
 
     expect(prompts).toHaveLength(1)
-    expect(prompts[0].text).toContain('帮我看看测试')
-    expect(prompts[0].text).toContain('<system_reminder>')
+    expect(prompts[0].text).toBe('帮我看看测试')
     expect(streamingEvents).toEqual([true, false])
     expect(idleCount).toBe(1)
     // No fallback card created

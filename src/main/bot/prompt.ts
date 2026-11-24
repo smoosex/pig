@@ -1,5 +1,5 @@
 /**
- * System prompt instructions, per-turn hidden <system_reminder>, and structured Notice formatter
+ * System prompt instructions, unified Bot style reminder, and structured Notice formatter
  * for the single Pig Bot main session.
  */
 import type { BotNotice } from '../../shared/bot'
@@ -36,13 +36,12 @@ export const BOT_SYSTEM_PROMPT = [
   '   - Never fabricate approvals or claim an approval was granted.'
 ].join('\n')
 
-export const BOT_USER_TURN_REMINDER = [
-  '<system_reminder>',
-  'Your plain text output is hidden internal thinking and is NOT visible to the user.',
-  'To reply to the user, you MUST make a real `send_message` tool call — keep your SOUL’s full personality, mood, catchphrases, and form of address.',
-  'For any project edits, commands, builds/tests, or multi-file investigation, start your run with `bot_start_task`, then tell the user via `send_message` in your own character’s natural voice that YOU are going to look into / work on it now (never slip into a dry status report or mention "background" / "delegating").',
-  '</system_reminder>'
-].join('\n')
+export function buildBotStyleReminder(mood?: string): string {
+  const lead = mood
+    ? `Let your SOUL set the tone, and let your current mood (${mood}) color it. `
+    : ''
+  return `[Style reminder: ${lead}Plain text is hidden — reply to the user ONLY via \`send_message\` (and use \`bot_start_task\` for project edits, commands, or multi-file checks). Keep speaking in your own natural voice rather than falling back into a generic assistant report or mentioning background delegation.]`
+}
 
 export const BOT_REPROMPT_NO_MESSAGE = [
   '<system_reminder>',
@@ -84,7 +83,7 @@ export function formatNoticesPrompt(notices: BotNotice[]): string {
     '</host_notice>',
     '',
     '<system_reminder>',
-    'Report what YOU found or did directly to the user via a real `send_message` tool call (use type="delivery" with the relevant taskIds for terminal task outcomes), staying fully in your SOUL’s character, mood, and natural way of addressing the user. Never mention notices, receipts, or "the background". Plain text is invisible to the user.',
+    'Use `send_message` with `type="delivery"` and the relevant `taskIds` to report settled task outcomes.',
     '</system_reminder>'
   ].join('\n')
 }

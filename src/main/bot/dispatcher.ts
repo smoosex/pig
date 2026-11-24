@@ -3,13 +3,13 @@
  * - Immediate bubble-landing on send (zero queued-message bar)
  * - Side-effect-free thinking preemption + context merge on rapid follow-ups
  * - Automatic `steer` injection once a side effect (send_message / delegation / write) has occurred
- * - Grok-Bot-style 3-layer send_message safeguard: per-turn hidden <system_reminder>, at most 1 reprompt
- *   on zero-message completion, and final system fallback card / delivery card without re-running tasks.
+ * - Grok-Bot-style 3-layer send_message safeguard: unified per-request style reminder + tool rule,
+ *   at most 1 reprompt on zero-message completion, and final system fallback card / delivery card without re-running tasks.
  */
 import { randomUUID } from 'node:crypto'
 import type { PromptStreamingBehavior } from '../../shared/api'
 import type { BotImageAttachment, BotNotice, BotTextAttachment, BotTimelineItem } from '../../shared/bot'
-import { BOT_REPROMPT_NO_MESSAGE, BOT_USER_TURN_REMINDER, formatNoticesPrompt } from './prompt'
+import { BOT_REPROMPT_NO_MESSAGE, formatNoticesPrompt } from './prompt'
 
 export interface BotPromptRequest {
   text: string
@@ -155,9 +155,8 @@ export class BotDispatcher {
         // Side effect already landed: steer seamlessly without duplicating tool calls or bubbles.
         this.activeTurn.repliedSinceLastInput = false
         this.setVisibleStreaming(true)
-        const steered = `${promptText}\n\n${BOT_USER_TURN_REMINDER}`
         void this.deps.sendPrompt({
-          text: steered,
+          text: promptText,
           images: input.images,
           textAttachments: input.textAttachments,
           streamingBehavior: 'steer'
@@ -249,12 +248,11 @@ export class BotDispatcher {
         this.activeTurn = turn
         this.setVisibleStreaming(true)
         const mergedText = currentTexts.filter(Boolean).join('\n\n')
-        const fullPrompt = `${mergedText}\n\n${BOT_USER_TURN_REMINDER}`
 
         let runError: string | null = null
         try {
           await this.deps.sendPrompt({
-            text: fullPrompt,
+            text: mergedText,
             images: currentImages.length ? currentImages : undefined,
             textAttachments: currentAttachments.length ? currentAttachments : undefined
           })
