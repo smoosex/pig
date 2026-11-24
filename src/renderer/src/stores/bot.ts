@@ -63,6 +63,8 @@ export interface BotStoreState {
   peek: BotPeekState | null
   stoppingTaskIds: Record<string, boolean>
   draftInput: string
+  draftProjectMentions: string[]
+  draftIssueMentions: number[]
   draftRevision: number
 
   init: (options?: { restoreSurface?: boolean }) => Promise<void>
@@ -75,12 +77,16 @@ export interface BotStoreState {
   toggleDrawer: () => void
   dismissPeek: () => void
   setDraftInput: (value: string) => void
+  setDraftProjectMentions: (cwds: string[]) => void
+  setDraftIssueMentions: (numbers: number[]) => void
+  addDraftIssueMention: (number: number) => void
 
   sendMessage: (input: {
     text: string
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
     projectMentions?: string[]
+    issueMentions?: number[]
   }) => Promise<void>
   retryLastMessage: () => Promise<void>
   abortCurrentTurn: () => Promise<void>
@@ -140,6 +146,8 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
   peek: null,
   stoppingTaskIds: {},
   draftInput: '',
+  draftProjectMentions: [],
+  draftIssueMentions: [],
   draftRevision: 0,
 
   init: async (options) => {
@@ -288,6 +296,20 @@ export const useBotStore = create<BotStoreState>((set, get) => ({
   dismissPeek: () => set({ peek: null }),
 
   setDraftInput: (draftInput) => set((prev) => ({ draftInput, draftRevision: prev.draftRevision + 1 })),
+  setDraftProjectMentions: (draftProjectMentions) => set((prev) => ({
+    draftProjectMentions,
+    draftRevision: prev.draftRevision + 1
+  })),
+  setDraftIssueMentions: (draftIssueMentions) => set((prev) => ({
+    draftIssueMentions,
+    draftRevision: prev.draftRevision + 1
+  })),
+  addDraftIssueMention: (number) => set((prev) => ({
+    draftIssueMentions: prev.draftIssueMentions.includes(number)
+      ? prev.draftIssueMentions
+      : [...prev.draftIssueMentions, number],
+    draftRevision: prev.draftRevision + 1
+  })),
 
   sendMessage: async (input) => {
     try {

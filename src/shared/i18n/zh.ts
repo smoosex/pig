@@ -247,10 +247,12 @@ export const zh = {
     approvalMore: '可能还有其他待确认的请求'
   },
   sidebar: {
-    tabsAria: '项目 / 对话切换',
+    tabsAria: '项目 / 对话 / 看板切换',
     projects: '项目',
     chats: '对话',
+    kanban: '看板',
     newChat: '新建对话',
+    newIssue: '新建事项',
     chatsEmpty: '点击 + 开始对话',
     projectsEmpty: '添加项目即可开始',
     settings: '设置',
@@ -588,12 +590,13 @@ export const zh = {
   shortcuts: {
     title: '快捷键',
     description: '查看和修改快捷键',
-    groups: { global: '全局', tabs: '标签页', composer: '输入框', file: '文件', terminal: '终端', projectPicker: '添加项目' },
+    groups: { global: '全局', tabs: '标签页', composer: '输入框', file: '文件', kanban: '看板', terminal: '终端', projectPicker: '添加项目' },
     actions: {
       sidebar: { toggleLeft: '切换左侧栏', toggleRight: '切换右侧栏' },
       settings: { toggle: '打开或关闭设置' },
       project: { add: '添加项目' },
       bot: { toggle: '进入或退出 Bot 页面', toggleTasks: '展开或收起任务抽屉' },
+      kanban: { toggle: '打开或退出看板', search: '搜索事项' },
       tab: {
         new: '新建会话',
         close: '关闭当前标签页',
@@ -968,6 +971,7 @@ export const zh = {
     groupSession: '会话',
     groupBrowser: '浏览器',
     groupTerminal: '终端',
+    groupIssue: '看板事项',
     groupFile: '文件'
   },
   retry: {
@@ -1346,7 +1350,9 @@ export const zh = {
     worktreeBadge: 'Bot',
     composer: {
       placeholder: '跟搭档说点什么，或直接交代要干的活…',
-      mentionProject: '提及项目',
+      mentionProject: '提及项目或看板事项',
+      projectsGroup: '项目',
+      issuesGroup: '看板事项',
       send: '发送',
       stopTurn: '停止当前思考',
       permissionLabel: 'Bot 权限模式',
@@ -1400,6 +1406,80 @@ export const zh = {
         puddle: '水洼'
       }
     }
+  },
+  kanban: {
+    title: '看板',
+    openBoard: '打开看板',
+    newIssue: '新建事项',
+    editIssue: '事项详情',
+    viewBoard: '看板',
+    viewList: '列表',
+    switchToList: '切换为列表视图',
+    switchToBoard: '切换为看板视图',
+    searchIssues: '搜索事项',
+    searchPlaceholder: '搜索编号、标题或标签…',
+    allIssues: '全部事项',
+    unassigned: '未分配',
+    unassignedHint: '未归属项目',
+    projectsHeader: '项目',
+    unopenedProject: '未打开',
+    showCanceled: '显示已取消',
+    hiddenColumns: '隐藏列',
+    hideColumn: '收起此列',
+    status: {
+      backlog: '待规划',
+      todo: '待处理',
+      in_progress: '进行中',
+      in_review: '待验收',
+      done: '已完成',
+      canceled: '已取消'
+    },
+    priority: {
+      none: '无优先级',
+      urgent: '紧急',
+      high: '高',
+      medium: '中',
+      low: '低'
+    },
+    fields: {
+      title: '标题',
+      titlePlaceholder: '事项标题',
+      description: '详细说明',
+      descriptionPlaceholder: '添加详细说明…（支持 Markdown，可直接粘贴图片）',
+      status: '状态',
+      priority: '优先级',
+      project: '项目',
+      labels: '标签',
+      labelsPlaceholder: '筛选或输入新标签…'
+    },
+    labelsCount: '{count} 个标签',
+    attachImage: '添加图片（也可直接粘贴）',
+    imageReadFailed: '读取图片失败',
+    createMore: '继续创建',
+    createLabel: '新建标签',
+    expand: '展开窗口',
+    collapse: '收起窗口',
+    createdOn: '创建于 {date}',
+    preview: '预览',
+    write: '编辑',
+    create: '创建事项',
+    save: '保存更改',
+    delete: '删除事项',
+    deleteConfirmTitle: '永久删除事项 #{number}？',
+    deleteConfirmDescription: '删除后无法恢复；如果只是不再推进，建议将状态改为「已取消」。',
+    deleteConfirmAction: '永久删除',
+    locateInBoard: '在看板中查看',
+    startInSession: '在对话中处理',
+    sendToBot: '交给 Bot',
+    linkedWork: '关联进展',
+    linkedSession: '打开关联会话',
+    linkedTask: '任务 · {title}',
+    emptyTitle: '还没有事项',
+    emptyDescription: '记录灵感、Bug 或待办，支持分配给项目并在对话和 Bot 中直接通过 @ 引用。',
+    noMatches: '没有匹配的事项',
+    columnEmpty: '暂无事项',
+    issueNotFound: '事项 #{number} 不存在或已被删除',
+    loadFailed: '读取看板失败：{error}'
   }
 }
 

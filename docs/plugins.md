@@ -14,13 +14,13 @@ Ordinary sessions bind extensions in `rpc` mode with Pig's `createExtensionUI` i
 
 - **pig-review** uses the private command panel and per-session indicator. Model selection, validation, fallback and restoration have one authoritative description in [Settings](settings.md).
 - **pig-web** provides web_search / web_fetch / web_read. See [Web](pig-web.md).
-- **pig-browser**, **pig-terminal**, **pig-process**, **pig-settings**, **pig-session** and **pig-subagent** use thin registration layers plus host bridges. Read the matching module document before changing their tools or lifecycle.
+- **pig-browser**, **pig-terminal**, **pig-process**, **pig-settings**, **pig-session**, **pig-kanban** and **pig-subagent** use thin registration layers plus host bridges. Read the matching module document before changing their tools or lifecycle.
 
 System notifications are shown only for the active session and expire eight seconds after receipt, including while a session is inactive. Pig retains at most five notifications per session and twenty across the window, dropping older notices first. Switching sessions does not renew their lifetime. Long messages never open a modal automatically; their notification has an explicit details action that consumes the notice while keeping its full text open. `src/main/plugins/pig-ui.ts` shares the system-plugin host registry across the SDK's jiti loader and Pig main, while `src/main/pi/system-plugin-ui.ts` owns pending review requests and window-bound replies. These are Pig implementation APIs, not a third-party `ctx.ui` compatibility layer.
 
 ## Scopes and tool grouping
 
-- 内置系统插件默认范围：pig-review 与 pig-subagent 仅项目启用，pig-web、pig-settings 与 pig-session 项目和 Chat 都启用；已保存的选择不受默认值变化影响。
+- 内置系统插件默认范围：pig-review 与 pig-subagent 仅项目启用，pig-web、pig-settings、pig-session 与 pig-kanban 项目和 Chat 都启用；已保存的选择不受默认值变化影响。
 - 插件范围为 `project` / `chat`，可多选，空数组表示停用；旧版布尔配置迁移为仅项目。
 - `enabledPluginPaths(scope)` 按会话类型过滤，并跳过缺失的内置文件，在设置页标出不可用。
 

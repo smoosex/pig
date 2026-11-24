@@ -1,5 +1,6 @@
-import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { useIsPresent } from 'motion/react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { isSessionEmpty } from './chat/session-empty'
@@ -32,12 +33,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { Sidebar } from './components/Sidebar'
 import { DreamDialogHost } from './components/settings/DreamSettings'
 import { useBotStore } from './stores/bot'
+import { useComposerDraftsStore } from './stores/composer-drafts'
+import { useKanbanStore } from './stores/kanban'
 import { BotOrbButton } from './components/bot/BotOrbButton'
 import { BotPeekBubble } from './components/bot/BotPeekBubble'
 import { BotPage } from './components/bot/BotPage'
+import { KanbanHeader } from './components/kanban/KanbanHeader'
+import { KanbanIssueDialog } from './components/kanban/KanbanIssueDialog'
+import { KanbanView } from './components/kanban/KanbanView'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
-import type { SidebarTab } from '../../shared/api'
+import type { KanbanIssue, SidebarTab } from '../../shared/api'
 import { NewTabButton, TabBar, newStripSession } from './components/TabBar'
 import { halfSwitch, stripSlots, visibleTabsFor } from './components/tab-strip'
 import { isChatScope } from './stores/sessions/tab-order'
@@ -313,6 +319,10 @@ export default function App() {
    */
   const projectFocusCwd = useRef<string | null>(null)
   const chatFocusTabId = useRef<string | null>(null)
+  const lastConversationTab = useRef<'projects' | 'chats'>('projects')
+  if (sidebarTab === 'projects' || sidebarTab === 'chats') {
+    lastConversationTab.current = sidebarTab
+  }
   const requestedWorkspaceRestore = useRef(false)
   useEventBridge()
   useSessionWindows()
@@ -382,6 +392,10 @@ export default function App() {
         }
         case 'tab.new':
           setSettingsOpen(false)
+          if (sidebarTab === 'kanban') {
+            useKanbanStore.getState().openCreateDialog()
+            break
+          }
           newStripSession(sidebarTab).catch((error: unknown) => {
             useSessionsStore.setState({ workspaceError: failureMessage(error) })
           })
@@ -393,6 +407,17 @@ export default function App() {
           break
         case 'bot.toggleTasks':
           if (useBotStore.getState().open) useBotStore.getState().toggleDrawer()
+          break
+        case 'kanban.toggle':
+          setSettingsOpen(false)
+          if (useBotStore.getState().open) {
+            useBotStore.getState().closeBot()
+            switchSidebarTab('kanban')
+          } else if (sidebarTab === 'kanban') {
+            switchSidebarTab(lastConversationTab.current)
+          } else {
+            switchSidebarTab('kanban')
+          }
           break
         case 'sidebar.toggleLeft': toggleLeftSidebar(); break
         case 'settings.toggle': setSettingsOpen((open) => !open); break
@@ -432,6 +457,7 @@ export default function App() {
     void loadSettings()
     void loadReviewPrefs()
     void initBot()
+    void useKanbanStore.getState().init()
   }, [loadChats, loadSettings, loadReviewPrefs, initBot])
 
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
@@ -526,6 +552,7 @@ export default function App() {
   const switchSidebarTab = (next: SidebarTab) => {
     if (next === sidebarTab) return
     setSidebarTab(next)
+    if (next === 'kanban') return
     // Keep the restore mode in sync now: the scan may finish before a sidebarTab effect runs.
     setWorkspaceRestoreMode(next === 'chats')
     const action = halfSwitch(
@@ -542,6 +569,104 @@ export default function App() {
     else if (action.kind === 'chatHome') focusChatHome()
   }
 
+  const openExistingWorkspaceSession = useCallback(async (sessionId: string, cwd: string) => {
+    setSettingsOpen(false)
+    if (useBotStore.getState().open) useBotStore.getState().closeBot()
+    const store = useSessionsStore.getState()
+    const isOpenedProject = store.projects.some(
+      (p) => p.cwd === cwd || p.worktrees?.some((wt) => wt.cwd === cwd)
+    )
+    const targetTab: SidebarTab = isOpenedProject ? 'projects' : 'chats'
+    if (sidebarTab !== targetTab) {
+      setSidebarTab(targetTab)
+      setWorkspaceRestoreMode(targetTab === 'chats')
+    }
+    if (isOpenedProject) {
+      await selectProjectCwd(cwd)
+    }
+    if (useSessionsStore.getState().openTabs.some((tab) => tab.id === sessionId)) {
+      await useSessionsStore.getState().activateTab(sessionId)
+      return
+    }
+    const findMeta = () => {
+      for (const proj of useSessionsStore.getState().projects) {
+        const found = proj.sessions.find((item) => item.id === sessionId)
+        if (found) return found
+      }
+      for (const chat of useSessionsStore.getState().chats) {
+        const found = chat.sessions.find((item) => item.id === sessionId)
+        if (found) return found
+      }
+      return undefined
+    }
+    let meta = findMeta()
+    if (!meta && isOpenedProject) {
+      await useSessionsStore.getState().refreshCwd(cwd).catch(() => {})
+      meta = findMeta()
+    }
+    if (meta) {
+      await useSessionsStore.getState().openExisting(meta, isOpenedProject ? 'project' : 'chat')
+    }
+  }, [selectProjectCwd, setSidebarTab, setWorkspaceRestoreMode, sidebarTab])
+
+  const kanbanCallbacks = useMemo(() => ({
+    onStartInSession: (issue: KanbanIssue) => {
+      void (async () => {
+        try {
+          setSettingsOpen(false)
+          if (useBotStore.getState().open) useBotStore.getState().closeBot()
+          const store = useSessionsStore.getState()
+          const openedProject = issue.projectCwd
+            ? store.projects.find((p) => p.cwd === issue.projectCwd)
+            : undefined
+          let targetSessionId: string | null = null
+          if (openedProject) {
+            setSidebarTab('projects')
+            setWorkspaceRestoreMode(false)
+            await selectProjectCwd(openedProject.cwd)
+            targetSessionId = await useSessionsStore.getState().newSession(openedProject.cwd)
+          } else {
+            setSidebarTab('chats')
+            setWorkspaceRestoreMode(true)
+            targetSessionId = await useSessionsStore.getState().newChat()
+          }
+          if (targetSessionId) {
+            useComposerDraftsStore.getState().restoreDraft(targetSessionId, {
+              content: {
+                type: 'doc',
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [
+                      {
+                        type: 'issueMention',
+                        attrs: {
+                          number: issue.number,
+                          title: issue.title,
+                          status: issue.status,
+                          detail: ''
+                        }
+                      },
+                      { type: 'text', text: ' ' }
+                    ]
+                  }
+                ]
+              },
+              images: []
+            })
+          }
+        } catch (error) {
+          toast.error(failureMessage(error))
+        }
+      })()
+    },
+    onSendToBot: (issue: KanbanIssue) => {
+      setSettingsOpen(false)
+      useBotStore.getState().addDraftIssueMention(issue.number)
+      useBotStore.getState().openBot()
+    }
+  }), [selectProjectCwd, setSidebarTab, setWorkspaceRestoreMode])
+
   return (
     <TooltipProvider disableHoverableContent>
       <ThemeSync />
@@ -552,10 +677,27 @@ export default function App() {
       <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
+      <KanbanIssueDialog
+        callbacks={kanbanCallbacks}
+        isBoardVisible={sidebarTab === 'kanban' && !botOpen && !settingsOpen}
+        onLocateInBoard={(issue) => {
+          setSettingsOpen(false)
+          if (useBotStore.getState().open) useBotStore.getState().closeBot()
+          useKanbanStore.getState().setProjectScope(issue.projectCwd ?? 'unassigned')
+          setSidebarTab('kanban')
+        }}
+        onOpenLinkedSession={(sessionId, cwd) => {
+          void openExistingWorkspaceSession(sessionId, cwd)
+        }}
+      />
       <BotPeekBubble hidden={settingsOpen} />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         {botOpen && !settingsOpen ? (
           <BotPage
+            onOpenKanban={() => {
+              useBotStore.getState().closeBot()
+              setSidebarTab('kanban')
+            }}
             onJumpToWorkspace={({ cwd, sessionId, openChanges, openFilePath }) => {
               setSettingsOpen(false)
               if (sidebarTab !== 'projects') switchSidebarTab('projects')
@@ -612,34 +754,42 @@ export default function App() {
           </div>
           {/* Keep both 248px rails and the card's 8px gutters reserved when either sidebar is hidden. */}
           <div data-header-tabs className="absolute inset-x-64 inset-y-1 flex min-w-0 items-center justify-center">
-            {!settingsOpen && (currentProjectCwd || activeTabId) ? <TabBar sidebarTab={sidebarTab} /> : null}
+            {!settingsOpen && sidebarTab !== 'kanban' && (currentProjectCwd || activeTabId) ? (
+              <TabBar sidebarTab={sidebarTab} />
+            ) : null}
           </div>
           {!settingsOpen ? (
             <div data-header-trailing className="flex h-full shrink-0 items-center gap-1 pl-2 pr-3">
-              <NewTabButton sidebarTab={sidebarTab} sidebarLayout={`${leftCollapsed}:${rightCollapsed}:${hoverSidebar}:${settingsOpen}`} />
-              <ReplyBookmarks onNavigate={kind => {
-                setWorkspaceRestoreMode(kind === 'chat')
-                setSidebarTab(kind === 'chat' ? 'chats' : 'projects')
-              }} />
-              {currentProjectCwd ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={cn('no-drag translate-y-px', sidebarSurfaceToggle)}
-                      aria-label={t('app.sidebarRight')}
-                      aria-pressed={reviewOpen}
-                      onClick={toggleRightSidebar}
-                    >
-                      <PanelRight />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {t('app.sidebarRight')} <ShortcutKbd action="sidebar.toggleRight" />
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
+              {sidebarTab === 'kanban' ? (
+                <KanbanHeader />
+              ) : (
+                <>
+                  <NewTabButton sidebarTab={sidebarTab} sidebarLayout={`${leftCollapsed}:${rightCollapsed}:${hoverSidebar}:${settingsOpen}`} />
+                  <ReplyBookmarks onNavigate={kind => {
+                    setWorkspaceRestoreMode(kind === 'chat')
+                    setSidebarTab(kind === 'chat' ? 'chats' : 'projects')
+                  }} />
+                  {currentProjectCwd ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className={cn('no-drag translate-y-px', sidebarSurfaceToggle)}
+                          aria-label={t('app.sidebarRight')}
+                          aria-pressed={reviewOpen}
+                          onClick={toggleRightSidebar}
+                        >
+                          <PanelRight />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {t('app.sidebarRight')} <ShortcutKbd action="sidebar.toggleRight" />
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                </>
+              )}
             </div>
           ) : null}
         </header>
@@ -663,15 +813,15 @@ export default function App() {
           {!settingsOpen && leftCollapsed && hoverSidebar !== 'left' ? (
             <div className="absolute inset-y-0 left-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('left')} />
           ) : null}
-          {!settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar !== 'right' ? (
+          {!settingsOpen && currentProjectCwd && sidebarTab !== 'kanban' && rightCollapsed && hoverSidebar !== 'right' ? (
             <div className="absolute inset-y-0 right-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('right')} />
           ) : null}
           <WorkspaceLayout
             settingsOpen={settingsOpen}
             leftCollapsed={leftCollapsed}
-            rightCollapsed={!currentProjectCwd || rightCollapsed}
+            rightCollapsed={sidebarTab === 'kanban' || !currentProjectCwd || rightCollapsed}
             leftFloating={leftCollapsed && hoverSidebar === 'left'}
-            rightFloating={rightCollapsed && hoverSidebar === 'right'}
+            rightFloating={sidebarTab !== 'kanban' && rightCollapsed && hoverSidebar === 'right'}
             left={
               <>
                 <div
@@ -713,7 +863,7 @@ export default function App() {
                     <WorkspacePanel
                       cwd={rightPanelCwd}
                       floating={rightCollapsed}
-                      hidden={settingsOpen || !currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')}
+                      hidden={settingsOpen || sidebarTab === 'kanban' || !currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')}
                     />
                   </div>
                 </div>
@@ -732,17 +882,20 @@ export default function App() {
                 <div
                   className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                 >
+                  {sidebarTab === 'kanban' ? (
+                    <KanbanView callbacks={kanbanCallbacks} />
+                  ) : null}
                   {activeTab || hasRetainableChatTabs ? (
                     <SplitPaneContainer
                       tabId={activeTab ? activeTabId! : null}
-                      visible={Boolean(activeTab)}
-                      className={cn('min-h-0 min-w-0 flex-1', !activeTab && 'hidden')}
+                      visible={Boolean(activeTab) && sidebarTab !== 'kanban'}
+                      className={cn('min-h-0 min-w-0 flex-1', (!activeTab || sidebarTab === 'kanban') && 'hidden')}
                       renderPane={(node: PaneNode, isActive) => (
                         <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
                       )}
                     />
                   ) : null}
-                  {activeTab ? null : projectHome || chatHome ? (
+                  {sidebarTab === 'kanban' || activeTab ? null : projectHome || chatHome ? (
                     <>
                       <SessionGreeting />
                       {chatHome && (chatDraftError || workspaceError) ? (

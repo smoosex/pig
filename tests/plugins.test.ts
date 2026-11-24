@@ -22,6 +22,7 @@ async function fixture(): Promise<void> {
   const personaBundle = join(process.cwd(), 'out', 'system-plugins', 'pig-persona', 'index.js')
   const settingsPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
   const sessionPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-session', 'index.ts')
+  const kanbanPath = join(process.cwd(), 'src', 'main', 'plugins', 'pig-kanban', 'index.ts')
   try {
     const module = { ...await import('../src/main/pi/plugins'), ...await import('../src/main/features/observational-memory-settings') }
     const { sessionToolPath } = await import('../src/main/pi/system-plugin-paths')
@@ -92,11 +93,11 @@ async function fixture(): Promise<void> {
     assert.deepEqual(await module.getPluginSettings('pig-review'), { thinking: 'high' })
     await module.setPluginSettings('pig-review', { thinking: null })
     assert.deepEqual(await module.getPluginSettings('pig-review'), {})
-    const defaultScopes = [['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat']]
+    const defaultScopes = [['project'], ['project', 'chat'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']]
     assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), defaultScopes)
     const bundledPaths = await module.enabledPluginPaths('project')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('plugins', 'observational-memory', 'index.ts'))), false)
-    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, settingsPath, sessionPath].filter(existsSync))
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [webAccessBundle, settingsPath, sessionPath, kanbanPath].filter(existsSync))
     assert.ok(bundledPaths.some((path) => path.endsWith(join('plugins', 'pig-review', 'index.ts'))))
     const subagentPath = bundledPaths.find((path) => path.endsWith(join('plugins', 'pig-subagent', 'index.ts')))
     assert.ok(subagentPath, 'subagents default to projects only')
@@ -122,7 +123,7 @@ async function fixture(): Promise<void> {
       assert.deepEqual((await module.toolProvidersByPath(scope)).get(settingsPath), { kind: 'pig', id: 'pig-settings', name: 'Settings' })
     }
     await assert.rejects(module.getPluginSettings('pig-settings'), /Plugin not found/, 'the settings tools do not declare a plugin configuration pane')
-    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, sessionPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
+    assert.deepEqual(module.subagentPluginPaths(bundledPaths), bundledPaths.filter((path) => ![subagentPath, browserPath, terminalPath, processPath, settingsPath, sessionPath, kanbanPath, personaBundle].includes(path)), 'children cannot alter global mood or settings, spawn, control window tools or own processes')
     assert.equal(bundledPaths.some((path) => path.endsWith(join('system-plugins', 'pig-web', 'index.js'))), existsSync(webAccessBundle))
     assert.equal((await module.listPlugins()).some(item => item.id === 'pig-persona' || item.id === 'observational-memory'), false)
     assert.equal(bundledPaths.includes(personaBundle), false)
@@ -173,8 +174,8 @@ async function fixture(): Promise<void> {
       version: 1, memoryEnabled: true, reviewEnabled: false, webAccessEnabled: true,
       installed: [{ id: 'legacy', source: plugin, kind: 'local', enabled: true }]
     }))
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project']])
-    assert.deepEqual(await module.enabledPluginPaths('chat'), [settingsPath, sessionPath].filter(existsSync), 'legacy switches do not change new built-in defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat'], ['project']])
+    assert.deepEqual(await module.enabledPluginPaths('chat'), [settingsPath, sessionPath, kanbanPath].filter(existsSync), 'legacy switches do not change new built-in defaults')
     await module.setPluginScopes('legacy', ['chat', 'project', 'chat'])
     const migrated = JSON.parse(await readFile(registryFile, 'utf8'))
     assert.equal(migrated.version, 2)
@@ -188,11 +189,11 @@ async function fixture(): Promise<void> {
     assert.deepEqual(migrated.terminalScopes, ['project'])
     assert.deepEqual(migrated.settingsScopes, ['project', 'chat'])
     assert.deepEqual(migrated.installed[0].scopes, ['project', 'chat'])
-    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
+    assert.deepEqual((await module.listPlugins()).map((item) => item.scopes), [[], ['project'], ['project'], ['project'], ['project'], ['project'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat'], ['project', 'chat']], 'saved scopes override defaults')
     assert.equal(migrated.installed[0].enabled, undefined)
     await rm(registryFile)
 
-    for (const id of ['pig-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session']) await module.setPluginScopes(id, [])
+    for (const id of ['pig-review', 'pig-web', 'pig-subagent', 'pig-browser', 'pig-terminal', 'pig-process', 'pig-settings', 'pig-session', 'pig-kanban']) await module.setPluginScopes(id, [])
     assert.deepEqual(await module.enabledPluginPaths('project'), [])
     await assert.rejects(module.setPluginScopes('pig-persona', []), /Plugin not found/)
     await assert.rejects(module.setPluginScopes('observational-memory', []), /Plugin not found/)

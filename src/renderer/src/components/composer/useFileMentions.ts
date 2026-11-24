@@ -3,10 +3,16 @@ import type { Editor } from '@tiptap/react'
 import { api, type FileSuggestion } from '../../ipc/api'
 import { fileMentionText } from '../../../../shared/file-mentions'
 import { atMentionToken, mentionValue } from './mentions'
+import { useKanbanStore } from '../../stores/kanban'
 import { useSessionsStore } from '../../stores/sessions'
+import { useT } from '../../hooks/useT'
+import { issueMentionText, scopedIssueMentions, type IssueMention } from './issue-mentions'
 import { tabMentionMatches, tabMentions, tabMentionText, type TabMention } from './tab-mentions'
 
-type MentionItem = { kind: 'file'; file: FileSuggestion } | { kind: 'tab'; tab: TabMention }
+export type MentionItem =
+  | { kind: 'file'; file: FileSuggestion }
+  | { kind: 'tab'; tab: TabMention }
+  | { kind: 'issue'; issue: IssueMention }
 
 /**
  * `@` path completion for the composer, mirroring the slash-command hook's contract: a debounced
@@ -37,6 +43,7 @@ function pieceText(node: { isText: boolean; text?: string | null; type: { name: 
   if (node.type.name === 'pastedText') return String(node.attrs.text ?? '')
   if (node.type.name === 'fileMention') return fileMentionText(String(node.attrs.path ?? ''))
   if (node.type.name === 'tabMention') return tabMentionText(node.attrs as unknown as TabMention)
+  if (node.type.name === 'issueMention') return issueMentionText(node.attrs as unknown as IssueMention)
   return ''
 }
 
@@ -95,10 +102,14 @@ export function useFileMentions({
   editor: Editor | null
   disabled: boolean
 }) {
+  const t = useT()
   const [target, setTarget] = useState<MentionTarget | null>(null)
   const [files, setItems] = useState<FileSuggestion[]>([])
   const tabs = useSessionsStore((state) => state.openTabs)
+  const projects = useSessionsStore((state) => state.projects)
   const chatDraftSessionId = useSessionsStore((state) => state.chatDraft?.sessionId)
+  const kanbanItems = useKanbanStore((state) => state.items)
+  const kanbanLoaded = useKanbanStore((state) => state.loaded)
   const [browserUrls, setBrowserUrls] = useState<Record<string, string>>({})
   const [itemsFor, setItemsFor] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
@@ -146,6 +157,11 @@ export function useFileMentions({
     const chain = editor.chain().focus().deleteRange({ from: live.from, to: live.to })
     if (item.kind === 'tab') {
       chain.insertContent([{ type: 'tabMention', attrs: item.tab }, { type: 'text', text: ' ' }]).run()
+      setDismissed(true)
+      return
+    }
+    if (item.kind === 'issue') {
+      chain.insertContent([{ type: 'issueMention', attrs: item.issue }, { type: 'text', text: ' ' }]).run()
       setDismissed(true)
       return
     }
@@ -205,13 +221,30 @@ export function useFileMentions({
     return () => { active = false; off() }
   }, [tabs, resetKey, cwd, chatDraftSessionId, query === null, disabled])
 
+  useEffect(() => {
+    if (query !== null && !disabled && !kanbanLoaded) {
+      void useKanbanStore.getState().init()
+    }
+  }, [query !== null, disabled, kanbanLoaded])
+
   // Stale rows stay up while the fresh fetch is in flight: closing per keystroke is what flickers.
   // itemsFor only marks the loading state now, so Enter can queue behind it instead of misfiring.
+  const issueItems: MentionItem[] = query === null ? [] : scopedIssueMentions({
+    issues: kanbanItems,
+    tabs,
+    projects,
+    currentSessionId: resetKey,
+    cwd,
+    chatDraftSessionId,
+    query,
+    unassignedLabel: t('kanban.unassigned')
+  }).map((issue) => ({ kind: 'issue', issue }))
   const tabItems: MentionItem[] = query === null ? [] : tabMentions(tabs, resetKey, cwd, chatDraftSessionId)
     .map((tab) => tab.kind === 'browser' && browserUrls[tab.id] ? { ...tab, detail: [browserUrls[tab.id], tab.detail].filter(Boolean).join(' · ') } : tab)
     .filter((tab) => tabMentionMatches(tab, query))
     .map((tab) => ({ kind: 'tab', tab }))
-  const items: MentionItem[] = [...tabItems, ...files.map((file): MentionItem => ({ kind: 'file', file }))]
+  const prefixCount = issueItems.length + tabItems.length
+  const items: MentionItem[] = [...issueItems, ...tabItems, ...files.map((file): MentionItem => ({ kind: 'file', file }))]
   const loading = itemsFor !== query
   const open = !disabled && query !== null && !dismissed && items.length > 0
   const selectedIndex = Math.min(index, Math.max(0, items.length - 1))
@@ -233,7 +266,7 @@ export function useFileMentions({
     if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault()
       // Loading rows are stale: queue the key behind the fresh fetch instead of completing one.
-      if (loading && items[selectedIndex].kind === 'file') pendingSelect.current = selectedIndex - tabItems.length
+      if (loading && items[selectedIndex].kind === 'file') pendingSelect.current = selectedIndex - prefixCount
       else select(items[selectedIndex])
       return true
     }

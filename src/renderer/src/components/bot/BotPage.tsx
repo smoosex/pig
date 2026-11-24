@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ArrowUpRight,
   Check,
+  Columns3,
   Copy,
   Download,
   FileText,
@@ -44,6 +45,7 @@ import { botColumn } from '../../chat/layout'
 import { SCROLL_END } from '../../chat/scroll-state'
 import { FileTypeIcon } from '../files/FileTypeIcon'
 import { ImagePreview } from '../ImagePreview'
+import { IssueMentionChip, renderTextWithIssueChips } from '../IssueMentionNode'
 import { MarkdownText } from '../MarkdownText'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { ShortcutKbd } from '../ShortcutKbd'
@@ -145,9 +147,11 @@ export function resolveWorkspaceFileTarget(
 }
 
 export function BotPage({
-  onJumpToWorkspace
+  onJumpToWorkspace,
+  onOpenKanban
 }: {
   onJumpToWorkspace: (options: BotWorkspaceJumpOptions) => void
+  onOpenKanban?: () => void
 }) {
   const t = useT()
   const state = useBotStore((s) => s.state)
@@ -394,6 +398,27 @@ export function BotPage({
         </div>
 
         <div className="no-drag flex items-center gap-1">
+          {onOpenKanban ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  data-bot-open-kanban
+                  aria-label={t('kanban.openBoard')}
+                  onClick={onOpenKanban}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Columns3 className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end">
+                <span>{t('kanban.openBoard')}</span>
+                <span className="ml-1.5 inline-flex"><ShortcutKbd action="kanban.toggle" /></span>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -894,7 +919,12 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
   })
   const textAttachments = item.textAttachments ?? []
   const projectMentions = item.projectMentions ?? []
-  const hasTextBubble = projectMentions.length > 0 || textAttachments.length > 0 || item.text.length > 0
+  const issueMentions = item.issueMentions ?? []
+  const hasTextBubble =
+    projectMentions.length > 0 ||
+    issueMentions.length > 0 ||
+    textAttachments.length > 0 ||
+    item.text.length > 0
   const copyText = textAttachments.length > 0 ? composePromptText(item.text, textAttachments) : item.text
 
   return (
@@ -931,16 +961,19 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
                   textAttachments.length > 0 && 'border-border'
                 )}
               >
-                {projectMentions.length > 0 ? (
+                {projectMentions.length > 0 || issueMentions.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {projectMentions.map((cwd) => (
                       <span
-                        key={cwd}
+                        key={`proj:${cwd}`}
                         className="inline-flex h-5 max-w-60 items-center gap-1 rounded-md border border-glass-button-border bg-glass-button-background bg-[image:var(--glass-button-sheen)] px-1.5 text-xs font-medium text-glass-prompt-foreground shadow-glass-button solid:border-transparent solid:bg-secondary solid:bg-none solid:text-secondary-foreground solid:shadow-none"
                       >
                         <FolderKanban className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="min-w-0 truncate">@{baseName(cwd)}</span>
                       </span>
+                    ))}
+                    {issueMentions.map((num) => (
+                      <IssueMentionChip key={`issue:${num}`} number={num} className="h-5 max-w-60" />
                     ))}
                   </div>
                 ) : null}
@@ -974,7 +1007,7 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
                     </PastedTextPreview>
                   )
                 })}
-                {item.text ? <div className="whitespace-pre-wrap break-words">{item.text}</div> : null}
+                {item.text ? <div className="whitespace-pre-wrap break-words">{renderTextWithIssueChips(item.text)}</div> : null}
               </BubbleContent>
             </Bubble>
           ) : null}

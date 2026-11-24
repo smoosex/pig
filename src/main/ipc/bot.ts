@@ -108,6 +108,7 @@ export function registerBotIpc(): void {
       images?: BotImageAttachment[]
       textAttachments?: BotTextAttachment[]
       projectMentions?: string[]
+      issueMentions?: number[]
     }
     if (typeof payload.text !== 'string') throw new Error('Message text must be a string')
     return botService().sendMessage({
@@ -116,6 +117,9 @@ export function registerBotIpc(): void {
       textAttachments: Array.isArray(payload.textAttachments) ? payload.textAttachments : undefined,
       projectMentions: Array.isArray(payload.projectMentions)
         ? payload.projectMentions.filter((item): item is string => typeof item === 'string')
+        : undefined,
+      issueMentions: Array.isArray(payload.issueMentions)
+        ? payload.issueMentions.filter((item): item is number => typeof item === 'number' && Number.isSafeInteger(item) && item >= 1)
         : undefined
     })
   })

@@ -14,7 +14,7 @@ import type { SessionToolProvider } from '../../shared/session-capabilities'
 import { pigPath } from '../pig-dir'
 import { readReviewSettingsFile, reviewSettingsSchema } from '../plugins/pig-review/settings'
 import { readSettingsObject, saveNamespacedSettings } from '../settings/json-file'
-import { sessionToolPath as sessionPath, settingsToolPath } from './system-plugin-paths'
+import { kanbanToolPath, sessionToolPath as sessionPath, settingsToolPath } from './system-plugin-paths'
 
 interface InstalledPlugin {
   id: string
@@ -32,6 +32,7 @@ interface Registry {
   processScopes: PluginScope[]
   settingsScopes: PluginScope[]
   sessionScopes: PluginScope[]
+  kanbanScopes: PluginScope[]
   installed: InstalledPlugin[]
 }
 
@@ -58,13 +59,15 @@ const webAccessPath = () => app.isPackaged
   ? join(process.resourcesPath, 'system-plugins', 'pig-web', 'index.js')
   : join(appPath(), 'out', 'system-plugins', 'pig-web', 'index.js')
 
-/** Built-in plugins permitted for the main Bot session per §5.2 matrix (pig-web + pig-settings only). */
+/** Built-in plugins permitted for the main Bot session per §5.2 matrix (pig-web + pig-settings + pig-kanban). */
 export function botMainPluginPaths(): string[] {
   const paths: string[] = []
   const web = webAccessPath()
   if (existsSync(web)) paths.push(web)
   const settings = settingsToolPath()
   if (existsSync(settings)) paths.push(settings)
+  const kanban = kanbanToolPath()
+  if (existsSync(kanban)) paths.push(kanban)
   return paths
 }
 
@@ -75,6 +78,7 @@ export async function botManagedPluginPaths(overlay: { mode: 'read' | 'write'; b
   const allowed = [
     { path: webAccessPath(), scopes: registry.webAccessScopes },
     { path: subagentPath(), scopes: registry.subagentScopes },
+    { path: kanbanToolPath(), scopes: registry.kanbanScopes },
     ...(overlay.mode === 'write' ? [
       { path: processPath(), scopes: registry.processScopes },
       ...(overlay.browser ? [{ path: browserPath(), scopes: registry.browserScopes }] : [])
@@ -98,7 +102,7 @@ function parseScopes(value: unknown): PluginScope[] {
 }
 
 async function readRegistry(): Promise<Registry> {
-  const defaults: Registry = { reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], installed: [] }
+  const defaults: Registry = { reviewScopes: ['project'], webAccessScopes: ['project', 'chat'], subagentScopes: ['project'], browserScopes: ['project'], terminalScopes: ['project'], processScopes: ['project'], settingsScopes: ['project', 'chat'], sessionScopes: ['project', 'chat'], kanbanScopes: ['project', 'chat'], installed: [] }
   let text: string
   try {
     text = await readFile(registryPath(), 'utf8')
@@ -134,6 +138,7 @@ async function readRegistry(): Promise<Registry> {
     processScopes: 'processScopes' in value ? parseScopes(value.processScopes) : defaults.processScopes,
     settingsScopes: 'settingsScopes' in value ? parseScopes(value.settingsScopes) : defaults.settingsScopes,
     sessionScopes: 'sessionScopes' in value ? parseScopes(value.sessionScopes) : defaults.sessionScopes,
+    kanbanScopes: 'kanbanScopes' in value ? parseScopes(value.kanbanScopes) : defaults.kanbanScopes,
     installed
   }
 }
@@ -197,7 +202,8 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
     { scopes: registry.terminalScopes, path: terminalPath(), name: 'terminal' },
     { scopes: registry.processScopes, path: processPath(), name: 'background process' },
     { scopes: registry.settingsScopes, path: settingsToolPath(), name: 'settings' },
-    { scopes: registry.sessionScopes, path: sessionPath(), name: 'session' }
+    { scopes: registry.sessionScopes, path: sessionPath(), name: 'session' },
+    { scopes: registry.kanbanScopes, path: kanbanToolPath(), name: 'kanban' }
   ]) {
     if (!isEnabled(bundled.scopes)) continue
     if (!existsSync(bundled.path)) {
@@ -219,7 +225,7 @@ export async function enabledPluginPaths(scope: PluginScope | 'any'): Promise<st
  * application settings (only the parent handles the user's global preferences).
  * Persona and memory are separately excluded by createSessionRuntime's identity:false. */
 export function subagentPluginPaths(parentPaths: string[]): string[] {
-  const excluded = new Set([subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), sessionPath()].map((path) => resolve(path)))
+  const excluded = new Set([subagentPath(), browserPath(), terminalPath(), processPath(), settingsToolPath(), sessionPath(), kanbanToolPath()].map((path) => resolve(path)))
   return parentPaths.filter((path) => !excluded.has(resolve(path)))
 }
 
@@ -274,7 +280,8 @@ export async function toolProvidersByPath(scope: PluginScope, bundledOnly = fals
     [resolve(terminalPath()), { kind: 'pig', id: 'pig-terminal', name: 'Terminal' }],
     [resolve(processPath()), { kind: 'pig', id: 'pig-process', name: 'Background Processes' }],
     [resolve(settingsToolPath()), { kind: 'pig', id: 'pig-settings', name: 'Settings' }],
-    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }]
+    [resolve(sessionPath()), { kind: 'pig', id: 'pig-session', name: 'Sessions' }],
+    [resolve(kanbanToolPath()), { kind: 'pig', id: 'pig-kanban', name: 'Board' }]
   ])
   if (bundledOnly) return providers
   // Only plugins this scope loads: one that is off elsewhere cannot break the session's listing.
@@ -349,6 +356,10 @@ export async function listPlugins(): Promise<PluginInfo[]> {
     id: 'pig-session', name: 'Sessions', source: 'Pig built-in',
     kind: 'system', scopes: registry.sessionScopes, available: existsSync(sessionPath()),
     ...(!existsSync(sessionPath()) ? { error: 'Bundled extension is missing' } : {})
+  }, {
+    id: 'pig-kanban', name: 'Board', source: 'Pig built-in',
+    kind: 'system', scopes: registry.kanbanScopes, available: existsSync(kanbanToolPath()),
+    ...(!existsSync(kanbanToolPath()) ? { error: 'Bundled extension is missing' } : {})
   }, ...installed]
 }
 
@@ -390,7 +401,8 @@ export function installPlugin(source: string): Promise<void> {
 const BUNDLED_SCOPES = {
   'pig-review': 'reviewScopes', 'pig-web': 'webAccessScopes',
   'pig-subagent': 'subagentScopes', 'pig-browser': 'browserScopes', 'pig-terminal': 'terminalScopes',
-  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes'
+  'pig-process': 'processScopes', 'pig-settings': 'settingsScopes', 'pig-session': 'sessionScopes',
+  'pig-kanban': 'kanbanScopes'
 } as const satisfies Record<string, keyof Registry>
 
 function registryScopes(registry: Registry): Record<string, PluginScope[]> {
@@ -426,6 +438,9 @@ async function applyScopes(registry: Registry, id: string, next: PluginScope[]):
   } else if (id === 'pig-session') {
     if (addsScope(registry.sessionScopes) && !existsSync(sessionPath())) throw new Error('Bundled extension is missing')
     registry.sessionScopes = next
+  } else if (id === 'pig-kanban') {
+    if (addsScope(registry.kanbanScopes) && !existsSync(kanbanToolPath())) throw new Error('Bundled extension is missing')
+    registry.kanbanScopes = next
   } else {
     const plugin = registry.installed.find((item) => item.id === id)
     if (!plugin) throw new Error('Plugin not found')

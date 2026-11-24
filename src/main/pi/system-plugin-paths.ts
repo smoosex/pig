@@ -13,3 +13,9 @@ export function settingsToolPath(): string {
     ? join(process.resourcesPath, 'system-plugins', 'pig-settings', 'index.ts')
     : join(app.getAppPath(), 'src', 'main', 'plugins', 'pig-settings', 'index.ts')
 }
+
+export function kanbanToolPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'system-plugins', 'pig-kanban', 'index.ts')
+    : join(app.getAppPath(), 'src', 'main', 'plugins', 'pig-kanban', 'index.ts')
+}

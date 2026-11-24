@@ -10,6 +10,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
+import { KanbanSidebar } from './kanban/KanbanSidebar'
+import { useKanbanStore } from '../stores/kanban'
 import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
@@ -51,9 +53,10 @@ export function Sidebar({
   const error = projectError ?? preferencesError ?? reviewPrefsError ?? settingsError
   // Mount each sidebar list lazily on first visit, then retain it via Activity so switching
   // between Projects and Chats does not tear down and rebuild Radix/dnd-kit trees every time.
-  const [mountedTabs, setMountedTabs] = useState<{ projects: boolean; chats: boolean }>(() => ({
+  const [mountedTabs, setMountedTabs] = useState<{ projects: boolean; chats: boolean; kanban: boolean }>(() => ({
     projects: tab === 'projects',
-    chats: tab === 'chats'
+    chats: tab === 'chats',
+    kanban: tab === 'kanban'
   }))
   if (!mountedTabs[tab]) {
     setMountedTabs((previous) => (previous[tab] ? previous : { ...previous, [tab]: true }))
@@ -74,6 +77,7 @@ export function Sidebar({
           tab={tab}
           onSelect={onSwitchTab}
           onNewChat={() => void runProjectAction('new-chat', newChat)}
+          onNewIssue={() => useKanbanStore.getState().openCreateDialog()}
           actionDisabled={projectPending !== null}
         />
         <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
@@ -86,6 +90,11 @@ export function Sidebar({
             {mountedTabs.chats ? (
               <Activity mode={tab === 'chats' ? 'visible' : 'hidden'}>
                 <ChatList />
+              </Activity>
+            ) : null}
+            {mountedTabs.kanban ? (
+              <Activity mode={tab === 'kanban' ? 'visible' : 'hidden'}>
+                <KanbanSidebar />
               </Activity>
             ) : null}
           </SidebarHoverHighlight>

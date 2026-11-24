@@ -5,7 +5,9 @@
  * other subresource, so the browser only loads the images it renders.
  */
 import { protocol } from 'electron'
+import { parseKanbanImageUrl } from '../shared/kanban'
 import { SESSION_IMAGE_SCHEME } from '../shared/session-images'
+import { kanbanImageResponse } from './kanban/service'
 import { sessionImageResponse } from './pi/session-images'
 import { sessionEntryLookup } from './pi/session-registry'
 
@@ -21,6 +23,8 @@ export function registerSessionImageScheme(): void {
 
 export function handleSessionImages(): void {
   protocol.handle(SESSION_IMAGE_SCHEME, (request) =>
-    sessionImageResponse(request.url, sessionEntryLookup)
+    parseKanbanImageUrl(request.url)
+      ? kanbanImageResponse(request.url)
+      : sessionImageResponse(request.url, sessionEntryLookup)
   )
 }

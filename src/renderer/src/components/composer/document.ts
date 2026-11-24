@@ -7,6 +7,7 @@ import type { JSONContent } from '@tiptap/core'
 import { createInlinePastedTextDisplayMetadata, isInlinePastedTextAttachments, normalizeNewlines, utf8ByteLength, type PastedTextAttachmentInput, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
 import { fileMentionText, isFileMentionAt, type FileMention } from '../../../../shared/file-mentions'
 import type { PigUserMessage } from '../../pi/types'
+import { issueMentionText, type IssueMention } from './issue-mentions'
 import { tabMentionText, type TabMention } from './tab-mentions'
 
 export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [], mentions: [] }
@@ -154,6 +155,10 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
     }
     if (node.type === 'tabMention') {
       text += tabMentionText(node.attrs as TabMention)
+      return
+    }
+    if (node.type === 'issueMention') {
+      text += issueMentionText(node.attrs as IssueMention)
       return
     }
     if (node.type === 'fileMention') {

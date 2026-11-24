@@ -15,6 +15,17 @@ const api: SessionApi = {
       return () => ipcRenderer.off('bookmarks:changed', handler)
     }
   },
+  kanban: {
+    getSnapshot: () => ipcRenderer.invoke('kanban:snapshot'),
+    create: (input) => ipcRenderer.invoke('kanban:create', input),
+    update: (input) => ipcRenderer.invoke('kanban:update', input),
+    delete: (number) => ipcRenderer.invoke('kanban:delete', number),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/kanban').KanbanSnapshot) => listener(snapshot)
+      ipcRenderer.on('kanban:changed', handler)
+      return () => ipcRenderer.off('kanban:changed', handler)
+    }
+  },
   sessionAgent: {
     onRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/session-agent').SessionAgentUiRequest) => listener(request)

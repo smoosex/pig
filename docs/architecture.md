@@ -64,6 +64,7 @@ src/
 | `src/main/pi/web-search-settings.ts` | 内置 pig-web 的配置读写（`$PIG_DIR/web-search.json`，权限 0600）  |
 | `src/main/skills/`                  | 个人 Skills 清单、本地引用、远程副本与手动更新、启停偏好及 skills.sh 搜索 |
 | `src/main/subagents/`               | 子 agent 的排队、上限、生命周期、结果投递与落盘；执行器接口与同进程 SDK 实现 |
+| `src/main/kanban/`                   | 本地看板存储（`$PIG_DIR/kanban.json`）及 `pig-kanban` 工具的项目与权限门控 |
 | `scripts/build-system-plugins.ts`    | 用 esbuild 将 pig-web 打成单文件到 `out/system-plugins/pig-web/`           |
 | `src/renderer/src/ipc/api.ts`        | renderer 的接口入口，复用共享类型                                       |
 | `src/renderer/src/lib/highlight.ts`  | Shiki 高亮（WASM 引擎、按可见性触发、LRU 缓存）                         |

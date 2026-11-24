@@ -1,5 +1,7 @@
 import { createPastedTextDeliveryMetadata, PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
+import { extractIssueMentionNumbers } from '../../shared/kanban'
 import { awaitCompactionBeforePrompt } from '../features/memory/proactive-compaction'
+import { kanban } from '../kanban/service'
 import { worktrees } from '../project-worktrees'
 import { nameWorktreeBranch } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
@@ -74,6 +76,12 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
                 PASTED_TEXT_CUSTOM_TYPE,
                 createPastedTextDeliveryMetadata(prompt.modelText, prompt.metadata, deliveredText)
               )
+            }
+            const mentionedIssues = extractIssueMentionNumbers(deliveredText)
+            if (mentionedIssues.length > 0) {
+              void kanban
+                .linkSession(mentionedIssues, { sessionId, cwd })
+                .catch((error) => console.error('Kanban session link failed:', error))
             }
             void worktrees
               .nameOnFirstPrompt(cwd, prompt.namingText, nameWorktreeBranch)

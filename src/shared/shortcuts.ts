@@ -10,7 +10,7 @@
  * settings.json stores only overrides; a missing entry follows the default, `null` disables it.
  */
 
-export type ShortcutGroup = 'global' | 'tabs' | 'composer' | 'file' | 'terminal' | 'projectPicker'
+export type ShortcutGroup = 'global' | 'tabs' | 'composer' | 'file' | 'kanban' | 'terminal' | 'projectPicker'
 
 export const TAB_SELECT_ACTIONS = [
   'tab.select1', 'tab.select2', 'tab.select3', 'tab.select4',
@@ -19,10 +19,11 @@ export const TAB_SELECT_ACTIONS = [
 
 export const SHORTCUT_ACTIONS = [
   'sidebar.toggleLeft', 'sidebar.toggleRight', 'settings.toggle', 'project.add',
-  'bot.toggle', 'bot.toggleTasks',
+  'bot.toggle', 'bot.toggleTasks', 'kanban.toggle',
   'tab.new', 'tab.close', ...TAB_SELECT_ACTIONS,
   'composer.focus',
   'file.save',
+  'kanban.search',
   'terminal.clear', 'terminal.selectAll',
   'projectPicker.addCurrent'
 ] as const
@@ -44,6 +45,8 @@ export const SHORTCUT_DEFINITIONS: Record<ShortcutActionId, ShortcutDefinition> 
   'project.add': { group: 'global', default: 'Mod+Shift+KeyA' },
   'bot.toggle': { group: 'global', default: 'Mod+Shift+KeyB' },
   'bot.toggleTasks': { group: 'global', default: 'Mod+Shift+KeyT' },
+  // Windows/Linux use Ctrl+Shift+K for terminal.clear, so Kanban uses Mod+Alt+KeyK outside macOS.
+  'kanban.toggle': { group: 'global', default: { mac: 'Mod+Shift+KeyK', other: 'Mod+Alt+KeyK' } },
   'tab.new': { group: 'tabs', default: 'Mod+KeyT' },
   'tab.close': { group: 'tabs', default: 'Mod+KeyW' },
   'tab.select1': { group: 'tabs', default: 'Mod+Digit1' },
@@ -57,6 +60,7 @@ export const SHORTCUT_DEFINITIONS: Record<ShortcutActionId, ShortcutDefinition> 
   'tab.selectLast': { group: 'tabs', default: 'Mod+Digit9' },
   'composer.focus': { group: 'composer', default: 'Mod+KeyL' },
   'file.save': { group: 'file', default: 'Mod+KeyS' },
+  'kanban.search': { group: 'kanban', default: 'Mod+KeyF' },
   // Control+K and Control+A are readline commands outside macOS.
   'terminal.clear': { group: 'terminal', default: { mac: 'Mod+KeyK', other: 'Mod+Shift+KeyK' } },
   'terminal.selectAll': { group: 'terminal', default: { mac: 'Mod+KeyA', other: null } },
@@ -72,7 +76,7 @@ export const HOST_SHORTCUT_ACTIONS = SHORTCUT_ACTIONS.filter((id) => {
   return group === 'global' || group === 'tabs'
 }) as HostShortcutAction[]
 export type HostShortcutAction = Exclude<ShortcutActionId,
-  'composer.focus' | 'file.save' | 'terminal.clear' | 'terminal.selectAll' | 'projectPicker.addCurrent'>
+  'composer.focus' | 'file.save' | 'kanban.search' | 'terminal.clear' | 'terminal.selectAll' | 'projectPicker.addCurrent'>
 
 /** Window-wide actions: they take their key from every other context, so they conflict with all of them. */
 export function isWindowShortcut(id: ShortcutActionId): boolean {

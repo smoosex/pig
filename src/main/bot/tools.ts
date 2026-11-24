@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { arr, bool, compile, obj, oneOf, opt, str, type Schema } from '@earendil-works/pi-schema'
+import { arr, bool, compile, int, obj, oneOf, opt, str, type Schema } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { THINKING_LEVELS } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
@@ -54,6 +54,7 @@ export interface BotToolsHost {
   confirmAction: (title: string, message: string, ctx?: ExtensionContext, signal?: AbortSignal) => Promise<boolean>
   onSendMessage: (item: Extract<BotTimelineItem, { kind: 'assistant' }>) => Promise<void>
   onSideEffect: (toolName: string) => void
+  onTaskDelegated?: (taskId: string, issueNumbers?: number[]) => void
 }
 
 const sendMessageSchema = obj({
@@ -74,14 +75,16 @@ const startTaskSchema = obj({
   slug: opt(str({ minLength: 1 })),
   capabilities: opt(obj({ browser: opt(bool()) })),
   modelOverride: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
-  thinkingOverride: opt(oneOf(THINKING_LEVELS))
+  thinkingOverride: opt(oneOf(THINKING_LEVELS)),
+  issueNumbers: opt(arr(int({ minimum: 1 }), { description: 'Optional Kanban issue numbers (#N / @[issue:N]) this task addresses, linking the task on the board.' }))
 })
 
 const followupSchema = obj({
   taskId: str({ minLength: 1 }),
   instruction: str({ minLength: 1, description: 'Clear specification of what to continue, fix, or verify next in this task’s workspace.' }),
   modelOverride: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
-  thinkingOverride: opt(oneOf(THINKING_LEVELS))
+  thinkingOverride: opt(oneOf(THINKING_LEVELS)),
+  issueNumbers: opt(arr(int({ minimum: 1 }), { description: 'Optional Kanban issue numbers (#N / @[issue:N]) this task addresses, linking the task on the board.' }))
 })
 
 const openProjectSchema = obj({ path: str({ minLength: 1 }) })
@@ -320,9 +323,11 @@ export function createBotExtension(host: BotToolsHost) {
             capabilities: params.capabilities,
             modelOverride: params.modelOverride,
             thinkingOverride: params.thinkingOverride,
-            confirmSharedNonGitWrite
+            confirmSharedNonGitWrite,
+            ...(params.issueNumbers?.length ? { issueNumbers: params.issueNumbers } : {})
           }
           const ack = await host.taskManager.delegateTask(input, guard.mode, guard.check)
+          host.onTaskDelegated?.(ack.taskId, params.issueNumbers)
           return jsonResult(ack)
         } finally {
           guard.dispose()

@@ -135,6 +135,7 @@ async function fixture(): Promise<void> {
     await plugins.setPluginScopes('pig-web', [])
     await plugins.setPluginScopes('pig-settings', [])
     await plugins.setPluginScopes('pig-session', [])
+    await plugins.setPluginScopes('pig-kanban', [])
     const cwds = [
       join(root, 'project'),
       join(root, 'other'),

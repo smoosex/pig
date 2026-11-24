@@ -5,7 +5,7 @@
  */
 import { useId } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { FolderKanban, MessageCircleMore, Plus } from 'lucide-react'
+import { Columns3, FolderKanban, MessageCircleMore, Plus } from 'lucide-react'
 import type { SidebarTab } from '../../../../shared/api'
 import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
@@ -18,11 +18,13 @@ export function SidebarModeSwitch({
   tab,
   onSelect,
   onNewChat,
+  onNewIssue,
   actionDisabled
 }: {
   tab: SidebarTab
   onSelect: (next: SidebarTab) => void
   onNewChat: () => void
+  onNewIssue?: () => void
   actionDisabled: boolean
 }) {
   const t = useT()
@@ -40,10 +42,12 @@ export function SidebarModeSwitch({
         aria-label={t('sidebar.tabsAria')}
         className="rounded-full border border-glass-border bg-glass-prompt-foreground/6 p-0.5 solid:border-sidebar-border solid:bg-transparent"
       >
-        {(['projects', 'chats'] as const).map((mode) => {
+        {(['projects', 'chats', 'kanban'] as const).map((mode) => {
           const active = mode === tab
-          const Icon = mode === 'projects' ? FolderKanban : MessageCircleMore
-          const label = t(mode === 'projects' ? 'sidebar.projects' : 'sidebar.chats')
+          const Icon = mode === 'projects' ? FolderKanban : mode === 'chats' ? MessageCircleMore : Columns3
+          const label = t(
+            mode === 'projects' ? 'sidebar.projects' : mode === 'chats' ? 'sidebar.chats' : 'sidebar.kanban'
+          )
           return (
             <ToggleGroupItem
               key={mode}
@@ -89,6 +93,21 @@ export function SidebarModeSwitch({
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t('sidebar.newChat')}</TooltipContent>
+        </Tooltip>
+      ) : tab === 'kanban' && onNewIssue ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn('shrink-0 text-muted-foreground', sidebarButtonSurface)}
+              aria-label={t('sidebar.newIssue')}
+              onClick={onNewIssue}
+            >
+              <Plus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('sidebar.newIssue')}</TooltipContent>
         </Tooltip>
       ) : null}
     </header>

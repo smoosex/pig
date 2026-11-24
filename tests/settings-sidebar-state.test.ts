@@ -404,7 +404,7 @@ async function runFixture(name: string): Promise<void> {
     const switched: string[] = []
     const restoreModes: boolean[] = []
     let closes = 0
-    const setTab = (tab: 'chats' | 'projects') => switched.push(tab)
+    const setTab = (tab: import('../src/shared/api').SidebarTab) => { switched.push(tab) }
     const setRestoreMode = (chat: boolean) => restoreModes.push(chat)
     const closeSettings = () => { closes++ }
     useSessionsStore.setState({

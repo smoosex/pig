@@ -21,11 +21,13 @@ import { registerPermissionsIpc } from './permissions'
 import { registerSessionReader } from '../pi/session-read'
 import { registerSessionAgentIpc } from './session-agent'
 import { registerBotIpc } from './bot'
+import { registerKanbanIpc } from './kanban'
 
 export function registerIpc(): void {
   registerProjectIpc()
   registerSessionIpc()
   registerBookmarksIpc()
+  registerKanbanIpc()
   registerSessionReader()
   registerSessionAgentIpc()
   registerBotIpc()

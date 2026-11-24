@@ -38,6 +38,10 @@ describe('accelerators', () => {
   test('defaults follow the platform where the shell needs the macOS key', () => {
     expect(resolveShortcuts({}, true)['terminal.clear']).toBe('Mod+KeyK')
     expect(resolveShortcuts({}, false)['terminal.clear']).toBe('Mod+Shift+KeyK')
+    expect(resolveShortcuts({}, true)['kanban.toggle']).toBe('Mod+Shift+KeyK')
+    expect(resolveShortcuts({}, false)['kanban.toggle']).toBe('Mod+Alt+KeyK')
+    expect(shortcutProblem('kanban.toggle', 'Mod+Shift+KeyK', resolveShortcuts({}, true))).toBeNull()
+    expect(shortcutProblem('kanban.toggle', 'Mod+Alt+KeyK', resolveShortcuts({}, false))).toBeNull()
     expect(resolveShortcuts({}, false)['terminal.selectAll']).toBeNull()
     expect(resolveShortcuts({ 'tab.close': null }, true)['tab.close']).toBeNull()
   })

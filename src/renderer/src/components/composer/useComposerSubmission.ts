@@ -6,6 +6,7 @@ import { api, type PromptStreamingBehavior, type SessionPreviewFallback } from '
 import { useSessionsStore } from '../../stores/sessions'
 import { composerUserMessage, textToComposerDocument, trimComposer } from './document'
 import type { useComposerEditor } from './useComposerEditor'
+import { hasIssueMention } from './issue-mentions'
 import { hasTabMention } from './tab-mentions'
 import type { useComposerImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
@@ -72,7 +73,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const command = bashMode ? serialized.text.trim() : null
     if (command !== null) {
       const refusal = hasAttachments || images.length > 0 ? 'composer.bashAttachments'
-        : hasTabMention(document.editor.state.doc) ? 'composer.bashReferences' : null
+        : (hasTabMention(document.editor.state.doc) || hasIssueMention(document.editor.state.doc)) ? 'composer.bashReferences' : null
       if (refusal) setErrors((current) => ({ ...current, [target]: t(refusal) }))
       if (!command || refusal) return
     }

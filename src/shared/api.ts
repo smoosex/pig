@@ -14,7 +14,9 @@ import type { QuitApi } from './quit'
 import type { BookmarksApi } from './bookmarks'
 import type { SessionAgentUiApi } from './session-agent'
 import type { BotApi } from './bot'
+import type { KanbanApi } from './kanban'
 export type * from './bot'
+export type * from './kanban'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -124,8 +126,8 @@ export interface ProjectGroup {
   gitError?: string
 }
 
-/** Which list the left sidebar shows: the toggle in the title bar switches it. */
-export type SidebarTab = 'projects' | 'chats'
+/** Which list the left sidebar shows: projects, standalone chats, or the Kanban board. */
+export type SidebarTab = 'projects' | 'chats' | 'kanban'
 
 export interface SidebarPrefs {
   sidebarTab: SidebarTab
@@ -974,6 +976,7 @@ export type * from './processes'
 
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
   bookmarks: BookmarksApi
+  kanban: KanbanApi
   sessionAgent: SessionAgentUiApi
   bot: BotApi
   browser: import('./browser').BrowserApi

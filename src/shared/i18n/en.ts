@@ -245,10 +245,12 @@ export const en: Messages = {
     approvalMore: 'Other requests may be waiting'
   },
   sidebar: {
-    tabsAria: 'Projects / chats switch',
+    tabsAria: 'Projects / chats / board switch',
     projects: 'Projects',
     chats: 'Chats',
+    kanban: 'Board',
     newChat: 'New chat',
+    newIssue: 'New issue',
     chatsEmpty: 'Click + to start chatting',
     projectsEmpty: 'Add a project to get started',
     settings: 'Settings',
@@ -591,12 +593,13 @@ export const en: Messages = {
   shortcuts: {
     title: 'Shortcuts',
     description: 'Manage keyboard shortcuts',
-    groups: { global: 'Global', tabs: 'Tabs', composer: 'Composer', file: 'Files', terminal: 'Terminal', projectPicker: 'Add project' },
+    groups: { global: 'Global', tabs: 'Tabs', composer: 'Composer', file: 'Files', kanban: 'Board', terminal: 'Terminal', projectPicker: 'Add project' },
     actions: {
       sidebar: { toggleLeft: 'Toggle left sidebar', toggleRight: 'Toggle right sidebar' },
       settings: { toggle: 'Open or close settings' },
       project: { add: 'Add project' },
       bot: { toggle: 'Toggle Bot view', toggleTasks: 'Toggle Bot task drawer' },
+      kanban: { toggle: 'Toggle Kanban board', search: 'Search issues' },
       tab: {
         new: 'New session',
         close: 'Close current tab',
@@ -971,6 +974,7 @@ export const en: Messages = {
     groupSession: 'Sessions',
     groupBrowser: 'Browsers',
     groupTerminal: 'Terminals',
+    groupIssue: 'Board issues',
     groupFile: 'Files'
   },
   retry: {
@@ -1349,7 +1353,9 @@ export const en: Messages = {
     worktreeBadge: 'Bot',
     composer: {
       placeholder: 'Chat with your Bot, or delegate work in any project…',
-      mentionProject: 'Mention project',
+      mentionProject: 'Mention project or issue',
+      projectsGroup: 'Projects',
+      issuesGroup: 'Board issues',
       send: 'Send',
       stopTurn: 'Stop current turn',
       permissionLabel: 'Bot permission mode',
@@ -1403,5 +1409,79 @@ export const en: Messages = {
         puddle: 'Puddle'
       }
     }
+  },
+  kanban: {
+    title: 'Board',
+    openBoard: 'Open board',
+    newIssue: 'New issue',
+    editIssue: 'Issue details',
+    viewBoard: 'Board',
+    viewList: 'List',
+    switchToList: 'Switch to list view',
+    switchToBoard: 'Switch to board view',
+    searchIssues: 'Search issues',
+    searchPlaceholder: 'Search number, title or labels…',
+    allIssues: 'All issues',
+    unassigned: 'Unassigned',
+    unassignedHint: 'No project assigned',
+    projectsHeader: 'Projects',
+    unopenedProject: 'Closed',
+    showCanceled: 'Show canceled',
+    hiddenColumns: 'Hidden columns',
+    hideColumn: 'Hide column',
+    status: {
+      backlog: 'Backlog',
+      todo: 'Todo',
+      in_progress: 'In progress',
+      in_review: 'In review',
+      done: 'Done',
+      canceled: 'Canceled'
+    },
+    priority: {
+      none: 'No priority',
+      urgent: 'Urgent',
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low'
+    },
+    fields: {
+      title: 'Title',
+      titlePlaceholder: 'Issue title',
+      description: 'Description',
+      descriptionPlaceholder: 'Add description… (Markdown supported; paste images directly)',
+      status: 'Status',
+      priority: 'Priority',
+      project: 'Project',
+      labels: 'Labels',
+      labelsPlaceholder: 'Filter or create label…'
+    },
+    labelsCount: '{count} labels',
+    attachImage: 'Attach image (or paste directly)',
+    imageReadFailed: 'Could not read image',
+    createMore: 'Create more',
+    createLabel: 'Create',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    createdOn: 'Created {date}',
+    preview: 'Preview',
+    write: 'Write',
+    create: 'Create issue',
+    save: 'Save changes',
+    delete: 'Delete issue',
+    deleteConfirmTitle: 'Permanently delete issue #{number}?',
+    deleteConfirmDescription: 'This cannot be undone. Consider marking it as Canceled instead if it is simply no longer planned.',
+    deleteConfirmAction: 'Delete permanently',
+    locateInBoard: 'Locate on board',
+    startInSession: 'Work in session',
+    sendToBot: 'Send to Bot',
+    linkedWork: 'Linked activity',
+    linkedSession: 'Open session',
+    linkedTask: 'Task · {title}',
+    emptyTitle: 'No issues yet',
+    emptyDescription: 'Capture ideas, bugs or tasks, assign them to projects, and @-mention them in sessions and Bot.',
+    noMatches: 'No matching issues',
+    columnEmpty: 'No issues',
+    issueNotFound: 'Issue #{number} was not found or has been deleted',
+    loadFailed: 'Could not load board: {error}'
   }
 }

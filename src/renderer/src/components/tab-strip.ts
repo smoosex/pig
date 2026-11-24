@@ -79,6 +79,9 @@ export function halfSwitch(
   knownProjectCwds: ReadonlySet<string>
 ): HalfSwitch {
   const active = tabs.find((item) => item.id === activeTabId)
+  if (next === 'kanban') {
+    return { kind: 'none' }
+  }
   if (next === 'chats') {
     if (active && isChatScope(active)) return { kind: 'none' }
     const chats = tabs.filter(isChatScope)

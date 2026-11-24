@@ -51,12 +51,27 @@ const TERMINAL_NOTICE_KINDS = new Set<BotNotice['kind']>([
   'task_interrupted'
 ])
 
-function formatUserInputText(text: string, projectMentions?: string[]): string {
-  if (!projectMentions?.length) return text
-  const unique = [...new Set(projectMentions.filter(Boolean))]
-  if (unique.length === 0) return text
-  const prefix = `[Referenced projects: ${unique.join(', ')}]`
-  return text ? `${prefix}\n${text}` : prefix
+function formatUserInputText(
+  text: string,
+  projectMentions?: string[],
+  issueMentions?: number[]
+): string {
+  const prefixes: string[] = []
+  if (projectMentions?.length) {
+    const uniqueProjects = [...new Set(projectMentions.filter(Boolean))]
+    if (uniqueProjects.length > 0) {
+      prefixes.push(`[Referenced projects: ${uniqueProjects.join(', ')}]`)
+    }
+  }
+  if (issueMentions?.length) {
+    const uniqueIssues = [...new Set(issueMentions.filter((n) => Number.isSafeInteger(n) && n >= 1))]
+    if (uniqueIssues.length > 0) {
+      prefixes.push(`[Referenced issues: ${uniqueIssues.map((n) => `@[issue:${n}]`).join(', ')}]`)
+    }
+  }
+  if (prefixes.length === 0) return text
+  const header = prefixes.join('\n')
+  return text ? `${header}\n${text}` : header
 }
 
 export class BotDispatcher {
@@ -136,9 +151,10 @@ export class BotDispatcher {
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
     projectMentions?: string[]
+    issueMentions?: number[]
   }): Promise<BotTimelineItem> {
     const cleanText = input.text.trim()
-    if (!cleanText && !input.images?.length && !input.textAttachments?.length) {
+    if (!cleanText && !input.images?.length && !input.textAttachments?.length && !input.issueMentions?.length) {
       throw new Error('Message cannot be empty')
     }
 
@@ -149,10 +165,11 @@ export class BotDispatcher {
       ...(input.images?.length ? { images: input.images } : {}),
       ...(input.textAttachments?.length ? { textAttachments: input.textAttachments } : {}),
       ...(input.projectMentions?.length ? { projectMentions: input.projectMentions } : {}),
+      ...(input.issueMentions?.length ? { issueMentions: input.issueMentions } : {}),
       createdAt: Date.now()
     }
     await this.deps.appendTimeline(userItem)
-    const promptText = formatUserInputText(cleanText, input.projectMentions)
+    const promptText = formatUserInputText(cleanText, input.projectMentions, input.issueMentions)
 
     if (this.activeTurn) {
       if (this.activeTurn.kind === 'user' && !this.activeTurn.hasSideEffect) {

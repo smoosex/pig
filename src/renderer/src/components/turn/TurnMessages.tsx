@@ -12,6 +12,7 @@ import { Message, MessageContent } from '../ui/message'
 import { ImagePreview } from '../ImagePreview'
 import { MarkdownText } from '../MarkdownText'
 import { FileMentionChip, FileMentionContext } from '../FileMentionChip'
+import { renderTextWithIssueChips } from '../IssueMentionNode'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { UserMessageActions } from './UserMessageActions'
@@ -40,7 +41,7 @@ function InlinePastedText({
     <div className="whitespace-pre-wrap break-words">
       {segments.map((segment, index) =>
         segment.type === 'text' ? (
-          <span key={index}>{segment.text}</span>
+          <span key={index}>{renderTextWithIssueChips(segment.text)}</span>
         ) : segment.type === 'file' ? (
           <FileMentionChip key={index} path={segment.path} opensFile />
         ) : (
@@ -149,7 +150,7 @@ export const UserBubble = memo(function UserBubble({
                   </Button>
                 </PastedTextPreview>
               )) : null}
-              {!segments && text ? <div className="whitespace-pre-wrap">{text}</div> : null}
+              {!segments && text ? <div className="whitespace-pre-wrap">{renderTextWithIssueChips(text)}</div> : null}
             </BubbleContent>
           </Bubble>
         ) : null}

@@ -80,6 +80,8 @@ import { BotDispatcher, type BotPromptRequest } from './dispatcher'
 import { BOT_MAIN_DISABLED_TOOLS, createBotExtension } from './tools'
 import { projectTimelineItemToPeek, stripHiddenBotTags } from './projection'
 import { awaitCompactionBeforePrompt } from '../features/memory/proactive-compaction'
+import { extractIssueMentionNumbers } from '../../shared/kanban'
+import { kanban } from '../kanban/service'
 
 export class BotService {
   readonly store: BotStore
@@ -109,7 +111,14 @@ export class BotService {
   })
   private backendTracker = this.fallbackTasks
   private launchingSessions = new Set<string>()
-  private lastUserMessage: { text: string; images?: BotImageAttachment[]; textAttachments?: BotTextAttachment[]; projectMentions?: string[] } | null = null
+  private lastUserMessage: {
+    text: string
+    images?: BotImageAttachment[]
+    textAttachments?: BotTextAttachment[]
+    projectMentions?: string[]
+    issueMentions?: number[]
+  } | null = null
+  private activeTurnIssues = new Set<number>()
   private lastEmittedControlsKey: string | undefined = undefined
   private notificationLifetime = new AbortController()
 
@@ -332,6 +341,19 @@ export class BotService {
         },
         onSideEffect: (toolName) => {
           this.dispatcher.markSideEffect(toolName)
+        },
+        onTaskDelegated: (taskId, explicitIssueNumbers) => {
+          const linked = [
+            ...new Set([
+              ...(explicitIssueNumbers ?? []),
+              ...this.activeTurnIssues
+            ])
+          ]
+          if (linked.length > 0) {
+            void kanban.linkBotTask(linked, taskId).catch((error) => {
+              console.error('Kanban Bot task link failed:', error)
+            })
+          }
         }
       })
 
@@ -963,10 +985,34 @@ export class BotService {
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
     projectMentions?: string[]
+    issueMentions?: number[]
   }): Promise<BotTimelineItem> {
     await this.initialize()
-    this.lastUserMessage = input
-    return this.dispatcher.handleUserMessage(input)
+    const combinedIssues = [
+      ...new Set([
+        ...(input.issueMentions ?? []),
+        ...extractIssueMentionNumbers(input.text)
+      ])
+    ]
+    this.activeTurnIssues = new Set(combinedIssues)
+    // Auto-include any opened project cwds assigned to referenced issues so Bot knows the target repo immediately.
+    let resolvedProjects = input.projectMentions ? [...input.projectMentions] : []
+    if (combinedIssues.length > 0) {
+      const opened = new Set(await listOpenedCwds().catch(() => [] as string[]))
+      for (const num of combinedIssues) {
+        const issue = await kanban.getByNumber(num).catch(() => null)
+        if (issue?.projectCwd && opened.has(issue.projectCwd) && !resolvedProjects.includes(issue.projectCwd)) {
+          resolvedProjects.push(issue.projectCwd)
+        }
+      }
+    }
+    const enriched = {
+      ...input,
+      ...(resolvedProjects.length ? { projectMentions: resolvedProjects } : {}),
+      ...(combinedIssues.length ? { issueMentions: combinedIssues } : {})
+    }
+    this.lastUserMessage = enriched
+    return this.dispatcher.handleUserMessage(enriched)
   }
 
   async retryLastMessage(): Promise<BotTimelineItem | null> {

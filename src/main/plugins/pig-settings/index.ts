@@ -26,6 +26,7 @@ const bindings = obj({
   'project.add': optionalBinding,
   'bot.toggle': optionalBinding,
   'bot.toggleTasks': optionalBinding,
+  'kanban.toggle': optionalBinding,
   'tab.new': optionalBinding,
   'tab.close': optionalBinding,
   'tab.select1': optionalBinding,
@@ -39,6 +40,7 @@ const bindings = obj({
   'tab.selectLast': optionalBinding,
   'composer.focus': optionalBinding,
   'file.save': optionalBinding,
+  'kanban.search': optionalBinding,
   'terminal.clear': optionalBinding,
   'terminal.selectAll': optionalBinding,
   'projectPicker.addCurrent': optionalBinding

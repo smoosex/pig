@@ -25,7 +25,7 @@ import { SettingsCard, SettingsRow } from './SettingsFields'
 // Shared by the key buttons and the send toggle so their left edges line up.
 const KEY_WIDTH = 'w-40'
 
-const GROUPS: ShortcutGroup[] = ['global', 'tabs', 'composer', 'file', 'terminal', 'projectPicker']
+const GROUPS: ShortcutGroup[] = ['global', 'tabs', 'composer', 'file', 'kanban', 'terminal', 'projectPicker']
 
 /** What the recorder shows: a rejected key keeps recording, a conflict waits for the user's choice. */
 type Attempt = { accelerator: string; problem: ShortcutProblem }

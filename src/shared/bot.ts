@@ -197,6 +197,7 @@ export type BotTimelineItem =
       images?: BotImageAttachment[]
       textAttachments?: BotTextAttachment[]
       projectMentions?: string[]
+      issueMentions?: number[]
       createdAt: number
     }
   | {
@@ -299,6 +300,7 @@ export interface BotDelegateTaskInput {
   modelOverride?: BotModelOverride
   thinkingOverride?: ThinkingLevel
   confirmSharedNonGitWrite?: boolean
+  issueNumbers?: number[]
 }
 
 export interface BotDelegateTaskAck {
@@ -336,6 +338,7 @@ export interface BotApi {
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
     projectMentions?: string[]
+    issueMentions?: number[]
   }) => Promise<BotTimelineItem>
   retryLastMessage: () => Promise<BotTimelineItem | null>
   abortCurrentTurn: () => Promise<void>
