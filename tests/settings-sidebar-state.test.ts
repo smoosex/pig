@@ -424,6 +424,27 @@ async function runFixture(name: string): Promise<void> {
     assert.deepEqual(switched, ['projects', 'chats'])
     assert.deepEqual(restoreModes, [false, true])
     assert.equal(closes, 3)
+
+    let botOpens = 0
+    let botCloses = 0
+    const botNav = {
+      sessionId: 'bot-main',
+      openBot: () => { botOpens++ },
+      closeBot: () => { botCloses++ }
+    }
+    assert.equal(openNotifiedSession('bot-main', 'projects', setTab, setRestoreMode, closeSettings, botNav), true)
+    assert.equal(botOpens, 1)
+    assert.equal(botCloses, 0)
+    assert.equal(closes, 4)
+    assert.equal(selected.length, 3)
+
+    assert.equal(openNotifiedSession('closed', 'projects', setTab, setRestoreMode, closeSettings, botNav), false)
+    assert.equal(botCloses, 0)
+
+    assert.equal(openNotifiedSession('project', 'chats', setTab, setRestoreMode, closeSettings, botNav), true)
+    assert.equal(botCloses, 1)
+    assert.equal(closes, 5)
+    assert.equal(selected.at(-1), 'project')
     await GlobalRegistrator.unregister()
     return
   }

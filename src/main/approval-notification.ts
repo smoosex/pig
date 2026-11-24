@@ -8,6 +8,7 @@
  * last option, which always refuses; allowing means opening the session and reading the full request.
  */
 import { app, Notification, type BrowserWindow } from 'electron'
+import { currentBotSessionId } from './bot/lifecycle'
 import { t } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { focusNotifiedSession, isNotificationSessionVisible, onNotificationVisibilityChange } from './completion-visibility'
@@ -36,6 +37,7 @@ function rescheduleWindow(win: BrowserWindow): void {
 onNotificationVisibilityChange(rescheduleWindow)
 
 async function sessionTitle(sessionId: string): Promise<string> {
+  if (currentBotSessionId() === sessionId) return t('bot.title')
   const [{ getLive }, { notificationTitle }] = await Promise.all([
     import('./pi/session-registry'),
     import('./pi/session-preview')
@@ -88,7 +90,7 @@ function show(sessionId: string, owner: Owner, notice: ApprovalNotice, title: st
 
 async function refresh(sessionId: string, owner: Owner): Promise<void> {
   const head = owner.queue[0]
-  if (!head || owner.shown || !Notification.isSupported()) return
+  if (!head || owner.shown || !Notification?.isSupported?.()) return
   const { win } = owner
   if (win.isDestroyed() || isNotificationSessionVisible(win, sessionId)) return
   const [settings, title] = await Promise.all([loadPigSettings(), sessionTitle(sessionId)])

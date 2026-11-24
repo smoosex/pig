@@ -99,6 +99,20 @@ export class BotDispatcher {
     }
   }
 
+  isTakeoverOnlyTurn(): boolean {
+    return Boolean(
+      this.activeTurn?.kind === 'notice' &&
+      this.activeTurn.notices.length > 0 &&
+      this.activeTurn.notices.every((n) => n.kind === 'task_taken_over')
+    )
+  }
+
+  singleNoticeTaskId(): string | undefined {
+    if (this.activeTurn?.kind !== 'notice') return undefined
+    const ids = [...new Set(this.activeTurn.notices.map((n) => n.taskId))]
+    return ids.length === 1 ? ids[0] : undefined
+  }
+
   /**
    * Called when the Bot main session begins executing a tool. Re-shows the thinking indicator only
    * if the model genuinely starts substantive post-reply tool work (not send_message or fast-ack delegation).

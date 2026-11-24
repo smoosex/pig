@@ -4,6 +4,7 @@
  * single-timeline reset/archive, and background Managed Overlay session launcher.
  */
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { BrowserWindow } from 'electron'
@@ -27,6 +28,7 @@ import {
   type BotTextAttachment,
   type BotTimelineItem
 } from '../../shared/bot'
+import { t } from '../i18n'
 import { pigPath } from '../pig-dir'
 import { listOpenedCwds } from '../opened-projects'
 import { openProjectDirectory } from '../project-open'
@@ -54,7 +56,7 @@ import { getSessionAgentController } from '../pi/session-agent'
 import { sessionStopCoordinator, stopSessionExecution } from '../pi/session-stop'
 import { closeSessionProcesses } from '../processes'
 import { onPermissionsChanged, saveSessionPermission, sessionPermission } from '../permissions/store'
-import { delegateApprovals } from '../permissions/delegation'
+import { approvalDelegation, delegateApprovals } from '../permissions/delegation'
 import { createExtensionUI, listPendingApprovals, onApprovalLifecycle } from '../extension-ui'
 import {
   startModelRuntime,
@@ -70,13 +72,13 @@ import {
 import { onModelCatalogChanged } from '../pi/model-catalog'
 import { indexSessionFile, UnsupportedSessionFile } from '../pi/session-jsonl'
 import { fileSettings } from '../pi/session-controls'
-import { registerBotShutdown } from './lifecycle'
+import { registerBotShutdown, setCurrentBotSessionId } from './lifecycle'
 import { BotStore } from './store'
 import { BotNoticeQueue } from './notice-queue'
 import { BotTaskManager, type BotBackendLaunchParams, type BotBackendLaunchResult } from './task-manager'
 import { BotDispatcher, type BotPromptRequest } from './dispatcher'
 import { BOT_MAIN_DISABLED_TOOLS, createBotExtension } from './tools'
-import { projectTimelineItemToPeek } from './projection'
+import { projectTimelineItemToPeek, stripHiddenBotTags } from './projection'
 
 export class BotService {
   readonly store: BotStore
@@ -108,8 +110,17 @@ export class BotService {
   private launchingSessions = new Set<string>()
   private lastUserMessage: { text: string; images?: BotImageAttachment[]; textAttachments?: BotTextAttachment[]; projectMentions?: string[] } | null = null
   private lastEmittedControlsKey: string | undefined = undefined
+  private notificationLifetime = new AbortController()
 
-  constructor(private readonly botDir = pigPath('bot')) {
+  constructor(
+    private readonly botDir = pigPath('bot'),
+    private readonly notifyCompletion?: (
+      sessionId: string,
+      win: BrowserWindow,
+      signal: AbortSignal,
+      content: { title: string; reply: string }
+    ) => Promise<void>
+  ) {
     this.store = new BotStore(this.botDir)
     this.noticeQueue = new BotNoticeQueue(this.store.noticesFilePath)
     this.taskManager = new BotTaskManager({
@@ -198,6 +209,7 @@ export class BotService {
   private async initializeOnce(): Promise<void> {
     await mkdir(this.workspaceDir, { recursive: true, mode: 0o700 })
     const state = await this.store.ensureState()
+    setCurrentBotSessionId(state.sessionId)
     this.currentSurface = state.lastSurface
 
     // Ensure Bot main session defaults to full-access on first initialization (only if not yet explicitly set).
@@ -409,6 +421,26 @@ export class BotService {
     })
   }
 
+  private notificationWindow(): BrowserWindow | undefined {
+    if (this.sessionWindow && !this.sessionWindow.isDestroyed() && !this.sessionWindow.webContents.isDestroyed()) {
+      return this.sessionWindow
+    }
+    const candidates = [BrowserWindow.getFocusedWindow(), ...BrowserWindow.getAllWindows()]
+    return candidates.find((win): win is BrowserWindow => Boolean(win && !win.isDestroyed() && !win.webContents.isDestroyed()))
+  }
+
+  private async notifyBotReply(sessionId: string, title: string, reply: string): Promise<void> {
+    const win = this.notificationWindow()
+    if (!win) return
+    const signal = this.notificationLifetime.signal
+    if (this.notifyCompletion) {
+      await this.notifyCompletion(sessionId, win, signal, { title, reply })
+      return
+    }
+    const { sendCompletionNotification } = await import('../completion-notification')
+    await sendCompletionNotification(sessionId, win, signal, { title, reply })
+  }
+
   private async appendTimelineAndBroadcast(item: BotTimelineItem): Promise<void> {
     await this.store.appendTimelineItem(item)
     this.emit({ type: 'timeline_item', item })
@@ -418,7 +450,7 @@ export class BotService {
         this.unreadCount++
       }
       let meta: { statusBadge?: string; projectName?: string; taskId?: string } | undefined
-      const firstTaskId = item.taskIds?.[0]
+      const firstTaskId = item.taskIds?.[0] ?? this.dispatcher.singleNoticeTaskId()
       if (firstTaskId) {
         const task = await this.taskManager.getTask(firstTaskId)
         if (task) {
@@ -431,6 +463,20 @@ export class BotService {
       }
       const peek = projectTimelineItemToPeek(item, meta)
       this.emit({ type: 'peek', message: peek })
+
+      if (meta?.statusBadge !== 'taken_over' && !this.dispatcher.isTakeoverOnlyTurn()) {
+        const state = await this.store.readState().catch(() => null)
+        if (state) {
+          const title = meta?.projectName ? `${t('bot.title')} · ${meta.projectName}` : t('bot.title')
+          const rawReply = item.kind === 'assistant' ? item.content : item.text
+          const reply = stripHiddenBotTags(rawReply) || (item.kind === 'assistant' && item.attachments?.length
+            ? item.attachments.map((att) => att.name).join(', ')
+            : '')
+          void this.notifyBotReply(state.sessionId, title, reply).catch((error: unknown) => {
+            console.error('Could not send Bot completion notification:', error)
+          })
+        }
+      }
     }
   }
 
@@ -495,6 +541,7 @@ export class BotService {
     this.approvalRoutes.get(sessionId)?.()
     const releaseApprovalRoute = delegateApprovals(sessionId, {
       controllerId,
+      sourceTitle: `${basename(params.task.projectCwd)} · ${params.task.title}`,
       check: () => {
         if (!getLive(sessionId)) throw new Error('Managed session closed')
       },
@@ -529,6 +576,11 @@ export class BotService {
   }
 
   private async restoreManagedSession(sessionId: string): Promise<void> {
+    const releaseApproval = this.approvalRoutes.get(sessionId)
+    if (releaseApproval) {
+      this.approvalRoutes.delete(sessionId)
+      releaseApproval()
+    }
     const existing = this.restoringOverlays.get(sessionId)
     if (existing) return existing
     if (!managedOverlays.has(sessionId)) return
@@ -989,7 +1041,10 @@ export class BotService {
     }
 
     await this.store.archiveAndResetTimeline(oldState.sessionId)
+    this.notificationLifetime.abort()
+    this.notificationLifetime = new AbortController()
     const newSessionId = `bot-${randomUUID()}`
+    setCurrentBotSessionId(newSessionId)
     await saveSessionPermission(newSessionId, oldMode)
 
     const nextState = await this.store.updateState((s) => ({
@@ -1010,9 +1065,11 @@ export class BotService {
         release()
         continue
       }
+      const sourceTitle = approvalDelegation(targetSessionId)?.sourceTitle
       release()
       const nextRelease = delegateApprovals(targetSessionId, {
         controllerId: newSessionId,
+        ...(sourceTitle ? { sourceTitle } : {}),
         check: () => {
           if (!getLive(targetSessionId)) throw new Error('Managed session closed')
         },
@@ -1085,7 +1142,10 @@ export class BotService {
 
   async handleUserPromptInSession(sessionId: string): Promise<void> {
     await this.assertUserInputAvailable(sessionId)
-    if (managedOverlays.has(sessionId)) await this.taskManager.markSessionTakenOverOnUserPrompt(sessionId)
+    await this.taskManager.markSessionTakenOverOnUserPrompt(sessionId)
+    if (managedOverlays.has(sessionId) || this.approvalRoutes.has(sessionId)) {
+      await this.restoreManagedSession(sessionId)
+    }
   }
 
   settingsWindow(sessionId: string, manager?: object): BrowserWindow | undefined {
@@ -1096,6 +1156,9 @@ export class BotService {
   }
 
   async shutdown(): Promise<void> {
+    this.notificationLifetime.abort()
+    this.notificationLifetime = new AbortController()
+    setCurrentBotSessionId(null)
     await this.initialization?.catch(() => undefined)
     await this.sessionInitPromise?.catch(() => undefined)
     this.sessionWindow = null
@@ -1134,8 +1197,10 @@ export async function assertBotUserInputAvailable(sessionId: string): Promise<vo
 }
 
 export async function notifyBotUserPromptInSessionIfActive(sessionId: string): Promise<void> {
-  if (!singleton) return
-  await singleton.handleUserPromptInSession(sessionId)
+  if (!singleton && !managedOverlays.has(sessionId) && !existsSync(pigPath('bot', 'tasks.json'))) return
+  const service = botService()
+  await service.initialize()
+  await service.handleUserPromptInSession(sessionId)
 }
 
 export async function shutdownBotService(): Promise<void> {

@@ -14,7 +14,7 @@ import { cn } from '../../lib/utils'
 const AUTO_DISMISS_MS = 6_000
 const BUBBLE_WIDTH = 304
 
-export function BotPeekBubble() {
+export function BotPeekBubble({ hidden = false }: { hidden?: boolean } = {}) {
   const t = useT()
   const prefersReduced = useReducedMotion()
   const open = useBotStore((s) => s.open)
@@ -30,7 +30,7 @@ export function BotPeekBubble() {
   })
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const visible = !open && peek !== null
+  const visible = !open && !hidden && peek !== null
   const isApproval = peek?.message.kind === 'approval'
 
   // Anchor below the BotOrbButton with viewport clamping

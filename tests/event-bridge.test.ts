@@ -14,6 +14,7 @@ import {
   steeringMessagesForDisplay,
   queuePendingUserMessage
 } from '../src/main/pi/event-bridge'
+import { managedOverlays } from '../src/main/pi/managed-overlay-state'
 import { reconcileFollowUpRows } from '../src/renderer/src/chat/follow-ups'
 
 function fixture(
@@ -200,6 +201,27 @@ describe('completion notifications', () => {
     state.unsubscribe()
     state.emit({ type: 'agent_settled', aborted: false })
     expect(state.notifications).toEqual([])
+  })
+
+  test('suppresses completion notifications while Bot-managed and resumes after manual takeover', () => {
+    const state = fixture()
+    managedOverlays.set('test-session', { mode: 'write' })
+    try {
+      state.emit({ type: 'agent_start' })
+      state.emit(assistantEnd('stop', [{ type: 'text', text: 'Bot 托管期间回复' }]))
+      state.emit({ type: 'agent_settled', aborted: false })
+      expect(state.notifications).toEqual([])
+
+      managedOverlays.delete('test-session')
+      state.emit({ type: 'agent_start' })
+      state.emit(assistantEnd('stop', [{ type: 'text', text: '手动接手后回复' }]))
+      state.emit({ type: 'agent_settled', aborted: false })
+      expect(state.notifications).toEqual(['test-session'])
+      expect(state.notificationContents).toEqual([{ title: '测试会话', reply: '手动接手后回复' }])
+    } finally {
+      managedOverlays.delete('test-session')
+      state.unsubscribe()
+    }
   })
 })
 

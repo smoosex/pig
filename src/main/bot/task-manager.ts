@@ -777,8 +777,8 @@ export class BotTaskManager {
     // first stop cause, and Notice, and a newer generation is never detached.
     const lastRun = task.runs.at(-1)
     if (runId && lastRun?.runId !== runId) return task
-    const lastSessionId = task.runs.findLast((r) => r.sessionId)?.sessionId
-    if (lastSessionId) await this.deps.restoreSessionCapabilities?.(lastSessionId)
+    const sessionIds = [...new Set(task.runs.map((r) => r.sessionId).filter((id): id is string => Boolean(id)))]
+    for (const sessionId of sessionIds) await this.deps.restoreSessionCapabilities?.(sessionId)
     const updated = await this.deps.store.updateTasks((tasks) => {
       const target = tasks.find((t) => t.taskId === taskId)!
       if (target.activeRunId || target.runs.at(-1)?.runId !== lastRun?.runId || target.status === 'taken_over') {

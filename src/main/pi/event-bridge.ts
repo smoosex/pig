@@ -7,6 +7,7 @@ import { GenerationSampler } from './generation-stats'
 import { LiveRunTracker } from './live-run-state'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
+import { managedOverlays } from './managed-overlay-state'
 import { notificationTitle } from './session-preview'
 
 let eventCursor = 0
@@ -41,7 +42,9 @@ async function notifyOnCompletion(
   signal: AbortSignal,
   content: { title: string; reply: string }
 ): Promise<void> {
+  if (managedOverlays.has(sessionId)) return
   const { sendCompletionNotification } = await import('../completion-notification')
+  if (managedOverlays.has(sessionId)) return
   await sendCompletionNotification(sessionId, win, signal, content)
 }
 
@@ -402,7 +405,7 @@ export function bridgeEvents(
     if (event.type === 'agent_settled') {
       activeRuns.delete(session)
       activeRunTrackers.delete(session)
-      if (windowReady && runActive && lastAnswerSucceeded && !event.aborted) {
+      if (windowReady && runActive && lastAnswerSucceeded && !event.aborted && !managedOverlays.has(sessionId)) {
         void notify(sessionId, win, lifetime.signal, { title: notificationTitle(session), reply: lastReply }).catch((error: unknown) => {
           console.error('Could not send completion notification:', error)
         })

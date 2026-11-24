@@ -1,11 +1,12 @@
 /** Desktop notifications belong to main; the renderer only receives a click target. */
-import { Notification, type BrowserWindow } from 'electron'
+import * as electron from 'electron'
+import type { BrowserWindow } from 'electron'
 import { t } from './i18n'
 import { loadPigSettings } from './pig-settings'
 import { focusNotifiedSession, isNotificationSessionVisible } from './completion-visibility'
 
 // Keep native notifications alive until dismissed; macOS removes them when the object is collected.
-const activeNotifications = new Set<Notification>()
+const activeNotifications = new Set<electron.Notification>()
 
 export async function sendCompletionNotification(
   sessionId: string,
@@ -13,7 +14,8 @@ export async function sendCompletionNotification(
   signal: AbortSignal,
   content: { title: string; reply: string }
 ): Promise<void> {
-  if (signal.aborted || win.isDestroyed() || isNotificationSessionVisible(win, sessionId) || !Notification.isSupported()) return
+  const Notification = electron.Notification
+  if (signal.aborted || win.isDestroyed() || isNotificationSessionVisible(win, sessionId) || !Notification?.isSupported?.()) return
   if (!(await loadPigSettings()).completionNotifications) return
   if (signal.aborted || win.isDestroyed() || win.webContents.isDestroyed() || isNotificationSessionVisible(win, sessionId)) return
 

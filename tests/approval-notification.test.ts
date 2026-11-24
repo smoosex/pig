@@ -36,8 +36,10 @@ async function runFixture(): Promise<void> {
         : undefined
     }))
     const { trackApproval, retireApproval } = await import('../src/main/approval-notification')
+    const { setCurrentBotSessionId } = await import('../src/main/bot/lifecycle')
     const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
     const { updatePigSettings } = await import('../src/main/pig-settings')
+    const { t } = await import('../src/main/i18n')
     const poll = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
     const waitForNotifications = async (count: number): Promise<void> => {
       const deadline = performance.now() + 2_000
@@ -127,6 +129,26 @@ async function runFixture(): Promise<void> {
     trackApproval('chat-1', win, notice('e'))
     retireApproval('chat-1', 'e')
     await expectNoNewNotifications(4, 'a request finished before the check never shows')
+
+    setCurrentBotSessionId('bot-1')
+    try {
+      trackApproval('bot-1', win, {
+        id: 'bot-a',
+        title: 'Run command?',
+        options: ['Approve', 'Deny'],
+        sourceTitle: 'pig · Fix notifications',
+        reply: () => retireApproval('bot-1', 'bot-a')
+      })
+      await waitForNotifications(5)
+      const botNotif = FakeNotification.instances[4]
+      assert.equal(botNotif.options.title, t('bot.title'))
+      assert.match(botNotif.options.body, /pig · Fix notifications · Run command\?/)
+      botNotif.emit('click')
+      assert.deepEqual(sent.at(-1), ['notification:click', 'bot-1'])
+      retireApproval('bot-1', 'bot-a')
+    } finally {
+      setCurrentBotSessionId(null)
+    }
   } finally {
     if (previous === undefined) delete process.env.PIG_DIR
     else process.env.PIG_DIR = previous

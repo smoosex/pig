@@ -332,8 +332,9 @@ export default function App() {
     if (store.loaded) void store.load()
   }), [])
 
+  const botSessionId = useBotStore((s) => s.state?.sessionId ?? null)
   const notificationVisibilityKey = JSON.stringify(visibleNotificationSessions(
-    openTabs, activeTabId, splitPaneNodes.map((pane) => pane.tabId), settingsOpen || botOpen
+    openTabs, activeTabId, splitPaneNodes.map((pane) => pane.tabId), settingsOpen, { open: botOpen, sessionId: botSessionId }
   ))
   useEffect(() => {
     void api.setVisibleNotificationSessions(JSON.parse(notificationVisibilityKey) as string[]).catch((error: unknown) => {
@@ -342,8 +343,19 @@ export default function App() {
   }, [notificationVisibilityKey])
 
   useEffect(() => api.onNotificationClick((sessionId) => {
-    useBotStore.getState().closeBot()
-    openNotifiedSession(sessionId, sidebarTab, setSidebarTab, setWorkspaceRestoreMode, () => setSettingsOpen(false))
+    const bot = useBotStore.getState()
+    openNotifiedSession(
+      sessionId,
+      sidebarTab,
+      setSidebarTab,
+      setWorkspaceRestoreMode,
+      () => setSettingsOpen(false),
+      {
+        sessionId: bot.state?.sessionId ?? null,
+        openBot: () => bot.openBot(),
+        closeBot: () => bot.closeBot()
+      }
+    )
   }), [sidebarTab, setSidebarTab, setWorkspaceRestoreMode])
 
   useEffect(() => {
@@ -540,7 +552,7 @@ export default function App() {
       <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
-      <BotPeekBubble />
+      <BotPeekBubble hidden={settingsOpen} />
       <div data-app-surface data-modal-blur-root className="flex h-full flex-col transition-[background-color,filter] duration-200 ease-in-out motion-reduce:transition-none solid:bg-background">
         {botOpen && !settingsOpen ? (
           <BotPage

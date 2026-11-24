@@ -10,10 +10,14 @@ const tabs = [
   { id: 'browser', kind: 'browser', loadState: 'ready' },
   { id: 'cold', kind: 'project', loadState: 'cold' }
 ] as const
-const visible = (active: string | null, panes: string[] = [], settings = false) =>
-  visibleNotificationSessions([...tabs], active, panes, settings)
+const visible = (
+  active: string | null,
+  panes: string[] = [],
+  settings = false,
+  bot?: { open: boolean; sessionId: string | null }
+) => visibleNotificationSessions([...tabs], active, panes, settings, bot)
 
-test('notification visibility follows the displayed single tab or split panes', () => {
+test('notification visibility follows the displayed single tab, split panes, and Bot surface', () => {
   expect(visible('chat')).toEqual(['chat'])
   expect(visible('project')).toEqual(['project'])
   expect(visible('chat', ['chat', 'project', 'browser'])).toEqual(['chat', 'project'])
@@ -22,6 +26,13 @@ test('notification visibility follows the displayed single tab or split panes', 
   expect(visible('browser')).toEqual([])
   expect(visible('cold')).toEqual([])
   expect(visible(null)).toEqual([])
+
+  expect(visible('project', [], false, { open: false, sessionId: 'bot-1' })).toEqual(['project', 'bot-1'])
+  expect(visible(null, [], false, { open: false, sessionId: 'bot-1' })).toEqual(['bot-1'])
+  expect(visible('project', ['chat', 'project'], false, { open: true, sessionId: 'bot-1' })).toEqual(['bot-1'])
+  expect(visible('project', [], false, { open: true, sessionId: null })).toEqual([])
+  expect(visible('project', [], true, { open: true, sessionId: 'bot-1' })).toEqual([])
+  expect(visible('project', [], true, { open: false, sessionId: 'bot-1' })).toEqual([])
 })
 
 test('notification visibility is window-local and cleared on document loss', () => {

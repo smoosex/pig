@@ -1,6 +1,7 @@
 /** Task-scoped approval routing. A route borrows grants, never copies them or changes a mode. */
 export interface ApprovalDelegation {
   controllerId: string
+  sourceTitle?: string
   check(): void
   allows(keys: readonly string[]): boolean
 }
@@ -11,6 +12,7 @@ export function delegateApprovals(target: string, spec: ApprovalDelegation): () 
   if (target === spec.controllerId || routes.has(target) || routes.has(spec.controllerId) || [...routes.values()].some(route => route.controllerId === target)) throw new Error('Recursive or concurrent approval delegation is not allowed')
   const route: ApprovalDelegation = {
     controllerId: spec.controllerId,
+    ...(spec.sourceTitle ? { sourceTitle: spec.sourceTitle } : {}),
     check() {
       if (routes.get(target) !== route) throw new Error('Session approval delegation expired')
       spec.check()

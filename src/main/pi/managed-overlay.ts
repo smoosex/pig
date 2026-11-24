@@ -1,14 +1,10 @@
 /** Temporary Bot runtime policy; ordinary session preferences and permissions are separate. */
 import type { PermissionMode } from '../../shared/permissions'
 import { sessionPermission } from '../permissions/store'
+import { managedOverlays, type ManagedOverlay } from './managed-overlay-state'
 import { readSessionCapabilities } from './session-capabilities'
 
-export interface ManagedOverlay {
-  mode: 'read' | 'write'
-  browser?: boolean
-}
-
-export const managedOverlays = new Map<string, ManagedOverlay>()
+export { managedOverlays, type ManagedOverlay }
 
 export function runtimePermissionMode(sessionId: string): PermissionMode {
   return managedOverlays.get(sessionId)?.mode === 'read' ? 'read-only' : sessionPermission(sessionId).mode

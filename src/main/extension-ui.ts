@@ -176,7 +176,10 @@ export async function createExtensionUI(
       if (opts?.timeout !== undefined) timer = setTimeout(cancel, opts.timeout)
       send({ kind: 'prompt', id, owner, ...fields, ...(delegated ? { approvalController: delegated.controllerId } : {}) })
       if (fields.approval && fields.options) {
-        const notice = { id, title: fields.title, options: fields.options, sourceTitle: delegated ? `Session ${owner}${fields.approvalSource ? ` / ${fields.approvalSource.title}` : ''}` : fields.approvalSource?.title, reply: finish }
+        const sourceTitle = delegated
+          ? [delegated.sourceTitle ?? `Session ${owner}`, fields.approvalSource?.title].filter(Boolean).join(' / ')
+          : fields.approvalSource?.title
+        const notice = { id, title: fields.title, options: fields.options, sourceTitle, reply: finish }
         approvalNotifications((module) => module.trackApproval(noticeOwner, win, notice))
       }
     })
