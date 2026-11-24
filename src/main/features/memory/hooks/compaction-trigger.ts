@@ -93,18 +93,22 @@ export function maybeTriggerCompaction(runtime: Runtime, ctx: CompactionTriggerC
 				);
 				return;
 			}
+			runtime.proactiveCompactionRunning = true;
 			ctx.compact({
 				onComplete: () => {
+					runtime.proactiveCompactionRunning = false;
 					runtime.compactInFlight = false;
 					if (runtime.notifications === notifications && showNotifications) notifications?.notify("Observational memory: compaction complete", "info");
 				},
 				onError: (error: { message: string }) => {
+					runtime.proactiveCompactionRunning = false;
 					runtime.compactInFlight = false;
 					if (runtime.proactiveCompactionAborted) return;
 					if (runtime.notifications === notifications) notifications?.notify(`Observational memory: ${error.message}`, "error");
 				},
 			});
 		} catch (error) {
+			runtime.proactiveCompactionRunning = false;
 			runtime.compactInFlight = false;
 			const msg = error instanceof Error ? error.message : String(error);
 			if (runtime.notifications === notifications) notifications?.notify(`Observational memory: compact threw: ${msg}`, "error");

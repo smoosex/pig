@@ -79,6 +79,7 @@ import { BotTaskManager, type BotBackendLaunchParams, type BotBackendLaunchResul
 import { BotDispatcher, type BotPromptRequest } from './dispatcher'
 import { BOT_MAIN_DISABLED_TOOLS, createBotExtension } from './tools'
 import { projectTimelineItemToPeek, stripHiddenBotTags } from './projection'
+import { awaitCompactionBeforePrompt } from '../features/memory/proactive-compaction'
 
 export class BotService {
   readonly store: BotStore
@@ -415,6 +416,7 @@ export class BotService {
       const extra = req.textAttachments.map((att) => `\n\n[Attached text]\n${att.text}`).join('')
       text = `${text}${extra}`
     }
+    await awaitCompactionBeforePrompt(session.sessionId, session)
     await session.prompt(text, {
       ...(images?.length ? { images } : {}),
       ...(req.streamingBehavior ? { streamingBehavior: req.streamingBehavior } : {})

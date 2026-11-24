@@ -9,6 +9,7 @@ import { controlsFor } from '../pi/session-controls'
 import { memoryStatus, memoryView } from '../features/memory/details'
 import type { Entry } from '../features/memory/session-ledger'
 import { applyConversationFeatures } from '../features/apply'
+import { isObservationalMemoryEnabledForCwd } from '../features/runtime'
 import type { FileMemorySettingsPatch, MemorySettingsPatch } from '../../shared/api'
 import { MemoryFiles, memoryRoot } from '../features/memory/long-term/files'
 import { join } from 'node:path'
@@ -61,8 +62,8 @@ export function registerConversationFeaturesIpc(): void {
   ipcMain.handle('memory:enabled', (event, sessionId: string) => {
     assertUi(event)
     if (typeof sessionId !== 'string') throw new Error('Session id is required')
-    ownedSession(event, sessionId)
-    return true
+    const session = ownedSession(event, sessionId)
+    return isObservationalMemoryEnabledForCwd(session.cwd)
   })
   ipcMain.handle('memory:get', (event) => { assertUi(event); return getMemorySettings() })
   ipcMain.handle('memory:defaults', (event) => { assertUi(event); return getMemoryDefaults() })

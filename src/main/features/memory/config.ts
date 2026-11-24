@@ -109,6 +109,8 @@ export interface Config {
 	showWorkerNotifications: boolean;
 	/** Pig-specific: gate the proactive-compaction notifications separately from worker ones. */
 	showCompactionNotifications: boolean;
+	/** Pig-specific: whether project/worktree sessions also run OM (default true; Bot & standalone Chats always run OM). */
+	enableInProjects: boolean;
 	passive: boolean;
 	debugLog: boolean;
 	/**
@@ -124,16 +126,17 @@ export const DEFAULTS: Config = {
 	observeAfterTokens: 10_000,
 	reflectAfterTokens: 20_000,
 	compactAfterTokens: 81_000,
-	compactAfterTokensMode: "calibrated",
-	compactAfterTokensRatio: 0.68,
+	compactAfterTokensMode: "ratio",
+	compactAfterTokensRatio: 0.7,
 	observationsPoolMaxTokens: 20_000,
 	observationsPoolTargetTokens: 10_000,
 	agentMaxTurns: 16,
 	agentMaxTokens: 32_000,
-	compactionCatchUpMaxChunks: 2,
+	compactionCatchUpMaxChunks: 0,
 	consolidateWhenIdle: false,
 	showWorkerNotifications: false,
 	showCompactionNotifications: false,
+	enableInProjects: true,
 	passive: false,
 	debugLog: false,
 	piAutoCompactionEnabled: true,
@@ -356,6 +359,7 @@ function normalizeSettingsConfig(value: Record<string, unknown>): Partial<Config
 	if (typeof value.consolidateWhenIdle === "boolean") normalized.consolidateWhenIdle = value.consolidateWhenIdle;
 	if (typeof value.showWorkerNotifications === "boolean") normalized.showWorkerNotifications = value.showWorkerNotifications;
 	if (typeof value.showCompactionNotifications === "boolean") normalized.showCompactionNotifications = value.showCompactionNotifications;
+	if (typeof value.enableInProjects === "boolean") normalized.enableInProjects = value.enableInProjects;
 	if (typeof value.passive === "boolean") normalized.passive = value.passive;
 	if (typeof value.debugLog === "boolean") normalized.debugLog = value.debugLog;
 	const model = normalizeModel(value.model);

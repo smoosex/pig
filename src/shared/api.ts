@@ -193,7 +193,7 @@ export interface SessionRef {
   created?: boolean
 }
 
-export type CompactionReason = 'manual' | 'threshold' | 'overflow'
+export type CompactionReason = 'manual' | 'memory' | 'threshold' | 'overflow'
 
 export interface LiveCompaction {
   id: string
@@ -818,6 +818,7 @@ export interface MemorySettings {
   showWorkerNotifications?: boolean
   showCompactionNotifications?: boolean
   consolidateWhenIdle?: boolean
+  enableInProjects?: boolean
   passive?: boolean
   debugLog?: boolean
 }

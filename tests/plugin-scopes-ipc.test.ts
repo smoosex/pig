@@ -57,10 +57,12 @@ async function fixture(): Promise<void> {
       assert.match(await invoke('memory:detail', sessionId, 'view') as string, /No visible observations/)
     }
     await assert.rejects(invoke('memory:detail', 'other-window', 'view'), /another window/)
-    const memorySettings = { observeAfterTokens: 900, compactAfterTokensMode: 'ratio' }
+    const memorySettings = { observeAfterTokens: 900, compactAfterTokensMode: 'ratio', enableInProjects: false }
     await invoke('memory:observational:set', memorySettings)
     assert.deepEqual(await invoke('memory:observational:get'), memorySettings)
-    assert.match(await invoke('memory:detail', 'chat', 'status') as string, /136,000/)
+    assert.equal(await invoke('memory:enabled', 'project'), false)
+    assert.equal(await invoke('memory:enabled', 'chat'), true)
+    assert.match(await invoke('memory:detail', 'chat', 'status') as string, /140,000/)
     assert.equal(refreshes, 1, 'memory settings still reload idle sessions')
     await invoke('memory:set', { fileMemory: { enabled: true } })
     assert.equal(refreshes, 2)

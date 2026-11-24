@@ -119,6 +119,7 @@ export class Runtime {
 	private consolidationAbortController: AbortController | undefined;
 	consolidationPhase: ConsolidationPhase | undefined;
 	compactInFlight = false;
+	proactiveCompactionRunning = false;
 	proactiveCompactionAborted = false;
 	branchRevision = 0;
 	compactHookInFlight = false;

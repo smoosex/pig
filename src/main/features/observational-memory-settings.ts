@@ -19,7 +19,7 @@ const integerKeys = [
 // 0 is meaningful here: it disables the synchronous observer catch-up.
 const nonNegativeIntegerKeys = ['compactionCatchUpMaxChunks'] as const
 const booleanKeys = [
-  'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog', 'consolidateWhenIdle'
+  'enableInProjects', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog', 'consolidateWhenIdle'
 ] as const
 
 const memoryDefaultKeys = [

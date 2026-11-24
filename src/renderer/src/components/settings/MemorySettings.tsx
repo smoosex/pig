@@ -1,5 +1,6 @@
 /** Standalone configuration of built-in observational memory. */
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api, type MemorySettings, type MemorySettingsPatch } from '../../ipc/api'
 import { useModelCatalogStore } from '../../stores/model-catalog'
 import { useT } from '../../hooks/useT'
@@ -8,6 +9,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Switch } from '../ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { ModelThinkingPicker, supportedThinking } from './ModelThinkingPicker'
 
@@ -22,7 +24,13 @@ const numberSettingKeys = [...numericKeys, ...nonNegativeKeys] as const
 const booleanKeys = ['consolidateWhenIdle', 'showWorkerNotifications', 'showCompactionNotifications', 'passive', 'debugLog'] as const
 const modelKeys = ['model', 'fallbackModel'] as const
 
-export function MemorySettings({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
+export function MemorySettings({
+  actionsContainer,
+  onBusyChange
+}: {
+  actionsContainer?: HTMLElement | null
+  onBusyChange?: (busy: boolean) => void
+}) {
   const t = useT()
   const [config, setConfig] = useState<MemorySettings>()
   const [defaults, setDefaults] = useState<Record<string, number>>({})
@@ -68,8 +76,33 @@ export function MemorySettings({ onBusyChange }: { onBusyChange?: (busy: boolean
   }
 
   const disabled = !config || busy
+  const projectAction = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <label
+          data-disabled={disabled}
+          className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50"
+        >
+          <span>{t('plugins.enableInProjects')}</span>
+          <Switch
+            size="sm"
+            aria-label={t('plugins.enableInProjects')}
+            disabled={disabled}
+            checked={config?.enableInProjects ?? true}
+            onCheckedChange={(checked) => void change({ enableInProjects: checked })}
+          />
+        </label>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="end" className="max-w-xs">
+        {t('plugins.enableInProjectsHint')}
+      </TooltipContent>
+    </Tooltip>
+  )
   return (
     <div className="flex flex-col gap-3">
+      {actionsContainer === undefined
+        ? <div className="flex items-center justify-end">{projectAction}</div>
+        : actionsContainer && createPortal(projectAction, actionsContainer)}
       {error ? <p role="alert" className="whitespace-pre-wrap text-sm text-destructive">{error}</p> : null}
       {!config && error ? <Button variant="outline" size="sm" className="self-start" disabled={busy} onClick={() => setReloadKey(key => key + 1)}>{t('longTerm.reload')}</Button> : null}
       <SettingsCard>

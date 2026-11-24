@@ -302,8 +302,8 @@ export function subscribeSessionEvents(): () => void {
         setRetryNotice(sessionId, null)
         break
       case 'compaction_start': {
-        const reason = event.reason
-        if (reason !== 'manual' && reason !== 'threshold' && reason !== 'overflow') break
+        const reason = event.reason as string | undefined
+        if (reason !== 'manual' && reason !== 'memory' && reason !== 'threshold' && reason !== 'overflow') break
         const startedAt = Date.now()
         // Pi runs automatic compaction between the work and the summary, so the turn's work clock
         // stops here: it is frozen at whatever the turn had worked out, summaries already excluded.

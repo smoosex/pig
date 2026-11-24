@@ -7,6 +7,7 @@ import { GenerationSampler } from './generation-stats'
 import { LiveRunTracker } from './live-run-state'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
 import type { PastedTextDisplayMetadata } from '../../shared/pasted-text'
+import { isProactiveMemoryCompaction } from '../features/memory/proactive-compaction'
 import { managedOverlays } from './managed-overlay-state'
 import { notificationTitle } from './session-preview'
 
@@ -379,7 +380,9 @@ export function bridgeEvents(
       }
     }
     let enriched: object = event
-    if (event.type === 'message_end' && message?.role === 'assistant' && generation) {
+    if (event.type === 'compaction_start' && event.reason === 'manual' && isProactiveMemoryCompaction(sessionId)) {
+      enriched = { ...event, reason: 'memory' as const }
+    } else if (event.type === 'message_end' && message?.role === 'assistant' && generation) {
       enriched = { ...event, message: { ...message, generation } }
     } else if (
       (event.type === 'message_start' || event.type === 'message_end') &&

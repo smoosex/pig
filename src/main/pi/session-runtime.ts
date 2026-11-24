@@ -59,7 +59,7 @@ export async function createSessionRuntime(
       pigDocsExtension,
       permissions,
       ...(options.identity === false ? [] : [
-        ...conversationFeatureFactories().map((extension) => {
+        ...conversationFeatureFactories({ cwd, isolatedWorkspace: options.isolatedWorkspace }).map((extension) => {
           const { name, factory } = typeof extension === 'function' ? { name: extension.name, factory: extension } : extension
           return { name, factory: async (pi: Parameters<ExtensionFactory>[0]) => {
             if (options.conversationFeatures?.() !== false) await factory(pi)

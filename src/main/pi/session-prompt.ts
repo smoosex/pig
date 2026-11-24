@@ -1,10 +1,19 @@
 import { createPastedTextDeliveryMetadata, PASTED_TEXT_CUSTOM_TYPE } from '../../shared/pasted-text'
+import { awaitCompactionBeforePrompt } from '../features/memory/proactive-compaction'
 import { worktrees } from '../project-worktrees'
 import { nameWorktreeBranch } from './branch-namer'
 import { queuePendingUserMessage } from './event-bridge'
 import { normalizeSessionPrompt, type SessionPromptInput } from './prompt-input'
 import { activateSessionInput } from './session-registry'
+import { sessionStopCoordinator } from './session-stop'
 import { isReviewReturning } from '../plugins/pig-ui'
+
+const compactionWaiters = new Map<string, Set<AbortController>>()
+sessionStopCoordinator.registerParticipant({
+  onBeforeStop: (sessionId) => {
+    for (const controller of compactionWaiters.get(sessionId) ?? []) controller.abort()
+  }
+})
 
 /**
  * Submit a prompt and attach display metadata when Pi accepts its user message.
@@ -24,6 +33,25 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
     }
     worktrees.assertAvailable(cwd)
     if (agentSession.isBashRunning) throw new Error('Session is running a bash command')
+    if (agentSession.isCompacting) {
+      const waiter = new AbortController()
+      let set = compactionWaiters.get(sessionId)
+      if (!set) {
+        set = new Set()
+        compactionWaiters.set(sessionId, set)
+      }
+      set.add(waiter)
+      try {
+        await awaitCompactionBeforePrompt(sessionId, agentSession, waiter.signal)
+      } finally {
+        set.delete(waiter)
+        if (set.size === 0) compactionWaiters.delete(sessionId)
+      }
+      options.beforeSubmit?.()
+      if (isReviewReturning(sessionId)) throw new Error('Cannot submit a prompt while returning from review. Wait for the return to finish and retry.')
+      worktrees.assertAvailable(cwd)
+      if (agentSession.isBashRunning) throw new Error('Session is running a bash command')
+    }
     // Pi decides whether to start or queue after its input hooks; a preflight busy snapshot can be stale.
     const streamingBehavior =
       input.streamingBehavior === 'steer' || input.streamingBehavior === 'followUp'

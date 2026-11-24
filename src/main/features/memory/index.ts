@@ -27,6 +27,7 @@ export default async function observationalMemory(pi: ExtensionAPI) {
 	});
 	pi.on('session_shutdown', (_event, ctx) => {
 		runtime.cancelConsolidation();
+		runtime.proactiveCompactionRunning = false;
 		runtime.notifications = undefined;
 		registerMemoryRuntime(ctx.sessionManager.getSessionId());
 	});

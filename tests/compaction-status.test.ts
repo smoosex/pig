@@ -55,6 +55,7 @@ async function runFixture(): Promise<void> {
   assert.equal(await show([running()], { sessionId: null }), '', 'a row belongs to the session that reported it')
   assert.match(await show([running({ reason: 'threshold' })]), /Context is near its limit, compacting/)
   assert.match(await show([running({ reason: 'overflow' })]), /Context overflowed, compacting/)
+  assert.match(await show([running({ reason: 'memory' })]), /Organizing session memory/)
   assert.equal(await show([running()], { liveRuns: 1 }), '', 'a summary the transcript shows is not repeated')
 
   // Counting its own time, and stopping it goes through the session API.

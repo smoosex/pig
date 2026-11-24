@@ -29,8 +29,8 @@ async function idleFixture(cancel: boolean): Promise<void> {
   runtime.configLoaded = true
   Object.assign(runtime.config, {
     consolidateWhenIdle: true, passive: false, observeAfterTokens: 1,
-    reflectAfterTokens: 100_000, compactAfterTokens: 1, showWorkerNotifications: false,
-    showCompactionNotifications: false
+    reflectAfterTokens: 100_000, compactAfterTokens: 1, compactAfterTokensMode: 'calibrated',
+    showWorkerNotifications: false, showCompactionNotifications: false
   })
   const notifications: string[] = []
   runtime.notifications = { notify: (message) => notifications.push(message) }
@@ -110,7 +110,9 @@ if (process.argv.includes('--idle-fixture')) {
     const { maybeTriggerCompaction } = await import('../src/main/features/memory/hooks/compaction-trigger')
     const runtime = new Runtime()
     runtime.configLoaded = true
-    Object.assign(runtime.config, { consolidateWhenIdle: true, compactAfterTokens: 1, showCompactionNotifications: false })
+    Object.assign(runtime.config, {
+      consolidateWhenIdle: true, compactAfterTokens: 1, compactAfterTokensMode: 'calibrated', showCompactionNotifications: false
+    })
     const entries: Entry[] = [
       { type: 'message', id: 'source', message: { role: 'user', content: 'Observed content', timestamp: 1 } },
       { type: 'custom', id: 'coverage', customType: 'om.observations.recorded', data: { observations: [{

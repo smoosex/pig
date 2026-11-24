@@ -72,7 +72,7 @@ async function fixture(): Promise<void> {
       return reviewConfig
     },
     getMemorySettings: async () => ({}),
-    getMemoryDefaults: async () => ({ observeAfterTokens: 10000 }),
+    getMemoryDefaults: async () => ({ observeAfterTokens: 10000, compactAfterTokensRatio: 0.7, compactionCatchUpMaxChunks: 0 }),
     getObservationalMemorySettings: async () => {
       if (memoryReadFails) throw new Error('Memory read failed')
       return memoryConfig
@@ -207,6 +207,9 @@ async function fixture(): Promise<void> {
     assert.equal(document.querySelector('[data-slot="dialog-content"]'), null)
     const threshold = () => host.querySelector<HTMLInputElement>('[aria-label="观察阈值（token）"]')!
     assert.equal(threshold().placeholder, '10000')
+    assert.equal(host.querySelector<HTMLInputElement>('[aria-label="上下文比例（0～1）"]')?.placeholder, '0.7')
+    assert.equal(host.querySelector<HTMLInputElement>('[aria-label="最多补观察次数"]')?.placeholder, '0')
+    assert.equal(host.querySelector('[aria-label="在项目对话中启用"]')?.getAttribute('aria-checked'), 'true')
     assert.ok(host.querySelector('[aria-label="压缩阈值模式"]'))
     assert.ok(host.querySelector('[aria-label="被动模式"]'))
     assert.ok(host.querySelector('[aria-label="调试日志"]'))
@@ -382,6 +385,10 @@ async function fixture(): Promise<void> {
     assert.equal(document.querySelector('[role="dialog"]'), null)
     await switchFeature('会话记忆')
     assert.ok(configure.closest('[hidden]'), 'persona actions are hidden on the memory tab')
+    const projectToggle = host.querySelector<HTMLButtonElement>('[aria-label="在项目对话中启用"]')!
+    assert.ok(header.contains(projectToggle), 'project session toggle sits on the right side of the memory tab bar')
+    assert.equal(projectToggle.closest('[hidden]'), null)
+    assert.equal(projectToggle.getAttribute('aria-checked'), 'true')
     const idleDraft = host.querySelector<HTMLButtonElement>('[aria-label="仅在空闲时运行"]')!
     const previousIdle = idleDraft.getAttribute('aria-checked')
     await act(async () => { idleDraft.click() })
@@ -389,6 +396,7 @@ async function fixture(): Promise<void> {
     await switchFeature('人格')
     assert.equal(dirty, false)
     assert.equal(configure.closest('[hidden]'), null)
+    assert.ok(projectToggle.closest('[hidden]'), 'memory tab bar toggle hides when leaving the memory tab')
     await switchFeature('会话记忆')
     assert.equal(idleDraft.getAttribute('aria-checked'), previousIdle === 'true' ? 'false' : 'true')
     assert.equal(document.querySelector('[aria-label="人格 默认启用范围"]'), null)

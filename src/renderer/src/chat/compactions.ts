@@ -21,8 +21,9 @@ export function showsInTranscript(mark: LiveCompaction, runInTranscript: boolean
   return runInTranscript && mark.status !== 'failed'
 }
 
-/** The three reasons read differently to a reader: manual, near the limit, or already overflowing. */
+/** The reasons read differently to a reader: manual, idle OM maintenance, near the limit, or overflowing. */
 export function compactionReasonKey(reason: CompactionReason): MessageKey {
+  if (reason === 'memory') return 'chat.compactingMemory'
   if (reason === 'manual') return 'chat.compactingManual'
   if (reason === 'overflow') return 'chat.compactingOverflow'
   return 'chat.compactingThreshold'

@@ -225,8 +225,8 @@ export class LiveRunTracker {
         break
       }
       case 'compaction_start': {
-        const reason = event.reason
-        if (reason !== 'manual' && reason !== 'threshold' && reason !== 'overflow') break
+        const reason = event.reason as string | undefined
+        if (reason !== 'manual' && reason !== 'memory' && reason !== 'threshold' && reason !== 'overflow') break
         const summarized = this.liveCompactions.reduce(
           (sum, mark) => sum + (mark.endedAt == null ? 0 : mark.endedAt - mark.startedAt),
           0

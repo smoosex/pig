@@ -13,6 +13,7 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
   const t = useT()
   const [tab, setTab] = useState('persona')
   const [actionsContainer, setActionsContainer] = useState<HTMLDivElement | null>(null)
+  const [memoryActionsContainer, setMemoryActionsContainer] = useState<HTMLDivElement | null>(null)
   const [personaDirty, setPersonaDirty] = useState(false)
   const [personaBusy, setPersonaBusy] = useState(false)
   const [memoryBusy, setMemoryBusy] = useState(false)
@@ -29,13 +30,14 @@ export function PersonaMemoryPane({ onDirtyChange, onBusyChange }: {
         <TabsTrigger value="memory">{t('longTerm.observational')}</TabsTrigger>
         <TabsTrigger value="long-term">{t('longTerm.title')}</TabsTrigger>
       </TabsList>
-      <div ref={setActionsContainer} hidden={tab !== 'persona'} className="flex items-center gap-2" />
+      <div ref={setActionsContainer} hidden={tab !== 'persona'} className={tab === 'persona' ? 'flex items-center gap-2' : 'hidden'} />
+      <div ref={setMemoryActionsContainer} hidden={tab !== 'memory'} className={tab === 'memory' ? 'flex items-center gap-2' : 'hidden'} />
     </div>
     <TabsContent value="persona" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
       <PersonaSettings actionsContainer={actionsContainer} onDirtyChange={setPersonaDirty} onBusyChange={setPersonaBusy} />
     </TabsContent>
     <TabsContent value="memory" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
-      <MemorySettings onBusyChange={setMemoryBusy} />
+      <MemorySettings actionsContainer={memoryActionsContainer} onBusyChange={setMemoryBusy} />
     </TabsContent>
     <TabsContent value="long-term" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
       <LongTermMemorySettings onBusyChange={setLongTermBusy} onDirtyChange={setLongTermDirty} />
