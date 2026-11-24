@@ -22,6 +22,7 @@ import {
   Bot,
   Box,
   Check,
+  Copy,
   Eye,
   Inbox,
   Maximize2,
@@ -153,6 +154,9 @@ export function KanbanIssueDialog({
   )
 
   const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current) }, [])
   const [createMore, setCreateMore] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -512,6 +516,34 @@ export function KanbanIssueDialog({
                       <TooltipContent side="bottom">{t('kanban.locateInBoard')}</TooltipContent>
                     </Tooltip>
                   ) : null}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={t('kanban.copyIssue')}
+                        onClick={() => {
+                          void useKanbanStore
+                            .getState()
+                            .copyIssue(existingIssue.number)
+                            .then(
+                              () => {
+                                setCopied(true)
+                                if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+                                copyTimerRef.current = setTimeout(() => setCopied(false), 1500)
+                                toast.success(t('kanban.copiedIssue'))
+                              },
+                              (err) => toast.error(failureMessage(err))
+                            )
+                        }}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{t('kanban.copyIssue')}</TooltipContent>
+                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button

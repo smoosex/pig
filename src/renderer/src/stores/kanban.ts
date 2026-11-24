@@ -56,6 +56,7 @@ export interface KanbanStoreState {
   createIssue: (input: KanbanCreateInput) => Promise<KanbanIssue>
   updateIssue: (input: KanbanUpdateInput) => Promise<KanbanIssue>
   deleteIssue: (number: number) => Promise<void>
+  copyIssue: (number: number) => Promise<string>
 }
 
 let unsubscribeKanban: (() => void) | null = null
@@ -199,5 +200,9 @@ export const useKanbanStore = create<KanbanStoreState>((set, get) => ({
     if (dialog?.mode === 'edit' && dialog.number === number) {
       set({ dialog: null })
     }
+  },
+
+  copyIssue: async (number) => {
+    return api.kanban.copyIssue(number)
   }
 }))

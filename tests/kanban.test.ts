@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   extractIssueMentionNumbers,
+  formatKanbanIssueClipboardText,
   KANBAN_DEFAULT_LABELS,
   kanbanImageUrl,
   parseKanbanImageUrl,
@@ -123,19 +124,24 @@ async function agentFixture(): Promise<void> {
     assert.equal(repoAIssue.images.length, 1)
     assert.equal(repoBIssue.projectCwd, projectB)
 
-    // Verify pig-image://kanban/<id> protocol response & agent imageBlocks return
+    // Verify pig-image://kanban/<id> protocol response, .png extension, clipboard formatting & agent imageBlocks return
     const imgId = repoAIssue.images[0].id
+    assert.equal(imgId.endsWith('.png'), true)
     const imgResponse = await kanbanImageResponse(kanbanImageUrl(imgId))
     assert.equal(imgResponse.status, 200)
     assert.equal(imgResponse.headers.get('content-type'), 'image/png')
     assert.equal((await imgResponse.arrayBuffer()).byteLength, Buffer.from(onePixelPng, 'base64').length)
+
+    const imgDiskPath = resolve(join(root, 'pig', 'kanban-images', imgId))
+    const formattedClip = await kanban.formatIssueForClipboard(repoAIssue.number, '图片')
+    assert.equal(formattedClip.includes(`# ${repoAIssue.title}`), true)
+    assert.equal(formattedClip.includes(`## 图片\n\n- ${imgDiskPath}`), true)
 
     const fetchedDetail = await host.get({ sessionId: 'proj-a-wt' }, repoAIssue.number)
     assert.equal(fetchedDetail.issue.number, repoAIssue.number)
     assert.deepEqual(fetchedDetail.imageBlocks, [{ mimeType: 'image/png', data: onePixelPng }])
 
     // Removing the image via update cleans up its file on disk
-    const imgDiskPath = join(root, 'pig', 'kanban-images', imgId)
     assert.equal(existsSync(imgDiskPath), true)
     await kanban.update({ number: repoAIssue.number, images: [] })
     assert.equal(existsSync(imgDiskPath), false)
@@ -303,9 +309,24 @@ if (process.argv.includes('--kanban-agent-fixture')) {
       expect(kanbanLabelDotClass('Feature')).toBe('bg-chart-5')
       expect(kanbanLabelDotClass('Bug')).toBe('bg-chart-1')
       expect(kanbanLabelDotClass('Improvement')).toBe('bg-chart-4')
-      expect(parseKanbanImageUrl(kanbanImageUrl('abc-123_45'))).toBe('abc-123_45')
+      expect(parseKanbanImageUrl(kanbanImageUrl('abc-123_45.png'))).toBe('abc-123_45.png')
       expect(parseKanbanImageUrl('pig-image://kanban/../escape')).toBeNull()
       expect(parseKanbanImageUrl('pig-image://session/a/b/0')).toBeNull()
+
+      expect(
+        formatKanbanIssueClipboardText({
+          title: '修复登录闪退',
+          description: '复现步骤：\n1. 点击登录\n2. 界面白屏',
+          imagePaths: ['/tmp/.pig/kanban-images/a.png', '/tmp/.pig/kanban-images/b.jpg'],
+          imagesHeading: '图片'
+        })
+      ).toBe(
+        [
+          '# 修复登录闪退',
+          '复现步骤：\n1. 点击登录\n2. 界面白屏',
+          '## 图片\n\n- /tmp/.pig/kanban-images/a.png\n- /tmp/.pig/kanban-images/b.jpg'
+        ].join('\n\n')
+      )
     })
 
     test('column-first collision detection hits an empty tall column instead of jumping to neighbor cards', () => {

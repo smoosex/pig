@@ -5,14 +5,16 @@
  * - Optional pasted-screenshot thumbnail strip
  * - Pill metadata row (`[---]` priority box, `[📦 Project]`, `[● Label]` colored-dot pills) + creation date
  */
-import { useMemo, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type HTMLAttributes, type Ref } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Bot, Box, Link2, LoaderCircle, MessageSquarePlus } from 'lucide-react'
+import { Bot, Box, Check, Copy, Link2, LoaderCircle, MessageSquarePlus } from 'lucide-react'
+import { toast } from 'sonner'
 import { isBotTaskActive } from '../../../../shared/bot'
 import { kanbanImageUrl, type KanbanIssue } from '../../../../shared/kanban'
 import { baseName } from '../../../../shared/paths'
 import { useT } from '../../hooks/useT'
+import { failureMessage } from '../../lib/ipc-error'
 import { cn } from '../../lib/utils'
 import { useBotStore } from '../../stores/bot'
 import { useKanbanStore } from '../../stores/kanban'
@@ -54,6 +56,24 @@ export function KanbanCardView({
 } & Omit<HTMLAttributes<HTMLDivElement>, 'style'>) {
   const t = useT()
   const locale = useSettingsStore((s) => s.locale)
+  const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current) }, [])
+
+  const handleCopy = () => {
+    void useKanbanStore
+      .getState()
+      .copyIssue(issue.number)
+      .then(
+        () => {
+          setCopied(true)
+          if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+          copyTimerRef.current = setTimeout(() => setCopied(false), 1500)
+          toast.success(t('kanban.copiedIssue'))
+        },
+        (err) => toast.error(failureMessage(err))
+      )
+  }
   const botTasks = useBotStore((s) => s.tasks)
   const linkedBotTasks = issue.linkedBotTaskIds
     .map((id) => botTasks.find((task) => task.taskId === id))
@@ -104,6 +124,21 @@ export function KanbanCardView({
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t('kanban.copyIssue')}
+                  onClick={handleCopy}
+                  className="size-5 rounded text-muted-foreground hover:text-foreground"
+                >
+                  {copied ? <Check className="size-3 text-primary" /> : <Copy className="size-3" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('kanban.copyIssue')}</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

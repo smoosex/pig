@@ -2,10 +2,11 @@
  * IPC boundary for the local Kanban board. Validates UI main-frame sender and ensures new project
  * assignments point to an opened project root.
  */
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { clipboard, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { resolve } from 'node:path'
 import type { KanbanCreateInput, KanbanUpdateInput } from '../../shared/kanban'
 import { assertBrowserSender } from '../browser/validation'
+import { t } from '../i18n'
 import { registerKanbanAgent } from '../kanban/agent-host'
 import { kanban } from '../kanban/service'
 import { listOpenedCwds } from '../opened-projects'
@@ -67,5 +68,15 @@ export function registerKanbanIpc(): void {
       throw new Error('Invalid issue number')
     }
     return kanban.delete(number)
+  })
+
+  ipcMain.handle('kanban:copy', async (event, number: unknown) => {
+    assertUi(event)
+    if (typeof number !== 'number' || !Number.isSafeInteger(number) || number < 1) {
+      throw new Error('Invalid issue number')
+    }
+    const text = await kanban.formatIssueForClipboard(number, t('kanban.copyImagesHeading'))
+    clipboard.writeText(text)
+    return text
   })
 }

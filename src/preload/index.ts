@@ -20,6 +20,7 @@ const api: SessionApi = {
     create: (input) => ipcRenderer.invoke('kanban:create', input),
     update: (input) => ipcRenderer.invoke('kanban:update', input),
     delete: (number) => ipcRenderer.invoke('kanban:delete', number),
+    copyIssue: (number) => ipcRenderer.invoke('kanban:copy', number),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/kanban').KanbanSnapshot) => listener(snapshot)
       ipcRenderer.on('kanban:changed', handler)

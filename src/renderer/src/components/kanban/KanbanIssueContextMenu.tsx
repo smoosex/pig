@@ -3,7 +3,7 @@
  * Adjust Status, Priority, Labels (multi-toggle + inline create), and Project directly without opening the modal.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import { Box, Inbox, Plus, Tag } from 'lucide-react'
+import { Box, Copy, Inbox, Plus, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   KANBAN_DEFAULT_LABELS,
@@ -27,6 +27,7 @@ import {
   ContextMenuItem,
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -96,6 +97,16 @@ export function KanbanIssueContextMenu({
     )
   }
 
+  const handleCopy = () => {
+    void useKanbanStore
+      .getState()
+      .copyIssue(issue.number)
+      .then(
+        () => toast.success(t('kanban.copiedIssue')),
+        (err) => toast.error(failureMessage(err))
+      )
+  }
+
   const toggleLabel = (raw: string) => {
     const clean = raw.trim()
     if (!clean) return
@@ -123,6 +134,12 @@ export function KanbanIssueContextMenu({
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
+        <ContextMenuItem onSelect={handleCopy}>
+          <Copy className="size-3.5 text-muted-foreground" />
+          <span>{t('kanban.copyIssue')}</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+
         {/* Status */}
         <ContextMenuSub>
           <ContextMenuSubTrigger>

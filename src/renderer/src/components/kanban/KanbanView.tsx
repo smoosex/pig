@@ -20,6 +20,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Copy,
   EyeOff,
   FolderKanban,
   Link2,
@@ -468,6 +469,29 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
                   className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/kanban-row:opacity-100 focus-within:opacity-100"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={t('kanban.copyIssue')}
+                        onClick={() => {
+                          void useKanbanStore
+                            .getState()
+                            .copyIssue(issue.number)
+                            .then(
+                              () => toast.success(t('kanban.copiedIssue')),
+                              (err) => toast.error(failureMessage(err))
+                            )
+                        }}
+                        className="size-6 text-muted-foreground hover:text-foreground"
+                      >
+                        <Copy className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t('kanban.copyIssue')}</TooltipContent>
+                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button

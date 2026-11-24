@@ -6,11 +6,14 @@
  */
 import { BrowserWindow } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import {
+  formatKanbanIssueClipboardText,
   isKanbanPriority,
   isKanbanStatus,
+  isSafeKanbanImageId,
+  kanbanImageExtension,
   parseKanbanImageUrl,
   type KanbanCreateInput,
   type KanbanImageAttachment,
@@ -35,7 +38,6 @@ const MAX_LABELS = 24
 const MAX_LABEL_LENGTH = 64
 const MAX_IMAGES_PER_ISSUE = 12
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024
-const SAFE_IMAGE_ID = /^[a-zA-Z0-9_-]{1,80}$/
 
 interface PersistedKanbanFile {
   version: 1
@@ -115,7 +117,7 @@ function parseImagesMeta(raw: unknown): KanbanImageAttachment[] {
     const mime = imageMimeType(img.mimeType)
     if (
       typeof img.id !== 'string' ||
-      !SAFE_IMAGE_ID.test(img.id) ||
+      !isSafeKanbanImageId(img.id) ||
       seen.has(img.id) ||
       !mime ||
       typeof img.size !== 'number' ||
@@ -319,7 +321,7 @@ export class KanbanStore {
   }
 
   async readImage(imageId: string): Promise<{ data: Buffer; mimeType: string } | null> {
-    if (!SAFE_IMAGE_ID.test(imageId)) return null
+    if (!isSafeKanbanImageId(imageId)) return null
     const snapshot = await this.getSnapshot()
     let found: KanbanImageAttachment | undefined
     for (const issue of snapshot.items) {
@@ -350,6 +352,36 @@ export class KanbanStore {
       }
     }
     return blocks
+  }
+
+  async formatIssueForClipboard(number: number, imagesHeading: string): Promise<string> {
+    const issue = await this.getByNumber(number)
+    if (!issue) throw new Error(`Issue #${number} not found`)
+    const dir = resolve(this.imagesDir())
+    const imagePaths: string[] = []
+    for (const img of issue.images) {
+      const rawPath = join(dir, img.id)
+      if (img.id.includes('.')) {
+        imagePaths.push(rawPath)
+        continue
+      }
+      const withExt = `${rawPath}.${kanbanImageExtension(img.mimeType)}`
+      try {
+        const existing = await stat(withExt).catch(() => null)
+        if (!existing) {
+          await link(rawPath, withExt).catch(() => copyFile(rawPath, withExt))
+        }
+        imagePaths.push(withExt)
+      } catch {
+        imagePaths.push(rawPath)
+      }
+    }
+    return formatKanbanIssueClipboardText({
+      title: issue.title,
+      description: issue.description,
+      imagePaths,
+      imagesHeading
+    })
   }
 
   private async read(): Promise<KanbanSnapshot> {
@@ -429,7 +461,7 @@ export class KanbanStore {
         if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
           throw new Error(`Image size must be between 1 byte and ${MAX_IMAGE_BYTES} bytes`)
         }
-        const id = randomUUID()
+        const id = `${randomUUID()}.${kanbanImageExtension(mime)}`
         await mkdir(dir, { recursive: true, mode: 0o700 })
         const filePath = join(dir, id)
         await writeFile(filePath, bytes, { mode: 0o600, flag: 'wx' })
@@ -474,7 +506,18 @@ export class KanbanStore {
       }
       if (cleanupIds.length > 0) {
         const dir = this.imagesDir()
-        await Promise.all(cleanupIds.map((id) => rm(join(dir, id), { force: true }).catch(() => {})))
+        const targets = cleanupIds.flatMap((id) =>
+          id.includes('.')
+            ? [join(dir, id)]
+            : [
+                join(dir, id),
+                join(dir, `${id}.png`),
+                join(dir, `${id}.jpg`),
+                join(dir, `${id}.webp`),
+                join(dir, `${id}.gif`)
+              ]
+        )
+        await Promise.all(targets.map((filePath) => rm(filePath, { force: true }).catch(() => {})))
       }
       this.onChanged(snapshot)
       return result

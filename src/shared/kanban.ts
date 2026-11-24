@@ -129,6 +129,7 @@ export interface KanbanApi {
   create: (input: KanbanCreateInput) => Promise<{ issue: KanbanIssue; snapshot: KanbanSnapshot }>
   update: (input: KanbanUpdateInput) => Promise<{ issue: KanbanIssue; snapshot: KanbanSnapshot }>
   delete: (number: number) => Promise<KanbanSnapshot>
+  copyIssue: (number: number) => Promise<string>
   onChanged: (listener: (snapshot: KanbanSnapshot) => void) => () => void
 }
 
@@ -159,7 +160,43 @@ export interface KanbanAgentHost {
 }
 
 const ISSUE_MENTION_PATTERN = /@\[issue:(\d+)\]/g
-const SAFE_IMAGE_ID = /^[a-zA-Z0-9_-]{1,80}$/
+const SAFE_IMAGE_ID = /^[a-zA-Z0-9_-]{1,80}(?:\.(?:png|jpg|jpeg|webp|gif))?$/i
+
+export function isSafeKanbanImageId(id: string): boolean {
+  return SAFE_IMAGE_ID.test(id)
+}
+
+export function kanbanImageExtension(mimeType: string): string {
+  switch (mimeType.toLowerCase()) {
+    case 'image/jpeg':
+    case 'image/jpg':
+      return 'jpg'
+    case 'image/webp':
+      return 'webp'
+    case 'image/gif':
+      return 'gif'
+    default:
+      return 'png'
+  }
+}
+
+export function formatKanbanIssueClipboardText(input: {
+  title: string
+  description: string
+  imagePaths: readonly string[]
+  imagesHeading: string
+}): string {
+  const sections: string[] = [`# ${input.title.trim()}`]
+  const body = input.description.replace(/\r\n?/g, '\n').trim()
+  if (body) {
+    sections.push(body)
+  }
+  if (input.imagePaths.length > 0) {
+    const list = input.imagePaths.map((p) => `- ${p}`).join('\n')
+    sections.push(`## ${input.imagesHeading}\n\n${list}`)
+  }
+  return sections.join('\n\n')
+}
 
 export function kanbanImageUrl(imageId: string): string {
   return `pig-image://kanban/${encodeURIComponent(imageId)}`
