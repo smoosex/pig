@@ -18,6 +18,7 @@ import { baseName } from '../../../../shared/paths'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { isComposingKey } from '../../lib/shortcuts'
+import { cn, hideScroll } from '../../lib/utils'
 import { useKanbanStore } from '../../stores/kanban'
 import { useSessionsStore } from '../../stores/sessions'
 import {
@@ -146,7 +147,7 @@ export function KanbanIssueContextMenu({
             <KanbanStatusIcon status={issue.status} className="size-3.5" />
             <span>{t('kanban.fields.status')}</span>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="min-w-40">
+          <ContextMenuSubContent className={cn('max-h-52 min-w-40 overflow-y-auto overscroll-contain', hideScroll)}>
             <ContextMenuRadioGroup
               value={issue.status}
               onValueChange={(next) => applyPatch({ status: next as KanbanStatus })}
@@ -167,7 +168,7 @@ export function KanbanIssueContextMenu({
             <KanbanPriorityIcon priority={issue.priority} className="size-3.5" />
             <span>{t('kanban.fields.priority')}</span>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="min-w-40">
+          <ContextMenuSubContent className={cn('max-h-52 min-w-40 overflow-y-auto overscroll-contain', hideScroll)}>
             <ContextMenuRadioGroup
               value={issue.priority}
               onValueChange={(next) => applyPatch({ priority: next as KanbanPriority })}
@@ -212,7 +213,7 @@ export function KanbanIssueContextMenu({
                 className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/65"
               />
             </div>
-            <div className="max-h-52 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className={cn('max-h-48 overflow-y-auto overscroll-contain', hideScroll)}>
               {filteredLabelOptions.map((option) => {
                 const checked = issue.labels.some((l) => l.toLowerCase() === option.toLowerCase())
                 return (
@@ -252,7 +253,7 @@ export function KanbanIssueContextMenu({
             <Box className="size-3.5 text-muted-foreground" />
             <span>{t('kanban.fields.project')}</span>
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="max-h-64 min-w-44 overflow-y-auto">
+          <ContextMenuSubContent className={cn('max-h-52 w-48 overflow-y-auto overscroll-contain', hideScroll)}>
             <ContextMenuRadioGroup
               value={issue.projectCwd ?? ''}
               onValueChange={(next) => applyPatch({ projectCwd: next || null })}

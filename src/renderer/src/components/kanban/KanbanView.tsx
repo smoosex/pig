@@ -39,7 +39,7 @@ import {
 import { baseName } from '../../../../shared/paths'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
-import { cn } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import { useKanbanStore } from '../../stores/kanban'
 import { useSessionsStore } from '../../stores/sessions'
 import { Button } from '../ui/button'
@@ -409,7 +409,10 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
                         <KanbanStatusIcon status={issue.status} className="size-3.5" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
+                    <DropdownMenuContent
+                      align="start"
+                      className={cn('max-h-52 min-w-40 overflow-y-auto overscroll-contain', hideScroll)}
+                    >
                       <DropdownMenuRadioGroup
                         value={issue.status}
                         onValueChange={(next) => {

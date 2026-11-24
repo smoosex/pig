@@ -51,7 +51,7 @@ import { baseName } from '../../../../shared/paths'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { isComposingKey } from '../../lib/shortcuts'
-import { cn } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import { useBotStore } from '../../stores/bot'
 import { useKanbanStore } from '../../stores/kanban'
 import { useSessionsStore } from '../../stores/sessions'
@@ -789,7 +789,11 @@ export function KanbanIssueDialog({
                       <span>{t(`kanban.status.${status}`)}</span>
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-40">
+                  <DropdownMenuContent
+                    align="start"
+                    onWheel={(e) => e.stopPropagation()}
+                    className={cn('max-h-52 min-w-40 overflow-y-auto overscroll-contain', hideScroll)}
+                  >
                     <DropdownMenuRadioGroup
                       value={status}
                       onValueChange={(next) => setStatus(next as KanbanStatus)}
@@ -819,7 +823,11 @@ export function KanbanIssueDialog({
                       </span>
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-40">
+                  <DropdownMenuContent
+                    align="start"
+                    onWheel={(e) => e.stopPropagation()}
+                    className={cn('max-h-52 min-w-40 overflow-y-auto overscroll-contain', hideScroll)}
+                  >
                     <DropdownMenuRadioGroup
                       value={priority}
                       onValueChange={(next) => setPriority(next as KanbanPriority)}
@@ -847,7 +855,11 @@ export function KanbanIssueDialog({
                       </span>
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-48">
+                  <DropdownMenuContent
+                    align="start"
+                    onWheel={(e) => e.stopPropagation()}
+                    className={cn('max-h-52 w-52 overflow-y-auto overscroll-contain', hideScroll)}
+                  >
                     <DropdownMenuRadioGroup
                       value={projectCwd ?? ''}
                       onValueChange={(next) => setProjectCwd(next || null)}
@@ -867,7 +879,7 @@ export function KanbanIssueDialog({
                 </DropdownMenu>
 
                 {/* Unified single Labels pill (0 -> "标签", 1 -> "● Feature", N -> "●● N 个标签") */}
-                <Popover open={labelMenuOpen} onOpenChange={setLabelMenuOpen}>
+                <Popover modal open={labelMenuOpen} onOpenChange={setLabelMenuOpen}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
@@ -901,6 +913,7 @@ export function KanbanIssueDialog({
                     side="bottom"
                     sideOffset={6}
                     className="w-56 p-1"
+                    onWheel={(e) => e.stopPropagation()}
                     onCloseAutoFocus={(e) => e.preventDefault()}
                   >
                     <div className="border-b border-glass-border px-2.5 py-1.5 solid:border-border">
@@ -920,7 +933,7 @@ export function KanbanIssueDialog({
                         className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/65"
                       />
                     </div>
-                    <div className="max-h-52 overflow-y-auto pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className={cn('max-h-48 overflow-y-auto overscroll-contain pt-1', hideScroll)}>
                       {filteredLabelOptions.map((option) => {
                         const checked = labels.some((l) => l.toLowerCase() === option.toLowerCase())
                         return (
