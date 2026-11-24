@@ -100,7 +100,8 @@ async function fixture(scenario: string): Promise<void> {
         for (const name of ['Sidebar', 'WorkspacePanel']) {
           const path = name === 'Sidebar' ? 'Sidebar' : 'panel/WorkspacePanel'
           mock.module(`../src/renderer/src/components/${path}`, () => ({
-            [name]: ({ hidden }: { hidden: boolean }) => h('div', { 'data-view': name, 'aria-hidden': hidden })
+            [name]: ({ hidden, cwd, defaultTab }: { hidden: boolean; cwd?: string; defaultTab?: string }) =>
+              h('div', { 'data-view': name, 'aria-hidden': hidden, 'data-cwd': cwd, 'data-default-tab': defaultTab })
           }))
         }
       }
@@ -250,7 +251,9 @@ async function fixture(scenario: string): Promise<void> {
         assert.equal(newButton.title, 'cannot create session')
         assert.ok(newButton.querySelector('.lucide-circle-alert'))
         await act(async () => { sessions.setState({ activeTabId: 'chat', currentProjectCwd: null }) })
-        assert.equal(toolbar.querySelectorAll('button').length, 2, 'chats keep creation and bookmarks without a project sidebar toggle')
+        assert.equal(toolbar.querySelectorAll('button').length, 3, 'chats keep creation, bookmarks, and the right sidebar toggle for their chat directory')
+        assert.equal(host.querySelector('[data-view="WorkspacePanel"]')?.getAttribute('data-cwd'), '/chats/a')
+        assert.equal(host.querySelector('[data-view="WorkspacePanel"]')?.getAttribute('data-default-tab'), 'files')
         await chooseSession()
         assert.deepEqual(created, ['/p', 'chat'])
         assert.ok(newButton.querySelector('.lucide-plus'), 'a successful retry clears the creation error')

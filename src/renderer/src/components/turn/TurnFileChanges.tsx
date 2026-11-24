@@ -64,7 +64,7 @@ export function TurnFileChanges({ sessionId, turnId }: { sessionId: string; turn
   const details = useTurnFileChanges(sessionId, turnId, expanded.size > 0 || (single !== null && open))
   const projectCwd = useSessionsStore((state) => {
     const tab = state.openTabs.find((item) => item.id === sessionId)
-    return tab?.kind === 'project' ? tab.cwd : null
+    return tab?.kind === 'project' || tab?.kind === 'chat' ? tab.cwd : null
   })
   if (!files?.length) return null
   const singleShown = single ? single.relativePath ?? single.path : null

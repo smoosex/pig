@@ -15,7 +15,9 @@ import type { OpenToolTabMembership } from '../../../../shared/api'
  * back at the tail later, where the restore appends it.
  */
 export function persistableIds(tabs: OpenTab[]): string[] {
-  return tabs.filter((tab) => tab.kind !== 'file' && tab.kind !== 'turn-diff').map((tab) => tab.id)
+  return tabs
+    .filter((tab) => tab.kind !== 'file' && tab.kind !== 'turn-diff' && !(tab.kind === 'diff' && tab.chatScope))
+    .map((tab) => tab.id)
 }
 
 /** Browser and terminal tabs come back after a restart; main records which are open and where. */
@@ -27,9 +29,13 @@ export function toolTabMemberships(tabs: OpenTab[]): OpenToolTabMembership[] {
   })
 }
 
-/** Chat browsers, terminals and history diffs have no worktree; real chat sessions keep their own storage cwd. */
+/** Chat browsers, terminals, history diffs and chat-folder file/diff tabs belong to the chats strip. */
 export function isChatScope(tab: OpenTab): boolean {
-  return tab.kind === 'chat' || ((tab.kind === 'browser' || tab.kind === 'terminal' || tab.kind === 'turn-diff') && tab.cwd === '')
+  return (
+    tab.kind === 'chat' ||
+    Boolean(tab.chatScope) ||
+    ((tab.kind === 'browser' || tab.kind === 'terminal' || tab.kind === 'turn-diff') && tab.cwd === '')
+  )
 }
 
 /** The strip sequence a tab belongs to: the chats half's, or its own worktree's project tabs. */

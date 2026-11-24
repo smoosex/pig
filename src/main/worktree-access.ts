@@ -7,8 +7,9 @@
  * Discovery runs git, so an answer is remembered by the spelling that came in. Only the positive ones are:
  * a worktree created after this process started has to work without anyone restarting it.
  */
-import { realpath } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { lstat, realpath } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { chatsDir } from './chats'
 import { listOpenedCwds } from './opened-projects'
 import { t } from './i18n'
 import { repositoryWorktrees } from './worktrees'
@@ -16,17 +17,30 @@ import { repositoryWorktrees } from './worktrees'
 const known = new Set<string>()
 
 /**
- * The worktree this cwd names, or null when it is not part of any opened project. Links are resolved to
- * judge the path — a worktree is the same directory however a window spells it, and git reports its own
- * spelling — but the answer keeps the spelling that came in. That spelling is what the window holds as
- * its key and what comes back to it in change events, so a worktree reached through a link still hears
- * about its own changes.
+ * The worktree this cwd names, or null when it is not part of any opened project or standalone chat.
+ * Links are resolved to judge the path — a worktree is the same directory however a window spells it,
+ * and git reports its own spelling — but the answer keeps the spelling that came in. Chat directories
+ * (`$PIG_DIR/chats/<id>`) are verified live via `lstat` rather than cached so a deleted chat stops
+ * resolving immediately and symlinks inside `chats/` cannot escape.
  */
 export async function openedWorktree(cwd: unknown): Promise<string | null> {
   if (typeof cwd !== 'string' || !cwd) return null
   const path = resolve(cwd)
   if (known.has(path)) return path
+
+  const chatsRoot = resolve(chatsDir())
+  if (dirname(path) === chatsRoot) {
+    const info = await lstat(path).catch(() => null)
+    return info?.isDirectory() ? path : null
+  }
+
   const real = await realpath(path).catch(() => path)
+  const realChatsRoot = await realpath(chatsRoot).catch(() => chatsRoot)
+  if (dirname(real) === realChatsRoot) {
+    const info = await lstat(real).catch(() => null)
+    if (info?.isDirectory()) return path
+  }
+
   const opened = await listOpenedCwds()
   if (opened.includes(path) || opened.includes(real)) {
     known.add(path)

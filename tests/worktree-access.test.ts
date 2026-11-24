@@ -36,6 +36,12 @@ async function runFixture(): Promise<void> {
   const plain = join(base, 'plain')
   await mkdir(plain)
 
+  const chatDir = join(pigDir, 'chats', 'chat-1')
+  await mkdir(chatDir, { recursive: true })
+  await writeFile(join(chatDir, 'notes.md'), 'hello chat\n')
+  const chatEscapeLink = join(pigDir, 'chats', 'escape-link')
+  await symlink('/etc', chatEscapeLink)
+
   // A project is routinely reached through a link: the guard has to recognise the worktree behind the
   // spelling it was handed, not only the one it stored.
   const alias = join(base, 'alias')
@@ -108,6 +114,17 @@ async function runFixture(): Promise<void> {
   assert.equal(await requireWorktree(alias), alias, 'and the guard that the callers use echoes it too')
   assert.equal(await openedWorktree(linked), linked, 'a linked worktree counts')
   assert.equal(await openedWorktree(plain), plain, 'a project that is not a repository still counts')
+  assert.equal(await openedWorktree(chatDir), chatDir, 'an existing standalone chat directory counts')
+  assert.equal(await openedWorktree(join(pigDir, 'chats')), null, 'the chats root itself is not a workspace')
+  assert.equal(await openedWorktree(chatEscapeLink), null, 'symlinks under chats/ cannot escape')
+  expect(await ask('files:read', chatDir, 'notes.md')).toEqual({
+    kind: 'text',
+    contents: 'hello chat\n',
+    mtimeMs: expect.any(Number),
+    size: 11
+  })
+  await rm(chatDir, { recursive: true, force: true })
+  assert.equal(await openedWorktree(chatDir), null, 'a deleted chat directory immediately stops resolving')
   assert.equal(await openedWorktree('/etc'), null)
   assert.equal(await openedWorktree(join(base, 'elsewhere')), null)
   assert.equal(await openedWorktree(''), null)

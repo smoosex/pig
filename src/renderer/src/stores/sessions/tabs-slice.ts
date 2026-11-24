@@ -191,17 +191,31 @@ export const createTabsSlice: SessionSlice<
    * all. Nothing here waits for the write — a chat whose id outlives its directory is dropped by the
    * restore rather than reported, so a delete that lands before this does can only leave a stale id.
    */
+  function isProjectWorkspaceCwd(state: SessionsStore, cwd: string): boolean {
+    return state.projects.some(
+      (project) => project.cwd === cwd || project.worktrees?.some((worktree) => worktree.cwd === cwd)
+    )
+  }
+
   function persistChatTabs(closedIds: string[] = []): void {
     const state = get()
     const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
-    if (active && isChatScope(active)) lastActiveChatTabId = active.id
+    if (
+      active &&
+      isChatScope(active) &&
+      active.kind !== 'file' &&
+      active.kind !== 'turn-diff' &&
+      !(active.kind === 'diff' && active.chatScope)
+    ) {
+      lastActiveChatTabId = active.id
+    }
     // Until a successful scan merges saved membership, record intent without replacing the saved list.
     // These tombstones survive failed scans so a retry cannot reopen a tab the reader already closed.
     if (!state.workspaceRestoreReady) {
       for (const id of closedIds) closedChatIdsBeforeRestore.add(id)
       return
     }
-    const ids = state.openTabs.filter(isChatScope).map((tab) => tab.id)
+    const ids = persistableIds(state.openTabs.filter(isChatScope))
     persist(api.saveOpenChatTabs(ids, ids.includes(lastActiveChatTabId ?? '') ? lastActiveChatTabId : null))
   }
 
@@ -576,21 +590,23 @@ export const createTabsSlice: SessionSlice<
         // Nothing to load: the patch is the panel's data, and the worktree watch is already running.
         // The version bump keeps a session opening behind this click from stealing the strip back.
         ++selectionVersion
+        const projectCwd = isChatScope(tab) ? null : tab.cwd
         set((state) => ({
-          ...activeTabPatch(state, tab.id, tab.cwd),
-          currentProjectCwd: tab.cwd,
+          ...activeTabPatch(state, tab.id, projectCwd),
+          currentProjectCwd: projectCwd,
           openTabs: state.openTabs
         }))
-        persistChangesTab(tab.cwd)
+        if (!isChatScope(tab)) persistChangesTab(tab.cwd)
         return
       }
       if (tab.kind === 'file' || tab.kind === 'turn-diff' || tab.kind === 'browser' || tab.kind === 'terminal') {
         // These views load their own data, never Pi controls or history. A file or history diff tab's
         // selection lasts only this run; a browser or terminal comes back after a restart, so its selection is saved.
         ++selectionVersion
+        const projectCwd = isChatScope(tab) ? null : (tab.cwd || null)
         set((state) => ({
-          ...activeTabPatch(state, tab.id, tab.cwd || null),
-          currentProjectCwd: tab.cwd || null,
+          ...activeTabPatch(state, tab.id, projectCwd),
+          currentProjectCwd: projectCwd,
           openTabs: state.openTabs
         }))
         if (tab.kind === 'browser' || tab.kind === 'terminal') persistToolSelection(tab)
@@ -674,6 +690,7 @@ export const createTabsSlice: SessionSlice<
     openChangesTab: async (cwd, path, scope) => {
       const id = changesTabId(cwd)
       const next = scope ?? DEFAULT_SCOPE
+      const chatScope = !isProjectWorkspaceCwd(get(), cwd)
       set((state) => state.openTabs.some((tab) => tab.id === id)
         ? {
             openTabs: state.openTabs.map((tab) =>
@@ -689,7 +706,8 @@ export const createTabsSlice: SessionSlice<
               title: scopeLabel(t, next),
               kind: 'diff' as const,
               loadState: 'ready' as const,
-              diffScope: next
+              diffScope: next,
+              ...(chatScope ? { chatScope: true } : {})
             }]
           })
       // The panel points at a file through the tab's own focus, which the tab clears by scrolling.
@@ -712,6 +730,7 @@ export const createTabsSlice: SessionSlice<
      */
     openFileTab: async (cwd, path) => {
       const id = fileTabId(cwd, path)
+      const chatScope = !isProjectWorkspaceCwd(get(), cwd)
       if (!get().openTabs.some((tab) => tab.id === id)) {
         set((state) => ({
           openTabs: [...state.openTabs, {
@@ -720,7 +739,8 @@ export const createTabsSlice: SessionSlice<
             path,
             title: path.slice(path.lastIndexOf('/') + 1),
             kind: 'file' as const,
-            loadState: 'ready' as const
+            loadState: 'ready' as const,
+            ...(chatScope ? { chatScope: true } : {})
           }]
         }))
       }
@@ -1174,7 +1194,7 @@ export const createTabsSlice: SessionSlice<
           openTabs: state.openTabs.filter((item) => item.id !== tabId),
           ...(wasActive ? fallbackSelection(state) : {})
         }))
-        persistChangesTab(tab.cwd)
+        if (!isChatScope(tab)) persistChangesTab(tab.cwd)
         if (wasActive && fallback) void get().activateTab(fallback)
         return
       }

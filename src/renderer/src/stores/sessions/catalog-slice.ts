@@ -428,6 +428,7 @@ export const createCatalogSlice: SessionSlice<
 
     deleteChat: async (cwd) => {
       await api.deleteChat(cwd)
+      useDiffStore.getState().forgetWorktree(cwd)
       chatMembershipVersion++
       const closedIds = new Set([
         ...get().openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd === cwd).map((tab) => tab.id),

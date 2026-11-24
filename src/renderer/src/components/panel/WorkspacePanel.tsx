@@ -19,11 +19,21 @@ import { useT } from '../../hooks/useT'
 import { cn } from '../../lib/utils'
 
 
-export function WorkspacePanel({ cwd, hidden = false, floating = false }: { cwd: string; hidden?: boolean; floating?: boolean }) {
+export function WorkspacePanel({
+  cwd,
+  defaultTab = 'changes',
+  hidden = false,
+  floating = false
+}: {
+  cwd: string
+  defaultTab?: PanelTab
+  hidden?: boolean
+  floating?: boolean
+}) {
   const t = useT()
   const switchId = useId()
   const reduced = useReducedMotion()
-  const tab = useDiffStore((s) => s.panelTab[cwd] ?? 'changes')
+  const tab = useDiffStore((s) => s.panelTab[cwd] ?? defaultTab)
   const setPanelTab = useDiffStore((s) => s.setPanelTab)
   const changed = useDiffStore((s) => s.worktrees[cwd]?.diff?.all.length ?? null)
 

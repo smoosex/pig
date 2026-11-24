@@ -259,6 +259,7 @@ export default function App() {
   const setActiveTab = useSessionsStore((s) => s.setActive)
   const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
   const projects = useSessionsStore((s) => s.projects)
+  const chats = useSessionsStore((s) => s.chats)
   const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
   const restoredProjectCwd = useSessionsStore((s) => s.restoredProjectCwd)
   const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
@@ -298,6 +299,47 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const botOpen = useBotStore((s) => s.open)
   const initBot = useBotStore((s) => s.init)
+  const projectHome = Boolean(currentProjectCwd && !activeTabId)
+  /**
+   * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
+   * waits for the restore, which is what decides whether a worktree was open to show instead.
+   */
+  const chatHome = Boolean(workspaceRestoreReady && !activeTab && !currentProjectCwd && !workspaceRestoreError)
+  /** What the projects half may still return to: a worktree nobody lists is not one of them. */
+  const knownProjectCwds = new Set(
+    projects.flatMap((project) => [
+      project.cwd,
+      ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
+    ])
+  )
+  const knownChatCwds = new Set([
+    ...chats.map((chat) => chat.cwd),
+    ...openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd).map((tab) => tab.cwd),
+    ...(chatDraft?.cwd ? [chatDraft.cwd] : [])
+  ])
+  const [retainedChatCwd, setRetainedChatCwd] = useState<string | null>(null)
+  const directChatCwd = !currentProjectCwd
+    ? activeTab?.cwd ||
+      (activeTab?.kind === 'turn-diff'
+        ? (openTabs.find((tab) => tab.id === activeTab.turnDiff?.sessionId)?.cwd ?? null)
+        : null) ||
+      (splitPaneNodes
+        .map((pane) => openTabs.find((tab) => tab.id === pane.tabId))
+        .find((tab) => tab && isChatScope(tab) && tab.cwd)?.cwd ?? null) ||
+      (chatHome ? (chatDraft?.cwd ?? null) : null)
+    : null
+  if (directChatCwd && retainedChatCwd !== directChatCwd) {
+    setRetainedChatCwd(directChatCwd)
+  } else if (retainedChatCwd && !knownChatCwds.has(retainedChatCwd)) {
+    setRetainedChatCwd(null)
+  }
+  const activeWorkspaceCwd =
+    sidebarTab === 'kanban'
+      ? null
+      : currentProjectCwd ??
+        directChatCwd ??
+        (retainedChatCwd && knownChatCwds.has(retainedChatCwd) ? retainedChatCwd : null)
+
   const toggleLeftSidebar = () => {
     if (autoCollapsed.left) {
       floatingSidebar.toggle('left')
@@ -305,7 +347,7 @@ export default function App() {
     } else setSidebarOpen((open) => !open)
   }
   const toggleRightSidebar = () => {
-    if (!currentProjectCwd) return
+    if (!activeWorkspaceCwd) return
     const diff = useDiffStore.getState()
     if (autoCollapsed.right) {
       floatingSidebar.toggle('right')
@@ -422,7 +464,7 @@ export default function App() {
         case 'sidebar.toggleLeft': toggleLeftSidebar(); break
         case 'settings.toggle': setSettingsOpen((open) => !open); break
         case 'sidebar.toggleRight': {
-          if (!currentProjectCwd) break
+          if (!activeWorkspaceCwd) break
           toggleRightSidebar()
           break
         }
@@ -444,7 +486,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown, true)
       offBrowserShortcut()
     }
-  }, [activeTabId, closeTab, currentProjectCwd, openProject, settingsOpen, sidebarTab, autoCollapsed.left, autoCollapsed.right])
+  }, [activeTabId, activeWorkspaceCwd, closeTab, currentProjectCwd, openProject, settingsOpen, sidebarTab, autoCollapsed.left, autoCollapsed.right])
 
   useEffect(() => {
     if (!sidebarReady || requestedWorkspaceRestore.current) return
@@ -473,16 +515,10 @@ export default function App() {
   const rightCollapsed = !reviewOpen || autoCollapsed.right
   useEffect(() => {
     if (settingsOpen || (hoverSidebar === 'left' && !leftCollapsed) ||
-        (hoverSidebar === 'right' && (!rightCollapsed || !currentProjectCwd))) {
+        (hoverSidebar === 'right' && (!rightCollapsed || !activeWorkspaceCwd))) {
       floatingSidebar.close()
     }
-  }, [settingsOpen, hoverSidebar, leftCollapsed, rightCollapsed, currentProjectCwd, floatingSidebar.close])
-  const projectHome = Boolean(currentProjectCwd && !activeTabId)
-  /**
-   * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
-   * waits for the restore, which is what decides whether a worktree was open to show instead.
-   */
-  const chatHome = Boolean(workspaceRestoreReady && !activeTab && !currentProjectCwd && !workspaceRestoreError)
+  }, [settingsOpen, hoverSidebar, leftCollapsed, rightCollapsed, activeWorkspaceCwd, floatingSidebar.close])
   const restoreError = !currentProjectCwd && !activeTab ? workspaceRestoreError : null
   const currentProject = currentProjectCwd
     ? projects.find((project) =>
@@ -490,13 +526,6 @@ export default function App() {
         project.worktrees?.some((worktree) => worktree.cwd === currentProjectCwd)
       )
     : undefined
-  /** What the projects half may still return to: a worktree nobody lists is not one of them. */
-  const knownProjectCwds = new Set(
-    projects.flatMap((project) => [
-      project.cwd,
-      ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
-    ])
-  )
   const currentWorktree = currentProject?.worktrees?.find(
     (worktree) => worktree.cwd === currentProjectCwd
   )
@@ -506,15 +535,20 @@ export default function App() {
         branch: currentWorktree?.branch ?? currentProject.name
       }
     : null
-  // Keep the last active project's right sidebar mounted while visiting Chats so switching back
-  // does not rebuild FileTree / ChangesPanel from scratch; drop it once that project is removed.
+  // Keep the last active workspace's right sidebar mounted across brief switches so FileTree / ChangesPanel
+  // do not tear down unnecessarily; drop it once that project or chat directory is removed.
   const [retainedRightCwd, setRetainedRightCwd] = useState<string | null>(null)
-  if (currentProjectCwd && retainedRightCwd !== currentProjectCwd) {
-    setRetainedRightCwd(currentProjectCwd)
-  } else if (retainedRightCwd && !currentProjectCwd && !knownProjectCwds.has(retainedRightCwd)) {
+  if (activeWorkspaceCwd && retainedRightCwd !== activeWorkspaceCwd) {
+    setRetainedRightCwd(activeWorkspaceCwd)
+  } else if (
+    retainedRightCwd &&
+    !activeWorkspaceCwd &&
+    !knownProjectCwds.has(retainedRightCwd) &&
+    !knownChatCwds.has(retainedRightCwd)
+  ) {
     setRetainedRightCwd(null)
   }
-  const rightPanelCwd = currentProjectCwd ?? retainedRightCwd
+  const rightPanelCwd = activeWorkspaceCwd ?? retainedRightCwd
   const hasRetainableChatTabs = openTabs.some((tab) => tab.kind === 'project' || tab.kind === 'chat')
 
   useEffect(() => {
@@ -769,7 +803,7 @@ export default function App() {
                     setWorkspaceRestoreMode(kind === 'chat')
                     setSidebarTab(kind === 'chat' ? 'chats' : 'projects')
                   }} />
-                  {currentProjectCwd ? (
+                  {activeWorkspaceCwd ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -813,15 +847,15 @@ export default function App() {
           {!settingsOpen && leftCollapsed && hoverSidebar !== 'left' ? (
             <div className="absolute inset-y-0 left-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('left')} />
           ) : null}
-          {!settingsOpen && currentProjectCwd && sidebarTab !== 'kanban' && rightCollapsed && hoverSidebar !== 'right' ? (
+          {!settingsOpen && activeWorkspaceCwd && rightCollapsed && hoverSidebar !== 'right' ? (
             <div className="absolute inset-y-0 right-0 z-20 w-2" onMouseEnter={() => floatingSidebar.hover('right')} />
           ) : null}
           <WorkspaceLayout
             settingsOpen={settingsOpen}
             leftCollapsed={leftCollapsed}
-            rightCollapsed={sidebarTab === 'kanban' || !currentProjectCwd || rightCollapsed}
+            rightCollapsed={!activeWorkspaceCwd || rightCollapsed}
             leftFloating={leftCollapsed && hoverSidebar === 'left'}
-            rightFloating={sidebarTab !== 'kanban' && rightCollapsed && hoverSidebar === 'right'}
+            rightFloating={Boolean(activeWorkspaceCwd) && rightCollapsed && hoverSidebar === 'right'}
             left={
               <>
                 <div
@@ -851,19 +885,20 @@ export default function App() {
               <>
                 <div
                   className={cn('flex shrink-0', rightCollapsed && 'absolute inset-y-0 right-0 z-30',
-                    currentProjectCwd && rightCollapsed && hoverSidebar === 'right' && 'p-2',
-                    (!currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')) && 'pointer-events-none')}
+                    activeWorkspaceCwd && rightCollapsed && hoverSidebar === 'right' && 'p-2',
+                    (!activeWorkspaceCwd || (rightCollapsed && hoverSidebar !== 'right')) && 'pointer-events-none')}
                   onMouseMoveCapture={(event) => floatingSidebar.trackPointer('right', event)}
                 >
                   <div
-                    data-sidebar-overlay={!settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
-                    className={cn('flex', !settingsOpen && currentProjectCwd && rightCollapsed && hoverSidebar === 'right' &&
+                    data-sidebar-overlay={!settingsOpen && activeWorkspaceCwd && rightCollapsed && hoverSidebar === 'right' ? '' : undefined}
+                    className={cn('flex', !settingsOpen && activeWorkspaceCwd && rightCollapsed && hoverSidebar === 'right' &&
                       'overflow-hidden rounded-xl bg-glass-popover-background bg-(image:--glass-popover-sheen) shadow-glass-popover ring-1 ring-glass-content-border solid:bg-sidebar solid:bg-none solid:shadow-md solid:ring-0')}
                   >
                     <WorkspacePanel
                       cwd={rightPanelCwd}
+                      defaultTab={knownProjectCwds.has(rightPanelCwd) ? 'changes' : 'files'}
                       floating={rightCollapsed}
-                      hidden={settingsOpen || sidebarTab === 'kanban' || !currentProjectCwd || (rightCollapsed && hoverSidebar !== 'right')}
+                      hidden={settingsOpen || !activeWorkspaceCwd || (rightCollapsed && hoverSidebar !== 'right')}
                     />
                   </div>
                 </div>

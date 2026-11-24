@@ -119,6 +119,8 @@ export interface OpenTab {
   turnDiff?: { sessionId: string; turnId: string }
   /** Optional real session that receives browser annotations; never the browser's own id. */
   browserTargetSessionId?: string
+  /** Set on file/diff tabs opened from a standalone Chat directory rather than a project worktree. */
+  chatScope?: boolean
 }
 
 export interface SessionsStore {
