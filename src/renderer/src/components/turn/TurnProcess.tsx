@@ -6,8 +6,7 @@
  * that token belongs to can have changed. The memo boundary is what keeps a long turn from
  * re-reconciling its entire history on every delta.
  */
-import { memo, useEffect, useState } from 'react'
-import type { MessageKey } from '../../../../shared/i18n'
+import { memo, useState } from 'react'
 import { ThinkingOrb } from 'thinking-orbs'
 import type { BashExecutionMessage } from '../../pi/types'
 import type { ProcessItem } from '../../chat/turns'
@@ -22,6 +21,7 @@ import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel 
 import { clusterWork, processToolNames, toolUsageSummary, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ThinkingRow } from './ProcessText'
+import { WaitLine } from './WaitLine'
 
 
 const GroupBody = memo(function GroupBody({ items }: { items: ProcessItem[] }) {
@@ -76,37 +76,6 @@ const ActivityGroup = memo(function ActivityGroup({ items }: { items: ProcessIte
     </Collapsible>
   )
 })
-
-const WAIT_LINE_KEYS: MessageKey[] = [
-  'turn.placeholder1',
-  'turn.placeholder2',
-  'turn.placeholder3',
-  'turn.placeholder4',
-  'turn.placeholder5',
-  'turn.placeholder6'
-]
-
-function WaitLine({ streaming }: { streaming: boolean }) {
-  const t = useT()
-  const [index, setIndex] = useState(0)
-  useEffect(() => {
-    if (!streaming) return
-    const id = window.setInterval(() => {
-      setIndex((current) => {
-        if (WAIT_LINE_KEYS.length < 2) return current
-        let next = current
-        while (next === current) next = Math.floor(Math.random() * WAIT_LINE_KEYS.length)
-        return next
-      })
-    }, 2800)
-    return () => window.clearInterval(id)
-  }, [streaming])
-  return (
-    <span className={cn(streaming && 'shimmer')}>
-      {t(WAIT_LINE_KEYS[index] ?? WAIT_LINE_KEYS[0])}
-    </span>
-  )
-}
 
 const OutlineBash = memo(function OutlineBash({ message, active }: { message: BashExecutionMessage; active?: boolean }) {
   const t = useT()

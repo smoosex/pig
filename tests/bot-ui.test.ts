@@ -851,6 +851,38 @@ async function fixture() {
   })
   assert.equal(exportBtn.disabled, true, 'disables export button when Bot timeline is empty')
 
+  // Streaming thinking row reuses workspace rotating humorous WaitLine phrases instead of static statusThinking.
+  const { WaitLine, WAIT_LINE_KEYS } = await import('../src/renderer/src/components/turn/WaitLine')
+  const { t } = await import('../src/renderer/src/lib/i18n')
+  const expectedPhrases = new Set(WAIT_LINE_KEYS.map((key) => t(key)))
+  await act(async () => {
+    useBotStore.setState({
+      streaming: true,
+      timeline: [{ id: 'u-wait', kind: 'user', text: 'think', createdAt: 4000 }]
+    })
+  })
+  const botWaitEl = pageHost.querySelector<HTMLElement>('[data-wait-line]')
+  assert.ok(botWaitEl, 'renders rotating WaitLine inside BotPage streaming hint')
+  assert.ok(expectedPhrases.has(botWaitEl.textContent ?? ''), 'displays one of the workspace humorous waiting lines')
+
+  const waitHost = document.createElement('div')
+  document.body.append(waitHost)
+  const waitRoot = createRoot(waitHost)
+  await act(async () => {
+    waitRoot.render(h(WaitLine, { streaming: true, intervalMs: 15 }))
+  })
+  const firstPhrase = waitHost.querySelector('[data-wait-line]')?.textContent ?? ''
+  assert.ok(expectedPhrases.has(firstPhrase))
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  })
+  const nextPhrase = waitHost.querySelector('[data-wait-line]')?.textContent ?? ''
+  assert.ok(expectedPhrases.has(nextPhrase))
+  assert.notEqual(nextPhrase, firstPhrase, 'rotates to a different humorous phrase on each tick')
+  await act(async () => {
+    waitRoot.unmount()
+  })
+
   await act(async () => {
     cardRoot.unmount()
     pageRoot.unmount()

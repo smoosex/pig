@@ -48,6 +48,7 @@ import { MarkdownText } from '../MarkdownText'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { ShortcutKbd } from '../ShortcutKbd'
 import { userBubbleSurface } from '../turn/TurnMessages'
+import { WaitLine } from '../turn/WaitLine'
 import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
 import { Message, MessageContent } from '../ui/message'
@@ -500,7 +501,7 @@ export function BotPage({
                         >
                           <BotAvatar type={avatar} size={24} state="working" interactive={false} className="shrink-0" />
                           <span className="text-xs text-muted-foreground motion-safe:animate-pulse">
-                            {streaming ? t('bot.statusThinking') : t('bot.statusApprovalContinuing', { title: resumedApprovalTask!.title })}
+                            {streaming ? <WaitLine streaming /> : t('bot.statusApprovalContinuing', { title: resumedApprovalTask!.title })}
                           </span>
                         </MessageScrollerItem>
                       ) : null}
