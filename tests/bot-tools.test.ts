@@ -96,6 +96,18 @@ function harness(opts: {
 }
 
 describe('Bot extension tools and §5.5 permission matrix', () => {
+  test('before_agent_start injects Bot surface situational awareness and operating rules into sections.bot', async () => {
+    const h = harness({})
+    const options = { sections: {} as Record<string, string> }
+    for (const fn of h.hooks.get('before_agent_start') ?? []) {
+      await fn({ systemPromptOptions: options })
+    }
+    expect(options.sections.bot).toContain('## Where You Are (Pig Bot Surface)')
+    expect(options.sections.bot).toContain('persistent single-timeline Bot space')
+    expect(options.sections.bot).toContain('"Bot" names the surface, NOT your persona')
+    expect(options.sections.bot).toContain('## Pig Bot Operating Rules')
+  })
+
   test('send_message strips hidden tags, validates attachments, and records visible assistant item', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pig-bot-att-'))
     const file = join(dir, 'report.txt')
