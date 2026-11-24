@@ -291,4 +291,120 @@ describe('BotDispatcher', () => {
     const takeoverCard = timeline.at(-1)
     expect(takeoverCard?.kind === 'system_fallback' && takeoverCard.text).toContain('[Taken over] Partial work')
   })
+
+  test('sending a user message during an in-flight notice turn lets the notice reply finish without triggering delivery_fallback, then runs the user turn', async () => {
+    const timeline: BotTimelineItem[] = []
+    const prompts: BotPromptRequest[] = []
+    let abortCount = 0
+    const noticeStarted = deferred()
+    const releaseNotice = deferred()
+
+    let dispatcher!: BotDispatcher
+    dispatcher = new BotDispatcher({
+      sendPrompt: async (req) => {
+        prompts.push(req)
+        if (req.text.includes('<host_notice>')) {
+          noticeStarted.resolve()
+          await releaseNotice.promise
+          dispatcher.markSideEffect('send_message')
+          await timeline.push({
+            id: 'bot-lumina-reply',
+            kind: 'assistant',
+            messageType: 'delivery',
+            content: 'lumina 梳理完啦！',
+            taskIds: ['task-lumina'],
+            createdAt: Date.now()
+          })
+          return
+        }
+        if (req.text.includes('matheme')) {
+          dispatcher.markSideEffect('bot_start_task')
+          dispatcher.markSideEffect('send_message')
+          timeline.push({
+            id: 'bot-matheme-reply',
+            kind: 'assistant',
+            messageType: 'text',
+            content: '我去翻一下 matheme！',
+            createdAt: Date.now()
+          })
+        }
+      },
+      abortCurrent: async () => { abortCount++ },
+      appendTimeline: async (item) => { timeline.push(item) },
+      onStreamingChanged: () => {},
+      onUserIdle: () => {}
+    })
+
+    const notice: BotNotice = {
+      noticeId: 'n-lumina',
+      kind: 'task_completed',
+      taskId: 'task-lumina',
+      runId: 'run-lumina',
+      projectCwd: '/repo/lumina',
+      summary: '## 1. 一句话定位 **Lumina 是一个个人数字花园**',
+      createdAt: Date.now(),
+      state: 'pending'
+    }
+
+    const deliveryPromise = dispatcher.deliverNotices([notice])
+    await noticeStarted.promise
+
+    // User sends a new message right while Bot is digesting lumina's completion notice before send_message!
+    const userItem = await dispatcher.handleUserMessage({
+      text: '这个项目做了什么工作',
+      projectMentions: ['/repo/matheme']
+    })
+    expect(userItem.kind).toBe('user')
+    // User bubble lands immediately without aborting the notice turn
+    expect(abortCount).toBe(0)
+    expect(timeline.some((i) => i.kind === 'user')).toBe(true)
+
+    releaseNotice.resolve()
+    const noticeResult = await deliveryPromise
+    await dispatcher.waitForIdle()
+
+    expect(noticeResult.state).toBe('delivered')
+    expect(timeline.filter((i) => i.kind === 'system_fallback')).toHaveLength(0)
+    expect(prompts).toHaveLength(2)
+    expect(prompts[0].text).toContain('<host_notice>')
+    expect(prompts[1].text).toContain('/repo/matheme')
+    expect(timeline.map((i) => i.id)).toContain('bot-lumina-reply')
+    expect(timeline.map((i) => i.id)).toContain('bot-matheme-reply')
+  })
+
+  test('explicitly aborting an in-flight notice turn defers the notice instead of emitting a false delivery_fallback card', async () => {
+    const timeline: BotTimelineItem[] = []
+    const noticeStarted = deferred()
+    const releaseAbortedPrompt = deferred()
+
+    const dispatcher = new BotDispatcher({
+      sendPrompt: async () => {
+        noticeStarted.resolve()
+        await releaseAbortedPrompt.promise
+      },
+      abortCurrent: async () => {
+        releaseAbortedPrompt.resolve()
+      },
+      appendTimeline: async (item) => { timeline.push(item) },
+      onStreamingChanged: () => {},
+      onUserIdle: () => {}
+    })
+
+    const deliveryPromise = dispatcher.deliverNotices([{
+      noticeId: 'n-abort',
+      kind: 'task_completed',
+      taskId: 'task-1',
+      runId: 'run-1',
+      projectCwd: '/repo/lumina',
+      summary: 'Completed work',
+      createdAt: Date.now(),
+      state: 'pending'
+    }])
+    await noticeStarted.promise
+    await dispatcher.abortActiveTurn()
+    const res = await deliveryPromise
+
+    expect(res.state).toBe('deferred')
+    expect(timeline.filter((i) => i.kind === 'system_fallback')).toHaveLength(0)
+  })
 })

@@ -630,7 +630,9 @@ function BotTimelineRow({
               </Button>
             ) : null}
           </div>
-          <p className="mt-1 text-foreground/90 break-words">{item.text}</p>
+          <div className="mt-1.5 text-foreground/90">
+            <MarkdownText text={item.text} />
+          </div>
           {relatedTasks.length > 0 ? (
             <div className="mt-2 flex flex-col gap-2">
               {relatedTasks.map((task) => (

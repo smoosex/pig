@@ -69,6 +69,7 @@ export class BotDispatcher {
     textAttachments?: BotTextAttachment[]
   }> = []
   private runPromise: Promise<void> | null = null
+  private noticePromise: Promise<unknown> | null = null
 
   constructor(private readonly deps: BotDispatcherDeps) {}
 
@@ -193,17 +194,9 @@ export class BotDispatcher {
         })
         return userItem
       }
-      // If a notice turn is active, preempt if side-effect-free or run immediately after.
-      if (!this.activeTurn.hasSideEffect) {
-        this.activeTurn.preempted = true
-        this.pendingPreemptInputs.push({
-          text: promptText,
-          images: input.images,
-          textAttachments: input.textAttachments
-        })
-        void this.deps.abortCurrent().catch(() => {})
-        return userItem
-      }
+      // Active notice turn already wrote <host_notice> into session history: let its fast send_message finish
+      // rather than aborting into a duplicate/half-baked context, then run the user burst immediately after.
+      this.setVisibleStreaming(true)
       this.pendingPreemptInputs.push({
         text: promptText,
         images: input.images,
@@ -223,8 +216,8 @@ export class BotDispatcher {
 
   /** Wait until current active turn (and any merged preemption follow-up) finishes (useful in tests). */
   async waitForIdle(): Promise<void> {
-    while (this.runPromise) {
-      await this.runPromise
+    while (this.noticePromise || this.runPromise) {
+      await (this.noticePromise ?? this.runPromise)
     }
   }
 
@@ -370,76 +363,94 @@ export class BotDispatcher {
     this.setVisibleStreaming(true)
 
     let runError: string | null = null
-    try {
-      await this.deps.sendPrompt({ text: formatNoticesPrompt(notices) })
+    const work = (async (): Promise<{ state: 'delivered' | 'fallback' | 'failed' | 'deferred'; error?: string }> => {
+      try {
+        await this.deps.sendPrompt({ text: formatNoticesPrompt(notices) })
 
-      if (!turn.preempted && turn.sentMessageCount === 0) {
-        this.setVisibleStreaming(true)
-        try {
-          await this.deps.sendPrompt({ text: BOT_REPROMPT_NO_MESSAGE })
-        } catch (error) {
+        if (!turn.preempted && turn.sentMessageCount === 0) {
+          this.setVisibleStreaming(true)
+          try {
+            await this.deps.sendPrompt({ text: BOT_REPROMPT_NO_MESSAGE })
+          } catch (error) {
+            if (!turn.preempted) {
+              runError = error instanceof Error ? error.message : String(error)
+            }
+          }
+        }
+      } catch (error) {
+        if (!turn.preempted) {
           runError = error instanceof Error ? error.message : String(error)
         }
+      } finally {
+        this.activeTurn = null
+        if (this.pendingPreemptInputs.length === 0) {
+          this.setVisibleStreaming(false)
+        }
       }
-    } catch (error) {
-      if (!turn.preempted) {
-        runError = error instanceof Error ? error.message : String(error)
+
+      // If user sent messages during notice handling, kick off the queued user burst immediately.
+      if (this.pendingPreemptInputs.length > 0) {
+        const drained = this.pendingPreemptInputs.splice(0)
+        this.runPromise = this.runUserBurst(
+          drained.map((d) => d.text),
+          drained.flatMap((d) => d.images ?? []),
+          drained.flatMap((d) => d.textAttachments ?? [])
+        )
       }
-    } finally {
-      this.activeTurn = null
-      this.setVisibleStreaming(false)
-    }
 
-    // If user jumped in during notice handling, kick off the queued user burst immediately.
-    if (this.pendingPreemptInputs.length > 0) {
-      const drained = this.pendingPreemptInputs.splice(0)
-      this.runPromise = this.runUserBurst(
-        drained.map((d) => d.text),
-        drained.flatMap((d) => d.images ?? []),
-        drained.flatMap((d) => d.textAttachments ?? [])
-      )
-    }
+      if (turn.sentMessageCount > 0) {
+        for (const notice of notices) {
+          await this.deps.onDeliveryState?.(notice.taskId, notice.runId, 'delivered', notice.noticeId)
+        }
+        return { state: 'delivered' }
+      }
 
-    if (turn.sentMessageCount > 0) {
+      // Never mistake an explicit stop/reset abort (`turn.preempted`) for model silence — defer back to queue.
+      if (turn.preempted) {
+        return { state: 'deferred' }
+      }
+
+      // Layer 3 final fallback for terminal notices: emit lightweight system delivery card without retrying background task.
+      const terminal = notices.filter((n) => TERMINAL_NOTICE_KINDS.has(n.kind))
+      if (terminal.length > 0) {
+        const summaryLines = terminal.map((n) => {
+          const label =
+            n.kind === 'task_completed' ? 'Completed'
+              : n.kind === 'task_stopped_by_user' ? 'Stopped by user'
+                : n.kind === 'task_stopped' ? 'Stopped'
+                  : n.kind === 'task_taken_over' ? 'Taken over'
+                    : n.kind === 'task_interrupted' ? 'Interrupted'
+                      : 'Failed'
+          return `[${label}] ${n.summary || n.taskId}`
+        })
+        const joinedSummary = summaryLines.join('\n\n')
+        const fallbackCard: Extract<BotTimelineItem, { kind: 'system_fallback' }> = {
+          id: randomUUID(),
+          kind: 'system_fallback',
+          reason: 'delivery_fallback',
+          text: runError
+            ? `${joinedSummary}\n\n(Bot reply error: ${runError})`
+            : joinedSummary,
+          taskIds: [...new Set(terminal.map((n) => n.taskId))],
+          createdAt: Date.now()
+        }
+        await this.deps.appendTimeline(fallbackCard)
+        for (const notice of notices) {
+          await this.deps.onDeliveryState?.(notice.taskId, notice.runId, 'fallback', notice.noticeId, runError ?? undefined)
+        }
+        return { state: 'fallback', error: runError ?? undefined }
+      }
+
       for (const notice of notices) {
-        await this.deps.onDeliveryState?.(notice.taskId, notice.runId, 'delivered', notice.noticeId)
+        await this.deps.onDeliveryState?.(notice.taskId, notice.runId, runError ? 'failed' : 'delivered', notice.noticeId, runError ?? undefined)
       }
-      return { state: 'delivered' }
-    }
+      return runError ? { state: 'failed', error: runError } : { state: 'delivered' }
+    })()
 
-    // Layer 3 final fallback for terminal notices: emit lightweight system delivery card without retrying background task.
-    const terminal = notices.filter((n) => TERMINAL_NOTICE_KINDS.has(n.kind))
-    if (terminal.length > 0) {
-      const summaryLines = terminal.map((n) => {
-        const label =
-          n.kind === 'task_completed' ? 'Completed'
-            : n.kind === 'task_stopped_by_user' ? 'Stopped by user'
-              : n.kind === 'task_stopped' ? 'Stopped'
-                : n.kind === 'task_taken_over' ? 'Taken over'
-                  : n.kind === 'task_interrupted' ? 'Interrupted'
-                    : 'Failed'
-        return `[${label}] ${n.summary || n.taskId}`
-      })
-      const fallbackCard: Extract<BotTimelineItem, { kind: 'system_fallback' }> = {
-        id: randomUUID(),
-        kind: 'system_fallback',
-        reason: 'delivery_fallback',
-        text: runError
-          ? `${summaryLines.join(' · ')} (Bot reply error: ${runError})`
-          : summaryLines.join(' · '),
-        taskIds: [...new Set(terminal.map((n) => n.taskId))],
-        createdAt: Date.now()
-      }
-      await this.deps.appendTimeline(fallbackCard)
-      for (const notice of notices) {
-        await this.deps.onDeliveryState?.(notice.taskId, notice.runId, 'fallback', notice.noticeId, runError ?? undefined)
-      }
-      return { state: 'fallback', error: runError ?? undefined }
-    }
-
-    for (const notice of notices) {
-      await this.deps.onDeliveryState?.(notice.taskId, notice.runId, runError ? 'failed' : 'delivered', notice.noticeId, runError ?? undefined)
-    }
-    return runError ? { state: 'failed', error: runError } : { state: 'delivered' }
+    const tracked = work.finally(() => {
+      if (this.noticePromise === tracked) this.noticePromise = null
+    })
+    this.noticePromise = tracked
+    return work
   }
 }
