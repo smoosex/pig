@@ -103,6 +103,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.browser.clearHistory()
   await api.browser.topSites()
   await api.browser.focusPage('session-1')
+  await api.browser.blurPage?.('session-1')
   await api.browser.getHistoryRecording()
   await api.browser.setHistoryRecording(false)
   api.browser.onHistoryChanged(() => {})()
@@ -245,6 +246,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'browser:history-clear', args: [] },
     { channel: 'browser:history-top', args: [8] },
     { channel: 'browser:focus-page', args: ['session-1'] },
+    { channel: 'browser:blur-page', args: ['session-1'] },
     { channel: 'browser:history-recording', args: [] },
     { channel: 'browser:history-set-recording', args: [false] },
     { channel: 'browser:release-agent', args: ['browser:one', 'session:one'] },

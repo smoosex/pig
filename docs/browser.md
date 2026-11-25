@@ -146,7 +146,7 @@
 - 原生焦点保护由 `browser/focus-guard.ts` 按窗口维护：网页的 focus 监听在原生视图挂载前安装，隐藏网页不得激活面板或保留抢来的键盘焦点；Agent 的 navigate/history 在启动导航前登记后台保护（open 的加载沿用 navigate），可见的非聚焦分屏网页也受保护。
 - 发生非用户焦点转移时同步恢复当前有效的原 WebContents（宿主、其他网页或 DevTools），不调用 DOM 输入框 focus、不激活窗口，也不发送错误的 `focused` 状态。
 - 保护不随工具返回或导航完成自动解除，迟到焦点仍受限；恢复本身的 focus 事件不重新激活面板。
-- 仅用户点击目标页、显式 focusPage 或成功的 `browser_switch(activate=true)` 解除对应目标页的保护；普通 Tab 不代表跨页面激活，bounds 从 null 恢复也可能只是菜单／弹窗遮挡结束，两者都不能解除保护；用户改用其他页面／DevTools 后，仍在加载的旧页只能返回当前键盘归属，不能恢复旧输入位置。
+- 仅用户点击目标页、切入已加载网页的活动浏览器标签／分屏、显式 `focusPage` 或成功的 `browser_switch(activate=true)` 解除对应目标页的保护；普通 Tab 键不代表跨页面激活，bounds 仅从遮挡恢复（菜单／弹窗关闭）也不解除保护；当持有焦点的网页或内嵌 DevTools 因切走标签、分屏失焦或浮层遮挡而隐藏时，必须同步经 `restoreHostFocus` / `browser:blur-page` 将原生键盘焦点归还宿主 `win.webContents`，防止焦点滞留在已隐藏的 `WebContentsView` 导致全局快捷键失灵；用户改用其他页面／DevTools 后，仍在加载的旧页只能返回当前键盘归属，不能恢复旧输入位置。
 - 窗口 blur/hide/minimize 清空保护与归属，销毁 WebContents／窗口移除监听与引用，不在重新前台化后补做旧恢复。
 
 ## 按需网络正文捕获

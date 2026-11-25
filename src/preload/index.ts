@@ -106,6 +106,7 @@ const api: SessionApi = {
     listHistory: (text, cursor, limit) => ipcRenderer.invoke('browser:history-list', text, cursor, limit ?? 50),
     removeHistory: (url) => ipcRenderer.invoke('browser:history-remove', url),
     focusPage: (browserId) => ipcRenderer.invoke('browser:focus-page', browserId),
+    blurPage: (browserId) => ipcRenderer.invoke('browser:blur-page', browserId),
     topSites: (limit) => ipcRenderer.invoke('browser:history-top', limit ?? 8),
     clearHistory: () => ipcRenderer.invoke('browser:history-clear'),
     getHistoryRecording: () => ipcRenderer.invoke('browser:history-recording'),

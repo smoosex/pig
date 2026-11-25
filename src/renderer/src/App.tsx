@@ -127,7 +127,7 @@ function SidebarToggle({ onClick }: { onClick: () => void }) {
   )
 }
 
-function BrowserTabContent({ tab }: { tab: OpenTab }) {
+function BrowserTabContent({ tab, active, surfaceVisible }: { tab: OpenTab; active: boolean; surfaceVisible: boolean }) {
   const present = useIsPresent()
   const targetSessionId = useSessionsStore((state) => {
     const realTarget = (id: string | null | undefined) => state.openTabs.find((item) =>
@@ -138,12 +138,20 @@ function BrowserTabContent({ tab }: { tab: OpenTab }) {
     return realTarget(tab.browserTargetSessionId) ?? null
   })
   // A mounted pane is visible even when another split pane owns keyboard focus.
-  return <BrowserPanel browserId={tab.id} targetSessionId={targetSessionId} active={present} onFocus={() => {
-    const layout = useSplitLayoutStore.getState()
-    const pane = paneOfTab(layout.groups, tab.id)
-    if (pane) layout.setActivePane(pane.id)
-    useSessionsStore.getState().setActive(tab.id)
-  }} />
+  return (
+    <BrowserPanel
+      browserId={tab.id}
+      targetSessionId={targetSessionId}
+      active={present && surfaceVisible}
+      focused={active && present && surfaceVisible}
+      onFocus={() => {
+        const layout = useSplitLayoutStore.getState()
+        const pane = paneOfTab(layout.groups, tab.id)
+        if (pane) layout.setActivePane(pane.id)
+        useSessionsStore.getState().setActive(tab.id)
+      }}
+    />
+  )
 }
 
 function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) {
@@ -163,10 +171,12 @@ function TerminalTabContent({ tab, active }: { tab: OpenTab; active: boolean }) 
 export const PaneViewContent = memo(function PaneViewContent({
   node,
   isActive,
+  surfaceVisible = true,
   composerWorkspace
 }: {
   node: PaneNode
   isActive: boolean
+  surfaceVisible?: boolean
   composerWorkspace: { project: string; branch: string } | null
 }) {
   const t = useT()
@@ -208,9 +218,9 @@ export const PaneViewContent = memo(function PaneViewContent({
   return (
     <div className="flex h-full w-full min-h-0 min-w-0 flex-1 flex-col">
       {paneTab?.kind === 'browser' ? (
-        <BrowserTabContent tab={paneTab} />
+        <BrowserTabContent tab={paneTab} active={isActive} surfaceVisible={surfaceVisible} />
       ) : paneTab?.kind === 'terminal' ? (
-        <TerminalTabContent tab={paneTab} active={isActive} />
+        <TerminalTabContent tab={paneTab} active={isActive && surfaceVisible} />
       ) : isDiff ? (
         <ChangesView cwd={paneTab.cwd} />
       ) : isTurnDiff && paneTab.turnDiff ? (
@@ -970,7 +980,12 @@ export default function App() {
                       visible={Boolean(activeTab) && sidebarTab !== 'kanban'}
                       className={cn('min-h-0 min-w-0 flex-1', (!activeTab || sidebarTab === 'kanban') && 'hidden')}
                       renderPane={(node: PaneNode, isActive) => (
-                        <PaneViewContent node={node} isActive={isActive} composerWorkspace={composerWorkspace} />
+                        <PaneViewContent
+                          node={node}
+                          isActive={isActive}
+                          surfaceVisible={!botOpen && sidebarTab !== 'kanban'}
+                          composerWorkspace={composerWorkspace}
+                        />
                       )}
                     />
                   ) : null}

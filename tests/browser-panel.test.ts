@@ -28,6 +28,9 @@ async function fixture() {
   let hideFailures = 0
   const appliedBounds = new Map<string, BrowserBounds | null>()
   const navigations: { browserId: string; url: string }[] = []
+  const reloads: string[] = []
+  const focusedPages: string[] = []
+  const blurredPages: string[] = []
   const pageActions: [string, string][] = []
   const controlActions: unknown[][] = []
   let finishAbort!: () => void
@@ -36,7 +39,7 @@ async function fixture() {
   const api: BrowserApi = {
     create: async (browserId) => { created++; return state(browserId) },
     getState: async (browserId) => { reads++; return browserId === 'a' ? new Promise((resolve) => { initial = resolve }) : state(browserId) },
-    navigate: async (browserId, url) => { navigations.push({ browserId, url }) }, back: async () => {}, forward: async () => {}, reload: async () => {},
+    navigate: async (browserId, url) => { navigations.push({ browserId, url }) }, back: async () => {}, forward: async () => {}, reload: async (browserId) => { reloads.push(browserId) },
     removeAnnotations: async () => {},
     setSelecting: async (_id, _selecting, options) => { assert.ok(options?.labels.add); assert.ok(options?.theme.foreground) }, close: async () => { closed++ },
     setBounds: async (browserId, rect) => {
@@ -64,7 +67,8 @@ async function fixture() {
     listHistory: async () => ({ entries: [], next: null }),
     removeHistory: async () => {},
     topSites: async () => [],
-    focusPage: async () => {},
+    focusPage: async (id) => { focusedPages.push(id) },
+    blurPage: async (id) => { blurredPages.push(id) },
     clearHistory: async () => {},
     getHistoryRecording: async () => true,
     setHistoryRecording: async () => {},
@@ -99,12 +103,13 @@ async function fixture() {
   document.body.append(container)
   const root = createRoot(container)
   const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 35)) }) }
+  const { IS_MAC } = await import('../src/renderer/src/lib/shortcuts')
   const { WorkspaceLayout } = await import('../src/renderer/src/components/WorkspaceLayout')
-  const render = async (browserId = 'a', active = true, targetSessionId: string | null = 'session-a', settingsOpen = false) => {
+  const render = async (browserId = 'a', active = true, targetSessionId: string | null = 'session-a', settingsOpen = false, focused?: boolean) => {
     await act(async () => { root.render(createElement(TooltipProvider, null, createElement(WorkspaceLayout, {
       settingsOpen, leftCollapsed: false, rightCollapsed: false, leftFloating: false, rightFloating: false,
       left: null, right: null, renderSettings: () => createElement('div', null, 'Settings'),
-      children: createElement(BrowserPanel, { browserId, active, targetSessionId })
+      children: createElement(BrowserPanel, { browserId, active, focused, targetSessionId })
     }))) })
     const viewport = container.querySelector('[data-browser-viewport]')!
     viewport.getBoundingClientRect = () => new DOMRect(400, 100, 500, 600)
@@ -131,14 +136,17 @@ async function fixture() {
   await act(async () => { pushState(state('a', 'fresh')); initial(state('a', 'old')) })
   await flush()
   assert.equal(container.querySelector('[role="status"]')?.textContent, 'fresh')
+  assert.deepEqual(focusedPages, ['a'], 'switching to a loaded browser tab hands keyboard focus to the webpage')
   const beforeSettings = container.querySelector('[data-browser-viewport]')
   const readsBeforeSettings = reads
   await render('a', true, 'session-a', true)
   assert.equal(bounds.filter(item => item.browserId === 'a').at(-1)?.bounds, null, 'settings hide the native view, not only its DOM wrapper')
+  assert.deepEqual(blurredPages, ['a'], 'entering settings blurs the browser page so host shortcuts remain active')
   await render('a', true, 'session-a', false)
   assert.equal(container.querySelector('[data-browser-viewport]'), beforeSettings, 'returning retains the browser DOM and state')
   assert.equal(reads, readsBeforeSettings, 'returning does not remount and re-read the browser')
   assert.ok(bounds.filter(item => item.browserId === 'a').at(-1)?.bounds, 'returning restores native bounds')
+  assert.deepEqual(focusedPages, ['a', 'a'], 'returning from settings restores webpage focus')
   const address = container.querySelector('input')!
   const toolbar = address.closest('form')!
   assert.equal(container.querySelector('button[type="submit"]'), null)
@@ -358,6 +366,31 @@ async function fixture() {
   await render('b', true, 'session-b')
   assert.equal(reads, 2, 'hiding must not recreate the preview')
   assert.equal(created, 0, 'tab creation, not the panel, owns preview creation')
+  // Unfocused visible split pane keeps visible bounds without stealing focus, and blurs when losing pane focus
+  const focusCountBeforeSplit = focusedPages.length
+  const blurCountBeforeSplit = blurredPages.length
+  await render('b', true, 'session-b', false, false)
+  assert.ok(bounds.at(-1)?.bounds, 'an unfocused split pane remains visible')
+  assert.equal(focusedPages.length, focusCountBeforeSplit, 'an unfocused split pane does not steal focus')
+  assert.equal(blurredPages.length, blurCountBeforeSplit + 1, 'losing split-pane focus returns native focus to the host')
+  await render('b', true, 'session-b', false, true)
+  assert.equal(focusedPages.at(-1), 'b', 'activating a split browser pane hands focus to its webpage')
+  // Mod+KeyR reloads the active browser tab unless typing in the address input
+  const bAddress = container.querySelector('input')!
+  await act(async () => {
+    bAddress.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'KeyR', key: 'r', metaKey: IS_MAC, ctrlKey: !IS_MAC, bubbles: true, cancelable: true
+    }))
+  })
+  assert.deepEqual(reloads, [], 'Mod+R while editing the address input does not reload')
+  await act(async () => {
+    bAddress.blur()
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'KeyR', key: 'r', metaKey: IS_MAC, ctrlKey: !IS_MAC, bubbles: true, cancelable: true
+    }))
+  })
+  assert.deepEqual(reloads, ['b'], 'Mod+R reloads the active browser page when host focus is outside inputs')
   await click('screenshot')
   await act(async () => { capture({ mimeType: 'image/png', data: 'YWJj' }) })
   assert.equal(drafts.getState().drafts['session-b']!.images!.length, 1)

@@ -214,6 +214,9 @@ export class BrowserHost {
       page.devtoolsTop = undefined
       page.devtoolsPageHeight = undefined
       this.syncDevtoolsPageEdge(owner, page)
+      // Hiding a focused native WebContentsView drops keyboard input into a black hole unless returned to the host.
+      this.restoreHostFocus(owner, liveContents(page.view))
+      if (page.devtools) this.restoreHostFocus(owner, liveContents(page.devtools))
       page.clip?.setVisible(false)
       page.view.setVisible(false)
       page.devtools?.setVisible(false)
@@ -222,6 +225,8 @@ export class BrowserHost {
     const visible = !page.bounds.occluded
     // Hide before resizing/reparenting; an overlay must never expose a native frame above itself.
     if (!visible) {
+      this.restoreHostFocus(owner, liveContents(page.view))
+      if (page.devtools) this.restoreHostFocus(owner, liveContents(page.devtools))
       page.clip?.setVisible(false)
       page.view.setVisible(false)
       page.devtools?.setVisible(false)
@@ -282,17 +287,21 @@ export class BrowserHost {
     const at = (y: number, h: number, clipped: boolean) => clipped
       ? { x: offsetX, y: offsetY, width: bounds.width, height: h }
       : { x: bounds.x, y, width: bounds.width, height: h }
+    const pageVisible = visible && bounds.width > 0 && pageHeight > 0
+    if (visible && !pageVisible) this.restoreHostFocus(owner, liveContents(page.view))
     page.view.setBounds(at(bounds.y, pageHeight, page.clipped === page.view))
-    page.view.setVisible(visible && bounds.width > 0 && pageHeight > 0)
-    if (visible && page.focusOnShow && bounds.width > 0 && pageHeight > 0) {
+    page.view.setVisible(pageVisible)
+    if (pageVisible && page.focusOnShow) {
       page.focusOnShow = false
       if (owner.win.isFocused()) {
         page.view.webContents.focus()
       }
     }
     if (page.devtools) {
+      const toolsVisible = visible && bounds.width > 0 && tools > 0
+      if (visible && !toolsVisible) this.restoreHostFocus(owner, liveContents(page.devtools))
       page.devtools.setBounds(at(bottomY, tools, page.clipped === page.devtools))
-      page.devtools.setVisible(visible && bounds.width > 0 && tools > 0)
+      page.devtools.setVisible(toolsVisible)
     }
     this.syncDevtoolsPageEdge(owner, page)
   }
@@ -740,6 +749,14 @@ export class BrowserHost {
     owner.focus.userIntent(page.view.webContents)
     page.focusOnShow = true
     this.layout(owner, page)
+  }
+
+  blurPage(win: BrowserWindow, id: string): void {
+    const { owner, page } = this.page(win, id, false)
+    if (!page) return
+    page.focusOnShow = false
+    this.restoreHostFocus(owner, liveContents(page.view))
+    if (page.devtools) this.restoreHostFocus(owner, liveContents(page.devtools))
   }
 
   allowFocus(win: BrowserWindow, id: string): void {

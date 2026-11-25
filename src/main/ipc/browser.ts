@@ -271,6 +271,11 @@ export function registerBrowserIpc(sessions?: BrowserSessions): void {
     return history.remove(url)
   })
   ipcMain.handle('browser:focus-page', (event, id: string) => host.focusPage(owner(event, id), id))
+  ipcMain.handle('browser:blur-page', (event, id: string) => {
+    const win = ui(event, id)
+    if (owners.has(id) && owners.get(id) !== win) throw new Error('Browser pane belongs to another window')
+    if (owners.get(id) === win) host.blurPage(win, id)
+  })
   ipcMain.handle('browser:history-top', (event, limit: unknown) => {
     assertBrowserSender(event, windowForEvent(event))
     return history.top(limit)

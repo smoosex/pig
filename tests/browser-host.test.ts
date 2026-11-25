@@ -631,6 +631,53 @@ describe('browser host', () => {
     }
   })
 
+  test('hiding, occluding, or blurring a focused page or DevTools returns keyboard focus to the host without stealing from unfocused panes', async () => {
+    for (const target of ['page', 'devtools'] as const) {
+      const { host, owner, win, views } = fixture()
+      await host.navigate(owner, 'a', 'https://example.com')
+      host.setBounds(owner, 'a', bounds)
+      if (target === 'devtools') {
+        host.inspect(owner, 'a')
+        host.setBounds(owner, 'a', { ...bounds, devtools: { height: 80 } })
+      }
+      const contents = views[target === 'page' ? 0 : 1].webContents
+      const focusContents = contents.focus.bind(contents)
+      contents.focus = () => { win.webContents.focused = false; focusContents() }
+      const focusHost = win.webContents.focus.bind(win.webContents)
+      win.webContents.focus = () => { contents.focused = false; focusHost() }
+
+      // Tab switch hide (`bounds = null`) restores host focus before hiding native view
+      contents.focus()
+      host.setBounds(owner, 'a', null)
+      expect(win.webContents.focusCalls).toBe(1)
+      expect(win.webContents.isFocused()).toBe(true)
+      expect(contents.isFocused()).toBe(false)
+      expect(views[0].visible).toBe(false)
+
+      // Overlay occlusion (`occluded = true`) restores host focus before hiding native view
+      host.setBounds(owner, 'a', target === 'devtools' ? { ...bounds, devtools: { height: 80 } } : bounds)
+      contents.focus()
+      host.setBounds(owner, 'a', { ...bounds, occluded: true, ...(target === 'devtools' ? { devtools: { height: 80 } } : {}) })
+      expect(win.webContents.focusCalls).toBe(2)
+      expect(win.webContents.isFocused()).toBe(true)
+
+      // Explicit blurPage (e.g. split pane focus switch) restores host focus only when this browser holds focus
+      host.setBounds(owner, 'a', target === 'devtools' ? { ...bounds, devtools: { height: 80 } } : bounds)
+      contents.focus()
+      host.blurPage(owner, 'a')
+      expect(win.webContents.focusCalls).toBe(3)
+      expect(win.webContents.isFocused()).toBe(true)
+
+      // Never steals focus when another browser pane owns keyboard focus
+      win.webContents.focused = false
+      host.setBounds(owner, 'b', bounds)
+      views.at(-1)!.webContents.focus()
+      host.blurPage(owner, 'a')
+      host.setBounds(owner, 'a', null)
+      expect(win.webContents.focusCalls).toBe(3)
+    }
+  })
+
   test('closing an unfocused browser does not steal keyboard focus from another pane', async () => {
     const { host, owner, win, views } = fixture()
     await host.navigate(owner, 'a', 'https://example.com')

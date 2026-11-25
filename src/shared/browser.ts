@@ -206,8 +206,10 @@ export interface BrowserApi {
   /** Newest first; `text` keeps entries whose URL or title contains every term. */
   listHistory(text: string, cursor: BrowserHistoryCursor | null, limit?: number): Promise<BrowserHistoryPage>
   removeHistory(url: string): Promise<void>
-  /** Gives the page keyboard focus once it is visible; for loads started from controls that then disappear. */
+  /** Gives the page keyboard focus once it is visible; for tab switches and loads started from controls that disappear. */
   focusPage(browserId: string): Promise<void>
+  /** Returns native keyboard focus to the host UI if this browser's page or docked DevTools currently hold it. */
+  blurPage?(browserId: string): Promise<void>
   /** Most frecent sites for a blank tab, one page per site. */
   topSites(limit?: number): Promise<BrowserHistoryEntry[]>
   clearHistory(): Promise<void>

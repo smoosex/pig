@@ -6,6 +6,7 @@ import type { BrowserFrame, BrowserScreenshot, BrowserState } from '../../../../
 import { api } from '../../ipc/api'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
+import { eventAccelerator, isComposingKey, isShortcutRecording } from '../../lib/shortcuts'
 import { cn } from '../../lib/utils'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { Button } from '../ui/button'
@@ -50,6 +51,7 @@ interface BrowserPanelProps {
   browserId: string
   targetSessionId: string | null
   active?: boolean
+  focused?: boolean
   onFocus?: () => void
 }
 
@@ -57,9 +59,16 @@ export function BrowserPanel({ browserId, ...props }: BrowserPanelProps) {
   return <IndependentBrowserPanel key={browserId} browserId={browserId} {...props} />
 }
 
-function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActive = true, onFocus }: BrowserPanelProps) {
+function IndependentBrowserPanel({
+  browserId,
+  targetSessionId,
+  active: paneActive = true,
+  focused: paneFocusedProp,
+  onFocus
+}: BrowserPanelProps) {
   const workspaceVisible = useWorkspaceVisible()
   const active = paneActive && workspaceVisible
+  const paneFocused = (paneFocusedProp ?? paneActive) && active
   const t = useT()
   const [state, setState] = useState<BrowserState | null>(null)
   const [address, setAddress] = useState('')
@@ -84,6 +93,11 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActiv
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  busyRef.current = busy
+  const toolbarRef = useRef<HTMLFormElement>(null)
+  const pendingTabFocus = useRef(false)
+  const wasPaneFocused = useRef(false)
   const viewport = useRef<HTMLDivElement>(null)
   const ratio = useSyncExternalStore(subscribeRatio, () => devtoolsRatio)
   // Main reports the pointer while the user drags the top edge of the native DevTools.
@@ -122,6 +136,12 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActiv
       latest.current = next
       setState(next)
       if (!previous || previous.url !== next.url) setAddress(next.url)
+      if (pendingTabFocus.current) {
+        pendingTabFocus.current = false
+        if (next.url && !next.certificate && !toolbarRef.current?.contains(document.activeElement)) {
+          void api.browser.focusPage(browserId).catch(report)
+        }
+      }
     }
     const offState = api.browser.onState((next) => {
       if (next.browserId !== browserId || disposed) return
@@ -176,11 +196,65 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActiv
     return () => observer.disconnect()
   }, [browserId, state?.documentId, pickerOptions, report])
 
-  const run = (operation: () => Promise<void>) => {
+  const run = useCallback((operation: () => Promise<void>) => {
     setError(null)
     setBusy(true)
     void operation().catch(report).finally(() => { if (alive.current) setBusy(false) })
-  }
+  }, [report])
+
+  useEffect(() => {
+    const entered = paneFocused && !wasPaneFocused.current
+    const left = !paneFocused && wasPaneFocused.current
+    wasPaneFocused.current = paneFocused
+    if (!paneFocused) {
+      pendingTabFocus.current = false
+      if (left) void api.browser.blurPage?.(browserId)?.catch(report)
+      return
+    }
+    if (!entered) return
+    const current = latest.current
+    if (!current) {
+      pendingTabFocus.current = true
+      return
+    }
+    pendingTabFocus.current = false
+    if (current.url && !current.certificate && !toolbarRef.current?.contains(document.activeElement)) {
+      void api.browser.focusPage(browserId).catch(report)
+    }
+  }, [browserId, paneFocused, report])
+
+  useEffect(() => () => {
+    if (wasPaneFocused.current) {
+      wasPaneFocused.current = false
+      void api.browser.blurPage?.(browserId)?.catch(() => {})
+    }
+  }, [browserId])
+
+  useEffect(() => {
+    if (!paneFocused) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || composing.current || isComposingKey(event) || isShortcutRecording()) return
+      const accelerator = eventAccelerator(event)
+      if (accelerator !== 'Mod+KeyR' && accelerator !== 'Mod+Shift+KeyR') return
+      const activeEl = document.activeElement
+      if (
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl instanceof HTMLElement && activeEl.isContentEditable)
+      ) {
+        return
+      }
+      if (!latest.current?.url || latest.current.certificate) return
+      event.preventDefault()
+      if (!event.repeat && !busyRef.current) {
+        invalidateCapture()
+        run(() => api.browser.reload(browserId))
+        void api.browser.focusPage(browserId).catch(report)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [browserId, invalidateCapture, paneFocused, report, run])
   const releaseControl = async (stop: boolean) => {
     if (!releaseTarget || releaseLock.current) return
     releaseLock.current = true
@@ -300,9 +374,14 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActiv
   return (
     <Activity mode={workspaceVisible ? 'visible' : 'hidden'}>
     <section className="flex min-h-0 flex-1 flex-col" aria-label={t('tabBar.newBrowser')} hidden={!active}>
-      <form className="flex shrink-0 items-center gap-0.5 border-b border-glass-card-border bg-glass-card-background px-2 py-1.5 text-xs text-glass-prompt-foreground solid:border-border solid:bg-muted/50 solid:text-foreground" onSubmit={(event) => {
+      <form ref={toolbarRef} className="flex shrink-0 items-center gap-0.5 border-b border-glass-card-border bg-glass-card-background px-2 py-1.5 text-xs text-glass-prompt-foreground solid:border-border solid:bg-muted/50 solid:text-foreground" onSubmit={(event) => {
         event.preventDefault()
-        if (address.trim() && !busy && !composing.current) navigate(() => api.browser.navigate(browserId, address.trim(), true))
+        if (address.trim() && !busy && !composing.current) {
+          if (toolbarRef.current?.contains(document.activeElement)) {
+            ;(document.activeElement as HTMLElement | null)?.blur?.()
+          }
+          openUrl(address.trim(), { typed: true, focus: true })
+        }
       }}>
         {iconButton(t('browser.back'), <ArrowLeft />, () => navigate(() => api.browser.back(browserId)), !state?.canGoBack)}
         {iconButton(t('browser.forward'), <ArrowRight />, () => navigate(() => api.browser.forward(browserId)), !state?.canGoForward)}
@@ -352,7 +431,12 @@ function IndependentBrowserPanel({ browserId, targetSessionId, active: paneActiv
           {iconButton(t('browser.clearMarks'), <Trash2 />, () => run(() => api.browser.removeAnnotations(browserId, state.annotations.map((mark) => mark.id))))}
         </> : null}
         <BrowserAddressInput value={address} onValueChange={setAddress} composing={composing}
-          onPick={(url, clicked) => openUrl(url, { typed: true, focus: clicked })} />
+          onPick={(url) => {
+            if (toolbarRef.current?.contains(document.activeElement)) {
+              ;(document.activeElement as HTMLElement | null)?.blur?.()
+            }
+            openUrl(url, { typed: true, focus: true })
+          }} />
         <div className="flex shrink-0 items-center gap-1">
           {state?.agentSessionId ? iconButton(t('browser.releaseAgent'), <Bot />, () => { setReleaseError(null); setReleaseTarget(state.agentSessionId) }, false, true, t('browser.agentControlled')) : null}
           {iconButton(t('browser.history'), <History />, () => setHistoryOpen(true))}
