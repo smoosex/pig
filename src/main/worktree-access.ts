@@ -9,7 +9,7 @@
  */
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { chatsDir } from './chats'
+import * as chats from './chats'
 import { listOpenedCwds } from './opened-projects'
 import { t } from './i18n'
 import { repositoryWorktrees } from './worktrees'
@@ -28,7 +28,7 @@ export async function openedWorktree(cwd: unknown): Promise<string | null> {
   const path = resolve(cwd)
   if (known.has(path)) return path
 
-  const chatsRoot = resolve(chatsDir())
+  const chatsRoot = resolve(chats.chatsDir?.() ?? '')
   if (dirname(path) === chatsRoot) {
     const info = await lstat(path).catch(() => null)
     return info?.isDirectory() ? path : null
@@ -62,4 +62,10 @@ export async function requireWorktree(cwd: unknown): Promise<string> {
   const path = await openedWorktree(cwd)
   if (!path) throw new Error(t('error.notAnOpenWorkspace'))
   return path
+}
+
+export function forgetKnownWorktrees(cwds: Iterable<string>): void {
+  for (const cwd of cwds) {
+    if (typeof cwd === 'string' && cwd) known.delete(resolve(cwd))
+  }
 }

@@ -313,6 +313,12 @@ export default function App() {
       ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
     ])
   )
+  const missingProjectCwds = new Set(
+    projects.flatMap((project) => [
+      ...(project.missing ? [project.cwd] : []),
+      ...(project.worktrees ?? []).filter((worktree) => worktree.missing).map((worktree) => worktree.cwd)
+    ])
+  )
   const knownChatCwds = new Set([
     ...chats.map((chat) => chat.cwd),
     ...openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd).map((tab) => tab.cwd),
@@ -334,10 +340,12 @@ export default function App() {
   } else if (retainedChatCwd && !knownChatCwds.has(retainedChatCwd)) {
     setRetainedChatCwd(null)
   }
+  const activeProjectWorkspaceCwd =
+    currentProjectCwd && !missingProjectCwds.has(currentProjectCwd) ? currentProjectCwd : null
   const activeWorkspaceCwd =
     sidebarTab === 'kanban'
       ? null
-      : currentProjectCwd ??
+      : activeProjectWorkspaceCwd ??
         directChatCwd ??
         (retainedChatCwd && knownChatCwds.has(retainedChatCwd) ? retainedChatCwd : null)
 
@@ -426,7 +434,7 @@ export default function App() {
     const runShortcut = (action: HostShortcutAction) => {
       // The picker handles close requests itself, including its in-flight save lock.
       const sessState = useSessionsStore.getState()
-      if (sessState.projectPickerOpen || sessState.convertChatDialog) return
+      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.convertChatDialog) return
       switch (action) {
         case 'tab.close': {
           if (settingsOpen) setSettingsOpen(false)
@@ -478,7 +486,7 @@ export default function App() {
       if (isShortcutRecording() || isComposingKey(event) || isTerminalShellChord(event)) return
       // The directory dialog owns its shortcuts, including Cmd+W; never close a background tab.
       const sessState = useSessionsStore.getState()
-      if (sessState.projectPickerOpen || sessState.convertChatDialog) return
+      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.convertChatDialog) return
       const action = findShortcut(shortcutBindings(), eventAccelerator(event), HOST_SHORTCUT_ACTIONS)
       if (!action) return
       event.preventDefault()
@@ -545,9 +553,11 @@ export default function App() {
     setRetainedRightCwd(activeWorkspaceCwd)
   } else if (
     retainedRightCwd &&
-    !activeWorkspaceCwd &&
-    !knownProjectCwds.has(retainedRightCwd) &&
-    !knownChatCwds.has(retainedRightCwd)
+    (missingProjectCwds.has(retainedRightCwd) || (
+      !activeWorkspaceCwd &&
+      !knownProjectCwds.has(retainedRightCwd) &&
+      !knownChatCwds.has(retainedRightCwd)
+    ))
   ) {
     setRetainedRightCwd(null)
   }
@@ -555,7 +565,7 @@ export default function App() {
   const hasRetainableChatTabs = openTabs.some((tab) => tab.kind === 'project' || tab.kind === 'chat')
 
   useEffect(() => {
-    if (!projectHome || !currentProjectCwd) return
+    if (!projectHome || !currentProjectCwd || missingProjectCwds.has(currentProjectCwd)) return
     const cwd = currentProjectCwd
     acquireProjectDraft(cwd)
     return () => releaseProjectDraft(cwd)

@@ -292,6 +292,28 @@ export class WorktreeService {
 
   async discover(projectCwd: string, knownHasGit?: boolean): Promise<GitWorktree[]> {
     const cwd = resolve(projectCwd)
+    const rootExists = await stat(cwd).then((s) => s.isDirectory()).catch(() => false)
+    if (!rootExists) {
+      const records = (await this.records()).filter((r) => r.projectCwd === cwd && !r.backgroundDeletion)
+      const managed: GitWorktree[] = await Promise.all(records.map(async (record) => {
+        const exists = await stat(record.cwd).then((s) => s.isDirectory()).catch(() => false)
+        return {
+          cwd: record.cwd,
+          branch: record.branch,
+          head: record.head,
+          detached: record.detached,
+          isPrimary: false,
+          locked: false,
+          missing: !exists || Boolean(record.deleting),
+          managed: true,
+          ...(record.owner ? { owner: record.owner } : {})
+        }
+      }))
+      return [
+        { cwd, branch: basename(cwd), isPrimary: true, locked: false, missing: true, managed: false },
+        ...managed
+      ]
+    }
     const hasGit = knownHasGit ?? await isGitProject(cwd)
     if (!hasGit) {
       return [{ cwd, branch: basename(cwd), isPrimary: true, locked: false, missing: false, managed: false }]
@@ -317,6 +339,21 @@ export class WorktreeService {
     }
     const deleting = new Set(records.filter((record) => record.backgroundDeletion).map((record) => record.cwd))
     return items.filter((item) => !deleting.has(item.cwd))
+  }
+
+  async relocateProject(oldProjectCwd: string, nextProjectCwd: string): Promise<string[]> {
+    const source = resolve(oldProjectCwd)
+    const target = resolve(nextProjectCwd)
+    let managedCwds: string[] = []
+    await this.update((records) => {
+      const owned = records.filter((record) => record.projectCwd === source)
+      managedCwds = owned.filter((record) => !record.deleting && !record.backgroundDeletion).map((record) => record.cwd)
+      if (owned.length === 0 || source === target) return records
+      return records.map((record) =>
+        record.projectCwd === source ? { ...record, projectCwd: target } : record
+      )
+    })
+    return managedCwds
   }
 
   async create(projectCwd: string, options?: CreateWorktreeOptions): Promise<GitWorktree> {

@@ -251,6 +251,8 @@ const api: SessionApi = {
   searchProjectDirectories: (path, query, showHidden) => ipcRenderer.invoke('project:search-directories', path, query, showHidden),
   cancelProjectDirectorySearch: () => ipcRenderer.invoke('project:cancel-directory-search'),
   openProject: (path) => ipcRenderer.invoke('session:open-project', path),
+  renameProject: (cwd: string, name: string) => ipcRenderer.invoke('project:rename', cwd, name),
+  relocateProject: (oldCwd: string, newPath: string) => ipcRenderer.invoke('project:relocate', oldCwd, newPath),
   unpinProject: (cwd: string) => ipcRenderer.invoke('session:unpin-project', cwd),
   reorderProjects: (cwds: string[]) =>
     ipcRenderer.invoke('session:reorder-projects', cwds),
@@ -267,7 +269,6 @@ const api: SessionApi = {
   prepareSession: (sessionId: string) =>
     ipcRenderer.invoke('session:prepare', sessionId),
   closeSession: (sessionId: string) => ipcRenderer.invoke('session:close', sessionId),
-  deleteProject: (cwd: string) => ipcRenderer.invoke('session:delete-project', cwd),
   worktreeCreateInfo: (projectCwd: string) => ipcRenderer.invoke('project:worktree-create-info', projectCwd),
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) =>
     ipcRenderer.invoke('project:create-worktree', projectCwd, options),

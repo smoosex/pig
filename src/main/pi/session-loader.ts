@@ -10,6 +10,7 @@ import {
   type PastedTextMetadata
 } from '../../shared/pasted-text'
 import { t } from '../i18n'
+import * as openedProjects from '../opened-projects'
 import { normalizeSessionPrompt } from './prompt-input'
 import { readSessionHeader, UnsupportedSessionFile } from './session-jsonl'
 import { contentText, hasImage, previewText } from './session-preview'
@@ -370,11 +371,12 @@ async function scanFiles(files: string[], options: { deep?: boolean } = {}): Pro
   return metas.filter((meta): meta is SessionMeta => meta !== null)
 }
 
-function projectGroup(cwd: string, sessions: SessionMeta[]): ProjectGroup {
+function projectGroup(cwd: string, sessions: SessionMeta[], customName?: string): ProjectGroup {
   const resolved = cwd === '(unknown)' ? cwd : resolve(cwd)
   return {
     cwd: resolved,
-    name: resolved === '(unknown)' ? t('sessions.unknownProject') : basename(resolved) || resolved,
+    name: resolved === '(unknown)' ? t('sessions.unknownProject') : customName ?? (basename(resolved) || resolved),
+    ...(customName ? { customName } : {}),
     sessions: [...sessions].sort((a, b) => b.modified.localeCompare(a.modified))
   }
 }
@@ -401,10 +403,15 @@ export async function listProject(cwd: string): Promise<ProjectGroup | null> {
     return metas.length === 0 ? null : projectGroup(cwd, metas)
   }
   const resolved = resolve(cwd)
-  const metas = (await scanFiles(await listJsonlFiles(sessionDirForCwd(resolved)))).filter(
-    (meta) => !meta.cwd || resolve(meta.cwd) === resolved
+  const [metas, customName] = await Promise.all([
+    scanFiles(await listJsonlFiles(sessionDirForCwd(resolved))),
+    openedProjects.getOpenedProjectAlias?.(resolved) ?? Promise.resolve(undefined)
+  ])
+  return projectGroup(
+    resolved,
+    metas.filter((meta) => !meta.cwd || resolve(meta.cwd) === resolved),
+    customName
   )
-  return projectGroup(resolved, metas)
 }
 
 /**

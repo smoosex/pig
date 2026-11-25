@@ -286,6 +286,25 @@ export class ProjectSpaceStore {
       }
     })
   }
+
+  relocateProject(oldCwd: string, nextCwd: string): Promise<ProjectSpacesSnapshot> {
+    const source = resolve(oldCwd)
+    const target = resolve(nextCwd)
+    if (source === target) return this.getSnapshot()
+    return this.mutate((current) => {
+      const assigned = current.assignments[source]
+      if (!assigned) return null
+      const assignments = { ...current.assignments }
+      if (!assignments[target]) {
+        assignments[target] = assigned
+      }
+      delete assignments[source]
+      return {
+        ...current,
+        assignments
+      }
+    })
+  }
 }
 
 export const projectSpaces = new ProjectSpaceStore()

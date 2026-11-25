@@ -65,6 +65,7 @@ async function runFixture(): Promise<void> {
     }
   }))
   mock.module(modulePath('../src/main/chats.ts'), () => ({
+    chatsDir: () => join(chatPath, 'root'),
     createChatDir: async () => '/chat',
     isChatCwd: (cwd: string) => cwd === chatPath,
     isChatsRoot: (cwd: string) => cwd === join(chatPath, 'root'),

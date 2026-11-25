@@ -336,10 +336,13 @@ export async function countUntrackedFiles(cwd: string, paths: string[]): Promise
 }
 
 async function isWorktree(cwd: string): Promise<boolean> {
+  const exists = await lstat(cwd).then((s) => s.isDirectory()).catch(() => false)
+  if (!exists) return false
   try {
     return (await runGit(cwd, ['rev-parse', '--is-inside-work-tree'], { locale: 'C' })).trim() === 'true'
   } catch (error) {
     if (isNotARepoError(error)) return false
+    if (error instanceof GitExecError && error.stderr?.includes('cannot change to')) return false
     throw error
   }
 }

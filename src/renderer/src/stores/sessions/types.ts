@@ -12,6 +12,7 @@ import type {
   GenerationStats,
   PromptStreamingBehavior,
   ProjectGroup,
+  RelocateProjectResult,
   RetryNotice,
   SessionControls,
   SessionLiveState,
@@ -169,11 +170,16 @@ export interface SessionsStore {
   loadChats: () => Promise<void>
   projectPickerOpen: boolean
   setProjectPickerOpen: (open: boolean) => void
+  relocateProjectTarget: { cwd: string; name: string } | null
+  openRelocateProjectDialog: (target: { cwd: string; name: string }) => void
+  closeRelocateProjectDialog: () => void
   convertChatDialog: ConvertChatDialogTarget | null
   openConvertChatDialog: (target: ConvertChatDialogTarget) => void
   closeConvertChatDialog: () => void
   convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
   openProject: (path?: string) => Promise<void>
+  renameProject: (cwd: string, name: string) => Promise<ProjectGroup>
+  relocateProject: (oldCwd: string, newPath: string) => Promise<RelocateProjectResult>
   mergeAgentProject: (project: ProjectGroup) => void
   unpinProject: (cwd: string) => Promise<void>
   forgetAgentProject: (cwd: string, cwds: string[]) => void
@@ -256,7 +262,6 @@ export interface SessionsStore {
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<string | null>
   deleteWorktree: (projectCwd: string, cwd: string, confirmation?: string) => Promise<void>
   applyWorktreeDeletions: (cwds: string[]) => void
-  deleteProject: (cwd: string) => Promise<void>
   deleteChat: (cwd: string) => Promise<void>
   deleteSession: (meta: SessionMeta) => Promise<void>
   /**

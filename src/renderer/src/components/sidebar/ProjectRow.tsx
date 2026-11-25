@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronRight, FolderInput, FolderMinus, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, ChevronRight, FolderInput, FolderMinus, FolderSearch, MoreHorizontal, PenLine, Plus } from 'lucide-react'
+import { baseName } from '../../../../shared/paths'
 import { resolveProjectSpaceId } from '../../../../shared/project-spaces'
 import { spaceDisplayName, useProjectSpacesStore } from '../../stores/project-spaces'
 import { useSessionsStore, selectActiveSessionCwd, type ProjectGroup, type WorktreeGroup } from '../../stores/sessions'
+import { failureMessage } from '../../lib/ipc-error'
+import { isComposingKey } from '../../lib/shortcuts'
 import { cn, hideScroll } from '../../lib/utils'
 import { Button } from '../ui/button'
+import { Input } from '../ui/input'
+import { Label } from '../ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
 import {
   ContextMenu,
@@ -60,7 +66,8 @@ export function ProjectRow({
 }) {
   const createWorktree = useSessionsStore((s) => s.createWorktree)
   const newSession = useSessionsStore((s) => s.newSession)
-  const deleteProject = useSessionsStore((s) => s.deleteProject)
+  const renameProject = useSessionsStore((s) => s.renameProject)
+  const openRelocateProjectDialog = useSessionsStore((s) => s.openRelocateProjectDialog)
   const unpinProject = useSessionsStore((s) => s.unpinProject)
   const open = useSessionsStore((s) => s.expandedProjects[project.cwd] ?? false)
   const expandedWorktrees = useSessionsStore((s) => s.expandedWorktrees)
@@ -73,8 +80,32 @@ export function ProjectRow({
   const openSpaceDialog = useProjectSpacesStore((s) => s.openDialog)
   const currentSpaceId = resolveProjectSpaceId({ spaces, assignments }, project.cwd)
   const t = useT()
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const renameInputId = useId()
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
   const { pending, error, runAction } = useProjectAction()
+
+  const folderName = baseName(project.cwd) || project.cwd
+  const openRename = () => {
+    setRenameValue(project.customName ?? project.name)
+    setRenameError(null)
+    setRenameOpen(true)
+  }
+  const submitRename = async () => {
+    if (renaming) return
+    setRenaming(true)
+    setRenameError(null)
+    try {
+      await renameProject(project.cwd, renameValue)
+      setRenameOpen(false)
+    } catch (failure) {
+      setRenameError(failureMessage(failure))
+    } finally {
+      setRenaming(false)
+    }
+  }
   const {
     attributes,
     listeners,
@@ -140,9 +171,21 @@ export function ProjectRow({
                     }}
                   >
                     <ProjectAvatar name={project.name} index={index} />
-                    <span className="min-w-0 truncate" title={project.cwd}>
+                    <span className={cn('min-w-0 truncate', project.missing && 'text-muted-foreground')} title={project.cwd}>
                       {project.name}
                     </span>
+                    {project.missing ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex shrink-0 text-destructive">
+                            <AlertCircle className="size-3.5" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64 break-all">
+                          {t('project.missingHint', { cwd: project.cwd })}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
                     <ChevronRight
                       className={cn(
                         'size-2.5 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] group-hover/project:opacity-100 group-focus-within/project:opacity-100',
@@ -168,6 +211,17 @@ export function ProjectRow({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuGroup>
+                      <DropdownMenuItem disabled={pending !== null} onSelect={openRename}>
+                        <PenLine data-icon="inline-start" />
+                        {t('project.rename')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={pending !== null}
+                        onSelect={() => openRelocateProjectDialog({ cwd: project.cwd, name: project.name })}
+                      >
+                        <FolderSearch data-icon="inline-start" />
+                        {t('project.relocate')}
+                      </DropdownMenuItem>
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <FolderInput data-icon="inline-start" />
@@ -206,21 +260,13 @@ export function ProjectRow({
                         <FolderMinus data-icon="inline-start" />
                         {t('project.remove')}
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        disabled={pending !== null}
-                        onSelect={() => setDeleteOpen(true)}
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        {t('project.delete')}
-                      </DropdownMenuItem>
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <CreateWorktreeButton
                   projectCwd={project.cwd}
                   hasGit={project.hasGit === true}
-                  disabled={pending !== null}
+                  disabled={pending !== null || Boolean(project.missing)}
                   busy={pending === 'create-worktree'}
                   runAction={runAction}
                   onCreate={async (initGit) => {
@@ -235,6 +281,17 @@ export function ProjectRow({
             </ContextMenuTrigger>
             <ContextMenuContent>
               <ContextMenuGroup>
+                <ContextMenuItem disabled={pending !== null} onSelect={openRename}>
+                  <PenLine data-icon="inline-start" />
+                  {t('project.rename')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  disabled={pending !== null}
+                  onSelect={() => openRelocateProjectDialog({ cwd: project.cwd, name: project.name })}
+                >
+                  <FolderSearch data-icon="inline-start" />
+                  {t('project.relocate')}
+                </ContextMenuItem>
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>
                     <FolderInput data-icon="inline-start" />
@@ -273,17 +330,27 @@ export function ProjectRow({
                   <FolderMinus data-icon="inline-start" />
                   {t('project.remove')}
                 </ContextMenuItem>
-                <ContextMenuItem
-                  variant="destructive"
-                  disabled={pending !== null}
-                  onSelect={() => setDeleteOpen(true)}
-                >
-                  <Trash2 data-icon="inline-start" />
-                  {t('project.delete')}
-                </ContextMenuItem>
               </ContextMenuGroup>
             </ContextMenuContent>
           </ContextMenu>
+          {project.missing && (
+            <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate" title={project.cwd}>
+                {t('project.missingHint', { cwd: folderName })}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="shrink-0"
+                disabled={pending !== null}
+                onClick={() => openRelocateProjectDialog({ cwd: project.cwd, name: project.name })}
+              >
+                <FolderSearch data-icon="inline-start" />
+                {t('project.relocateShort')}
+              </Button>
+            </div>
+          )}
           {project.gitError && (
             <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">
               {project.gitError}
@@ -295,25 +362,45 @@ export function ProjectRow({
             </p>
           )}
         </div>
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent confirmation showCloseButton={false}>
+        <Dialog open={renameOpen} onOpenChange={(next) => { if (!renaming) setRenameOpen(next) }}>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-sm">{t('project.delete')}</DialogTitle>
-              <DialogDescription className="text-xs">{t('project.deleteBody')}</DialogDescription>
+              <DialogTitle className="text-sm">{t('project.renameTitle')}</DialogTitle>
+              <DialogDescription className="text-xs">
+                {t('project.renameDescription', { folder: folderName })}
+              </DialogDescription>
             </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={renameInputId} className="text-xs">
+                {t('project.renameLabel')}
+              </Label>
+              <Input
+                id={renameInputId}
+                value={renameValue}
+                placeholder={folderName}
+                maxLength={120}
+                disabled={renaming}
+                autoFocus
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !isComposingKey(event.nativeEvent)) {
+                    event.preventDefault()
+                    void submitRename()
+                  }
+                }}
+              />
+              {renameError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {renameError}
+                </p>
+              ) : null}
+            </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
+              <Button variant="ghost" disabled={renaming} onClick={() => setRenameOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button
-                variant="destructive"
-                disabled={pending !== null}
-                onClick={() => {
-                  setDeleteOpen(false)
-                  void runAction('delete-project', () => deleteProject(project.cwd))
-                }}
-              >
-                {t('project.deleteConfirm')}
+              <Button disabled={renaming} onClick={() => void submitRename()}>
+                {t('project.renameSave')}
               </Button>
             </DialogFooter>
           </DialogContent>

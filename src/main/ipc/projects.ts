@@ -7,18 +7,14 @@ import { openProjectDirectory } from '../project-open'
 import { unpinProjectDirectory } from '../project-unpin'
 import { closeSessionsForCwd, createPendingSession } from '../pi/session-registry'
 import { removeProjectSessions } from '../pi/session-removal'
-import { removeOpenedProject, reorderOpenedProjects } from '../opened-projects'
+import { reorderOpenedProjects } from '../opened-projects'
 import {
   discoverOpenedWorktrees,
-  forgetProjectBranches,
   loadOpenedWorktreeProjects,
   loadProjectForCwd,
-  loadWorktreeSessions,
-  requireOpenedProject,
-  worktrees
+  loadWorktreeSessions
 } from '../project-worktrees'
 import { createChatDir, isChatCwd, listChats, removeChatWorkDir } from '../chats'
-import { removeOpenProjectWorkspaces } from '../open-project-sessions'
 import { registerWorktreeIpc } from './worktrees'
 import { windowForEvent } from './window'
 
@@ -57,6 +53,18 @@ export function registerProjectIpc(): void {
 
   ipcMain.handle('session:open-project', async (_event, path: string) => openProjectDirectory(path))
 
+  ipcMain.handle('project:rename', async (event, cwd: string, name: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    const { renameProjectDirectory } = await import('../project-relocate')
+    return renameProjectDirectory(cwd, name)
+  })
+
+  ipcMain.handle('project:relocate', async (event, oldCwd: string, newPath: string) => {
+    assertBrowserSender(event, windowForEvent(event))
+    const { relocateProjectDirectory } = await import('../project-relocate')
+    return relocateProjectDirectory(oldCwd, newPath)
+  })
+
   ipcMain.handle('session:list-chats', async () => listChats())
   ipcMain.handle('session:is-chat-cwd', async (_event, cwd: string) => isChatCwd(cwd))
 
@@ -90,22 +98,5 @@ export function registerProjectIpc(): void {
 
   ipcMain.handle('session:reorder-projects', async (_event, cwds: unknown) => {
     return reorderOpenedProjects(cwds)
-  })
-
-  ipcMain.handle('session:delete-project', async (_event, cwd: string) => {
-    const project = await requireOpenedProject(cwd)
-    await worktrees.exclusive(project, async () => {
-      const cwds = new Set([project, ...(await worktrees.discover(project)).map((w) => w.cwd)])
-      await worktrees.withBlockedCwds([...cwds], async () => {
-        for (const path of cwds) {
-          await closeSessionsForCwd(path, 'project_removed')
-          await removeProjectSessions(path)
-        }
-        await removeOpenProjectWorkspaces(cwds)
-        await removeOpenedProject(project)
-        forgetProjectBranches(project)
-      })
-    })
-    return true
   })
 }

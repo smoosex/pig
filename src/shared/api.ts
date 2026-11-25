@@ -90,6 +90,7 @@ export type WorktreeTopology = Omit<WorktreeGroup, 'sessions' | 'sessionsLoaded'
 
 export interface ProjectWorktreeDiscovery {
   cwd: string
+  missing?: boolean
   hasGit: boolean | null
   worktrees: WorktreeTopology[] | null
   gitError?: string
@@ -123,10 +124,20 @@ export interface WorktreeDeletionInfo {
 export interface ProjectGroup {
   cwd: string
   name: string
+  /** User-defined Pig display alias; omitted when showing the folder's own basename. */
+  customName?: string
+  /** True when the project root directory does not exist on disk. */
+  missing?: boolean
   sessions: SessionMeta[]
   worktrees?: WorktreeGroup[]
   hasGit?: boolean
   gitError?: string
+}
+
+export interface RelocateProjectResult {
+  oldCwd: string
+  project: ProjectGroup
+  migratedSessionIds: string[]
 }
 
 /** Which list the left sidebar shows: projects, standalone chats, or the Kanban board. */
@@ -1021,6 +1032,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   /** Stops this window's in-flight folder search; a new search also supersedes the previous one. */
   cancelProjectDirectorySearch: () => Promise<void>
   openProject: (path: string) => Promise<ProjectGroup>
+  renameProject: (cwd: string, name: string) => Promise<ProjectGroup>
+  relocateProject: (oldCwd: string, newPath: string) => Promise<RelocateProjectResult>
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<string[]>
   prepareSession: (sessionId: string) => Promise<SessionRef>
@@ -1033,7 +1046,6 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
   openSession: (path: string) => Promise<OpenSessionRef>
   closeSession: (sessionId: string) => Promise<void>
-  deleteProject: (cwd: string) => Promise<boolean>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>
   worktreeCreateInfo: (projectCwd: string) => Promise<WorktreeCreateInfo>
   worktreeDeletionInfo: (projectCwd: string, cwd: string) => Promise<WorktreeDeletionInfo>

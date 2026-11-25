@@ -36,9 +36,14 @@ export const createCatalogSlice: SessionSlice<
   | 'loadWorktreeSessions'
   | 'loadChats'
   | 'openProject'
+  | 'renameProject'
+  | 'relocateProject'
   | 'mergeAgentProject'
   | 'projectPickerOpen'
   | 'setProjectPickerOpen'
+  | 'relocateProjectTarget'
+  | 'openRelocateProjectDialog'
+  | 'closeRelocateProjectDialog'
   | 'convertChatDialog'
   | 'openConvertChatDialog'
   | 'closeConvertChatDialog'
@@ -51,7 +56,6 @@ export const createCatalogSlice: SessionSlice<
   | 'createWorktree'
   | 'deleteWorktree'
   | 'applyWorktreeDeletions'
-  | 'deleteProject'
   | 'deleteChat'
   | 'deleteSession'
   | 'renameSession'
@@ -93,6 +97,9 @@ export const createCatalogSlice: SessionSlice<
     projects: [],
     projectPickerOpen: false,
     setProjectPickerOpen: (open) => set({ projectPickerOpen: open }),
+    relocateProjectTarget: null,
+    openRelocateProjectDialog: (target) => set({ relocateProjectTarget: target }),
+    closeRelocateProjectDialog: () => set({ relocateProjectTarget: null }),
     convertChatDialog: null,
     openConvertChatDialog: (target) => set({ convertChatDialog: target }),
     closeConvertChatDialog: () => set({ convertChatDialog: null }),
@@ -241,6 +248,73 @@ export const createCatalogSlice: SessionSlice<
       })
     },
 
+    renameProject: async (cwd, name) => {
+      const updated = await api.renameProject(cwd, name)
+      projectMembershipVersion++
+      set((s) => ({
+        projects: s.projects.map((item) =>
+          item.cwd === updated.cwd
+            ? { ...item, name: updated.name, customName: updated.customName }
+            : item
+        )
+      }))
+      return updated
+    },
+
+    relocateProject: async (oldCwd, newPath) => {
+      const result = await api.relocateProject(oldCwd, newPath)
+      const nextCwd = result.project.cwd
+      projectMembershipVersion++
+      if (oldCwd !== nextCwd) {
+        useDiffStore.getState().forgetWorktree(oldCwd)
+        useFilesStore.getState().forgetWorktree(oldCwd)
+      }
+      const wasCurrent = get().currentProjectCwd === oldCwd
+      set((s) => {
+        const oldProject = s.projects.find((item) => item.cwd === oldCwd)
+        const targetExists = oldCwd !== nextCwd && s.projects.some((item) => item.cwd === nextCwd)
+        const projects = targetExists
+          ? s.projects
+              .map((item) => (item.cwd === nextCwd ? result.project : item))
+              .filter((item) => item.cwd !== oldCwd)
+          : s.projects.map((item) => (item.cwd === oldCwd ? result.project : item))
+        if (oldCwd === nextCwd) {
+          return {
+            projects,
+            relocateProjectTarget: null,
+            openTabs: patchTabsFromGroups(s.openTabs, [result.project])
+          }
+        }
+        const expandedProjects = { ...s.expandedProjects }
+        if (oldCwd in expandedProjects) {
+          expandedProjects[nextCwd] = Boolean(expandedProjects[nextCwd] || expandedProjects[oldCwd])
+          delete expandedProjects[oldCwd]
+        }
+        const expandedWorktrees = { ...s.expandedWorktrees }
+        if (oldCwd in expandedWorktrees) {
+          expandedWorktrees[nextCwd] = Boolean(expandedWorktrees[nextCwd] || expandedWorktrees[oldCwd])
+          delete expandedWorktrees[oldCwd]
+        }
+        revealedWorktreeByProject.delete(oldCwd)
+        return {
+          projects,
+          relocateProjectTarget: null,
+          ...removeCwdSessions(s, new Set([oldCwd]), oldProject?.sessions ?? []),
+          openTabs: patchTabsFromGroups(
+            s.openTabs.filter((tab) => tab.cwd !== oldCwd),
+            [result.project]
+          ),
+          expandedProjects,
+          expandedWorktrees
+        }
+      })
+      void useProjectSpacesStore.getState().load()
+      if (wasCurrent && oldCwd !== nextCwd) {
+        await get().selectProjectCwd(nextCwd)
+      }
+      return result
+    },
+
     convertChatToProject: async (input) => {
       const result = await api.convertChatToProject(input)
       const activeSpaceId = useProjectSpacesStore.getState().activeSpaceId
@@ -300,6 +374,14 @@ export const createCatalogSlice: SessionSlice<
 
     forgetAgentProject: (cwd, removedCwds) => {
       const project = get().projects.find((item) => item.cwd === cwd)
+      for (const worktreeCwd of new Set([
+        cwd,
+        ...removedCwds,
+        ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
+      ])) {
+        useDiffStore.getState().forgetWorktree(worktreeCwd)
+        useFilesStore.getState().forgetWorktree(worktreeCwd)
+      }
       projectMembershipVersion++
       // The worktrees this drops may be what a restore or a switch is still heading for.
       get().invalidateSelection()
@@ -451,43 +533,6 @@ export const createCatalogSlice: SessionSlice<
             sessions: project.sessions.filter((session) => !targets.has(session.cwd)),
             worktrees: project.worktrees?.filter((worktree) => !targets.has(worktree.cwd))
           })),
-          expandedWorktrees
-        }
-      })
-    },
-
-    deleteProject: async (cwd) => {
-      const project = get().projects.find((item) => item.cwd === cwd)
-      if (!(await api.deleteProject(cwd))) return
-      void useProjectSpacesStore.getState().forgetProject(cwd)
-      for (const worktreeCwd of new Set([
-        cwd,
-        ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)
-      ])) {
-        useDiffStore.getState().forgetWorktree(worktreeCwd)
-      }
-      projectMembershipVersion++
-      get().invalidateSelection()
-      set((s) => {
-        const current = s.projects.find((item) => item.cwd === cwd)
-        const sessions = [...(project?.sessions ?? []), ...(current?.sessions ?? [])]
-        const cwds = new Set([
-          cwd,
-          ...(project?.worktrees ?? []).map((worktree) => worktree.cwd),
-          ...(current?.worktrees ?? []).map((worktree) => worktree.cwd),
-          ...sessions.map((session) => session.cwd)
-        ])
-        const expandedProjects = { ...s.expandedProjects }
-        const expandedWorktrees = { ...s.expandedWorktrees }
-        delete expandedProjects[cwd]
-        for (const dropCwd of cwds) {
-          delete expandedWorktrees[dropCwd]
-        }
-        revealedWorktreeByProject.delete(cwd)
-        return {
-          projects: s.projects.filter((item) => item.cwd !== cwd),
-          ...removeCwdSessions(s, cwds, sessions),
-          expandedProjects,
           expandedWorktrees
         }
       })

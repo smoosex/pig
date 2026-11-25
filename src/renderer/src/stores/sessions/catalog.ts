@@ -28,7 +28,8 @@ export function mergeWorktreeDiscoveries(
     const discovery = byCwd.get(project.cwd)
     if (!discovery) return project
     const hasGit = discovery.hasGit ?? project.hasGit
-    if (!discovery.worktrees) return { ...project, hasGit, gitError: discovery.gitError }
+    const missing = discovery.missing ?? project.missing
+    if (!discovery.worktrees) return { ...project, missing, hasGit, gitError: discovery.gitError }
     const existingByCwd = new Map(
       (project.worktrees ?? []).map((worktree) => [worktree.cwd, worktree])
     )
@@ -45,6 +46,7 @@ export function mergeWorktreeDiscoveries(
     })
     return {
       ...project,
+      missing,
       hasGit,
       worktrees,
       sessions: worktrees.flatMap((worktree) => worktree.sessions),

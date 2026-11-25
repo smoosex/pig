@@ -323,13 +323,26 @@ export const en: Messages = {
   },
   project: {
     menu: 'More actions for {name}',
+    rename: 'Rename…',
+    renameTitle: 'Rename project',
+    renameDescription: 'Changes only the display name in Pig without renaming the folder on disk. Leave blank to restore the folder name ({folder}).',
+    renameLabel: 'Display name',
+    renamePlaceholder: 'Enter display name',
+    renameSave: 'Save',
+    invalidName: 'Project name must be 120 characters or fewer',
+    relocate: 'Relocate folder…',
+    relocateShort: 'Relocate…',
+    relocateTitle: 'Relocate “{name}”',
+    relocateDescription: 'Select the moved or renamed project folder. Pig will migrate Pi sessions, repair Git worktrees, and update spaces, board issues, bookmarks, and memory.',
+    relocateConfirm: 'Relocate to this folder',
+    relocating: 'Relocating…',
+    relocateInsideOpenRepo: 'The selected folder is inside an already-open Git repository ({repo}); choose the project root instead',
+    relocateUnsafeTarget: 'Cannot relocate a project to the filesystem root, home folder, or Pig data directory',
+    relocateBusy: 'Stop running sessions, subagents, background processes, or Bot tasks in this project before relocating',
+    missingHint: 'Local folder not found: {cwd}',
     moveToSpace: 'Move to space',
     newSpaceAndMove: 'New space…',
-    remove: 'Remove from list',
-    delete: 'Delete project',
-    deleteBody:
-      'Stops and deletes the Pi sessions of the project directory and every worktree, then removes the project from the list. Project files, worktrees and Git branches stay. Deleted sessions cannot be recovered.',
-    deleteConfirm: 'Delete sessions and remove'
+    remove: 'Remove from list'
   },
   spaces: {
     defaultName: 'Default',

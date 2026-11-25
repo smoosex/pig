@@ -1,6 +1,7 @@
 import * as electron from 'electron'
 import { watch } from 'node:fs'
-import { resolve } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
 import { createHeadWatchManager } from './git/head-watch'
 import { listOpenedCwds } from './opened-projects'
 import { pigPath } from './pig-dir'
@@ -59,6 +60,22 @@ export async function requireOpenedProject(cwd: string): Promise<string> {
 export async function loadWorktreeProject(cwd: string): Promise<WorktreeProject> {
   const base = await listProject(cwd)
   if (!base) throw new Error(t('error.projectMissing'))
+  const rootExists = await stat(base.cwd).then((s) => s.isDirectory()).catch(() => false)
+  if (!rootExists) {
+    void watchBranches(base.cwd, false, null)
+    const branches = await worktrees.discover(base.cwd, false)
+    const groups = await Promise.all(branches.map(async (branch) => ({
+      ...branch,
+      sessions: branch.cwd === base.cwd ? base.sessions : (await listProject(branch.cwd))?.sessions ?? []
+    })))
+    return {
+      ...base,
+      missing: true,
+      hasGit: false,
+      worktrees: groups,
+      sessions: groups.flatMap((group) => group.sessions)
+    }
+  }
   const hasGit = await isGitProject(cwd)
   try {
     const branches = await worktrees.discover(cwd, hasGit)
@@ -73,7 +90,7 @@ export async function loadWorktreeProject(cwd: string): Promise<WorktreeProject>
     return {
       ...base,
       hasGit,
-      worktrees: [{ cwd: base.cwd, branch: base.name, isPrimary: true, locked: false, missing: false, managed: false, sessions: base.sessions }],
+      worktrees: [{ cwd: base.cwd, branch: basename(base.cwd) || base.name, isPrimary: true, locked: false, missing: false, managed: false, sessions: base.sessions }],
       gitError: error instanceof Error ? error.message : String(error)
     }
   }
@@ -87,16 +104,23 @@ export async function discoverOpenedWorktrees(): Promise<ProjectWorktreeDiscover
   const opened = await listOpenedCwds()
   branchWatch.retain(opened)
   return Promise.all(opened.map(async (cwd) => {
+    const rootExists = await stat(cwd).then((s) => s.isDirectory()).catch(() => false)
+    if (!rootExists) {
+      void watchBranches(cwd, false, null)
+      const items = await worktrees.discover(cwd, false)
+      return { cwd, missing: true, hasGit: false, worktrees: items }
+    }
     let hasGit: boolean | null = null
     try {
       hasGit = await isGitProject(cwd)
       const items = await worktrees.discover(cwd, hasGit)
       void watchBranches(cwd, hasGit, items)
-      return { cwd, hasGit, worktrees: items }
+      return { cwd, missing: false, hasGit, worktrees: items }
     } catch (error) {
       void watchBranches(cwd, hasGit, null)
       return {
         cwd,
+        missing: false,
         hasGit,
         worktrees: null,
         gitError: error instanceof Error ? error.message : String(error)

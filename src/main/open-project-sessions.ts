@@ -387,6 +387,49 @@ export function removeOpenProjectWorkspaces(cwds: Iterable<string>): Promise<voi
   })
 }
 
+export function relocateOpenProjectWorkspace(oldCwd: string, nextCwd: string): Promise<void> {
+  const source = resolve(oldCwd)
+  const target = resolve(nextCwd)
+  if (source === target) return Promise.resolve()
+  return mutate((state) => {
+    const removed = state.tools.filter((tool) => tool.kind === 'browser' && tool.cwd === source)
+    state.tools = state.tools.filter((tool) => tool.cwd !== source)
+    const oldChangesId = changesTabId(source)
+    const nextChangesId = changesTabId(target)
+    const sourceWorkspace = state.workspaces.find((workspace) => workspace.cwd === source)
+    if (sourceWorkspace) {
+      const existingTarget = state.workspaces.find((workspace) => workspace.cwd === target)
+      const mergedSessionIds = [...new Set([...(existingTarget?.sessionIds ?? []), ...sourceWorkspace.sessionIds])]
+      const changesOpen = Boolean(existingTarget?.changesOpen || sourceWorkspace.changesOpen)
+      const remapTabId = (id: string | null): string | null =>
+        id === oldChangesId ? nextChangesId : id
+      const activeSessionId = sourceWorkspace.activeSessionId ?? existingTarget?.activeSessionId ?? mergedSessionIds.at(-1) ?? null
+      const activeTabId = remapTabId(sourceWorkspace.activeTabId) ?? existingTarget?.activeTabId ?? activeSessionId
+      const rawOrder = [
+        ...(existingTarget?.tabOrder ?? []),
+        ...sourceWorkspace.tabOrder.map((id) => (id === oldChangesId ? nextChangesId : id))
+      ]
+      const members = workspaceMembers({ cwd: target, sessionIds: mergedSessionIds, changesOpen }, state.tools)
+      const nextWorkspace: OpenProjectWorkspace = {
+        cwd: target,
+        sessionIds: mergedSessionIds,
+        activeSessionId,
+        changesOpen,
+        activeTabId: activeTabId && members.includes(activeTabId) ? activeTabId : activeSessionId,
+        tabOrder: normalizeOrder(rawOrder, members)
+      }
+      state.workspaces = state.workspaces.filter((workspace) => workspace.cwd !== source && workspace.cwd !== target)
+      if (nextWorkspace.sessionIds.length > 0 || nextWorkspace.changesOpen || state.tools.some((tool) => tool.cwd === target)) {
+        state.workspaces.push(nextWorkspace)
+      }
+    }
+    if (state.currentCwd === source) state.currentCwd = target
+    return () => {
+      for (const tool of removed) discardBrowserUrl(tool.id)
+    }
+  })
+}
+
 /**
  * Which browser and terminal tabs are open, written whole by the renderer. A tab seen for the first
  * time joins the end of its strip, which is where the renderer appends it; a browser keeps the page

@@ -4,7 +4,7 @@
  * it, so a worktree with a huge `node_modules` only pays for what is on screen — and a link that leads
  * out of the worktree is refused rather than listed.
  */
-import { opendir, readdir } from 'node:fs/promises'
+import { opendir, readdir, stat } from 'node:fs/promises'
 import type { DirectoryListing, FileTreeEntry } from '../../shared/api'
 import { compareFileNames } from '../../shared/file-order'
 import { GitExecError, isNotARepoError } from '../git/exec'
@@ -33,6 +33,10 @@ export function readDirectory(cwd: string, path: string, options: DirectoryScanO
 export async function readDirectory(cwd: string, path: string, options?: DirectoryScanOptions): Promise<DirectoryListing | DirectoryScan> {
   const signal = options?.signal
   signal?.throwIfAborted()
+  const rootExists = await stat(cwd).then((s) => s.isDirectory()).catch(() => false)
+  if (!rootExists) {
+    throw Object.assign(new Error(t('error.projectMissing')), { code: 'ENOENT' })
+  }
   const target = await resolveWorktreePath(cwd, path, 'directory')
   if (!target) throw new Error(t('error.directoryOutsideWorkspace'))
   signal?.throwIfAborted()

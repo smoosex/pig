@@ -325,13 +325,26 @@ export const zh = {
   },
   project: {
     menu: '项目 {name} 更多操作',
+    rename: '重命名…',
+    renameTitle: '重命名项目',
+    renameDescription: '仅修改在 Pig 中显示的项目名称，不会改动本机文件夹路径。留空可恢复默认文件夹名（{folder}）。',
+    renameLabel: '显示名称',
+    renamePlaceholder: '输入项目显示名称',
+    renameSave: '保存',
+    invalidName: '项目名称不能超过 120 个字符',
+    relocate: '重新定位目录…',
+    relocateShort: '重新定位…',
+    relocateTitle: '重新定位「{name}」',
+    relocateDescription: '选择移动或改名后的新项目文件夹。Pig 会自动迁移历史会话、修复 Git 工作树关联，并同步空间、看板、书签与长期记忆。',
+    relocateConfirm: '迁移到此文件夹',
+    relocating: '正在迁移…',
+    relocateInsideOpenRepo: '所选文件夹位于已打开的 Git 仓库内（{repo}），请选择独立的项目目录',
+    relocateUnsafeTarget: '不能将项目定位到系统根目录、个人主目录或 Pig 数据目录',
+    relocateBusy: '该项目仍有正在运行的会话、子代理、后台进程或 Bot 任务，请先停止后再重新定位',
+    missingHint: '未找到本地目录：{cwd}',
     moveToSpace: '移动到空间',
     newSpaceAndMove: '新建空间…',
-    remove: '从列表移除',
-    delete: '删除项目',
-    deleteBody:
-      '将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree 和 Git 分支会保留。会话删除后无法恢复。',
-    deleteConfirm: '删除会话并移除'
+    remove: '从列表移除'
   },
   spaces: {
     defaultName: '默认',

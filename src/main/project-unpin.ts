@@ -28,6 +28,12 @@ export async function unpinProjectDirectory(cwd: string, options: {
         options.check?.()
         await removeOpenedProject(project)
         forgetProjectBranches(project)
+        const [{ forgetKnownWorktrees }, { closeWorktreeWatch }] = await Promise.all([
+          import('./worktree-access'),
+          import('./git/watch')
+        ])
+        forgetKnownWorktrees(cwds)
+        for (const path of cwds) closeWorktreeWatch(path)
         return { cwd: project, cwds: [...cwds] }
       })
     } catch (error) {

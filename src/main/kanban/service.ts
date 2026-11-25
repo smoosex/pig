@@ -752,6 +752,46 @@ export class KanbanStore {
       return { snapshot, result: snapshot, changed: true }
     })
   }
+
+  relocateProject(
+    oldProjectCwd: string,
+    nextProjectCwd: string,
+    sessionIds: Iterable<string> = []
+  ): Promise<KanbanSnapshot | null> {
+    const source = resolve(oldProjectCwd)
+    const target = resolve(nextProjectCwd)
+    const ids = new Set(sessionIds)
+    if (source === target && ids.size === 0) return Promise.resolve(null)
+    return this.mutateAsync(async (current) => {
+      let mutated = false
+      const items = current.items.map((item) => {
+        const projectChanged = item.projectCwd === source && source !== target
+        const sessionsChanged = item.linkedSessions.some(
+          (entry) => (entry.cwd === source || ids.has(entry.sessionId)) && entry.cwd !== target
+        )
+        if (!projectChanged && !sessionsChanged) return item
+        mutated = true
+        return {
+          ...item,
+          ...(projectChanged ? { projectCwd: target } : {}),
+          ...(sessionsChanged
+            ? {
+                linkedSessions: item.linkedSessions.map((entry) =>
+                  entry.cwd === source || ids.has(entry.sessionId) ? { ...entry, cwd: target } : entry
+                )
+              }
+            : {})
+        }
+      })
+      if (!mutated) return { snapshot: current, result: null, changed: false }
+      const snapshot: KanbanSnapshot = {
+        revision: current.revision + 1,
+        nextNumber: current.nextNumber,
+        items
+      }
+      return { snapshot, result: snapshot, changed: true }
+    })
+  }
 }
 
 export const kanban = new KanbanStore()
