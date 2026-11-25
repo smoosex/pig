@@ -769,6 +769,11 @@ async function fixture() {
   assert.ok(userBubble.classList.contains('*:data-[slot=bubble-content]:bg-glass-popover-background'))
   assert.ok(userBubble.classList.contains('*:data-[slot=bubble-content]:shadow-glass-bubble'))
   assert.ok(userBubble.classList.contains('solid:*:data-[slot=bubble-content]:bg-user-message-background'))
+  const userScrollerItem = userBubble.closest<HTMLElement>('[data-slot="message-scroller-item"]')!
+  assert.ok(
+    userScrollerItem.classList.contains('[content-visibility:visible]'),
+    'disables content-visibility paint containment so glass bubble outer ring and shadows are not clipped'
+  )
   assert.ok(userBubble.textContent?.includes('@lumina') && userBubble.textContent?.includes('这个项目做了什么工作'))
 
   const assistantBubbles = pageHost.querySelectorAll<HTMLElement>('[data-bot-assistant-bubble]')

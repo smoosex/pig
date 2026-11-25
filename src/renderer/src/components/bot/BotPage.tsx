@@ -88,6 +88,8 @@ import { BotTaskDrawer } from './BotTaskDrawer'
 import { BotComposer } from './BotComposer'
 
 const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+/** Overrides MessageScrollerItem's `content-visibility: auto` (`contain: paint`) so bubble/card shadows and rings are never clipped. */
+const unclippedItem = '[content-visibility:visible] [contain-intrinsic-size:none]'
 
 export interface BotWorkspaceJumpOptions {
   cwd: string
@@ -522,7 +524,7 @@ export function BotPage({
                         <MessageScrollerItem
                           messageId="bot-working-hint"
                           data-bot-post-approval-hint={!streaming ? resumedApprovalTask?.taskId : undefined}
-                          className="flex items-center gap-2 py-1"
+                          className={cn(unclippedItem, 'flex items-center gap-2 py-1')}
                         >
                           <BotAvatar type={avatar} size={24} state="working" interactive={false} className="shrink-0" />
                           <span className="text-xs text-muted-foreground motion-safe:animate-pulse">
@@ -635,7 +637,7 @@ function BotTimelineRow({
       .filter((task): task is BotTask => task !== undefined)
 
     return (
-      <MessageScrollerItem messageId={item.id} className="flex justify-center">
+      <MessageScrollerItem messageId={item.id} className={cn(unclippedItem, 'flex justify-center')}>
         <div
           data-bot-fallback-card={item.reason}
           className="w-full max-w-2xl rounded-xl border border-warning/40 bg-warning-background/40 px-3.5 py-2.5 text-xs text-foreground"
@@ -682,7 +684,7 @@ function BotTimelineRow({
   return (
     <MessageScrollerItem
       messageId={item.id}
-      className={cn('group/bot-reply flex flex-col items-start gap-1.5', grouped ? '-mt-2' : '')}
+      className={cn(unclippedItem, 'group/bot-reply flex flex-col items-start gap-1.5', grouped ? '-mt-2' : '')}
     >
       {!grouped ? (
         <div data-bot-assistant-header className="flex items-center">
@@ -928,7 +930,7 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
   const copyText = textAttachments.length > 0 ? composePromptText(item.text, textAttachments) : item.text
 
   return (
-    <MessageScrollerItem messageId={item.id}>
+    <MessageScrollerItem messageId={item.id} className={unclippedItem}>
       <Message align="end" className="group/user-message">
         <MessageContent className="w-fit max-w-9/10 gap-1.5">
           {images.length > 0 ? (
