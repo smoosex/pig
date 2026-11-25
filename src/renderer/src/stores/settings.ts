@@ -99,7 +99,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       current.lightTheme !== next.lightTheme ||
       current.darkTheme !== next.darkTheme
     ) {
-      applyDocumentTheme(next)
+      applyDocumentTheme(next, current.loaded)
     }
     if (!current.loaded || current.locale !== locale) applyDocumentLocale(locale)
     set(next)

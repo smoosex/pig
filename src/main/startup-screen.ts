@@ -3,14 +3,22 @@
  * `runStartupScene`, with no network or simulated progress. Inline script is the only allowance;
  * the view is sandboxed and has no preload.
  */
-import { runStartupScene } from './startup-scene'
+import type { SurfaceStyle } from '../shared/api'
+import { runStartupScene, type StartupSceneConfig } from './startup-scene'
 
-export const STARTUP_EXIT_MS = 860
+export type { StartupSceneConfig } from './startup-scene'
+
+export const STARTUP_EXIT_MS = 560
 
 /** Starts the scene's exit; the canvas is transparent once `STARTUP_EXIT_MS` has passed. */
 export const STARTUP_EXIT_SCRIPT = 'window.__pigStartupExit?.()'
 
-export function startupScreenHtml(): string {
+export function startupSurfaceScript(style: SurfaceStyle): string {
+  return `window.__pigStartupSurface?.(${JSON.stringify(style)})`
+}
+
+export function startupScreenHtml(config: StartupSceneConfig | SurfaceStyle = 'solid'): string {
+  const normalized: StartupSceneConfig = typeof config === 'string' ? { surfaceStyle: config } : config
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
@@ -20,6 +28,6 @@ body { -webkit-app-region: drag; user-select: none; cursor: default; }
 canvas { display: block; width: 100%; height: 100%; }
 </style></head><body>
 <canvas role="progressbar" aria-label="Loading Pig"></canvas>
-<script>(${runStartupScene.toString()})(${STARTUP_EXIT_MS})</script>
+<script>(${runStartupScene.toString()})(${STARTUP_EXIT_MS}, ${JSON.stringify(normalized)})</script>
 </body></html>`
 }

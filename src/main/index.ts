@@ -27,6 +27,7 @@ import { handleSessionImages, registerSessionImageScheme } from './session-image
 import { handleMcpIcons, registerMcpIconScheme } from './mcp/icon-protocol'
 import { handleWorktreeFiles, registerWorktreeFileScheme } from './worktree-file-protocol'
 import { flushOpenProjectSessions, loadOpenProjectSessions, removeOpenProjectWorkspaces } from './open-project-sessions'
+import { flushStartupBlueprint } from './startup-blueprint'
 import { flushBrowserHistory } from './browser/history'
 import { pruneTerminalHistories } from './terminal/history'
 import { pruneEmptyChatDirs } from './chats'
@@ -93,7 +94,8 @@ app.whenReady().then(async () => {
     })
   })
   const startup = createStartupMainWindow()
-  await duringStartup(attachStartupScreen(startup.window).ready)
+  const startupScreen = attachStartupScreen(startup.window)
+  await duringStartup(startupScreen.ready)
   startup.window.show()
   await duringStartup(shellEnvironment)
 
@@ -112,6 +114,7 @@ app.whenReady().then(async () => {
   nativeTheme.themeSource = settings.appearance
   applyShortcutOverrides(settings.shortcuts)
   applyWindowSurfaceStyle(settings.surfaceStyle)
+  startupScreen.setSurfaceStyle?.(settings.surfaceStyle)
   await duringStartup(initLocale(settings.locale))
   await duringStartup(worktrees.startDeletionWorker(async (cwd) => {
     await closeSessionsForCwd(cwd)
@@ -173,6 +176,7 @@ app.on('before-quit', (event) => {
     shutdownBotService(),
     worktrees.shutdown(),
     flushOpenProjectSessions(),
+    flushStartupBlueprint(),
     flushBrowserHistory(),
     cancelMcpOperations(),
     flushToolMutations()

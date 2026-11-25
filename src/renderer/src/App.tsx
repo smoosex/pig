@@ -64,6 +64,7 @@ import { SessionGreeting } from './components/SessionGreeting'
 import { subscribeSettingsChanges, useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
 import { prewarmHighlighter } from './lib/highlight'
+import { captureStartupBlueprint } from './lib/startup-blueprint'
 import { cn } from './lib/utils'
 import { eventAccelerator, isComposingKey, isShortcutRecording, isTerminalShellChord, shortcutBindings } from './lib/shortcuts'
 import { findShortcut, HOST_SHORTCUT_ACTIONS, TAB_SELECT_ACTIONS, type HostShortcutAction } from '../../shared/shortcuts'
@@ -272,7 +273,9 @@ export default function App() {
     s.openTabs.find((tab) => tab.id === s.activeTabId)
   )
   const loadSettings = useSettingsStore((s) => s.load)
+  const settingsSettled = useSettingsStore((s) => s.loaded || s.error !== null)
   const loadReviewPrefs = useDiffStore((s) => s.loadReviewPrefs)
+  const reviewSettled = useDiffStore((s) => s.reviewReady || s.prefsError !== null)
   const splitGroups = useSplitLayoutStore((s) => s.groups)
   // Only the group holding the active tab is on screen; the others wait behind their merged tabs.
   const activeSplit = groupOfTab(splitGroups, activeTabId)
@@ -577,10 +580,74 @@ export default function App() {
     return () => releaseChatDraft()
   }, [acquireChatDraft, chatHome, releaseChatDraft])
 
+  const activeTabSettled = !activeTab || (activeTab.loadState !== 'cold' && activeTab.loadState !== 'opening')
+  const startupSettled = Boolean((workspaceRestoreReady || workspaceRestoreError) && sidebarReady && reviewSettled && settingsSettled && activeTabSettled)
+  const notifiedStartupReady = useRef(false)
   // A failed restore is shown by the app itself, so it lifts the startup screen too.
   useEffect(() => {
-    if (workspaceRestoreReady || workspaceRestoreError) api.notifyStartupReady()
-  }, [workspaceRestoreReady, workspaceRestoreError])
+    if (!startupSettled || notifiedStartupReady.current) return
+    notifiedStartupReady.current = true
+    const root = document.documentElement
+    root.dataset.startupFocus = '1'
+    void root.offsetHeight
+    api.notifyStartupReady()
+    const timer = window.setTimeout(() => {
+      delete root.dataset.startupFocus
+    }, 920)
+    return () => {
+      window.clearTimeout(timer)
+      delete root.dataset.startupFocus
+    }
+  }, [startupSettled])
+
+  const activeMessageCount = useSessionsStore((s) => {
+    if (!activeSessionId) return 0
+    const rt = s.runtime[activeSessionId]
+    return (rt?.turns.length ?? 0) + (rt?.liveMessages.length ?? 0)
+  })
+  const lastBlueprintJson = useRef('')
+  const rightSurfaceOpen = Boolean(activeWorkspaceCwd) && !rightCollapsed
+  useEffect(() => {
+    if (!startupSettled || !activeTabSettled || settingsOpen || botOpen) return
+    const flushBlueprint = () => {
+      const bp = captureStartupBlueprint(document, {
+        leftOpen: !leftCollapsed,
+        rightOpen: rightSurfaceOpen
+      })
+      if (!bp) return
+      const json = JSON.stringify(bp)
+      if (json === lastBlueprintJson.current) return
+      lastBlueprintJson.current = json
+      void api.saveStartupBlueprint?.(bp)?.catch(() => {})
+    }
+    // Wait past the 500ms centered-to-bottom composer glide when the first message is sent.
+    const timer = window.setTimeout(flushBlueprint, 600)
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushBlueprint()
+    }
+    window.addEventListener('pagehide', flushBlueprint)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('pagehide', flushBlueprint)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [
+    startupSettled,
+    activeTabSettled,
+    activeTabId,
+    sidebarTab,
+    leftCollapsed,
+    rightSurfaceOpen,
+    settingsOpen,
+    botOpen,
+    projects.length,
+    chats.length,
+    openTabs.length,
+    splitGroups,
+    windowWidth,
+    activeMessageCount
+  ])
 
   useEffect(() => {
     if (!activeTab) {
@@ -945,6 +1012,7 @@ export default function App() {
             >
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl">
                 <div
+                  data-content-inner
                   className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                 >
                   {sidebarTab === 'kanban' ? (

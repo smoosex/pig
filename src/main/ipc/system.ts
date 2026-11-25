@@ -1,5 +1,8 @@
 import { ipcMain } from 'electron'
+import { assertBrowserSender } from '../browser/validation'
+import { saveStartupBlueprint } from '../startup-blueprint'
 import { loadSidebarPrefs, saveSidebarPrefs, type SidebarPrefs } from '../sidebar-prefs'
+import { windowForEvent } from './window'
 import {
   loadOpenProjectSessions,
   saveOpenChatTabs,
@@ -41,4 +44,8 @@ export function registerSystemIpc(): void {
   ipcMain.handle('system:save-open-split-layouts', async (_event, layouts: unknown) =>
     saveOpenSplitLayouts(layouts)
   )
+  ipcMain.handle('system:save-startup-blueprint', async (event, blueprint: unknown) => {
+    assertBrowserSender(event, windowForEvent(event))
+    await saveStartupBlueprint(blueprint)
+  })
 }

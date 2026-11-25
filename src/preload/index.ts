@@ -439,6 +439,7 @@ const api: SessionApi = {
   },
   supportsGlass: process.argv.includes(GLASS_SURFACE_ARGUMENT),
   notifyStartupReady: () => ipcRenderer.send('window:startup-ready'),
+  saveStartupBlueprint: (blueprint) => ipcRenderer.invoke('system:save-startup-blueprint', blueprint),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   onSettingsChanged: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, update: import('../shared/settings').SettingsChanged) => listener(update)

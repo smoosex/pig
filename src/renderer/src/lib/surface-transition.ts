@@ -20,13 +20,17 @@ export function setSurfaceRevealOrigin(element: Element): void {
   revealOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
 }
 
-export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle): void {
-  if (style === revealTarget && (reveal || root.dataset.surfaceStyle === style)) return
+export function applySurfaceStyle(root: HTMLElement, style: SurfaceStyle, animate = true): void {
+  if ((!reveal && root.dataset.surfaceStyle === style) || (style === revealTarget && (reveal || root.dataset.surfaceStyle === style))) {
+    revealTarget = style
+    revealOrigin = undefined
+    return
+  }
   revealTarget = style
   const origin = revealOrigin ?? { x: innerWidth / 2, y: innerHeight / 2 }
   revealOrigin = undefined
   if (
-    root.dataset.surfaceStyle === undefined || typeof document.startViewTransition !== 'function' ||
+    !animate || root.dataset.surfaceStyle === undefined || typeof document.startViewTransition !== 'function' ||
     document.visibilityState !== 'visible' || matchMedia('(prefers-reduced-motion: reduce)').matches
   ) {
     // A skipped earlier reveal still runs its update later; it reads the same latest target.

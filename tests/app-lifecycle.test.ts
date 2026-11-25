@@ -18,14 +18,18 @@ async function fixture(mode: string): Promise<void> {
     class FakeContents extends EventEmitter {
       url = ''
       script = ''
+      insertedCss = ''
+      removedCssKey = ''
       mainFrame = {}
       ipc = new EventEmitter()
       isDestroyed() { return this.destroyed }
       destroyed = false
       close() { calls.push('close'); this.destroyed = true }
       focus() { calls.push('focus') }
+      async insertCSS(css: string) { this.insertedCss = css; calls.push('hide-app'); return 'css-1' }
+      async removeInsertedCSS(key: string) { this.removedCssKey = key; calls.push('reveal-app') }
       async loadURL(url: string) { this.url = url }
-      async executeJavaScript(script: string) { this.script = script }
+      async executeJavaScript(script: string) { this.script = script; calls.push('exit-script') }
     }
     class FakeView {
       static instance: FakeView
@@ -55,14 +59,17 @@ async function fixture(mode: string): Promise<void> {
     assert.ok(html.includes("default-src 'none'"))
     assert.ok(html.includes('__pigStartupExit'))
     window.emit('resize')
+    window.webContents.emit('did-navigate')
     view.contents.emit('did-finish-load')
     await ready
+    assert.ok(window.webContents.insertedCss.includes('opacity: 0'), 'the loading app stays hidden beneath translucent glass')
     window.webContents.ipc.emit('window:startup-ready', { senderFrame: {} })
     assert.equal(view.contents.script, '', 'only the app document can lift the screen')
     window.webContents.ipc.emit('window:startup-ready', { senderFrame: window.webContents.mainFrame })
     await flush()
+    assert.equal(window.webContents.removedCssKey, 'css-1')
     assert.equal(view.contents.script, STARTUP_EXIT_SCRIPT)
-    assert.equal(calls.at(-1), 'focus', 'the app takes focus while the screen still covers it')
+    assert.deepEqual(calls.slice(-3), ['focus', 'reveal-app', 'exit-script'], 'the app reveals right before the startup overlay exits')
     assert.equal(calls.includes('remove'), false, 'the screen stays while it fades out')
     await Bun.sleep(STARTUP_EXIT_MS + 50)
     assert.deepEqual(calls.slice(-2), ['remove', 'close'])

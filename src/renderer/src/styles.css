@@ -504,6 +504,58 @@ html[data-surface-style='glass']:has([data-slot='dialog-overlay'][data-state='op
   filter: blur(8px);
 }
 
+/* Progressive per-region optical focus at startup: `[data-content-surface]` (the outer card skeleton
+   frame) stays crisp and stationary while the real contents inside each skeleton zone sharpen in
+   staggered waves as the canvas placeholder bars dissolve. */
+@keyframes startup-block-focus {
+  0% {
+    opacity: 0;
+    filter: blur(14px);
+  }
+  28% {
+    opacity: 0.62;
+    filter: blur(8px);
+  }
+  65% {
+    opacity: 0.92;
+    filter: blur(2.5px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+html[data-startup-focus] [data-workspace-left-rail],
+html[data-startup-focus] [data-workspace-right-rail],
+html[data-startup-focus] [data-header-leading],
+html[data-startup-focus] [data-content-surface] {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-startup-focus] [data-header-leading],
+  html[data-startup-focus] [data-header-tabs],
+  html[data-startup-focus] [data-header-trailing],
+  html[data-startup-focus] [data-bot-header] {
+    animation: startup-block-focus 420ms cubic-bezier(0.22, 1, 0.36, 1) 0ms both;
+  }
+
+  html[data-startup-focus] [data-workspace-left-rail] {
+    animation: startup-block-focus 480ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+  }
+
+  html[data-startup-focus] [data-content-inner],
+  html[data-startup-focus] [data-workspace-center] > :not([data-workspace-content]),
+  html[data-startup-focus] [data-bot-page] > :not([data-bot-header]) {
+    animation: startup-block-focus 540ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
+  }
+
+  html[data-startup-focus] [data-workspace-right-rail] {
+    animation: startup-block-focus 480ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
+  }
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
