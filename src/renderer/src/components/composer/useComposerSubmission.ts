@@ -7,6 +7,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import { composerUserMessage, textToComposerDocument, trimComposer } from './document'
 import type { useComposerEditor } from './useComposerEditor'
 import { hasIssueMention } from './issue-mentions'
+import { hasSkillMention } from '../SkillMentionNode'
 import { hasTabMention } from './tab-mentions'
 import type { useComposerImages } from './useComposerImages'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
@@ -73,7 +74,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const command = bashMode ? serialized.text.trim() : null
     if (command !== null) {
       const refusal = hasAttachments || images.length > 0 ? 'composer.bashAttachments'
-        : (hasTabMention(document.editor.state.doc) || hasIssueMention(document.editor.state.doc)) ? 'composer.bashReferences' : null
+        : (hasTabMention(document.editor.state.doc) || hasIssueMention(document.editor.state.doc) || hasSkillMention(document.editor.state.doc)) ? 'composer.bashReferences' : null
       if (refusal) setErrors((current) => ({ ...current, [target]: t(refusal) }))
       if (!command || refusal) return
     }
@@ -185,7 +186,7 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
     const agentRunRevision = runtime.agentRunRevision
     setErrors((current) => ({ ...current, [target]: undefined }))
 
-    const optimistic = composerUserMessage(text, payload, prompt.attachments, prompt.mentions)
+    const optimistic = composerUserMessage(text, payload, prompt.attachments, prompt.mentions, prompt.skillMentions)
     if (!streaming) state.beginPrompt(target, optimistic)
     if (title) state.previewSessionTitle(target, title, fallback)
     // The home editor can already be gone; clear the submitted session and rehydrate its new editor.
@@ -217,7 +218,8 @@ export function useComposerSubmission({ sessionId, draftCwd, isDraftSession, doc
         payload.length > 0 ? payload : undefined,
         hasAttachments ? prompt.attachments : undefined,
         streamingBehavior,
-        prompt.mentions.length > 0 ? prompt.mentions : undefined
+        prompt.mentions.length > 0 ? prompt.mentions : undefined,
+        prompt.skillMentions.length > 0 ? prompt.skillMentions : undefined
       )
     } catch (error) {
       if (!isCurrent()) return

@@ -6,11 +6,12 @@
 import type { JSONContent } from '@tiptap/core'
 import { createInlinePastedTextDisplayMetadata, isInlinePastedTextAttachments, normalizeNewlines, utf8ByteLength, type PastedTextAttachmentInput, type PastedTextPromptAttachment } from '../../../../shared/pasted-text'
 import { fileMentionText, isFileMentionAt, type FileMention } from '../../../../shared/file-mentions'
+import { isSkillMentionAt, skillMentionText, type SkillMention } from '../../../../shared/skill-mentions'
 import type { PigUserMessage } from '../../pi/types'
 import { issueMentionText, type IssueMention } from './issue-mentions'
 import { tabMentionText, type TabMention } from './tab-mentions'
 
-export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [], mentions: [] }
+export const EMPTY_COMPOSER: SerializedComposer = { text: '', attachments: [], mentions: [], skillMentions: [] }
 
 export function textToComposerDocument(text: string): JSONContent {
   return {
@@ -24,10 +25,13 @@ export function textToComposerDocument(text: string): JSONContent {
 export function restoredPromptToComposerDocument(
   text: string,
   attachments: PastedTextAttachmentInput[] = [],
-  mentions: FileMention[] = []
+  mentions: FileMention[] = [],
+  skillMentions: SkillMention[] = []
 ): JSONContent {
   const normalizedText = normalizeNewlines(text)
-  if (attachments.length === 0 && mentions.length === 0) return textToComposerDocument(normalizedText)
+  if (attachments.length === 0 && mentions.length === 0 && skillMentions.length === 0) {
+    return textToComposerDocument(normalizedText)
+  }
   const normalized = attachments.map((attachment) => ({
     ...attachment,
     start: attachment.start,
@@ -39,6 +43,9 @@ export function restoredPromptToComposerDocument(
   }
   if (!mentions.every((mention) => isFileMentionAt(normalizedText, mention))) {
     throw new Error('Invalid restored file mention ranges')
+  }
+  if (!skillMentions.every((mention) => isSkillMentionAt(normalizedText, mention))) {
+    throw new Error('Invalid restored skill mention ranges')
   }
 
   const paragraphs: JSONContent[] = [{ type: 'paragraph' }]
@@ -63,6 +70,10 @@ export function restoredPromptToComposerDocument(
     ...mentions.map((mention) => ({ start: mention.start, end: mention.end, node: {
       type: 'fileMention',
       attrs: { path: mention.path }
+    } })),
+    ...skillMentions.map((skill) => ({ start: skill.start, end: skill.end, node: {
+      type: 'skillMention',
+      attrs: { name: skill.name }
     } }))
   ].sort((left, right) => left.start - right.start)
   let cursor = 0
@@ -80,6 +91,7 @@ export type SerializedComposer = {
   text: string
   attachments: PastedTextPromptAttachment[]
   mentions: FileMention[]
+  skillMentions: SkillMention[]
 }
 
 /**
@@ -87,15 +99,16 @@ export type SerializedComposer = {
  * a range owns (a pasted block that starts with indentation) stays, so no range is cut.
  */
 export function trimComposer(serialized: SerializedComposer): SerializedComposer {
-  const { text, attachments, mentions } = serialized
-  const ranges = [...attachments, ...mentions]
+  const { text, attachments, mentions, skillMentions } = serialized
+  const ranges = [...attachments, ...mentions, ...skillMentions]
   const leading = Math.min(text.length - text.trimStart().length, ...ranges.map((range) => range.start))
   const end = Math.max(text.trimEnd().length, ...ranges.map((range) => range.end))
   if (leading === 0 && end === text.length) return serialized
   return {
     text: text.slice(leading, Math.max(leading, end)),
     attachments: attachments.map((attachment) => ({ ...attachment, start: attachment.start - leading, end: attachment.end - leading })),
-    mentions: mentions.map((mention) => ({ ...mention, start: mention.start - leading, end: mention.end - leading }))
+    mentions: mentions.map((mention) => ({ ...mention, start: mention.start - leading, end: mention.end - leading })),
+    skillMentions: skillMentions.map((skill) => ({ ...skill, start: skill.start - leading, end: skill.end - leading }))
   }
 }
 
@@ -103,7 +116,8 @@ export function composerUserMessage(
   text: string,
   images: Array<{ mimeType: string; data: string }>,
   attachments: PastedTextPromptAttachment[],
-  mentions: FileMention[] = []
+  mentions: FileMention[] = [],
+  skillMentions: SkillMention[] = []
 ): PigUserMessage {
   const imageBlocks = images.map((image) => ({
     type: 'image' as const,
@@ -118,8 +132,8 @@ export function composerUserMessage(
     role: 'user',
     content,
     timestamp: Date.now(),
-    ...(attachments.length > 0 || mentions.length > 0
-      ? { pastedText: createInlinePastedTextDisplayMetadata(text, attachments, mentions) }
+    ...(attachments.length > 0 || mentions.length > 0 || skillMentions.length > 0
+      ? { pastedText: createInlinePastedTextDisplayMetadata(text, attachments, mentions, skillMentions) }
       : {})
   }
 }
@@ -128,6 +142,7 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
   let text = ''
   const attachments: PastedTextPromptAttachment[] = []
   const mentions: FileMention[] = []
+  const skillMentions: SkillMention[] = []
 
   const append = (node: JSONContent) => {
     if (node.type === 'text') {
@@ -168,6 +183,13 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
       mentions.push({ path, start, end: text.length })
       return
     }
+    if (node.type === 'skillMention') {
+      const name = String(node.attrs?.name ?? '')
+      const start = text.length
+      text += skillMentionText(name)
+      skillMentions.push({ name, start, end: text.length })
+      return
+    }
     for (const child of node.content ?? []) append(child)
   }
 
@@ -175,5 +197,5 @@ export function serializeComposerDocument(json: JSONContent): SerializedComposer
     if (index > 0) text += '\n'
     append(node)
   }
-  return { text, attachments, mentions }
+  return { text, attachments, mentions, skillMentions }
 }

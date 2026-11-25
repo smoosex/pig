@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
+import { skillCommandName } from '../../../../shared/skill-mentions'
 import { api, type SlashCommand } from '../../ipc/api'
 import { filterSlashCommands, slashQuery } from './commands'
 
@@ -81,9 +82,21 @@ export function useSlashCommands(
   const select = (command: SlashCommand) => {
     const live = editor && !disabled ? readSlashTarget(editor) : null
     if (editor && live) {
+      const skillName = command.source === 'skill' ? skillCommandName(command.name) : null
       editor.chain().focus().insertContentAt(
         { from: live.from, to: live.to },
-        { type: 'text', text: `/${command.name} ` }
+        skillName
+          ? [
+              {
+                type: 'skillMention',
+                attrs: {
+                  name: skillName,
+                  ...(command.description ? { description: command.description } : {})
+                }
+              },
+              { type: 'text', text: ' ' }
+            ]
+          : { type: 'text', text: `/${command.name} ` }
       ).run()
     }
     setDismissed(true)

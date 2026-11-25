@@ -133,10 +133,10 @@ export function registerSessionIpc(): void {
 
   ipcMain.handle(
     'session:prompt',
-    async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown, fileMentions?: unknown) => {
+    async (_event, sessionId: string, text: unknown, images?: unknown, textAttachments?: unknown, streamingBehavior?: unknown, fileMentions?: unknown, skillMentions?: unknown) => {
       const { notifyBotUserPromptInSessionIfActive } = await import('../bot/service')
       await notifyBotUserPromptInSessionIfActive(sessionId)
-      await promptSession(sessionId, { text, images, textAttachments, fileMentions, streamingBehavior })
+      await promptSession(sessionId, { text, images, textAttachments, fileMentions, skillMentions, streamingBehavior })
     }
   )
 

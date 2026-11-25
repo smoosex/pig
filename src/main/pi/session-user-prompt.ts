@@ -8,6 +8,7 @@ import {
   PASTED_TEXT_CUSTOM_TYPE,
   type PastedTextMetadata
 } from '../../shared/pasted-text'
+import { formatExpandedSkillPreview, parseExpandedSkillPrompt, skillMentionText } from '../../shared/skill-mentions'
 
 export function restoreSessionUserPrompt(
   manager: SessionManager,
@@ -41,7 +42,8 @@ export function restoreSessionUserPrompt(
     metadata = pastedTextEntry.data
   }
   const source = metadata ? resolvePastedTextMetadata(deliveredText, metadata) : undefined
-  const text = source?.text ?? deliveredText
+  const expandedLegacySkill = !source ? parseExpandedSkillPrompt(deliveredText) : null
+  const text = source?.text ?? (expandedLegacySkill ? formatExpandedSkillPreview(expandedLegacySkill) : deliveredText)
   const textAttachments = source?.metadata.attachments.map((attachment) => ({
     id: attachment.id,
     text: text.slice(attachment.start, attachment.end),
@@ -51,6 +53,11 @@ export function restoreSessionUserPrompt(
     ...(attachment.filename ? { filename: attachment.filename } : {})
   }))
   const fileMentions = source?.metadata.version === 2 ? source.metadata.mentions : undefined
+  const skillMentions = source?.metadata.version === 2
+    ? source.metadata.skillMentions
+    : expandedLegacySkill
+      ? [{ name: expandedLegacySkill.name, start: 0, end: skillMentionText(expandedLegacySkill.name).length }]
+      : undefined
 
   return {
     parentId: pastedTextEntry ? pastedTextEntry.parentId : entry.parentId,
@@ -58,7 +65,8 @@ export function restoreSessionUserPrompt(
       text,
       images,
       ...(textAttachments ? { textAttachments } : {}),
-      ...(fileMentions?.length ? { fileMentions } : {})
+      ...(fileMentions?.length ? { fileMentions } : {}),
+      ...(skillMentions?.length ? { skillMentions } : {})
     }
   }
 }

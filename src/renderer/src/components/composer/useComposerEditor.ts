@@ -8,9 +8,11 @@ import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
 import { fileMentionText } from '../../../../shared/file-mentions'
 import { createPastedTextFilename, isLongPastedText, normalizeNewlines, utf8ByteLength } from '../../../../shared/pasted-text'
+import { parseLeadingSkillCommand } from '../../../../shared/skill-mentions'
 import { useT } from '../../hooks/useT'
 import { FileMentionNode } from '../FileMentionNode'
 import { IssueMentionNode } from '../IssueMentionNode'
+import { SkillMentionNode } from '../SkillMentionNode'
 import { TabMentionNode } from '../TabMentionNode'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
@@ -44,6 +46,10 @@ function plainTextSlice(schema: Schema, text: string): Slice {
 function insertPastedText(view: EditorView, text: string, at?: number): void {
   const { schema } = view.state
   const normalized = normalizeNewlines(text)
+  const insertFrom = at ?? view.state.selection.from
+  const leadingSkill = !isLongPastedText(normalized) && insertFrom === 1 && !callbacksBashMode(view)
+    ? parseLeadingSkillCommand(normalized)
+    : null
   const slice = isLongPastedText(normalized)
     // The trailing space keeps the caret in text: beside an atom the browser sizes it to the chip.
     ? Slice.maxOpen(Fragment.fromArray([
@@ -55,8 +61,19 @@ function insertPastedText(view: EditorView, text: string, at?: number): void {
         }),
         schema.text(' ')
       ]))
-    : plainTextSlice(schema, normalized)
+    : leadingSkill
+      ? Slice.maxOpen(Fragment.fromArray([
+          schema.nodes.skillMention.create({ name: leadingSkill.name }),
+          ...(leadingSkill.rest
+            ? plainTextSlice(schema, leadingSkill.rest).content.content
+            : [schema.text(' ')])
+        ]))
+      : plainTextSlice(schema, normalized)
   insertSlice(view, slice, at)
+}
+
+function callbacksBashMode(view: EditorView): boolean {
+  return view.dom.closest('.font-mono') !== null
 }
 
 function shellWord(text: string): string {
@@ -133,6 +150,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
       Placeholder.configure({ placeholder: () => placeholder.current }),
       PastedTextNode,
       FileMentionNode,
+      SkillMentionNode,
       TabMentionNode,
       IssueMentionNode
     ],

@@ -28,13 +28,14 @@ import type {
   PastedTextDisplaySegment
 } from './pasted-text'
 import type { FileMention } from './file-mentions'
+import type { SkillMention } from './skill-mentions'
 import type { SessionFileChangesSummary, TurnFileChangesResult } from './file-change-api'
 export type * from './file-change-api'
 export type * from './session-file-changes'
 
 export type { Locale, LocaleSetting } from './i18n'
 
-export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment, FileMention }
+export type { PastedTextAttachment, PastedTextAttachmentInput, PastedTextDisplaySegment, FileMention, SkillMention }
 
 /** An app-written stand-in title for an attachments/images-only first message; the renderer translates it. */
 export type SessionPreviewFallback = 'pastedText' | 'image'
@@ -628,6 +629,7 @@ export interface RestoredSessionPrompt {
   images: Array<{ mimeType: string; data: string }>
   textAttachments?: PastedTextAttachmentInput[]
   fileMentions?: FileMention[]
+  skillMentions?: SkillMention[]
 }
 
 /** A Pi fork is a separate session whose composer restores the selected user message. */
@@ -1055,7 +1057,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
     images?: { mimeType: string; data: string }[],
     textAttachments?: PastedTextAttachmentInput[],
     streamingBehavior?: PromptStreamingBehavior,
-    fileMentions?: FileMention[]
+    fileMentions?: FileMention[],
+    skillMentions?: SkillMention[]
   ) => Promise<void>
   abort: (sessionId: string) => Promise<void>
   executeBash: (sessionId: string, command: string, id: string) => Promise<BashExecutionResult>

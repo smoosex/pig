@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { composerUserMessage, restoredPromptToComposerDocument, serializeComposerDocument, textToComposerDocument, trimComposer } from '../src/renderer/src/components/composer/document'
 import { filterSlashCommands, slashQuery } from '../src/renderer/src/components/composer/commands'
+import { parseExpandedSkillPrompt } from '../src/shared/skill-mentions'
 import type { SlashCommand } from '../src/shared/api'
 
 describe('composer document protocol', () => {
   test('preserves blank lines and literal backslash sequences in edited queue text', () => {
     const text = '第一段\n\n第二段 \\n 不换行\n'
-    expect(serializeComposerDocument(textToComposerDocument(text))).toEqual({ text, attachments: [], mentions: [] })
+    expect(serializeComposerDocument(textToComposerDocument(text))).toEqual({ text, attachments: [], mentions: [], skillMentions: [] })
   })
 
   test('round-trips clipboard line endings as LF', () => {
@@ -54,7 +55,8 @@ describe('composer document protocol', () => {
         start: 4,
         end: text.length
       }],
-      mentions: []
+      mentions: [],
+      skillMentions: []
     })
   })
 
@@ -68,16 +70,83 @@ describe('composer document protocol', () => {
       ] }]
     }
     const serialized = serializeComposerDocument(document)
-    expect(serialized).toEqual({ text: '  看 @"my file.md" ', attachments: [], mentions: [{ path: 'my file.md', start: 4, end: 17 }] })
+    expect(serialized).toEqual({ text: '  看 @"my file.md" ', attachments: [], mentions: [{ path: 'my file.md', start: 4, end: 17 }], skillMentions: [] })
     const trimmed = trimComposer(serialized)
-    expect(trimmed).toEqual({ text: '看 @"my file.md"', attachments: [], mentions: [{ path: 'my file.md', start: 2, end: 15 }] })
+    expect(trimmed).toEqual({ text: '看 @"my file.md"', attachments: [], mentions: [{ path: 'my file.md', start: 2, end: 15 }], skillMentions: [] })
     expect(serializeComposerDocument(restoredPromptToComposerDocument(trimmed.text, [], trimmed.mentions))).toEqual(trimmed)
     expect(composerUserMessage(trimmed.text, [], [], trimmed.mentions).pastedText?.segments?.map((segment) => segment.type)).toEqual(['text', 'file'])
   })
 
+  test('serializes skill chips as /skill:name and restores them alongside file mentions', () => {
+    const document = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [
+        { type: 'skillMention', attrs: { name: 'diffs', description: 'Render diffs' } },
+        { type: 'text', text: ' 看下 ' },
+        { type: 'fileMention', attrs: { path: 'src/a.ts' } },
+        { type: 'text', text: ' ' }
+      ] }]
+    }
+    const serialized = serializeComposerDocument(document)
+    expect(serialized).toEqual({
+      text: '/skill:diffs 看下 @src/a.ts ',
+      attachments: [],
+      mentions: [{ path: 'src/a.ts', start: 16, end: 25 }],
+      skillMentions: [{ name: 'diffs', start: 0, end: 12 }]
+    })
+    const trimmed = trimComposer(serialized)
+    expect(trimmed).toEqual({
+      text: '/skill:diffs 看下 @src/a.ts',
+      attachments: [],
+      mentions: [{ path: 'src/a.ts', start: 16, end: 25 }],
+      skillMentions: [{ name: 'diffs', start: 0, end: 12 }]
+    })
+    expect(
+      serializeComposerDocument(
+        restoredPromptToComposerDocument(trimmed.text, [], trimmed.mentions, trimmed.skillMentions)
+      )
+    ).toEqual(trimmed)
+    const msg = composerUserMessage(trimmed.text, [], [], trimmed.mentions, trimmed.skillMentions)
+    expect(msg.pastedText?.segments?.map((segment) => segment.type)).toEqual(['skill', 'text', 'file'])
+  })
+
+  test('parses expanded skill prompts even with nested </skill> inside SKILL.md or multi-paragraph args', () => {
+    const expanded = [
+      '<skill name="agy-customizations" location="/repo/.agents/skills/agy/SKILL.md">',
+      'References are relative to /repo/.agents/skills/agy.',
+      '',
+      'Example block:',
+      '<skill>',
+      'nested example',
+      '</skill>',
+      '',
+      'More instructions',
+      '</skill>',
+      '',
+      '第一段请求',
+      '',
+      '第二段请求'
+    ].join('\n')
+    expect(parseExpandedSkillPrompt(expanded)).toEqual({
+      name: 'agy-customizations',
+      location: '/repo/.agents/skills/agy/SKILL.md',
+      body: [
+        'References are relative to /repo/.agents/skills/agy.',
+        '',
+        'Example block:',
+        '<skill>',
+        'nested example',
+        '</skill>',
+        '',
+        'More instructions'
+      ].join('\n'),
+      userMessage: '第一段请求\n\n第二段请求'
+    })
+  })
+
   test('trimming keeps whitespace that belongs to a pasted range', () => {
-    const serialized = { text: ' \n  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 2, end: 6 }], mentions: [] }
-    expect(trimComposer(serialized)).toEqual({ text: '  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 0, end: 4 }], mentions: [] })
+    const serialized = { text: ' \n  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 2, end: 6 }], mentions: [], skillMentions: [] }
+    expect(trimComposer(serialized)).toEqual({ text: '  A ', attachments: [{ id: 'p', text: '  A ', byteSize: 4, start: 0, end: 4 }], mentions: [], skillMentions: [] })
   })
 
   test('restores prompts without attachments as ordinary text', () => {
@@ -96,7 +165,8 @@ describe('composer document protocol', () => {
         { id: 'first', text: 'A', byteSize: 1, start: 0, end: 1 },
         { id: 'second', text: 'B', byteSize: 1, start: 3, end: 4 }
       ],
-      mentions: []
+      mentions: [],
+      skillMentions: []
     })
     expect(() => restoredPromptToComposerDocument('AAAA', [
       { id: 'first', text: 'AA', start: 0, end: 2 },

@@ -1,6 +1,7 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { composePromptText, formatPastedTextSize } from '../../../../shared/pasted-text'
+import { formatExpandedSkillPreview, parseExpandedSkillPrompt, parseLeadingSkillCommand } from '../../../../shared/skill-mentions'
 import type { PigImageContent, PigUserMessage, TextContent } from '../../pi/types'
 import { turnImageSrc, type AnswerBlock } from '../../chat/turns'
 import { useT } from '../../hooks/useT'
@@ -15,6 +16,7 @@ import { FileMentionChip, FileMentionContext } from '../FileMentionChip'
 import { renderTextWithIssueChips } from '../IssueMentionNode'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
+import { SkillMentionChip } from '../SkillMentionChip'
 import { UserMessageActions } from './UserMessageActions'
 
 function userText(message: PigUserMessage): string {
@@ -31,6 +33,21 @@ function userImages(message: PigUserMessage): PigImageContent[] {
   return message.content.filter((b): b is PigImageContent => b.type === 'image')
 }
 
+function renderUserText(text: string, allowLeadingSkill: boolean): ReactNode {
+  if (allowLeadingSkill) {
+    const leading = parseLeadingSkillCommand(text)
+    if (leading) {
+      return (
+        <>
+          <SkillMentionChip name={leading.name} opensSkill />
+          {renderTextWithIssueChips(leading.rest)}
+        </>
+      )
+    }
+  }
+  return renderTextWithIssueChips(text)
+}
+
 function InlinePastedText({
   segments
 }: {
@@ -41,9 +58,11 @@ function InlinePastedText({
     <div className="whitespace-pre-wrap break-words">
       {segments.map((segment, index) =>
         segment.type === 'text' ? (
-          <span key={index}>{renderTextWithIssueChips(segment.text)}</span>
+          <span key={index}>{renderUserText(segment.text, index === 0)}</span>
         ) : segment.type === 'file' ? (
           <FileMentionChip key={index} path={segment.path} opensFile />
+        ) : segment.type === 'skill' ? (
+          <SkillMentionChip key={index} name={segment.name} location={segment.location} opensSkill />
         ) : (
           <PastedTextChip
             key={segment.attachment.id}
@@ -75,9 +94,12 @@ export const UserBubble = memo(function UserBubble({
   const text = userText(message)
   const textAttachments = message.pastedText?.attachments ?? []
   const segments = message.pastedText?.segments
+  const expandedSkill = !segments && text ? parseExpandedSkillPrompt(text) : null
   const copyText = message.pastedText && !segments
-    ? composePromptText(message.pastedText.body, textAttachments)
-    : text
+    ? composePromptText(expandedSkill ? formatExpandedSkillPreview(expandedSkill) : message.pastedText.body, textAttachments)
+    : expandedSkill
+      ? formatExpandedSkillPreview(expandedSkill)
+      : text
   const [preview, setPreview] = useState<string | null>(null)
   const hasTextBubble = Boolean(segments) || text.length > 0 || textAttachments.length > 0
   const cwd = useSessionsStore((state) => sessionId ? state.openTabs.find((tab) => tab.id === sessionId)?.cwd ?? null : null)
@@ -150,7 +172,20 @@ export const UserBubble = memo(function UserBubble({
                   </Button>
                 </PastedTextPreview>
               )) : null}
-              {!segments && text ? <div className="whitespace-pre-wrap">{renderTextWithIssueChips(text)}</div> : null}
+              {!segments && text ? (
+                <FileMentionContext.Provider value={mentionContext}>
+                  <div className="whitespace-pre-wrap break-words">
+                    {expandedSkill ? (
+                      <>
+                        <SkillMentionChip name={expandedSkill.name} location={expandedSkill.location} opensSkill />
+                        {expandedSkill.userMessage ? <span> {renderTextWithIssueChips(expandedSkill.userMessage)}</span> : null}
+                      </>
+                    ) : (
+                      renderUserText(text, true)
+                    )}
+                  </div>
+                </FileMentionContext.Provider>
+              ) : null}
             </BubbleContent>
           </Bubble>
         ) : null}

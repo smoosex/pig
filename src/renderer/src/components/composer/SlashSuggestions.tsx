@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import { BookOpen } from 'lucide-react'
+import { WandSparkles } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useT } from '../../hooks/useT'
 import { Button } from '../ui/button'
@@ -57,7 +57,7 @@ export function SlashSuggestions({
                 onMouseEnter={() => commands.setIndex(index)}
                 onClick={() => commands.select(command)}
               >
-                {command.source === 'skill' ? <BookOpen className="text-chart-4" /> : null}
+                {command.source === 'skill' ? <WandSparkles className="text-chart-4" /> : null}
                 <span className={cn('shrink-0 font-normal', index === selectedIndex && 'font-medium', command.source === 'skill' && 'text-chart-4')}>
                   /{command.name}
                 </span>

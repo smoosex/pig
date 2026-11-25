@@ -2,7 +2,11 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import type { SlashCommand } from '../src/shared/api'
 
-const commands = [{ name: 'review', source: 'extension' }, { name: 'export', source: 'prompt' }] as SlashCommand[]
+const commands = [
+  { name: 'review', source: 'extension' },
+  { name: 'export', source: 'prompt' },
+  { name: 'skill:diffs', description: 'Render code diffs', source: 'skill' }
+] as SlashCommand[]
 mock.module('../src/renderer/src/ipc/api', () => ({
   api: { getCommands: async () => commands, onPluginsChanged: () => () => {} }
 }))
@@ -54,7 +58,7 @@ test('opens slash completion before existing prose and preserves the document su
     editor.commands.insertContent('/')
   })
   expect(slash().open).toBe(true)
-  expect(slash().filtered).toHaveLength(2)
+  expect(slash().filtered).toHaveLength(3)
   await act(async () => { editor.commands.insertContent('rev') })
   expect(slash().filtered.map((command) => command.name)).toEqual(['review'])
   const original = draft()
@@ -108,6 +112,7 @@ test('tracks caret movement and dismisses outside the initial plain-text command
     [{ type: 'text', text: 'hello /rev' }],
     [{ type: 'text', text: 'hello' }, { type: 'hardBreak' }, { type: 'text', text: '/rev' }],
     [{ type: 'fileMention', attrs: { path: 'a' } }, { type: 'text', text: '/rev' }],
+    [{ type: 'skillMention', attrs: { name: 'diffs' } }, { type: 'text', text: '/rev' }],
     [{ type: 'pastedText', attrs: { id: 'p', text: '/rev' } }]
   ]) {
     await act(async () => {
@@ -116,4 +121,25 @@ test('tracks caret movement and dismisses outside the initial plain-text command
     })
     expect(slash().open).toBe(false)
   }
+})
+
+test('inserts skill commands as atomic skillMention chips while preserving existing suffix', async () => {
+  const { act, editor, slash, draft } = await setup()
+  await act(async () => {
+    editor.commands.setContent('<p>检查当前改动</p>')
+    editor.commands.setTextSelection(1)
+    editor.commands.insertContent('/dif')
+  })
+  expect(slash().open).toBe(true)
+  expect(slash().filtered.map((command) => command.name)).toEqual(['skill:diffs'])
+  await act(async () => {
+    expect(slash().handleKeyDown(new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(true)
+  })
+  expect(draft().text).toBe('/skill:diffs 检查当前改动')
+  expect(draft().skillMentions).toEqual([{ name: 'diffs', start: 0, end: 12 }])
+  expect(editor.getJSON().content?.[0].content?.[0]).toEqual({
+    type: 'skillMention',
+    attrs: { name: 'diffs', description: 'Render code diffs' }
+  })
+  expect(slash().open).toBe(false)
 })

@@ -1018,6 +1018,9 @@ export const zh = {
     groupIssue: '看板事项',
     groupFile: '文件'
   },
+  skillMention: {
+    copyCommand: '复制命令'
+  },
   retry: {
     requestWaiting: '请求失败，{seconds} 秒后重试（第 {attempt}/{total} 次）',
     requestRetrying: '请求失败，正在重试（第 {attempt}/{total} 次）',

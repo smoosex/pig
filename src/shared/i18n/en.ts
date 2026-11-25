@@ -1021,6 +1021,9 @@ export const en: Messages = {
     groupIssue: 'Board issues',
     groupFile: 'Files'
   },
+  skillMention: {
+    copyCommand: 'Copy command'
+  },
   retry: {
     requestWaiting: 'Request failed, retrying in {seconds}s (attempt {attempt}/{total})',
     requestRetrying: 'Request failed, retrying (attempt {attempt}/{total})',

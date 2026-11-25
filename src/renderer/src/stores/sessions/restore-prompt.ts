@@ -4,7 +4,12 @@ import { useComposerDraftsStore } from '../composer-drafts'
 
 export function restorePromptDraft(sessionId: string, prompt: RestoredSessionPrompt): void {
   useComposerDraftsStore.getState().restoreDraft(sessionId, {
-    content: restoredPromptToComposerDocument(prompt.text, prompt.textAttachments, prompt.fileMentions),
+    content: restoredPromptToComposerDocument(
+      prompt.text,
+      prompt.textAttachments,
+      prompt.fileMentions,
+      prompt.skillMentions
+    ),
     images: prompt.images.map((image) => ({ ...image, id: crypto.randomUUID() }))
   })
 }

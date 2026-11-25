@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { api, type FileSuggestion } from '../../ipc/api'
 import { fileMentionText } from '../../../../shared/file-mentions'
+import { skillMentionText } from '../../../../shared/skill-mentions'
 import { atMentionToken, mentionValue } from './mentions'
 import { useKanbanStore } from '../../stores/kanban'
 import { useSessionsStore } from '../../stores/sessions'
@@ -42,6 +43,7 @@ function pieceText(node: { isText: boolean; text?: string | null; type: { name: 
   if (node.type.name === 'hardBreak') return '\n'
   if (node.type.name === 'pastedText') return String(node.attrs.text ?? '')
   if (node.type.name === 'fileMention') return fileMentionText(String(node.attrs.path ?? ''))
+  if (node.type.name === 'skillMention') return skillMentionText(String(node.attrs.name ?? ''))
   if (node.type.name === 'tabMention') return tabMentionText(node.attrs as unknown as TabMention)
   if (node.type.name === 'issueMention') return issueMentionText(node.attrs as unknown as IssueMention)
   return ''

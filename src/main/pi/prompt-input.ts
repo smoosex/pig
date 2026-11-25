@@ -16,6 +16,7 @@ import {
   type PastedTextPromptAttachment
 } from '../../shared/pasted-text'
 import { isFileMentionAt, isFileMentionShape, rangesAreDisjoint, type FileMention } from '../../shared/file-mentions'
+import { isSkillMentionAt, isSkillMentionShape, type SkillMention } from '../../shared/skill-mentions'
 import { isImagePayload } from '../../shared/session-images'
 import { t } from '../i18n'
 
@@ -31,6 +32,7 @@ export interface SessionPromptInput {
   images?: unknown
   textAttachments?: unknown
   fileMentions?: unknown
+  skillMentions?: unknown
   streamingBehavior?: unknown
 }
 
@@ -64,6 +66,20 @@ function normalizeFileMentions(body: string, value: unknown, attachments: Pasted
   return mentions
 }
 
+function normalizeSkillMentions(
+  body: string,
+  value: unknown,
+  existingRanges: Array<{ start: number; end: number }>
+): SkillMention[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || !value.every(isSkillMentionShape)) throw new Error('Invalid skill mentions')
+  const mentions = value.map(({ name, start, end }) => ({ name, start, end }))
+  if (!mentions.every((mention) => isSkillMentionAt(body, mention)) || !rangesAreDisjoint([...existingRanges, ...mentions])) {
+    throw new Error('Skill mentions do not match the prompt text')
+  }
+  return mentions
+}
+
 export function normalizeSessionPrompt(input: SessionPromptInput) {
   const body = typeof input.text === 'string' ? input.text : ''
   const textAttachments = normalizeTextAttachments(input.textAttachments)
@@ -72,16 +88,23 @@ export function normalizeSessionPrompt(input: SessionPromptInput) {
     : undefined
   // A legacy prompt appends its attachments after the body; mentions only exist beside inline ranges.
   const mentions = inlineAttachments ? normalizeFileMentions(body, input.fileMentions, inlineAttachments) : []
+  const skillMentions = inlineAttachments ? normalizeSkillMentions(body, input.skillMentions, [...inlineAttachments, ...mentions]) : []
   const modelText = inlineAttachments ? body : composePromptText(body, textAttachments)
-  const hasRanges = textAttachments.length > 0 || mentions.length > 0
+  // Pi's skill expander splits on ASCII space; insert one for delivery if the user typed directly past a leading chip.
+  const leadingSkill = skillMentions.find((mention) => mention.start === 0)
+  const piModelText =
+    leadingSkill && modelText.length > leadingSkill.end && modelText[leadingSkill.end] !== ' '
+      ? `${modelText.slice(0, leadingSkill.end)} ${modelText.slice(leadingSkill.end)}`
+      : modelText
+  const hasRanges = textAttachments.length > 0 || mentions.length > 0 || skillMentions.length > 0
   const metadata = hasRanges
     ? inlineAttachments
-      ? createInlinePastedTextMetadata(modelText, inlineAttachments, mentions)
+      ? createInlinePastedTextMetadata(modelText, inlineAttachments, mentions, skillMentions)
       : createPastedTextMetadata(body, textAttachments)
     : undefined
   const displayMetadata: PastedTextDisplayMetadata | undefined = hasRanges
     ? inlineAttachments
-      ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments, mentions)
+      ? createInlinePastedTextDisplayMetadata(modelText, inlineAttachments, mentions, skillMentions)
       : { body, attachments: textAttachments }
     : undefined
   const attachments = (Array.isArray(input.images) ? input.images : []).flatMap((image) => {
@@ -97,6 +120,8 @@ export function normalizeSessionPrompt(input: SessionPromptInput) {
   const namingText = inlineAttachments ? stripPastedTextAttachments(body, inlineAttachments) : body
   return {
     modelText,
+    piModelText,
+    skillMentions,
     metadata,
     displayMetadata,
     images: attachments,

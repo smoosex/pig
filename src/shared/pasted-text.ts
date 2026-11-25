@@ -1,4 +1,5 @@
 import { isFileMentionAt, isFileMentionShape, rangesAreDisjoint, type FileMention } from './file-mentions'
+import { isSkillMentionAt, isSkillMentionShape, type SkillMention } from './skill-mentions'
 
 export const PASTED_TEXT_CUSTOM_TYPE = 'pig.pasted-text'
 export const PASTED_TEXT_MAX_CHARS = 2000
@@ -48,6 +49,8 @@ export interface PastedTextInlineMetadata {
   attachments: PastedTextMetadataAttachment[]
   /** Optional so entries written before file chips existed stay valid. */
   mentions?: FileMention[]
+  /** Optional so entries written before skill chips existed stay valid. */
+  skillMentions?: SkillMention[]
 }
 
 export type PastedTextInputMetadata = PastedTextLegacyMetadata | PastedTextInlineMetadata
@@ -66,6 +69,7 @@ export type PastedTextDisplaySegment =
   | { type: 'text'; text: string }
   | { type: 'attachment'; attachment: PastedTextAttachment }
   | { type: 'file'; path: string; text: string }
+  | { type: 'skill'; name: string; text: string; location?: string }
 
 export interface PastedTextDisplayMetadata {
   body: string
@@ -159,8 +163,10 @@ export function resolvePastedTextMetadata(
       pastedTextFingerprint(source.text) !== source.metadata.contentHash
     )) ||
     source.metadata.attachments.some((attachment) => attachment.end > source.text.length) ||
-    (source.metadata.version === 2 &&
-      !(source.metadata.mentions ?? []).every((mention) => isFileMentionAt(source.text, mention)))
+    (source.metadata.version === 2 && (
+      !(source.metadata.mentions ?? []).every((mention) => isFileMentionAt(source.text, mention)) ||
+      !(source.metadata.skillMentions ?? []).every((mention) => isSkillMentionAt(source.text, mention))
+    ))
   ) {
     throw Object.assign(new Error('Pasted-text metadata does not match its user message or source input'), {
       code: 'PASTED_TEXT_METADATA_MISMATCH'
@@ -198,7 +204,8 @@ export function createPastedTextMetadata(
 export function createInlinePastedTextMetadata(
   content: string,
   attachments: PastedTextPromptAttachment[],
-  mentions: FileMention[] = []
+  mentions: FileMention[] = [],
+  skillMentions: SkillMention[] = []
 ): PastedTextInlineMetadata {
   return {
     version: 2,
@@ -213,6 +220,9 @@ export function createInlinePastedTextMetadata(
     })),
     ...(mentions.length > 0
       ? { mentions: [...mentions].sort((a, b) => a.start - b.start).map(({ path, start, end }) => ({ path, start, end })) }
+      : {}),
+    ...(skillMentions.length > 0
+      ? { skillMentions: [...skillMentions].sort((a, b) => a.start - b.start).map(({ name, start, end }) => ({ name, start, end })) }
       : {})
   }
 }
@@ -220,12 +230,14 @@ export function createInlinePastedTextMetadata(
 export function createInlinePastedTextDisplayMetadata(
   content: string,
   attachments: PastedTextPromptAttachment[],
-  mentions: FileMention[] = []
+  mentions: FileMention[] = [],
+  skillMentions: SkillMention[] = []
 ): PastedTextDisplayMetadata {
   const sorted = [...attachments].sort((a, b) => a.start - b.start)
   const ranges = [
     ...sorted.map((attachment) => ({ start: attachment.start, end: attachment.end, attachment })),
-    ...mentions.map((mention) => ({ start: mention.start, end: mention.end, mention }))
+    ...mentions.map((mention) => ({ start: mention.start, end: mention.end, mention })),
+    ...skillMentions.map((skill) => ({ start: skill.start, end: skill.end, skill }))
   ].sort((a, b) => a.start - b.start)
   const segments: PastedTextDisplaySegment[] = []
   let cursor = 0
@@ -234,6 +246,8 @@ export function createInlinePastedTextDisplayMetadata(
     const text = content.slice(range.start, range.end)
     if ('mention' in range) {
       segments.push({ type: 'file', path: range.mention.path, text })
+    } else if ('skill' in range) {
+      segments.push({ type: 'skill', name: range.skill.name, text })
     } else {
       segments.push({
         type: 'attachment',
@@ -350,11 +364,21 @@ function isPastedTextInputMetadata(value: unknown): value is PastedTextInputMeta
     return true
   })
   const mentions = (metadata as { mentions?: unknown }).mentions
-  if (mentions === undefined) return attachmentsOrdered
-  return attachmentsOrdered &&
-    Array.isArray(mentions) &&
-    mentions.every((mention) => isFileMentionShape(mention) && mention.end <= contentLength) &&
-    rangesAreDisjoint([...metadata.attachments, ...mentions])
+  const skillMentions = (metadata as { skillMentions?: unknown }).skillMentions
+  if (!attachmentsOrdered) return false
+  if (mentions !== undefined && (
+    !Array.isArray(mentions) ||
+    !mentions.every((mention) => isFileMentionShape(mention) && mention.end <= contentLength)
+  )) return false
+  if (skillMentions !== undefined && (
+    !Array.isArray(skillMentions) ||
+    !skillMentions.every((mention) => isSkillMentionShape(mention) && mention.end <= contentLength)
+  )) return false
+  return rangesAreDisjoint([
+    ...metadata.attachments,
+    ...(mentions ?? []),
+    ...(skillMentions ?? [])
+  ])
 }
 
 export function isPastedTextMetadata(value: unknown): value is PastedTextMetadata {

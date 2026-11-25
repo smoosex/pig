@@ -1,6 +1,7 @@
 /** Shared user-content previews for session lists, notification titles and naming input. */
 import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
+import { formatExpandedSkillPreview, parseExpandedSkillPrompt } from '../../shared/skill-mentions'
 import { t } from '../i18n'
 
 export function contentText(content: unknown): string {
@@ -19,7 +20,9 @@ export function hasImage(content: unknown): boolean {
 
 /** Image-only previews stay a flag so each consumer translates them in the current language. */
 export function previewText(content: unknown): { text: string; image: boolean } {
-  const text = contentText(stripImageHintsFromContent(content)).trim()
+  const raw = contentText(stripImageHintsFromContent(content)).trim()
+  const expanded = raw ? parseExpandedSkillPrompt(raw) : null
+  const text = expanded ? formatExpandedSkillPreview(expanded) : raw
   if (text) return { text: text.slice(0, 500), image: false }
   return { text: '', image: hasImage(content) }
 }

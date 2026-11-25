@@ -315,8 +315,9 @@ const api: SessionApi = {
     images?: Parameters<SessionApi['prompt']>[2],
     textAttachments?: Parameters<SessionApi['prompt']>[3],
     streamingBehavior?: Parameters<SessionApi['prompt']>[4],
-    fileMentions?: Parameters<SessionApi['prompt']>[5]
-  ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior, fileMentions),
+    fileMentions?: Parameters<SessionApi['prompt']>[5],
+    skillMentions?: Parameters<SessionApi['prompt']>[6]
+  ) => ipcRenderer.invoke('session:prompt', sessionId, text, images, textAttachments, streamingBehavior, fileMentions, skillMentions),
   abort: (sessionId: string) => ipcRenderer.invoke('session:abort', sessionId),
   executeBash: (sessionId: string, command: string, id: string) =>
     ipcRenderer.invoke('session:execute-bash', sessionId, command, id),

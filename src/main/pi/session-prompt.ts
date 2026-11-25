@@ -91,7 +91,7 @@ export async function promptSession(sessionId: string, input: SessionPromptInput
           prompt.images
         )
     try {
-      const submit = () => agentSession.prompt(prompt.modelText, {
+      const submit = () => agentSession.prompt(prompt.piModelText, {
         ...(options.literal ? { expandPromptTemplates: false, source: 'extension' as const } : {}),
         ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
         ...(streamingBehavior ? { streamingBehavior } : {}),

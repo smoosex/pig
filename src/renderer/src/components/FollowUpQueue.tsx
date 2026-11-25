@@ -1,11 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useIsPresent, usePresenceData, useReducedMotion } from 'motion/react'
 import { Clock3, CornerDownRight, SquarePen, Trash2 } from 'lucide-react'
+import { formatExpandedSkillPreview, parseExpandedSkillPrompt } from '../../../shared/skill-mentions'
 import { queuedRowsMatch, reconcileQueuedRows, type QueuedMessageRow, type QueueRowChange } from '../chat/follow-ups'
 import type { FollowUpAction } from '../ipc/api'
 import { useSessionsStore } from '../stores/sessions'
 import { useT } from '../hooks/useT'
 import { cn } from '../lib/utils'
+import { SkillMentionChip } from './SkillMentionChip'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { ScrollArea } from './ui/scroll-area'
@@ -41,6 +43,8 @@ function QueueRow({
   const reducedMotion = useReducedMotion()
   const dismissedRows = usePresenceData() as ReadonlySet<string> | undefined
   const StatusIcon = row.mode === 'steer' ? CornerDownRight : Clock3
+  const expandedSkill = !error && row.text ? parseExpandedSkillPrompt(row.text) : null
+  const plainLabel = expandedSkill ? formatExpandedSkillPreview(expandedSkill) : row.text
 
   return (
     <motion.li
@@ -94,10 +98,15 @@ function QueueRow({
       </Badge>
       <span
         className="min-w-0 flex-1 truncate"
-        title={error ?? row.text}
+        title={error ?? plainLabel}
         role={error ? 'alert' : undefined}
       >
-        {error ?? (row.text || t('common.image'))}
+        {error ?? (expandedSkill ? (
+          <>
+            <SkillMentionChip name={expandedSkill.name} location={expandedSkill.location} />
+            {expandedSkill.userMessage ? ` ${expandedSkill.userMessage}` : null}
+          </>
+        ) : (row.text || t('common.image')))}
       </span>
       <div className="pointer-events-none flex max-w-0 shrink-0 items-center overflow-hidden opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:max-w-full group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:max-w-full group-focus-within:opacity-100 motion-reduce:transition-none">
         <Button
