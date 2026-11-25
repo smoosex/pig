@@ -47,7 +47,7 @@ export function AddSearchEngineDialog({ providers, editing, values, sources, onS
             </Field>
             {source === 'config' ? <Field>
               <FieldLabel htmlFor="web-provider-key">{t('webSearch.apiKey')}</FieldLabel>
-              <Input id="web-provider-key" type="password" autoComplete="off" required value={apiKey} onChange={event => setApiKey(event.target.value)} />
+              <Input id="web-provider-key" autoFocus type="password" autoComplete="off" required value={apiKey} onChange={event => setApiKey(event.target.value)} />
             </Field> : null}
           </> : null}
         </FieldGroup>

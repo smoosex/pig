@@ -2,6 +2,7 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { focusDialogContent } from "@/components/ui/dialog"
 
 function Popover({
   ...props
@@ -23,6 +24,7 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
@@ -36,6 +38,10 @@ function PopoverContent({
           className
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          if (!event.defaultPrevented) focusDialogContent(event)
+        }}
       />
     </PopoverPrimitive.Portal>
   )

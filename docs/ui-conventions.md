@@ -17,7 +17,7 @@
 - 底部操作统一 DialogFooter／AlertDialogFooter：普通弹窗有顶部细分隔线，二次确认无分隔线；不加独立背景或负边距。
 - 取消／关闭用 ghost，普通默认尺寸，按钮间距 8px。主操作靠右，危险操作 destructive；辅助信息或独立删除入口靠左。
 - 只滚动正文并隐藏滚动条，标题和底栏留在滚动区外。通常由 DialogContent 的 p-4 提供留白，p-0 容器须给底栏补 p-4。
-- 二次确认用 DialogContent confirmation 或 AlertDialogContent；打开时只聚焦无轮廓的容器，不自动选择取消或危险操作，保留 Tab 导航和关闭后焦点恢复。
+- `DialogContent`、`AlertDialogContent` 与 `PopoverContent` 在未显式指定 `autoFocus` 输入控件或自定义 `onOpenAutoFocus` 时，默认统一聚焦无轮廓的弹层容器本身，绝不按 DOM 顺序自动选中首个按钮（避免工具栏图标按钮、取消／危险操作或关闭按钮在打开瞬间出现聚焦环并触发零延迟 Tooltip），同时保留 `Esc` 关闭、`Tab` 导航和关闭后焦点恢复；二次确认用 `DialogContent confirmation` 或 `AlertDialogContent`（隐藏底栏分隔线）。需要打开即输入的表单框显式声明 `autoFocus`。
 
 ## 输入框
 

@@ -77,7 +77,7 @@ function DialogContent({
         {...props}
         onOpenAutoFocus={(event) => {
           onOpenAutoFocus?.(event)
-          if (confirmation && !event.defaultPrevented) focusDialogContent(event)
+          if (!event.defaultPrevented) focusDialogContent(event)
         }}
       >
         <DialogConfirmationContext.Provider value={confirmation}>

@@ -95,6 +95,7 @@ export function AddProviderDialog({
             }}
           >
             <CommandInput
+              autoFocus
               aria-label={t('providers.searchProviders')}
               placeholder={t('providers.searchPlaceholder')}
               value={query}

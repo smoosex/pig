@@ -110,7 +110,7 @@ export function AddSkillDialog({ initial, onClose, onInstalled }: {
               <Field>
                 <FieldLabel htmlFor={`${id}-source`}>{t('skills.source')}</FieldLabel>
                 <InputGroup>
-                  <InputGroupInput id={`${id}-source`} value={source} onChange={(event) => setSource(event.target.value)} placeholder={t('skills.sourcePlaceholder')} disabled={scanning || installing} />
+                  <InputGroupInput autoFocus id={`${id}-source`} value={source} onChange={(event) => setSource(event.target.value)} placeholder={t('skills.sourcePlaceholder')} disabled={scanning || installing} />
                   <InputGroupAddon><Search /></InputGroupAddon>
                 </InputGroup>
               </Field>
