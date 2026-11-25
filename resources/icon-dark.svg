@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Pig (Dark)</title>
+  <desc>Jade Quatrefoil application icon (Dark appearance) framed in Apple's 824x824 continuous squircle.</desc>
+  <defs>
+    <filter id="shadow" x="-12%" y="-10%" width="124%" height="126%">
+      <feDropShadow dx="0" dy="14" stdDeviation="15" flood-color="#040806" flood-opacity="0.44" />
+    </filter>
+    <clipPath id="squircle">
+      <path d="M 324.00 100.00 L 700.00 100.00 C 854.00 100.00, 924.00 170.00, 924.00 324.00 L 924.00 700.00 C 924.00 854.00, 854.00 924.00, 700.00 924.00 L 324.00 924.00 C 170.00 924.00, 100.00 854.00, 100.00 700.00 L 100.00 324.00 C 100.00 170.00, 170.00 100.00, 324.00 100.00 Z" />
+    </clipPath>
+    <linearGradient id="dark-rim" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#e2f7ea" stop-opacity="0.28" />
+      <stop offset="30%" stop-color="#ffffff" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#9ad4b0" stop-opacity="0.05" />
+    </linearGradient>
+  </defs>
+  <g filter="url(#shadow)">
+    <g clip-path="url(#squircle)">
+      <image href="Icon.icon/Assets/jade-dark.png" x="100" y="100" width="824" height="824" preserveAspectRatio="xMidYMid slice" />
+    </g>
+  </g>
+  <path d="M 323.05 101.75 L 700.95 101.75 C 854.30 101.75, 922.25 169.70, 922.25 323.05 L 922.25 700.95 C 922.25 854.30, 854.30 922.25, 700.95 922.25 L 323.05 922.25 C 169.70 922.25, 101.75 854.30, 101.75 700.95 L 101.75 323.05 C 101.75 169.70, 169.70 101.75, 323.05 101.75 Z" fill="none" stroke="url(#dark-rim)" stroke-width="3.5" />
+</svg>
