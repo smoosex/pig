@@ -1,6 +1,8 @@
 import type { StateCreator } from 'zustand'
 import type { BrowserPopupRequest } from '../../../../shared/browser'
 import type {
+  ConvertChatToProjectInput,
+  ConvertChatToProjectResult,
   ForkPosition,
   BashExecutionResult,
   DiffScope,
@@ -97,6 +99,12 @@ export interface ChatDraft {
   cwd: string
 }
 
+export interface ConvertChatDialogTarget {
+  sessionId: string
+  chatCwd: string
+  title: string
+}
+
 export interface OpenTab {
   /** The tab's own identity: a session id, or a worktree's `diff:<cwd>`. */
   id: string
@@ -161,6 +169,10 @@ export interface SessionsStore {
   loadChats: () => Promise<void>
   projectPickerOpen: boolean
   setProjectPickerOpen: (open: boolean) => void
+  convertChatDialog: ConvertChatDialogTarget | null
+  openConvertChatDialog: (target: ConvertChatDialogTarget) => void
+  closeConvertChatDialog: () => void
+  convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
   openProject: (path?: string) => Promise<void>
   mergeAgentProject: (project: ProjectGroup) => void
   unpinProject: (cwd: string) => Promise<void>

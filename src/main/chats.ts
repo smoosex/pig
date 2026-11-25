@@ -1,6 +1,7 @@
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
+import { closeWorktreeWatch } from './git/watch'
 import { pigPath } from './pig-dir'
 import { listJsonlFiles, listProject, sessionDirForCwd, type ProjectGroup } from './pi/session-loader'
 import { compareGroupsByLatestSession } from '../shared/session-order'
@@ -49,6 +50,7 @@ export async function listChats(): Promise<ProjectGroup[]> {
 
 export async function removeChatWorkDir(cwd: string): Promise<void> {
   if (!isChatCwd(cwd)) throw new Error(`Invalid chat dir: ${cwd}`)
+  closeWorktreeWatch(cwd)
   await rm(resolve(cwd), { recursive: true, force: true })
 }
 

@@ -724,6 +724,34 @@ export class KanbanStore {
       return { snapshot, result: snapshot, changed: true }
     })
   }
+
+  relocateLinkedSessions(sessionIds: readonly string[], nextCwd: string): Promise<KanbanSnapshot | null> {
+    const ids = new Set(sessionIds.filter(Boolean))
+    if (ids.size === 0 || !nextCwd) return Promise.resolve(null)
+    const normalizedCwd = resolve(nextCwd)
+    return this.mutateAsync(async (current) => {
+      let mutated = false
+      const items = current.items.map((item) => {
+        if (!item.linkedSessions.some((entry) => ids.has(entry.sessionId) && entry.cwd !== normalizedCwd)) {
+          return item
+        }
+        mutated = true
+        return {
+          ...item,
+          linkedSessions: item.linkedSessions.map((entry) =>
+            ids.has(entry.sessionId) ? { ...entry, cwd: normalizedCwd } : entry
+          )
+        }
+      })
+      if (!mutated) return { snapshot: current, result: null, changed: false }
+      const snapshot: KanbanSnapshot = {
+        revision: current.revision + 1,
+        nextNumber: current.nextNumber,
+        items
+      }
+      return { snapshot, result: snapshot, changed: true }
+    })
+  }
 }
 
 export const kanban = new KanbanStore()

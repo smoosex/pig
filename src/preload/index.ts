@@ -242,6 +242,8 @@ const api: SessionApi = {
     ipcRenderer.invoke('session:reorder-projects', cwds),
   createChat: () => ipcRenderer.invoke('session:create-chat'),
   deleteChat: (cwd: string) => ipcRenderer.invoke('session:delete-chat', cwd),
+  getDefaultProjectsLocation: () => ipcRenderer.invoke('project:default-location'),
+  convertChatToProject: (input) => ipcRenderer.invoke('session:convert-chat-to-project', input),
   createSession: (cwd: string, sessionId?: string) =>
     ipcRenderer.invoke('session:create', cwd, sessionId),
   promoteSession: (sessionId: string) => ipcRenderer.invoke('session:promote', sessionId),

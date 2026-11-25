@@ -28,3 +28,6 @@ export const watchWorktree = manager.watchWorktree
 
 /** Releases only the lease that acquired the shared worktree watch. */
 export const unwatchWorktree = manager.unwatchWorktree
+
+/** Immediately closes any active watchers and pending debounce timers before removing a directory. */
+export const closeWorktreeWatch = manager.closeWorktreeWatch

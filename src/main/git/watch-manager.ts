@@ -33,6 +33,7 @@ export interface WorktreeWatchManagerOptions {
 export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions): {
   watchWorktree: (cwd: string) => Promise<string>
   unwatchWorktree: (cwd: string, leaseId: string) => void
+  closeWorktreeWatch: (cwd: string) => void
 } {
   const watched = new Map<string, Watched>()
   const debounceMs = options.debounceMs ?? 300
@@ -156,7 +157,16 @@ export function createWorktreeWatchManager(options: WorktreeWatchManagerOptions)
     if (entry.leases.size === 0) closeEntry(cwd, entry)
   }
 
-  return { watchWorktree, unwatchWorktree }
+  const closeWorktreeWatch = (cwd: string): void => {
+    const target = resolve(cwd)
+    for (const [key, entry] of watched) {
+      if (key === cwd || resolve(key) === target) {
+        closeEntry(key, entry)
+      }
+    }
+  }
+
+  return { watchWorktree, unwatchWorktree, closeWorktreeWatch }
 }
 
 function asError(error: unknown): Error {

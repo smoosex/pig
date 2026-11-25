@@ -275,7 +275,31 @@ export const en: Messages = {
     imagePreview: 'Image',
     unknownProject: 'Unknown project',
     copyId: 'Copy session ID',
-    export: 'Export session'
+    export: 'Export session',
+    convertToProject: 'Convert to project…',
+    convertDialog: {
+      title: 'Convert chat to project',
+      description: 'Create a dedicated project folder (including any files in this chat’s folder) and add it to Projects.',
+      folderName: 'Project folder name',
+      folderNamePlaceholder: 'Enter folder name',
+      parentDir: 'Location',
+      parentDirPlaceholder: '~/pig_projects',
+      chooseParent: 'Choose…',
+      pickerTitle: 'Choose parent folder',
+      pickerDescription: 'The new project folder will be created inside the selected directory.',
+      pickerConfirm: 'Use current folder',
+      targetPreview: 'Target path: {path}',
+      transferSession: 'Transfer session history',
+      transferSessionDescription: 'Move this chat’s conversation history into the new project; turn off to keep the original chat.',
+      submit: 'Convert to project',
+      submitting: 'Converting…',
+      invalidName: 'Enter a valid project folder name without path separators',
+      invalidParent: 'Choose a valid absolute or ~/ parent directory',
+      unsafeTarget: 'Cannot use filesystem root, home directory, or Pig data directory directly as a project folder',
+      targetNotEmpty: 'Target folder already exists and is not empty; choose another name or location',
+      targetNotDirectory: 'A file already exists at the target path; choose another name',
+      sessionBusy: 'Stop or wait for the active run in this chat to finish before converting'
+    }
   },
   tabBar: {
     closeTab: 'Close Tab',

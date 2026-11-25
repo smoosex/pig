@@ -1,8 +1,9 @@
 import { ipcMain } from 'electron'
+import { resolve } from 'node:path'
 import type { DiffScope } from '../../shared/api'
 import { countUntrackedFiles, readUntrackedFile, readWorktreeDiff, readWorktreePatch } from '../git/diff'
 import { unwatchWorktree, watchWorktree } from '../git/watch'
-import { requireWorktree } from '../worktree-access'
+import { openedWorktree, requireWorktree } from '../worktree-access'
 
 /**
  * The review panel and the changes tab are the only clients: they read changes and hold the watch. The
@@ -24,6 +25,8 @@ export function registerDiffIpc(): void {
   )
   ipcMain.handle('diff:watch', async (_event, cwd: string) => watchWorktree(await requireWorktree(cwd)))
   ipcMain.handle('diff:unwatch', async (_event, cwd: string, leaseId: string) => {
-    unwatchWorktree(await requireWorktree(cwd), leaseId)
+    if (typeof cwd !== 'string' || !cwd || typeof leaseId !== 'string' || !leaseId) return
+    const path = (await openedWorktree(cwd)) ?? resolve(cwd)
+    unwatchWorktree(path, leaseId)
   })
 }

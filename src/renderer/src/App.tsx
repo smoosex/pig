@@ -59,6 +59,7 @@ import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
 import { ProjectPickerDialog } from './components/projects/ProjectPickerDialog'
+import { ConvertChatToProjectDialog } from './components/projects/ConvertChatToProjectDialog'
 import { SessionGreeting } from './components/SessionGreeting'
 import { subscribeSettingsChanges, useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
@@ -424,7 +425,8 @@ export default function App() {
     }
     const runShortcut = (action: HostShortcutAction) => {
       // The picker handles close requests itself, including its in-flight save lock.
-      if (useSessionsStore.getState().projectPickerOpen) return
+      const sessState = useSessionsStore.getState()
+      if (sessState.projectPickerOpen || sessState.convertChatDialog) return
       switch (action) {
         case 'tab.close': {
           if (settingsOpen) setSettingsOpen(false)
@@ -475,7 +477,8 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isShortcutRecording() || isComposingKey(event) || isTerminalShellChord(event)) return
       // The directory dialog owns its shortcuts, including Cmd+W; never close a background tab.
-      if (useSessionsStore.getState().projectPickerOpen) return
+      const sessState = useSessionsStore.getState()
+      if (sessState.projectPickerOpen || sessState.convertChatDialog) return
       const action = findShortcut(shortcutBindings(), eventAccelerator(event), HOST_SHORTCUT_ACTIONS)
       if (!action) return
       event.preventDefault()
@@ -711,6 +714,23 @@ export default function App() {
       <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
+      <ConvertChatToProjectDialog
+        onConverted={async (result, { transferSession, targetSessionId }) => {
+          setSettingsOpen(false)
+          if (useBotStore.getState().open) useBotStore.getState().closeBot()
+          setSidebarTab('projects')
+          setWorkspaceRestoreMode(false)
+          await selectProjectCwd(result.project.cwd)
+          if (transferSession && result.project.sessions.length > 0) {
+            const preferred =
+              result.project.sessions.find((s) => s.id === targetSessionId) ??
+              result.project.sessions[0]
+            if (preferred) {
+              await useSessionsStore.getState().openExisting(preferred, 'project')
+            }
+          }
+        }}
+      />
       <KanbanIssueDialog
         callbacks={kanbanCallbacks}
         isBoardVisible={sidebarTab === 'kanban' && !botOpen && !settingsOpen}

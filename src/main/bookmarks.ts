@@ -76,6 +76,37 @@ export class BookmarkStore {
   remove(id: string): Promise<BookmarkSnapshot> {
     return this.mutate(items => items.some(item => item.id === id) ? items.filter(item => item.id !== id) : items)
   }
+
+  relocateSessions(
+    relocations: ReadonlyMap<string, { path: string; cwd: string; kind: 'project' | 'chat' }>
+  ): Promise<BookmarkSnapshot> {
+    if (relocations.size === 0) return this.list()
+    return this.mutate((items) => {
+      let changed = false
+      const next = items.map((item) => {
+        const target = relocations.get(item.session.id)
+        if (!target) return item
+        if (
+          item.session.path === target.path &&
+          item.session.cwd === target.cwd &&
+          item.kind === target.kind
+        ) {
+          return item
+        }
+        changed = true
+        return {
+          ...item,
+          kind: target.kind,
+          session: {
+            ...item.session,
+            path: target.path,
+            cwd: target.cwd
+          }
+        }
+      })
+      return changed ? next : items
+    })
+  }
 }
 
 export const bookmarks = new BookmarkStore()

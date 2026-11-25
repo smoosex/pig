@@ -974,6 +974,24 @@ export type * from './browser'
 export type * from './terminal'
 export type * from './processes'
 
+export interface DefaultProjectsLocation {
+  defaultParentDir: string
+  parentExists: boolean
+  homeDir: string
+}
+
+export interface ConvertChatToProjectInput {
+  chatCwd: string
+  parentDir?: string
+  folderName: string
+  transferSession: boolean
+}
+
+export interface ConvertChatToProjectResult {
+  project: ProjectGroup
+  migratedSessionIds: string[]
+}
+
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
   bookmarks: BookmarksApi
   kanban: KanbanApi
@@ -1006,6 +1024,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   discardDraftSession: (sessionId: string) => Promise<void>
   createChat: () => Promise<SessionRef>
   deleteChat: (cwd: string) => Promise<void>
+  getDefaultProjectsLocation: () => Promise<DefaultProjectsLocation>
+  convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
   openSession: (path: string) => Promise<OpenSessionRef>
   closeSession: (sessionId: string) => Promise<void>
   deleteProject: (cwd: string) => Promise<boolean>

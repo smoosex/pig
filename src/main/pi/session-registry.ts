@@ -1119,6 +1119,23 @@ export async function closeSessionsForCwd(cwd: string, origin: SessionStopOrigin
   ))
 }
 
+export function hasBusySessionsForCwd(cwd: string): boolean {
+  const target = resolve(cwd)
+  for (const [id, session] of live) {
+    if (resolve(session.cwd) !== target) continue
+    if (
+      isSessionRunActive(session.agentSession) ||
+      isNavigatingSessionBranch(id) ||
+      session.agentSession.isStreaming ||
+      session.agentSession.isCompacting ||
+      session.agentSession.isBashRunning
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 export async function disposeAll(): Promise<void> {
   const sessionIds = new Set([...pending.keys(), ...live.keys(), ...preparing.keys(), ...closing.keys()])
   await Promise.all([...sessionIds].map((sessionId) =>

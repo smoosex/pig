@@ -1,4 +1,7 @@
 import { ipcMain } from 'electron'
+import type { ConvertChatToProjectInput } from '../../shared/api'
+import { assertBrowserSender } from '../browser/validation'
+import { convertChatToProject, getDefaultProjectsLocation } from '../chat-to-project'
 import { browseProjectDirectories, searchProjectDirectories } from '../project-directory-browser'
 import { openProjectDirectory } from '../project-open'
 import { unpinProjectDirectory } from '../project-unpin'
@@ -69,6 +72,16 @@ export function registerProjectIpc(): void {
     await closeSessionsForCwd(cwd)
     await removeProjectSessions(cwd)
     await removeChatWorkDir(cwd)
+  })
+
+  ipcMain.handle('project:default-location', async (event) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return getDefaultProjectsLocation()
+  })
+
+  ipcMain.handle('session:convert-chat-to-project', async (event, input: ConvertChatToProjectInput) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return convertChatToProject(input)
   })
 
   ipcMain.handle('session:unpin-project', async (_event, cwd: string) => {

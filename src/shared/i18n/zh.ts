@@ -277,7 +277,31 @@ export const zh = {
     imagePreview: '图片',
     unknownProject: '未知项目',
     copyId: '复制会话 ID',
-    export: '导出会话'
+    export: '导出会话',
+    convertToProject: '转为项目…',
+    convertDialog: {
+      title: '将对话转为项目',
+      description: '为该对话创建独立项目目录（包含对话文件夹内的现有文件），并注册到项目列表。',
+      folderName: '项目文件夹名称',
+      folderNamePlaceholder: '输入新文件夹名称',
+      parentDir: '存放位置',
+      parentDirPlaceholder: '~/pig_projects',
+      chooseParent: '选择目录…',
+      pickerTitle: '选择项目存放目录',
+      pickerDescription: '新项目文件夹将创建在你选择的目录之下。',
+      pickerConfirm: '选择当前目录',
+      targetPreview: '目标路径：{path}',
+      transferSession: '同时迁移会话记录',
+      transferSessionDescription: '将当前对话历史直接迁入新项目并移除原独立对话；关闭则保留原独立对话。',
+      submit: '转为项目',
+      submitting: '正在转换…',
+      invalidName: '请输入有效的项目文件夹名称（不能包含路径分隔符）',
+      invalidParent: '请选择有效的绝对路径或 ~/ 路径作为存放位置',
+      unsafeTarget: '不能直接使用系统根目录、个人主目录或 Pig 数据目录作为项目路径',
+      targetNotEmpty: '目标文件夹已存在且不为空，请更换项目名称或存放位置',
+      targetNotDirectory: '目标路径已存在同名文件，请更换项目名称',
+      sessionBusy: '请先停止或等待当前对话运行结束后再转为项目'
+    }
   },
   tabBar: {
     closeTab: '关闭标签页',

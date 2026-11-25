@@ -22,9 +22,10 @@ export interface PathPickerDialogProps {
   busyLabel?: string
   project?: boolean
   includeFiles?: boolean
+  initialPath?: string
 }
 
-export function PathPickerDialog({ onClose, onSelect, title, description, confirmLabel, busyLabel, project = false, includeFiles = false }: PathPickerDialogProps) {
+export function PathPickerDialog({ onClose, onSelect, title, description, confirmLabel, busyLabel, project = false, includeFiles = false, initialPath }: PathPickerDialogProps) {
   const t = useT()
   const addShortcut = useShortcut('projectPicker.addCurrent')
   const id = useId()
@@ -32,7 +33,7 @@ export function PathPickerDialog({ onClose, onSelect, title, description, confir
   const listRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef(document.activeElement as HTMLElement | null)
   const savingRef = useRef(false)
-  const [target, setTarget] = useState<string>()
+  const [target, setTarget] = useState<string | undefined>(initialPath)
   const [revision, setRevision] = useState(0)
   const [showHidden, setShowHidden] = useState(false)
   const [listing, setListing] = useState<ProjectDirectoryListing | null>(null)

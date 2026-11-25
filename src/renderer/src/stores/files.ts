@@ -108,6 +108,8 @@ interface FilesStore {
   moveDocument: (cwd: string, from: string, to: string) => void
   /** Drops what this store holds for a row that is gone. */
   forgetDocument: (cwd: string, path: string) => void
+  /** Drops cached directory trees, expansion state, and documents for a removed workspace. */
+  forgetWorktree: (cwd: string) => void
   /**
    * The name a tree is asking for, or null when nothing is being named.
    *
@@ -403,6 +405,42 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         documents[existing] = document
       }
       return changed ? { documents } : state
+    })
+  },
+
+  forgetWorktree: (cwd) => {
+    for (const key of [...reads.keys()]) {
+      if (key.endsWith(`\u0000${cwd}`)) reads.delete(key)
+    }
+    set((state) => {
+      const hasTree = cwd in state.trees
+      const hasExpanded = cwd in state.expanded
+      let hasDocs = false
+      for (const key of Object.keys(state.documents)) {
+        if (key.endsWith(`\u0000${cwd}`)) {
+          hasDocs = true
+          break
+        }
+      }
+      const clearReveal = state.reveal?.cwd === cwd
+      const clearNaming = state.naming?.cwd === cwd
+      if (!hasTree && !hasExpanded && !hasDocs && !clearReveal && !clearNaming) return state
+
+      const trees = { ...state.trees }
+      delete trees[cwd]
+      const expanded = { ...state.expanded }
+      delete expanded[cwd]
+      const documents: Record<string, FileDocument> = {}
+      for (const [key, doc] of Object.entries(state.documents)) {
+        if (!key.endsWith(`\u0000${cwd}`)) documents[key] = doc
+      }
+      return {
+        trees,
+        expanded,
+        documents,
+        ...(clearReveal ? { reveal: null } : {}),
+        ...(clearNaming ? { naming: null } : {})
+      }
     })
   },
 

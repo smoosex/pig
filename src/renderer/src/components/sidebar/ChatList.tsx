@@ -9,7 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger
 } from '../ui/context-menu'
-import { Copy, Download, PenLine } from 'lucide-react'
+import { Copy, Download, FolderOutput, PenLine } from 'lucide-react'
 import { api } from '../../ipc/api'
 import { cn } from '../../lib/utils'
 import { SessionRenameField, useSessionRename } from '../SessionRenameField'
@@ -126,6 +126,19 @@ function ChatRow({ row, active }: { row: SessionMeta & SessionFork; active: bool
           <ContextMenuItem onSelect={rename.start}>
             <PenLine data-icon="inline-start" />
             {t('common.rename')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={pending !== null || streaming}
+            onSelect={() =>
+              useSessionsStore.getState().openConvertChatDialog({
+                sessionId: session.id,
+                chatCwd: cwd,
+                title
+              })
+            }
+          >
+            <FolderOutput data-icon="inline-start" />
+            {t('sessions.convertToProject')}
           </ContextMenuItem>
           <ContextMenuItem
             disabled={pending !== null}

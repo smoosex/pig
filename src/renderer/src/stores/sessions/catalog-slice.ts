@@ -7,6 +7,7 @@ import { api } from '../../ipc/api'
 import { compareGroupsByLatestSession } from '../../../../shared/session-order'
 import { t } from '../../lib/i18n'
 import { useDiffStore } from '../diff'
+import { useFilesStore } from '../files'
 import {
   mapGroupSessions,
   mergeWorktreeDiscoveries,
@@ -36,6 +37,10 @@ export const createCatalogSlice: SessionSlice<
   | 'mergeAgentProject'
   | 'projectPickerOpen'
   | 'setProjectPickerOpen'
+  | 'convertChatDialog'
+  | 'openConvertChatDialog'
+  | 'closeConvertChatDialog'
+  | 'convertChatToProject'
   | 'unpinProject'
   | 'forgetAgentProject'
   | 'reorderProjects'
@@ -86,6 +91,9 @@ export const createCatalogSlice: SessionSlice<
     projects: [],
     projectPickerOpen: false,
     setProjectPickerOpen: (open) => set({ projectPickerOpen: open }),
+    convertChatDialog: null,
+    openConvertChatDialog: (target) => set({ convertChatDialog: target }),
+    closeConvertChatDialog: () => set({ convertChatDialog: null }),
     chats: [],
     isReorderingProjects: false,
     expandedProjects: {},
@@ -225,6 +233,53 @@ export const createCatalogSlice: SessionSlice<
         else projects[index] = project
         return { projects, projectPickerOpen: false }
       })
+    },
+
+    convertChatToProject: async (input) => {
+      const result = await api.convertChatToProject(input)
+      projectMembershipVersion++
+      if (input.transferSession) {
+        useDiffStore.getState().forgetWorktree(input.chatCwd)
+        useFilesStore.getState().forgetWorktree(input.chatCwd)
+        chatMembershipVersion++
+      }
+      const closedIds = input.transferSession
+        ? new Set([
+            ...result.migratedSessionIds,
+            ...get()
+              .openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd === input.chatCwd)
+              .map((tab) => tab.id),
+            ...get()
+              .chats.filter((chat) => chat.cwd === input.chatCwd)
+              .flatMap((chat) => chat.sessions.map((meta) => meta.id))
+          ])
+        : new Set<string>()
+
+      set((s) => {
+        const index = s.projects.findIndex((item) => item.cwd === result.project.cwd)
+        const projects = [...s.projects]
+        if (index === -1) projects.push(result.project)
+        else projects[index] = result.project
+
+        if (!input.transferSession) {
+          return { projects, convertChatDialog: null }
+        }
+        return {
+          projects,
+          convertChatDialog: null,
+          chats: s.chats.filter((chat) => chat.cwd !== input.chatCwd),
+          ...removeCwdSessions(
+            s,
+            new Set([input.chatCwd]),
+            s.chats.flatMap((chat) => chat.sessions)
+          )
+        }
+      })
+
+      if (input.transferSession) {
+        get().persistOpenChatTabs([...closedIds])
+      }
+      return result
     },
 
     unpinProject: async (cwd) => {
@@ -429,6 +484,7 @@ export const createCatalogSlice: SessionSlice<
     deleteChat: async (cwd) => {
       await api.deleteChat(cwd)
       useDiffStore.getState().forgetWorktree(cwd)
+      useFilesStore.getState().forgetWorktree(cwd)
       chatMembershipVersion++
       const closedIds = new Set([
         ...get().openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd === cwd).map((tab) => tab.id),
