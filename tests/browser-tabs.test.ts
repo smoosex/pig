@@ -23,13 +23,13 @@ if (!process.argv.includes('--browser-tabs-fixture')) test('browser and terminal
   assert.deepEqual(persistableIds(tabs), tabs.map((item) => item.id))
   assert.deepEqual(sameScopeTabs(tabs, browser), [project, browser])
   assert.deepEqual(sameScopeTabs(tabs, chatBrowser), [chat, chatBrowser])
-  assert.deepEqual(visibleTabsFor(tabs, 'chats', '/project'), [chat, chatBrowser])
+  assert.deepEqual(visibleTabsFor(tabs, 'projects', null), [chat, chatBrowser])
   assert.deepEqual(visibleTabsFor(tabs, 'projects', '/project'), [project, browser])
   assert.equal(neighbourTab(tabs, chatBrowser)?.id, chat.id)
   assert.equal(neighbourTab(tabs, project)?.id, browser.id)
   assert.deepEqual(halfSwitch(tabs, 'projects', chatBrowser.id, null, chatBrowser.id, '/project', new Set()), { kind: 'project', cwd: '/project' })
-  assert.deepEqual(halfSwitch(tabs, 'chats', browser.id, '/project', chatBrowser.id, '/project', new Set()), { kind: 'chat', tabId: chatBrowser.id })
-  assert.deepEqual(halfSwitch(tabs, 'chats', chatBrowser.id, null, null, null, new Set()), { kind: 'none' })
+  assert.deepEqual(halfSwitch(tabs, 'kanban', browser.id, '/project', chatBrowser.id, '/project', new Set()), { kind: 'none' })
+  assert.deepEqual(halfSwitch(tabs, 'projects', browser.id, '/project', null, '/project', new Set()), { kind: 'none' })
 })
 
 async function fixture() {

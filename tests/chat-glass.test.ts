@@ -61,7 +61,7 @@ async function fixture(scenario: string): Promise<void> {
         mock.module(`../src/renderer/src/hooks/${name}`, () => ({ [name]: noop }))
       }
       mock.module('../src/renderer/src/components/sidebar/use-sidebar-preferences', () => ({
-        useSidebarPreferences: () => ({ tab: scenario === 'tab-layout' ? 'projects' : 'chats', setTab: noop, ready: false, error: null })
+        useSidebarPreferences: () => ({ tab: 'projects' as const, setTab: noop, ready: false, error: null })
       }))
       for (const [path, name] of [
         ['Sidebar', 'Sidebar'], ['Composer', 'Composer'], ['SessionGreeting', 'SessionGreeting'],
@@ -251,14 +251,17 @@ async function fixture(scenario: string): Promise<void> {
         assert.equal(newButton.title, 'cannot create session')
         assert.ok(newButton.querySelector('.lucide-circle-alert'))
         await act(async () => { sessions.setState({ activeTabId: 'chat', currentProjectCwd: null }) })
-        assert.equal(toolbar.querySelectorAll('button').length, 3, 'chats keep creation, bookmarks, and the right sidebar toggle for their chat directory')
-        assert.equal(host.querySelector('[data-view="WorkspacePanel"]')?.getAttribute('data-cwd'), '/chats/a')
-        assert.equal(host.querySelector('[data-view="WorkspacePanel"]')?.getAttribute('data-default-tab'), 'files')
+        assert.equal(toolbar.querySelectorAll('button').length, 2, 'without an open project, the right sidebar toggle hides while creation and bookmarks stay')
+        const botOpened = { count: 0 }
+        const { useBotStore } = await import('../src/renderer/src/stores/bot')
+        const prevOpenBot = useBotStore.getState().openBot
+        useBotStore.setState({ openBot: () => { botOpened.count++ } })
         await chooseSession()
-        assert.deepEqual(created, ['/p', 'chat'])
+        useBotStore.setState({ openBot: prevOpenBot })
+        assert.equal(botOpened.count, 1, 'creating a session without an open project routes to Bot')
         assert.ok(newButton.querySelector('.lucide-plus'), 'a successful retry clears the creation error')
         await chooseSession('Browser')
-        assert.deepEqual(created, ['/p', 'chat', 'browser:chat'], 'the browser item creates a browser pane, not another Pi session')
+        assert.deepEqual(created, ['/p', 'browser:chat'], 'the browser item creates a browser pane, not another Pi session')
         checkBounds()
         return
       }

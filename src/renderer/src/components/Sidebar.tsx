@@ -11,16 +11,13 @@ import { ScrollArea } from './ui/scroll-area'
 import { cn } from '../lib/utils'
 import { useT } from '../hooks/useT'
 import { KanbanSidebar } from './kanban/KanbanSidebar'
-import { useKanbanStore } from '../stores/kanban'
 import { useProjectSpacesStore } from '../stores/project-spaces'
-import { ChatList } from './sidebar/ChatList'
 import { ProjectList } from './sidebar/ProjectList'
 import { ProjectSpaceDialog } from './sidebar/ProjectSpaceDialog'
 import { ProjectSpaceSwitcher, useProjectSpacesSync } from './sidebar/ProjectSpaceSwitcher'
 import { useSpaceWheelSwipe } from './sidebar/use-space-swipe'
 import { SidebarHoverHighlight } from './sidebar/SidebarHoverHighlight'
 import { sidebarSurfaceHover } from './sidebar/sidebar-surface'
-import { SidebarModeSwitch } from './sidebar/SidebarModeSwitch'
 import { SurfaceStyleToggle } from './sidebar/SurfaceStyleToggle'
 import { DreamStatusButton } from './sidebar/DreamStatus'
 import { useProjectAction } from './sidebar/project-action'
@@ -41,7 +38,6 @@ export function Sidebar({
   preferencesError: string | null
 }) {
   const openProject = useSessionsStore((s) => s.openProject)
-  const newChat = useSessionsStore((s) => s.newChat)
   const surfaceStyle = useSettingsStore((s) => s.surfaceStyle)
   const supportsGlass = useSettingsStore((s) => s.supportsGlass)
   const setTheme = useSettingsStore((s) => s.setTheme)
@@ -59,10 +55,9 @@ export function Sidebar({
   const spacesError = useProjectSpacesStore((s) => (s.dialog ? null : s.error))
   const error = projectError ?? preferencesError ?? reviewPrefsError ?? spacesError ?? settingsError
   // Mount each sidebar list lazily on first visit, then retain it via Activity so switching
-  // between Projects and Chats does not tear down and rebuild Radix/dnd-kit trees every time.
-  const [mountedTabs, setMountedTabs] = useState<{ projects: boolean; chats: boolean; kanban: boolean }>(() => ({
+  // between Projects and Kanban does not tear down and rebuild Radix/dnd-kit trees every time.
+  const [mountedTabs, setMountedTabs] = useState<{ projects: boolean; kanban: boolean }>(() => ({
     projects: tab === 'projects',
-    chats: tab === 'chats',
     kanban: tab === 'kanban'
   }))
   if (!mountedTabs[tab]) {
@@ -80,26 +75,14 @@ export function Sidebar({
       )}
     >
       <div className="flex w-62 shrink-0 flex-col pl-2">
-        <SidebarModeSwitch
-          tab={tab}
-          onSelect={onSwitchTab}
-          onNewChat={() => void runProjectAction('new-chat', newChat)}
-          onNewIssue={() => useKanbanStore.getState().openCreateDialog()}
-          actionDisabled={projectPending !== null}
-        />
         <ScrollArea
           onWheel={tab === 'projects' ? handleSpaceSwipe : undefined}
           className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden"
         >
-          <SidebarHoverHighlight className="pt-1">
+          <SidebarHoverHighlight className="pt-2">
             {mountedTabs.projects ? (
               <Activity mode={tab === 'projects' ? 'visible' : 'hidden'}>
                 <ProjectList />
-              </Activity>
-            ) : null}
-            {mountedTabs.chats ? (
-              <Activity mode={tab === 'chats' ? 'visible' : 'hidden'}>
-                <ChatList />
               </Activity>
             ) : null}
             {mountedTabs.kanban ? (
@@ -140,7 +123,12 @@ export function Sidebar({
                 aria-label={t('app.openProject')}
                 disabled={projectPending !== null}
                 aria-busy={projectPending !== null}
-                onClick={() => void runProjectAction('open-project', openProject)}
+                onClick={() =>
+                  void runProjectAction('open-project', async () => {
+                    await openProject()
+                    if (tab !== 'projects') onSwitchTab('projects')
+                  })
+                }
               >
                 <FolderPlus />
               </Button>

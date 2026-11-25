@@ -1,8 +1,8 @@
 /** Right-click actions for one tab, shared by the tab strip and each split pane's header. */
 import type { ReactElement } from 'react'
-import { Copy, Download, FolderOutput, PenLine } from 'lucide-react'
+import { Copy, Download, PenLine } from 'lucide-react'
 import { api } from '../ipc/api'
-import { useSessionsStore, type OpenTab } from '../stores/sessions'
+import type { OpenTab } from '../stores/sessions'
 import type { useProjectAction } from './sidebar/project-action'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from './ui/context-menu'
 import { useT } from '../hooks/useT'
@@ -46,25 +46,6 @@ export function TabContextMenu({
               <PenLine data-icon="inline-start" />
               {t('common.rename')}
             </ContextMenuItem>
-            {kind === 'chat' ? (
-              <ContextMenuItem
-                disabled={pending !== null}
-                onSelect={() => {
-                  const state = useSessionsStore.getState()
-                  const tab = state.openTabs.find((item) => item.id === tabId)
-                  if (tab?.cwd) {
-                    state.openConvertChatDialog({
-                      sessionId: tab.id,
-                      chatCwd: tab.cwd,
-                      title: tab.title
-                    })
-                  }
-                }}
-              >
-                <FolderOutput data-icon="inline-start" />
-                {t('sessions.convertToProject')}
-              </ContextMenuItem>
-            ) : null}
             {copyId}
             <ContextMenuItem
               disabled={pending !== null}

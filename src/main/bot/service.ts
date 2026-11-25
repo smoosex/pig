@@ -137,6 +137,24 @@ export class BotService {
       store: this.store,
       noticeQueue: this.noticeQueue,
       listOpenedProjects: listOpenedCwds,
+      isAllowedProject: async (cwd) => {
+        const { isManagedPigProjectDir } = await import('../project-relocate')
+        return isManagedPigProjectDir(cwd)
+      },
+      reserveNewProject: async (input, check) => {
+        const { reserveManagedProjectDirectory } = await import('../project-relocate')
+        const reserved = await reserveManagedProjectDirectory(input.folderName, check)
+        return { cwd: reserved.cwd, createdTarget: reserved.createdTarget }
+      },
+      initializeNewProject: async (cwd, input) => {
+        const { initializeManagedProjectDirectory } = await import('../project-relocate')
+        await initializeManagedProjectDirectory(cwd, {
+          fromWorkspaceSubpath: input.fromWorkspaceSubpath,
+          botWorkspaceDir: this.workspaceDir,
+          initGit: true,
+          createdTarget: input.createdTarget
+        })
+      },
       createWorktree: (projectCwd, options) => projectWorktrees.create(projectCwd, options),
       verifyBotWorktree: (projectCwd, cwd, taskId) => projectWorktrees.verifyBotWorktree(projectCwd, cwd, taskId),
       removeWorktree: async (projectCwd, cwd, { check, ...bot }) => {
@@ -291,21 +309,30 @@ export class BotService {
         getPermissionMode: () => sessionPermission(state.sessionId).mode,
         onPermissionsChanged,
         listOpenedProjects: async () => {
-          const cwds = await listOpenedCwds()
-          return Promise.all(cwds.map(async (cwd) => ({
+          const { listManagedPigProjects } = await import('../project-relocate')
+          const [cwds, managed] = await Promise.all([listOpenedCwds(), listManagedPigProjects()])
+          const openedSet = new Set(cwds)
+          const allCwds = [...cwds, ...managed.filter((cwd) => !openedSet.has(cwd))]
+          return Promise.all(allCwds.map(async (cwd) => ({
             cwd,
             name: basename(cwd),
-            hasGit: await isGitProject(cwd).catch(() => false)
+            hasGit: await isGitProject(cwd).catch(() => false),
+            inSidebar: openedSet.has(cwd)
           })))
         },
         openProject: async (path, check) => {
           const project = await openProjectDirectory(path, check)
-          for (const win of BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-              win.webContents.send('projects:changed', project.cwd)
-            }
-          }
+          const { sendToAllWindows } = await import('../ipc/send')
+          sendToAllWindows('projects:changed', project.cwd)
           return { cwd: project.cwd, name: project.name }
+        },
+        requestMoveProject: async (input) => {
+          const { requestMoveProjectDialog } = await import('../project-relocate')
+          const target = await requestMoveProjectDialog(input.projectCwd, {
+            suggestedFolderName: input.suggestedFolderName,
+            suggestedParentDir: input.suggestedParentDir
+          })
+          return { cwd: target.cwd, name: target.name, status: 'dialog_opened' as const }
         },
         inspectTaskSession: (task) => this.inspectTaskSession(task),
         confirmAction: async (title, message, ctx, signal) => {
@@ -556,9 +583,12 @@ export class BotService {
       live.agentSession.setThinkingLevel(params.thinkingOverride)
     }
 
-    // Notify renderer project tree so new Bot worktree / session appears immediately.
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('projects:changed', params.task.projectCwd)
+    // Notify renderer project tree if this project is pinned in the sidebar.
+    if ((await listOpenedCwds()).includes(params.task.projectCwd)) {
+      const { canSendToWindow } = await import('../ipc/send')
+      if (canSendToWindow(win)) {
+        win.webContents.send('projects:changed', params.task.projectCwd)
+      }
     }
 
     // Set up approval delegation so missing permissions mirror cleanly to Bot page.

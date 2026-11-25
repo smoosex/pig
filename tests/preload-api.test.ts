@@ -43,6 +43,10 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.searchProjectDirectories('/home', 'web', false)
   await api.cancelProjectDirectorySearch()
   await api.openProject('/home/project')
+  await api.renameProject('/home/project', 'Alias')
+  await api.relocateProject('/home/old', '/home/project')
+  await api.moveProject({ oldCwd: '/home/project', parentDir: '/home/moved', folderName: 'renamed-project' })
+  api.onRequestMoveProject(() => {})()
   await api.setModelThinkingPreference('session-1', true)
   await api.readWorktreeDiff('/repo')
   await api.readWorktreePatch('/repo', 'staged')
@@ -181,6 +185,9 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'project:search-directories', args: ['/home', 'web', false] },
     { channel: 'project:cancel-directory-search', args: [] },
     { channel: 'session:open-project', args: ['/home/project'] },
+    { channel: 'project:rename', args: ['/home/project', 'Alias'] },
+    { channel: 'project:relocate', args: ['/home/old', '/home/project'] },
+    { channel: 'project:move', args: [{ oldCwd: '/home/project', parentDir: '/home/moved', folderName: 'renamed-project' }] },
     { channel: 'session:set-model-thinking-preference', args: ['session-1', true] },
     { channel: 'diff:read-worktree', args: ['/repo'] },
     { channel: 'diff:read-patch', args: ['/repo', 'staged'] },
@@ -300,6 +307,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'spaces:forget-project', args: ['/repo'] }
   ])
   assert.ok(listeners.includes('spaces:changed'))
+  assert.ok(listeners.includes('projects:request-move'))
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
   assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')

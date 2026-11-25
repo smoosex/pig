@@ -63,7 +63,7 @@ mock.module('../src/main/project-worktrees', () => ({
     withBlockedCwds: async (_cwds: string[], fn: () => Promise<unknown>) => fn()
   }
 }))
-mock.module('../src/main/opened-projects', () => ({ removeOpenedProject: async () => { order.push('unpin') } }))
+mock.module('../src/main/opened-projects', () => ({ listOpenedCwds: async () => ['/project'], removeOpenedProject: async () => { order.push('unpin') } }))
 mock.module('../src/main/processes', () => ({ hasRunningSessionProcesses: (id: string) => runningProcesses.has(id) }))
 mock.module('../src/main/open-project-sessions', () => ({ rememberOpenProjectSession: async () => { order.push('remember') }, forgetOpenProjectSession: async () => {}, removeOpenProjectWorkspaces: async () => { order.push('forgetWorkspaces') } }))
 mock.module('../src/main/chats', () => ({ isChatCwd: () => false }))

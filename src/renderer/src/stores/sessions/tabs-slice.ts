@@ -191,12 +191,6 @@ export const createTabsSlice: SessionSlice<
    * all. Nothing here waits for the write — a chat whose id outlives its directory is dropped by the
    * restore rather than reported, so a delete that lands before this does can only leave a stale id.
    */
-  function isProjectWorkspaceCwd(state: SessionsStore, cwd: string): boolean {
-    return state.projects.some(
-      (project) => project.cwd === cwd || project.worktrees?.some((worktree) => worktree.cwd === cwd)
-    )
-  }
-
   function persistChatTabs(closedIds: string[] = []): void {
     const state = get()
     const active = state.openTabs.find((tab) => tab.id === state.activeTabId)
@@ -690,7 +684,6 @@ export const createTabsSlice: SessionSlice<
     openChangesTab: async (cwd, path, scope) => {
       const id = changesTabId(cwd)
       const next = scope ?? DEFAULT_SCOPE
-      const chatScope = !isProjectWorkspaceCwd(get(), cwd)
       set((state) => state.openTabs.some((tab) => tab.id === id)
         ? {
             openTabs: state.openTabs.map((tab) =>
@@ -706,8 +699,7 @@ export const createTabsSlice: SessionSlice<
               title: scopeLabel(t, next),
               kind: 'diff' as const,
               loadState: 'ready' as const,
-              diffScope: next,
-              ...(chatScope ? { chatScope: true } : {})
+              diffScope: next
             }]
           })
       // The panel points at a file through the tab's own focus, which the tab clears by scrolling.
@@ -730,7 +722,6 @@ export const createTabsSlice: SessionSlice<
      */
     openFileTab: async (cwd, path) => {
       const id = fileTabId(cwd, path)
-      const chatScope = !isProjectWorkspaceCwd(get(), cwd)
       if (!get().openTabs.some((tab) => tab.id === id)) {
         set((state) => ({
           openTabs: [...state.openTabs, {
@@ -739,8 +730,7 @@ export const createTabsSlice: SessionSlice<
             path,
             title: path.slice(path.lastIndexOf('/') + 1),
             kind: 'file' as const,
-            loadState: 'ready' as const,
-            ...(chatScope ? { chatScope: true } : {})
+            loadState: 'ready' as const
           }]
         }))
       }

@@ -10,13 +10,16 @@ import { runSelf } from './helpers/subprocess.ts'
 async function fixture(): Promise<void> {
   const rawRoot = await mkdtemp(join(tmpdir(), 'pig-project-relocate-'))
   const root = await realpath(rawRoot)
+  const fakeHome = join(root, 'home')
   const pigDataDir = join(root, 'pig-data')
   const agentDir = join(root, 'pi-agent')
   const workspaceParent = join(root, 'workspaces')
+  await mkdir(fakeHome, { recursive: true })
   await mkdir(pigDataDir, { recursive: true })
   await mkdir(agentDir, { recursive: true })
   await mkdir(workspaceParent, { recursive: true })
 
+  process.env.HOME = fakeHome
   process.env.PIG_DIR = pigDataDir
   process.env.PI_CODING_AGENT_DIR = agentDir
 
@@ -27,7 +30,13 @@ async function fixture(): Promise<void> {
 
   const { openProjectDirectory } = await import('../src/main/project-open')
   const { forgetProjectBranches, loadOpenedWorktreeProjects, worktrees } = await import('../src/main/project-worktrees')
-  const { relocateProjectDirectory, renameProjectDirectory } = await import('../src/main/project-relocate')
+  const {
+    createManagedProjectDirectory,
+    moveProjectDirectory,
+    relocateProjectDirectory,
+    renameProjectDirectory,
+    requestMoveProjectDialog
+  } = await import('../src/main/project-relocate')
   const { projectSpaces } = await import('../src/main/project-spaces')
   const { kanban } = await import('../src/main/kanban/service')
   const { bookmarks } = await import('../src/main/bookmarks')
@@ -124,9 +133,8 @@ async function fixture(): Promise<void> {
     assert.equal(missingLoaded[0]?.name, '官网重构')
     assert.equal(missingLoaded[0]?.sessions.some((s) => s.id === sessionId), true)
 
-    // Missing directory reads must NOT throw GitExecError or misreport "directoryOutsideWorkspace".
-    const missingDiff = await readWorktreeDiff(repoOld)
-    assert.deepEqual(missingDiff, { git: false, staged: [], unstaged: [], all: [] })
+    // Missing directory reads report missing directory instead of misreporting "directoryOutsideWorkspace".
+    await assert.rejects(() => readWorktreeDiff(repoOld), /cannot change to|No such file/i)
     await assert.rejects(
       () => readDirectory(repoOld, ''),
       (err: NodeJS.ErrnoException) => err.code === 'ENOENT'
@@ -196,10 +204,90 @@ async function fixture(): Promise<void> {
     const clearedAlias = await renameProjectDirectory(repoNew, '   ')
     assert.equal(clearedAlias.name, 'repo-new')
     assert.equal(clearedAlias.customName, undefined)
+
+    // 4. Managed project creation (`bot_create_project` backend) creates `~/pig_projects/<folderName>`,
+    //    copies regular files from Bot scratchpad while rejecting traversal, initializes Git + starter commit, and sets display alias.
+    const botScratch = join(pigDataDir, 'bot', 'workspace')
+    await mkdir(join(botScratch, 'snake-proto'), { recursive: true })
+    await writeFile(join(botScratch, 'snake-proto', 'game.py'), 'print("snake")\n')
+    await assert.rejects(() =>
+      createManagedProjectDirectory({
+        folderName: 'bad-escape',
+        fromWorkspaceSubpath: '../../outside',
+        botWorkspaceDir: botScratch
+      })
+    )
+    const createdManaged = await createManagedProjectDirectory({
+      folderName: 'snake-game',
+      displayName: '贪吃蛇小游戏',
+      fromWorkspaceSubpath: 'snake-proto',
+      botWorkspaceDir: botScratch
+    })
+    assert.equal(createdManaged.cwd, join(fakeHome, 'pig_projects', 'snake-game'))
+    assert.equal(createdManaged.name, '贪吃蛇小游戏')
+    assert.equal(createdManaged.hasGit, true)
+    assert.equal(await readFile(join(createdManaged.cwd, 'game.py'), 'utf8'), 'print("snake")\n')
+    const headCommit = await git(createdManaged.cwd, ['rev-parse', '--verify', 'HEAD'])
+    assert.ok(headCommit.trim().length >= 7)
+    // Bot-created managed projects stay out of Pig's left sidebar until explicitly added or moved!
+    const sidebarProjectsBeforeMove = await loadOpenedWorktreeProjects()
+    assert.equal(sidebarProjectsBeforeMove.some((p) => p.cwd === createdManaged.cwd), false)
+
+    // 5. Physical directory move (`moveProjectDirectory` + `requestMoveProjectDialog`) works on unpinned managed projects too,
+    //    moves on disk, and registers the user-chosen destination in Pig!
+    const requestedTarget = await requestMoveProjectDialog(createdManaged.cwd, {
+      suggestedFolderName: 'snake-v2',
+      suggestedParentDir: workspaceParent
+    })
+    assert.deepEqual(requestedTarget, {
+      cwd: createdManaged.cwd,
+      name: 'snake-game',
+      suggestedFolderName: 'snake-v2',
+      suggestedParentDir: workspaceParent
+    })
+    // Rejects nested moves into itself
+    await assert.rejects(() =>
+      moveProjectDirectory({
+        oldCwd: createdManaged.cwd,
+        parentDir: createdManaged.cwd,
+        folderName: 'nested'
+      })
+    )
+    const movedTargetCwd = join(workspaceParent, 'snake-v2')
+    const movedResult = await moveProjectDirectory({
+      oldCwd: createdManaged.cwd,
+      parentDir: workspaceParent,
+      folderName: 'snake-v2'
+    })
+    assert.equal(movedResult.oldCwd, createdManaged.cwd)
+    assert.equal(movedResult.project.cwd, movedTargetCwd)
+    await assert.rejects(() => stat(createdManaged.cwd))
+    assert.equal(await readFile(join(movedTargetCwd, 'game.py'), 'utf8'), 'print("snake")\n')
+    const sidebarProjectsAfterMove = await loadOpenedWorktreeProjects()
+    assert.equal(sidebarProjectsAfterMove.some((p) => p.cwd === movedTargetCwd), true)
+
+    // 6. Disposed render frames (`mainFrame === null` or `mainFrame.isDestroyed()`) are skipped without throwing.
+    const { canSendToWindow } = await import('../src/main/ipc/send')
+    assert.equal(
+      canSendToWindow({
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, mainFrame: null }
+      } as unknown as Electron.BrowserWindow),
+      false
+    )
+    assert.equal(
+      canSendToWindow({
+        isDestroyed: () => false,
+        webContents: { isDestroyed: () => false, mainFrame: { isDestroyed: () => true } }
+      } as unknown as Electron.BrowserWindow),
+      false
+    )
   } finally {
     forgetProjectBranches(join(workspaceParent, 'repo-old'))
     forgetProjectBranches(join(workspaceParent, 'repo-new'))
     forgetProjectBranches(join(workspaceParent, 'repo-other'))
+    forgetProjectBranches(join(fakeHome, 'pig_projects', 'snake-game'))
+    forgetProjectBranches(join(workspaceParent, 'snake-v2'))
     await rm(root, { recursive: true, force: true })
   }
 }

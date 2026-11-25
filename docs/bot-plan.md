@@ -134,7 +134,8 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 2. **Bot 编排工具（宿主记账封装，替代裸调 `pig-session`）**
    - `bot_list_projects`：列出当前窗口已注册的项目（`cwd`、`name`、`isGit`、当前分支、工作树是否脏、活跃任务数），让 Bot 在不盲猜路径的前提下决策。
    - `bot_open_project`：注册一个本地已有目录到 Pig 项目列表（遵循当前权限模式：`full-access` 直接放行、`default` 复用 `session_open_project` 审批链路、`read-only` 拒绝；不隐式建目录或 clone）。
-   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——仅做轻量参数与项目归属校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`；**绝不在工具调用内同步等待 `git worktree add`、`createSessionRuntime` 或后台首轮启动**。耗时的 worktree 创建、会话初始化、权限/审批委派与首轮投递全部交由 `BotTaskManager` 在后台异步推进，启动失败或遇审批阻塞时通过 `BotNoticeQueue` 回传 Notice。支持可选 `slug`、按需能力声明（如 `capabilities: { browser?: boolean }`）以及**可选按任务覆写模型 / 思考强度**（缺省继承 Pig 全局默认模型与思考强度）。往已打开的 Git 项目派活在 `full-access` / `default` 下免弹派活审批卡。
+   - `bot_request_move_project`：针对已打开或 `~/pig_projects/*` 下的空闲项目非阻塞唤起前端 `MoveProjectDialog`（预填建议文件夹名与父目录），由用户在 UI 确认路径后执行本地目录物理搬迁与全链路关联数据迁移（会话、Git worktree、空间、看板、书签、长期记忆与 Bot 任务）。
+   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——支持传入已有 `projectCwd` 或 `newProject: { folderName, displayName?, fromWorkspaceSubpath? }`（二选一）：仅做轻量参数/空目录预留校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`，使主会话可在同一轮同时发出 `bot_start_task` 与 `send_message`；**绝不在工具调用内同步等待 `git init`、`git worktree add`、`createSessionRuntime` 或后台首轮启动**。通过 `newProject` 新建的托管目录落位 `~/pig_projects/<folderName>`，默认不自动加入左侧项目栏（在 `BotTaskCard` 上展示「添加项目并查看」按需入列，`full-access` 直接放行、`default` 弹确认、`read-only` 拒绝），且首次任务及其后续 `bot_followup_task` 直接在主目录 `main` 分支原位写入，避免对空仓库多切一层冗余 worktree 导致主目录留空。往已打开的 Git 项目派活在 `full-access` / `default` 下免弹派活审批卡。
    - `bot_list_tasks` / `bot_get_task`：从宿主账本读取真实状态、worktree 路径、分支、阻塞审批状态与 `latestReceipt`，不靠模型翻聊天记录猜。
    - `bot_inspect_task`：只读查看 Bot 自己名下指定 `taskId` 的最近进展、工具轨迹或受控截断的 diff 摘要；只读取当前仍受托管的活跃 Run 的实时记录；已完成或已接管的 Run 只使用账本中的既有回执，不读取后续会话消息。
    - `bot_stop_task`：按精确 `taskId` 停止对应 Run；若由本次工具调用发起并完成停止，返回 `runId` 和 `receipt`，当前轮通过 `send_message` 报告，不另发模型唤醒或系统交付卡。加入已在途的停止或调用时任务已终结，不重发旧回执。
@@ -148,7 +149,7 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 
 | 工具 / 插件 / 特性 | 策略 | 说明与约束 |
 | --- | --- | --- |
-| **`send_message` + `bot_*`（9 个）** | **专属启用** | 唯一对外表达口与任务编排入口。 |
+| **`send_message` + `bot_*`（8 个）** | **专属启用** | 唯一对外表达口与任务编排入口。 |
 | **`read`（开放单文件读取）+ `edit` / `write`（硬路径白名单）** | **受限保留** | `read` 保留用于读取 `SKILL.md`、`SOUL.md`、用户提供的本地文件/日志，以及秒答单个项目文件的事实确认；**`edit` 与 `write` 在 `tool_call` 钩子中通过 `realTarget` 硬性锁死在 `$PIG_DIR/bot/workspace/**` 与 `$PIG_DIR/persona/SOUL.md`**，直写任何项目目录一律拦截，物理杜绝绕过 worktree 偷改项目代码。 |
 | **`bash`、`powershell`、`grep`、`find`、`ls`** | **主会话禁用** | 主会话通过 `applySessionTools` 隐藏并在 `tool_call` 双重拦截命令执行与仓库级检索工具；任何命令执行、构建/测试、跨文件代码排查均必须经 `bot_start_task` 委派至后台 Session。 |
 | **`pig-persona`、`memory_*`、`recall`（OM）** | **保留** | 常驻伙伴的人格、心情、全局长期记忆与观测记忆由 Bot 主会话持有。 |
@@ -228,6 +229,8 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 | `bot_start_task`（已打开 Git 项目，写任务） | 直接派活（免弹派活审批） | 直接派活（免弹派活审批；后台执行受沙箱与越界审批约束） | 拒绝 |
 | `bot_start_task`（非 Git 目录，写任务） | 确认共用目录并串行互斥 | 显式审批确认共用目录并串行互斥 | 拒绝 |
 | `bot_open_project`（注册已有本地目录） | 直接放行 | 弹审批确认 | 拒绝 |
+| `bot_start_task`（传入 `newProject` 在 `~/pig_projects` 新建托管目录并原位写任务） | 直接派活 | 弹审批确认 | 拒绝 |
+| `bot_request_move_project`（仅唤起前端移动项目位置弹窗，用户自行确认路径） | 唤起 UI 弹窗 | 唤起 UI 弹窗 | 唤起 UI 弹窗 |
 | `bot_cleanup_worktree`（存在未提交改动或未合并提交） | **强制弹确认卡** | **强制弹确认卡** | 拒绝 |
 | `bot_cleanup_worktree`（已合并且工作树干净） | 直接清理 | 弹审批确认 | 拒绝 |
 

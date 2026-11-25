@@ -12,7 +12,16 @@ async function fixture(name: string): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  Object.defineProperty(window, 'api', { value: {}, configurable: true })
+  Object.defineProperty(window, 'api', {
+    value: {
+      setLocaleSetting: async (locale: 'en' | 'zh-CN' | 'system') => ({
+        localeSetting: locale,
+        systemLocale: 'zh-CN' as const,
+        settingsRevision: 0
+      })
+    },
+    configurable: true
+  })
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
@@ -109,7 +118,7 @@ async function fixture(name: string): Promise<void> {
     }
 
     if (name === 'chat-locale') {
-      const { ChatList } = await import('../src/renderer/src/components/sidebar/ChatList')
+      const { ProjectSessionHome } = await import('../src/renderer/src/components/ProjectSessionHome')
       const metas: SessionMeta[] = [
         { ...parent, id: 'image', path: '/sessions/image.jsonl', firstMessage: '', previewFallback: 'image' },
         { ...parent, id: 'pasted', path: '/sessions/pasted.jsonl', firstMessage: '', previewFallback: 'pastedText' },
@@ -117,10 +126,10 @@ async function fixture(name: string): Promise<void> {
         { ...parent, id: 'image-only', path: '/sessions/image-only.jsonl', firstMessage: '', firstMessageIsImage: true },
         { ...parent, id: 'named', path: '/sessions/named.jsonl', name: '固定标题' }
       ]
-      const chats = metas.map((session) => ({ cwd: `/chats/${session.id}`, name: session.id, sessions: [session] }))
+      const projects = [{ cwd: '/project', name: 'project', sessions: metas }]
       await act(async () => {
-        store.setState({ chats })
-        root.render(h(ChatList))
+        store.setState({ projects })
+        root.render(h(ProjectSessionHome, { cwd: '/project' }))
       })
       const titles = () => [...container.querySelectorAll('[data-sidebar-hover-row] .truncate')]
         .map((element) => element.textContent)
@@ -128,7 +137,7 @@ async function fixture(name: string): Promise<void> {
       await act(async () => {
         useSettingsStore.setState({ localeSetting: 'en', locale: 'en' })
       })
-      assert.ok(store.getState().chats === chats, 'switching locale does not refresh the catalog')
+      assert.ok(store.getState().projects === projects, 'switching locale does not refresh the catalog')
       assert.deepEqual(titles(), ['Image', 'Pasted text', 'New chat', 'Image', '固定标题'])
       return
     }

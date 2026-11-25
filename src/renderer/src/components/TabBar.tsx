@@ -4,6 +4,7 @@ import { closestCenter, DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useSessionsStore } from '../stores/sessions'
+import { useBotStore } from '../stores/bot'
 import { useProjectAction } from './sidebar/project-action'
 import type { OpenTab } from '../stores/sessions'
 import { fileKey, isDirty, useFilesStore } from '../stores/files'
@@ -209,11 +210,11 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   )
 }
 
-/** A session of whatever the strip is listing: the projects half needs a worktree for it to belong to. */
-export async function newStripSession(sidebarTab: SidebarTab): Promise<void> {
-  const { currentProjectCwd, newChat, newSession } = useSessionsStore.getState()
-  if (stripShowsChats(sidebarTab, currentProjectCwd)) await newChat()
-  else if (currentProjectCwd) await newSession(currentProjectCwd)
+/** A session of the open project worktree; when no project is open, direct conversation goes to Bot. */
+export async function newStripSession(_sidebarTab?: SidebarTab): Promise<void> {
+  const { currentProjectCwd, newSession } = useSessionsStore.getState()
+  if (currentProjectCwd) await newSession(currentProjectCwd)
+  else useBotStore.getState().openBot()
 }
 
 export function NewTabButton({ sidebarTab, sidebarLayout }: { sidebarTab: SidebarTab; sidebarLayout: string }) {

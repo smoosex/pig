@@ -46,6 +46,8 @@ export interface BotWorkspace {
   branch?: string
   baseHead?: string
   cleanedUpAt?: number
+  /** True only when the project directory was newly created for this task (`newProject`) and intentionally runs in place. */
+  inPlace?: boolean
 }
 
 export interface BotFileChangeSummary {
@@ -290,8 +292,15 @@ export type BotEvent = { cursor?: number } & (
   | { type: 'state_changed'; state: BotState }
 )
 
+export interface BotNewProjectInput {
+  folderName: string
+  displayName?: string
+  fromWorkspaceSubpath?: string
+}
+
 export interface BotDelegateTaskInput {
-  projectCwd: string
+  projectCwd?: string
+  newProject?: BotNewProjectInput
   title: string
   intent: string
   mode: BotTaskMode

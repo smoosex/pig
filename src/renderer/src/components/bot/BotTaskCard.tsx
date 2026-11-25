@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   FileDiff,
+  FolderPlus,
   GitBranch,
   Hand,
   LoaderCircle,
@@ -26,6 +27,7 @@ import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { cn } from '../../lib/utils'
 import { useBotStore } from '../../stores/bot'
+import { useSessionsStore } from '../../stores/sessions'
 import { FileChangeCounts } from '../turn/TurnFileChanges'
 import { SessionRunningOrb } from '../RunningSpinners'
 import { Button } from '../ui/button'
@@ -89,7 +91,9 @@ export function BotTaskCard({
   const [submittingFollowup, setSubmittingFollowup] = useState(false)
   const [cleanupSafety, setCleanupSafety] = useState<BotWorktreeCleanupSafety | null>(null)
   const [cleaning, setCleaning] = useState(false)
+  const [addingProject, setAddingProject] = useState(false)
 
+  const isProjectOpened = useSessionsStore((s) => s.projects.some((p) => p.cwd === task.projectCwd))
   const active = isBotTaskActive(task.status)
   const latestRun = task.runs.at(-1)
   const hasSession = Boolean(latestRun?.sessionId)
@@ -114,8 +118,28 @@ export function BotTaskCard({
     }
   }
 
+  const handleAddProjectAndView = async () => {
+    if (addingProject) return
+    setAddingProject(true)
+    try {
+      await useSessionsStore.getState().openProject(task.projectCwd)
+      if (hasSession) {
+        navigation.onOpenSession(task)
+      } else {
+        navigation.onViewChanges(task)
+      }
+    } catch (error) {
+      toast.error(failureMessage(error))
+    } finally {
+      setAddingProject(false)
+    }
+  }
+
   const handleTakeOver = async () => {
     try {
+      if (!useSessionsStore.getState().projects.some((p) => p.cwd === task.projectCwd)) {
+        await useSessionsStore.getState().openProject(task.projectCwd)
+      }
       const updated = await takeOverTask(task.taskId)
       navigation.onOpenSession(updated)
     } catch (error) {
@@ -223,26 +247,42 @@ export function BotTaskCard({
         ) : null}
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          {hasSession ? (
+          {isProjectOpened ? (
+            <>
+              {hasSession ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => navigation.onOpenSession(task)}
+                >
+                  <ArrowUpRight className="size-3" />
+                  {t('bot.actions.openSession')}
+                </Button>
+              ) : null}
+              {worktreeActive || hasWritableChanges ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => navigation.onViewChanges(task)}
+                >
+                  <FileDiff className="size-3" />
+                  {t('bot.actions.viewChanges')}
+                </Button>
+              ) : null}
+            </>
+          ) : hasSession || worktreeActive || hasWritableChanges ? (
             <Button
               type="button"
               variant="outline"
               size="xs"
-              onClick={() => navigation.onOpenSession(task)}
+              data-bot-add-and-view
+              disabled={addingProject}
+              onClick={() => void handleAddProjectAndView()}
             >
-              <ArrowUpRight className="size-3" />
-              {t('bot.actions.openSession')}
-            </Button>
-          ) : null}
-          {worktreeActive || hasWritableChanges ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => navigation.onViewChanges(task)}
-            >
-              <FileDiff className="size-3" />
-              {t('bot.actions.viewChanges')}
+              {addingProject ? <LoaderCircle className="size-3 animate-spin" /> : <FolderPlus className="size-3" />}
+              {t(addingProject ? 'bot.actions.addingProject' : 'bot.actions.addProjectAndView')}
             </Button>
           ) : null}
           {active ? (

@@ -1,8 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { BrowserPopupRequest } from '../../../../shared/browser'
 import type {
-  ConvertChatToProjectInput,
-  ConvertChatToProjectResult,
   ForkPosition,
   BashExecutionResult,
   DiffScope,
@@ -10,6 +8,8 @@ import type {
   DisplayTurnsResult,
   FollowUpAction,
   GenerationStats,
+  MoveProjectDialogTarget,
+  MoveProjectInput,
   PromptStreamingBehavior,
   ProjectGroup,
   RelocateProjectResult,
@@ -100,12 +100,6 @@ export interface ChatDraft {
   cwd: string
 }
 
-export interface ConvertChatDialogTarget {
-  sessionId: string
-  chatCwd: string
-  title: string
-}
-
 export interface OpenTab {
   /** The tab's own identity: a session id, or a worktree's `diff:<cwd>`. */
   id: string
@@ -173,10 +167,10 @@ export interface SessionsStore {
   relocateProjectTarget: { cwd: string; name: string } | null
   openRelocateProjectDialog: (target: { cwd: string; name: string }) => void
   closeRelocateProjectDialog: () => void
-  convertChatDialog: ConvertChatDialogTarget | null
-  openConvertChatDialog: (target: ConvertChatDialogTarget) => void
-  closeConvertChatDialog: () => void
-  convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
+  moveProjectTarget: MoveProjectDialogTarget | null
+  openMoveProjectDialog: (target: MoveProjectDialogTarget) => void
+  closeMoveProjectDialog: () => void
+  moveProject: (input: MoveProjectInput) => Promise<RelocateProjectResult>
   openProject: (path?: string) => Promise<void>
   renameProject: (cwd: string, name: string) => Promise<ProjectGroup>
   relocateProject: (oldCwd: string, newPath: string) => Promise<RelocateProjectResult>

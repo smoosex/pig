@@ -18,30 +18,21 @@
 
 ### 2.1 顶栏左侧（`header[data-app-header]`）
 
-当前 `src/renderer/src/App.tsx` 的 `data-header-leading` 放着 `<SidebarToggle />` 和 `<GooglyEyesButton />`（切换 `projects` / `chats`）。调整如下：
+`src/renderer/src/App.tsx` 的 `data-header-leading` 放置全局一级舞台入口：
 
 ```text
-调整前：[红绿灯]  [SidebarToggle]  [GooglyEyes: 项目/对话]    |   TabBar   |   [+][书签][右侧栏]
-调整后：[红绿灯]  [SidebarToggle]  [BotOrbButton ○]           |   TabBar   |   [+][书签][右侧栏]
+工作区顶栏：[红绿灯]  [SidebarToggle]  [BotOrbButton ○]  [KanbanToggleButton]  |   TabBar   |   [+][书签][右侧栏]
+Bot 页顶栏：[红绿灯]  [任务抽屉按钮]   [BotOrbButton ○]  [KanbanToggleButton]  |  状态文案  |   [导出][更多菜单]
 ```
 
-- **`BotOrbButton` 占据原 `GooglyEyesButton` 的位置**：
+- **`BotOrbButton` 与 `KanbanToggleButton` 同驻左上角**：
   - 基础命中区 `size-7`（28px），与同栏图标按钮等高，居中对齐在 `h-10` 顶栏内，外环光晕通过不占布局空间的 `box-shadow` / 伪层绘制。
-  - **独立于左侧栏折叠状态**：即使 `leftCollapsed === true`，`BotOrbButton` 始终留在 `data-header-leading`，保证随时可点击进入、随时能承接 Bot 弹出消息气泡。
+  - **独立于左侧栏折叠状态**：即使 `leftCollapsed === true`，`BotOrbButton` 与 `KanbanToggleButton` 始终留在 `data-header-leading`，在工作区、看板与 Bot 页三端保持完全相同的屏幕坐标。
   - 进入 `settingsOpen` 时随普通顶栏一起隐藏（沿用现有设置页覆盖规则），后台任务与未读角标继续保持。
 
-### 2.2 左侧栏顶部（「项目 / 对话」切换器搬家）
+### 2.2 左侧栏（纯项目列表 / 看板筛选）
 
-将原来的「项目 / 对话」切换器迁移到 `src/renderer/src/components/Sidebar.tsx` 顶部，固定在 `ScrollArea` 上方、不随列表滚动：
-
-```text
-┌──────────────────────────────────┐
-│  ( [📁 项目]  💬 )            +  │  ← 靠左胶囊容器 + 展开式活动药丸（顶边与中间卡片 8px 齐平）
-├──────────────────────────────────┤
-│  ProjectList / ChatList          │  ← 原有 ScrollArea + SidebarHoverHighlight
-│  ...                             │
-└──────────────────────────────────┘
-```
+直接会话对话能力统一由全窗口 Bot 承接，左侧栏移除独立「会话 (Chats)」分组与顶部模式胶囊，在工作区下纯展示 `ProjectList`（配合底部空间切换 Dock），切入看板时通过 `Activity` 切换为 `KanbanSidebar` 项目筛选列表。
 
 - **形态与材质**：靠左放置的胶囊切换器（`SidebarModeSwitch`），复用右侧栏 `WorkspacePanel` 的 `ToggleGroup` + `motion/react` `layoutId` 滑动玻璃药丸与活动项文字展开动画，并将两枚按钮包裹在同一外层胶囊容器内（不再铺满整宽，也不把大眼睛按钮硬塞进窄侧栏）。
   - **顶部对齐**：外层 header 使用 `pt-2 pb-0.5`（总高 40px，与右侧栏 `h-9 mb-1` 一致），胶囊顶边与中间对话区 `m-2`（8px）齐平；

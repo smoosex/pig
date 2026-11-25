@@ -889,4 +889,96 @@ describe('BotTaskManager and BotNoticeQueue', () => {
     expect(finalTask?.runs[0].status).toBe('stopped')
     expect(finalTask?.runs[0].sessionId).toBeUndefined()
   })
+
+  test('newProject returns Fast Ack while initializing Git asynchronously, writes in place without worktrees, and isolates later independent tasks', async () => {
+    let createWorktreeCalls = 0
+    let markInitEntered!: () => void
+    let releaseInit!: () => void
+    const initEntered = new Promise<void>((r) => { markInitEntered = r })
+    const initGate = new Promise<void>((r) => { releaseInit = r })
+
+    const { realpath } = await import('node:fs/promises')
+    const rawNpDir = await mkdtemp(join(tmpdir(), 'pig-bot-np-'))
+    temps.push(rawNpDir)
+    const realDir = await realpath(rawNpDir)
+    const { manager, launched } = await makeFixture({
+      isAllowedProject: async (cwd) => cwd.startsWith(join(realDir, 'pig_projects')),
+      reserveNewProject: async (input) => ({
+        cwd: join(realDir, 'pig_projects', input.folderName),
+        createdTarget: true
+      }),
+      initializeNewProject: async () => {
+        markInitEntered()
+        await initGate
+      },
+      createWorktree: async (_proj, opts) => {
+        createWorktreeCalls += 1
+        return {
+          cwd: join(realDir, 'wt', `bot-${opts.owner!.taskId.slice(0, 6)}`),
+          branch: `bot/feat-${opts.owner!.taskId.slice(0, 6)}`,
+          isPrimary: false,
+          locked: false,
+          missing: false,
+          managed: true,
+          owner: opts.owner
+        }
+      }
+    })
+
+    const expectedCwd = join(realDir, 'pig_projects', 'snake-game')
+    const ack = await manager.delegateTask({
+      newProject: { folderName: 'snake-game' },
+      title: 'Build Snake Game',
+      intent: 'Create HTML5 snake game',
+      mode: 'write'
+    }, 'full-access')
+
+    expect(ack.status).toBe('starting')
+    expect(ack.projectCwd).toBe(expectedCwd)
+    expect(launched).toHaveLength(0)
+
+    await initEntered
+    releaseInit()
+    await manager.waitForLaunch(ack.runId)
+
+    const running = await manager.getTask(ack.taskId)
+    expect(running?.status).toBe('running')
+    expect(running?.workspace.kind).toBe('project')
+    expect(running?.workspace.cwd).toBe(expectedCwd)
+    expect(running?.workspace.branch).toBe('main')
+    expect(createWorktreeCalls).toBe(0)
+    expect(launched[0]?.cwd).toBe(expectedCwd)
+
+    // Settle initial run as stopped, then follow up on the same task: stays in-place in expectedCwd!
+    await manager.handleSessionTaskFinished({
+      taskId: 'stask-1',
+      sessionId: 'sess-1',
+      status: 'aborted',
+      stopOrigin: 'user'
+    } as SessionAgentTask)
+
+    const followupAck = await manager.followupTask(ack.taskId, 'Add leaderboard', 'full-access')
+    await manager.waitForLaunch(followupAck.runId)
+    expect(createWorktreeCalls).toBe(0)
+    expect(launched[1]?.cwd).toBe(expectedCwd)
+
+    await manager.handleSessionTaskFinished({
+      taskId: 'stask-2',
+      sessionId: 'sess-2',
+      status: 'completed',
+      reply: 'Done'
+    } as SessionAgentTask)
+
+    // A subsequent independent write task on the now-existing Git project uses an isolated worktree as normal.
+    const laterAck = await manager.delegateTask({
+      projectCwd: expectedCwd,
+      title: 'Refactor controls',
+      intent: 'Add gamepad support',
+      mode: 'write'
+    }, 'full-access')
+    await manager.waitForLaunch(laterAck.runId)
+    expect(createWorktreeCalls).toBe(1)
+    const laterTask = await manager.getTask(laterAck.taskId)
+    expect(laterTask?.workspace.kind).toBe('worktree')
+  })
 })

@@ -5,7 +5,7 @@ import type { OpenTab } from '../src/renderer/src/stores/sessions'
 import type { SessionMeta } from '../src/shared/api'
 import { runSelf } from './helpers/subprocess.ts'
 
-async function runFixture(kind: 'project' | 'chat'): Promise<void> {
+async function runFixture(): Promise<void> {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -26,7 +26,7 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     created: '', modified: '', size: 0, firstMessage: '正在运行的对话'
   }
   const tab: OpenTab = {
-    id: session.id, cwd: session.cwd, title: session.firstMessage, kind, loadState: 'ready', meta: session
+    id: session.id, cwd: session.cwd, title: session.firstMessage, kind: 'project', loadState: 'ready', meta: session
   }
   const copied: string[] = []
   let copyError: Error | null = null
@@ -38,19 +38,15 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     } }
   })
   const closed: string[] = []
-  const deleted: string[] = []
   const selected: string[] = []
   store.setState({
-    openTabs: [tab], activeTabId: tab.id, currentProjectCwd: kind === 'project' ? session.cwd : null,
-    chats: [{ cwd: session.cwd, name: 'chat', sessions: [session] }],
+    openTabs: [tab], activeTabId: tab.id, currentProjectCwd: session.cwd,
     runtime: { [session.id]: { ...emptyRuntime(), isStreaming: true } },
     closeTab: (id) => { closed.push(id) },
-    deleteChat: async (cwd) => { deleted.push(cwd) },
     activateTab: async (id) => { selected.push(id) },
     openExisting: async (meta) => { selected.push(meta.id) }
   })
   const { SessionList } = await import('../src/renderer/src/components/sidebar/SessionList')
-  const { ChatList } = await import('../src/renderer/src/components/sidebar/ChatList')
   const { TabBar } = await import('../src/renderer/src/components/TabBar')
   const container = document.createElement('div')
   document.body.append(container)
@@ -59,10 +55,8 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
   try {
     await act(async () => {
       root.render(h(Fragment, null,
-        h('div', { onClick: () => { rowClicks++ } },
-          kind === 'project' ? h(SessionList, { sessions: [tab] }) : h(ChatList)
-        ),
-        h('div', { 'data-tabs': '' }, h(TabBar, { sidebarTab: kind === 'project' ? 'projects' : 'chats' }))
+        h('div', { onClick: () => { rowClicks++ } }, h(SessionList, { sessions: [tab] })),
+        h('div', { 'data-tabs': '' }, h(TabBar, { sidebarTab: 'projects' }))
       ))
     })
     const row = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!
@@ -74,8 +68,6 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.ok(orb)
     assert.equal(orb.getAttribute('data-size'), '20')
     assert.equal(orb.getAttribute('data-theme'), 'light')
-    // Pig pins the scheme with the root `dark` class only; the orb must follow it,
-    // not prefers-color-scheme, which a forced light appearance overrides.
     document.documentElement.classList.add('dark')
     await act(async () => {})
     assert.equal(orb.getAttribute('data-theme'), 'dark')
@@ -88,7 +80,7 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.equal(row.children.length, 2)
     assert.ok(row.classList.contains('group/session'))
     assert.ok(row.classList.contains('close-reveal'))
-    assert.ok(row.classList.contains('bg-sidebar-foreground/12'), 'selected project and chat rows use the same foreground tint')
+    assert.ok(row.classList.contains('bg-sidebar-foreground/12'), 'selected project rows use the foreground tint')
     assert.ok(row.classList.contains('hover:bg-sidebar-foreground/12!'), 'hover keeps the selected tint unchanged')
     assert.ok(row.hasAttribute('data-sidebar-selected'), 'the shared hover layer can mask the selected row')
     assert.ok(row.classList.contains('duration-100'))
@@ -104,7 +96,6 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.ok(close.classList.contains('absolute'))
     assert.ok(close.classList.contains('opacity-0'))
     assert.ok(close.classList.contains('pointer-events-none'))
-    // The row owns button backgrounds in every state, not just during hover.
     for (const button of row.querySelectorAll<HTMLElement>('button')) {
       assert.ok(
         button.classList.contains('!bg-transparent'),
@@ -128,25 +119,13 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     })
     assert.equal(document.activeElement, close)
     assert.deepEqual(closed, [session.id])
-    assert.deepEqual(deleted, [])
     assert.deepEqual(selected, [])
     assert.equal(rowClicks, 0)
     await act(async () => { store.getState().setStreaming(session.id, false) })
     assert.equal(row.querySelector('[data-orb]'), null)
     assert.equal(row.querySelector('.close-spin'), null)
     assert.equal(row.children.length, 2)
-    if (kind === 'project') {
-      assert.ok(row.querySelector('.lucide-x'))
-    } else {
-      const settledRow = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!
-      const hold = settledRow.querySelector('.lucide-trash-2')?.closest('button')
-      assert.ok(hold, 'settled chats render a hold-to-delete button')
-      assert.ok(hold.classList.contains('text-destructive'), 'hold-to-delete keeps its destructive red')
-      assert.ok(!hold.classList.contains('text-muted-foreground'), 'secondary icon colors must not override delete feedback')
-      assert.ok(hold.classList.contains('!bg-transparent'), 'the row also owns the idle hold-to-delete background')
-      assert.ok(!hold.classList.contains('hover:bg-accent'))
-      assert.equal(settledRow.querySelector('.lucide-x'), null)
-    }
+    assert.ok(row.querySelector('.lucide-x'))
     await act(async () => { store.setState({ activeTabId: null }) })
     const unselected = container.querySelector<HTMLElement>('[data-sidebar-hover-row]')!
     assert.ok(unselected.classList.contains('hover:bg-transparent!'), 'the shared layer owns hover tint')
@@ -171,7 +150,7 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
     assert.deepEqual(copied, [session.id, session.id], 'both menus copy the clicked session, even when inactive')
     assert.deepEqual(selected, [], 'copying does not activate the session')
 
-    const terminal: OpenTab = { id: 'terminal:copy', cwd: kind === 'project' ? session.cwd : '', title: '终端', kind: 'terminal', loadState: 'ready' }
+    const terminal: OpenTab = { id: 'terminal:copy', cwd: session.cwd, title: '终端', kind: 'terminal', loadState: 'ready' }
     await act(async () => { store.setState({ openTabs: [tab, terminal] }) })
     const terminalTrigger = [...container.querySelectorAll<HTMLElement>('[data-tabs] [data-slot="context-menu-trigger"]')]
       .find((item) => item.textContent?.includes('终端'))
@@ -203,14 +182,10 @@ async function runFixture(kind: 'project' | 'chat'): Promise<void> {
 }
 
 if (process.argv[2] === '--sidebar-actions-fixture') {
-  const kind = process.argv[3]
-  assert.ok(kind === 'project' || kind === 'chat')
-  await runFixture(kind)
+  await runFixture()
 } else {
-  for (const kind of ['project', 'chat'] as const) {
-    test(`sidebar ${kind}: breathing shares the close slot and hover/focus reveals the tab-style close ring`, async () => {
-      const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--sidebar-actions-fixture', kind])
-      assert.equal(code, 0, stdout + stderr)
-    })
-  }
+  test('sidebar project session: breathing shares the close slot and hover/focus reveals the tab-style close ring', async () => {
+    const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--sidebar-actions-fixture'])
+    assert.equal(code, 0, stdout + stderr)
+  })
 }

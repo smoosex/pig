@@ -28,13 +28,19 @@ function harness(opts: {
   const permissionsChanged = new Set<() => void>()
   const confirms: Array<{ title: string; message: string }> = []
   let cleanedTasks: string[] = []
+  const delegatedInputs: Array<import('../src/shared/bot').BotDelegateTaskInput> = []
+  const requestedMoves: Array<{ projectCwd: string; suggestedFolderName?: string; suggestedParentDir?: string }> = []
 
   const taskManager = {
-    delegateTask: async (input: { projectCwd: string; mode: 'read' | 'write' }, permMode: PermissionMode) => {
-      if (input.mode === 'write' && permMode === 'read-only') {
+    delegateTask: async (input: import('../src/shared/bot').BotDelegateTaskInput, permMode: PermissionMode) => {
+      if ((input.mode === 'write' || input.newProject) && permMode === 'read-only') {
         throw new Error('Read-only mode cannot delegate write tasks')
       }
-      return { taskId: 't-1', runId: 'r-1', projectCwd: input.projectCwd, mode: input.mode, status: 'starting' as const }
+      delegatedInputs.push(input)
+      const projectCwd = input.newProject
+        ? `/home/pig_projects/${input.newProject.folderName}`
+        : input.projectCwd!
+      return { taskId: 't-1', runId: 'r-1', projectCwd, mode: input.mode, status: 'starting' as const }
     },
     listTasks: async () => [] as BotTask[],
     getTask: async (id: string) => ({ taskId: id, status: 'completed', workspace: { kind: 'worktree', cwd: '/wt' }, runs: [] } as unknown as BotTask),
@@ -59,6 +65,10 @@ function harness(opts: {
     },
     listOpenedProjects: async () => [{ cwd: '/repo/pig', name: 'pig', hasGit: opts.hasGit ?? true }],
     openProject: async (path: string) => ({ cwd: path, name: 'demo' }),
+    requestMoveProject: async (input) => {
+      requestedMoves.push(input)
+      return { cwd: input.projectCwd, name: 'pig', status: 'dialog_opened' as const }
+    },
     inspectTaskSession: async () => ({ recentMessages: [{ role: 'assistant', text: 'done' }] }),
     confirmAction: async (title, message, _ctx, signal) => {
       confirms.push({ title, message })
@@ -87,6 +97,8 @@ function harness(opts: {
     sideEffects,
     confirms,
     cleanedTasks,
+    delegatedInputs,
+    requestedMoves,
     getActiveTools: () => [...activeTools],
     setMode: (next: PermissionMode, notify = true) => {
       mode = next
@@ -336,5 +348,73 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  test('bot_start_task newProject creates+starts in one step with permission checks and bot_request_move_project opens dialog non-blockingly', async () => {
+    const h = harness({ mode: 'read-only' })
+    expect(h.tools.has('bot_create_project')).toBe(false)
+    const startTool = h.tools.get('bot_start_task')!
+    const moveTool = h.tools.get('bot_request_move_project')!
+
+    // Rejects missing both or passing both projectCwd and newProject, or read mode with newProject
+    await expect(startTool.execute('c0a', {
+      title: 'Invalid', intent: 'Missing target', mode: 'write'
+    })).rejects.toThrow(/exactly one of projectCwd or newProject/)
+    await expect(startTool.execute('c0b', {
+      projectCwd: '/repo/pig', newProject: { folderName: 'dup' }, title: 'Invalid', intent: 'Both targets', mode: 'write'
+    })).rejects.toThrow(/exactly one of projectCwd or newProject/)
+    await expect(startTool.execute('c0c', {
+      newProject: { folderName: 'ro-new' }, title: 'Invalid', intent: 'Read new project', mode: 'read'
+    })).rejects.toThrow(/mode="write"/)
+
+    // read-only blocks newProject
+    await expect(startTool.execute('c1', {
+      newProject: { folderName: 'snake-game' }, title: 'Snake', intent: 'Build snake game', mode: 'write'
+    })).rejects.toThrow(/Read-only/)
+    expect(h.delegatedInputs).toHaveLength(0)
+
+    // default mode prompts confirmation once, then delegates Fast Ack
+    h.setMode('default')
+    const defaultRes = await startTool.execute('c2', {
+      newProject: { folderName: 'snake-game', fromWorkspaceSubpath: 'proto' },
+      title: 'Snake',
+      intent: 'Build snake game',
+      mode: 'write'
+    })
+    expect(h.confirms).toHaveLength(1)
+    expect(JSON.parse(defaultRes.content[0].text)).toEqual({
+      taskId: 't-1',
+      runId: 'r-1',
+      projectCwd: '/home/pig_projects/snake-game',
+      mode: 'write',
+      status: 'starting'
+    })
+
+    // full-access creates+delegates directly without confirmation so send_message can run in the same turn
+    h.setMode('full-access')
+    await startTool.execute('c3', {
+      newProject: { folderName: 'fast-app' },
+      title: 'Fast App',
+      intent: 'Scaffold app',
+      mode: 'write'
+    })
+    expect(h.confirms).toHaveLength(1)
+    expect(h.delegatedInputs.map((d) => d.newProject?.folderName)).toEqual(['snake-game', 'fast-app'])
+
+    // bot_request_move_project returns dialog_opened immediately
+    const moveRes = await moveTool.execute('c4', {
+      projectCwd: '/repo/pig',
+      suggestedFolderName: 'pig-next',
+      suggestedParentDir: '~/Code'
+    })
+    expect(JSON.parse(moveRes.content[0].text)).toEqual({
+      ok: true,
+      cwd: '/repo/pig',
+      name: 'pig',
+      status: 'dialog_opened'
+    })
+    expect(h.requestedMoves).toEqual([
+      { projectCwd: '/repo/pig', suggestedFolderName: 'pig-next', suggestedParentDir: '~/Code' }
+    ])
   })
 })

@@ -7,7 +7,6 @@ if (process.argv.includes('--dream-ui-fixture')) {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  mock.module('../src/renderer/src/components/sidebar/ChatList', () => ({ ChatList: () => null }))
   mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({ ProjectList: () => null }))
   let status: DreamStatus = { state: 'idle', changes: [], input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0, costKnown: true, requests: 0 }
   const starts: DreamRequest[] = []
@@ -44,7 +43,7 @@ if (process.argv.includes('--dream-ui-fixture')) {
   }
   try {
     await act(async () => root.render(h(TooltipProvider, null,
-      h(Sidebar, { tab: 'chats', preferencesError: null, onOpenSettings: () => {} }),
+      h(Sidebar, { tab: 'projects', preferencesError: null, onOpenSettings: () => {} }),
       h(DreamSettings, { enabled: true }), h(DreamDialogHost))))
     await act(async () => button('做梦…').click()); await flush()
     assert.equal(reads, 1, 'the sidebar and dialog share one pending status read')

@@ -10,7 +10,6 @@ import {
   AlertCircle,
   ArrowUpRight,
   Check,
-  Columns3,
   Copy,
   Download,
   FileText,
@@ -82,6 +81,7 @@ import {
   useMessageScroller
 } from '../ui/message-scroller'
 import { BotOrbButton } from './BotOrbButton'
+import { KanbanToggleButton } from '../kanban/KanbanToggleButton'
 import { BotLiveTaskBar } from './BotLiveTaskBar'
 import { BotTaskCard, type BotTaskNavigation } from './BotTaskCard'
 import { BotTaskDrawer } from './BotTaskDrawer'
@@ -93,6 +93,7 @@ const unclippedItem = '[content-visibility:visible] [contain-intrinsic-size:none
 
 export interface BotWorkspaceJumpOptions {
   cwd: string
+  projectCwd?: string
   sessionId?: string
   openChanges?: boolean
   openFilePath?: string
@@ -240,18 +241,22 @@ export function BotPage({
     () => ({
       onOpenSession: (task: BotTask) => {
         const latestRun = [...task.runs].reverse().find((r) => r.sessionId)
+        const targetCwd = task.workspace.cleanedUpAt ? task.projectCwd : task.workspace.cwd
         closeBot()
         onJumpToWorkspace({
-          cwd: task.workspace.cwd,
+          cwd: targetCwd,
+          projectCwd: task.projectCwd,
           sessionId: latestRun?.sessionId,
           openChanges: false
         })
       },
       onViewChanges: (task: BotTask) => {
         const latestRun = [...task.runs].reverse().find((r) => r.sessionId)
+        const targetCwd = task.workspace.cleanedUpAt ? task.projectCwd : task.workspace.cwd
         closeBot()
         onJumpToWorkspace({
-          cwd: task.workspace.cwd,
+          cwd: targetCwd,
+          projectCwd: task.projectCwd,
           sessionId: latestRun?.sessionId,
           openChanges: true
         })
@@ -391,6 +396,9 @@ export function BotPage({
             </Tooltip>
           </div>
           <BotOrbButton registerAnchor />
+          {onOpenKanban ? (
+            <KanbanToggleButton active={false} onClick={onOpenKanban} data-bot-open-kanban />
+          ) : null}
         </div>
 
         <div className="pointer-events-none absolute inset-x-48 flex items-center justify-center">
@@ -400,27 +408,6 @@ export function BotPage({
         </div>
 
         <div className="no-drag flex items-center gap-1">
-          {onOpenKanban ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  data-bot-open-kanban
-                  aria-label={t('kanban.openBoard')}
-                  onClick={onOpenKanban}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Columns3 className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="end">
-                <span>{t('kanban.openBoard')}</span>
-                <span className="ml-1.5 inline-flex"><ShortcutKbd action="kanban.toggle" /></span>
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

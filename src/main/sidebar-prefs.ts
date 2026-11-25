@@ -46,10 +46,7 @@ export async function loadSidebarPrefs(): Promise<SidebarPrefs> {
   }
   const data = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<SidebarPrefs>
   return {
-    sidebarTab:
-      data.sidebarTab === 'chats' || data.sidebarTab === 'kanban'
-        ? data.sidebarTab
-        : defaults.sidebarTab,
+    sidebarTab: data.sidebarTab === 'kanban' ? 'kanban' : defaults.sidebarTab,
     split: clampSplit(data.split ?? defaults.split),
     reviewOpen: Boolean(data.reviewOpen)
   }
@@ -59,7 +56,7 @@ export async function saveSidebarPrefs(patch: Partial<SidebarPrefs>): Promise<Si
   const current = await loadSidebarPrefs()
   const next: SidebarPrefs = {
     sidebarTab:
-      patch.sidebarTab === 'projects' || patch.sidebarTab === 'chats' || patch.sidebarTab === 'kanban'
+      patch.sidebarTab === 'projects' || patch.sidebarTab === 'kanban'
         ? patch.sidebarTab
         : current.sidebarTab,
     split: patch.split === undefined ? current.split : clampSplit(patch.split),

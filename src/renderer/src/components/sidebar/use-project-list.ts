@@ -69,7 +69,10 @@ export function useProjectList() {
         }
       )
     }
-    const unsubscribe = api.onProjectsChanged((cwd) => refresh(cwd))
+    const unsubscribe = api.onProjectsChanged((cwd) => {
+      if (useSessionsStore.getState().projects.some((p) => p.cwd === cwd)) refresh(cwd)
+      else sync()
+    })
     window.addEventListener('focus', sync)
     sync()
     return () => {

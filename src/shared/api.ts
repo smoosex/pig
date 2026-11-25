@@ -140,8 +140,21 @@ export interface RelocateProjectResult {
   migratedSessionIds: string[]
 }
 
-/** Which list the left sidebar shows: projects, standalone chats, or the Kanban board. */
-export type SidebarTab = 'projects' | 'chats' | 'kanban'
+export interface MoveProjectInput {
+  oldCwd: string
+  parentDir?: string
+  folderName: string
+}
+
+export interface MoveProjectDialogTarget {
+  cwd: string
+  name: string
+  suggestedFolderName?: string
+  suggestedParentDir?: string
+}
+
+/** Which view the workspace shell shows: projects or the Kanban board. */
+export type SidebarTab = 'projects' | 'kanban'
 
 export interface SidebarPrefs {
   sidebarTab: SidebarTab
@@ -995,18 +1008,6 @@ export interface DefaultProjectsLocation {
   homeDir: string
 }
 
-export interface ConvertChatToProjectInput {
-  chatCwd: string
-  parentDir?: string
-  folderName: string
-  transferSession: boolean
-}
-
-export interface ConvertChatToProjectResult {
-  project: ProjectGroup
-  migratedSessionIds: string[]
-}
-
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
   bookmarks: BookmarksApi
   kanban: KanbanApi
@@ -1034,6 +1035,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   openProject: (path: string) => Promise<ProjectGroup>
   renameProject: (cwd: string, name: string) => Promise<ProjectGroup>
   relocateProject: (oldCwd: string, newPath: string) => Promise<RelocateProjectResult>
+  moveProject: (input: MoveProjectInput) => Promise<RelocateProjectResult>
+  onRequestMoveProject: (listener: (target: MoveProjectDialogTarget) => void) => () => void
   unpinProject: (cwd: string) => Promise<void>
   reorderProjects: (cwds: string[]) => Promise<string[]>
   prepareSession: (sessionId: string) => Promise<SessionRef>
@@ -1043,7 +1046,6 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   createChat: () => Promise<SessionRef>
   deleteChat: (cwd: string) => Promise<void>
   getDefaultProjectsLocation: () => Promise<DefaultProjectsLocation>
-  convertChatToProject: (input: ConvertChatToProjectInput) => Promise<ConvertChatToProjectResult>
   openSession: (path: string) => Promise<OpenSessionRef>
   closeSession: (sessionId: string) => Promise<void>
   createWorktree: (projectCwd: string, options?: { initGit?: boolean }) => Promise<{ cwd: string; project: ProjectGroup } | null>

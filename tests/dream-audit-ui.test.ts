@@ -7,7 +7,6 @@ if (process.argv.includes('--dream-audit-ui-fixture')) {
   const { GlobalRegistrator } = await import('@happy-dom/global-registrator')
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  mock.module('../src/renderer/src/components/sidebar/ChatList', () => ({ ChatList: () => null }))
   mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({ ProjectList: () => null }))
 
   const projId = '1'.repeat(64)
@@ -73,7 +72,7 @@ if (process.argv.includes('--dream-audit-ui-fixture')) {
 
   try {
     await act(async () => root.render(h(TooltipProvider, null,
-      h(Sidebar, { tab: 'chats', preferencesError: null, onOpenSettings: () => {} }),
+      h(Sidebar, { tab: 'projects', preferencesError: null, onOpenSettings: () => {} }),
       h(DreamSettings, { enabled: true }),
       h(DreamAuditSettings, { enabled: true }),
       h(DreamDialogHost)

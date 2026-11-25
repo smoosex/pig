@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { AlertCircle, ChevronRight, FolderInput, FolderMinus, FolderSearch, MoreHorizontal, PenLine, Plus } from 'lucide-react'
+import { AlertCircle, ChevronRight, FolderInput, FolderMinus, FolderOutput, FolderSearch, MoreHorizontal, PenLine, Plus } from 'lucide-react'
 import { baseName } from '../../../../shared/paths'
 import { resolveProjectSpaceId } from '../../../../shared/project-spaces'
 import { spaceDisplayName, useProjectSpacesStore } from '../../stores/project-spaces'
@@ -68,6 +68,7 @@ export function ProjectRow({
   const newSession = useSessionsStore((s) => s.newSession)
   const renameProject = useSessionsStore((s) => s.renameProject)
   const openRelocateProjectDialog = useSessionsStore((s) => s.openRelocateProjectDialog)
+  const openMoveProjectDialog = useSessionsStore((s) => s.openMoveProjectDialog)
   const unpinProject = useSessionsStore((s) => s.unpinProject)
   const open = useSessionsStore((s) => s.expandedProjects[project.cwd] ?? false)
   const expandedWorktrees = useSessionsStore((s) => s.expandedWorktrees)
@@ -215,6 +216,15 @@ export function ProjectRow({
                         <PenLine data-icon="inline-start" />
                         {t('project.rename')}
                       </DropdownMenuItem>
+                      {!project.missing ? (
+                        <DropdownMenuItem
+                          disabled={pending !== null}
+                          onSelect={() => openMoveProjectDialog({ cwd: project.cwd, name: project.name })}
+                        >
+                          <FolderOutput data-icon="inline-start" />
+                          {t('project.moveLocation')}
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuItem
                         disabled={pending !== null}
                         onSelect={() => openRelocateProjectDialog({ cwd: project.cwd, name: project.name })}
@@ -285,6 +295,15 @@ export function ProjectRow({
                   <PenLine data-icon="inline-start" />
                   {t('project.rename')}
                 </ContextMenuItem>
+                {!project.missing ? (
+                  <ContextMenuItem
+                    disabled={pending !== null}
+                    onSelect={() => openMoveProjectDialog({ cwd: project.cwd, name: project.name })}
+                  >
+                    <FolderOutput data-icon="inline-start" />
+                    {t('project.moveLocation')}
+                  </ContextMenuItem>
+                ) : null}
                 <ContextMenuItem
                   disabled={pending !== null}
                   onSelect={() => openRelocateProjectDialog({ cwd: project.cwd, name: project.name })}

@@ -1,5 +1,5 @@
 /**
- * Bot-exclusive tools (`send_message` + 9 `bot_*` orchestration tools) using @earendil-works/pi-schema.
+ * Bot-exclusive tools (`send_message` + 8 `bot_*` orchestration tools) using @earendil-works/pi-schema.
  * Enforces §5.2/§5.5 permission and approval boundaries, including mandatory confirmation for dirty/unmerged
  * worktree cleanup even in `full-access` mode.
  */
@@ -48,8 +48,13 @@ export interface BotToolsHost {
   soulPath?: string
   getPermissionMode: () => PermissionMode
   onPermissionsChanged?: (listener: () => void) => () => void
-  listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean }>>
+  listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean; inSidebar?: boolean }>>
   openProject: (path: string, check?: () => void) => Promise<{ cwd: string; name: string }>
+  requestMoveProject?: (input: {
+    projectCwd: string
+    suggestedFolderName?: string
+    suggestedParentDir?: string
+  }) => Promise<{ cwd: string; name: string; status: 'dialog_opened' }>
   inspectTaskSession: (task: BotTask) => Promise<{ recentMessages: Array<{ role: string; text: string }>; diffSummary?: string }>
   confirmAction: (title: string, message: string, ctx?: ExtensionContext, signal?: AbortSignal) => Promise<boolean>
   onSendMessage: (item: Extract<BotTimelineItem, { kind: 'assistant' }>) => Promise<void>
@@ -67,8 +72,23 @@ const sendMessageSchema = obj({
   attachments: opt(arr(str({ minLength: 1 })))
 })
 
+const newProjectSchema = obj({
+  folderName: str({
+    minLength: 1,
+    description: 'New project folder name (no slashes, e.g. "snake-game"), created under ~/pig_projects/<folderName> and written directly in place on main.'
+  }),
+  fromWorkspaceSubpath: opt(str({
+    minLength: 1,
+    description: 'Optional relative path inside $PIG_DIR/bot/workspace ONLY when turning pre-existing scratch files from an earlier turn into a project.'
+  }))
+})
+
 const startTaskSchema = obj({
-  projectCwd: str({ minLength: 1 }),
+  projectCwd: opt(str({
+    minLength: 1,
+    description: 'Absolute path of an existing opened/managed project directory. Provide EITHER projectCwd OR newProject (never both).'
+  })),
+  newProject: opt(newProjectSchema),
   title: str({ minLength: 1 }),
   intent: str({ minLength: 1, description: 'Clear, self-contained specification of what to investigate, run, or change in the project workspace.' }),
   mode: oneOf(['read', 'write'] as const),
@@ -88,6 +108,20 @@ const followupSchema = obj({
 })
 
 const openProjectSchema = obj({ path: str({ minLength: 1 }) })
+const requestMoveProjectSchema = obj({
+  projectCwd: str({
+    minLength: 1,
+    description: 'Absolute path of an opened project directory to move.'
+  }),
+  suggestedFolderName: opt(str({
+    minLength: 1,
+    description: 'Optional suggested folder name pre-filled in the Move Project dialog.'
+  })),
+  suggestedParentDir: opt(str({
+    minLength: 1,
+    description: 'Optional suggested parent directory (absolute path or ~/...) pre-filled in the Move Project dialog.'
+  }))
+})
 const taskIdSchema = obj({ taskId: str({ minLength: 1 }) })
 const listTasksSchema = obj({
   status: opt(oneOf(['active', 'all', 'completed', 'failed', 'stopped'] as const))
@@ -286,36 +320,72 @@ export function createBotExtension(host: BotToolsHost) {
     }))
 
     pi.registerTool(defineTool({
+      name: 'bot_request_move_project',
+      label: 'Open Move Project dialog',
+      description: 'Open Pig’s Move Project UI dialog for an idle opened or managed project so the user can choose or confirm a custom parent directory and folder name on disk (migrating all sessions, Git worktrees, memory, and tasks). Returns immediately once the dialog opens.',
+      parameters: requestMoveProjectSchema,
+      async execute(_id, rawParams) {
+        const params = assertValid(requestMoveProjectSchema, rawParams, 'bot_request_move_project')
+        if (!host.requestMoveProject) throw new Error('Move project dialog is unavailable in this session')
+        host.onSideEffect('bot_request_move_project')
+        const opened = await host.requestMoveProject(params)
+        return jsonResult({ ok: true, ...opened })
+      }
+    }))
+
+    pi.registerTool(defineTool({
       name: 'bot_start_task',
       label: 'Start project task',
-      description: 'Start working on a project task asynchronously (<50ms Fast Ack; Git write runs automatically use an isolated bot/<slug>-<shortId> worktree). Returns immediately with status="starting"; tell the user in first person that YOU are looking into / working on it now (never say "background" or "delegating") and end your turn without polling. Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
+      description: 'Start working on an existing project (`projectCwd`) OR create and start building a brand-new project (`newProject: { folderName }`) asynchronously (<50ms Fast Ack; existing Git repos use an isolated bot/<slug>-<shortId> worktree, while newly created projects run directly in ~/pig_projects/<folderName> without cluttering Pig’s sidebar). Returns immediately with status="starting"; call send_message (type="text") in the SAME turn to tell the user in first person that YOU are working on it now (never say "background" or "delegating") and end your turn without polling.',
       parameters: startTaskSchema,
       async execute(_id, rawParams, signal, _update, ctx) {
         const params = assertValid(startTaskSchema, rawParams, 'bot_start_task')
+        const hasProjectCwd = Boolean(params.projectCwd?.trim())
+        const hasNewProject = Boolean(params.newProject)
+        if (hasProjectCwd === hasNewProject) {
+          throw new Error('Provide exactly one of projectCwd or newProject in bot_start_task')
+        }
+        if (hasNewProject && params.mode !== 'write') {
+          throw new Error('Creating a new project via bot_start_task requires mode="write"')
+        }
         const guard = guardPermission(host, signal)
         try {
           guard.check()
-          if (params.mode === 'write' && guard.mode === 'read-only') {
-            throw new Error('Read-only mode cannot start write tasks')
+          if ((params.mode === 'write' || hasNewProject) && guard.mode === 'read-only') {
+            throw new Error('Read-only mode cannot start write tasks or create projects')
           }
-          const projects = await host.listOpenedProjects()
-          guard.check()
-          const target = projects.find((p) => p.cwd === params.projectCwd)
           let confirmSharedNonGitWrite = false
-          if (target && target.hasGit === false && params.mode === 'write') {
-            const ok = await host.confirmAction(
-              'Write directly in non-Git directory?',
-              `${target.cwd} is not a Git repository. Allow Bot to run a write task directly in this directory?`,
-              ctx,
-              guard.signal
-            )
+          if (params.newProject) {
+            if (guard.mode === 'default') {
+              const ok = await host.confirmAction(
+                'Create new project directory?',
+                `Create ~/pig_projects/${params.newProject.folderName} and start working in it?`,
+                ctx,
+                guard.signal
+              )
+              guard.check()
+              if (!ok) throw new Error('User declined creating project directory')
+            }
+          } else {
+            const projects = await host.listOpenedProjects()
             guard.check()
-            if (!ok) throw new Error('User declined writing in non-Git directory')
-            confirmSharedNonGitWrite = true
+            const target = projects.find((p) => p.cwd === params.projectCwd)
+            if (target && target.hasGit === false && params.mode === 'write') {
+              const ok = await host.confirmAction(
+                'Write directly in non-Git directory?',
+                `${target.cwd} is not a Git repository. Allow Bot to run a write task directly in this directory?`,
+                ctx,
+                guard.signal
+              )
+              guard.check()
+              if (!ok) throw new Error('User declined writing in non-Git directory')
+              confirmSharedNonGitWrite = true
+            }
           }
           host.onSideEffect('bot_start_task')
           const input: BotDelegateTaskInput = {
-            projectCwd: params.projectCwd,
+            ...(params.projectCwd ? { projectCwd: params.projectCwd } : {}),
+            ...(params.newProject ? { newProject: params.newProject } : {}),
             title: params.title,
             intent: params.intent,
             mode: params.mode,

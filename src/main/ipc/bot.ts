@@ -8,6 +8,7 @@ import type { PermissionMode } from '../../shared/permissions'
 import { isBotAvatarId, type BotEvent, type BotImageAttachment, type BotPreferencesPatch, type BotSurface, type BotTextAttachment } from '../../shared/bot'
 import { assertBrowserSender } from '../browser/validation'
 import { t } from '../i18n'
+import { sendToAllWindows } from './send'
 import { windowForEvent } from './window'
 import { botService } from '../bot/service'
 
@@ -21,11 +22,7 @@ function assertUiMainFrame(event: IpcMainInvokeEvent): BrowserWindow {
 }
 
 function broadcastBotEvent(event: BotEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('bot:event', event)
-    }
-  }
+  sendToAllWindows('bot:event', event)
 }
 
 export function registerBotIpc(): void {

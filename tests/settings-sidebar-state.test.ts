@@ -415,14 +415,14 @@ async function runFixture(name: string): Promise<void> {
       ],
       setActive: (id) => { selected.push(id) }
     })
-    openNotifiedSession('project', 'chats', setTab, setRestoreMode, closeSettings)
+    openNotifiedSession('project', 'kanban', setTab, setRestoreMode, closeSettings)
     openNotifiedSession('chat', 'projects', setTab, setRestoreMode, closeSettings)
     openNotifiedSession('project', 'projects', setTab, setRestoreMode, closeSettings)
     openNotifiedSession('diff', 'projects', setTab, setRestoreMode, closeSettings)
     openNotifiedSession('closed', 'projects', setTab, setRestoreMode, closeSettings)
     assert.deepEqual(selected, ['project', 'chat', 'project'])
-    assert.deepEqual(switched, ['projects', 'chats'])
-    assert.deepEqual(restoreModes, [false, true])
+    assert.deepEqual(switched, ['projects'])
+    assert.deepEqual(restoreModes, [false])
     assert.equal(closes, 3)
 
     let botOpens = 0
@@ -441,7 +441,7 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(openNotifiedSession('closed', 'projects', setTab, setRestoreMode, closeSettings, botNav), false)
     assert.equal(botCloses, 0)
 
-    assert.equal(openNotifiedSession('project', 'chats', setTab, setRestoreMode, closeSettings, botNav), true)
+    assert.equal(openNotifiedSession('project', 'kanban', setTab, setRestoreMode, closeSettings, botNav), true)
     assert.equal(botCloses, 1)
     assert.equal(closes, 5)
     assert.equal(selected.at(-1), 'project')
@@ -627,7 +627,7 @@ async function runFixture(name: string): Promise<void> {
         assert.equal(state.ready, true, 'an unanswered preference read cannot block workspace restore')
         assert.equal(state.tab, 'projects', 'a timed-out read falls back to Projects')
         await act(async () => {
-          initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false })
+          initial.resolve({ sidebarTab: 'kanban', split: 0.5, reviewOpen: false })
         })
         assert.equal(state.tab, 'projects', 'a late preference cannot steal the pane after fallback')
       } finally {
@@ -646,10 +646,10 @@ async function runFixture(name: string): Promise<void> {
       await act(async () => { root.render(createElement(Probe)) })
       assert.equal(state.ready, false)
       await act(async () => {
-        initial.resolve({ sidebarTab: 'chats', split: 0.5, reviewOpen: false })
+        initial.resolve({ sidebarTab: 'kanban', split: 0.5, reviewOpen: false })
       })
       assert.equal(state.ready, true)
-      assert.equal(state.tab, 'chats', 'a restored Chats preference can drive the initial workspace selection')
+      assert.equal(state.tab, 'kanban', 'a restored Kanban preference can drive the initial workspace selection')
     } else if (name === 'sidebar') {
       const initial = deferred<SidebarPrefs>()
       const saves: {
@@ -674,12 +674,12 @@ async function runFixture(name: string): Promise<void> {
       })
       assert.equal(state.ready, false, 'the workspace must wait for the sidebar selection')
       await act(async () => {
-        state.setTab('chats')
+        state.setTab('kanban')
       })
       await act(async () => {
         initial.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false })
       })
-      assert.equal(state.tab, 'chats', 'a switch made before the prefs land wins over them')
+      assert.equal(state.tab, 'kanban', 'a switch made before the prefs land wins over them')
       assert.equal(state.ready, true)
       await act(async () => {
         state.setTab('projects')
@@ -687,7 +687,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(saves.length, 1, 'the second write waits for the first')
       assert.deepEqual(
         saves.map((save) => save.patch),
-        [{ sidebarTab: 'chats' }]
+        [{ sidebarTab: 'kanban' }]
       )
       await act(async () => {
         saves[0].result.reject(new Error('save failed'))
@@ -696,7 +696,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(saves.length, 2, 'settling the first releases the second')
       assert.deepEqual(
         saves.map((save) => save.patch),
-        [{ sidebarTab: 'chats' }, { sidebarTab: 'projects' }]
+        [{ sidebarTab: 'kanban' }, { sidebarTab: 'projects' }]
       )
       await act(async () => {
         saves[1].result.resolve({ sidebarTab: 'projects', split: 0.5, reviewOpen: false })
@@ -1056,7 +1056,7 @@ async function runFixture(name: string): Promise<void> {
         currentProjectCwd: null,
         selectProjectCwd: async (cwd) => { useSessionsStore.setState({ currentProjectCwd: cwd }) }
       })
-      const renderHalf = async (half: 'projects' | 'chats', select?: () => void) => {
+      const renderHalf = async (half: 'projects' | 'kanban', select?: () => void) => {
         await act(async () => {
           select?.()
           root.render(
@@ -1084,7 +1084,7 @@ async function runFixture(name: string): Promise<void> {
       }
       const roundTrip = async () => {
         const { activeTabId, currentProjectCwd } = useSessionsStore.getState()
-        await renderHalf('chats', () => {
+        await renderHalf('kanban', () => {
           useSessionsStore.setState({ activeTabId: null, currentProjectCwd: null })
         })
         assert.ok(container.querySelector<HTMLElement>('[title="/project"]')?.closest('[style*="display: none"]'))

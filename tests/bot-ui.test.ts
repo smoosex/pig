@@ -209,9 +209,18 @@ async function fixture() {
     }
   }
 
+  const openProjectCalls: string[] = []
   Object.assign(window, {
     api: {
       bot: mockBotApi,
+      openProject: async (path: string) => {
+        openProjectCalls.push(path)
+        return {
+          cwd: path,
+          name: path.split('/').pop() || 'demo',
+          sessions: []
+        }
+      },
       getScopedModels: async () => ({
         patterns: [],
         selections: [],
@@ -586,6 +595,39 @@ async function fixture() {
   const readCard = cardHost.querySelector('[data-bot-task-card="read-dirty-1"]')!
   assert.ok(!readCard.textContent?.includes('1 files'), 'hides spurious changed-file count on read-only task')
   assert.ok(!readCard.textContent?.includes('View changes'), 'hides view-changes button on read-only task')
+
+  // Unpinned / Bot-created project replaces Open session & View changes with Add project & view until added
+  const openedSessions: string[] = []
+  const unpinnedTask = makeTask({
+    taskId: 'unpinned-1',
+    status: 'completed',
+    projectCwd: '/pig_projects/demo-site',
+    workspace: { kind: 'worktree', cwd: '/wt/unpinned-1', branch: 'bot/init-demo' }
+  })
+  await act(async () => {
+    cardRoot.render(
+      h(BotTaskCard, {
+        task: unpinnedTask,
+        navigation: {
+          onOpenSession: (task) => { openedSessions.push(task.taskId) },
+          onViewChanges: () => {}
+        }
+      })
+    )
+  })
+  const unpinnedCard = cardHost.querySelector('[data-bot-task-card="unpinned-1"]')!
+  const addAndViewBtn = unpinnedCard.querySelector<HTMLButtonElement>('[data-bot-add-and-view]')
+  assert.ok(addAndViewBtn, 'renders Add project & view button when task.projectCwd is not in Pig sidebar')
+  assert.ok(addAndViewBtn.textContent?.includes('Add project & view'))
+  assert.ok(!unpinnedCard.textContent?.includes('Open session'), 'hides Open session before project is added to Pig')
+  assert.ok(!unpinnedCard.textContent?.includes('View changes'), 'hides View changes before project is added to Pig')
+
+  await act(async () => { addAndViewBtn.click() })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  assert.deepEqual(openProjectCalls, ['/pig_projects/demo-site'], 'adds project to Pig via openProject')
+  assert.deepEqual(openedSessions, ['unpinned-1'], 'jumps to task session immediately after adding project')
+  assert.equal(unpinnedCard.querySelector('[data-bot-add-and-view]'), null, 'replaces Add project & view once project is in Pig')
+  assert.ok(unpinnedCard.textContent?.includes('Open session'), 'shows Open session once project is added to Pig')
 
   // 9. BotPage deduplicates stacked task cards across multiple timeline bubbles & shows post-approval continuation hint
   const { BotOrbButton } = await import('../src/renderer/src/components/bot/BotOrbButton')

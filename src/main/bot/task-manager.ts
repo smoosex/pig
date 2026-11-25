@@ -3,6 +3,7 @@
  * generational protection, stop/takeover propagation, and workspace safety checks.
  */
 import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import type { ThinkingLevel } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import type {
@@ -10,6 +11,7 @@ import type {
   BotDelegateTaskInput,
   BotManagedSessionInfo,
   BotModelOverride,
+  BotNewProjectInput,
   BotRun,
   BotStopOrigin,
   BotTask,
@@ -17,7 +19,7 @@ import type {
   BotTaskReceipt
 } from '../../shared/bot'
 import type { SessionAgentTask, SessionStopOrigin } from '../../shared/session-agent'
-import { isGitProject, normalizeWorktreePath as resolve, type CreateWorktreeOptions, type GitWorktree } from '../worktrees'
+import { isGitProject, normalizeWorktreePath as resolve, resolveGitHead, type CreateWorktreeOptions, type GitWorktree } from '../worktrees'
 import { BotStore } from './store'
 import { BotNoticeQueue } from './notice-queue'
 import { collectWorkspaceReceipt, inspectWorktreeSafety, NonGitWriteMutex, prepareGitWriteWorkspace } from './worktree-policy'
@@ -42,6 +44,9 @@ export interface BotTaskManagerDeps {
   store: BotStore
   noticeQueue: BotNoticeQueue
   listOpenedProjects: () => Promise<string[]>
+  isAllowedProject?: (cwd: string) => Promise<boolean>
+  reserveNewProject?: (input: BotNewProjectInput, check?: () => void) => Promise<{ cwd: string; createdTarget: boolean }>
+  initializeNewProject?: (cwd: string, input: BotNewProjectInput & { createdTarget: boolean }) => Promise<void>
   isGitRepo?: (cwd: string) => Promise<boolean>
   createWorktree: (projectCwd: string, options: CreateWorktreeOptions) => Promise<GitWorktree>
   verifyBotWorktree: (projectCwd: string, cwd: string, taskId: string) => Promise<GitWorktree>
@@ -179,10 +184,30 @@ export class BotTaskManager {
     }
     const effectivePermission: PermissionMode = input.mode === 'read' ? 'read-only' : callerPermissionMode
 
-    const normalizedProject = resolve(input.projectCwd)
-    const opened = (await this.deps.listOpenedProjects()).map((p) => resolve(p))
-    if (!opened.includes(normalizedProject)) {
-      throw new Error(`Project is not open in Pig: ${normalizedProject}`)
+    const hasProjectCwd = Boolean(input.projectCwd?.trim())
+    const hasNewProject = Boolean(input.newProject)
+    if (hasProjectCwd === hasNewProject) {
+      throw new Error('Provide exactly one of projectCwd or newProject')
+    }
+    if (hasNewProject && input.mode !== 'write') {
+      throw new Error('Creating a new project requires mode="write"')
+    }
+
+    let normalizedProject: string
+    let newProjectInit: (BotNewProjectInput & { createdTarget: boolean }) | undefined
+    if (input.newProject) {
+      if (!this.deps.reserveNewProject) {
+        throw new Error('Project creation is unavailable in this session')
+      }
+      const reserved = await this.deps.reserveNewProject(input.newProject, check)
+      normalizedProject = resolve(reserved.cwd)
+      newProjectInit = { ...input.newProject, createdTarget: reserved.createdTarget }
+    } else {
+      normalizedProject = resolve(input.projectCwd!)
+      const opened = (await this.deps.listOpenedProjects()).map((p) => resolve(p))
+      if (!opened.includes(normalizedProject) && !(await this.deps.isAllowedProject?.(normalizedProject))) {
+        throw new Error(`Project is not open in Pig: ${normalizedProject}`)
+      }
     }
 
     const taskId = randomUUID()
@@ -205,7 +230,11 @@ export class BotTaskManager {
       intent,
       projectCwd: normalizedProject,
       mode: input.mode,
-      workspace: { kind: 'project', cwd: normalizedProject },
+      workspace: {
+        kind: 'project',
+        cwd: normalizedProject,
+        ...(newProjectInit ? { inPlace: true } : {})
+      },
       status: 'starting',
       activeRunId: runId,
       runs: [run],
@@ -215,11 +244,18 @@ export class BotTaskManager {
       updatedAt: now
     }
 
-    await this.deps.store.updateTasks((tasks) => {
-      check?.()
-      tasks.unshift(task)
-      return { tasks, result: undefined }
-    })
+    try {
+      await this.deps.store.updateTasks((tasks) => {
+        check?.()
+        tasks.unshift(task)
+        return { tasks, result: undefined }
+      })
+    } catch (error) {
+      if (newProjectInit?.createdTarget) {
+        await rm(normalizedProject, { recursive: true, force: true }).catch(() => {})
+      }
+      throw error
+    }
     this.deps.onTaskUpdated?.(structuredClone(task))
 
     const launch = this.launchRunAsync(taskId, runId, {
@@ -229,7 +265,9 @@ export class BotTaskManager {
       capabilities: input.capabilities,
       modelOverride: input.modelOverride,
       thinkingOverride: input.thinkingOverride,
-      confirmSharedNonGitWrite: input.confirmSharedNonGitWrite
+      confirmSharedNonGitWrite: input.confirmSharedNonGitWrite,
+      newProjectInit,
+      directInProject: Boolean(newProjectInit)
     }).finally(() => {
       this.launchPromises.delete(runId)
     })
@@ -333,6 +371,8 @@ export class BotTaskManager {
       thinkingOverride?: ThinkingLevel
       reuseExistingWorkspace?: boolean
       confirmSharedNonGitWrite?: boolean
+      newProjectInit?: BotNewProjectInput & { createdTarget: boolean }
+      directInProject?: boolean
     }
   ): Promise<void> {
     let heldNonGitCwd: string | null = null
@@ -341,10 +381,28 @@ export class BotTaskManager {
       if (!task || task.activeRunId !== runId) return
       if (this.stopRequests.has(runId)) return
 
+      if (options.newProjectInit) {
+        await this.deps.initializeNewProject?.(task.projectCwd, options.newProjectInit)
+        if (this.stopRequests.has(runId)) return
+      }
+
       let workspace = structuredClone(task.workspace)
+      const isRepo = task.mode === 'write' ? await this.isGitRepo(task.projectCwd) : false
       if (task.mode === 'read') {
         workspace = { kind: 'project', cwd: task.projectCwd }
-      } else if (await this.isGitRepo(task.projectCwd)) {
+      } else if (options.directInProject || (options.reuseExistingWorkspace && task.workspace.inPlace === true)) {
+        this.nonGitMutex.acquire(task.projectCwd, taskId)
+        heldNonGitCwd = task.projectCwd
+        const head = isRepo ? await resolveGitHead(task.projectCwd).catch(() => undefined) : undefined
+        const baseHead = task.workspace.baseHead ?? head
+        workspace = {
+          kind: 'project',
+          cwd: task.projectCwd,
+          inPlace: true,
+          branch: task.workspace.branch ?? (isRepo ? 'main' : undefined),
+          ...(baseHead ? { baseHead } : {})
+        }
+      } else if (isRepo) {
         workspace = await prepareGitWriteWorkspace({
           create: this.deps.createWorktree,
           verifyBotWorktree: this.deps.verifyBotWorktree
@@ -373,7 +431,10 @@ export class BotTaskManager {
         return
       }
       this.deps.onTaskUpdated?.(preparedTask)
-      if (this.stopRequests.has(runId)) return
+      if (this.stopRequests.has(runId)) {
+        if (heldNonGitCwd) this.nonGitMutex.release(heldNonGitCwd, taskId)
+        return
+      }
 
       const botState = await this.deps.store.readState()
       // Re-check after awaiting readState(): a stop requested during the read must never launch a backend session.

@@ -253,13 +253,18 @@ const api: SessionApi = {
   openProject: (path) => ipcRenderer.invoke('session:open-project', path),
   renameProject: (cwd: string, name: string) => ipcRenderer.invoke('project:rename', cwd, name),
   relocateProject: (oldCwd: string, newPath: string) => ipcRenderer.invoke('project:relocate', oldCwd, newPath),
+  moveProject: (input) => ipcRenderer.invoke('project:move', input),
+  onRequestMoveProject: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, target: import('../shared/api').MoveProjectDialogTarget) => listener(target)
+    ipcRenderer.on('projects:request-move', handler)
+    return () => ipcRenderer.off('projects:request-move', handler)
+  },
   unpinProject: (cwd: string) => ipcRenderer.invoke('session:unpin-project', cwd),
   reorderProjects: (cwds: string[]) =>
     ipcRenderer.invoke('session:reorder-projects', cwds),
   createChat: () => ipcRenderer.invoke('session:create-chat'),
   deleteChat: (cwd: string) => ipcRenderer.invoke('session:delete-chat', cwd),
   getDefaultProjectsLocation: () => ipcRenderer.invoke('project:default-location'),
-  convertChatToProject: (input) => ipcRenderer.invoke('session:convert-chat-to-project', input),
   createSession: (cwd: string, sessionId?: string) =>
     ipcRenderer.invoke('session:create', cwd, sessionId),
   promoteSession: (sessionId: string) => ipcRenderer.invoke('session:promote', sessionId),

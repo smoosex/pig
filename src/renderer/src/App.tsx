@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
+import { Bot, FolderPlus, PanelLeft, PanelRight, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useIsPresent } from 'motion/react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
@@ -28,7 +28,7 @@ import { useModelCatalogStore } from './stores/model-catalog'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert'
 import { Button } from './components/ui/button'
 import { ShortcutKbd } from './components/ShortcutKbd'
-import { Empty, EmptyDescription } from './components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
 import { DreamDialogHost } from './components/settings/DreamSettings'
@@ -40,6 +40,7 @@ import { BotPeekBubble } from './components/bot/BotPeekBubble'
 import { BotPage } from './components/bot/BotPage'
 import { KanbanHeader } from './components/kanban/KanbanHeader'
 import { KanbanIssueDialog } from './components/kanban/KanbanIssueDialog'
+import { KanbanToggleButton } from './components/kanban/KanbanToggleButton'
 import { KanbanView } from './components/kanban/KanbanView'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
@@ -59,7 +60,7 @@ import { Composer } from './components/Composer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { ProjectSessionHome } from './components/ProjectSessionHome'
 import { ProjectPickerDialog } from './components/projects/ProjectPickerDialog'
-import { ConvertChatToProjectDialog } from './components/projects/ConvertChatToProjectDialog'
+import { MoveProjectDialog } from './components/projects/MoveProjectDialog'
 import { SessionGreeting } from './components/SessionGreeting'
 import { subscribeSettingsChanges, useSettingsStore } from './stores/settings'
 import { applyDocumentTheme } from './lib/theme'
@@ -245,23 +246,13 @@ export default function App() {
   const setWorkspaceRestoreMode = useSessionsStore((s) => s.setWorkspaceRestoreMode)
   const acquireProjectDraft = useSessionsStore((s) => s.acquireProjectDraft)
   const releaseProjectDraft = useSessionsStore((s) => s.releaseProjectDraft)
-  const acquireChatDraft = useSessionsStore((s) => s.acquireChatDraft)
-  const releaseChatDraft = useSessionsStore((s) => s.releaseChatDraft)
-  const focusChatHome = useSessionsStore((s) => s.focusChatHome)
-  const retryChatDraft = useSessionsStore((s) => s.retryChatDraft)
-  const chatDraft = useSessionsStore((s) => s.chatDraft)
-  const chatDraftError = useSessionsStore((s) => s.chatDraftError)
-  const workspaceError = useSessionsStore((s) => s.workspaceError)
-  const loadChats = useSessionsStore((s) => s.loadChats)
   const openProject = useSessionsStore((s) => s.openProject)
   const closeTab = useSessionsStore((s) => s.closeTab)
   const activeSessionId = useSessionsStore((s) => selectActiveSessionId(s))
   const activeTabId = useSessionsStore((s) => s.activeTabId)
   const openTabs = useSessionsStore((s) => s.openTabs)
-  const setActiveTab = useSessionsStore((s) => s.setActive)
   const selectProjectCwd = useSessionsStore((s) => s.selectProjectCwd)
   const projects = useSessionsStore((s) => s.projects)
-  const chats = useSessionsStore((s) => s.chats)
   const currentProjectCwd = useSessionsStore((s) => s.currentProjectCwd)
   const restoredProjectCwd = useSessionsStore((s) => s.restoredProjectCwd)
   const workspaceRestoreError = useSessionsStore((s) => s.workspaceRestoreError)
@@ -304,11 +295,6 @@ export default function App() {
   const botOpen = useBotStore((s) => s.open)
   const initBot = useBotStore((s) => s.init)
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
-  /**
-   * Nothing open at all: the chats half's own home, a chat the first message turns into a tab. It
-   * waits for the restore, which is what decides whether a worktree was open to show instead.
-   */
-  const chatHome = Boolean(workspaceRestoreReady && !activeTab && !currentProjectCwd && !workspaceRestoreError)
   /** What the projects half may still return to: a worktree nobody lists is not one of them. */
   const knownProjectCwds = new Set(
     projects.flatMap((project) => [
@@ -322,35 +308,10 @@ export default function App() {
       ...(project.worktrees ?? []).filter((worktree) => worktree.missing).map((worktree) => worktree.cwd)
     ])
   )
-  const knownChatCwds = new Set([
-    ...chats.map((chat) => chat.cwd),
-    ...openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd).map((tab) => tab.cwd),
-    ...(chatDraft?.cwd ? [chatDraft.cwd] : [])
-  ])
-  const [retainedChatCwd, setRetainedChatCwd] = useState<string | null>(null)
-  const directChatCwd = !currentProjectCwd
-    ? activeTab?.cwd ||
-      (activeTab?.kind === 'turn-diff'
-        ? (openTabs.find((tab) => tab.id === activeTab.turnDiff?.sessionId)?.cwd ?? null)
-        : null) ||
-      (splitPaneNodes
-        .map((pane) => openTabs.find((tab) => tab.id === pane.tabId))
-        .find((tab) => tab && isChatScope(tab) && tab.cwd)?.cwd ?? null) ||
-      (chatHome ? (chatDraft?.cwd ?? null) : null)
-    : null
-  if (directChatCwd && retainedChatCwd !== directChatCwd) {
-    setRetainedChatCwd(directChatCwd)
-  } else if (retainedChatCwd && !knownChatCwds.has(retainedChatCwd)) {
-    setRetainedChatCwd(null)
-  }
   const activeProjectWorkspaceCwd =
     currentProjectCwd && !missingProjectCwds.has(currentProjectCwd) ? currentProjectCwd : null
   const activeWorkspaceCwd =
-    sidebarTab === 'kanban'
-      ? null
-      : activeProjectWorkspaceCwd ??
-        directChatCwd ??
-        (retainedChatCwd && knownChatCwds.has(retainedChatCwd) ? retainedChatCwd : null)
+    sidebarTab === 'kanban' ? null : activeProjectWorkspaceCwd
 
   const toggleLeftSidebar = () => {
     if (autoCollapsed.left) {
@@ -373,10 +334,6 @@ export default function App() {
    */
   const projectFocusCwd = useRef<string | null>(null)
   const chatFocusTabId = useRef<string | null>(null)
-  const lastConversationTab = useRef<'projects' | 'chats'>('projects')
-  if (sidebarTab === 'projects' || sidebarTab === 'chats') {
-    lastConversationTab.current = sidebarTab
-  }
   const requestedWorkspaceRestore = useRef(false)
   useEventBridge()
   useSessionWindows()
@@ -437,7 +394,7 @@ export default function App() {
     const runShortcut = (action: HostShortcutAction) => {
       // The picker handles close requests itself, including its in-flight save lock.
       const sessState = useSessionsStore.getState()
-      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.convertChatDialog) return
+      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.moveProjectTarget) return
       switch (action) {
         case 'tab.close': {
           if (settingsOpen) setSettingsOpen(false)
@@ -469,7 +426,7 @@ export default function App() {
             useBotStore.getState().closeBot()
             switchSidebarTab('kanban')
           } else if (sidebarTab === 'kanban') {
-            switchSidebarTab(lastConversationTab.current)
+            switchSidebarTab('projects')
           } else {
             switchSidebarTab('kanban')
           }
@@ -489,7 +446,7 @@ export default function App() {
       if (isShortcutRecording() || isComposingKey(event) || isTerminalShellChord(event)) return
       // The directory dialog owns its shortcuts, including Cmd+W; never close a background tab.
       const sessState = useSessionsStore.getState()
-      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.convertChatDialog) return
+      if (sessState.projectPickerOpen || sessState.relocateProjectTarget || sessState.moveProjectTarget) return
       const action = findShortcut(shortcutBindings(), eventAccelerator(event), HOST_SHORTCUT_ACTIONS)
       if (!action) return
       event.preventDefault()
@@ -505,16 +462,20 @@ export default function App() {
   useEffect(() => {
     if (!sidebarReady || requestedWorkspaceRestore.current) return
     requestedWorkspaceRestore.current = true
-    void initializeProjectWorkspaces(sidebarTab === 'chats')
-  }, [initializeProjectWorkspaces, sidebarReady, sidebarTab])
+    void initializeProjectWorkspaces(false)
+  }, [initializeProjectWorkspaces, sidebarReady])
 
   useEffect(() => {
-    void loadChats()
+    if (!workspaceRestoreReady || workspaceRestoreError || currentProjectCwd || activeTab || projects.length === 0) return
+    void selectProjectCwd(projects[0]!.cwd)
+  }, [activeTab, currentProjectCwd, projects, selectProjectCwd, workspaceRestoreError, workspaceRestoreReady])
+
+  useEffect(() => {
     void loadSettings()
     void loadReviewPrefs()
     void initBot()
     void useKanbanStore.getState().init()
-  }, [loadChats, loadSettings, loadReviewPrefs, initBot])
+  }, [loadSettings, loadReviewPrefs, initBot])
 
   const reviewOpen = useDiffStore((s) => s.reviewOpen)
   useEffect(() => {
@@ -556,11 +517,7 @@ export default function App() {
     setRetainedRightCwd(activeWorkspaceCwd)
   } else if (
     retainedRightCwd &&
-    (missingProjectCwds.has(retainedRightCwd) || (
-      !activeWorkspaceCwd &&
-      !knownProjectCwds.has(retainedRightCwd) &&
-      !knownChatCwds.has(retainedRightCwd)
-    ))
+    (missingProjectCwds.has(retainedRightCwd) || (!activeWorkspaceCwd && !knownProjectCwds.has(retainedRightCwd)))
   ) {
     setRetainedRightCwd(null)
   }
@@ -573,12 +530,6 @@ export default function App() {
     acquireProjectDraft(cwd)
     return () => releaseProjectDraft(cwd)
   }, [acquireProjectDraft, currentProjectCwd, projectHome, releaseProjectDraft])
-
-  useEffect(() => {
-    if (!chatHome) return
-    acquireChatDraft()
-    return () => releaseChatDraft()
-  }, [acquireChatDraft, chatHome, releaseChatDraft])
 
   const activeTabSettled = !activeTab || (activeTab.loadState !== 'cold' && activeTab.loadState !== 'opening')
   const startupSettled = Boolean((workspaceRestoreReady || workspaceRestoreError) && sidebarReady && reviewSettled && settingsSettled && activeTabSettled)
@@ -642,7 +593,6 @@ export default function App() {
     settingsOpen,
     botOpen,
     projects.length,
-    chats.length,
     openTabs.length,
     splitGroups,
     windowWidth,
@@ -658,17 +608,11 @@ export default function App() {
     else projectFocusCwd.current = activeTab.cwd
   }, [activeTab, currentProjectCwd])
 
-  /**
-   * The switcher moves the content pane with it: the half being entered shows the session it was
-   * left on, or its newest tab when that one is gone. The chats half with nothing open shows its
-   * own home, so the pane never keeps the half that was just left.
-   */
   const switchSidebarTab = (next: SidebarTab) => {
     if (next === sidebarTab) return
     setSidebarTab(next)
     if (next === 'kanban') return
-    // Keep the restore mode in sync now: the scan may finish before a sidebarTab effect runs.
-    setWorkspaceRestoreMode(next === 'chats')
+    setWorkspaceRestoreMode(false)
     const action = halfSwitch(
       openTabs,
       next,
@@ -678,9 +622,12 @@ export default function App() {
       projectFocusCwd.current ?? restoredProjectCwd,
       knownProjectCwds
     )
-    if (action.kind === 'chat') setActiveTab(action.tabId)
-    else if (action.kind === 'project') void selectProjectCwd(action.cwd)
-    else if (action.kind === 'chatHome') focusChatHome()
+    if (action.kind === 'project') void selectProjectCwd(action.cwd)
+  }
+
+  const toggleKanban = () => {
+    setSettingsOpen(false)
+    switchSidebarTab(sidebarTab === 'kanban' ? 'projects' : 'kanban')
   }
 
   const openExistingWorkspaceSession = useCallback(async (sessionId: string, cwd: string) => {
@@ -690,10 +637,9 @@ export default function App() {
     const isOpenedProject = store.projects.some(
       (p) => p.cwd === cwd || p.worktrees?.some((wt) => wt.cwd === cwd)
     )
-    const targetTab: SidebarTab = isOpenedProject ? 'projects' : 'chats'
-    if (sidebarTab !== targetTab) {
-      setSidebarTab(targetTab)
-      setWorkspaceRestoreMode(targetTab === 'chats')
+    if (sidebarTab !== 'projects') {
+      setSidebarTab('projects')
+      setWorkspaceRestoreMode(false)
     }
     if (isOpenedProject) {
       await selectProjectCwd(cwd)
@@ -707,10 +653,6 @@ export default function App() {
         const found = proj.sessions.find((item) => item.id === sessionId)
         if (found) return found
       }
-      for (const chat of useSessionsStore.getState().chats) {
-        const found = chat.sessions.find((item) => item.id === sessionId)
-        if (found) return found
-      }
       return undefined
     }
     let meta = findMeta()
@@ -718,8 +660,8 @@ export default function App() {
       await useSessionsStore.getState().refreshCwd(cwd).catch(() => {})
       meta = findMeta()
     }
-    if (meta) {
-      await useSessionsStore.getState().openExisting(meta, isOpenedProject ? 'project' : 'chat')
+    if (meta && isOpenedProject) {
+      await useSessionsStore.getState().openExisting(meta, 'project')
     }
   }, [selectProjectCwd, setSidebarTab, setWorkspaceRestoreMode, sidebarTab])
 
@@ -728,22 +670,20 @@ export default function App() {
       void (async () => {
         try {
           setSettingsOpen(false)
-          if (useBotStore.getState().open) useBotStore.getState().closeBot()
           const store = useSessionsStore.getState()
           const openedProject = issue.projectCwd
             ? store.projects.find((p) => p.cwd === issue.projectCwd)
             : undefined
-          let targetSessionId: string | null = null
-          if (openedProject) {
-            setSidebarTab('projects')
-            setWorkspaceRestoreMode(false)
-            await selectProjectCwd(openedProject.cwd)
-            targetSessionId = await useSessionsStore.getState().newSession(openedProject.cwd)
-          } else {
-            setSidebarTab('chats')
-            setWorkspaceRestoreMode(true)
-            targetSessionId = await useSessionsStore.getState().newChat()
+          if (!openedProject) {
+            useBotStore.getState().addDraftIssueMention(issue.number)
+            useBotStore.getState().openBot()
+            return
           }
+          if (useBotStore.getState().open) useBotStore.getState().closeBot()
+          setSidebarTab('projects')
+          setWorkspaceRestoreMode(false)
+          await selectProjectCwd(openedProject.cwd)
+          const targetSessionId = await useSessionsStore.getState().newSession(openedProject.cwd)
           if (targetSessionId) {
             useComposerDraftsStore.getState().restoreDraft(targetSessionId, {
               content: {
@@ -791,23 +731,7 @@ export default function App() {
       <QuitConfirm />
       <ExtensionUI />
       <ProjectPickerDialog />
-      <ConvertChatToProjectDialog
-        onConverted={async (result, { transferSession, targetSessionId }) => {
-          setSettingsOpen(false)
-          if (useBotStore.getState().open) useBotStore.getState().closeBot()
-          setSidebarTab('projects')
-          setWorkspaceRestoreMode(false)
-          await selectProjectCwd(result.project.cwd)
-          if (transferSession && result.project.sessions.length > 0) {
-            const preferred =
-              result.project.sessions.find((s) => s.id === targetSessionId) ??
-              result.project.sessions[0]
-            if (preferred) {
-              await useSessionsStore.getState().openExisting(preferred, 'project')
-            }
-          }
-        }}
-      />
+      <MoveProjectDialog />
       <KanbanIssueDialog
         callbacks={kanbanCallbacks}
         isBoardVisible={sidebarTab === 'kanban' && !botOpen && !settingsOpen}
@@ -829,10 +753,22 @@ export default function App() {
               useBotStore.getState().closeBot()
               setSidebarTab('kanban')
             }}
-            onJumpToWorkspace={({ cwd, sessionId, openChanges, openFilePath }) => {
+            onJumpToWorkspace={({ cwd, projectCwd, sessionId, openChanges, openFilePath }) => {
               setSettingsOpen(false)
               if (sidebarTab !== 'projects') switchSidebarTab('projects')
-              void selectProjectCwd(cwd).then(async () => {
+              void (async () => {
+                const rootCwd = projectCwd ?? cwd
+                const initialProject = useSessionsStore.getState().projects.find(
+                  (proj) => proj.cwd === rootCwd || proj.worktrees?.some((wt) => wt.cwd === cwd)
+                )
+                if (
+                  initialProject &&
+                  initialProject.cwd !== cwd &&
+                  !initialProject.worktrees?.some((wt) => wt.cwd === cwd)
+                ) {
+                  await useSessionsStore.getState().refreshProject(initialProject.cwd).catch(() => {})
+                }
+                await selectProjectCwd(cwd)
                 const store = useSessionsStore.getState()
                 if (openFilePath) {
                   await store.openFileTab(cwd, openFilePath)
@@ -850,21 +786,30 @@ export default function App() {
                   }
                   const findMeta = () => {
                     for (const proj of useSessionsStore.getState().projects) {
-                      const found = proj.sessions.find((item) => item.id === sessionId)
-                      if (found) return found
+                      const direct = proj.sessions.find((item) => item.id === sessionId)
+                      if (direct) return direct
+                      for (const wt of proj.worktrees ?? []) {
+                        const inWt = wt.sessions.find((item) => item.id === sessionId)
+                        if (inWt) return inWt
+                      }
                     }
                     return undefined
                   }
                   let meta = findMeta()
                   if (!meta) {
-                    await useSessionsStore.getState().refreshCwd(cwd).catch(() => {})
+                    const targetRoot =
+                      useSessionsStore.getState().projects.find(
+                        (proj) => proj.cwd === rootCwd || proj.worktrees?.some((wt) => wt.cwd === cwd)
+                      )?.cwd ?? rootCwd
+                    await useSessionsStore.getState().refreshProject(targetRoot).catch(() => {})
+                    await useSessionsStore.getState().loadWorktreeSessions(cwd).catch(() => {})
                     meta = findMeta()
                   }
                   if (meta) {
                     await useSessionsStore.getState().openExisting(meta, 'project')
                   }
                 }
-              })
+              })()
             }}
           />
         ) : null}
@@ -875,11 +820,12 @@ export default function App() {
           className={cn('min-h-0 flex-1 flex-col', botOpen && !settingsOpen ? 'hidden' : 'flex')}
         >
         <header data-app-header className="drag relative flex h-10 min-w-0 shrink-0 items-center justify-between">
-          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20 transition-[width] duration-200 ease-in-out motion-reduce:transition-none', !leftCollapsed || settingsOpen ? 'w-62' : 'w-38')}>
+          <div data-header-leading className={cn('flex h-full shrink-0 items-center gap-1 pr-3 pl-20 transition-[width] duration-200 ease-in-out motion-reduce:transition-none', !leftCollapsed || settingsOpen ? 'w-62' : 'w-46')}>
             {settingsOpen ? null : (
               <>
                 <SidebarToggle onClick={toggleLeftSidebar} />
                 <BotOrbButton registerAnchor={!botOpen} />
+                <KanbanToggleButton active={sidebarTab === 'kanban'} onClick={toggleKanban} />
               </>
             )}
           </div>
@@ -896,9 +842,9 @@ export default function App() {
               ) : (
                 <>
                   <NewTabButton sidebarTab={sidebarTab} sidebarLayout={`${leftCollapsed}:${rightCollapsed}:${hoverSidebar}:${settingsOpen}`} />
-                  <ReplyBookmarks onNavigate={kind => {
-                    setWorkspaceRestoreMode(kind === 'chat')
-                    setSidebarTab(kind === 'chat' ? 'chats' : 'projects')
+                  <ReplyBookmarks onNavigate={() => {
+                    setWorkspaceRestoreMode(false)
+                    setSidebarTab('projects')
                   }} />
                   {activeWorkspaceCwd ? (
                     <Tooltip>
@@ -1028,39 +974,34 @@ export default function App() {
                       )}
                     />
                   ) : null}
-                  {sidebarTab === 'kanban' || activeTab ? null : projectHome || chatHome ? (
+                  {sidebarTab === 'kanban' || activeTab ? null : projectHome ? (
                     <>
                       <SessionGreeting />
-                      {chatHome && (chatDraftError || workspaceError) ? (
-                        <div
-                          role="alert"
-                          className="flex flex-col items-center gap-1 px-3.5 pb-2 text-xs text-destructive"
-                        >
-                          {chatDraftError ? (
-                            <span className="flex items-center gap-2">
-                              {chatDraftError}
-                              <Button variant="outline" size="xs" onClick={retryChatDraft}>
-                                <RotateCw />
-                                {t('common.retry')}
-                              </Button>
-                            </span>
-                          ) : null}
-                          {/* A chat or draft that could not be taken back leaves no tab to report it in. */}
-                          {workspaceError ? <span>{workspaceError}</span> : null}
-                        </div>
-                      ) : null}
                       <Composer
-                        draftCwd={projectHome ? currentProjectCwd! : chatHome ? chatDraft?.cwd : undefined}
-                        draftSessionId={
-                          projectHome ? draftSessionId : chatHome ? (chatDraft?.sessionId ?? null) : null
-                        }
+                        draftCwd={currentProjectCwd!}
+                        draftSessionId={draftSessionId}
                         centered
                         workspace={composerWorkspace}
                       />
-                      {projectHome ? (
-                        <ProjectSessionHome cwd={currentProjectCwd!} />
-                      ) : <div className="min-h-0 flex-1" />}
+                      <ProjectSessionHome cwd={currentProjectCwd!} />
                     </>
+                  ) : workspaceRestoreReady && !restoreError ? (
+                    <Empty className="gap-4">
+                      <EmptyHeader>
+                        <EmptyTitle>{t('app.emptyProjectsTitle')}</EmptyTitle>
+                        <EmptyDescription>{t('app.emptyProjectsDescription')}</EmptyDescription>
+                      </EmptyHeader>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button size="sm" onClick={() => void openProject()}>
+                          <FolderPlus data-icon="inline-start" />
+                          {t('sidebar.addProject')}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => useBotStore.getState().openBot()}>
+                          <Bot data-icon="inline-start" />
+                          {t('app.openBot')}
+                        </Button>
+                      </div>
+                    </Empty>
                   ) : (
                     <Empty className="gap-4">
                       <EmptyDescription>
@@ -1072,7 +1013,7 @@ export default function App() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => void initializeProjectWorkspaces(sidebarTab === 'chats')}
+                          onClick={() => void initializeProjectWorkspaces(false)}
                         >
                           <RotateCw />
                           {t('app.retryRestore')}

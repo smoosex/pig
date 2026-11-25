@@ -45,8 +45,10 @@ async function runFixture(): Promise<void> {
 
     await writeFile(file, JSON.stringify({ sidebarTab: 'nope' }))
     assert.equal((await loadSidebarPrefs()).sidebarTab, 'projects', 'an unknown tab falls back')
-    await saveSidebarPrefs({ sidebarTab: 'chats' })
-    assert.equal((await loadSidebarPrefs()).sidebarTab, 'chats', 'and a known one round-trips')
+    await writeFile(file, JSON.stringify({ sidebarTab: 'chats' }))
+    assert.equal((await loadSidebarPrefs()).sidebarTab, 'projects', 'legacy chats tab normalizes to projects')
+    await saveSidebarPrefs({ sidebarTab: 'kanban' })
+    assert.equal((await loadSidebarPrefs()).sidebarTab, 'kanban', 'and kanban round-trips')
 
     await writeFile(file, JSON.stringify({ reviewOpen: true, reviewWidth: 720 }))
     assert.deepEqual(await loadSidebarPrefs(), { ...defaults, reviewOpen: true }, 'legacy widths are not part of the preference contract')

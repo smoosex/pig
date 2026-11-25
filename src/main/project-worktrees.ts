@@ -1,8 +1,9 @@
-import * as electron from 'electron'
 import { watch } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import { createHeadWatchManager } from './git/head-watch'
+import { GitExecError } from './git/exec'
+import { sendToAllWindows } from './ipc/send'
 import { listOpenedCwds } from './opened-projects'
 import { pigPath } from './pig-dir'
 import { listProject } from './pi/session-loader'
@@ -17,11 +18,7 @@ export interface WorktreeProject extends ProjectGroup {
 }
 
 function sendProjectChanged(projectCwd: string): void {
-  for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
-    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-      window.webContents.send('projects:changed', projectCwd)
-    }
-  }
+  sendToAllWindows('projects:changed', projectCwd)
 }
 
 const branchWatch = createHeadWatchManager({
@@ -43,11 +40,7 @@ async function watchBranches(projectCwd: string, hasGit: boolean | null, items: 
 export const forgetProjectBranches = branchWatch.forget
 
 export const worktrees = new WorktreeService(pigPath('worktrees'), sendProjectChanged, (jobs) => {
-  for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
-    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-      window.webContents.send('worktrees:deletions-changed', jobs)
-    }
-  }
+  sendToAllWindows('worktrees:deletions-changed', jobs)
 })
 
 export async function requireOpenedProject(cwd: string): Promise<string> {
@@ -104,23 +97,24 @@ export async function discoverOpenedWorktrees(): Promise<ProjectWorktreeDiscover
   const opened = await listOpenedCwds()
   branchWatch.retain(opened)
   return Promise.all(opened.map(async (cwd) => {
-    const rootExists = await stat(cwd).then((s) => s.isDirectory()).catch(() => false)
-    if (!rootExists) {
-      void watchBranches(cwd, false, null)
-      const items = await worktrees.discover(cwd, false)
-      return { cwd, missing: true, hasGit: false, worktrees: items }
-    }
     let hasGit: boolean | null = null
     try {
       hasGit = await isGitProject(cwd)
       const items = await worktrees.discover(cwd, hasGit)
       void watchBranches(cwd, hasGit, items)
-      return { cwd, missing: false, hasGit, worktrees: items }
+      return { cwd, hasGit, worktrees: items }
     } catch (error) {
+      if (error instanceof GitExecError) {
+        const missing = await stat(cwd).then(() => false).catch((err) => (err as NodeJS.ErrnoException).code === 'ENOENT')
+        if (missing) {
+          void watchBranches(cwd, false, null)
+          const items = await worktrees.discover(cwd, false)
+          return { cwd, missing: true, hasGit: false, worktrees: items }
+        }
+      }
       void watchBranches(cwd, hasGit, null)
       return {
         cwd,
-        missing: false,
         hasGit,
         worktrees: null,
         gitError: error instanceof Error ? error.message : String(error)

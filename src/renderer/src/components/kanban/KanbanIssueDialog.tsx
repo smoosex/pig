@@ -878,7 +878,7 @@ export function KanbanIssueDialog({
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Unified single Labels pill (0 -> "标签", 1 -> "● Feature", N -> "●● N 个标签") */}
+                {/* Unified single Labels pill (0 -> "Labels", 1 -> "● Feature", N -> "●● N labels") */}
                 <Popover modal open={labelMenuOpen} onOpenChange={setLabelMenuOpen}>
                   <PopoverTrigger asChild>
                     <button

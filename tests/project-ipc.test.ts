@@ -72,10 +72,6 @@ async function runFixture(): Promise<void> {
     listChats: async () => [],
     removeChatWorkDir: async () => {}
   }))
-  mock.module(modulePath('../src/main/chat-to-project.ts'), () => ({
-    convertChatToProject: async () => ({ project: { cwd: '/project' }, migratedSessionIds: [] }),
-    getDefaultProjectsLocation: async () => ({ defaultParentDir: '/projects', parentExists: false, homeDir: '/' })
-  }))
   mock.module(modulePath('../src/main/open-project-sessions.ts'), () => ({
     removeOpenProjectWorkspaces: async () => { removeWorkspaceCalls++ }
   }))

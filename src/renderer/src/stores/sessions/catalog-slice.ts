@@ -44,10 +44,10 @@ export const createCatalogSlice: SessionSlice<
   | 'relocateProjectTarget'
   | 'openRelocateProjectDialog'
   | 'closeRelocateProjectDialog'
-  | 'convertChatDialog'
-  | 'openConvertChatDialog'
-  | 'closeConvertChatDialog'
-  | 'convertChatToProject'
+  | 'moveProjectTarget'
+  | 'openMoveProjectDialog'
+  | 'closeMoveProjectDialog'
+  | 'moveProject'
   | 'unpinProject'
   | 'forgetAgentProject'
   | 'reorderProjects'
@@ -100,9 +100,9 @@ export const createCatalogSlice: SessionSlice<
     relocateProjectTarget: null,
     openRelocateProjectDialog: (target) => set({ relocateProjectTarget: target }),
     closeRelocateProjectDialog: () => set({ relocateProjectTarget: null }),
-    convertChatDialog: null,
-    openConvertChatDialog: (target) => set({ convertChatDialog: target }),
-    closeConvertChatDialog: () => set({ convertChatDialog: null }),
+    moveProjectTarget: null,
+    openMoveProjectDialog: (target) => set({ moveProjectTarget: target }),
+    closeMoveProjectDialog: () => set({ moveProjectTarget: null }),
     chats: [],
     isReorderingProjects: false,
     expandedProjects: {},
@@ -277,11 +277,14 @@ export const createCatalogSlice: SessionSlice<
           ? s.projects
               .map((item) => (item.cwd === nextCwd ? result.project : item))
               .filter((item) => item.cwd !== oldCwd)
-          : s.projects.map((item) => (item.cwd === oldCwd ? result.project : item))
+          : s.projects.some((item) => item.cwd === oldCwd)
+            ? s.projects.map((item) => (item.cwd === oldCwd ? result.project : item))
+            : [...s.projects, result.project]
         if (oldCwd === nextCwd) {
           return {
             projects,
             relocateProjectTarget: null,
+            moveProjectTarget: null,
             openTabs: patchTabsFromGroups(s.openTabs, [result.project])
           }
         }
@@ -299,6 +302,7 @@ export const createCatalogSlice: SessionSlice<
         return {
           projects,
           relocateProjectTarget: null,
+          moveProjectTarget: null,
           ...removeCwdSessions(s, new Set([oldCwd]), oldProject?.sessions ?? []),
           openTabs: patchTabsFromGroups(
             s.openTabs.filter((tab) => tab.cwd !== oldCwd),
@@ -315,53 +319,59 @@ export const createCatalogSlice: SessionSlice<
       return result
     },
 
-    convertChatToProject: async (input) => {
-      const result = await api.convertChatToProject(input)
-      const activeSpaceId = useProjectSpacesStore.getState().activeSpaceId
-      if (activeSpaceId && activeSpaceId !== DEFAULT_SPACE_ID) {
-        await useProjectSpacesStore.getState().assignProject(result.project.cwd, activeSpaceId)
-      }
+    moveProject: async (input) => {
+      const result = await api.moveProject(input)
+      const oldCwd = result.oldCwd
+      const nextCwd = result.project.cwd
       projectMembershipVersion++
-      if (input.transferSession) {
-        useDiffStore.getState().forgetWorktree(input.chatCwd)
-        useFilesStore.getState().forgetWorktree(input.chatCwd)
-        chatMembershipVersion++
+      if (oldCwd !== nextCwd) {
+        useDiffStore.getState().forgetWorktree(oldCwd)
+        useFilesStore.getState().forgetWorktree(oldCwd)
       }
-      const closedIds = input.transferSession
-        ? new Set([
-            ...result.migratedSessionIds,
-            ...get()
-              .openTabs.filter((tab) => tab.kind === 'chat' && tab.cwd === input.chatCwd)
-              .map((tab) => tab.id),
-            ...get()
-              .chats.filter((chat) => chat.cwd === input.chatCwd)
-              .flatMap((chat) => chat.sessions.map((meta) => meta.id))
-          ])
-        : new Set<string>()
-
+      const wasCurrent = get().currentProjectCwd === oldCwd
       set((s) => {
-        const index = s.projects.findIndex((item) => item.cwd === result.project.cwd)
-        const projects = [...s.projects]
-        if (index === -1) projects.push(result.project)
-        else projects[index] = result.project
-
-        if (!input.transferSession) {
-          return { projects, convertChatDialog: null }
+        const oldProject = s.projects.find((item) => item.cwd === oldCwd)
+        const targetExists = oldCwd !== nextCwd && s.projects.some((item) => item.cwd === nextCwd)
+        const projects = targetExists
+          ? s.projects
+              .map((item) => (item.cwd === nextCwd ? result.project : item))
+              .filter((item) => item.cwd !== oldCwd)
+          : s.projects.some((item) => item.cwd === oldCwd)
+            ? s.projects.map((item) => (item.cwd === oldCwd ? result.project : item))
+            : [...s.projects, result.project]
+        if (oldCwd === nextCwd) {
+          return {
+            projects,
+            moveProjectTarget: null,
+            openTabs: patchTabsFromGroups(s.openTabs, [result.project])
+          }
         }
+        const expandedProjects = { ...s.expandedProjects }
+        if (oldCwd in expandedProjects) {
+          expandedProjects[nextCwd] = Boolean(expandedProjects[nextCwd] || expandedProjects[oldCwd])
+          delete expandedProjects[oldCwd]
+        }
+        const expandedWorktrees = { ...s.expandedWorktrees }
+        if (oldCwd in expandedWorktrees) {
+          expandedWorktrees[nextCwd] = Boolean(expandedWorktrees[nextCwd] || expandedWorktrees[oldCwd])
+          delete expandedWorktrees[oldCwd]
+        }
+        revealedWorktreeByProject.delete(oldCwd)
         return {
           projects,
-          convertChatDialog: null,
-          chats: s.chats.filter((chat) => chat.cwd !== input.chatCwd),
-          ...removeCwdSessions(
-            s,
-            new Set([input.chatCwd]),
-            s.chats.flatMap((chat) => chat.sessions)
-          )
+          moveProjectTarget: null,
+          ...removeCwdSessions(s, new Set([oldCwd]), oldProject?.sessions ?? []),
+          openTabs: patchTabsFromGroups(
+            s.openTabs.filter((tab) => tab.cwd !== oldCwd),
+            [result.project]
+          ),
+          expandedProjects,
+          expandedWorktrees
         }
       })
-
-      if (input.transferSession) {
-        get().persistOpenChatTabs([...closedIds])
+      void useProjectSpacesStore.getState().load()
+      if (wasCurrent && oldCwd !== nextCwd) {
+        await get().selectProjectCwd(nextCwd)
       }
       return result
     },
@@ -540,7 +550,6 @@ export const createCatalogSlice: SessionSlice<
 
     deleteChat: async (cwd) => {
       await api.deleteChat(cwd)
-      useDiffStore.getState().forgetWorktree(cwd)
       useFilesStore.getState().forgetWorktree(cwd)
       chatMembershipVersion++
       const closedIds = new Set([

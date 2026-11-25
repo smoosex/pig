@@ -4,7 +4,7 @@
 
 ## 右侧文件与变更面板
 
-- 右侧 `WorkspacePanel` 同时服务项目 worktree 与独立对话（`$PIG_DIR/chats/<id>`）：项目默认展示「变更」，独立对话默认展示「文件」；顶部是文件／变更图标切换，仅选中项展开文字，通过独立 layoutId 的胶囊和宽度动画平滑切换，尊重 reduced-motion；正文不横移。
+- 右侧 `WorkspacePanel` 服务项目 worktree（默认展示「变更」）：顶部是文件／变更图标切换，仅选中项展开文字，通过独立 layoutId 的胶囊和宽度动画平滑切换，尊重 reduced-motion；正文不横移。
 - 工作树确实无变更时，列表区域居中显示圆形文件图标、「没有更改」及编辑来源说明；搜索无匹配、加载、非 Git 目录和读取失败仍各自展示，不能混作无变更。
 - 分组列表的当前标题独立放在文件滚动视口之外，连同搜索下方留白及标题内边距一起保持固定；文件行不再穿过透明 sticky 标题，也不通过动态 clip-path 或 scroll timeline 补遮挡。首组标题不在列表内重复；后续组标题先随正文滚动，完全越过视口上沿后接替独立标题，反向滚动恢复上一组。滚动／布局观察只更新当前组标识，折叠操作始终作用于标题对应的组；全部模式、空态和错误态不预留标题区。
 - 变更底栏上方有内缩分隔线，左侧分组／全部使用同风格的平滑胶囊（两个文字项常显），右侧只保留树形视图开关。
@@ -16,8 +16,9 @@
 
 ## 设置页与侧栏轨道
 
+- 左侧栏不再提供「独立会话 (Chats)」分组或顶部模式胶囊切换：跨项目直接对话统一归全窗口 Bot 舞台，看板切换按钮（`KanbanToggleButton`）固定在顶栏左上角 `BotOrbButton` 右侧（工作区、看板与 Bot 三端同像素坐标对齐）；工作区左栏纯展示项目列表与底部空间切换栏，进入看板时通过 `Activity` 切换为 `KanbanSidebar` 项目筛选栏。
+- 项目支持仅在 Pig 内生效的显示别名（`opened-projects.json` 的 `alias`）、本地移动项目目录（`project:move` / `MoveProjectDialog`，支持从项目菜单或由 Bot `bot_request_move_project` 唤起由用户确认目标父目录与文件夹名后执行物理搬迁）与外部移动／改名后的「重新定位目录…」（`project:relocate`）：物理搬迁与重新定位共用同一独占锁、空闲门控与全量状态迁移流水线（迁移主目录 Pi JSONL 会话、`git worktree repair`、长期记忆项目作用域、`opened-projects.json`、`project-spaces.json`、`open-project-sessions.json`、书签、看板事项与 Bot 任务）。Bot 新建项目内聚在 `bot_start_task` 的 `newProject` 参数中（单轮 Fast Ack 预留 `~/pig_projects/<folderName>`，后台异步完成 `git init` 与可选草稿文件拷贝，并直接在主目录 `main` 分支原位执行写任务、不额外切空 worktree），默认不自动钉入左侧项目列表以避免堆满一次性项目，待用户在任务卡点击「添加项目并查看」（或通过 `MoveProjectDialog` 迁至正式位置）时加入左栏。
 - 项目侧栏支持多「空间」（`$PIG_DIR/project-spaces.json`，revision 串行原子写入，解析失败拒绝用默认值覆盖）：底部切换栏在项目页居中展示紧凑空间图标／圆点与新建入口（超过 3 个空间时仅当前空间常显图标，其余折叠为圆点并在悬停时显现图标，配合基于指针距离余弦衰减的 Dock 联动缩放；支持在项目列表横向滑动鼠标／触控板或滚轮切换空间，项目列表按切换方向左右滑动过渡，尊重 reduced-motion）；右键空间可重命名、改图标或删除（删除非空空间仅将项目迁回默认／回退空间，不删除项目或会话）；项目行右键菜单与更多菜单均支持「移动到空间」及「新建空间…」，空间内拖拽重排仅重排当前可见项目在全局 `opened-projects.json` 中的槽位，后台会话与 worktree 授权不受当前空间切换影响。
-- 项目支持仅在 Pig 内生效的显示别名（`opened-projects.json` 的 `alias`，留空恢复文件夹原名）与外部移动／改名后的「重新定位目录…」（`project:relocate`）：加载项目前先校验根目录是否存在，目录缺失时标记 `missing: true`、保留历史会话列表并提供一键重新定位入口，不因 `git -C` 失败中断整个项目列表；重新定位在项目独占锁与空闲门控下迁移主目录 Pi JSONL 会话（重写首行 `cwd`）、执行 `git worktree repair` 修复托管 worktree 双向指针，并同步更新长期记忆项目作用域、`opened-projects.json` 顺序槽位、`project-spaces.json`、`open-project-sessions.json`、书签、看板事项与 Bot 任务。
 - 工作区与设置页共用 `WorkspaceLayout` 的左右轨道（各 248px、200ms 宽度过渡）。
 - 进入设置时 main 立即显示设置正文；原工作区保持 DOM、组件和编辑器实例，以 hidden／inert 隐藏并通过可见性 context 暂停相关工作，不整体套 Activity（其 effect cleanup 会销毁 Tiptap 编辑器）。聊天正文及辅助控件按 Activity 暂停，浏览器隐藏原生 bounds、终端停用并停放视图、分屏停止测量；返回时恢复，不重建整棵主内容。只通过左轨展开使 main 左边界往中间收、露出固定在左侧的设置菜单，如同普通 sidebar 展开；左栏已开时同宽直接换菜单。
 - 编辑器保持挂载时，节点内的长文本预览也必须响应工作区可见性：进入设置立即移除 Portal、清除打开状态，并阻止关闭浮层时把焦点还给隐藏的触发器；返回工作区不自动重开，不销毁 EditorContent 或改写草稿。

@@ -24,7 +24,7 @@ async function runFixture(): Promise<void> {
   const { createRoot } = await import('react-dom/client')
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
   const { TabBar } = await import('../src/renderer/src/components/TabBar')
-  const tab: OpenTab = { id: 'chat', cwd: '/chats/c', kind: 'chat', title: 'Chat', loadState: 'ready' }
+  const tab: OpenTab = { id: 'project-s1', cwd: '/p', kind: 'project', title: 'Project Session', loadState: 'ready' }
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -35,9 +35,9 @@ async function runFixture(): Promise<void> {
       await act(async () => {
         store.setState({
           openTabs: [{ ...tab, loadState: reason === 'load failed' ? 'error' : 'ready', loadError: reason }],
-          activeTabId: tab.id, currentProjectCwd: null
+          activeTabId: tab.id, currentProjectCwd: '/p'
         })
-        root.render(h(TabBar, { sidebarTab: 'chats' }))
+        root.render(h(TabBar, { sidebarTab: 'projects' }))
       })
       const icon = container.querySelector<SVGElement>('[role="img"].lucide-circle-alert')
       assert.ok(icon, `${reason} must have a visible error icon`)

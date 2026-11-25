@@ -19,10 +19,9 @@ export function openNotifiedSession(
   const tab = state.openTabs.find((item) => item.id === sessionId)
   if (!tab || (tab.kind !== 'chat' && tab.kind !== 'project')) return false
   bot?.closeBot()
-  const next = tab.kind === 'chat' ? 'chats' : 'projects'
-  if (sidebarTab !== next) {
-    setWorkspaceRestoreMode(next === 'chats')
-    setSidebarTab(next)
+  if (sidebarTab !== 'projects') {
+    setWorkspaceRestoreMode(false)
+    setSidebarTab('projects')
   }
   closeSettings()
   state.setActive(tab.id)

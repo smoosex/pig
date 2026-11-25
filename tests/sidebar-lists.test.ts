@@ -1,6 +1,6 @@
 /**
- * The sidebar shows one list at a time: the projects half its project list, the chats half the chat
- * list plus the header action that starts a new one.
+ * The sidebar shows one list at a time: Projects in the normal workspace view, and KanbanSidebar
+ * when the Kanban board is toggled open.
  */
 import { afterEach, describe, mock, test } from 'bun:test'
 import assert from 'node:assert/strict'
@@ -8,10 +8,8 @@ import { createElement, useState } from 'react'
 import type { SurfaceStyle } from '../src/shared/api'
 
 let projectListInstances = 0
-let chatListInstances = 0
+let kanbanListInstances = 0
 
-// The store graph reads window.api the first time it is evaluated and that evaluation is shared
-// across test files, so this one pins the module rather than freezing `undefined` for everyone.
 mock.module('../src/renderer/src/ipc/api', () => ({
   api: { supportsGlass: true }
 }))
@@ -21,10 +19,10 @@ mock.module('../src/renderer/src/components/sidebar/ProjectList', () => ({
     return createElement('div', { 'data-stub': 'project-list', 'data-instance': String(instance) })
   }
 }))
-mock.module('../src/renderer/src/components/sidebar/ChatList', () => ({
-  ChatList: () => {
-    const [instance] = useState(() => ++chatListInstances)
-    return createElement('div', { 'data-stub': 'chat-list', 'data-instance': String(instance) })
+mock.module('../src/renderer/src/components/kanban/KanbanSidebar', () => ({
+  KanbanSidebar: () => {
+    const [instance] = useState(() => ++kanbanListInstances)
+    return createElement('div', { 'data-stub': 'kanban-list', 'data-instance': String(instance) })
   }
 }))
 mock.module('../src/renderer/src/components/diff/ChangesPanel', () => ({
@@ -40,11 +38,9 @@ async function ensureDom(): Promise<void> {
     GlobalRegistrator.register({ url: 'http://localhost' })
     domOurs = true
   } catch {
-    // Another fixture in this process holds the document; the containers below keep this scoped.
     domOurs = false
   }
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  // Happy DOM rejects cancelled WAAPI promises; use Motion's JS fallback.
   Reflect.deleteProperty(Element.prototype, 'animate')
   domReady = true
 }
@@ -57,7 +53,7 @@ afterEach(async () => {
   domOurs = false
 })
 
-describe('sidebar list per half', () => {
+describe('sidebar list per view', () => {
   test('floating sidebars close without a width transition; docked sidebars retain it', async () => {
     await ensureDom()
     const { act, createElement: h } = await import('react')
@@ -88,7 +84,8 @@ describe('sidebar list per half', () => {
       container.remove()
     }
   })
-  test('each half renders only its own list and action', async () => {
+
+  test('each view renders only its own list without a top mode capsule', async () => {
     await ensureDom()
     const { act, createElement: h } = await import('react')
     const { createRoot } = await import('react-dom/client')
@@ -106,7 +103,7 @@ describe('sidebar list per half', () => {
     const { Sidebar } = await import('../src/renderer/src/components/Sidebar')
     const { TooltipProvider } = await import('../src/renderer/src/components/ui/tooltip')
 
-    for (const tab of ['projects', 'chats'] as const) {
+    for (const tab of ['projects', 'kanban'] as const) {
       const container = document.createElement('div')
       document.body.append(container)
       const root = createRoot(container)
@@ -115,6 +112,7 @@ describe('sidebar list per half', () => {
           h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab, preferencesError: null }))
         )
       })
+      assert.equal(container.querySelector('[data-sidebar-mode-pill]'), null, 'top mode switch is removed')
       const highlight = container.querySelector('span.will-change-transform')!
       assert.ok(highlight.classList.contains('bg-sidebar-foreground/6'), 'sidebar rows share a sliding foreground tint')
       assert.ok(!highlight.className.includes('backdrop-blur'))
@@ -147,14 +145,9 @@ describe('sidebar list per half', () => {
         `${tab} tab project list`
       )
       assert.equal(
-        container.querySelector('[data-stub="chat-list"]') !== null,
-        tab === 'chats',
-        `${tab} tab chat list`
-      )
-      assert.equal(
-        container.querySelector('button[aria-label="新建对话"]') !== null,
-        tab === 'chats',
-        `${tab} tab new-chat action`
+        container.querySelector('[data-stub="kanban-list"]') !== null,
+        tab === 'kanban',
+        `${tab} tab kanban list`
       )
       await act(async () => { root.unmount() })
       container.remove()
@@ -166,7 +159,7 @@ describe('sidebar list per half', () => {
     })
   })
 
-  test('switching between projects and chats lazily mounts once and retains both lists via Activity', async () => {
+  test('switching between projects and kanban lazily mounts once and retains both lists via Activity', async () => {
     await ensureDom()
     const { act, createElement: h } = await import('react')
     const { createRoot } = await import('react-dom/client')
@@ -176,31 +169,31 @@ describe('sidebar list per half', () => {
     document.body.append(container)
     const root = createRoot(container)
     const startProjectInstances = projectListInstances
-    const startChatInstances = chatListInstances
+    const startKanbanInstances = kanbanListInstances
     try {
       await act(async () => {
         root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'projects', preferencesError: null })))
       })
       assert.equal(projectListInstances, startProjectInstances + 1)
-      assert.equal(chatListInstances, startChatInstances, 'chats list stays unmounted until first visit')
+      assert.equal(kanbanListInstances, startKanbanInstances, 'kanban list stays unmounted until first visit')
 
       await act(async () => {
-        root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'chats', preferencesError: null })))
+        root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'kanban', preferencesError: null })))
       })
-      assert.equal(projectListInstances, startProjectInstances + 1, 'projects list stays retained when switching to chats')
-      assert.equal(chatListInstances, startChatInstances + 1, 'chats list mounts lazily on first visit')
+      assert.equal(projectListInstances, startProjectInstances + 1, 'projects list stays retained when switching to kanban')
+      assert.equal(kanbanListInstances, startKanbanInstances + 1, 'kanban list mounts lazily on first visit')
       const projectNode = container.querySelector<HTMLElement>('[data-stub="project-list"]')!
-      const chatNode = container.querySelector<HTMLElement>('[data-stub="chat-list"]')!
+      const kanbanNode = container.querySelector<HTMLElement>('[data-stub="kanban-list"]')!
       assert.equal(projectNode.style.display, 'none', 'inactive projects list is hidden by Activity')
-      assert.notEqual(chatNode.style.display, 'none', 'active chats list is visible')
+      assert.notEqual(kanbanNode.style.display, 'none', 'active kanban list is visible')
 
       await act(async () => {
         root.render(h(TooltipProvider, null, h(Sidebar, { onOpenSettings: () => {}, tab: 'projects', preferencesError: null })))
       })
       assert.equal(projectListInstances, startProjectInstances + 1, 'returning to projects reuses the mounted instance')
-      assert.equal(chatListInstances, startChatInstances + 1, 'leaving chats retains its mounted instance')
+      assert.equal(kanbanListInstances, startKanbanInstances + 1, 'leaving kanban retains its mounted instance')
       assert.notEqual(projectNode.style.display, 'none')
-      assert.equal(chatNode.style.display, 'none')
+      assert.equal(kanbanNode.style.display, 'none')
     } finally {
       await act(async () => root.unmount())
       container.remove()
