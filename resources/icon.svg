@@ -1,56 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <title>Pig</title>
-  <desc>Colored adaptation of the user-supplied streamline-pixel--business-product-piggy-bank.svg. Original pixel paths are preserved.</desc>
+  <desc>Jade Quatrefoil application icon (Light appearance) framed in Apple's 824x824 continuous squircle.</desc>
   <defs>
-    <linearGradient id="tile" x2="0.85" y2="1">
-      <stop stop-color="#3a3f8f" />
-      <stop offset="1" stop-color="#1c1f4d" />
-    </linearGradient>
-    <linearGradient id="body" x2="0.7" y2="1">
-      <stop stop-color="#ffd3d6" />
-      <stop offset="1" stop-color="#f59fb0" />
+    <filter id="shadow" x="-12%" y="-10%" width="124%" height="126%">
+      <feDropShadow dx="0" dy="13" stdDeviation="15" flood-color="#0d1c15" flood-opacity="0.20" />
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0d1c15" flood-opacity="0.08" />
+    </filter>
+    <clipPath id="squircle">
+      <path d="M 324.00 100.00 L 700.00 100.00 C 854.00 100.00, 924.00 170.00, 924.00 324.00 L 924.00 700.00 C 924.00 854.00, 854.00 924.00, 700.00 924.00 L 324.00 924.00 C 170.00 924.00, 100.00 854.00, 100.00 700.00 L 100.00 324.00 C 100.00 170.00, 170.00 100.00, 324.00 100.00 Z" />
+    </clipPath>
+    <linearGradient id="inner-rim" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+      <stop offset="45%" stop-color="#ffffff" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#9db5a8" stop-opacity="0.30" />
     </linearGradient>
   </defs>
-  <rect x="64" y="76" width="896" height="896" rx="200" fill="#0d0f2a" opacity=".18" />
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)" />
-  <rect x="66" y="66" width="892" height="892" rx="198" fill="none" stroke="#c9ccff" stroke-opacity=".16" stroke-width="4" />
-  <g transform="translate(152 140) scale(22.5)">
-    <path fill="url(#body)" d="M6.1 17.525H7.62V16H9.14V14.475H13.71V11.425H16.76V14.475H21.33V11.425H24.38V14.475H25.91V16H27.43V19.045H22.86V20.565H21.33V26.665H22.86V28.185H21.33V28.185H12.19V29.715H9.14V26.665H7.62V25.145H6.1Z" />
-    <path fill="#c2416a" d="M30.48 19.045h-1.53V16h-1.52v3.05h-4.57v1.52h-1.53v6.1h1.53v1.52h1.52v1.53h1.53v-1.53h3.04v-1.52h1.53v-1.52H32v-4.58h-1.52Zm-4.57 6.1h-1.53V22.1h1.53Zm3.04 0h-1.52V22.1h1.52Zm-3.04-10.67h1.52v1.52h-1.52Z" />
-    <path fill="#c2416a" d="M24.380 15.995H25.910V17.525H24.380Z" />
-    <path fill="#c2416a" d="M24.380 11.425H25.910V14.475H24.380Z" />
-    <path fill="#c2416a" d="M21.330 9.905H24.380V11.425H21.330Z" />
-    <path fill="#ffe7a3" d="M22.860 3.805H24.380V5.335H22.860Z" />
-    <path fill="#c2416a" d="M21.330 29.715H24.380V31.235H21.330Z" />
-    <path fill="#c2416a" d="M12.190 28.185H21.330V29.715H12.190Z" />
-    <path fill="#c2416a" d="M19.810 15.995H21.330V17.525H19.810Z" />
-    <path fill="#c2416a" d="M18.290 8.375H19.810V9.905H18.290Z" />
-    <path fill="#ffe7a3" d="M19.810 3.805H21.330V2.285H19.810V0.765H18.290V2.285H16.760V3.805H18.290V5.335H19.810Z" />
-    <path fill="#c2416a" d="M21.330 14.475V11.425H19.810V12.955H18.290V11.425H16.760V14.475Z" />
-    <path fill="#c2416a" d="M13.710 9.905H16.760V11.425H13.710Z" />
-    <path fill="#ffe7a3" d="M15.240 5.335H16.760V6.855H15.240Z" />
-    <path fill="#ffc94a" d="M12.190 3.805H13.710V8.375H12.190Z" />
-    <path fill="#c2416a" d="M13.710 14.475V11.425H12.190V12.955H9.140V14.475Z" />
-    <path fill="#ffc94a" d="M10.670 8.375H12.190V9.905H10.670Z" />
-    <path fill="#ffc94a" d="M10.670 2.285H12.190V3.805H10.670Z" />
-    <path fill="#c2416a" d="M9.140 29.715H12.190V31.235H9.140Z" />
-    <path fill="#c2416a" d="M7.620 26.665H9.140V29.715H7.620Z" />
-    <path fill="#c2416a" d="M7.620 14.475H9.140V15.995H7.620Z" />
-    <path fill="#ffc94a" d="M6.100 9.905H10.670V11.425H6.100Z" />
-    <path fill="#ffc94a" d="M6.100 3.805H10.670V8.375H6.100Z" />
-    <path fill="#ffc94a" d="M6.100 0.765H10.670V2.285H6.100Z" />
-    <path fill="#c2416a" d="M6.100 25.145H7.620V26.665H6.100Z" />
-    <path fill="#c2416a" d="M6.100 15.995H7.620V17.525H6.100Z" />
-    <path fill="#c2416a" d="M4.570 17.525H6.100V25.145H4.570Z" />
-    <path fill="#ffc94a" d="M4.570 8.375H6.100V9.905H4.570Z" />
-    <path fill="#ffc94a" d="M4.570 2.285H6.100V3.805H4.570Z" />
-    <path fill="#ffe7a3" d="M3.050 12.955H4.570V14.475H3.050Z" />
-    <path fill="#ffc94a" d="M3.050 3.805H4.570V8.375H3.050Z" />
-    <path fill="#ffe7a3" d="M1.520 14.475H3.050V15.995H1.520Z" />
-    <path fill="#ffe7a3" d="M1.520 11.425H3.050V12.955H1.520Z" />
-    <path fill="#ffe7a3" d="M1.520 0.765H3.050V2.285H1.520Z" />
-    <path fill="#ffe7a3" d="M0.000 12.955H1.520V14.475H0.000Z" />
-    <path fill="#ffe7a3" d="M0.000 6.855H1.520V8.375H0.000Z" />
-    <path fill="#5a1f33" d="M19.81 15.995h1.52v1.53h-1.52zM24.38 22.1h1.53v3.045h-1.53zM27.43 22.1h1.52v3.045h-1.52z" />
+  <g filter="url(#shadow)">
+    <g clip-path="url(#squircle)">
+      <image href="Icon.icon/Assets/jade-light.png" x="100" y="100" width="824" height="824" preserveAspectRatio="xMidYMid slice" />
+    </g>
   </g>
+  <path d="M 323.05 101.75 L 700.95 101.75 C 854.30 101.75, 922.25 169.70, 922.25 323.05 L 922.25 700.95 C 922.25 854.30, 854.30 922.25, 700.95 922.25 L 323.05 922.25 C 169.70 922.25, 101.75 854.30, 101.75 700.95 L 101.75 323.05 C 101.75 169.70, 169.70 101.75, 323.05 101.75 Z" fill="none" stroke="url(#inner-rim)" stroke-width="3.5" />
+  <path d="M 324.00 100.00 L 700.00 100.00 C 854.00 100.00, 924.00 170.00, 924.00 324.00 L 924.00 700.00 C 924.00 854.00, 854.00 924.00, 700.00 924.00 L 324.00 924.00 C 170.00 924.00, 100.00 854.00, 100.00 700.00 L 100.00 324.00 C 100.00 170.00, 170.00 100.00, 324.00 100.00 Z" fill="none" stroke="#183024" stroke-opacity="0.11" stroke-width="1.5" />
 </svg>

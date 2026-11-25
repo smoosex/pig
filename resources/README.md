@@ -1,20 +1,23 @@
 # Application icon
 
-`icon.svg` is the editable, colored application artwork, adapted from the user-supplied
-`streamline-pixel--business-product-piggy-bank.svg` (Streamline Pixel). It retains the source's
-pixel shapes, with an indigo tile, a pink pig with a berry outline, a gold coin and pale-gold sparkles.
-The SVG description records the source; this repository does not assert a new license for the original artwork.
+`resources/Icon.icon` is the Apple Icon Composer source bundle for Pig's Jade Quatrefoil icon,
+defining both Light (`Assets/jade-light.png`, porcelain + pine-emerald glass) and Dark
+(`Assets/jade-dark.png`, forest-obsidian + luminous champagne-jade glass) appearances.
+`resources/icon.svg` and `resources/icon-dark.svg` frame those masters inside Apple's `824x824`
+continuous squircle for static raster targets.
 
-The committed packaging assets are `build/icon.icns` (macOS), `build/icon.ico` (Windows,
-16–256px), and `build/icon.png` (Linux, 1024px). `electron-builder.yml` selects them explicitly.
-Packaging uses those assets directly and does not require image-generation tools.
+The committed packaging assets are:
+- `build/Assets.car` — macOS Asset Catalog (`CFBundleIconName = Icon`) providing native Light/Dark/Tinted dynamic app icons
+- `build/icon.icns` — macOS static fallback icon
+- `build/icon.ico` — Windows multi-size icon (16–256px)
+- `build/icon.png` — Linux 1024px icon
 
-To regenerate all three on macOS:
+`electron-builder.yml` bundles these committed files directly so packaging itself requires no Xcode
+or image-generation tools.
+
+To regenerate all four on macOS (requires Xcode 26+ `actool`, `librsvg`, and `imagemagick`):
 
 ```sh
 brew install librsvg imagemagick
 bun run app-icons:generate
 ```
-
-The generator also uses Apple's built-in `iconutil`. Its temporary iconset is removed on success
-or failure; missing converters and conversion failures are reported rather than replaced with a default icon.

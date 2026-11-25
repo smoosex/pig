@@ -87,6 +87,11 @@ win:
   executableName: Pig
 mac:
   icon: build/icon.icns
+  extendInfo:
+    CFBundleIconName: Icon
+  extraResources:
+    - from: build/Assets.car
+      to: Assets.car
   target:
     - dmg
   category: public.app-category.developer-tools
