@@ -27,6 +27,20 @@ const api: SessionApi = {
       return () => ipcRenderer.off('kanban:changed', handler)
     }
   },
+  spaces: {
+    getSnapshot: () => ipcRenderer.invoke('spaces:snapshot'),
+    select: (spaceId) => ipcRenderer.invoke('spaces:select', spaceId),
+    create: (input) => ipcRenderer.invoke('spaces:create', input),
+    update: (input) => ipcRenderer.invoke('spaces:update', input),
+    remove: (id) => ipcRenderer.invoke('spaces:remove', id),
+    assignProject: (cwd, spaceId) => ipcRenderer.invoke('spaces:assign-project', cwd, spaceId),
+    forgetProject: (cwd) => ipcRenderer.invoke('spaces:forget-project', cwd),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/project-spaces').ProjectSpacesSnapshot) => listener(snapshot)
+      ipcRenderer.on('spaces:changed', handler)
+      return () => ipcRenderer.off('spaces:changed', handler)
+    }
+  },
   sessionAgent: {
     onRequest: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, request: import('../shared/session-agent').SessionAgentUiRequest) => listener(request)

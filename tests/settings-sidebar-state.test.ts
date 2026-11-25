@@ -1068,7 +1068,10 @@ async function runFixture(name: string): Promise<void> {
           )
         })
       }
-      const shown = (text: string) => container.textContent?.includes(text) ?? false
+      const shown = (text: string) =>
+        [...container.querySelectorAll<HTMLElement>('*')].some(
+          (el) => el.childElementCount === 0 && el.textContent?.includes(text) && !el.closest('[style*="display: none"]')
+        )
       const projectButton = () => {
         const button = container.querySelector('[title="/project"]')?.closest('button')
         assert.ok(button)
@@ -1084,7 +1087,7 @@ async function runFixture(name: string): Promise<void> {
         await renderHalf('chats', () => {
           useSessionsStore.setState({ activeTabId: null, currentProjectCwd: null })
         })
-        assert.equal(container.querySelector('[title="/project"]'), null)
+        assert.ok(container.querySelector<HTMLElement>('[title="/project"]')?.closest('[style*="display: none"]'))
         assert.equal(shown('First session'), false)
         await renderHalf('projects', () => {
           useSessionsStore.setState({ activeTabId, currentProjectCwd })

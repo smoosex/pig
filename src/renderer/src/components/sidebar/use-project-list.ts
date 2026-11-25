@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PointerSensor,
   useSensor,
@@ -7,13 +7,18 @@ import {
   type DragStartEvent
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
+import { resolveProjectSpaceId } from '../../../../shared/project-spaces'
 import { api } from '../../ipc/api'
+import { useProjectSpacesStore } from '../../stores/project-spaces'
 import { useSessionsStore } from '../../stores/sessions'
 import { failureMessage } from '../../lib/ipc-error'
 
-/** Keeps filesystem synchronization and drag ordering outside the project tree UI. */
+/** Keeps filesystem synchronization, space filtering, and drag ordering outside the project tree UI. */
 export function useProjectList() {
-  const projects = useSessionsStore((s) => s.projects)
+  const allProjects = useSessionsStore((s) => s.projects)
+  const spaces = useProjectSpacesStore((s) => s.spaces)
+  const activeSpaceId = useProjectSpacesStore((s) => s.activeSpaceId)
+  const assignments = useProjectSpacesStore((s) => s.assignments)
   const reorderProjects = useSessionsStore((s) => s.reorderProjects)
   const isReorderingProjects = useSessionsStore((s) => s.isReorderingProjects)
   const refreshProject = useSessionsStore((s) => s.refreshProject)
@@ -22,10 +27,25 @@ export function useProjectList() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const clickGuard = useRef(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  const projects = useMemo(
+    () =>
+      allProjects.filter(
+        (project) => resolveProjectSpaceId({ spaces, assignments }, project.cwd) === activeSpaceId
+      ),
+    [allProjects, spaces, assignments, activeSpaceId]
+  )
+  const colorIndexByCwd = useMemo(
+    () => new Map(allProjects.map((project, index) => [project.cwd, index])),
+    [allProjects]
+  )
+  const activeSpaceIndex = useMemo(() => {
+    const idx = spaces.findIndex((space) => space.id === activeSpaceId)
+    return idx === -1 ? 0 : idx
+  }, [spaces, activeSpaceId])
+  const activeSpace = spaces[activeSpaceIndex] ?? spaces[0]
   const activeProject = activeId ? projects.find((project) => project.cwd === activeId) : undefined
-  const activeIndex = activeProject
-    ? projects.findIndex((project) => project.cwd === activeProject.cwd)
-    : -1
+  const activeIndex = activeProject ? (colorIndexByCwd.get(activeProject.cwd) ?? 0) : -1
 
   useEffect(() => {
     let disposed = false
@@ -77,8 +97,13 @@ export function useProjectList() {
     const oldIndex = projects.findIndex((project) => project.cwd === active.id)
     const newIndex = projects.findIndex((project) => project.cwd === over.id)
     if (oldIndex === -1 || newIndex === -1) return
-    const nextProjects = arrayMove(projects, oldIndex, newIndex)
-    void reorderProjects(nextProjects.map((project) => project.cwd)).then(
+    const nextVisible = arrayMove(projects, oldIndex, newIndex)
+    const visibleSet = new Set(projects.map((project) => project.cwd))
+    let cursor = 0
+    const nextOrder = allProjects.map((project) =>
+      visibleSet.has(project.cwd) ? nextVisible[cursor++]!.cwd : project.cwd
+    )
+    void reorderProjects(nextOrder).then(
       () => setSyncError(null),
       (error: unknown) => setSyncError(failureMessage(error))
     )
@@ -88,6 +113,10 @@ export function useProjectList() {
 
   return {
     projects,
+    spacesCount: spaces.length,
+    activeSpace,
+    activeSpaceIndex,
+    colorIndexByCwd,
     isReorderingProjects,
     syncError,
     activeProject,

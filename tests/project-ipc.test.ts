@@ -37,6 +37,7 @@ async function runFixture(): Promise<void> {
   }))
   mock.module(modulePath('../src/main/opened-projects.ts'), () => ({
     addOpenedProject: async (cwd: string) => { openCalls.push(`add:${cwd}`); return cwd },
+    listOpenedCwds: async () => [],
     removeOpenedProject: async () => { removeProjectCalls++ },
     reorderOpenedProjects: async () => {}
   }))
@@ -69,6 +70,10 @@ async function runFixture(): Promise<void> {
     isChatsRoot: (cwd: string) => cwd === join(chatPath, 'root'),
     listChats: async () => [],
     removeChatWorkDir: async () => {}
+  }))
+  mock.module(modulePath('../src/main/chat-to-project.ts'), () => ({
+    convertChatToProject: async () => ({ project: { cwd: '/project' }, migratedSessionIds: [] }),
+    getDefaultProjectsLocation: async () => ({ defaultParentDir: '/projects', parentExists: false, homeDir: '/' })
   }))
   mock.module(modulePath('../src/main/open-project-sessions.ts'), () => ({
     removeOpenProjectWorkspaces: async () => { removeWorkspaceCalls++ }

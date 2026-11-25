@@ -4,7 +4,7 @@
  * serializes mutations through a single queue with atomic writes, and maps Git worktree cwds
  * back to their canonical opened project root.
  */
-import { BrowserWindow } from 'electron'
+import * as electron from 'electron'
 import { randomUUID } from 'node:crypto'
 import { copyFile, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -241,7 +241,7 @@ function parseSnapshot(text: string): KanbanSnapshot {
 }
 
 function broadcastKanbanChanged(snapshot: KanbanSnapshot): void {
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of electron.BrowserWindow?.getAllWindows?.() ?? []) {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send('kanban:changed', snapshot)
     }

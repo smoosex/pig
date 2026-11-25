@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { watch } from 'node:fs'
-import { BrowserWindow } from 'electron'
+import * as electron from 'electron'
 import type { DiffWatchError } from '../../shared/api'
 import { pigDir } from '../pig-dir'
 import { createWorktreeWatchManager } from './watch-manager'
@@ -12,12 +12,12 @@ const manager = createWorktreeWatchManager({
   dataDir: pigDir,
   createLease: randomUUID,
   sendChanged: (cwd) => {
-    for (const window of BrowserWindow.getAllWindows()) {
+    for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
       if (!window.isDestroyed()) window.webContents.send('diff:changed', cwd)
     }
   },
   sendError: (error: DiffWatchError) => {
-    for (const window of BrowserWindow.getAllWindows()) {
+    for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
       if (!window.isDestroyed()) window.webContents.send('diff:watch-error', error)
     }
   }

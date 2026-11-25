@@ -325,11 +325,31 @@ export const zh = {
   },
   project: {
     menu: '项目 {name} 更多操作',
+    moveToSpace: '移动到空间',
+    newSpaceAndMove: '新建空间…',
     remove: '从列表移除',
     delete: '删除项目',
     deleteBody:
       '将停止并删除原目录及所有 Worktree 的 Pi 会话，并从项目列表移除。项目文件、Worktree 和 Git 分支会保留。会话删除后无法恢复。',
     deleteConfirm: '删除会话并移除'
+  },
+  spaces: {
+    defaultName: '默认',
+    numberedName: '空间 {n}',
+    switcherAria: '切换项目空间',
+    create: '新建空间',
+    renameTitle: '重命名空间',
+    changeIcon: '更改图标…',
+    changeIconTitle: '更改空间图标',
+    nameLabel: '名称',
+    namePlaceholder: '输入空间名称',
+    chooseIcon: '选择图标',
+    defaultIcon: '默认圆点',
+    createConfirm: '创建',
+    saveConfirm: '保存',
+    deleteTitle: '删除空间「{name}」？',
+    deleteBody: '该空间内的 {count} 个项目将移至「{target}」，项目文件与会话记录不会被删除。',
+    deleteConfirm: '删除空间'
   },
   worktree: {
     create: '创建 worktree',

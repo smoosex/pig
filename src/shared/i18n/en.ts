@@ -323,11 +323,31 @@ export const en: Messages = {
   },
   project: {
     menu: 'More actions for {name}',
+    moveToSpace: 'Move to space',
+    newSpaceAndMove: 'New space…',
     remove: 'Remove from list',
     delete: 'Delete project',
     deleteBody:
       'Stops and deletes the Pi sessions of the project directory and every worktree, then removes the project from the list. Project files, worktrees and Git branches stay. Deleted sessions cannot be recovered.',
     deleteConfirm: 'Delete sessions and remove'
+  },
+  spaces: {
+    defaultName: 'Default',
+    numberedName: 'Space {n}',
+    switcherAria: 'Switch project space',
+    create: 'New space',
+    renameTitle: 'Rename space',
+    changeIcon: 'Change icon…',
+    changeIconTitle: 'Change space icon',
+    nameLabel: 'Name',
+    namePlaceholder: 'Enter space name',
+    chooseIcon: 'Choose icon',
+    defaultIcon: 'Default dot',
+    createConfirm: 'Create',
+    saveConfirm: 'Save',
+    deleteTitle: 'Delete space “{name}”?',
+    deleteBody: '{count} project(s) in this space will be moved to “{target}”. Project files and sessions will not be deleted.',
+    deleteConfirm: 'Delete space'
   },
   worktree: {
     create: 'Create worktree',

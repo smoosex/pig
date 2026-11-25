@@ -3,7 +3,7 @@
  * (defaulting under `$HOME/pig_projects/<folderName>`), copying workspace files and optionally
  * migrating its Pi JSONL session history, subagent parent links, bookmarks, and Kanban links.
  */
-import { BrowserWindow } from 'electron'
+import * as electron from 'electron'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -261,7 +261,7 @@ export async function convertChatToProject(
     const prevBookmarks = await bookmarks.list().catch(() => null)
     const nextBookmarks = await bookmarks.relocateSessions(bookmarkTargets).catch(() => null)
     if (prevBookmarks && nextBookmarks && nextBookmarks.revision !== prevBookmarks.revision) {
-      for (const win of BrowserWindow.getAllWindows()) {
+      for (const win of electron.BrowserWindow?.getAllWindows?.() ?? []) {
         if (!win.isDestroyed()) win.webContents.send('bookmarks:changed')
       }
     }

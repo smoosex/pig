@@ -4,10 +4,12 @@
  * Versions prevent a delayed directory scan from undoing a local reorder.
  */
 import { api } from '../../ipc/api'
+import { DEFAULT_SPACE_ID } from '../../../../shared/project-spaces'
 import { compareGroupsByLatestSession } from '../../../../shared/session-order'
 import { t } from '../../lib/i18n'
 import { useDiffStore } from '../diff'
 import { useFilesStore } from '../files'
+import { useProjectSpacesStore } from '../project-spaces'
 import {
   mapGroupSessions,
   mergeWorktreeDiscoveries,
@@ -225,6 +227,10 @@ export const createCatalogSlice: SessionSlice<
         return
       }
       const project = await api.openProject(path)
+      const activeSpaceId = useProjectSpacesStore.getState().activeSpaceId
+      if (activeSpaceId && activeSpaceId !== DEFAULT_SPACE_ID) {
+        await useProjectSpacesStore.getState().assignProject(project.cwd, activeSpaceId)
+      }
       projectMembershipVersion++
       set((s) => {
         const index = s.projects.findIndex((item) => item.cwd === project.cwd)
@@ -237,6 +243,10 @@ export const createCatalogSlice: SessionSlice<
 
     convertChatToProject: async (input) => {
       const result = await api.convertChatToProject(input)
+      const activeSpaceId = useProjectSpacesStore.getState().activeSpaceId
+      if (activeSpaceId && activeSpaceId !== DEFAULT_SPACE_ID) {
+        await useProjectSpacesStore.getState().assignProject(result.project.cwd, activeSpaceId)
+      }
       projectMembershipVersion++
       if (input.transferSession) {
         useDiffStore.getState().forgetWorktree(input.chatCwd)
@@ -284,6 +294,7 @@ export const createCatalogSlice: SessionSlice<
 
     unpinProject: async (cwd) => {
       await api.unpinProject(cwd)
+      void useProjectSpacesStore.getState().forgetProject(cwd)
       get().forgetAgentProject(cwd, [])
     },
 
@@ -448,6 +459,7 @@ export const createCatalogSlice: SessionSlice<
     deleteProject: async (cwd) => {
       const project = get().projects.find((item) => item.cwd === cwd)
       if (!(await api.deleteProject(cwd))) return
+      void useProjectSpacesStore.getState().forgetProject(cwd)
       for (const worktreeCwd of new Set([
         cwd,
         ...(project?.worktrees ?? []).map((worktree) => worktree.cwd)

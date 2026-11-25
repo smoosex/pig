@@ -164,6 +164,14 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.terminal.answerAgentOpen('request-1', { terminalId: 'terminal:two' })
   await api.dream.auditProjects()
   await api.dream.start({ audit: true, scope: { kind: 'global' } })
+  await api.spaces.getSnapshot()
+  await api.spaces.select('space-1')
+  await api.spaces.create({ name: 'Work', icon: 'rocket', moveProjectCwd: '/repo' })
+  await api.spaces.update({ id: 'space-1', name: 'Renamed', icon: null })
+  await api.spaces.remove('space-1')
+  await api.spaces.assignProject('/repo', 'default')
+  await api.spaces.forgetProject('/repo')
+  api.spaces.onChanged(() => {})()
   api.terminal.onAgentOpenRequest(() => {})()
   api.terminal.onAgentState(() => {})()
   api.terminal.onEvent(() => {})()
@@ -282,8 +290,16 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'terminal:release-agent', args: ['terminal:one', 'session-1'] },
     { channel: 'terminal:agent-open-answer', args: ['request-1', { terminalId: 'terminal:two' }] },
     { channel: 'memory:dream:audit-projects', args: [] },
-    { channel: 'memory:dream:start', args: [{ audit: true, scope: { kind: 'global' } }] }
+    { channel: 'memory:dream:start', args: [{ audit: true, scope: { kind: 'global' } }] },
+    { channel: 'spaces:snapshot', args: [] },
+    { channel: 'spaces:select', args: ['space-1'] },
+    { channel: 'spaces:create', args: [{ name: 'Work', icon: 'rocket', moveProjectCwd: '/repo' }] },
+    { channel: 'spaces:update', args: [{ id: 'space-1', name: 'Renamed', icon: null }] },
+    { channel: 'spaces:remove', args: ['space-1'] },
+    { channel: 'spaces:assign-project', args: ['/repo', 'default'] },
+    { channel: 'spaces:forget-project', args: ['/repo'] }
   ])
+  assert.ok(listeners.includes('spaces:changed'))
   assert.ok(listeners.includes('diff:watch-error'), 'the preload exposes watch failures')
   assert.ok(listeners.includes('session:names'), 'the preload exposes names found after a listing')
   assert.ok(listeners.includes('notification:click'), 'the preload exposes completion notification clicks')

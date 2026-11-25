@@ -15,8 +15,10 @@ import type { BookmarksApi } from './bookmarks'
 import type { SessionAgentUiApi } from './session-agent'
 import type { BotApi } from './bot'
 import type { KanbanApi } from './kanban'
+import type { ProjectSpacesApi } from './project-spaces'
 export type * from './bot'
 export type * from './kanban'
+export type * from './project-spaces'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -995,6 +997,7 @@ export interface ConvertChatToProjectResult {
 export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
   bookmarks: BookmarksApi
   kanban: KanbanApi
+  spaces: ProjectSpacesApi
   sessionAgent: SessionAgentUiApi
   bot: BotApi
   browser: import('./browser').BrowserApi

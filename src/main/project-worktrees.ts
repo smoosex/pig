@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import * as electron from 'electron'
 import { watch } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHeadWatchManager } from './git/head-watch'
@@ -16,7 +16,7 @@ export interface WorktreeProject extends ProjectGroup {
 }
 
 function sendProjectChanged(projectCwd: string): void {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
       window.webContents.send('projects:changed', projectCwd)
     }
@@ -42,7 +42,7 @@ async function watchBranches(projectCwd: string, hasGit: boolean | null, items: 
 export const forgetProjectBranches = branchWatch.forget
 
 export const worktrees = new WorktreeService(pigPath('worktrees'), sendProjectChanged, (jobs) => {
-  for (const window of BrowserWindow.getAllWindows()) {
+  for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
       window.webContents.send('worktrees:deletions-changed', jobs)
     }

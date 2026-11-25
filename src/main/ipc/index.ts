@@ -22,9 +22,11 @@ import { registerSessionReader } from '../pi/session-read'
 import { registerSessionAgentIpc } from './session-agent'
 import { registerBotIpc } from './bot'
 import { registerKanbanIpc } from './kanban'
+import { registerProjectSpacesIpc } from './project-spaces'
 
 export function registerIpc(): void {
   registerProjectIpc()
+  registerProjectSpacesIpc()
   registerSessionIpc()
   registerBookmarksIpc()
   registerKanbanIpc()

@@ -1,16 +1,39 @@
 import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ChevronRight, FolderMinus, MoreHorizontal, Trash2 } from 'lucide-react'
+import { ChevronRight, FolderInput, FolderMinus, MoreHorizontal, Plus, Trash2 } from 'lucide-react'
+import { resolveProjectSpaceId } from '../../../../shared/project-spaces'
+import { spaceDisplayName, useProjectSpacesStore } from '../../stores/project-spaces'
 import { useSessionsStore, selectActiveSessionCwd, type ProjectGroup, type WorktreeGroup } from '../../stores/sessions'
-import { cn } from '../../lib/utils'
+import { cn, hideScroll } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuPortal,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger
+} from '../ui/context-menu'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
@@ -20,6 +43,7 @@ import { CreateWorktreeButton } from './WorktreeActions'
 import { WorktreeRow } from './WorktreeRow'
 import { ProjectAvatar } from './ProjectAvatar'
 import { sidebarButtonSurface, sidebarRowSurface } from './sidebar-surface'
+import { SpaceGlyph } from './space-icons'
 
 export type DragClickGuard = { current: boolean }
 
@@ -43,6 +67,11 @@ export function ProjectRow({
   const setProjectExpanded = useSessionsStore((s) => s.setProjectExpanded)
   const setWorktreeExpanded = useSessionsStore((s) => s.setWorktreeExpanded)
   const revealProjectWorktree = useSessionsStore((s) => s.revealProjectWorktree)
+  const spaces = useProjectSpacesStore((s) => s.spaces)
+  const assignments = useProjectSpacesStore((s) => s.assignments)
+  const assignProject = useProjectSpacesStore((s) => s.assignProject)
+  const openSpaceDialog = useProjectSpacesStore((s) => s.openDialog)
+  const currentSpaceId = resolveProjectSpaceId({ spaces, assignments }, project.cwd)
   const t = useT()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { pending, error, runAction } = useProjectAction()
@@ -86,90 +115,175 @@ export function ProjectRow({
     >
       <Collapsible open={open} onOpenChange={(next) => setProjectExpanded(project.cwd, next)}>
         <div className="px-1">
-          <div
-            data-sidebar-hover-row
-            data-sidebar-selected={active || undefined}
-            className={cn(
-              'group/project relative flex h-9 items-center gap-0.5 rounded-md px-1',
-              sidebarRowSurface(active)
-            )}
-          >
-            <CollapsibleTrigger asChild>
-              <Button
-                ref={setActivatorNodeRef}
-                {...attributes}
-                {...listeners}
-                variant="ghost"
-                className={cn('h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal', sidebarButtonSurface)}
-                onClick={(event) => {
-                  if (clickGuard.current) {
-                    event.preventDefault()
-                    event.stopPropagation()
-                  }
-                }}
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                data-sidebar-hover-row
+                data-sidebar-selected={active || undefined}
+                className={cn(
+                  'group/project relative flex h-9 items-center gap-0.5 rounded-md px-1',
+                  sidebarRowSurface(active)
+                )}
               >
-                <ProjectAvatar name={project.name} index={index} />
-                <span className="min-w-0 truncate" title={project.cwd}>
-                  {project.name}
-                </span>
-                <ChevronRight
-                  className={cn(
-                    'size-2.5 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] group-hover/project:opacity-100 group-focus-within/project:opacity-100',
-                    open && 'rotate-90'
-                  )}
-                />
-              </Button>
-            </CollapsibleTrigger>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={cn(
-                    'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
-                    sidebarButtonSurface
-                  )}
-                  aria-label={t('project.menu', { name: project.name })}
+                <CollapsibleTrigger asChild>
+                  <Button
+                    ref={setActivatorNodeRef}
+                    {...attributes}
+                    {...listeners}
+                    variant="ghost"
+                    className={cn('h-full min-w-0 flex-1 justify-start gap-1.5 rounded-md px-0 text-xs font-normal', sidebarButtonSurface)}
+                    onClick={(event) => {
+                      if (clickGuard.current) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }
+                    }}
+                  >
+                    <ProjectAvatar name={project.name} index={index} />
+                    <span className="min-w-0 truncate" title={project.cwd}>
+                      {project.name}
+                    </span>
+                    <ChevronRight
+                      className={cn(
+                        'size-2.5 shrink-0 text-muted-foreground opacity-0 transition-[opacity,transform] group-hover/project:opacity-100 group-focus-within/project:opacity-100',
+                        open && 'rotate-90'
+                      )}
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className={cn(
+                        'pointer-events-none text-muted-foreground opacity-0 transition-opacity group-hover/project:pointer-events-auto group-hover/project:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
+                        sidebarButtonSurface
+                      )}
+                      aria-label={t('project.menu', { name: project.name })}
+                      disabled={pending !== null}
+                    >
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuGroup>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <FolderInput data-icon="inline-start" />
+                          {t('project.moveToSpace')}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuPortal>
+                          <DropdownMenuSubContent className={cn('max-h-52 overflow-y-auto', hideScroll)}>
+                            <DropdownMenuRadioGroup
+                              value={currentSpaceId}
+                              onValueChange={(spaceId) => void assignProject(project.cwd, spaceId)}
+                            >
+                              {spaces.map((space) => (
+                                <DropdownMenuRadioItem key={space.id} value={space.id}>
+                                  <span className="flex size-3 shrink-0 items-center justify-center">
+                                    <SpaceGlyph icon={space.icon} active={space.id === currentSpaceId} />
+                                  </span>
+                                  <span className="min-w-0 truncate">{spaceDisplayName(space, t)}</span>
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => openSpaceDialog({ mode: 'create', moveProjectCwd: project.cwd })}
+                            >
+                              <Plus data-icon="inline-start" />
+                              {t('project.newSpaceAndMove')}
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuPortal>
+                      </DropdownMenuSub>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={pending !== null}
+                        onSelect={() => void runAction('unpin', () => unpinProject(project.cwd))}
+                      >
+                        <FolderMinus data-icon="inline-start" />
+                        {t('project.remove')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={pending !== null}
+                        onSelect={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {t('project.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <CreateWorktreeButton
+                  projectCwd={project.cwd}
+                  hasGit={project.hasGit === true}
                   disabled={pending !== null}
+                  busy={pending === 'create-worktree'}
+                  runAction={runAction}
+                  onCreate={async (initGit) => {
+                    const cwd = await createWorktree(project.cwd, { initGit })
+                    if (!cwd) return
+                    setProjectExpanded(project.cwd, true)
+                    setWorktreeExpanded(cwd, true)
+                    await newSession(cwd)
+                  }}
+                />
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuGroup>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <FolderInput data-icon="inline-start" />
+                    {t('project.moveToSpace')}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuPortal>
+                    <ContextMenuSubContent className={cn('max-h-52 overflow-y-auto', hideScroll)}>
+                      <ContextMenuRadioGroup
+                        value={currentSpaceId}
+                        onValueChange={(spaceId) => void assignProject(project.cwd, spaceId)}
+                      >
+                        {spaces.map((space) => (
+                          <ContextMenuRadioItem key={space.id} value={space.id}>
+                            <span className="flex size-3 shrink-0 items-center justify-center">
+                              <SpaceGlyph icon={space.icon} active={space.id === currentSpaceId} />
+                            </span>
+                            <span className="min-w-0 truncate">{spaceDisplayName(space, t)}</span>
+                          </ContextMenuRadioItem>
+                        ))}
+                      </ContextMenuRadioGroup>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={() => openSpaceDialog({ mode: 'create', moveProjectCwd: project.cwd })}
+                      >
+                        <Plus data-icon="inline-start" />
+                        {t('project.newSpaceAndMove')}
+                      </ContextMenuItem>
+                    </ContextMenuSubContent>
+                  </ContextMenuPortal>
+                </ContextMenuSub>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  disabled={pending !== null}
+                  onSelect={() => void runAction('unpin', () => unpinProject(project.cwd))}
                 >
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem
-                    disabled={pending !== null}
-                    onSelect={() => void runAction('unpin', () => unpinProject(project.cwd))}
-                  >
-                    <FolderMinus data-icon="inline-start" />
-                    {t('project.remove')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    disabled={pending !== null}
-                    onSelect={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 data-icon="inline-start" />
-                    {t('project.delete')}
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <CreateWorktreeButton
-              projectCwd={project.cwd}
-              hasGit={project.hasGit === true}
-              disabled={pending !== null}
-              busy={pending === 'create-worktree'}
-              runAction={runAction}
-              onCreate={async (initGit) => {
-                const cwd = await createWorktree(project.cwd, { initGit })
-                if (!cwd) return
-                setProjectExpanded(project.cwd, true)
-                setWorktreeExpanded(cwd, true)
-                await newSession(cwd)
-              }}
-            />
-          </div>
+                  <FolderMinus data-icon="inline-start" />
+                  {t('project.remove')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  variant="destructive"
+                  disabled={pending !== null}
+                  onSelect={() => setDeleteOpen(true)}
+                >
+                  <Trash2 data-icon="inline-start" />
+                  {t('project.delete')}
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </ContextMenuContent>
+          </ContextMenu>
           {project.gitError && (
             <p role="alert" className="px-1 py-1 text-xs break-words text-destructive">
               {project.gitError}
