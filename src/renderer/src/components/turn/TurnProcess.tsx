@@ -18,7 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { Marker, MarkerContent } from '../ui/marker'
 import { MarkdownText } from '../MarkdownText'
 import { Chevron, disclosureButton, Rail, StackedIcons, statusMarker, VerbLabel } from './ProcessChrome'
-import { clusterWork, processToolNames, toolUsageSummary, iconKinds, processSegments, type WorkRow } from './process-model'
+import { activeIconKind, clusterWork, processToolNames, toolUsageSummary, iconKinds, processSegments, type WorkRow } from './process-model'
 import { BashCluster, BashRow, ToolCluster, ToolRow } from './ToolDetails'
 import { CustomProcess, ThinkingRow } from './ProcessText'
 import { WaitLine } from './WaitLine'
@@ -146,14 +146,19 @@ const OutlineBody = memo(function OutlineBody({ items, active, streaming }: { it
   )
 })
 
-const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { items: ProcessItem[]; active: boolean; streaming: boolean }) {
+const OutlineGroup = memo(function OutlineGroup({ items, active, streaming, waitingForModel }: {
+  items: ProcessItem[]
+  active: boolean
+  streaming: boolean
+  waitingForModel: boolean
+}) {
   const tools = processToolNames(items)
   if (tools.length === 0) {
     return (
       <>
         {items.map((item, i) => {
           if (item.kind === 'thinking') {
-            const live = streaming && active && i === items.length - 1 && item.live
+            const live = streaming && active && !waitingForModel && i === items.length - 1 && item.live
             if (live) {
               return <ThinkingRow key={i} text={item.text} live stacked streaming={streaming} />
             }
@@ -165,10 +170,11 @@ const OutlineGroup = memo(function OutlineGroup({ items, active, streaming }: { 
       </>
     )
   }
+  const currentKind = streaming && active && !waitingForModel ? activeIconKind(items) : undefined
   return (
     <div className="min-w-0">
       <Marker className={statusMarker}>
-        <StackedIcons kinds={iconKinds(items)} />
+        <StackedIcons kinds={iconKinds(items)} activeKind={currentKind} />
         <MarkerContent className="flex-1 truncate">{toolUsageSummary(tools)}</MarkerContent>
       </Marker>
       <Rail>
@@ -210,7 +216,13 @@ export function ProcessOutline({ items, streaming, waitingForModel }: {
             streaming={streaming && i === segments.length - 1}
           />
         ) : (
-          <OutlineGroup key={i} items={segment.items} active={i === segments.length - 1} streaming={streaming} />
+          <OutlineGroup
+            key={i}
+            items={segment.items}
+            active={i === segments.length - 1}
+            streaming={streaming}
+            waitingForModel={i === segments.length - 1 && waitingForModel}
+          />
         )
       )}
       {streaming && waitingForModel ? (

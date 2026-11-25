@@ -282,7 +282,7 @@ function AgentTurnView({
                       </Button>
                     </CollapsibleTrigger>
                   </Marker>
-                  <CollapsibleContent className="duration-300">
+                  <CollapsibleContent className={cn('duration-300', turn.streaming && 'overflow-visible')}>
                     {liveOutline ? (
                       <ProcessOutline
                         items={block.items}

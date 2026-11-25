@@ -32,6 +32,24 @@ export function iconKinds(items: ProcessItem[]): IconKind[] {
   return kinds
 }
 
+/** Icon category of the step currently executing at the tail of an active process group. */
+export function activeIconKind(items: ProcessItem[]): IconKind | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]
+    if (item.kind === 'compaction') continue
+    if (item.kind === 'thinking') return item.live ? 'thinking' : undefined
+    if (item.kind === 'tools') {
+      const current = item.tools.findLast((step) => !step.result)
+      return current ? stackKindForTool(current.name) : undefined
+    }
+    if (item.kind === 'bash') {
+      return item.message.exitCode === undefined && !item.message.cancelled ? 'bash' : undefined
+    }
+    return undefined
+  }
+  return undefined
+}
+
 export type WorkRow =
   | Extract<ProcessItem, { kind: 'thinking' }>
   | { kind: 'tools'; steps: ToolStep[] }

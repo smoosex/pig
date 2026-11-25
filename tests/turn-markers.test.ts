@@ -81,6 +81,9 @@ async function runFixture(name: string): Promise<void> {
     return button
   }
   const shimmerText = () => [...container.querySelectorAll('.shimmer')].map((el) => el.textContent)
+  const glowingIcons = () =>
+    [...container.querySelectorAll<HTMLElement>('.step-icon-glow[data-active="true"]')]
+      .map((el) => el.getAttribute('data-icon-kind'))
   const readTool = (id: string, done = false): ToolStep => ({
     id,
     name: 'read',
@@ -116,6 +119,7 @@ async function runFixture(name: string): Promise<void> {
       const process: ProcessItem[] = [{ kind: 'thinking', text: '完整思考正文', durationMs: 0, live: true }]
       await render(makeTurn({ process }))
       assert.deepEqual(shimmerText(), ['思考中...'])
+      assert.deepEqual(glowingIcons(), ['thinking'])
       assert.equal(container.querySelector('.shimmer')!.classList.contains('shimmer-once'), false)
       assert.equal(container.querySelector('.shimmer')!.children.length, 0)
       assert.equal(container.querySelector('.shimmer svg'), null)
@@ -147,6 +151,7 @@ async function runFixture(name: string): Promise<void> {
       assert.equal(container.querySelector('pre')!.scrollTop, 2_000)
       await render(makeTurn({ process: [{ ...process[0], durationMs: 1_000, live: false } as ProcessItem] }))
       assert.deepEqual(shimmerText(), [])
+      assert.deepEqual(glowingIcons(), [])
       const thinking = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('已思考'))!
       assert.ok(thinking)
       // Expanding a live thought keeps it open once it settles.
@@ -241,6 +246,7 @@ async function runFixture(name: string): Promise<void> {
       ]
       await render(makeTurn({ process }))
       assert.equal(shimmerText().length, 1)
+      assert.deepEqual(glowingIcons(), ['file'])
       assert.ok(shimmerText()[0]?.includes('current.ts'))
       const shimmer = container.querySelector('.shimmer')!
       assert.equal(shimmer.classList.contains('shimmer-once'), false)
@@ -254,6 +260,7 @@ async function runFixture(name: string): Promise<void> {
       for (const header of summaries) assert.equal(header.querySelector('.shimmer'), null)
       await render(makeTurn({ process, errorMessage: 'request failed' }))
       assert.deepEqual(shimmerText(), [])
+      assert.deepEqual(glowingIcons(), [])
       assert.ok(container.textContent?.includes('current.ts'))
     } else if (name === 'tool-wait') {
       const messages: Message[] = [sourceUser, sourceRequest]
@@ -286,6 +293,7 @@ async function runFixture(name: string): Promise<void> {
       }
       await render(groupTurns([sourceUser, parallel, { ...sourceResult, toolCallId: 'fast' }], true)[0])
       assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null, 'another pending tool is not a model wait')
+      assert.deepEqual(glowingIcons(), ['bash'])
       await render(groupTurns([...messages, { ...nextAssistant, errorMessage: 'aborted' }], true)[0])
       assert.equal(container.querySelector('[data-testid="thinking-orb"]'), null)
       await render(groupTurns(messages, false)[0])
@@ -466,8 +474,10 @@ async function runFixture(name: string): Promise<void> {
       }
       await render(makeTurn({ process: [running] }))
       assert.equal(shimmerText().length, 1)
+      assert.deepEqual(glowingIcons(), ['bash'])
       await render(makeTurn({ process: [{ ...running, message: { ...running.message, exitCode: 0 } }] }))
       assert.deepEqual(shimmerText(), [])
+      assert.deepEqual(glowingIcons(), [])
       for (const cancelled of [false, true]) {
         const process: ProcessItem[] = [{
           kind: 'bash',
@@ -483,6 +493,7 @@ async function runFixture(name: string): Promise<void> {
         }]
         await render(makeTurn({ process }))
         assert.deepEqual(shimmerText(), [])
+        assert.deepEqual(glowingIcons(), [])
         assert.ok(container.querySelector('[data-slot="marker"] .text-destructive'))
       }
     } else if (name === 'finish') {
@@ -498,6 +509,7 @@ async function runFixture(name: string): Promise<void> {
       assert.ok(content.classList.contains('duration-300'))
       assert.equal(liveRow?.isConnected, true)
       assert.deepEqual(shimmerText(), [])
+      assert.deepEqual(glowingIcons(), [])
       await render(turn)
       await act(async () => { await Bun.sleep(350) })
       assert.equal(separator().getAttribute('aria-expanded'), 'true')

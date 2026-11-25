@@ -50,11 +50,12 @@ export const ThinkingRow = memo(function ThinkingRow({
   const label = (
     <span className={cn('min-w-0 flex-1 truncate text-left', live && streaming && 'shimmer')}>{title}</span>
   )
+  const activeIcon = live && streaming ? 'thinking' : undefined
 
   if (live && !body) {
     return (
       <Marker className={statusMarker}>
-        {stacked ? <StackedIcons kinds={['thinking']} /> : null}
+        {stacked ? <StackedIcons kinds={['thinking']} activeKind={activeIcon} /> : null}
         <MarkerContent className="flex-1 truncate">{label}</MarkerContent>
       </Marker>
     )
@@ -77,7 +78,7 @@ export const ThinkingRow = memo(function ThinkingRow({
     >
       <CollapsibleTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className={cn(disclosureButton, stacked && 'w-full')}>
-          {stacked ? <StackedIcons kinds={['thinking']} /> : null}
+          {stacked ? <StackedIcons kinds={['thinking']} activeKind={activeIcon} /> : null}
           {label}
           <Chevron open={open} />
         </Button>

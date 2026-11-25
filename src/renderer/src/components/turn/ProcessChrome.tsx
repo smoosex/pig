@@ -37,19 +37,25 @@ export function Rail({ children }: { children: ReactNode }) {
   )
 }
 
-export function StackedIcons({ kinds }: { kinds: IconKind[] }) {
+export function StackedIcons({ kinds, activeKind }: { kinds: IconKind[]; activeKind?: IconKind }) {
   return (
     <span className="flex shrink-0 items-center">
       {kinds.map((kind, i) => {
         const Icon = ICONS[kind]
+        const active = kind === activeKind
         return (
           <span
             key={`${kind}-${i}`}
+            data-icon-kind={kind}
+            data-active={active || undefined}
             className={cn(
-              'relative flex size-5 items-center justify-center rounded-full border border-glass-button-border bg-glass-button-hover-background bg-[image:var(--glass-button-sheen)] shadow-glass-button solid:border-border solid:bg-card solid:bg-none solid:shadow-none',
+              'relative flex size-5 items-center justify-center rounded-full border bg-glass-button-hover-background bg-[image:var(--glass-button-sheen)] solid:bg-card solid:bg-none',
+              active
+                ? 'step-icon-glow border-primary/65 text-primary solid:border-primary/65'
+                : 'border-glass-button-border shadow-glass-button solid:border-border solid:shadow-none',
               i > 0 && '-ml-1.5'
             )}
-            style={{ zIndex: i }}
+            style={{ zIndex: active ? kinds.length : i }}
           >
             <Icon className="size-2.5" />
           </span>

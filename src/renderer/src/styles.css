@@ -428,6 +428,39 @@ html[data-bot-reveal='collapse']::view-transition-new(root) {
   animation: bot-orb-bounce 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+@keyframes step-icon-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 0.5px color-mix(in srgb, var(--primary) 22%, transparent),
+      0 0 5px 0 color-mix(in srgb, var(--primary) 28%, transparent),
+      inset 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--primary) 26%, transparent),
+      0 0 10px 1.5px color-mix(in srgb, var(--primary) 54%, transparent),
+      inset 0 0 7px color-mix(in srgb, var(--primary) 30%, transparent);
+  }
+}
+
+.step-icon-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 0 8px 1px color-mix(in srgb, var(--primary) 38%, transparent),
+    inset 0 0 6px color-mix(in srgb, var(--primary) 22%, transparent);
+  animation: step-icon-glow 1.8s ease-in-out infinite;
+}
+
+.step-icon-glow > svg {
+  filter: drop-shadow(0 0 2.5px color-mix(in srgb, var(--primary) 55%, transparent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-icon-glow {
+    animation: none;
+  }
+}
+
 /* Glass modals blur the app itself: backdrop-filter cannot see the native vibrancy and ghosts over
    translucent content, while filter rasterizes the app once. Dialogs portal to body, so stay sharp. */
 html[data-surface-style='glass']:has([data-slot='dialog-overlay'][data-state='open'], [data-slot='alert-dialog-overlay'][data-state='open']) [data-modal-blur-root] {
