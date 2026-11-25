@@ -4,15 +4,43 @@
  * - Owns board/list view preference, sidebar project scope filter, search query, and global Issue create/detail dialog state
  */
 import { create } from 'zustand'
-import type {
-  KanbanCreateInput,
-  KanbanIssue,
-  KanbanSnapshot,
-  KanbanStatus,
-  KanbanUpdateInput
+import {
+  isKanbanStatus,
+  KANBAN_STATUSES,
+  type KanbanCreateInput,
+  type KanbanIssue,
+  type KanbanSnapshot,
+  type KanbanStatus,
+  type KanbanUpdateInput
 } from '../../../shared/kanban'
 import { api } from '../ipc/api'
 import { failureMessage } from '../lib/ipc-error'
+
+const HIDDEN_STATUSES_STORAGE_KEY = 'pig:kanban:hidden-statuses'
+const DEFAULT_HIDDEN_STATUSES: KanbanStatus[] = ['canceled']
+
+function readStoredHiddenStatuses(): KanbanStatus[] {
+  try {
+    if (typeof localStorage === 'undefined') return DEFAULT_HIDDEN_STATUSES
+    const raw = localStorage.getItem(HIDDEN_STATUSES_STORAGE_KEY)
+    if (!raw) return DEFAULT_HIDDEN_STATUSES
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return DEFAULT_HIDDEN_STATUSES
+    const valid = new Set(parsed.filter(isKanbanStatus))
+    return KANBAN_STATUSES.filter((s) => valid.has(s))
+  } catch {
+    return DEFAULT_HIDDEN_STATUSES
+  }
+}
+
+function writeStoredHiddenStatuses(statuses: readonly KanbanStatus[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(HIDDEN_STATUSES_STORAGE_KEY, JSON.stringify(statuses))
+  } catch {
+    // Ignore storage quota / sandbox errors.
+  }
+}
 
 export type KanbanProjectScope = 'all' | 'unassigned' | string
 export type KanbanViewMode = 'board' | 'list'
@@ -40,7 +68,7 @@ export interface KanbanStoreState {
   viewMode: KanbanViewMode
   projectScope: KanbanProjectScope
   searchQuery: string
-  showCanceled: boolean
+  hiddenStatuses: KanbanStatus[]
   dialog: KanbanDialogState
 
   init: () => Promise<void>
@@ -48,7 +76,7 @@ export interface KanbanStoreState {
   setViewMode: (mode: KanbanViewMode) => void
   setProjectScope: (scope: KanbanProjectScope) => void
   setSearchQuery: (query: string) => void
-  setShowCanceled: (show: boolean) => void
+  setColumnHidden: (status: KanbanStatus, hidden: boolean) => void
   openCreateDialog: (options?: { projectCwd?: string | null; status?: KanbanStatus }) => void
   openIssueDialog: (number: number) => void
   closeDialog: () => void
@@ -73,7 +101,7 @@ export const useKanbanStore = create<KanbanStoreState>((set, get) => ({
   viewMode: 'board',
   projectScope: 'all',
   searchQuery: '',
-  showCanceled: false,
+  hiddenStatuses: readStoredHiddenStatuses(),
   dialog: null,
 
   init: async () => {
@@ -116,7 +144,16 @@ export const useKanbanStore = create<KanbanStoreState>((set, get) => ({
   setViewMode: (viewMode) => set({ viewMode }),
   setProjectScope: (projectScope) => set({ projectScope }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
-  setShowCanceled: (showCanceled) => set({ showCanceled }),
+  setColumnHidden: (status, hidden) => {
+    set((state) => {
+      const setNext = new Set(state.hiddenStatuses)
+      if (hidden) setNext.add(status)
+      else setNext.delete(status)
+      const hiddenStatuses = KANBAN_STATUSES.filter((s) => setNext.has(s))
+      writeStoredHiddenStatuses(hiddenStatuses)
+      return { hiddenStatuses }
+    })
+  },
 
   openCreateDialog: (options) => {
     const scope = get().projectScope

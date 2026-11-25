@@ -31,7 +31,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  KANBAN_BOARD_STATUSES,
   KANBAN_STATUSES,
   type KanbanIssue,
   type KanbanStatus
@@ -97,7 +96,7 @@ function KanbanColumn({
       ref={setNodeRef}
       data-kanban-column={status}
       className={cn(
-        'flex h-full w-72 min-w-68 shrink-0 flex-col rounded-xl border border-transparent bg-glass-prompt-foreground/4 transition-colors solid:bg-muted/35',
+        'group/kanban-col flex h-full w-72 min-w-68 shrink-0 flex-col rounded-xl border border-transparent bg-glass-prompt-foreground/4 transition-colors solid:bg-muted/35',
         isOver && 'border-primary/35 bg-primary/6 solid:bg-accent/50'
       )}
     >
@@ -117,7 +116,7 @@ function KanbanColumn({
                   size="icon-xs"
                   aria-label={t('kanban.hideColumn')}
                   onClick={onHideColumn}
-                  className="size-6 text-muted-foreground hover:text-foreground"
+                  className="size-6 text-muted-foreground opacity-0 transition-opacity group-hover/kanban-col:opacity-100 focus-visible:opacity-100 hover:text-foreground motion-reduce:transition-none"
                 >
                   <EyeOff className="size-3.5" />
                 </Button>
@@ -171,39 +170,63 @@ function KanbanColumn({
   )
 }
 
-/** Linear-style right-side collapsed "Hidden columns" rail (`Canceled`) — clickable to expand AND droppable! */
-function CollapsedCanceledRail({
+/** Single collapsed column pill inside Linear-style right-side "Hidden columns" rail — clickable to expand AND droppable! */
+function HiddenColumnPill({
+  status,
   count,
   onExpand
 }: {
+  status: KanbanStatus
   count: number
   onExpand: () => void
 }) {
   const t = useT()
   const { setNodeRef, isOver } = useDroppable({
-    id: 'column:canceled',
-    data: { type: 'column', status: 'canceled' as KanbanStatus }
+    id: `column:${status}`,
+    data: { type: 'column', status }
   })
 
   return (
-    <div className="flex w-52 shrink-0 flex-col pt-1 pr-1">
-      <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">
+    <button
+      ref={setNodeRef}
+      type="button"
+      data-kanban-hidden-column={status}
+      onClick={onExpand}
+      className={cn(
+        'flex h-9 w-full items-center gap-2 rounded-lg border border-transparent bg-glass-prompt-foreground/4 px-3 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-glass-prompt-foreground/8 hover:text-foreground focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring solid:bg-muted/35 solid:hover:bg-accent/60',
+        isOver && 'border-primary/40 bg-primary/10 text-foreground solid:bg-accent'
+      )}
+    >
+      <KanbanStatusIcon status={status} className="size-3.5" />
+      <span className="min-w-0 flex-1 truncate font-medium">{t(`kanban.status.${status}`)}</span>
+      <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">{count}</span>
+    </button>
+  )
+}
+
+function HiddenColumnsRail({
+  statuses,
+  groupedByStatus,
+  onExpand
+}: {
+  statuses: readonly KanbanStatus[]
+  groupedByStatus: ReadonlyMap<KanbanStatus, KanbanIssue[]>
+  onExpand: (status: KanbanStatus) => void
+}) {
+  const t = useT()
+  return (
+    <div className="flex w-52 shrink-0 flex-col gap-1.5 pt-1 pr-1">
+      <div className="px-2 pb-0.5 text-xs font-medium text-muted-foreground">
         {t('kanban.hiddenColumns')}
       </div>
-      <button
-        ref={setNodeRef}
-        type="button"
-        data-kanban-hidden-column="canceled"
-        onClick={onExpand}
-        className={cn(
-          'flex h-9 w-full items-center gap-2 rounded-lg border border-transparent bg-glass-prompt-foreground/4 px-3 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-glass-prompt-foreground/8 hover:text-foreground focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-ring solid:bg-muted/35 solid:hover:bg-accent/60',
-          isOver && 'border-primary/40 bg-primary/10 text-foreground solid:bg-accent'
-        )}
-      >
-        <KanbanStatusIcon status="canceled" className="size-3.5" />
-        <span className="min-w-0 flex-1 truncate font-medium">{t('kanban.status.canceled')}</span>
-        <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground">{count}</span>
-      </button>
+      {statuses.map((status) => (
+        <HiddenColumnPill
+          key={status}
+          status={status}
+          count={groupedByStatus.get(status)?.length ?? 0}
+          onExpand={() => onExpand(status)}
+        />
+      ))}
     </div>
   )
 }
@@ -217,8 +240,8 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
   const viewMode = useKanbanStore((s) => s.viewMode)
   const projectScope = useKanbanStore((s) => s.projectScope)
   const searchQuery = useKanbanStore((s) => s.searchQuery)
-  const showCanceled = useKanbanStore((s) => s.showCanceled)
-  const setShowCanceled = useKanbanStore((s) => s.setShowCanceled)
+  const hiddenStatuses = useKanbanStore((s) => s.hiddenStatuses)
+  const setColumnHidden = useKanbanStore((s) => s.setColumnHidden)
   const openCreateDialog = useKanbanStore((s) => s.openCreateDialog)
   const openIssueDialog = useKanbanStore((s) => s.openIssueDialog)
   const updateIssue = useKanbanStore((s) => s.updateIssue)
@@ -227,6 +250,7 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
   const projectNames = useMemo(() => new Map(projects.map((p) => [p.cwd, p.name])), [projects])
 
   const [activeDragNumber, setActiveDragNumber] = useState<number | null>(null)
+  const [listPeekStatuses, setListPeekStatuses] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!loaded && !loading) {
@@ -275,7 +299,15 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
     return map
   }, [scopedFilteredAllStatuses])
 
-  const canceledIssues = groupedByStatus.get('canceled') ?? []
+  const hiddenSet = useMemo(() => new Set(hiddenStatuses), [hiddenStatuses])
+  const visibleStatuses = useMemo(
+    () => KANBAN_STATUSES.filter((s) => !hiddenSet.has(s)),
+    [hiddenSet]
+  )
+  const orderedHiddenStatuses = useMemo(
+    () => KANBAN_STATUSES.filter((s) => hiddenSet.has(s)),
+    [hiddenSet]
+  )
 
   const activeDragIssue = useMemo(
     () => (activeDragNumber != null ? items.find((i) => i.number === activeDragNumber) ?? null : null),
@@ -536,46 +568,70 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
     return (
       <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:hidden">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
-          {KANBAN_BOARD_STATUSES.map((status) => {
+          {visibleStatuses.map((status) => {
             const list = groupedByStatus.get(status) ?? []
             if (list.length === 0) return null
             return (
-              <section key={status} className="flex flex-col gap-1">
+              <section key={status} className="group/kanban-list-sec flex flex-col gap-1">
                 <header className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
                   <KanbanStatusIcon status={status} className="size-3.5" />
                   <span className="text-foreground">{t(`kanban.status.${status}`)}</span>
                   <span className="tabular-nums text-[11px]">{list.length}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={t('kanban.newIssue')}
-                    onClick={() => openCreateDialog({ status })}
-                    className="ml-auto size-6 text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={t('kanban.hideColumn')}
+                          onClick={() => setColumnHidden(status, true)}
+                          className="size-6 text-muted-foreground opacity-0 transition-opacity group-hover/kanban-list-sec:opacity-100 focus-visible:opacity-100 hover:text-foreground motion-reduce:transition-none"
+                        >
+                          <EyeOff className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{t('kanban.hideColumn')}</TooltipContent>
+                    </Tooltip>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t('kanban.newIssue')}
+                      onClick={() => openCreateDialog({ status })}
+                      className="size-6 text-muted-foreground hover:text-foreground"
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                  </div>
                 </header>
                 {renderListRows(list)}
               </section>
             )
           })}
 
-          {canceledIssues.length > 0 ? (
-            <section className="flex flex-col gap-1 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowCanceled(!showCanceled)}
-                className="flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {showCanceled ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                <KanbanStatusIcon status="canceled" className="size-3.5" />
-                <span>{t('kanban.status.canceled')}</span>
-                <span className="tabular-nums text-[11px]">{canceledIssues.length}</span>
-              </button>
-              {showCanceled ? renderListRows(canceledIssues) : null}
-            </section>
-          ) : null}
+          {orderedHiddenStatuses.map((status) => {
+            const list = groupedByStatus.get(status) ?? []
+            if (list.length === 0) return null
+            const peeked = Boolean(listPeekStatuses[status])
+            return (
+              <section key={status} className="flex flex-col gap-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setListPeekStatuses((prev) => ({ ...prev, [status]: !prev[status] }))
+                  }
+                  className="flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {peeked ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  <KanbanStatusIcon status={status} className="size-3.5" />
+                  <span>{t(`kanban.status.${status}`)}</span>
+                  <span className="tabular-nums text-[11px]">{list.length}</span>
+                </button>
+                {peeked ? renderListRows(list) : null}
+              </section>
+            )
+          })}
         </div>
       </ScrollArea>
     )
@@ -590,7 +646,7 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
       onDragCancel={() => setActiveDragNumber(null)}
     >
       <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto p-3 [scrollbar-width:thin]">
-        {KANBAN_BOARD_STATUSES.map((status) => (
+        {visibleStatuses.map((status) => (
           <KanbanColumn
             key={status}
             status={status}
@@ -599,25 +655,17 @@ export function KanbanView({ callbacks }: { callbacks: KanbanCardCallbacks }) {
             showProjectBadge={showProjectBadge}
             callbacks={callbacks}
             onQuickCreate={(colStatus) => openCreateDialog({ status: colStatus })}
+            onHideColumn={() => setColumnHidden(status, true)}
           />
         ))}
 
-        {showCanceled ? (
-          <KanbanColumn
-            status="canceled"
-            issues={canceledIssues}
-            projectNames={projectNames}
-            showProjectBadge={showProjectBadge}
-            callbacks={callbacks}
-            onQuickCreate={(colStatus) => openCreateDialog({ status: colStatus })}
-            onHideColumn={() => setShowCanceled(false)}
+        {orderedHiddenStatuses.length > 0 ? (
+          <HiddenColumnsRail
+            statuses={orderedHiddenStatuses}
+            groupedByStatus={groupedByStatus}
+            onExpand={(status) => setColumnHidden(status, false)}
           />
-        ) : (
-          <CollapsedCanceledRail
-            count={canceledIssues.length}
-            onExpand={() => setShowCanceled(true)}
-          />
-        )}
+        ) : null}
       </div>
 
       <DragOverlay dropAnimation={null} className="pointer-events-none">
