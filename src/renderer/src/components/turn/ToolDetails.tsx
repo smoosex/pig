@@ -16,6 +16,7 @@ import { useT } from '../../hooks/useT'
 import { editList, splitReadOutput, toolClusterLabel, toolInput } from './tool-output'
 import { NestedToolCalls } from './NestedToolCalls'
 import { SpawnToolBody } from '../subagents/SubagentLinks'
+import { useFollowScroll } from './useFollowScroll'
 
 const EditDiffBody = lazy(() => import('../diff/EditDiffBody'))
 
@@ -26,12 +27,14 @@ function CodePanel({
   path,
   code,
   notice,
-  fileListing = false
+  fileListing = false,
+  follow = false
 }: {
   path: string
   code: string
   notice?: string
   fileListing?: boolean
+  follow?: boolean
 }) {
   const t = useT()
   const { copied, copy } = useCopyFeedback(code)
@@ -56,35 +59,44 @@ function CodePanel({
           </Button>
         </div>
       ) : null}
-      <HighlightedCode code={code} lang={langFromPath(path)} variant="file" fileListing={fileListing} notice={notice} />
+      <HighlightedCode code={code} lang={langFromPath(path)} variant="file" fileListing={fileListing} notice={notice} follow={follow} />
     </div>
   )
 }
 
-function ToolPanel({ input, output }: { input?: string; output?: string }) {
+function ToolPanel({ input, output, follow = false }: { input?: string; output?: string; follow?: boolean }) {
+  const inputScroll = useFollowScroll<HTMLPreElement>(Boolean(follow && input && !output), input)
+  const outputScroll = useFollowScroll<HTMLPreElement>(Boolean(follow && output), output)
   if (!input && !output) return null
   return (
     <div className={cn('overflow-hidden', glassCodeSurface, 'solid:border-border solid:bg-transparent')}>
-      {input ? <pre className={panelCell}>{input}</pre> : null}
+      {input ? <pre ref={inputScroll.ref} onScroll={inputScroll.onScroll} className={panelCell}>{input}</pre> : null}
       {input && output ? <Separator className="bg-glass-card-border solid:bg-border" /> : null}
-      {output ? <pre className={panelCell}>{output}</pre> : null}
+      {output ? <pre ref={outputScroll.ref} onScroll={outputScroll.onScroll} className={panelCell}>{output}</pre> : null}
     </div>
   )
 }
 
-function BashToolPanel({ command, output }: { command: string; output?: string }) {
+function BashToolPanel({ command, output, follow = false }: { command: string; output?: string; follow?: boolean }) {
   const t = useT()
   const surface = `${glassCommandSurface} max-h-60 overflow-auto font-mono text-xs leading-snug ${hideScroll}`
+  const outputScroll = useFollowScroll<HTMLPreElement>(Boolean(follow && output), output)
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="min-w-0">
         <div className="mb-1 text-xs text-muted-foreground">{t('tool.command')}</div>
-        <HighlightedCode code={command} lang="bash" variant="command" />
+        <HighlightedCode code={command} lang="bash" variant="command" follow={Boolean(follow && !output)} />
       </div>
       {output ? (
         <div className="min-w-0">
           <div className="mb-1 text-xs text-muted-foreground">{t('tool.output')}</div>
-          <pre className={`${surface} whitespace-pre-wrap break-words px-3 py-2`}>{output}</pre>
+          <pre
+            ref={outputScroll.ref}
+            onScroll={outputScroll.onScroll}
+            className={`${surface} whitespace-pre-wrap break-words px-3 py-2`}
+          >
+            {output}
+          </pre>
         </div>
       ) : null}
     </div>
@@ -95,14 +107,17 @@ function BashToolPanel({ command, output }: { command: string; output?: string }
  * groupTurns rebuilds ToolStep wrappers on each delta. Arguments and results retain their source
  * snapshot references, so compare the wrapper's fields rather than its identity.
  */
-export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
+export const ToolRow = memo(function ToolRow({ step, active, live, nestedCall }: {
   step: ToolStep
   active?: boolean
+  live?: boolean
   nestedCall?: LiveNestedCall
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
   const failed = nestedCall?.status === 'error' || !!step.result?.isError
+  const isLive = Boolean((live ?? active) && !step.result)
+  const follow = open && isLive
   const output = resultText(step.result ?? step.partialResult)
   const edits = useMemo(() => (step.name === 'edit' ? editList(step.args) : []), [step])
   const path = typeof step.args.path === 'string' ? step.args.path : ''
@@ -135,17 +150,17 @@ export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
             {step.result ? <ToolPanel output={output} /> : null}
           </>
         ) : step.name === 'bash' && bashCommand ? (
-          <BashToolPanel command={bashCommand} output={output} />
+          <BashToolPanel command={bashCommand} output={output} follow={follow} />
         ) : read?.code ? (
-          <CodePanel path={path} code={read.code} notice={read.notice} fileListing />
+          <CodePanel path={path} code={read.code} notice={read.notice} fileListing follow={follow} />
         ) : writeCode && !failed ? (
-          <CodePanel path={path} code={writeCode} fileListing />
+          <CodePanel path={path} code={writeCode} fileListing follow={follow} />
         ) : edits.length > 0 ? (
           <Suspense fallback={<div className="px-3 py-2 text-xs text-muted-foreground">{t('tool.rendering')}</div>}>
-            <EditDiffBody path={path} edits={edits} />
+            <EditDiffBody path={path} edits={edits} follow={follow} />
           </Suspense>
         ) : (
-          <ToolPanel input={toolInput(step)} output={output} />
+          <ToolPanel input={toolInput(step)} output={output} follow={follow} />
         )}
         {nestedCall?.argumentsBytes !== undefined ? (
           <p className="text-xs text-muted-foreground">
@@ -164,6 +179,7 @@ export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
                 key={call.id}
                 step={{ id: call.id, name: call.name, args: call.arguments ?? {} }}
                 active={call.status === 'running'}
+                live={call.status === 'running'}
                 nestedCall={call}
               />
             ))}
@@ -179,6 +195,7 @@ export const ToolRow = memo(function ToolRow({ step, active, nestedCall }: {
   previous.step.result === next.step.result &&
   previous.step.partialResult === next.step.partialResult &&
   previous.active === next.active &&
+  previous.live === next.live &&
   previous.nestedCall === next.nestedCall
 )
 

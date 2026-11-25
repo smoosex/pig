@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useState } from 'react'
 import { SUBAGENT_RESULT_TYPE } from '../../../../shared/api'
 import type { CustomMessage, TextContent } from '../../pi/types'
 import { formatElapsed } from '../../chat/turns'
@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/colla
 import { Marker, MarkerContent } from '../ui/marker'
 import { SubagentResultNotice } from '../subagents/SubagentLinks'
 import { Chevron, disclosureButton, pre, Rail, StackedIcons, statusMarker } from './ProcessChrome'
+import { useFollowScroll } from './useFollowScroll'
 
 export function stripThoughtHeading(text: string): string {
   return text.replace(/^(Thought for \d+s|已?思考了?\s*\d+\s*(秒|s)?)\s*\n+/i, '').trim()
@@ -37,21 +38,14 @@ export const ThinkingRow = memo(function ThinkingRow({
   streaming?: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const bodyRef = useRef<HTMLPreElement>(null)
-  const following = useRef(true)
   const t = useT()
   const body = stripThoughtHeading(text)
+  const { ref: bodyRef, onScroll } = useFollowScroll<HTMLPreElement>(Boolean(open && live), body)
   const title = live
     ? t('turn.thinkingNow')
     : durationMs > 0
       ? t('turn.thoughtFor', { duration: formatElapsed(Math.max(1000, durationMs), t) })
       : t('turn.thought')
-
-  useEffect(() => {
-    if (!open || !live || !following.current) return
-    const node = bodyRef.current
-    if (node) node.scrollTop = node.scrollHeight
-  }, [open, live, body])
 
   const label = (
     <span className={cn('min-w-0 flex-1 truncate text-left', live && streaming && 'shimmer')}>{title}</span>
@@ -69,10 +63,7 @@ export const ThinkingRow = memo(function ThinkingRow({
   const stream = (
     <pre
       ref={bodyRef}
-      onScroll={(event) => {
-        const node = event.currentTarget
-        following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24
-      }}
+      onScroll={onScroll}
       className={cn(pre, 'mt-0 text-muted-foreground', !stacked && 'ml-2.5 border-l border-glass-border px-3 py-1 solid:border-border')}
     >
       {body}
@@ -81,10 +72,7 @@ export const ThinkingRow = memo(function ThinkingRow({
   return (
     <Collapsible
       open={open}
-      onOpenChange={(next) => {
-        if (next) following.current = true
-        setOpen(next)
-      }}
+      onOpenChange={setOpen}
       className="min-w-0"
     >
       <CollapsibleTrigger asChild>

@@ -151,6 +151,84 @@ async function runFixture(): Promise<void> {
     const bashRailLine = container.querySelector('[data-slot="collapsible-content"] .w-px')
     assert.ok(bashRailLine, 'expected Rail line inside BashCluster')
     assert.equal(container.querySelectorAll('[data-slot="collapsible-content"] button').length, 2)
+
+    // Streaming write code & generic JSON tool input auto-follow bottom, pause on scroll-up, and resume at bottom
+    const writeId = 'write-live-1'
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        step: { id: writeId, name: 'write', args: { path: 'src/app.ts', content: 'line 1\n' } },
+        active: true,
+        live: true
+      }))
+    })
+    await act(async () => { container.querySelector('button')!.click() })
+    const codeViewport = container.querySelector<HTMLDivElement>('.max-h-80')!
+    assert.ok(codeViewport)
+    Object.defineProperty(codeViewport, 'scrollHeight', { value: 900, configurable: true })
+    Object.defineProperty(codeViewport, 'clientHeight', { value: 200, configurable: true })
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        step: { id: writeId, name: 'write', args: { path: 'src/app.ts', content: 'line 1\nline 2\n' } },
+        active: true,
+        live: true
+      }))
+    })
+    assert.equal(codeViewport.scrollTop, 900, 'live write input follows streaming content to bottom')
+
+    // User scrolls up -> pauses auto-follow
+    await act(async () => {
+      codeViewport.scrollTop = 100
+      codeViewport.dispatchEvent(new Event('scroll'))
+    })
+    Object.defineProperty(codeViewport, 'scrollHeight', { value: 1200, configurable: true })
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        step: { id: writeId, name: 'write', args: { path: 'src/app.ts', content: 'line 1\nline 2\nline 3\n' } },
+        active: true,
+        live: true
+      }))
+    })
+    assert.equal(codeViewport.scrollTop, 100, 'scrolling up pauses auto-follow during streaming')
+
+    // User scrolls back to bottom -> resumes auto-follow
+    await act(async () => {
+      codeViewport.scrollTop = 1000
+      codeViewport.dispatchEvent(new Event('scroll'))
+    })
+    Object.defineProperty(codeViewport, 'scrollHeight', { value: 1500, configurable: true })
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        step: { id: writeId, name: 'write', args: { path: 'src/app.ts', content: 'line 1\nline 2\nline 3\nline 4\n' } },
+        active: true,
+        live: true
+      }))
+    })
+    assert.equal(codeViewport.scrollTop, 1500, 'scrolling back near bottom resumes auto-follow')
+
+    // Generic JSON tool input panel also auto-follows while streaming arguments
+    const customId = 'mcp-live-1'
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        key: customId,
+        step: { id: customId, name: 'custom_tool', args: { query: 'part 1' } },
+        active: true,
+        live: true
+      }))
+    })
+    await act(async () => { container.querySelector('button')!.click() })
+    const inputPre = container.querySelector<HTMLPreElement>('pre')!
+    assert.ok(inputPre)
+    Object.defineProperty(inputPre, 'scrollHeight', { value: 640, configurable: true })
+    Object.defineProperty(inputPre, 'clientHeight', { value: 240, configurable: true })
+    await act(async () => {
+      root.render(createElement(ToolRow, {
+        key: customId,
+        step: { id: customId, name: 'custom_tool', args: { query: 'part 1 + part 2' } },
+        active: true,
+        live: true
+      }))
+    })
+    assert.equal(inputPre.scrollTop, 640, 'generic tool input panel follows streaming JSON args')
   } finally {
     await act(async () => { root.unmount() })
     await GlobalRegistrator.unregister()

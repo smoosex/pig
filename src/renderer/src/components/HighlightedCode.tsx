@@ -2,6 +2,7 @@
 import { useRef } from 'react'
 import { useHighlightHtml } from '../lib/highlight'
 import { cn, hideScroll } from '../lib/utils'
+import { useFollowScroll } from './turn/useFollowScroll'
 
 export const codeSurface = 'rounded-lg border border-code-border bg-code-background text-code-foreground'
 /** Code inside the conversation (Markdown fences, expanded tool steps) lets glass show the material through a neutral fill. */
@@ -51,21 +52,25 @@ export function HighlightedCode({
   lang,
   variant = 'fence',
   fileListing = false,
-  notice
+  notice,
+  follow = false
 }: {
   code: string
   lang: string
   variant?: keyof typeof variants
   fileListing?: boolean
   notice?: string
+  follow?: boolean
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const html = useHighlightHtml(code, lang, ref)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const html = useHighlightHtml(code, lang, viewportRef)
+  const { ref, onScroll } = useFollowScroll<HTMLDivElement>(follow, `${Boolean(html)}\0${code}`, viewportRef)
   const numbered = variant === 'file' && fileListing
 
   return (
     <div
       ref={ref}
+      onScroll={onScroll}
       className={cn('overflow-auto font-mono text-xs', hideScroll, variants[variant].viewport)}
     >
       {html ? (

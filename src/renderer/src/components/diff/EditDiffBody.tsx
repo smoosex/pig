@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { parseDiffFromFile } from '@pierre/diffs'
 import { FileDiff, Virtualizer } from '@pierre/diffs/react'
 import { useDarkMode } from '../../lib/useDarkMode'
 import { cn } from '../../lib/utils'
 import { glassCodeSurface } from '../HighlightedCode'
+import { FOLLOW_SCROLL_THRESHOLD_PX } from '../turn/useFollowScroll'
 import { fileDiffOptions } from './diff-options'
 
 /**
@@ -17,12 +18,22 @@ import { fileDiffOptions } from './diff-options'
  */
 export default function EditDiffBody({
   path,
-  edits
+  edits,
+  follow = false
 }: {
   path: string
   edits: { oldText: string; newText: string }[]
+  follow?: boolean
 }) {
   const dark = useDarkMode()
+  const hostRef = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
+  const prevFollow = useRef(false)
+  if (follow && !prevFollow.current) {
+    following.current = true
+  }
+  prevFollow.current = follow
+
   const options = useMemo(() => fileDiffOptions(dark, 'unified'), [dark])
   const diffs = useMemo(
     () =>
@@ -31,8 +42,26 @@ export default function EditDiffBody({
       ),
     [edits, path]
   )
+
+  useEffect(() => {
+    if (!follow || !following.current) return
+    const scroller = hostRef.current?.firstElementChild as HTMLElement | null
+    if (scroller) scroller.scrollTop = scroller.scrollHeight
+  }, [follow, diffs])
+
   return (
-    <div className={cn('glass-code-surface overflow-hidden [--diffs-gap-block:0px]', glassCodeSurface)}>
+    <div
+      ref={hostRef}
+      onScrollCapture={(event) => {
+        const scroller = hostRef.current?.firstElementChild
+        if (scroller && event.target === scroller) {
+          const el = scroller as HTMLElement
+          following.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_SCROLL_THRESHOLD_PX
+        }
+      }}
+      className={cn('glass-code-surface overflow-hidden [--diffs-gap-block:0px]', glassCodeSurface)}
+    >
       <Virtualizer className="max-h-80 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {diffs.map((fileDiff, index) => (
           <div key={index}>

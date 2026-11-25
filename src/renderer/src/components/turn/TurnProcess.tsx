@@ -106,7 +106,12 @@ const OutlineRow = memo(function OutlineRow({ row, last, streaming }: { row: Wor
     return (
       <>
         {row.steps.map((step, i) => (
-          <ToolRow key={step.id} step={step} active={last && streaming && i === current} />
+          <ToolRow
+            key={step.id}
+            step={step}
+            active={last && streaming && i === current}
+            live={last && streaming && !step.result}
+          />
         ))}
       </>
     )
