@@ -163,6 +163,22 @@ async function fixture(name: string): Promise<void> {
       await waiting
       assert.equal(first.playState, 'finished', 'hidden windows snap the opaque background instead of blocking writes')
       assert.equal(frames.size, 0)
+    } else if (name === 'startup') {
+      const root = document.documentElement
+      root.dataset.surfaceStyle = 'glass'
+      let transitions = 0
+      Object.assign(document, {
+        startViewTransition: (update: () => void) => {
+          transitions += 1
+          update()
+          return { ready: Promise.resolve(), finished: Promise.resolve(), skipTransition: () => {} }
+        }
+      })
+      applySurfaceStyle(root, 'glass')
+      assert.equal(transitions, 0, 'first theme sync with matching glass style must not contract to center')
+      applySurfaceStyle(root, 'solid', false)
+      assert.equal(transitions, 0, 'initial settings hydration switches surface without a radial reveal')
+      assert.equal(root.dataset.surfaceStyle, 'solid')
     }
   } finally {
     surface.remove()
@@ -178,7 +194,8 @@ else {
     reduced: 'reduced motion paints immediately without an animation delay',
     reveal: 'the circular reveal changes style inside its snapshot and holds the native material until it ends',
     directions: 'solid expands and glass contracts around the toggle with complementary snapshots',
-    hidden: 'hidden windows do not strand preference writes behind suspended RAF'
+    hidden: 'hidden windows do not strand preference writes behind suspended RAF',
+    startup: 'initial hydration and unchanged surface style never trigger a shrinking reveal'
   })) {
     test(`surface transition: ${title}`, async () => {
       const { exitCode: code, stdout: output, stderr: errors } = await runSelf(

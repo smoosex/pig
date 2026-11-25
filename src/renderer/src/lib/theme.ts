@@ -31,13 +31,13 @@ export function resolvedScheme(appearance: Appearance): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-export function applyDocumentTheme(prefs: ThemePrefs): void {
+export function applyDocumentTheme(prefs: ThemePrefs, animateSurface = true): void {
   const scheme = resolvedScheme(prefs.appearance)
   const palette = scheme === 'dark' ? prefs.darkTheme : prefs.lightTheme
   const root = document.documentElement
   root.classList.toggle('dark', scheme === 'dark')
   root.dataset.palette = palette
-  applySurfaceStyle(root, prefs.surfaceStyle)
+  applySurfaceStyle(root, prefs.surfaceStyle, animateSurface)
   root.style.colorScheme = scheme
   localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
 }

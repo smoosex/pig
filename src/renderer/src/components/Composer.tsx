@@ -85,7 +85,7 @@ export function Composer({
     <motion.div
       layout="position"
       layoutDependency={centered}
-      transition={{ duration: reducedMotion || switchedSession ? 0 : 0.5, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: reducedMotion || switchedSession || centered ? 0 : 0.5, ease: [0.22, 1, 0.36, 1] }}
       className={cn(chatColumn, '@container/composer-column relative isolate shrink-0 pb-3.5')}
     >
       <Activity mode={visible ? 'visible' : 'hidden'}>

@@ -1131,6 +1131,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   readonly supportsGlass: boolean
   /** Lifts the startup screen covering the window; later calls and reloads are ignored. */
   notifyStartupReady: () => void
+  /** Records the settled workspace's geometry blueprint so the next cold launch aligns 1:1. */
+  saveStartupBlueprint: (blueprint: import('./startup-blueprint').StartupBlueprint) => Promise<void>
   getSettings: () => Promise<SettingsReply<AppSettings>>
   listPlugins: () => Promise<PluginInfo[]>
   installPlugin: (source: string) => Promise<PluginInfo[]>
