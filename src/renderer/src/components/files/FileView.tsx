@@ -14,7 +14,7 @@
  * preview resolves relative links and images against the file's own directory, the way a repository
  * browser reads a README, and renders the sanitized HTML READMEs use for layout.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Components } from 'react-markdown'
 import type { Translate } from '../../../../shared/i18n'
 import {
@@ -28,7 +28,16 @@ import { api } from '../../ipc/api'
 import { splitPath } from '../diff/file-entry'
 import { FileTypeIcon } from './FileTypeIcon'
 import { fileCodeOptions } from '../diff/diff-options'
-import { isDirty, fileKey, watchWorktreeFiles, useFilesStore, type FileDocument } from '../../stores/files'
+import {
+  fileKey,
+  isDirty,
+  rememberFileScroll,
+  rememberMarkdownPreviewScroll,
+  savedFileScroll,
+  useFilesStore,
+  watchWorktreeFiles,
+  type FileDocument
+} from '../../stores/files'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
 import { useDarkMode } from '../../lib/useDarkMode'
@@ -71,21 +80,16 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 
   useEffect(() => setActionError(null), [cwd, path])
 
-  // The view choice belongs to one file; the component itself is reused when the tab switches files.
+  // View mode and scroll offsets live in the files store so switching tabs (or refreshing on disk)
+  // preserves the reader's exact place until the file tab itself is closed.
   const key = fileKey(cwd, path)
-  const [sourceFor, setSourceFor] = useState<ReadonlySet<string>>(() => new Set())
-  const showSource = (file: string, source: boolean) =>
-    setSourceFor((current) => {
-      if (current.has(file) === source) return current
-      const next = new Set(current)
-      if (source) next.add(file)
-      else next.delete(file)
-      return next
-    })
+  const sourceChosen = useFilesStore((state) => Boolean(state.sourceViews[key]))
+  const setShowSource = useFilesStore((state) => state.setShowSource)
+  const showSource = (source: boolean) => setShowSource(cwd, path, source)
   const revealPending = useFilesStore((state) => state.reveal?.cwd === cwd && state.reveal?.path === path)
   useEffect(() => {
-    if (revealPending) showSource(key, true)
-  }, [revealPending, key])
+    if (revealPending) setShowSource(cwd, path, true)
+  }, [revealPending, cwd, path, setShowSource])
 
   // The line a diff row asked for, and the editor that can be told about it.
   const reveal = useFileLineReveal(cwd, path, document)
@@ -152,7 +156,51 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
   const saving = document?.saving === true
   const markdown = MARKDOWN_PATH.test(path) && document?.status === 'ready' && document.preview === 'text'
   // A pending reveal shows the source in the same commit, so the editor is visible when it is focused.
-  const previewing = markdown && !sourceFor.has(key) && !revealPending
+  const previewing = markdown && !sourceChosen && !revealPending
+
+  // Restore and track Markdown preview scroll position across tab switches, preview toggles, and disk updates.
+  useLayoutEffect(() => {
+    if (!previewing) return
+    const preview = previewRef.current
+    if (!preview) return
+    const targetTop = savedFileScroll(key).previewScrollTop
+    let frame = 0
+    let tries = 0
+    let cancelled = false
+    const stop = () => {
+      cancelled = true
+      if (frame) cancelAnimationFrame(frame)
+    }
+    if (targetTop > 0) {
+      const restore = () => {
+        if (cancelled || !preview.isConnected) return
+        preview.scrollTop = targetTop
+        if (preview.scrollTop < targetTop && tries++ < 30) {
+          frame = requestAnimationFrame(restore)
+        }
+      }
+      restore()
+    }
+    const onScroll = () => {
+      if (!preview.isConnected) return
+      // Avoid overwriting a saved offset before async layout has given the container scrollable height.
+      if (preview.scrollTop === 0 && targetTop > 0 && !cancelled && preview.scrollHeight <= preview.clientHeight) {
+        return
+      }
+      rememberMarkdownPreviewScroll(key, preview.scrollTop)
+    }
+    preview.addEventListener('scroll', onScroll, { passive: true })
+    preview.addEventListener('wheel', stop, { passive: true })
+    preview.addEventListener('pointerdown', stop)
+    preview.addEventListener('touchstart', stop, { passive: true })
+    return () => {
+      stop()
+      preview.removeEventListener('scroll', onScroll)
+      preview.removeEventListener('wheel', stop)
+      preview.removeEventListener('pointerdown', stop)
+      preview.removeEventListener('touchstart', stop)
+    }
+  }, [previewing, key, document?.revision])
 
   return (
     <div
@@ -181,7 +229,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             data-markdown-view-toggle
             aria-label={previewing ? t('file.showSource') : t('file.showPreview')}
             title={previewing ? t('file.showSource') : t('file.showPreview')}
-            onClick={() => showSource(key, previewing)}
+            onClick={() => showSource(previewing)}
           >
             {previewing ? <Code /> : <Eye />}
           </Button>
@@ -276,12 +324,16 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             </div>
           ) : null}
           <FileSurface
-            key={`${fileKey(cwd, path)}-${document.revision}`}
+            key={key}
+            surfaceKey={key}
             path={path}
             contents={document.text}
+            revision={document.revision}
             dark={dark}
             hidden={previewing}
+            revealPending={Boolean(revealPending)}
             editorOptions={reveal.editorOptions}
+            onDetach={reveal.onDetach}
             onEditChange={(text) => setDraft(cwd, path, text)}
           />
         </div>
@@ -308,48 +360,119 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 }
 
 /**
- * The editable surface for one revision of the file. It reads its starting bytes once, when it mounts:
- * everything the editor does after that belongs to the editor, and the next revision is a different
- * component as far as React is concerned.
- *
- * That key has to name the document, not just the revision: revisions count from zero inside each
- * document, so two files that were each read once both sit at 1, and switching straight between two
- * loaded tabs would hand the new path the editor of the old one. The same goes for two worktrees holding
- * the same relative path, which is why the path alone is not enough either.
+ * Editable code surface keyed by `fileKey(cwd, path)` (without revision) so external disk updates
+ * replace `file` in place inside the live `<Virtualizer>` rather than tearing down the scroll viewport.
+ * Across tab switches or explicit reloads, `editStateKey` retains same-revision editor state while
+ * `savedFileScroll` restores the exact `scrollTop` / `scrollLeft` once virtualized content settles.
  */
 function FileSurface({
+  surfaceKey,
   path,
   contents,
+  revision,
   dark,
   hidden,
+  revealPending,
   editorOptions,
+  onDetach,
   onEditChange
 }: {
+  surfaceKey: string
   path: string
   contents: string
+  revision: number
   dark: boolean
   hidden: boolean
+  revealPending: boolean
   editorOptions: { onAttach: (editor: Editor<'file', undefined, undefined>) => void }
+  onDetach: () => void
   onEditChange: (text: string) => void
 }) {
-  const [file] = useState(() => ({ name: path, contents }))
+  // Recompute `file` only when `revision` changes (disk refresh / reload), never on user keystrokes.
+  const file = useMemo(() => ({ name: path, contents }), [path, revision])
   const options = useMemo(() => fileCodeOptions(dark), [dark])
+  const hostRef = useRef<HTMLDivElement>(null)
+  const revealRef = useRef(revealPending)
+  revealRef.current = revealPending
+
+  useEffect(() => () => onDetach(), [onDetach])
+
+  useLayoutEffect(() => {
+    const scroller = hostRef.current?.firstElementChild
+    if (!(scroller instanceof HTMLElement)) return
+    const target = savedFileScroll(surfaceKey)
+    let frame = 0
+    let tries = 0
+    let cancelled = false
+    const stop = () => {
+      cancelled = true
+      if (frame) cancelAnimationFrame(frame)
+    }
+
+    if (!revealRef.current && (target.scrollTop > 0 || target.scrollLeft > 0)) {
+      const restore = () => {
+        if (cancelled || revealRef.current || !scroller.isConnected) return
+        if (target.scrollTop > 0) scroller.scrollTop = target.scrollTop
+        if (target.scrollLeft > 0) scroller.scrollLeft = target.scrollLeft
+        const needsMore =
+          (target.scrollTop > 0 && scroller.scrollTop < target.scrollTop) ||
+          (target.scrollLeft > 0 && scroller.scrollLeft < target.scrollLeft)
+        if (needsMore && tries++ < 60) {
+          frame = requestAnimationFrame(restore)
+        }
+      }
+      restore()
+    }
+
+    const onScroll = () => {
+      if (hidden || !scroller.isConnected) return
+      // Ignore transient 0,0 scroll events before the virtualizer has expanded its content height.
+      if (
+        scroller.scrollTop === 0 &&
+        scroller.scrollLeft === 0 &&
+        (target.scrollTop > 0 || target.scrollLeft > 0) &&
+        !cancelled &&
+        scroller.scrollHeight <= scroller.clientHeight
+      ) {
+        return
+      }
+      rememberFileScroll(surfaceKey, scroller.scrollTop, scroller.scrollLeft)
+    }
+
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    scroller.addEventListener('wheel', stop, { passive: true })
+    scroller.addEventListener('pointerdown', stop)
+    scroller.addEventListener('touchstart', stop, { passive: true })
+    scroller.addEventListener('keydown', stop)
+    return () => {
+      stop()
+      scroller.removeEventListener('scroll', onScroll)
+      scroller.removeEventListener('wheel', stop)
+      scroller.removeEventListener('pointerdown', stop)
+      scroller.removeEventListener('touchstart', stop)
+      scroller.removeEventListener('keydown', stop)
+    }
+  }, [surfaceKey, revision, hidden])
+
   return (
     <EditProvider createEditor={createEditor}>
-      {/* No block gap around the code: the opaque gutter would otherwise stop short of the header and the
-          card edge, with the glass backplate showing through above and below it. */}
-      <Virtualizer className={cn('min-h-0 flex-1 overflow-auto [--diffs-gap-block:0px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', hidden && 'invisible')}>
-        <FileCode
-          file={file}
-          options={options}
-          editorOptions={editorOptions}
-          edit
-          onEditChange={(event: EditorChangeEvent<'file', undefined, undefined>) =>
-            onEditChange(event.file.contents)
-          }
-          onEditComplete={(_event: FileEditCompleteEvent<undefined, undefined>) => 'accept' as const}
-        />
-      </Virtualizer>
+      <div ref={hostRef} className="flex min-h-0 flex-1 flex-col">
+        {/* No block gap around the code: the opaque gutter would otherwise stop short of the header and the
+            card edge, with the glass backplate showing through above and below it. */}
+        <Virtualizer className={cn('min-h-0 flex-1 overflow-auto [--diffs-gap-block:0px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', hidden && 'invisible')}>
+          <FileCode
+            file={file}
+            options={options}
+            editorOptions={editorOptions}
+            editStateKey={`${surfaceKey}:${revision}`}
+            edit
+            onEditChange={(event: EditorChangeEvent<'file', undefined, undefined>) =>
+              onEditChange(event.file.contents)
+            }
+            onEditComplete={(_event: FileEditCompleteEvent<undefined, undefined>) => 'accept' as const}
+          />
+        </Virtualizer>
+      </div>
     </EditProvider>
   )
 }

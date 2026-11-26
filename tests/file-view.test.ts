@@ -121,6 +121,9 @@ async function runFixture(name: string): Promise<void> {
   if (name === 'reload') {
     await open('a.ts')
     const before = mounted.length
+    const scroller = container.querySelector<HTMLElement>('[data-virtualizer]')!
+    scroller.scrollTop = 240
+    scroller.dispatchEvent(new window.Event('scroll'))
 
     disk = { ...disk, 'a.ts': 'AAA alpha and more\n' }
     stamps = { ...stamps, 'a.ts': 3 }
@@ -131,7 +134,73 @@ async function runFixture(name: string): Promise<void> {
     await settle('a.ts')
 
     assert.deepEqual(shown(), { name: 'a.ts', contents: 'AAA alpha and more\n' })
-    assert.ok(mounted.length > before, 'bytes the editor has already taken are handed over as a new surface')
+    assert.equal(mounted.length, before, 'external disk updates refresh in place without tearing down the scroll surface')
+    assert.equal(container.querySelector('[data-virtualizer]'), scroller)
+    assert.equal(scroller.scrollTop, 240, 'in-place disk refresh preserves scroll position')
+    return
+  }
+
+  if (name === 'scroll-retention') {
+    await open('a.ts')
+    const scrollerA = container.querySelector<HTMLElement>('[data-virtualizer]')!
+    Object.defineProperty(scrollerA, 'clientHeight', { value: 300, configurable: true })
+    Object.defineProperty(scrollerA, 'scrollHeight', { value: 2000, configurable: true })
+    scrollerA.scrollTop = 420
+    scrollerA.scrollLeft = 36
+    scrollerA.dispatchEvent(new window.Event('scroll'))
+
+    // Simulate switching away from the file tab (unmount) and switching back (remount).
+    await React.act(async () => {
+      root.render(React.createElement('div', { 'data-other-tab': '' }))
+    })
+    assert.equal(container.querySelector('[data-virtualizer]'), null)
+
+    await open('a.ts')
+    const restoredA = container.querySelector<HTMLElement>('[data-virtualizer]')!
+    assert.equal(restoredA.scrollTop, 420, 'returning to a code tab restores vertical scroll position')
+    assert.equal(restoredA.scrollLeft, 36, 'returning to a code tab restores horizontal scroll position')
+
+    // Closing the clean file tab releases its document and clears saved scroll offsets.
+    await React.act(async () => {
+      root.render(React.createElement('div'))
+      useFilesStore.getState().releaseDocument(cwd, 'a.ts')
+    })
+    await open('a.ts')
+    assert.equal(container.querySelector<HTMLElement>('[data-virtualizer]')!.scrollTop, 0, 'reopening a closed clean tab starts at top')
+
+    // Markdown preview also retains scroll offset across tab unmount/remount and disk updates,
+    // and remembers source/preview mode across tab unmounts.
+    await open('README.md')
+    const mdPreview = container.querySelector<HTMLElement>('[data-markdown-preview]')!
+    Object.defineProperty(mdPreview, 'clientHeight', { value: 300, configurable: true })
+    Object.defineProperty(mdPreview, 'scrollHeight', { value: 1800, configurable: true })
+    mdPreview.scrollTop = 310
+    mdPreview.dispatchEvent(new window.Event('scroll'))
+
+    disk = { ...disk, 'README.md': '# Title\n\nUpdated paragraph\n' }
+    stamps = { ...stamps, 'README.md': 9 }
+    await React.act(async () => {
+      change!(cwd)
+    })
+    await settle('README.md')
+    assert.equal(container.querySelector<HTMLElement>('[data-markdown-preview]')!.scrollTop, 310, 'markdown preview keeps scroll across disk update')
+
+    await React.act(async () => {
+      root.render(React.createElement('div', { 'data-other-tab': '' }))
+    })
+    await open('README.md')
+    assert.equal(container.querySelector<HTMLElement>('[data-markdown-preview]')!.scrollTop, 310, 'markdown preview restores scroll after switching tabs')
+
+    // Switch README.md to source mode, unmount tab, and return: stays in source mode.
+    await React.act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-markdown-view-toggle]')!.click()
+    })
+    assert.equal(container.querySelector('[data-markdown-preview]'), null)
+    await React.act(async () => {
+      root.render(React.createElement('div', { 'data-other-tab': '' }))
+    })
+    await open('README.md')
+    assert.equal(container.querySelector('[data-markdown-preview]'), null, 'markdown source mode survives tab unmount and remount')
     return
   }
 
@@ -394,7 +463,8 @@ if (process.argv[2] === '--file-view-fixture') {
 } else {
   for (const [name, description] of Object.entries({
     switch: 'a tab that comes back to an open file gives the surface that file\'s bytes',
-    reload: 'an external change replaces the surface rather than editing the one already on screen',
+    reload: 'an external change updates the surface in place and preserves scroll position',
+    'scroll-retention': 'code and markdown tabs retain scroll position and view mode across tab switches and disk updates',
     'refresh-failure': 'a refresh that could not read says so and offers only a retry',
     'open-failure': 'a file the desktop will not open reports the reason on the tab',
     markdown: 'markdown toggles between a preview of the draft and the mounted source editor',

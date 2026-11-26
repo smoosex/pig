@@ -86,12 +86,46 @@ export interface FileReveal {
   token: number
 }
 
+export interface FileScrollOffset {
+  scrollTop: number
+  scrollLeft: number
+  previewScrollTop: number
+}
+
+const fileScrollOffsets = new Map<string, FileScrollOffset>()
+
+export function savedFileScroll(key: string): FileScrollOffset {
+  return fileScrollOffsets.get(key) ?? { scrollTop: 0, scrollLeft: 0, previewScrollTop: 0 }
+}
+
+export function rememberFileScroll(key: string, scrollTop: number, scrollLeft: number): void {
+  const prev = fileScrollOffsets.get(key)
+  if (prev && prev.scrollTop === scrollTop && prev.scrollLeft === scrollLeft) return
+  fileScrollOffsets.set(key, {
+    scrollTop,
+    scrollLeft,
+    previewScrollTop: prev?.previewScrollTop ?? 0
+  })
+}
+
+export function rememberMarkdownPreviewScroll(key: string, previewScrollTop: number): void {
+  const prev = fileScrollOffsets.get(key)
+  if (prev && prev.previewScrollTop === previewScrollTop) return
+  fileScrollOffsets.set(key, {
+    scrollTop: prev?.scrollTop ?? 0,
+    scrollLeft: prev?.scrollLeft ?? 0,
+    previewScrollTop
+  })
+}
+
 interface FilesStore {
   /** Directory listings per worktree, then per worktree-relative path. */
   trees: Record<string, Record<string, DirectoryState>>
   /** Which directories the reader has opened; a worktree starts with nothing open. */
   expanded: Record<string, Record<string, boolean>>
   documents: Record<string, FileDocument>
+  /** Files explicitly switched from Markdown preview to source view, keyed by `fileKey(cwd, path)`. */
+  sourceViews: Record<string, boolean>
   hideIgnored: boolean
   loadDirectory: (cwd: string, path: string) => Promise<void>
   toggleDirectory: (cwd: string, path: string) => void
@@ -101,6 +135,7 @@ interface FilesStore {
   collapseDirectories: (cwd: string) => void
   openDocument: (cwd: string, path: string) => Promise<void>
   setDraft: (cwd: string, path: string, text: string) => void
+  setShowSource: (cwd: string, path: string, show: boolean) => void
   saveDocument: (cwd: string, path: string, overwrite?: boolean) => Promise<void>
   reloadDocument: (cwd: string, path: string) => Promise<void>
   releaseDocument: (cwd: string, path: string) => void
@@ -184,6 +219,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   trees: {},
   expanded: {},
   documents: {},
+  sourceViews: {},
   hideIgnored: false,
 
   loadDirectory: async (cwd, path) => {
@@ -260,6 +296,17 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     const key = fileKey(cwd, path)
     if (get().documents[key]?.text === text) return
     update(key, (document) => ({ ...document, text }))
+  },
+
+  setShowSource: (cwd, path, show) => {
+    const key = fileKey(cwd, path)
+    if (Boolean(get().sourceViews[key]) === show) return
+    set((state) => {
+      const sourceViews = { ...state.sourceViews }
+      if (show) sourceViews[key] = true
+      else delete sourceViews[key]
+      return { sourceViews }
+    })
   },
 
   /**
@@ -344,10 +391,16 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     reads.delete(key)
     set((state) => {
       const document = state.documents[key]
-      if (!document || isDirty(document) || document.saving) return state
-      const documents = { ...state.documents }
-      delete documents[key]
-      return { documents }
+      if (document && (isDirty(document) || document.saving)) return state
+      fileScrollOffsets.delete(key)
+      const hasDoc = key in state.documents
+      const hasSource = key in state.sourceViews
+      if (!hasDoc && !hasSource) return state
+      const documents = hasDoc ? { ...state.documents } : state.documents
+      if (hasDoc) delete documents[key]
+      const sourceViews = hasSource ? { ...state.sourceViews } : state.sourceViews
+      if (hasSource) delete sourceViews[key]
+      return { documents, sourceViews }
     })
   },
 
@@ -366,7 +419,24 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   moveDocument: (cwd, from, to) => {
     set((state) => {
       const moved: Record<string, FileDocument> = {}
+      const movedSources: Record<string, boolean> = {}
       let changed = false
+      for (const [key, offset] of [...fileScrollOffsets.entries()]) {
+        const path = pathOf(cwd, key)
+        if (path === null) continue
+        const renamed = renamedPath(path, from, to)
+        if (renamed === null) continue
+        fileScrollOffsets.set(fileKey(cwd, renamed), offset)
+        fileScrollOffsets.delete(key)
+      }
+      for (const [key, show] of Object.entries(state.sourceViews)) {
+        const path = pathOf(cwd, key)
+        if (path === null) continue
+        const renamed = renamedPath(path, from, to)
+        if (renamed === null) continue
+        movedSources[fileKey(cwd, renamed)] = show
+        changed = true
+      }
       for (const [key, document] of Object.entries(state.documents)) {
         const path = pathOf(cwd, key)
         if (path === null) continue
@@ -384,7 +454,15 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         const path = pathOf(cwd, key)
         if (path !== null && renamedPath(path, from, to) !== null) delete documents[key]
       }
-      return { documents: { ...documents, ...moved } }
+      const sourceViews = { ...state.sourceViews }
+      for (const key of Object.keys(state.sourceViews)) {
+        const path = pathOf(cwd, key)
+        if (path !== null && renamedPath(path, from, to) !== null) delete sourceViews[key]
+      }
+      return {
+        documents: { ...documents, ...moved },
+        sourceViews: { ...sourceViews, ...movedSources }
+      }
     })
   },
 
@@ -392,8 +470,15 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   forgetDocument: (cwd, path) => {
     const key = fileKey(cwd, path)
     reads.delete(key)
+    for (const existing of [...fileScrollOffsets.keys()]) {
+      const at = pathOf(cwd, existing)
+      if (at !== null && (at === path || isUnder(at, path))) {
+        fileScrollOffsets.delete(existing)
+      }
+    }
     set((state) => {
       const documents: Record<string, FileDocument> = {}
+      const sourceViews: Record<string, boolean> = {}
       let changed = false
       for (const [existing, document] of Object.entries(state.documents)) {
         const at = pathOf(cwd, existing)
@@ -404,13 +489,24 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         }
         documents[existing] = document
       }
-      return changed ? { documents } : state
+      for (const [existing, show] of Object.entries(state.sourceViews)) {
+        const at = pathOf(cwd, existing)
+        if (at !== null && (at === path || isUnder(at, path))) {
+          changed = true
+          continue
+        }
+        sourceViews[existing] = show
+      }
+      return changed ? { documents, sourceViews } : state
     })
   },
 
   forgetWorktree: (cwd) => {
     for (const key of [...reads.keys()]) {
       if (key.endsWith(`\u0000${cwd}`)) reads.delete(key)
+    }
+    for (const key of [...fileScrollOffsets.keys()]) {
+      if (key.endsWith(`\u0000${cwd}`)) fileScrollOffsets.delete(key)
     }
     set((state) => {
       const hasTree = cwd in state.trees
@@ -422,9 +518,16 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
           break
         }
       }
+      let hasSources = false
+      for (const key of Object.keys(state.sourceViews)) {
+        if (key.endsWith(`\u0000${cwd}`)) {
+          hasSources = true
+          break
+        }
+      }
       const clearReveal = state.reveal?.cwd === cwd
       const clearNaming = state.naming?.cwd === cwd
-      if (!hasTree && !hasExpanded && !hasDocs && !clearReveal && !clearNaming) return state
+      if (!hasTree && !hasExpanded && !hasDocs && !hasSources && !clearReveal && !clearNaming) return state
 
       const trees = { ...state.trees }
       delete trees[cwd]
@@ -434,10 +537,15 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
       for (const [key, doc] of Object.entries(state.documents)) {
         if (!key.endsWith(`\u0000${cwd}`)) documents[key] = doc
       }
+      const sourceViews: Record<string, boolean> = {}
+      for (const [key, show] of Object.entries(state.sourceViews)) {
+        if (!key.endsWith(`\u0000${cwd}`)) sourceViews[key] = show
+      }
       return {
         trees,
         expanded,
         documents,
+        sourceViews,
         ...(clearReveal ? { reveal: null } : {}),
         ...(clearNaming ? { naming: null } : {})
       }
