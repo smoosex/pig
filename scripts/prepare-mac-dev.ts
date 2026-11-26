@@ -1,11 +1,17 @@
 // Sync Pig's dynamic macOS icon catalog into the dev Electron.app bundle and sign it so Dock and notifications match packaged builds.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { copyFileSync, existsSync, readFileSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 
 function sameBytes(a: string, b: string): boolean {
   if (!existsSync(a) || !existsSync(b)) return false
   return readFileSync(a).equals(readFileSync(b))
+}
+
+function plistString(plist: string, key: string): string | undefined {
+  const result = spawnSync('plutil', ['-extract', key, 'raw', '-o', '-', plist], { encoding: 'utf8' })
+  return result.status === 0 ? result.stdout.trim() : undefined
 }
 
 if (process.platform === 'darwin') {
@@ -30,9 +36,21 @@ if (process.platform === 'darwin') {
     bundleChanged = true
   }
 
-  const iconName = spawnSync('plutil', ['-extract', 'CFBundleIconName', 'raw', '-o', '-', infoPlist], { encoding: 'utf8' })
-  if (iconName.status !== 0 || iconName.stdout.trim() !== 'Icon') {
+  if (plistString(infoPlist, 'CFBundleIconName') !== 'Icon') {
     execFileSync('plutil', ['-replace', 'CFBundleIconName', '-string', 'Icon', infoPlist], { stdio: 'inherit' })
+    bundleChanged = true
+  }
+
+  // usernoted caches notification icons per bundle ID + CFBundleVersion; encode an icon digest into
+  // the fourth numeric version slot so icon updates invalidate stale dev notification caches.
+  const iconHash = createHash('sha256')
+  if (existsSync(srcCar)) iconHash.update(readFileSync(srcCar))
+  if (existsSync(srcIcns)) iconHash.update(readFileSync(srcIcns))
+  const iconBuild = (iconHash.digest().readUInt16BE(0) % 9000) + 1000
+  const shortVersion = plistString(infoPlist, 'CFBundleShortVersionString') ?? '0.0.0'
+  const expectedBundleVersion = `${shortVersion}.${iconBuild}`
+  if (plistString(infoPlist, 'CFBundleVersion') !== expectedBundleVersion) {
+    execFileSync('plutil', ['-replace', 'CFBundleVersion', '-string', expectedBundleVersion, infoPlist], { stdio: 'inherit' })
     bundleChanged = true
   }
 
@@ -40,6 +58,17 @@ if (process.platform === 'darwin') {
   if (signature.error) throw signature.error
   if (bundleChanged || signature.status !== 0 || signature.stderr.includes('linker-signed')) {
     execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' })
+  }
+
+  // Electron's archive extracts Electron.app with a 1980-01-01 mtime; bump it when modified so
+  // LaunchServices sees a newer bundle record.
+  const latestIconMtime = Math.max(
+    existsSync(srcCar) ? statSync(srcCar).mtimeMs : 0,
+    existsSync(srcIcns) ? statSync(srcIcns).mtimeMs : 0,
+  )
+  if (bundleChanged || statSync(appPath).mtimeMs < latestIconMtime) {
+    const now = new Date()
+    utimesSync(appPath, now, now)
   }
 
   execFileSync(

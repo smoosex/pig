@@ -10,6 +10,7 @@
 import { app, Notification, type BrowserWindow } from 'electron'
 import { currentBotSessionId } from './bot/lifecycle'
 import { t } from './i18n'
+import { notificationIconOption } from './notification-icon'
 import { loadPigSettings } from './pig-settings'
 import { focusNotifiedSession, isNotificationSessionVisible, onNotificationVisibilityChange } from './completion-visibility'
 
@@ -76,7 +77,8 @@ function show(sessionId: string, owner: Owner, notice: ApprovalNotice, title: st
     title,
     body: [t('notification.approvalPending', { title: request }), owner.queue.length > 1 ? t('notification.approvalMore') : '']
       .filter(Boolean).join('\n'),
-    actions: refuse === undefined ? [] : [{ type: 'button' as const, text: refuse }]
+    actions: refuse === undefined ? [] : [{ type: 'button' as const, text: refuse }],
+    ...notificationIconOption()
   })
   owner.shown = { id: notice.id, notification, win }
   notification.on('failed', (_event, error) => console.error('Could not show approval notification:', error))

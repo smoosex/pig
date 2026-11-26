@@ -2,6 +2,7 @@
 import * as electron from 'electron'
 import type { BrowserWindow } from 'electron'
 import { t } from './i18n'
+import { notificationIconOption } from './notification-icon'
 import { loadPigSettings } from './pig-settings'
 import { focusNotifiedSession, isNotificationSessionVisible } from './completion-visibility'
 
@@ -20,7 +21,11 @@ export async function sendCompletionNotification(
   if (signal.aborted || win.isDestroyed() || win.webContents.isDestroyed() || isNotificationSessionVisible(win, sessionId)) return
 
   const body = content.reply.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 2).join('\n')
-  const notification = new Notification({ title: content.title, body: body || t('notification.replyReady') })
+  const notification = new Notification({
+    title: content.title,
+    body: body || t('notification.replyReady'),
+    ...notificationIconOption()
+  })
   if (activeNotifications.size >= 32) {
     const oldest = activeNotifications.values().next().value
     if (oldest) activeNotifications.delete(oldest)

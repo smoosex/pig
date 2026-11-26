@@ -1,6 +1,6 @@
 {
   "name": "pig",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop GUI for the pi coding agent",
   "type": "module",
   "main": "./out/main/index.js",

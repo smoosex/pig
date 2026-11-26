@@ -28,9 +28,15 @@ async function runFixture(): Promise<void> {
       Notification: FakeNotification
     }))
     const { sendCompletionNotification } = await import('../src/main/completion-notification')
+    const { notificationIconOption } = await import('../src/main/notification-icon')
     const { setVisibleNotificationSessions } = await import('../src/main/completion-visibility')
     const { updatePigSettings } = await import('../src/main/pig-settings')
     const { t } = await import('../src/main/i18n')
+
+    assert.deepEqual(notificationIconOption('darwin'), {})
+    assert.deepEqual(notificationIconOption('win32'), {})
+    assert.match(notificationIconOption('linux').icon ?? '', /build[\\/]icon\.png$/)
+
     const events: Array<{ channel: string; sessionId: string }> = []
     const windowActions: string[] = []
     let focused = false
@@ -53,7 +59,11 @@ async function runFixture(): Promise<void> {
     })
     assert.equal(FakeNotification.instances.length, 1)
     assert.equal(FakeNotification.instances[0].shown, true)
-    assert.deepEqual(FakeNotification.instances[0].options, { title: '修复登录问题', body: '第一行回复\n第二行回复' })
+    assert.deepEqual(FakeNotification.instances[0].options, {
+      title: '修复登录问题',
+      body: '第一行回复\n第二行回复',
+      ...notificationIconOption()
+    })
     const errors: unknown[][] = []
     const originalError = console.error
     try {
@@ -68,7 +78,11 @@ async function runFixture(): Promise<void> {
     assert.deepEqual(events, [{ channel: 'notification:click', sessionId: 'chat-1' }])
 
     await sendCompletionNotification('empty-reply', win, new AbortController().signal, { title: '空回复', reply: ' \n' })
-    assert.deepEqual(FakeNotification.instances[1].options, { title: '空回复', body: t('notification.replyReady') })
+    assert.deepEqual(FakeNotification.instances[1].options, {
+      title: '空回复',
+      body: t('notification.replyReady'),
+      ...notificationIconOption()
+    })
 
     focused = true
     setVisibleNotificationSessions(win, ['chat-2', 'chat-3'])
