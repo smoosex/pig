@@ -16,9 +16,11 @@ import type { SessionAgentUiApi } from './session-agent'
 import type { BotApi } from './bot'
 import type { KanbanApi } from './kanban'
 import type { ProjectSpacesApi } from './project-spaces'
+import type { CustomModelsApi } from './custom-models'
 export type * from './bot'
 export type * from './kanban'
 export type * from './project-spaces'
+export type * from './custom-models'
 export type * from './session-capabilities'
 export type * from './tool-settings'
 export type * from './skills'
@@ -1008,7 +1010,7 @@ export interface DefaultProjectsLocation {
   homeDir: string
 }
 
-export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi {
+export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilitiesApi, SettingsEventsApi, QuitApi, CustomModelsApi {
   bookmarks: BookmarksApi
   kanban: KanbanApi
   spaces: ProjectSpacesApi

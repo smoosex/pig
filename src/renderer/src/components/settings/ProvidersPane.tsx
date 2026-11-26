@@ -16,6 +16,7 @@ import {
 import { SettingsCard, SettingsRow } from './SettingsFields'
 import { AddProviderDialog } from './AddProviderDialog'
 import { AuthDialog } from './AuthDialog'
+import { CustomProvidersSection } from './CustomProvidersSection'
 import { useProviderAuth } from './use-provider-auth'
 
 function sourceLabel(t: Translate, provider: SettingsProvider): string {
@@ -119,7 +120,7 @@ export function ProvidersPane() {
           ))}
         </SettingsCard>
       ) : (
-        <Empty className="min-h-60 border">
+        <Empty className="min-h-44 border">
           <EmptyHeader>
             <EmptyTitle>{t('providers.connectFirst')}</EmptyTitle>
             <EmptyDescription>{t('providers.connectFirstDescription')}</EmptyDescription>
@@ -129,6 +130,7 @@ export function ProvidersPane() {
           </Button>
         </Empty>
       )}
+      <CustomProvidersSection disabled={locked} />
       <AddProviderDialog
         open={adding}
         onOpenChange={setAdding}

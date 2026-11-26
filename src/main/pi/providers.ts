@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { shell, type BrowserWindow } from 'electron'
 import { currentLocale } from '../i18n'
+import { getBuiltinProviderIds } from './custom-models'
 import { getOrCreateDeviceId, startModelRuntime } from './model-settings'
 import { synchronizeModelCatalog } from './model-catalog'
 
@@ -36,9 +37,10 @@ function clearPrompts(owner: AbortController, error: Error): void {
 }
 
 export async function listProviders(): Promise<SettingsProvider[]> {
-  const runtime = await startModelRuntime()
+  const [runtime, builtinIds] = await Promise.all([startModelRuntime(), getBuiltinProviderIds()])
   return runtime
     .getProviders()
+    .filter((provider) => builtinIds.has(provider.id))
     .map((provider) => {
       const status = runtime.getProviderAuthStatus(provider.id)
       const oauth = provider.auth.oauth

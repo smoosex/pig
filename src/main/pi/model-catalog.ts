@@ -52,7 +52,9 @@ function sameModels(next: SessionModelInfo[]): boolean {
       current.name === model.name &&
       current.providerName === model.providerName &&
       current.contextWindow === model.contextWindow &&
-      current.reasoning === model.reasoning
+      current.reasoning === model.reasoning &&
+      current.thinkingLevels.length === model.thinkingLevels.length &&
+      current.thinkingLevels.every((level, i) => level === model.thinkingLevels[i])
   })
 }
 

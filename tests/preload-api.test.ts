@@ -176,6 +176,12 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.spaces.remove('space-1')
   await api.spaces.assignProject('/repo', 'default')
   await api.spaces.forgetProject('/repo')
+  await api.getCustomModels()
+  await api.saveCustomProvider({ id: 'ollama', api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none', authHeader: false })
+  await api.removeCustomProvider('ollama')
+  await api.saveCustomModel('ollama', { id: 'qwen3:32b', reasoning: true, vision: false, contextWindow: 128000, maxTokens: 16384 })
+  await api.removeCustomModel('ollama', 'qwen3:32b')
+  await api.discoverCustomModels({ api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none' })
   api.spaces.onChanged(() => {})()
   api.terminal.onAgentOpenRequest(() => {})()
   api.terminal.onAgentState(() => {})()
@@ -306,7 +312,13 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'spaces:update', args: [{ id: 'space-1', name: 'Renamed', icon: null }] },
     { channel: 'spaces:remove', args: ['space-1'] },
     { channel: 'spaces:assign-project', args: ['/repo', 'default'] },
-    { channel: 'spaces:forget-project', args: ['/repo'] }
+    { channel: 'spaces:forget-project', args: ['/repo'] },
+    { channel: 'models:custom-get', args: [] },
+    { channel: 'models:custom-save-provider', args: [{ id: 'ollama', api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none', authHeader: false }] },
+    { channel: 'models:custom-remove-provider', args: ['ollama'] },
+    { channel: 'models:custom-save-model', args: ['ollama', { id: 'qwen3:32b', reasoning: true, vision: false, contextWindow: 128000, maxTokens: 16384 }] },
+    { channel: 'models:custom-remove-model', args: ['ollama', 'qwen3:32b'] },
+    { channel: 'models:custom-discover', args: [{ api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none' }] }
   ])
   assert.ok(listeners.includes('spaces:changed'))
   assert.ok(listeners.includes('projects:request-move'))

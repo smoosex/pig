@@ -362,6 +362,12 @@ const api: SessionApi = {
   },
   getModelCatalog: () => ipcRenderer.invoke('models:get-catalog'),
   refreshModelCatalog: () => ipcRenderer.invoke('models:refresh-catalog'),
+  getCustomModels: () => ipcRenderer.invoke('models:custom-get'),
+  saveCustomProvider: (input) => ipcRenderer.invoke('models:custom-save-provider', input),
+  removeCustomProvider: (providerId) => ipcRenderer.invoke('models:custom-remove-provider', providerId),
+  saveCustomModel: (providerId, model) => ipcRenderer.invoke('models:custom-save-model', providerId, model),
+  removeCustomModel: (providerId, modelId) => ipcRenderer.invoke('models:custom-remove-model', providerId, modelId),
+  discoverCustomModels: (input) => ipcRenderer.invoke('models:custom-discover', input),
   getTokenStats: (sessionId: string) =>
     ipcRenderer.invoke('session:get-token-stats', sessionId),
   getCommands: (sessionId: string) =>

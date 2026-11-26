@@ -62,6 +62,7 @@
 
 ## 相关入口
 
+- 自定义供应商与自定义模型由 `src/main/pi/custom-models.ts` 读写 `~/.pi/agent/models.json`（与 Pi CLI 共用），不在 Agent `SettingsService` 白名单内。GUI 仅管理独立的自定义供应商（拒绝与内置供应商 ID 重名），但保存时原样保留手写的内置供应商覆盖、`$schema`、`compat`、`samplingParams` 等字段；损坏的 `models.json` 只报错不覆盖。在 GUI 新填入的字面量 API Key 写入 `auth.json`，已存在于 `models.json` 的字面量密钥与请求头值向 renderer 脱敏，修改其他字段时可原样保留；每次变更刷新 `ModelRuntime` 并同步模型目录。
 - 快捷键契约与窗口动作见 [工作区](workspace.md)。
 - 默认权限、审批和委派见 [权限](permissions.md)。
 - Web 凭据与供应商配置见 [Web](pig-web.md)，人格与记忆不走通用插件设置。
