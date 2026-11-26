@@ -1,4 +1,4 @@
-import { Activity, useEffect, useMemo, useRef } from 'react'
+import { Activity, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Folder, GitBranch } from 'lucide-react'
@@ -11,6 +11,7 @@ import { FollowUpQueue } from './FollowUpQueue'
 import { ImagePreview } from './ImagePreview'
 import { ApprovalPrompt, useApprovalPrompt } from './composer/ApprovalPrompt'
 import { CompactionStatus } from './composer/CompactionStatus'
+import { ComposerDropHint } from './composer/ComposerDropHint'
 import { ComposerImages } from './composer/ComposerImages'
 import { ComposerToolbar } from './composer/ComposerToolbar'
 import { MentionSuggestions } from './composer/MentionSuggestions'
@@ -22,7 +23,8 @@ import { SteerHint } from './composer/SteerHint'
 import { useWorkspaceVisible } from './WorkspaceLayout'
 import { useComposer } from './composer/useComposer'
 import { ComposerSurface, composerTextLayout } from './composer/ComposerSurface'
-import { TAB_REFERENCE_DROP } from './composer/tab-reference'
+import { activeFileDrag, classifyComposerDrag, type ComposerDragKind } from './composer/file-drag'
+import { TAB_REFERENCE_DRAG, TAB_REFERENCE_DROP } from './composer/tab-reference'
 import { tabMentions, type TabMention } from './composer/tab-mentions'
 import { useSessionsStore } from '../stores/sessions'
 
@@ -45,26 +47,57 @@ export function Composer({
   const t = useT()
   const visible = useWorkspaceVisible()
   const isActive = paneActive && visible
-  const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
+  const { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash, editor, dropExternal, insertTabReference, hasDraft, commands, mentions, attachments, send, abort, error, canRestore, restore } = useComposer(draftCwd, draftSessionId, explicitSessionId, isActive)
   const mentionContext = useMemo(() => ({ cwd: mentions.cwd, sessionId: sessionId ?? null }), [mentions.cwd, sessionId])
   const boxRef = useRef<HTMLDivElement>(null)
   const reducedMotion = useReducedMotion()
   const approval = useApprovalPrompt(sessionId)
+  const [htmlDragKind, setHtmlDragKind] = useState<ComposerDragKind | null>(null)
+  const [tabDragOver, setTabDragOver] = useState(false)
+  const dragKind: ComposerDragKind | null = tabDragOver ? 'tab' : htmlDragKind
+
+  useEffect(() => {
+    setHtmlDragKind(null)
+    setTabDragOver(false)
+  }, [sessionId, inputDisabled, bashMode, approval])
+
+  useEffect(() => {
+    if (!htmlDragKind) return
+    const clear = () => setHtmlDragKind(null)
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+    }
+  }, [htmlDragKind])
+
   useEffect(() => {
     const box = boxRef.current
     if (!box) return
-    const onDrop = (event: Event) => {
-      if (!editor || inputDisabled || bashMode || approval !== undefined) return
-      const { reference, x, y } = (event as CustomEvent<{ reference: TabMention; x: number; y: number }>).detail
+    const acceptsTab = (reference: TabMention | null | undefined): reference is TabMention => {
+      if (!reference || !editor || inputDisabled || bashMode || approval !== undefined) return false
       const { openTabs, chatDraft } = useSessionsStore.getState()
-      if (!tabMentions(openTabs, sessionId, mentions.cwd, chatDraft?.sessionId)
-        .some((item) => item.kind === reference.kind && item.id === reference.id)) return
-      const position = editor.view.posAtCoords({ left: x, top: y })?.pos ?? editor.state.selection.from
-      editor.chain().focus().insertContentAt(position, [{ type: 'tabMention', attrs: reference }, { type: 'text', text: ' ' }]).run()
+      return tabMentions(openTabs, sessionId, mentions.cwd, chatDraft?.sessionId)
+        .some((item) => item.kind === reference.kind && item.id === reference.id)
     }
+    const onDrag = (event: Event) => {
+      const { reference } = (event as CustomEvent<{ reference: TabMention | null }>).detail
+      setTabDragOver(acceptsTab(reference))
+    }
+    const onDrop = (event: Event) => {
+      setTabDragOver(false)
+      const { reference } = (event as CustomEvent<{ reference: TabMention; x: number; y: number }>).detail
+      if (!acceptsTab(reference)) return
+      insertTabReference(reference)
+    }
+    box.addEventListener(TAB_REFERENCE_DRAG, onDrag)
     box.addEventListener(TAB_REFERENCE_DROP, onDrop)
-    return () => box.removeEventListener(TAB_REFERENCE_DROP, onDrop)
-  }, [editor, inputDisabled, bashMode, approval, sessionId, mentions.cwd])
+    return () => {
+      box.removeEventListener(TAB_REFERENCE_DRAG, onDrag)
+      box.removeEventListener(TAB_REFERENCE_DROP, onDrop)
+    }
+  }, [editor, insertTabReference, inputDisabled, bashMode, approval, sessionId, mentions.cwd])
   // Answering hands the keyboard back to the prompt it replaced.
   const hadApproval = useRef(false)
   useEffect(() => {
@@ -96,7 +129,7 @@ export function Composer({
       <ApprovalPrompt sessionId={sessionId} autoFocus={isActive} />
       </Activity>
       {/* Hidden rather than unmounted while a permission request stands in for it, keeping the draft. */}
-      <Popover open={visible && !approval && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
+      <Popover open={visible && !approval && !dragKind && (commands.open || mentions.open)} onOpenChange={(open) => { if (!open) { commands.dismiss(); mentions.dismiss() } }}>
         <PopoverAnchor asChild>
           <ComposerSurface
             ref={boxRef}
@@ -105,7 +138,41 @@ export function Composer({
             visible={visible}
             bashMode={bashMode}
             streaming={isStreaming}
-            before={<SteerHint visible={!inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />}
+            dragOver={dragKind !== null}
+            onDragOver={(event) => {
+              const native = event.nativeEvent
+              const kind = classifyComposerDrag(native, {
+                editable: Boolean(editor?.isEditable) && approval === undefined,
+                disabled: inputDisabled,
+                cwd: mentions.cwd,
+                bashMode,
+                internalDragging: Boolean(editor?.view.dragging)
+              })
+              setHtmlDragKind(kind)
+              if (kind) {
+                if (!event.defaultPrevented) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'copy'
+                }
+              } else if (activeFileDrag(native) && !event.defaultPrevented) {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'none'
+              }
+            }}
+            onDragLeave={(event) => {
+              if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+              setHtmlDragKind(null)
+            }}
+            onDrop={(event) => {
+              setHtmlDragKind(null)
+              if (!event.defaultPrevented) dropExternal(event.nativeEvent)
+            }}
+            before={(
+              <>
+                <ComposerDropHint kind={approval === undefined ? dragKind : null} />
+                <SteerHint visible={!dragKind && !inputDisabled && isStreaming && hasDraft && !bashMode && !commands.open && !mentions.open} />
+              </>
+            )}
             toolbar={(
               <Activity mode={visible ? 'visible' : 'hidden'}>
                 <ComposerToolbar
@@ -130,7 +197,7 @@ export function Composer({
             <FileMentionContext.Provider value={mentionContext}>
               <EditorContent
                 editor={editor}
-                className={cn(composerTextLayout, '[&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', bashMode && 'font-mono')}
+                className={cn(composerTextLayout, '[&_.ProseMirror]:min-h-16 [&_.ProseMirror]:outline-none [&_.ProseMirror:not(:focus)]:caret-transparent [&_.ProseMirror_p]:m-0 [&_.is-editor-empty:first-child::before]:pointer-events-none [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:h-0 [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror:focus_.is-editor-empty:first-child::before]:hidden', dragKind && '[&_.ProseMirror]:caret-transparent', bashMode && 'font-mono')}
               />
             </FileMentionContext.Provider>
             <ComposerImages images={attachments.images} onPreview={attachments.setPreview} onRemove={attachments.remove} disabled={inputDisabled} />

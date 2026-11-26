@@ -9,13 +9,14 @@ export const composerTextLayout = 'min-h-16 w-full shrink-0 px-3.5 pt-3 text-sm 
 
 /** Shared visual frame; each composer provides its own editor, controls and submission logic. */
 export function ComposerSurface({
-  before, toolbar, children, visible = true, streaming, bashMode = false, className, ...props
+  before, toolbar, children, visible = true, streaming, bashMode = false, dragOver = false, className, ...props
 }: ComponentProps<'div'> & {
   before?: ReactNode
   toolbar: ReactNode
   visible?: boolean
   streaming: boolean
   bashMode?: boolean
+  dragOver?: boolean
 }) {
   const appearance = useComposerAppearance()
   const beamEnabled = useSettingsStore((s) => s.beamBorderEnabled)
@@ -26,7 +27,11 @@ export function ComposerSurface({
       <div className="relative z-10">
         <BorderBeam size={bashMode ? 'pulse-inner' : 'md'} {...appearance} active={visible && beamEnabled && (bashMode || focused || streaming)} className="w-full">
           <InputGroup
-            className="@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl solid:bg-composer-input-background text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 transition-[background-color,border-color] duration-200 ease-in-out motion-reduce:transition-none"
+            data-drag-over={dragOver || undefined}
+            className={cn(
+              '@container/composer min-h-[min(8rem,calc(100dvh-6rem))] max-h-[min(16rem,calc(100dvh-6rem))] overflow-hidden rounded-2xl solid:bg-composer-input-background text-glass-prompt-foreground solid:text-foreground has-disabled:opacity-100 transition-[background-color,border-color,box-shadow] duration-200 ease-in-out motion-reduce:transition-none',
+              dragOver && 'border-primary/45 ring-2 ring-primary/15 solid:border-primary/45'
+            )}
             onFocus={() => setFocused(true)}
             onBlur={(event) => {
               if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return

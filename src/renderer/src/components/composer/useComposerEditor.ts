@@ -14,10 +14,16 @@ import { FileMentionNode } from '../FileMentionNode'
 import { IssueMentionNode } from '../IssueMentionNode'
 import { SkillMentionNode } from '../SkillMentionNode'
 import { TabMentionNode } from '../TabMentionNode'
+import type { TabMention } from './tab-mentions'
 import { PastedTextNode } from '../PastedTextNode'
 import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } from './document'
 import { clipboardImages } from './useComposerImages'
-import { activeFileDrag, type FileDrag } from './file-drag'
+import {
+  activeFileDrag,
+  draggedImageFiles,
+  hasDraggedImageFiles,
+  type FileDrag
+} from './file-drag'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
 import { isComposingKey, isShortcutRecording, matchesShortcut, shortcutText, useShortcut } from '../../lib/shortcuts'
 
@@ -95,14 +101,21 @@ function insertFileDrag(view: EditorView, drag: FileDrag, bashMode: boolean, at:
   insertSlice(view, Slice.maxOpen(Fragment.fromArray(nodes)), at)
 }
 
+function insertTabDrag(view: EditorView, reference: TabMention, at: number): void {
+  const { schema, doc } = view.state
+  const before = doc.textBetween(Math.max(0, at - 1), at, '\n', '\ufffc')
+  const nodes: ProseMirrorNode[] = []
+  if (before && !/\s/.test(before)) nodes.push(schema.text(' '))
+  nodes.push(schema.nodes.tabMention.create(reference), schema.text(' '))
+  insertSlice(view, Slice.maxOpen(Fragment.fromArray(nodes)), at)
+}
+
 function insertSlice(view: EditorView, slice: Slice, at?: number): void {
   const { tr } = view.state
   if (at == null) {
     view.dispatch(tr.replaceSelection(slice).scrollIntoView())
     return
   }
-  // A drop lands where the pointer was, not where the caret was, so the caret has to follow the
-  // inserted content: mapping alone leaves it behind and the focus() below would light it up there.
   const startLength = tr.steps.length
   tr.replace(at, at, slice)
   selectionToInsertionEnd(tr, startLength, -1)
@@ -117,11 +130,19 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   const callbacks = useRef(options)
   const composing = useRef(false)
   const compositionFrame = useRef<number | null>(null)
+  // Unfocused ProseMirror documents default selection to pos 1; drops should append at the end
+  // until the user explicitly places the caret (or a previous drop leaves it after inserted content).
+  const hasPlacedCaret = useRef(false)
   callbacks.current = options
   const focusShortcut = useShortcut('composer.focus')
   // Read at each decoration pass: the editor is built once, the key and the language can change.
   const placeholder = useRef('')
   placeholder.current = focusShortcut ? t('composer.focusPlaceholder', { key: shortcutText(focusShortcut) }) : ''
+
+  const dropInsertionPos = (view: EditorView): number => {
+    const endPos = Math.max(1, view.state.doc.content.size - 1)
+    return view.hasFocus() || hasPlacedCaret.current ? view.state.selection.to : endPos
+  }
 
   const editor = useEditor({
     editable: Boolean(options.sessionId) && !options.disabled,
@@ -137,6 +158,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
         bulletList: false,
         code: false,
         codeBlock: false,
+        dropcursor: false,
         heading: false,
         horizontalRule: false,
         italic: false,
@@ -155,6 +177,12 @@ export function useComposerEditor(options: ComposerEditorOptions) {
       IssueMentionNode
     ],
     content: textToComposerDocument(''),
+    onFocus: () => {
+      hasPlacedCaret.current = true
+    },
+    onSelectionUpdate: ({ editor: nextEditor }) => {
+      if (nextEditor.isFocused) hasPlacedCaret.current = true
+    },
     onUpdate: ({ editor: nextEditor }) => {
       const next = serializeComposerDocument(nextEditor.getJSON())
       currentDraft.current = next
@@ -185,13 +213,32 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           return false
         },
         dragover: (view, event) => {
-          const file = activeFileDrag(event)
-          if (!file) return false
-          event.preventDefault()
-          const accepted = view.editable && !callbacks.current.disabled && file.cwd === callbacks.current.cwd
-          event.dataTransfer!.dropEffect = accepted ? 'copy' : 'none'
-          // Falling through lets the drop cursor show where the path will land.
-          return !accepted
+          const drag = event as DragEvent
+          const file = activeFileDrag(drag)
+          if (file) {
+            event.preventDefault()
+            const accepted = view.editable && !callbacks.current.disabled && file.cwd === callbacks.current.cwd
+            drag.dataTransfer!.dropEffect = accepted ? 'copy' : 'none'
+            return true
+          }
+          if (drag.dataTransfer?.types.includes('Files')) {
+            const accepted =
+              view.editable &&
+              !callbacks.current.disabled &&
+              !(callbacks.current.isBashMode?.() ?? false) &&
+              hasDraggedImageFiles(drag.dataTransfer)
+            if (!accepted) return false
+            event.preventDefault()
+            drag.dataTransfer.dropEffect = 'copy'
+            return true
+          }
+          if (!view.dragging && drag.dataTransfer?.types.includes('text/plain')) {
+            if (!view.editable || callbacks.current.disabled) return false
+            event.preventDefault()
+            drag.dataTransfer.dropEffect = 'copy'
+            return true
+          }
+          return false
         },
         drop: (view, event) => {
           if (callbacks.current.disabled || !view.editable) {
@@ -200,20 +247,30 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           }
           if (view.dragging) return false
           const drag = event as DragEvent
+          const at = dropInsertionPos(view)
           const file = activeFileDrag(drag)
           if (file) {
             event.preventDefault()
             if (file.cwd !== callbacks.current.cwd) return true
-            const at = view.posAtCoords({ left: drag.clientX, top: drag.clientY })?.pos ?? view.state.selection.from
             insertFileDrag(view, file, callbacks.current.isBashMode?.() ?? false, at)
+            hasPlacedCaret.current = true
             view.focus()
             return true
           }
+          if (!(callbacks.current.isBashMode?.() ?? false)) {
+            const images = draggedImageFiles(drag.dataTransfer)
+            if (images.length > 0) {
+              event.preventDefault()
+              void callbacks.current.onPasteImages(images)
+              view.focus()
+              return true
+            }
+          }
           const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
           if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
-          const at = view.posAtCoords({ left: drag.clientX, top: drag.clientY })?.pos ?? view.state.selection.from
           event.preventDefault()
           insertPastedText(view, dropped, at)
+          hasPlacedCaret.current = true
           view.focus()
           return true
         }
@@ -249,6 +306,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   })
 
   const clear = useCallback(() => {
+    hasPlacedCaret.current = false
     currentDraft.current = EMPTY_COMPOSER
     setDraft(EMPTY_COMPOSER)
     editor?.commands.clearContent(false)
@@ -257,10 +315,12 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   }, [editor])
 
   const replaceText = useCallback((text: string) => {
+    hasPlacedCaret.current = false
     editor?.commands.setContent(textToComposerDocument(text))
   }, [editor])
 
   const restore = useCallback((content: JSONContent) => {
+    hasPlacedCaret.current = false
     if (!editor?.isDestroyed) editor?.commands.setContent(content)
   }, [editor])
 
@@ -289,7 +349,11 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     setDraft(next)
     // Only a new external restoration in this active editor moves focus, not ordinary tab hydration.
     const previous = appliedRestore.current
+    if (previous.sessionId !== options.sessionId) {
+      hasPlacedCaret.current = false
+    }
     if (saved?.focusOnRestore && previous.sessionId === options.sessionId && restoreVersion > previous.version && options.isActive !== false && !options.disabled) {
+      hasPlacedCaret.current = true
       editor?.commands.focus('end')
     }
     appliedRestore.current = { sessionId: options.sessionId, version: restoreVersion }
@@ -334,5 +398,56 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     if (compositionFrame.current != null) cancelAnimationFrame(compositionFrame.current)
   }, [])
 
-  return { editor, draft, getDraft: () => currentDraft.current, clear, replaceText, restore, restoreBashPrefix }
+  const dropExternal = useCallback((drag: Pick<DragEvent, 'dataTransfer' | 'preventDefault'>): boolean => {
+    if (!editor || editor.isDestroyed || callbacks.current.disabled || !editor.view.editable || editor.view.dragging) {
+      return false
+    }
+    const { view } = editor
+    const at = dropInsertionPos(view)
+    const file = activeFileDrag(drag)
+    if (file) {
+      drag.preventDefault()
+      if (file.cwd !== callbacks.current.cwd) return true
+      insertFileDrag(view, file, callbacks.current.isBashMode?.() ?? false, at)
+      hasPlacedCaret.current = true
+      view.focus()
+      return true
+    }
+    if (!(callbacks.current.isBashMode?.() ?? false)) {
+      const images = draggedImageFiles(drag.dataTransfer)
+      if (images.length > 0) {
+        drag.preventDefault()
+        void callbacks.current.onPasteImages(images)
+        view.focus()
+        return true
+      }
+    }
+    const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
+    if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
+    drag.preventDefault()
+    insertPastedText(view, dropped, at)
+    hasPlacedCaret.current = true
+    view.focus()
+    return true
+  }, [editor])
+
+  const insertTabReference = useCallback((reference: TabMention): void => {
+    if (!editor || editor.isDestroyed || callbacks.current.disabled || !editor.view.editable) return
+    const { view } = editor
+    insertTabDrag(view, reference, dropInsertionPos(view))
+    hasPlacedCaret.current = true
+    view.focus()
+  }, [editor])
+
+  return {
+    editor,
+    draft,
+    getDraft: () => currentDraft.current,
+    clear,
+    replaceText,
+    restore,
+    restoreBashPrefix,
+    dropExternal,
+    insertTabReference
+  }
 }

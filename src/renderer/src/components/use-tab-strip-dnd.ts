@@ -17,7 +17,7 @@ import {
   type SplitDropPosition
 } from '../stores/split-layout'
 import type { OpenTab } from '../stores/sessions/types'
-import { composerAtPoint, dropTabReference } from './composer/tab-reference'
+import { composerAtPoint, dropTabReference, hoverTabReference } from './composer/tab-reference'
 
 export type TabStripDropTarget =
   | 'tab-strip-reintegrate'
@@ -166,11 +166,22 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
         sourcePaneIdRef.current ??
         getSourcePaneId({ id: activeId, data: { current: activeDataRef.current } })
 
-      if (composerAtPoint(e.clientX, e.clientY)) {
+      const composer = composerAtPoint(e.clientX, e.clientY)
+      if (composer) {
+        const sourceNode = sourcePaneId
+          ? findPaneNode(groupOfPane(useSplitLayoutStore.getState().groups, sourcePaneId)?.root ?? null, sourcePaneId)
+          : null
+        const tabId = sourceNode?.tabId ?? activeId
+        const { openTabs } = useSessionsStore.getState()
+        const tab = !isGroupDrag(activeId, sourcePaneId)
+          ? (openTabs.find((item) => item.id === tabId) ?? null)
+          : null
+        hoverTabReference(composer, tab, openTabs)
         updateDropTarget(null)
         useSplitLayoutStore.getState().setDragOver(null)
         return
       }
+      hoverTabReference(null, null)
 
       if (isPointerOverTabBar(e.clientX, e.clientY)) {
         if (sourcePaneId) {
@@ -247,6 +258,7 @@ export function useTabStripDnd(visibleTabs: OpenTab[], groupedTabIds: Readonly<R
     window.addEventListener('pointermove', handlePointerMove)
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
+      hoverTabReference(null, null)
       useSplitLayoutStore.getState().setDragOver(null)
     }
   }, [activeId])

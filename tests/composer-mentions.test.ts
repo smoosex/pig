@@ -247,5 +247,181 @@ describe('file drag into the composer', () => {
     await act(async () => { drop('/repo', 'my dir', true) })
     assert.equal(editorState.getDraft().text, '@src/a.ts @"my dir/" ')
     await act(async () => { root.unmount() })
+    container.remove()
+  })
+
+  test('classifies draggable payloads, attaches dropped OS images, and renders top drop hints', async () => {
+    await ensureDom()
+    const { act, createElement } = await import('react')
+    const { createRoot } = await import('react-dom/client')
+    const { useSettingsStore } = await import('../src/renderer/src/stores/settings')
+    const { useComposerEditor } = await import('../src/renderer/src/components/composer/useComposerEditor')
+    const { ComposerDropHint } = await import('../src/renderer/src/components/composer/ComposerDropHint')
+    const { classifyComposerDrag, fileDragProps } = await import('../src/renderer/src/components/composer/file-drag')
+    const { TAB_REFERENCE_DRAG, dropTabReference, hoverTabReference } = await import(
+      '../src/renderer/src/components/composer/tab-reference'
+    )
+
+    useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
+
+    // 1. classifyComposerDrag distinguishes workspace files, OS images, plain text, and rejected drags
+    const sameRepoDrag = fileDragProps({ cwd: '/repo', path: 'AGENTS.md', isDirectory: false })
+    const wsData = new Map<string, string>()
+    const wsTransfer = {
+      types: [] as string[],
+      files: [] as File[],
+      items: [],
+      effectAllowed: 'all',
+      dropEffect: 'none',
+      setData(type: string, value: string) {
+        wsData.set(type, value)
+        this.types.push(type)
+      },
+      getData: (type: string) => wsData.get(type) ?? ''
+    }
+    sameRepoDrag.onDragStart({ dataTransfer: wsTransfer } as never)
+    expect(
+      classifyComposerDrag({ dataTransfer: wsTransfer as unknown as DataTransfer }, { editable: true, cwd: '/repo' })
+    ).toBe('files')
+    expect(
+      classifyComposerDrag({ dataTransfer: wsTransfer as unknown as DataTransfer }, { editable: true, cwd: '/other' })
+    ).toBeNull()
+    sameRepoDrag.onDragEnd()
+
+    const imgFile = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+    const pdfFile = new File([new Uint8Array([1, 2, 3])], 'doc.pdf', { type: 'application/pdf' })
+    expect(
+      classifyComposerDrag(
+        { dataTransfer: { types: ['Files'], files: [imgFile], items: [] } as unknown as DataTransfer },
+        { editable: true, cwd: '/repo', bashMode: false }
+      )
+    ).toBe('files')
+    expect(
+      classifyComposerDrag(
+        { dataTransfer: { types: ['Files'], files: [imgFile], items: [] } as unknown as DataTransfer },
+        { editable: true, cwd: '/repo', bashMode: true }
+      )
+    ).toBeNull()
+    expect(
+      classifyComposerDrag(
+        { dataTransfer: { types: ['Files'], files: [pdfFile], items: [] } as unknown as DataTransfer },
+        { editable: true, cwd: '/repo', bashMode: false }
+      )
+    ).toBeNull()
+    expect(
+      classifyComposerDrag(
+        { dataTransfer: { types: ['text/plain'], files: [], items: [] } as unknown as DataTransfer },
+        { editable: true, cwd: '/repo', internalDragging: false }
+      )
+    ).toBe('text')
+    expect(
+      classifyComposerDrag(
+        { dataTransfer: { types: ['text/plain'], files: [], items: [] } as unknown as DataTransfer },
+        { editable: true, cwd: '/repo', internalDragging: true }
+      )
+    ).toBeNull()
+
+    // 2. Dropping an OS image file forwards it to onPasteImages and suppresses ProseMirror's inline dropcursor
+    const receivedImages: File[][] = []
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    let editorState!: ReturnType<typeof useComposerEditor>
+    function EditorProbe() {
+      editorState = useComposerEditor({
+        sessionId: 'drag-image',
+        cwd: '/repo',
+        onKeyDown: () => false,
+        onPasteImages: async (files) => {
+          receivedImages.push(files)
+        }
+      })
+      return null
+    }
+    await act(async () => {
+      root.render(createElement(EditorProbe))
+    })
+    assert.ok(editorState.editor)
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.assign(dropEvent, {
+      dataTransfer: { types: ['Files'], files: [imgFile], items: [], getData: () => '' },
+      clientX: 0,
+      clientY: 0
+    })
+    await act(async () => {
+      editorState.editor!.view.dom.dispatchEvent(dropEvent)
+    })
+    assert.equal(dropEvent.defaultPrevented, true)
+    assert.equal(receivedImages.length, 1)
+    assert.equal(receivedImages[0]?.[0]?.name, 'shot.png')
+
+    // 2b. Dragging files never draws a dropcursor line and ignores pointer coordinates, appending at
+    // the end when no caret was placed or inserting at the active caret when explicitly positioned.
+    await act(async () => {
+      editorState.replaceText('已有前缀')
+    })
+    editorState.editor!.view.posAtCoords = () => ({ pos: 1, inside: 0 })
+    const fileDrag = fileDragProps({ cwd: '/repo', path: 'AGENTS.md', isDirectory: false })
+    const fileData = new Map<string, string>()
+    const fileTransfer = {
+      types: [] as string[],
+      files: [] as File[],
+      items: [],
+      effectAllowed: 'all',
+      dropEffect: 'none',
+      setData(type: string, value: string) {
+        fileData.set(type, value)
+        this.types.push(type)
+      },
+      getData: (type: string) => fileData.get(type) ?? ''
+    }
+    fileDrag.onDragStart({ dataTransfer: fileTransfer } as never)
+    const overEvent = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.assign(overEvent, { dataTransfer: fileTransfer, clientX: 2, clientY: 2 })
+    await act(async () => {
+      editorState.editor!.view.dom.dispatchEvent(overEvent)
+    })
+    assert.equal(
+      document.querySelector('.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline'),
+      null,
+      'dropcursor plugin is disabled so no horizontal or vertical line renders during dragover'
+    )
+    const fileDropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.assign(fileDropEvent, { dataTransfer: fileTransfer, clientX: 2, clientY: 2 })
+    await act(async () => {
+      editorState.editor!.view.dom.dispatchEvent(fileDropEvent)
+    })
+    fileDrag.onDragEnd()
+    assert.equal(
+      editorState.getDraft().text,
+      '已有前缀 @AGENTS.md ',
+      'drops append after existing content instead of jumping to posAtCoords(1)'
+    )
+
+    // 3. ComposerDropHint renders localized banner text and hoverTabReference notifies target enter/leave
+    await act(async () => {
+      root.render(createElement(ComposerDropHint, { kind: 'files' }))
+    })
+    assert.equal(container.querySelector('[data-composer-drop-hint]')?.textContent, '拖放文件以添加附件')
+    await act(async () => {
+      root.render(createElement(ComposerDropHint, { kind: 'tab' }))
+    })
+    assert.equal(container.querySelector('[data-composer-drop-hint]')?.textContent, '拖放标签以添加引用')
+
+    const dragStates: Array<string | null> = []
+    const targetEl = document.createElement('div')
+    targetEl.addEventListener(TAB_REFERENCE_DRAG, (event) => {
+      const detail = (event as CustomEvent<{ reference: { id: string } | null }>).detail
+      dragStates.push(detail.reference?.id ?? null)
+    })
+    const termTab = { id: 'term-1', cwd: '/repo', title: 'zsh', kind: 'terminal' as const, loadState: 'ready' as const }
+    hoverTabReference(targetEl, termTab, [termTab])
+    dropTabReference(targetEl, termTab, 10, 10, [termTab])
+    assert.deepEqual(dragStates, ['term-1', null])
+
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
   })
 })

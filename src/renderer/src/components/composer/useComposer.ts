@@ -134,5 +134,5 @@ export function useComposer(
     return true
   }
 
-  return { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash: Boolean((enteringBash ? draft.text.slice(1) : draft.text).trim()), editor, hasDraft, commands, mentions, attachments, ...submission }
+  return { sessionId, isDraftSession, isStreaming, inputDisabled, bashMode, canRunBash: Boolean((enteringBash ? draft.text.slice(1) : draft.text).trim()), editor, dropExternal: document.dropExternal, insertTabReference: document.insertTabReference, hasDraft, commands, mentions, attachments, ...submission }
 }
