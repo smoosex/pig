@@ -143,6 +143,79 @@ async function domFixture(): Promise<void> {
   // 2. Hidden shell (e.g. BotPage covering workspace) never overwrites the workspace blueprint
   document.querySelector('[data-workspace-shell]')!.setAttribute('hidden', '')
   assert.equal(captureStartupBlueprint(document, { leftOpen: true, rightOpen: false }), null)
+
+  // 3. Kanban Board view: captures multi-column swimlanes, elevated issue cards, collapsed rail, and top sidebar row
+  document.body.innerHTML = `
+    <div data-workspace-shell>
+      <header data-app-header>
+        <div data-header-leading>
+          <button aria-label="Sidebar"></button>
+          <button aria-label="Bot"><span data-bot-orb></span></button>
+          <button aria-label="Board"></button>
+        </div>
+        <div data-header-tabs></div>
+        <div data-header-trailing>
+          <button aria-label="Search"></button>
+          <button aria-label="View"></button>
+          <button aria-label="New"></button>
+        </div>
+      </header>
+      <div data-workspace-left-rail>
+        <div data-slot="scroll-area-viewport">
+          <button id="kanban-all" data-sidebar-selected="true">All issues</button>
+          <button id="kanban-proj">pig</button>
+        </div>
+      </div>
+      <div data-content-surface>
+        <div data-content-inner>
+          <div id="col-todo" data-kanban-column="todo">
+            <div id="col-todo-hdr"><svg></svg><span id="col-todo-title">Todo</span></div>
+            <div id="card-1" data-kanban-card="1">Fix shortcut focus</div>
+            <div id="card-2" data-kanban-card="2">Custom models GUI</div>
+          </div>
+          <div id="col-doing" data-kanban-column="in_progress">
+            <div id="col-doing-hdr"><svg></svg><span id="col-doing-title">In progress</span></div>
+            <div id="card-3" data-kanban-card="3">Kanban startup skeleton</div>
+          </div>
+          <button id="col-hidden" data-kanban-hidden-column="canceled">Canceled</button>
+          <div class="hidden">
+            <div data-tab-reference-target id="hidden-composer"></div>
+          </div>
+        </div>
+      </div>
+      <div data-workspace-right-rail></div>
+    </div>
+  `
+  assignRect(document.querySelector('[data-workspace-shell]')!, { x: 0, y: 0, width: 1200, height: 760 })
+  assignRect(document.querySelector('[data-app-header]')!, { x: 0, y: 0, width: 1200, height: 40 })
+  assignRect(document.querySelector('[data-workspace-left-rail]')!, { x: 0, y: 40, width: 248, height: 720 })
+  assignRect(document.querySelector('[data-slot="scroll-area-viewport"]')!, { x: 0, y: 48, width: 248, height: 620 })
+  assignRect(document.querySelector('#kanban-all')!, { x: 10, y: 48, width: 228, height: 32 })
+  assignRect(document.querySelector('#kanban-proj')!, { x: 10, y: 86, width: 228, height: 32 })
+
+  assignRect(document.querySelector('[data-content-inner]')!, { x: 256, y: 48, width: 936, height: 704 })
+  assignRect(document.querySelector('#col-todo')!, { x: 268, y: 60, width: 288, height: 680 })
+  assignRect(document.querySelector('#col-todo-title')!, { x: 298, y: 72, width: 42, height: 16 })
+  assignRect(document.querySelector('#card-1')!, { x: 276, y: 104, width: 272, height: 84 })
+  assignRect(document.querySelector('#card-2')!, { x: 276, y: 196, width: 272, height: 76 })
+  assignRect(document.querySelector('#col-doing')!, { x: 568, y: 60, width: 288, height: 680 })
+  assignRect(document.querySelector('#col-doing-title')!, { x: 598, y: 72, width: 78, height: 16 })
+  assignRect(document.querySelector('#card-3')!, { x: 576, y: 104, width: 272, height: 92 })
+  assignRect(document.querySelector('#col-hidden')!, { x: 976, y: 84, width: 200, height: 36 })
+  assignRect(document.querySelector('#hidden-composer')!, { x: 380, y: 600, width: 580, height: 112 })
+
+  const kanbanBp = captureStartupBlueprint(document, { leftOpen: true, rightOpen: false })
+  assert.ok(kanbanBp, 'captures Kanban board blueprint')
+  const kanbanCenterCapsules = kanbanBp.items.filter((it) => it.region === 2 && it.kind === 'capsule')
+  assert.equal(kanbanCenterCapsules.length, 3, 'captures 2 visible swimlane columns + 1 collapsed hidden-column pill')
+  const kanbanCards = kanbanBp.items.filter((it) => it.region === 2 && it.kind === 'pill')
+  assert.equal(kanbanCards.length, 3, 'captures all 3 issue cards across parallel columns')
+  const kanbanSidebarBars = kanbanBp.items.filter((it) => it.region === 1 && it.kind === 'bar')
+  assert.equal(kanbanSidebarBars.length, 2, 'captures the top All issues row without clipping at y+40')
+  assert.ok(
+    kanbanBp.items.some((it) => it.region === 1 && it.kind === 'capsule'),
+    'captures active selected sidebar row highlight'
+  )
 }
 
 if (process.argv[2] === '--dom-fixture') {

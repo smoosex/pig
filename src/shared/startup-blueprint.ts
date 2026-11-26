@@ -50,7 +50,7 @@ export interface BlueprintBox {
 
 const VALID_KINDS = new Set<StartupBlueprintKind>(['capsule', 'pill', 'bar', 'ghost', 'orb'])
 const VALID_ANCHORS = new Set<StartupBlueprintAnchor>(['tl', 'tr', 'tc', 'bl', 'br', 'cc', 'cb', 'box'])
-const MAX_BLUEPRINT_ITEMS = 64
+const MAX_BLUEPRINT_ITEMS = 96
 
 const round1 = (v: number) => Math.round(v * 10) / 10
 const round4 = (v: number) => Math.round(v * 10000) / 10000

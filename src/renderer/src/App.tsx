@@ -541,8 +541,22 @@ export default function App() {
     return () => releaseProjectDraft(cwd)
   }, [acquireProjectDraft, currentProjectCwd, projectHome, releaseProjectDraft])
 
+  const kanbanLoaded = useKanbanStore((s) => s.loaded)
+  const kanbanError = useKanbanStore((s) => s.error)
+  const kanbanItems = useKanbanStore((s) => s.items)
+  const kanbanViewMode = useKanbanStore((s) => s.viewMode)
+  const kanbanProjectScope = useKanbanStore((s) => s.projectScope)
+  const kanbanHiddenStatuses = useKanbanStore((s) => s.hiddenStatuses)
   const activeTabSettled = !activeTab || (activeTab.loadState !== 'cold' && activeTab.loadState !== 'opening')
-  const startupSettled = Boolean((workspaceRestoreReady || workspaceRestoreError) && sidebarReady && reviewSettled && settingsSettled && activeTabSettled)
+  const kanbanSettled = sidebarTab !== 'kanban' || kanbanLoaded || Boolean(kanbanError)
+  const startupSettled = Boolean(
+    (workspaceRestoreReady || workspaceRestoreError) &&
+      sidebarReady &&
+      reviewSettled &&
+      settingsSettled &&
+      activeTabSettled &&
+      kanbanSettled
+  )
   const notifiedStartupReady = useRef(false)
   // A failed restore is shown by the app itself, so it lifts the startup screen too.
   useEffect(() => {
@@ -606,7 +620,12 @@ export default function App() {
     openTabs.length,
     splitGroups,
     windowWidth,
-    activeMessageCount
+    activeMessageCount,
+    kanbanLoaded,
+    kanbanItems,
+    kanbanViewMode,
+    kanbanProjectScope,
+    kanbanHiddenStatuses
   ])
 
   useEffect(() => {

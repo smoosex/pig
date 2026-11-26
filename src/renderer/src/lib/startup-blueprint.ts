@@ -139,7 +139,7 @@ export function captureStartupBlueprint(
     anchor: StartupBlueprintAnchor,
     radius: number
   ) => {
-    if (!rect || rect.w < 5 || rect.h < 5 || items.length >= 60) return
+    if (!rect || rect.w < 5 || rect.h < 5 || items.length >= 88) return
     items.push(encodeBlueprintItem(rect, box, region, kind, anchor, radius))
   }
 
@@ -214,12 +214,18 @@ export function captureStartupBlueprint(
       }
     }
 
+    const hasTopModeSwitch = Boolean(modeSwitch && !isHiddenElement(modeSwitch))
     const scrollViewport = leftRail.querySelector('[data-slot="scroll-area-viewport"]') ?? leftRail
     const listClip: BlueprintBox = {
       x: leftBox.x,
-      y: leftBox.y + 40,
+      y: leftBox.y + (hasTopModeSwitch ? 40 : 6),
       w: leftBox.w,
-      h: Math.max(0, leftBox.h - 84)
+      h: Math.max(0, leftBox.h - (hasTopModeSwitch ? 84 : 50))
+    }
+    const activeSidebarRow = scrollViewport.querySelector('[data-sidebar-selected]')
+    if (activeSidebarRow && !isHiddenElement(activeSidebarRow)) {
+      const ar = clipBox(toBox(activeSidebarRow.getBoundingClientRect()), listClip)
+      if (ar) push(ar, leftBox, 1, 'capsule', 'tl', 8)
     }
     for (const bar of collectRowBars(scrollViewport, listClip, 12)) {
       push(bar, leftBox, 1, 'bar', 'tl', 5)
@@ -362,18 +368,127 @@ export function captureStartupBlueprint(
           push(shape.rect, centerBox, 2, shape.kind, multiPane ? 'box' : 'cb', shape.r)
         }
       } else if (composers.length === 0) {
-        // Kanban / File / Changes / Terminal / Browser tab
-        const cards = Array.from(contentInner.querySelectorAll('pre, [data-slot="card"], [role="region"]')).filter(
+        const kanbanColumns = Array.from(contentInner.querySelectorAll('[data-kanban-column]')).filter(
           (el) => !isHiddenElement(el)
         )
-        for (const card of cards.slice(0, 8)) {
-          const cr = clipBox(toBox(card.getBoundingClientRect()), centerBox)
-          if (cr && cr.h >= 28 && cr.w < centerBox.w * 0.96) {
-            push(cr, centerBox, 2, 'capsule', 'box', 10)
+        const kanbanListRows = Array.from(contentInner.querySelectorAll('[data-kanban-list-row]')).filter(
+          (el) => !isHiddenElement(el)
+        )
+        const emptyBox = contentInner.querySelector('[data-slot="empty"]')
+
+        if (kanbanColumns.length > 0) {
+          // Kanban Board view: swimlane columns, column header bars, elevated issue cards, and collapsed rails
+          for (const col of kanbanColumns.slice(0, 6)) {
+            const colClip = clipBox(toBox(col.getBoundingClientRect()), centerBox)
+            if (!colClip || colClip.w < 48) continue
+            push(colClip, centerBox, 2, 'capsule', 'tl', 12)
+
+            const headerTitle = col.firstElementChild?.querySelector('span')
+            const headerBar = headerTitle && !isHiddenElement(headerTitle)
+              ? measureTextLines(headerTitle, colClip, 1)[0]
+              : undefined
+            push(
+              headerBar ?? { x: colClip.x + 12, y: colClip.y + 15, w: Math.min(72, colClip.w - 28), h: 10 },
+              centerBox,
+              2,
+              'bar',
+              'tl',
+              5
+            )
+
+            const cards = Array.from(col.querySelectorAll('[data-kanban-card]')).filter(
+              (el) => !isHiddenElement(el)
+            )
+            for (const card of cards.slice(0, 4)) {
+              const cardClip = clipBox(toBox(card.getBoundingClientRect()), colClip)
+              if (!cardClip || cardClip.h < 28) continue
+              push(cardClip, centerBox, 2, 'pill', 'tl', 8)
+              push(
+                {
+                  x: cardClip.x + 12,
+                  y: cardClip.y + Math.min(34, Math.max(12, cardClip.h * 0.36)),
+                  w: Math.max(36, Math.min(cardClip.w - 28, cardClip.w * 0.72)),
+                  h: 9
+                },
+                centerBox,
+                2,
+                'bar',
+                'tl',
+                4.5
+              )
+            }
           }
-        }
-        for (const row of collectRowBars(contentInner, centerBox, 10)) {
-          push(row, centerBox, 2, 'bar', 'box', 5)
+
+          const hiddenCols = Array.from(contentInner.querySelectorAll('[data-kanban-hidden-column]')).filter(
+            (el) => !isHiddenElement(el)
+          )
+          for (const pill of hiddenCols.slice(0, 4)) {
+            const pr = clipBox(toBox(pill.getBoundingClientRect()), centerBox)
+            if (pr && pr.w >= 40) push(pr, centerBox, 2, 'capsule', 'tl', 8)
+          }
+        } else if (kanbanListRows.length > 0) {
+          // Kanban List view: status group containers + issue title rows
+          const seenGroups = new Set<Element>()
+          for (const row of kanbanListRows) {
+            const group = row.parentElement
+            if (!group || seenGroups.has(group) || isHiddenElement(group)) continue
+            seenGroups.add(group)
+            const gr = clipBox(toBox(group.getBoundingClientRect()), centerBox)
+            if (gr && gr.h >= 28) push(gr, centerBox, 2, 'capsule', 'box', 12)
+            if (seenGroups.size >= 5) break
+          }
+          for (const row of kanbanListRows.slice(0, 12)) {
+            const rr = clipBox(toBox(row.getBoundingClientRect()), centerBox)
+            if (!rr) continue
+            push(
+              {
+                x: rr.x + 14,
+                y: rr.y + (rr.h - 9) * 0.5,
+                w: Math.max(64, Math.min(320, rr.w * 0.45)),
+                h: 9
+              },
+              centerBox,
+              2,
+              'bar',
+              'box',
+              4.5
+            )
+          }
+        } else if (emptyBox && !isHiddenElement(emptyBox)) {
+          // Centered Empty state without a composer (e.g. empty Kanban board)
+          const iconBox = emptyBox.querySelector('[data-slot="empty-media"], svg')
+          if (iconBox && !isHiddenElement(iconBox)) {
+            const ir = clipBox(toBox(iconBox.getBoundingClientRect()), centerBox)
+            if (ir) push(ir, centerBox, 2, 'ghost', 'cc', 10)
+          }
+          const texts = Array.from(emptyBox.querySelectorAll('[data-slot="empty-title"], [data-slot="empty-description"], p'))
+          const seenTextEls = new Set<Element>()
+          for (const textEl of texts) {
+            if (seenTextEls.has(textEl) || isHiddenElement(textEl)) continue
+            seenTextEls.add(textEl)
+            for (const line of measureTextLines(textEl, centerBox, 2)) {
+              push({ ...line, h: 10 }, centerBox, 2, 'bar', 'cc', 5)
+            }
+          }
+          const actionBtn = emptyBox.querySelector('button')
+          if (actionBtn && !isHiddenElement(actionBtn)) {
+            const br = clipBox(toBox(actionBtn.getBoundingClientRect()), centerBox)
+            if (br) push(br, centerBox, 2, 'pill', 'cc', 8)
+          }
+        } else {
+          // File / Changes / Terminal / Browser tab
+          const cards = Array.from(contentInner.querySelectorAll('pre, [data-slot="card"], [role="region"]')).filter(
+            (el) => !isHiddenElement(el)
+          )
+          for (const card of cards.slice(0, 8)) {
+            const cr = clipBox(toBox(card.getBoundingClientRect()), centerBox)
+            if (cr && cr.h >= 28 && cr.w < centerBox.w * 0.96) {
+              push(cr, centerBox, 2, 'capsule', 'box', 10)
+            }
+          }
+          for (const row of collectRowBars(contentInner, centerBox, 10)) {
+            push(row, centerBox, 2, 'bar', 'box', 5)
+          }
         }
       }
     }
