@@ -1,9 +1,10 @@
 /**
- * Parses Markdown link destinations in chat and Bot replies so local filesystem references
+ * Parses Markdown link and image destinations in chat and Bot replies so local filesystem references
  * (`正文/002.md`, `/Users/.../a.ts#L12`, `file:///...`, `~/...`, `src/a.ts:42`) can show file hover
- * cards and open in a workspace file tab (or via the OS default app when outside open workspaces),
- * while external URLs stay external and unsafe schemes stay inert.
+ * cards, open workspace tabs, and render local images through `pig-file:`, while external URLs stay
+ * external and unsafe schemes stay inert.
  */
+import { localImageFileUrl, worktreeFileUrl } from './worktree-files'
 
 export type ParsedFileTarget = {
   /** Normalized `/`-separated path: worktree-relative when `relativeToCwd` is true, else absolute or `~/...`. */
@@ -62,6 +63,9 @@ const EXACT_FILENAMES = new Set([
 const BARE_FRAMEWORK_JS =
   /^(?:node|next|nuxt|vue|react|angular|solid|svelte|ember|backbone|three|chart|d3|day|moment|highlight|prism|mermaid|katex|electron|nw|bun|deno|express|nest|koa|hapi|fastify|vite|rollup|webpack|gulp|grunt|jest|mocha|ava|sinon|cypress|playwright|alpine|htmx|pixi|babylon|p5|paper|fabric|tone|howler|video|pdf|fuse|zone|core)\.js$/i
 
+const KNOWN_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'])
+const DATA_IMAGE_SRC = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp|x-icon)(?:;|,)/i
+
 /**
  * True for `<a href>` destinations that `react-markdown`'s `defaultUrlTransform` would strip as
  * unknown protocols (`file://...`, `C:/...`, or bare `file.ext:line`), while keeping `javascript:`,
@@ -73,6 +77,63 @@ export function isChatPassthroughHref(url: string): boolean {
   const match = SCHEME_PREFIX.exec(trimmed)
   if (!match) return false
   return FILE_EXT_BEFORE_COLON.test(match[1]) && LINE_COLON_REST.test(match[2])
+}
+
+/**
+ * True for `<img src>` values in chat Markdown that `defaultUrlTransform` would strip (`file://...`,
+ * Windows drive paths, and raster `data:image/...`), while blocking `javascript:` and `data:text/html`.
+ */
+export function isChatPassthroughImageSrc(url: string): boolean {
+  const trimmed = url.trim()
+  return FILE_SCHEME.test(trimmed) || WINDOWS_DRIVE.test(trimmed) || DATA_IMAGE_SRC.test(trimmed)
+}
+
+/**
+ * Resolves a chat Markdown `<img src>` into a loadable URL: remote `http(s):` and raster `data:image/`
+ * stay as written, workspace-relative or workspace-contained image paths use `pig-file://worktree/...`,
+ * and explicit local image paths outside open workspaces use `pig-file://local/...`. Non-image local
+ * paths (such as `file:///etc/passwd`) return `undefined`.
+ */
+export function resolveChatMarkdownImageSrc(
+  src: string | undefined,
+  options: {
+    cwd?: string | null
+    preferredCwds?: readonly string[]
+    projects?: readonly WorkspaceCandidate[]
+  } = {}
+): string | undefined {
+  const raw = src?.trim() ?? ''
+  if (!raw) return undefined
+  if (/^https?:/i.test(raw) || DATA_IMAGE_SRC.test(raw)) return raw
+
+  const { cwd = null, preferredCwds = [], projects = [] } = options
+  const baseCwd = cwd ?? preferredCwds[0] ?? null
+  const parsed = parseMarkdownFileLink(raw, baseCwd)
+  if (parsed.kind !== 'file' || !hasImageFileExtension(parsed.path)) return undefined
+
+  const isOpenRoot = (candidate: string): boolean =>
+    (Boolean(cwd) && candidate === cwd) ||
+    projects.some(
+      (proj) => proj.cwd === candidate || proj.worktrees?.some((wt) => !wt.missing && wt.cwd === candidate)
+    )
+
+  if (parsed.relativeToCwd) {
+    if (!baseCwd) return undefined
+    if (isOpenRoot(baseCwd)) return worktreeFileUrl(baseCwd, parsed.path)
+    return localImageFileUrl(`${baseCwd.replace(/[\\/]+$/, '')}/${parsed.path}`)
+  }
+
+  const matched = matchOpenedWorkspaceFile(parsed.path, cwd ? [cwd, ...preferredCwds] : preferredCwds, projects)
+  if (matched) return worktreeFileUrl(matched.cwd, matched.relativePath)
+  return localImageFileUrl(parsed.path)
+}
+
+function hasImageFileExtension(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/')
+  const base = normalized.slice(normalized.lastIndexOf('/') + 1)
+  const dot = base.lastIndexOf('.')
+  if (dot <= 0 || dot === base.length - 1) return false
+  return KNOWN_IMAGE_EXTENSIONS.has(base.slice(dot + 1).toLowerCase())
 }
 
 export function parseMarkdownFileLink(

@@ -165,7 +165,7 @@ export async function fileMentionInfo(cwd: string, path: string): Promise<FileMe
   }
 }
 
-function expandLocalInputPath(rawPath: unknown): string | null {
+export function expandLocalInputPath(rawPath: unknown): string | null {
   if (typeof rawPath !== 'string') return null
   const trimmed = rawPath.trim()
   if (!trimmed || trimmed.length > 4096 || trimmed.includes('\0')) return null

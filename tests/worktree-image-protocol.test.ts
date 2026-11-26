@@ -25,7 +25,7 @@ async function runFixture(): Promise<void> {
     openedWorktree: async (cwd: unknown) => (cwd === root ? root : null)
   }))
   const { worktreeImageResponse } = await import('../src/main/files/image')
-  const { worktreeFileUrl } = await import('../src/shared/worktree-files')
+  const { localImageFileUrl, worktreeFileUrl } = await import('../src/shared/worktree-files')
   try {
     const served = await worktreeImageResponse(worktreeFileUrl(root, 'docs/logo.png'))
     assert.equal(served.status, 200)
@@ -43,6 +43,18 @@ async function runFixture(): Promise<void> {
       assert.equal((await worktreeImageResponse(worktreeFileUrl(cwd, path))).status, 404, why)
     }
     assert.equal((await worktreeImageResponse('pig-file://worktree/%E0/x.png')).status, 404)
+
+    const localServed = await worktreeImageResponse(localImageFileUrl(join(outside, 'leak.png')))
+    assert.equal(localServed.status, 200, 'explicit local image URL serves regular image outside worktree')
+    assert.equal(localServed.headers.get('content-type'), 'image/png')
+    for (const [targetPath, why] of [
+      [join(root, 'notes.txt'), 'local URL refuses non-image extension'],
+      [join(root, 'link.png'), 'local URL refuses symlink at final segment'],
+      ['relative/logo.png', 'local URL refuses non-absolute path'],
+      [join(outside, 'missing.png'), 'local URL refuses missing file']
+    ]) {
+      assert.equal((await worktreeImageResponse(localImageFileUrl(targetPath))).status, 404, why)
+    }
   } finally {
     await rm(base, { recursive: true, force: true })
   }

@@ -11,8 +11,14 @@ import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
 import { Message, MessageContent } from '../ui/message'
 import { ImagePreview } from '../ImagePreview'
-import { MarkdownInlineCodeContext, MarkdownLinkContext, MarkdownText } from '../MarkdownText'
-import { FileMentionChip, FileMentionContext, MarkdownFileLink, MarkdownInlineCode } from '../FileMentionChip'
+import { MarkdownImageContext, MarkdownInlineCodeContext, MarkdownLinkContext, MarkdownText } from '../MarkdownText'
+import {
+  FileMentionChip,
+  FileMentionContext,
+  MarkdownChatImage,
+  MarkdownFileLink,
+  MarkdownInlineCode
+} from '../FileMentionChip'
 import { renderTextWithIssueChips } from '../IssueMentionNode'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
@@ -197,7 +203,9 @@ export const UserBubble = memo(function UserBubble({
 })
 
 export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: AnswerBlock[]; errorMessage?: string }) {
+  const t = useT()
   const linkRenderer = useContext(MarkdownLinkContext)
+  const [preview, setPreview] = useState<string | null>(null)
   if (blocks.length === 0 && !errorMessage) return null
   const content = (
     <Message align="start" className="mb-4">
@@ -209,15 +217,26 @@ export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: A
           return (
             <img
               key={i}
-              className="my-1.5 block max-w-90 rounded-lg"
+              className="my-1.5 block max-h-96 max-w-full cursor-zoom-in rounded-lg object-contain focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:outline-none sm:max-w-lg"
               src={src}
               loading="lazy"
               decoding="async"
+              role="button"
+              tabIndex={0}
+              aria-label={t('composer.previewImage')}
+              onClick={() => setPreview(src)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setPreview(src)
+                }
+              }}
               alt=""
             />
           )
         })}
         {errorMessage ? <div className="mt-1.5 text-xs text-destructive">{errorMessage}</div> : null}
+        {preview ? <ImagePreview src={preview} onClose={() => setPreview(null)} /> : null}
       </MessageContent>
     </Message>
   )
@@ -225,9 +244,11 @@ export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: A
     content
   ) : (
     <MarkdownLinkContext.Provider value={MarkdownFileLink}>
-      <MarkdownInlineCodeContext.Provider value={MarkdownInlineCode}>
-        {content}
-      </MarkdownInlineCodeContext.Provider>
+      <MarkdownImageContext.Provider value={MarkdownChatImage}>
+        <MarkdownInlineCodeContext.Provider value={MarkdownInlineCode}>
+          {content}
+        </MarkdownInlineCodeContext.Provider>
+      </MarkdownImageContext.Provider>
     </MarkdownLinkContext.Provider>
   )
 })

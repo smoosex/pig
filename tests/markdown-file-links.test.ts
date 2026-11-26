@@ -7,10 +7,13 @@ import { describe, expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
 import {
   isChatPassthroughHref,
+  isChatPassthroughImageSrc,
   matchOpenedWorkspaceFile,
   parseInlineCodeFileLink,
-  parseMarkdownFileLink
+  parseMarkdownFileLink,
+  resolveChatMarkdownImageSrc
 } from '../src/shared/file-links'
+import { localImageFileUrl, worktreeFileUrl } from '../src/shared/worktree-files'
 import { runSelf } from './helpers/subprocess.ts'
 
 if (process.argv[2] === '--markdown-file-links-dom') {
@@ -103,6 +106,29 @@ describe('parseMarkdownFileLink', () => {
     expect(isChatPassthroughHref('javascript:alert(1)')).toBe(false)
     expect(isChatPassthroughHref('javascript:1')).toBe(false)
     expect(isChatPassthroughHref('data:image/png;base64,AA==')).toBe(false)
+    expect(isChatPassthroughImageSrc('file:///Users/me/map.png')).toBe(true)
+    expect(isChatPassthroughImageSrc('data:image/png;base64,AA==')).toBe(true)
+    expect(isChatPassthroughImageSrc('data:text/html,<b>x</b>')).toBe(false)
+    expect(isChatPassthroughImageSrc('javascript:alert(1)')).toBe(false)
+
+    expect(
+      resolveChatMarkdownImageSrc('地图/西梁女国-王城及近郊.png', {
+        cwd,
+        projects: [{ cwd }]
+      })
+    ).toBe(worktreeFileUrl(cwd, '地图/西梁女国-王城及近郊.png'))
+    expect(
+      resolveChatMarkdownImageSrc(`file://${cwd}/%E5%9C%B0%E5%9B%BE/map.png`, {
+        projects: [{ cwd }]
+      })
+    ).toBe(worktreeFileUrl(cwd, '地图/map.png'))
+    expect(resolveChatMarkdownImageSrc('/tmp/generated-chart.png', { cwd })).toBe(
+      localImageFileUrl('/tmp/generated-chart.png')
+    )
+    expect(resolveChatMarkdownImageSrc('https://example.com/avatar?size=64', { cwd })).toBe(
+      'https://example.com/avatar?size=64'
+    )
+    expect(resolveChatMarkdownImageSrc('file:///etc/passwd', { cwd })).toBeUndefined()
 
     expect(
       matchOpenedWorkspaceFile(
@@ -298,6 +324,8 @@ async function runDomFixture(): Promise<void> {
     '目录链接：[正文目录](正文)。',
     '网页：[文档](https://example.com)。',
     '写好嘞！ `/Users/smoose/Documents/小说/故人西来/红线啦啦啦.md` ，接口是 `/models` ，命令 `bun run test` ，属性 `window.api`。',
+    '![西梁女国地图](地图/西梁女国-王城及近郊.png)',
+    '![临时图](file:///tmp/chart.png)',
     '![bad](file:///etc/passwd)'
   ].join('\n\n')
 
@@ -318,9 +346,28 @@ async function runDomFixture(): Promise<void> {
     assert.equal(codeFileLinks.length, 1, 'only the real file path backtick span becomes interactive; [`window.ts`](...) stays nested once')
     assert.equal(codeFileLinks[0]?.getAttribute('data-file-code'), `${projectCwd}/红线啦啦啦.md`)
 
-    // Local image with file:// must not keep a file:// src in chat output.
-    const img = container.querySelector('img')
-    assert.ok(!img?.getAttribute('src')?.startsWith('file:'), 'file:// image src must be sanitized')
+    // Local images rewrite to pig-file:// URLs while non-image file:// targets have src stripped.
+    const imgs = [...container.querySelectorAll('img')]
+    assert.equal(imgs.length, 3)
+    assert.equal(
+      imgs[0]?.getAttribute('src'),
+      worktreeFileUrl(projectCwd, '地图/西梁女国-王城及近郊.png')
+    )
+    assert.equal(imgs[1]?.getAttribute('src'), localImageFileUrl('/tmp/chart.png'))
+    assert.equal(imgs[2]?.getAttribute('src'), null, 'non-image file:// src must be stripped')
+
+    // Clicking a rendered Markdown image opens the zoomable ImagePreview dialog.
+    await act(async () => {
+      imgs[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+    const previewImg = document.body.querySelector('[role="dialog"] img')
+    assert.equal(
+      previewImg?.getAttribute('src'),
+      worktreeFileUrl(projectCwd, '地图/西梁女国-王城及近郊.png')
+    )
+    await act(async () => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
 
     // External https link keeps target="_blank".
     assert.equal(links[4]?.getAttribute('target'), '_blank')

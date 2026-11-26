@@ -8,7 +8,7 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import type { Element } from 'hast'
 import { Streamdown, preprocessLaTeX } from '@lobehub/streamdown'
-import { isChatPassthroughHref } from '../../../shared/file-links'
+import { isChatPassthroughHref, isChatPassthroughImageSrc } from '../../../shared/file-links'
 import { renderMermaid } from '../lib/mermaid-renderer'
 import { useDarkMode } from '../lib/useDarkMode'
 import { cn } from '../lib/utils'
@@ -41,13 +41,17 @@ const htmlRemarkRehypeOptions: Options['remarkRehypeOptions'] = { clobberPrefix:
 const fileUrlTransform: Options['urlTransform'] = (url, key, node) =>
   node.tagName === 'img' && key === 'src' && /^data:image\//i.test(url) ? url : defaultUrlTransform(url)
 
-const chatUrlTransform: Options['urlTransform'] = (url, key, node) =>
-  node.tagName === 'a' && key === 'href' && isChatPassthroughHref(url) ? url : defaultUrlTransform(url)
+const chatUrlTransform: Options['urlTransform'] = (url, key, node) => {
+  if (node.tagName === 'a' && key === 'href' && isChatPassthroughHref(url)) return url
+  if (node.tagName === 'img' && key === 'src' && isChatPassthroughImageSrc(url)) return url
+  return defaultUrlTransform(url)
+}
 
 export const INLINE_CODE_CLASS =
   'rounded-sm bg-foreground/8 px-1 py-px font-mono text-xs text-code-foreground shadow-glass-inline-code box-decoration-clone solid:bg-inline-code-background solid:shadow-none'
 
 export const MarkdownLinkContext = createContext<Components['a'] | null>(null)
+export const MarkdownImageContext = createContext<Components['img'] | null>(null)
 export const MarkdownInlineCodeContext = createContext<
   ((props: { text: string; children: import('react').ReactNode }) => import('react').ReactNode) | null
 >(null)
@@ -149,15 +153,21 @@ export const MarkdownText = memo(function MarkdownText({
   overrides?: Components
 }) {
   const linkRenderer = useContext(MarkdownLinkContext)
+  const imageRenderer = useContext(MarkdownImageContext)
   const merged = useMemo(() => {
-    const contextual = !allowHtml && linkRenderer ? { a: linkRenderer } : undefined
+    const contextual = !allowHtml && (linkRenderer || imageRenderer)
+      ? {
+          ...(linkRenderer ? { a: linkRenderer } : {}),
+          ...(imageRenderer ? { img: imageRenderer } : {})
+        }
+      : undefined
     if (!overrides && !contextual) return components
     return {
       ...components,
       ...contextual,
       ...overrides
     }
-  }, [allowHtml, linkRenderer, overrides])
+  }, [allowHtml, imageRenderer, linkRenderer, overrides])
   const content = (
     <div className={cn('min-w-0 [&_.katex]:text-foreground', className)}>
       {streaming ? (

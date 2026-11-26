@@ -6,6 +6,7 @@ import {
   matchOpenedWorkspaceFile,
   parseInlineCodeFileLink,
   parseMarkdownFileLink,
+  resolveChatMarkdownImageSrc,
   type ParsedFileTarget
 } from '../../../shared/file-links'
 import { baseName } from '../../../shared/paths'
@@ -18,7 +19,13 @@ import { useSessionFileChanges } from '../stores/file-changes'
 import { useFilesStore } from '../stores/files'
 import { useSessionsStore } from '../stores/sessions'
 import { FileTypeIcon } from './files/FileTypeIcon'
-import { INLINE_CODE_CLASS, MarkdownInlineCodeContext, MarkdownLinkContext } from './MarkdownText'
+import { ImagePreview } from './ImagePreview'
+import {
+  INLINE_CODE_CLASS,
+  MarkdownImageContext,
+  MarkdownInlineCodeContext,
+  MarkdownLinkContext
+} from './MarkdownText'
 import { Button } from './ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 import { INLINE_CHIP_CLASS } from './inline-chip'
@@ -52,9 +59,11 @@ export function FileMentionProvider({
   return (
     <FileMentionContext.Provider value={value}>
       <MarkdownLinkContext.Provider value={MarkdownFileLink}>
-        <MarkdownInlineCodeContext.Provider value={MarkdownInlineCode}>
-          {children}
-        </MarkdownInlineCodeContext.Provider>
+        <MarkdownImageContext.Provider value={MarkdownChatImage}>
+          <MarkdownInlineCodeContext.Provider value={MarkdownInlineCode}>
+            {children}
+          </MarkdownInlineCodeContext.Provider>
+        </MarkdownImageContext.Provider>
       </MarkdownLinkContext.Provider>
     </FileMentionContext.Provider>
   )
@@ -394,6 +403,71 @@ export const MarkdownFileLink: NonNullable<Components['a']> = function MarkdownF
         </a>
       )}
     </InteractiveFileReference>
+  )
+}
+
+/**
+ * Markdown `<img>` renderer for chat and Bot replies: rewrites local workspace and disk image paths
+ * (`地图/王城.png`, `/Users/...`, `file:///...`, `~/...`) to `pig-file:` URLs and opens `ImagePreview`
+ * on click when standalone.
+ */
+export const MarkdownChatImage: NonNullable<Components['img']> = function MarkdownChatImage({
+  src,
+  alt,
+  title,
+  width,
+  height
+}) {
+  const t = useT()
+  const insideLink = useContext(InsideMarkdownLinkContext)
+  const { cwd, preferredCwds } = useContext(FileMentionContext)
+  const projects = useSessionsStore((state) => state.projects)
+  const [preview, setPreview] = useState<string | null>(null)
+
+  const resolvedSrc =
+    typeof src === 'string'
+      ? resolveChatMarkdownImageSrc(src, { cwd, preferredCwds, projects })
+      : undefined
+
+  if (!resolvedSrc || insideLink) {
+    return (
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ''}
+        title={title}
+        width={width}
+        height={height}
+        loading="lazy"
+        decoding="async"
+        className="my-1.5 block max-h-96 max-w-full rounded-lg object-contain sm:max-w-lg"
+      />
+    )
+  }
+
+  return (
+    <>
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ''}
+        title={title}
+        width={width}
+        height={height}
+        loading="lazy"
+        decoding="async"
+        role="button"
+        tabIndex={0}
+        aria-label={alt || t('composer.previewImage')}
+        onClick={() => setPreview(resolvedSrc)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setPreview(resolvedSrc)
+          }
+        }}
+        className="my-1.5 block max-h-96 max-w-full cursor-zoom-in rounded-lg object-contain focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:outline-none sm:max-w-lg"
+      />
+      {preview ? <ImagePreview src={preview} onClose={() => setPreview(null)} /> : null}
+    </>
   )
 }
 
