@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ChevronRight } from 'lucide-react'
 import { formatElapsed, renderKeyForTurn, type CompactionItem, type ProcessItem, type Turn } from '../chat/turns'
 import { MIN_GENERATION_DURATION_MS, MAX_REALISTIC_TPS } from '../../../shared/api'
@@ -9,6 +9,7 @@ import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { Marker, MarkerContent } from './ui/marker'
+import { FileMentionProvider } from './FileMentionChip'
 import { Answer, UserBubble } from './turn/TurnMessages'
 import { AssistantMessageActions } from './turn/AssistantMessageActions'
 import { BashTurn } from './turn/BashTurn'
@@ -19,6 +20,7 @@ import { useWorkBlockMs } from './turn/useWorkBlockMs'
 import { TurnFileChanges } from './turn/TurnFileChanges'
 import { failureMessage } from '../lib/ipc-error'
 import { useBookmarksStore } from '../stores/bookmarks'
+import { useSessionsStore } from '../stores/sessions'
 import { replyBookmarkId } from '../../../shared/bookmarks'
 
 /**
@@ -126,6 +128,10 @@ function AgentTurnView({
 }) {
   const bookmarked = useBookmarksStore(state => Boolean(sessionId && turn.replyEntryId &&
     state.items.some(item => item.id === replyBookmarkId(sessionId, turn.replyEntryId!))))
+  const cwd = useSessionsStore((state) =>
+    sessionId ? state.openTabs.find((tab) => tab.id === sessionId)?.cwd ?? null : null
+  )
+  const mentionContext = useMemo(() => ({ cwd, sessionId: sessionId ?? null }), [cwd, sessionId])
   const trailing: SummarySegment[] = []
   const trailingCompactions: CompactionItem[] = []
   const inline: ProcessItem[] = []
@@ -244,88 +250,90 @@ function AgentTurnView({
     (turn.answer.length > 0 || Boolean(turn.errorMessage) || Boolean(turn.usage))
 
   return (
-    <div className="mb-4">
-      {turn.user ? <UserBubble message={turn.user} sessionId={sessionId} turnId={turn.id} /> : null}
-      <div className="group/agent-reply">
-        {showBody ? (
-          <div className="mb-3">
-            {blocks.map((block, index) =>
-              block.kind === 'branchSummary' ? (
-                <BranchSummaryNotice key={`branch-${index}`} text={block.item.text} />
-              ) : block.kind === 'compaction' ? (
-                <CompactionNotice key={`compaction-${index}`} item={block.item} />
-              ) : (
-                // One Collapsible per work block, each with its own header: they open independently,
-                // and each gets its own content id (a single root reuses one id for every content).
-                <Collapsible
-                  key={`work-${block.block}`}
-                  open={openAt(block.block)}
-                  onOpenChange={(next) => void toggleProcess(block.block, next)}
-                >
-                  <Marker variant="separator" asChild>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={loading}
-                        className={cn(
-                          'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent solid:hover:bg-transparent solid:hover:text-muted-foreground solid:aria-expanded:bg-transparent solid:aria-expanded:text-muted-foreground solid:hover:aria-expanded:bg-transparent solid:dark:hover:bg-transparent solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-transparent',
-                          turn.streaming && 'pointer-events-none'
-                        )}
-                      >
-                        <MarkerContent className="flex shrink-0 items-center gap-1">
-                          <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={block.block} />
-                          <ChevronRight
-                            className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
-                          />
-                        </MarkerContent>
-                      </Button>
-                    </CollapsibleTrigger>
-                  </Marker>
-                  <CollapsibleContent className={cn('duration-300', turn.streaming && 'overflow-visible')}>
-                    {liveOutline ? (
-                      <ProcessOutline
-                        items={block.items}
-                        streaming={index === activeWorkIndex}
-                        waitingForModel={index === activeWorkIndex && turn.waitingForModel}
-                      />
-                    ) : (
-                      <ProcessList items={block.items} />
-                    )}
-                  </CollapsibleContent>
-                </Collapsible>
-              )
+    <FileMentionProvider value={mentionContext}>
+      <div className="mb-4">
+        {turn.user ? <UserBubble message={turn.user} sessionId={sessionId} turnId={turn.id} /> : null}
+        <div className="group/agent-reply">
+          {showBody ? (
+            <div className="mb-3">
+              {blocks.map((block, index) =>
+                block.kind === 'branchSummary' ? (
+                  <BranchSummaryNotice key={`branch-${index}`} text={block.item.text} />
+                ) : block.kind === 'compaction' ? (
+                  <CompactionNotice key={`compaction-${index}`} item={block.item} />
+                ) : (
+                  // One Collapsible per work block, each with its own header: they open independently,
+                  // and each gets its own content id (a single root reuses one id for every content).
+                  <Collapsible
+                    key={`work-${block.block}`}
+                    open={openAt(block.block)}
+                    onOpenChange={(next) => void toggleProcess(block.block, next)}
+                  >
+                    <Marker variant="separator" asChild>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={loading}
+                          className={cn(
+                            'h-7 w-full justify-start gap-2 rounded-none px-0 text-xs font-normal text-muted-foreground before:min-w-4 after:min-w-4 hover:bg-transparent hover:text-muted-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground hover:aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent dark:hover:aria-expanded:bg-transparent solid:hover:bg-transparent solid:hover:text-muted-foreground solid:aria-expanded:bg-transparent solid:aria-expanded:text-muted-foreground solid:hover:aria-expanded:bg-transparent solid:dark:hover:bg-transparent solid:dark:aria-expanded:bg-transparent solid:dark:hover:aria-expanded:bg-transparent',
+                            turn.streaming && 'pointer-events-none'
+                          )}
+                        >
+                          <MarkerContent className="flex shrink-0 items-center gap-1">
+                            <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={block.block} />
+                            <ChevronRight
+                              className={cn('size-3.5 transition-transform duration-150', openAt(block.block) && 'rotate-90')}
+                            />
+                          </MarkerContent>
+                        </Button>
+                      </CollapsibleTrigger>
+                    </Marker>
+                    <CollapsibleContent className={cn('duration-300', turn.streaming && 'overflow-visible')}>
+                      {liveOutline ? (
+                        <ProcessOutline
+                          items={block.items}
+                          streaming={index === activeWorkIndex}
+                          waitingForModel={index === activeWorkIndex && turn.waitingForModel}
+                        />
+                      ) : (
+                        <ProcessList items={block.items} />
+                      )}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )
+              )}
+              {trailingTps}
+              {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
+            </div>
+          ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
+          <div data-bookmarked={bookmarked || undefined}
+            className={cn(bookmarked && 'rounded-xl bg-primary/5 px-3 pt-3 pb-2 ring-1 ring-primary/15 shadow-sm')}>
+            {turn.streaming ? null : (
+              <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />
             )}
-            {trailingTps}
-            {loadError ? <p role="alert" className="py-1 text-xs text-destructive">{loadError}</p> : null}
+            {turn.streaming || !sessionId || !turn.id ? null : <TurnFileChanges sessionId={sessionId} turnId={turn.id} />}
+            {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
+            {trailing.length ? (
+              <div className="mb-2">
+                {trailing.map((segment, index) => segment.kind === 'compaction'
+                  ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
+                  : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
+              </div>
+            ) : null}
+            {showActions ? (
+              <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Activity className="size-3.5 shrink-0" />
+                  <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} speed={false} />
+                </span>
+                <AssistantMessageActions turn={turn} sessionId={sessionId} tps={turnTps(turn)} />
+              </div>
+            ) : null}
           </div>
-        ) : trailingTps ? <div className="mb-3">{trailingTps}</div> : null}
-        <div data-bookmarked={bookmarked || undefined}
-          className={cn(bookmarked && 'rounded-xl bg-primary/5 px-3 pt-3 pb-2 ring-1 ring-primary/15 shadow-sm')}>
-          {turn.streaming ? null : (
-            <Answer blocks={turn.answer} errorMessage={turn.errorMessage} />
-          )}
-          {turn.streaming || !sessionId || !turn.id ? null : <TurnFileChanges sessionId={sessionId} turnId={turn.id} />}
-          {/* The footer's negative margin is meant to eat an answer's bottom spacing, not these rows. */}
-          {trailing.length ? (
-            <div className="mb-2">
-              {trailing.map((segment, index) => segment.kind === 'compaction'
-                ? <CompactionNotice key={`trailing-${index}`} item={segment.item} />
-                : <BranchSummaryNotice key={`trailing-${index}`} text={segment.item.text} />)}
-            </div>
-          ) : null}
-          {showActions ? (
-            <div data-slot="assistant-message-footer" className="-mt-2 flex h-7 items-center gap-3 px-1 text-xs text-muted-foreground">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Activity className="size-3.5 shrink-0" />
-                <WorkedLabel sessionId={sessionId} turn={turn} landmarks={landmarks} block={landmarks.length} speed={false} />
-              </span>
-              <AssistantMessageActions turn={turn} sessionId={sessionId} tps={turnTps(turn)} />
-            </div>
-          ) : null}
         </div>
       </div>
-    </div>
+    </FileMentionProvider>
   )
 }
 

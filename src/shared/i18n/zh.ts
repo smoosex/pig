@@ -1376,6 +1376,7 @@ export const zh = {
     directoryOutsideWorkspace: '目录不在工作区内',
     symlinkWrite: '符号链接不写入',
     symlinkFollow: '这是符号链接，不跟随',
+    unsafeExternalOpen: '出于安全考虑，不能直接从链接运行可执行程序或启动器文件',
     notAFile: '这个路径不是文件',
     noWritePermission: '没有写入权限',
     isDirectory: '这个路径是目录',

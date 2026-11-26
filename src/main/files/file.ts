@@ -9,8 +9,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import { constants, type Stats } from 'node:fs'
-import { lstat, open, rename, rm } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { lstat, open, realpath, rename, rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import type { FileMentionInfo, FileReadResult, FileStamp, FileWriteResult } from '../../shared/api'
 import { t } from '../i18n'
 import { readLanes } from '../git/limit'
@@ -20,11 +21,16 @@ import { BINARY_PROBE_BYTES, isMissingError, readCapped, writeFailure } from './
 /** A file a person edits by hand: past this it is data, and the tab refuses it instead of loading it. */
 const MAX_EDITABLE_BYTES = 2 * 1024 * 1024
 
-export async function readFile(cwd: string, path: string): Promise<FileReadResult> {
-  const target = await resolveWorktreePath(cwd, path, 'file')
-  if (!target) return { kind: 'missing' }
+const BLOCKED_EXTERNAL_EXTENSIONS = new Set([
+  '.app', '.command', '.tool', '.terminal', '.workflow', '.action', '.pkg', '.mpkg',
+  '.exe', '.bat', '.cmd', '.com', '.msi', '.msp', '.scr', '.pif', '.lnk',
+  '.url', '.webloc', '.inetloc', '.desktop', '.appimage'
+])
+const WINDOWS_SCRIPT_EXTENSIONS = new Set(['.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.ps1'])
+
+async function readBoundedAbsoluteFile(absolute: string): Promise<FileReadResult> {
   try {
-    const info = await lstat(target.absolute)
+    const info = await lstat(absolute)
     if (info.isSymbolicLink()) return { kind: 'link' }
     if (!info.isFile()) return { kind: 'missing' }
     if (info.size > MAX_EDITABLE_BYTES) return { kind: 'too-large', size: info.size }
@@ -37,7 +43,7 @@ export async function readFile(cwd: string, path: string): Promise<FileReadResul
     // change event re-reads every document at once, and this is the buffer — a couple of MiB each — that
     // the pool exists to bound. The allocation is inside the task so the bound covers it too.
     return await readLanes.run(async () => {
-      const handle = await open(target.absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+      const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
       try {
         // One byte past the cap: that byte is the difference between "that was all of it" and "there was
         // more", and nothing past it is ever brought into memory.
@@ -57,6 +63,12 @@ export async function readFile(cwd: string, path: string): Promise<FileReadResul
     if (isMissingError(error)) return { kind: 'missing' }
     throw error
   }
+}
+
+export async function readFile(cwd: string, path: string): Promise<FileReadResult> {
+  const target = await resolveWorktreePath(cwd, path, 'file')
+  if (!target) return { kind: 'missing' }
+  return readBoundedAbsoluteFile(target.absolute)
 }
 
 /**
@@ -151,6 +163,89 @@ export async function fileMentionInfo(cwd: string, path: string): Promise<FileMe
     modifiedAt: read.kind === 'text' ? read.mtimeMs : info.mtimeMs,
     lineCount: read.kind === 'text' ? lineCount(read.contents) : null
   }
+}
+
+function expandLocalInputPath(rawPath: unknown): string | null {
+  if (typeof rawPath !== 'string') return null
+  const trimmed = rawPath.trim()
+  if (!trimmed || trimmed.length > 4096 || trimmed.includes('\0')) return null
+  const expanded = trimmed === '~'
+    ? homedir()
+    : trimmed.startsWith('~/') || trimmed.startsWith('~\\')
+      ? join(homedir(), trimmed.slice(2))
+      : trimmed
+  return isAbsolute(expanded) ? resolve(expanded) : null
+}
+
+/**
+ * Hover-card metadata for an absolute or `~/` filesystem reference outside open worktrees. Never
+ * returns file contents, never follows a symlink at the target, and treats unreadable files as having
+ * no line count rather than failing the card.
+ */
+export async function localFileMentionInfo(rawPath: string): Promise<FileMentionInfo> {
+  const target = expandLocalInputPath(rawPath)
+  if (!target) return { kind: 'missing' }
+  const parent = dirname(target)
+  const resolvedParent = parent === target ? target : await realpath(parent).catch(() => null)
+  const absolute = parent === target
+    ? target
+    : resolvedParent
+      ? join(resolvedParent, basename(target))
+      : target
+  const info = await lstat(absolute).catch((error: unknown) => {
+    if (isMissingError(error)) return null
+    throw error
+  })
+  if (!info) return { kind: 'missing' }
+  if (info.isDirectory()) return { kind: 'directory', absolutePath: absolute, modifiedAt: info.mtimeMs }
+  if (info.isSymbolicLink()) return { kind: 'file', absolutePath: absolute, modifiedAt: info.mtimeMs, lineCount: null }
+  if (!info.isFile()) return { kind: 'missing' }
+  const read = await readBoundedAbsoluteFile(absolute).catch((error: unknown) => {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EACCES' || code === 'EPERM') return null
+    throw error
+  })
+  if (read?.kind === 'missing') return { kind: 'missing' }
+  return {
+    kind: 'file',
+    absolutePath: absolute,
+    modifiedAt: read?.kind === 'text' ? read.mtimeMs : info.mtimeMs,
+    lineCount: read?.kind === 'text' ? lineCount(read.contents) : null
+  }
+}
+
+/**
+ * Resolves an explicit user-clicked local path outside open worktrees for `shell.openPath`, refusing
+ * symlinks, special files, and executable/launcher bundles so a model-emitted link cannot launch code.
+ */
+export async function openableLocalPath(rawPath: string): Promise<string> {
+  const target = expandLocalInputPath(rawPath)
+  if (!target) throw new Error(t('error.fileOutsideWorkspace'))
+  const parent = dirname(target)
+  let absolute = target
+  if (parent !== target) {
+    const resolvedParent = await realpath(parent).catch((error: unknown) => {
+      if (isMissingError(error)) return null
+      throw error
+    })
+    if (!resolvedParent) throw new Error(t('error.missingEntry'))
+    absolute = join(resolvedParent, basename(target))
+  }
+  const info = await lstat(absolute).catch((error: unknown) => {
+    if (isMissingError(error)) return null
+    throw error
+  })
+  if (!info) throw new Error(t('error.missingEntry'))
+  if (info.isSymbolicLink()) throw new Error(t('error.symlinkFollow'))
+  if (!info.isFile() && !info.isDirectory()) throw new Error(t('error.notAFile'))
+  const ext = extname(absolute).toLowerCase()
+  if (
+    BLOCKED_EXTERNAL_EXTENSIONS.has(ext) ||
+    (process.platform === 'win32' && WINDOWS_SCRIPT_EXTENSIONS.has(ext))
+  ) {
+    throw new Error(t('error.unsafeExternalOpen'))
+  }
+  return absolute
 }
 
 /** Counted the way an editor numbers them: a trailing newline does not open another line. */

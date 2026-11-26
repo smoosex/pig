@@ -5,6 +5,7 @@ import { useIsPresent } from 'motion/react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
 import { isSessionEmpty } from './chat/session-empty'
 import { useDiffStore } from './stores/diff'
+import { useFilesStore } from './stores/files'
 import { useT } from './hooks/useT'
 import { useFloatingSidebar } from './hooks/useFloatingSidebar'
 import { useEventBridge } from './hooks/useEventBridge'
@@ -782,7 +783,7 @@ export default function App() {
               useBotStore.getState().closeBot()
               setSidebarTab('kanban')
             }}
-            onJumpToWorkspace={({ cwd, projectCwd, sessionId, openChanges, openFilePath }) => {
+            onJumpToWorkspace={({ cwd, projectCwd, sessionId, openChanges, openFilePath, openFileLine }) => {
               setSettingsOpen(false)
               if (sidebarTab !== 'projects') switchSidebarTab('projects')
               void (async () => {
@@ -801,6 +802,7 @@ export default function App() {
                 const store = useSessionsStore.getState()
                 if (openFilePath) {
                   await store.openFileTab(cwd, openFilePath)
+                  if (openFileLine) useFilesStore.getState().revealLine(cwd, openFilePath, openFileLine)
                   return
                 }
                 if (openChanges) {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { createContext, memo, useContext, useEffect, useMemo, useState } from 'react'
 import type { Components, Options } from 'react-markdown'
 import Markdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,6 +8,7 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import type { Element } from 'hast'
 import { Streamdown, preprocessLaTeX } from '@lobehub/streamdown'
+import { isChatPassthroughHref } from '../../../shared/file-links'
 import { renderMermaid } from '../lib/mermaid-renderer'
 import { useDarkMode } from '../lib/useDarkMode'
 import { cn } from '../lib/utils'
@@ -40,6 +41,17 @@ const htmlRemarkRehypeOptions: Options['remarkRehypeOptions'] = { clobberPrefix:
 const fileUrlTransform: Options['urlTransform'] = (url, key, node) =>
   node.tagName === 'img' && key === 'src' && /^data:image\//i.test(url) ? url : defaultUrlTransform(url)
 
+const chatUrlTransform: Options['urlTransform'] = (url, key, node) =>
+  node.tagName === 'a' && key === 'href' && isChatPassthroughHref(url) ? url : defaultUrlTransform(url)
+
+export const INLINE_CODE_CLASS =
+  'rounded-sm bg-foreground/8 px-1 py-px font-mono text-xs text-code-foreground shadow-glass-inline-code box-decoration-clone solid:bg-inline-code-background solid:shadow-none'
+
+export const MarkdownLinkContext = createContext<Components['a'] | null>(null)
+export const MarkdownInlineCodeContext = createContext<
+  ((props: { text: string; children: import('react').ReactNode }) => import('react').ReactNode) | null
+>(null)
+
 /** `align` on block HTML, the way READMEs center a logo or a title. */
 function alignClass(node: Element | undefined): string | undefined {
   const align = node?.properties.align
@@ -48,6 +60,12 @@ function alignClass(node: Element | undefined): string | undefined {
 
 function CodeFence({ lang, code }: { lang: string; code: string }) {
   return <HighlightedCode code={code} lang={lang || 'plaintext'} variant="markdown" />
+}
+
+function InlineCodeRenderer({ text, children }: { text: string; children: import('react').ReactNode }) {
+  const custom = useContext(MarkdownInlineCodeContext)
+  if (custom) return <>{custom({ text, children })}</>
+  return <code className={INLINE_CODE_CLASS}>{children}</code>
 }
 
 function MermaidBlock({ code }: { code: string }) {
@@ -105,10 +123,11 @@ const components: Components = {
   pre: ({ children }) => <>{children}</>,
   code: ({ className, children }) => {
     const lang = /language-([\w-]+)/.exec(className ?? '')?.[1]
-    const text = String(children).replace(/\n$/, '')
+    const raw = String(children)
+    const text = raw.replace(/\n$/, '')
     if (lang === 'mermaid') return <MermaidBlock code={text} />
-    if (!lang && !text.includes('\n')) {
-      return <code className="rounded-sm bg-foreground/8 px-1 py-px font-mono text-xs text-code-foreground shadow-glass-inline-code box-decoration-clone solid:bg-inline-code-background solid:shadow-none">{children}</code>
+    if (!lang && !raw.includes('\n')) {
+      return <InlineCodeRenderer text={text}>{children}</InlineCodeRenderer>
     }
     return <CodeFence lang={lang ?? 'plaintext'} code={text} />
   }
@@ -129,14 +148,24 @@ export const MarkdownText = memo(function MarkdownText({
   /** Element renderers that replace the defaults; pass a stable object, the renderer is memoized. */
   overrides?: Components
 }) {
-  const merged = useMemo(() => (overrides ? { ...components, ...overrides } : components), [overrides])
-  return (
+  const linkRenderer = useContext(MarkdownLinkContext)
+  const merged = useMemo(() => {
+    const contextual = !allowHtml && linkRenderer ? { a: linkRenderer } : undefined
+    if (!overrides && !contextual) return components
+    return {
+      ...components,
+      ...contextual,
+      ...overrides
+    }
+  }, [allowHtml, linkRenderer, overrides])
+  const content = (
     <div className={cn('min-w-0 [&_.katex]:text-foreground', className)}>
       {streaming ? (
         <Streamdown
           content={text}
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
+          urlTransform={chatUrlTransform}
           components={merged}
           granularity="char"
           smoothing="balanced"
@@ -147,7 +176,7 @@ export const MarkdownText = memo(function MarkdownText({
         <Markdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={allowHtml ? htmlRehypePlugins : rehypePlugins}
-          urlTransform={allowHtml ? fileUrlTransform : defaultUrlTransform}
+          urlTransform={allowHtml ? fileUrlTransform : chatUrlTransform}
           remarkRehypeOptions={allowHtml ? htmlRemarkRehypeOptions : undefined}
           components={merged}
         >
@@ -156,4 +185,5 @@ export const MarkdownText = memo(function MarkdownText({
       )}
     </div>
   )
+  return allowHtml ? <MarkdownInlineCodeContext.Provider value={null}>{content}</MarkdownInlineCodeContext.Provider> : content
 })

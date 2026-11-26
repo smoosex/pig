@@ -7,7 +7,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readFile as readTabFile, externalPath, openablePath, writeFile as writeTabFile } from '../src/main/files/file'
+import {
+  readFile as readTabFile,
+  externalPath,
+  localFileMentionInfo,
+  openableLocalPath,
+  openablePath,
+  writeFile as writeTabFile
+} from '../src/main/files/file'
 import type { FileStamp } from '../src/shared/api'
 import { readLanes } from '../src/main/git/limit'
 import { readDirectory } from '../src/main/files/tree'
@@ -341,5 +348,61 @@ describe('writeFile', () => {
     await expect(writeTabFile(root, 'link.txt', 'stolen\n', {})).rejects.toThrow('符号链接不写入')
     await expect(writeTabFile(root, '../escape.txt', 'nope\n', {})).rejects.toThrow('文件不在工作区内')
     expect(await readFile(secret, 'utf8')).toBe('secret\n')
+  })
+})
+
+describe('localFileMentionInfo & openableLocalPath', () => {
+  test('reads metadata for outside files and directories without following final symlinks', async () => {
+    const outside = await temp('pig-local-mention-')
+    const doc = join(outside, 'chapter.md')
+    await writeFile(doc, '一\n二\n三\n')
+    const link = join(outside, 'chapter-link.md')
+    await symlink(doc, link)
+
+    const fileInfo = await localFileMentionInfo(doc)
+    expect(fileInfo).toEqual({
+      kind: 'file',
+      absolutePath: doc,
+      modifiedAt: expect.any(Number),
+      lineCount: 3
+    })
+
+    const dirInfo = await localFileMentionInfo(outside)
+    expect(dirInfo).toEqual({
+      kind: 'directory',
+      absolutePath: outside,
+      modifiedAt: expect.any(Number)
+    })
+
+    const linkInfo = await localFileMentionInfo(link)
+    expect(linkInfo).toEqual({
+      kind: 'file',
+      absolutePath: link,
+      modifiedAt: expect.any(Number),
+      lineCount: null
+    })
+
+    expect(await localFileMentionInfo(join(outside, 'missing.md'))).toEqual({ kind: 'missing' })
+    expect(await localFileMentionInfo('relative/path.md')).toEqual({ kind: 'missing' })
+  })
+
+  test('allows regular files and directories while refusing symlinks, missing entries, and launcher bundles', async () => {
+    const outside = await temp('pig-local-open-')
+    const doc = join(outside, 'notes.md')
+    await writeFile(doc, '# Notes\n')
+    const link = join(outside, 'notes-link.md')
+    await symlink(doc, link)
+    const appBundle = join(outside, 'Evil.app')
+    await mkdir(appBundle)
+    const cmdScript = join(outside, 'run.command')
+    await writeFile(cmdScript, '#!/bin/sh\n')
+
+    expect(await openableLocalPath(doc)).toBe(doc)
+    expect(await openableLocalPath(outside)).toBe(outside)
+    await expect(openableLocalPath('relative.md')).rejects.toThrow('文件不在工作区内')
+    await expect(openableLocalPath(join(outside, 'gone.md'))).rejects.toThrow('这个文件或文件夹已不存在')
+    await expect(openableLocalPath(link)).rejects.toThrow('这是符号链接，不跟随')
+    await expect(openableLocalPath(appBundle)).rejects.toThrow('出于安全考虑')
+    await expect(openableLocalPath(cmdScript)).rejects.toThrow('出于安全考虑')
   })
 })

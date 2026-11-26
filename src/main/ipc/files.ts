@@ -1,6 +1,14 @@
 import { clipboard, ipcMain, shell } from 'electron'
 import type { FileStamp } from '../../shared/api'
-import { externalPath, fileMentionInfo, openablePath, readFile, writeFile } from '../files/file'
+import {
+  externalPath,
+  fileMentionInfo,
+  localFileMentionInfo,
+  openableLocalPath,
+  openablePath,
+  readFile,
+  writeFile
+} from '../files/file'
 import { absolutePath, createEntry, renameEntry } from '../files/mutations'
 import { suggestFiles } from '../files/suggest'
 import { readDirectory } from '../files/tree'
@@ -60,6 +68,10 @@ export function registerFilesIpc(): void {
   ipcMain.handle('files:mention-info', async (_event, cwd: string, path: string) =>
     fileMentionInfo(await requireWorktree(cwd), path)
   )
+  ipcMain.handle('files:local-mention-info', async (event, path: string) => {
+    assertBrowserSender(event, windowForEvent(event))
+    return localFileMentionInfo(path)
+  })
   ipcMain.handle(
     'files:write',
     async (
@@ -72,6 +84,11 @@ export function registerFilesIpc(): void {
   )
   ipcMain.handle('files:open-externally', async (_event, cwd: string, path: string) => {
     const failure = await shell.openPath(await openablePath(await requireWorktree(cwd), path))
+    if (failure) throw new Error(failure)
+  })
+  ipcMain.handle('files:open-local-externally', async (event, path: string) => {
+    assertBrowserSender(event, windowForEvent(event))
+    const failure = await shell.openPath(await openableLocalPath(path))
     if (failure) throw new Error(failure)
   })
   ipcMain.handle('files:reveal-externally', async (_event, cwd: string, path: string) => {

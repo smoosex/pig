@@ -75,6 +75,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.renameEntry('/repo', 'src/thing.ts', 'entry.ts')
   await api.trashEntry('/repo', 'src/entry.ts')
   await api.copyPath('/repo', 'src/entry.ts')
+  await api.localFileMentionInfo('/outside/doc.md')
+  await api.openLocalFileExternally('/outside/doc.md')
   await api.browser.create('browser:one', '/repo')
   await api.browser.create('browser:restored', '', 'https://example.test/saved')
   await api.browser.getState('session-1')
@@ -224,6 +226,8 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'files:rename', args: ['/repo', 'src/thing.ts', 'entry.ts'] },
     { channel: 'files:trash', args: ['/repo', 'src/entry.ts'] },
     { channel: 'files:copy-path', args: ['/repo', 'src/entry.ts'] },
+    { channel: 'files:local-mention-info', args: ['/outside/doc.md'] },
+    { channel: 'files:open-local-externally', args: ['/outside/doc.md'] },
     { channel: 'browser:create', args: ['browser:one', '/repo'] },
     { channel: 'browser:create', args: ['browser:restored', '', 'https://example.test/saved'] },
     { channel: 'browser:get-state', args: ['session-1'] },

@@ -1379,6 +1379,7 @@ export const en: Messages = {
     directoryOutsideWorkspace: 'That directory is outside the workspace',
     symlinkWrite: 'Refusing to write through a symbolic link',
     symlinkFollow: 'That is a symbolic link, and pig does not follow it',
+    unsafeExternalOpen: 'Executable apps and launcher files cannot be opened directly from a link',
     notAFile: 'That path is not a file',
     noWritePermission: 'No permission to write',
     isDirectory: 'That path is a directory',

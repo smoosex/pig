@@ -388,6 +388,7 @@ const api: SessionApi = {
   searchFiles: (cwd, query, hideIgnored) => ipcRenderer.invoke('files:search', cwd, query, hideIgnored),
   cancelFileSearch: () => ipcRenderer.invoke('files:cancel-search'),
   fileMentionInfo: (cwd: string, path: string) => ipcRenderer.invoke('files:mention-info', cwd, path),
+  localFileMentionInfo: (path: string) => ipcRenderer.invoke('files:local-mention-info', path),
   readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (
     cwd: string,
@@ -397,6 +398,8 @@ const api: SessionApi = {
   ) => ipcRenderer.invoke('files:write', cwd, path, contents, options),
   openFileExternally: (cwd: string, path: string) =>
     ipcRenderer.invoke('files:open-externally', cwd, path),
+  openLocalFileExternally: (path: string) =>
+    ipcRenderer.invoke('files:open-local-externally', path),
   revealFileExternally: (cwd: string, path: string) =>
     ipcRenderer.invoke('files:reveal-externally', cwd, path),
   createFile: (cwd: string, path: string) => ipcRenderer.invoke('files:create-file', cwd, path),

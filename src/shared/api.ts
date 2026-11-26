@@ -1124,6 +1124,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   cancelFileSearch: () => Promise<void>
   suggestFiles: (cwd: string, query: string) => Promise<FileSuggestion[]>
   fileMentionInfo: (cwd: string, path: string) => Promise<FileMentionInfo>
+  localFileMentionInfo: (path: string) => Promise<FileMentionInfo>
   readFile: (cwd: string, path: string) => Promise<FileReadResult>
   /**
    * Writes a file tab's draft. `expected` is the stamp the draft was edited against: a file that has
@@ -1137,6 +1138,7 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   ) => Promise<FileWriteResult>
   /** 打开方式…: hands the file to the desktop instead of opening a tab for it. */
   openFileExternally: (cwd: string, path: string) => Promise<void>
+  openLocalFileExternally: (path: string) => Promise<void>
   revealFileExternally: (cwd: string, path: string) => Promise<void>
   /** The file tree's own writes, asked for from a row's context menu. */
   createFile: (cwd: string, path: string) => Promise<{ path: string }>

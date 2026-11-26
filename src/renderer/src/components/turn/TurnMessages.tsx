@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type ReactNode } from 'react'
+import { memo, useContext, useMemo, useState, type ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { composePromptText, formatPastedTextSize } from '../../../../shared/pasted-text'
 import { formatExpandedSkillPreview, parseExpandedSkillPrompt, parseLeadingSkillCommand } from '../../../../shared/skill-mentions'
@@ -11,8 +11,8 @@ import { Bubble, BubbleContent } from '../ui/bubble'
 import { Button } from '../ui/button'
 import { Message, MessageContent } from '../ui/message'
 import { ImagePreview } from '../ImagePreview'
-import { MarkdownText } from '../MarkdownText'
-import { FileMentionChip, FileMentionContext } from '../FileMentionChip'
+import { MarkdownInlineCodeContext, MarkdownLinkContext, MarkdownText } from '../MarkdownText'
+import { FileMentionChip, FileMentionContext, MarkdownFileLink, MarkdownInlineCode } from '../FileMentionChip'
 import { renderTextWithIssueChips } from '../IssueMentionNode'
 import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
@@ -197,8 +197,9 @@ export const UserBubble = memo(function UserBubble({
 })
 
 export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: AnswerBlock[]; errorMessage?: string }) {
+  const linkRenderer = useContext(MarkdownLinkContext)
   if (blocks.length === 0 && !errorMessage) return null
-  return (
+  const content = (
     <Message align="start" className="mb-4">
       <MessageContent className="w-fit max-w-9/10 gap-1.5 px-1">
         {blocks.map((block, i) => {
@@ -219,5 +220,14 @@ export const Answer = memo(function Answer({ blocks, errorMessage }: { blocks: A
         {errorMessage ? <div className="mt-1.5 text-xs text-destructive">{errorMessage}</div> : null}
       </MessageContent>
     </Message>
+  )
+  return linkRenderer ? (
+    content
+  ) : (
+    <MarkdownLinkContext.Provider value={MarkdownFileLink}>
+      <MarkdownInlineCodeContext.Provider value={MarkdownInlineCode}>
+        {content}
+      </MarkdownInlineCodeContext.Provider>
+    </MarkdownLinkContext.Provider>
   )
 })

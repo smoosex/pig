@@ -43,6 +43,7 @@ import { ApprovalPrompt, useApprovalPrompt } from '../composer/ApprovalPrompt'
 import { botColumn } from '../../chat/layout'
 import { SCROLL_END } from '../../chat/scroll-state'
 import { FileTypeIcon } from '../files/FileTypeIcon'
+import { FileMentionProvider } from '../FileMentionChip'
 import { ImagePreview } from '../ImagePreview'
 import { IssueMentionChip, renderTextWithIssueChips } from '../IssueMentionNode'
 import { MarkdownText } from '../MarkdownText'
@@ -97,6 +98,7 @@ export interface BotWorkspaceJumpOptions {
   sessionId?: string
   openChanges?: boolean
   openFilePath?: string
+  openFileLine?: number
 }
 
 /**
@@ -266,9 +268,13 @@ export function BotPage({
   )
 
   const handleOpenAttachmentFile = useCallback(
-    (cwd: string, relativePath: string) => {
+    (cwd: string, relativePath: string, line?: number | null) => {
       closeBot()
-      onJumpToWorkspace({ cwd, openFilePath: relativePath })
+      onJumpToWorkspace({
+        cwd,
+        openFilePath: relativePath,
+        ...(line ? { openFileLine: line } : {})
+      })
     },
     [closeBot, onJumpToWorkspace]
   )
@@ -604,7 +610,7 @@ function BotTimelineRow({
   tasksById: Map<string, BotTask>
   latestCardItemByTaskId: Map<string, string>
   navigation: BotTaskNavigation
-  onOpenAttachmentFile: (cwd: string, relativePath: string) => void
+  onOpenAttachmentFile: (cwd: string, relativePath: string, line?: number | null) => void
   onRetry: () => void
 }) {
   const t = useT()
@@ -622,6 +628,9 @@ function BotTimelineRow({
       .filter((id) => latestCardItemByTaskId.get(id) === item.id)
       .map((id) => tasksById.get(id))
       .filter((task): task is BotTask => task !== undefined)
+    const fallbackPreferredCwds = relatedTasks.flatMap((task) =>
+      task.workspace.cleanedUpAt ? [task.projectCwd] : [task.workspace.cwd, task.projectCwd]
+    )
 
     return (
       <MessageScrollerItem messageId={item.id} className={cn(unclippedItem, 'flex justify-center')}>
@@ -645,7 +654,16 @@ function BotTimelineRow({
             ) : null}
           </div>
           <div className="mt-1.5 text-foreground/90">
-            <MarkdownText text={item.text} />
+            <FileMentionProvider
+              value={{
+                cwd: fallbackPreferredCwds[0] ?? null,
+                sessionId: null,
+                preferredCwds: fallbackPreferredCwds,
+                onOpenWorkspaceFile: onOpenAttachmentFile
+              }}
+            >
+              <MarkdownText text={item.text} />
+            </FileMentionProvider>
           </div>
           {relatedTasks.length > 0 ? (
             <div className="mt-2 flex flex-col gap-2">
@@ -667,6 +685,10 @@ function BotTimelineRow({
   const preferredCwds = referencedTasks.flatMap((task) =>
     task.workspace.cleanedUpAt ? [task.projectCwd] : [task.workspace.cwd, task.projectCwd]
   )
+  const singleTaskSessionId =
+    referencedTasks.length === 1
+      ? ([...referencedTasks[0].runs].reverse().find((run) => run.sessionId)?.sessionId ?? null)
+      : null
 
   return (
     <MessageScrollerItem
@@ -681,7 +703,16 @@ function BotTimelineRow({
 
       <div data-bot-assistant-bubble className="w-full min-w-0 space-y-2">
         <div data-bot-assistant-body className="text-sm leading-relaxed text-foreground">
-          <MarkdownText text={item.content} />
+          <FileMentionProvider
+            value={{
+              cwd: preferredCwds[0] ?? null,
+              sessionId: singleTaskSessionId,
+              preferredCwds,
+              onOpenWorkspaceFile: onOpenAttachmentFile
+            }}
+          >
+            <MarkdownText text={item.content} />
+          </FileMentionProvider>
         </div>
 
         {item.attachments?.length ? (
