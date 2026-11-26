@@ -455,6 +455,36 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'idle-editor-warmup') {
+    const idleQueue: IdleRequestCallback[] = []
+    Object.defineProperty(window, 'requestIdleCallback', {
+      configurable: true,
+      value: (cb: IdleRequestCallback) => {
+        idleQueue.push(cb)
+        return idleQueue.length
+      }
+    })
+    Object.defineProperty(window, 'cancelIdleCallback', {
+      configurable: true,
+      value: () => {}
+    })
+
+    try {
+      await open('README.md')
+      assert.ok(container.querySelector('[data-markdown-preview]'), 'markdown preview renders immediately')
+      assert.equal(container.querySelector('[data-virtualizer]'), null, 'hidden source editor waits for idle callback instead of blocking preview commit')
+
+      await React.act(async () => {
+        for (const cb of idleQueue.splice(0)) cb({ didTimeout: false, timeRemaining: () => 16 })
+      })
+      assert.ok(container.querySelector('[data-virtualizer]')?.classList.contains('invisible'), 'hidden source editor warms up on idle')
+    } finally {
+      Reflect.deleteProperty(window, 'requestIdleCallback')
+      Reflect.deleteProperty(window, 'cancelIdleCallback')
+    }
+    return
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -468,7 +498,8 @@ if (process.argv[2] === '--file-view-fixture') {
     'refresh-failure': 'a refresh that could not read says so and offers only a retry',
     'open-failure': 'a file the desktop will not open reports the reason on the tab',
     markdown: 'markdown toggles between a preview of the draft and the mounted source editor',
-    'settings-roundtrip': 'settings roundtrip preserves markdown source mode and selection without caching files across tabs'
+    'settings-roundtrip': 'settings roundtrip preserves markdown source mode and selection without caching files across tabs',
+    'idle-editor-warmup': 'warms hidden markdown source editor on idle without blocking preview commit'
   })) {
     test(`file view: ${description}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--file-view-fixture', name])

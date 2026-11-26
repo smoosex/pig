@@ -74,6 +74,20 @@ async function fixture(): Promise<void> {
     assert.ok(second.classList.contains('bg-sidebar-foreground/12'))
     assert.ok(!first.classList.contains('bg-sidebar-foreground/12'))
 
+    await hover(second)
+    await act(async () => {
+      second.focus()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    })
+    pointer = null
+    await act(async () => {
+      area.dispatchEvent(new window.PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }))
+      second.blur()
+    })
+    await renderRows('none')
+    assert.equal(layer.style.clipPath, '')
+    assert.equal(Number.parseFloat(tint.style.opacity || '0'), 0, 'deselecting a previously masked row never unmasks a residual hover tint')
+
     await act(async () => {
       root.render(h('div', { 'data-scroll': '' }, h(SidebarHoverHighlight, null,
         h('div', { 'data-section': '' },

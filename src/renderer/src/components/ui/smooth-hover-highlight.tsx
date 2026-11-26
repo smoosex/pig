@@ -43,6 +43,8 @@ export function SmoothHoverHighlight({
   const focusRowRef = useRef<HTMLElement | null>(null)
   const activeRowRef = useRef<HTMLElement | null>(null)
   const targetRef = useRef<HTMLElement | null>(null)
+  const lastRowRef = useRef<HTMLElement | null>(null)
+  const lastRowMaskedRef = useRef(false)
   const [target, setTarget] = useState<HTMLElement | null>(null)
   const reduced = useReducedMotion() ?? false
   const x = useMotionValue(0)
@@ -78,9 +80,16 @@ export function SmoothHoverHighlight({
       }
       if (!nextTarget || !area) {
         setTarget(null)
-        animate(opacity, 0, reduced ? { duration: 0 } : FADE)
+        if (lastRowMaskedRef.current) {
+          lastRowMaskedRef.current = false
+          opacity.jump(0)
+        } else {
+          animate(opacity, 0, reduced ? { duration: 0 } : FADE)
+        }
         return
       }
+      lastRowRef.current = nextTarget
+      lastRowMaskedRef.current = Boolean(highlightClip && nextTarget.hasAttribute(activeAttribute))
       setTarget(nextTarget)
 
       const areaRect = area.getBoundingClientRect()
@@ -104,7 +113,7 @@ export function SmoothHoverHighlight({
       }
       animate(opacity, 1, reduced ? { duration: 0 } : FADE)
     },
-    [height, opacity, reduced, targetAttribute, updateHighlightClip, width, x, y]
+    [activeAttribute, height, highlightClip, opacity, reduced, targetAttribute, updateHighlightClip, width, x, y]
   )
 
   useEffect(() => {
@@ -130,14 +139,26 @@ export function SmoothHoverHighlight({
   useEffect(() => {
     const area = areaRef.current
     if (!highlightClip || !area) return
-    const sync = () => updateHighlightClip()
+    const sync = () => {
+      const lastRow = lastRowRef.current
+      if (lastRow) {
+        const maskedNow = lastRow.hasAttribute(activeAttribute)
+        if (lastRowMaskedRef.current && !maskedNow && pointerRowRef.current !== lastRow) {
+          lastRowMaskedRef.current = false
+          opacity.jump(0)
+        } else {
+          lastRowMaskedRef.current = maskedNow
+        }
+      }
+      updateHighlightClip()
+    }
     sync()
     const observer = new MutationObserver(sync)
     observer.observe(area, {
       attributes: true, attributeFilter: [activeAttribute], childList: true, subtree: true
     })
     return () => observer.disconnect()
-  }, [activeAttribute, highlightClip, updateHighlightClip])
+  }, [activeAttribute, highlightClip, opacity, updateHighlightClip])
 
   useEffect(() => {
     let frame = 0
@@ -206,7 +227,10 @@ export function SmoothHoverHighlight({
   }
 
   const handleFocus = (event: FocusEvent<HTMLDivElement>) => {
-    const row = rowFrom(event.target)
+    const row =
+      highlightClip && event.target instanceof Element && !event.target.matches(':focus-visible')
+        ? null
+        : rowFrom(event.target)
     focusRowRef.current = row
     if (!pointerInsideRef.current) moveTo(activeRowRef.current ?? row)
   }

@@ -684,27 +684,33 @@ export const createTabsSlice: SessionSlice<
     openChangesTab: async (cwd, path, scope) => {
       const id = changesTabId(cwd)
       const next = scope ?? DEFAULT_SCOPE
-      set((state) => state.openTabs.some((tab) => tab.id === id)
-        ? {
-            openTabs: state.openTabs.map((tab) =>
-              tab.id === id && tab.diffScope !== next
-                ? { ...tab, diffScope: next, title: scopeLabel(t, next) }
-                : tab
-            )
-          }
-        : {
-            openTabs: [...state.openTabs, {
+      // The panel points at a file through the tab's own focus, which the tab clears by scrolling.
+      if (path) useDiffStore.getState().focusPath(cwd, path)
+      ++selectionVersion
+      let chatScoped = false
+      set((state) => {
+        const existing = state.openTabs.find((tab) => tab.id === id)
+        const tab: OpenTab = existing
+          ? (existing.diffScope !== next ? { ...existing, diffScope: next, title: scopeLabel(t, next) } : existing)
+          : {
               id,
               cwd,
               title: scopeLabel(t, next),
               kind: 'diff' as const,
               loadState: 'ready' as const,
               diffScope: next
-            }]
-          })
-      // The panel points at a file through the tab's own focus, which the tab clears by scrolling.
-      if (path) useDiffStore.getState().focusPath(cwd, path)
-      await get().activateTab(id)
+            }
+        chatScoped = isChatScope(tab)
+        const projectCwd = chatScoped ? null : tab.cwd
+        return {
+          openTabs: existing
+            ? (tab === existing ? state.openTabs : state.openTabs.map((item) => item.id === id ? tab : item))
+            : [...state.openTabs, tab],
+          ...activeTabPatch(state, id, projectCwd),
+          currentProjectCwd: projectCwd
+        }
+      })
+      if (!chatScoped) persistChangesTab(cwd)
     },
 
     setChangesScope: (cwd, scope) => {
@@ -722,19 +728,24 @@ export const createTabsSlice: SessionSlice<
      */
     openFileTab: async (cwd, path) => {
       const id = fileTabId(cwd, path)
-      if (!get().openTabs.some((tab) => tab.id === id)) {
-        set((state) => ({
-          openTabs: [...state.openTabs, {
-            id,
-            cwd,
-            path,
-            title: path.slice(path.lastIndexOf('/') + 1),
-            kind: 'file' as const,
-            loadState: 'ready' as const
-          }]
-        }))
-      }
-      await get().activateTab(id)
+      ++selectionVersion
+      set((state) => {
+        const existing = state.openTabs.find((tab) => tab.id === id)
+        const tab: OpenTab = existing ?? {
+          id,
+          cwd,
+          path,
+          title: path.slice(path.lastIndexOf('/') + 1),
+          kind: 'file' as const,
+          loadState: 'ready' as const
+        }
+        const projectCwd = isChatScope(tab) ? null : (tab.cwd || null)
+        return {
+          openTabs: existing ? state.openTabs : [...state.openTabs, tab],
+          ...activeTabPatch(state, id, projectCwd),
+          currentProjectCwd: projectCwd
+        }
+      })
     },
 
     /**

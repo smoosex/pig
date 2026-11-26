@@ -371,7 +371,9 @@ function TabFace({
           : [
             leaving && 'pointer-events-none overflow-hidden',
             '@container/session-tab w-56 min-w-7 max-w-56 shrink-0 cursor-pointer text-glass-prompt-foreground solid:text-foreground',
-            active ? 'basis-56 grow-0' : 'basis-7 grow',
+            // Keep sum(flex-grow) >= 1 across the 0 -> inactive transition when a lone active tab gains a
+            // second tab; with `grow` (1), Flexbox §9.7 attenuates free space mid-transition and bounces.
+            active ? 'basis-56 grow-0' : 'basis-7 grow-1000',
             // The frost behind the rail is the window's native material; the selected face only paints the glass optics.
             active
               ? 'bg-glass-tab-active-background bg-(image:--glass-tab-active-sheen) shadow-glass-tab-active inset-ring-1 inset-ring-glass-tab-active-border after:opacity-0 solid:bg-tab-active-background solid:bg-none solid:shadow-xs solid:inset-ring-border'

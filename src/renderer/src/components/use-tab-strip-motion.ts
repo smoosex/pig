@@ -82,9 +82,16 @@ export function useTabStripMotion<T>({
     const priorKeys = new Set(prior.entries.map((entry) => entry.key))
     const animates = (key: string) => !still.has(key) && !prior.still.has(key)
     const motion = !reducedMotion()
+    const elements = new Map<string, HTMLElement>()
+    if (motion && listRef.current) {
+      // `fileTabId` joins worktree and path with U+0000, which `CSS.escape` replaces with U+FFFD in selectors.
+      for (const item of listRef.current.querySelectorAll<HTMLElement>('[data-tab-key]')) {
+        if (item.dataset.tabKey !== undefined) elements.set(item.dataset.tabKey, item)
+      }
+    }
     for (const { key } of entries) {
       if (priorKeys.has(key) || !animates(key) || !motion) continue
-      const element = listRef.current?.querySelector<HTMLElement>(`[data-tab-key="${CSS.escape(key)}"]`)
+      const element = elements.get(key)
       if (!element) continue
       // A lone keyframe defaults to offset 1, the end; pinned to 0 it animates from nothing to whatever
       // the tab's classes resolve to.

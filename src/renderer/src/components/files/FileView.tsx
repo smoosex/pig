@@ -157,6 +157,23 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
   const markdown = MARKDOWN_PATH.test(path) && document?.status === 'ready' && document.preview === 'text'
   // A pending reveal shows the source in the same commit, so the editor is visible when it is focused.
   const previewing = markdown && !sourceChosen && !revealPending
+  const [editorWarmKey, setEditorWarmKey] = useState<string | null>(null)
+  const mountEditor = !previewing || dirty || editorWarmKey === key
+
+  useEffect(() => {
+    if (document?.status !== 'ready' || document.preview !== 'text') return
+    if (editorWarmKey === key) return
+    if (!previewing || dirty) {
+      setEditorWarmKey(key)
+      return
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      const idle = window.requestIdleCallback(() => setEditorWarmKey(key), { timeout: 300 })
+      return () => window.cancelIdleCallback(idle)
+    }
+    const timer = window.setTimeout(() => setEditorWarmKey(key), 0)
+    return () => window.clearTimeout(timer)
+  }, [dirty, document?.preview, document?.status, editorWarmKey, key, previewing])
 
   // Restore and track Markdown preview scroll position across tab switches, preview toggles, and disk updates.
   useLayoutEffect(() => {
@@ -323,19 +340,21 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
               <MarkdownText className="mx-auto max-w-3xl text-sm" text={document.text} allowHtml overrides={previewComponents} />
             </div>
           ) : null}
-          <FileSurface
-            key={key}
-            surfaceKey={key}
-            path={path}
-            contents={document.text}
-            revision={document.revision}
-            dark={dark}
-            hidden={previewing}
-            revealPending={Boolean(revealPending)}
-            editorOptions={reveal.editorOptions}
-            onDetach={reveal.onDetach}
-            onEditChange={(text) => setDraft(cwd, path, text)}
-          />
+          {mountEditor ? (
+            <FileSurface
+              key={key}
+              surfaceKey={key}
+              path={path}
+              contents={document.text}
+              revision={document.revision}
+              dark={dark}
+              hidden={previewing}
+              revealPending={Boolean(revealPending)}
+              editorOptions={reveal.editorOptions}
+              onDetach={reveal.onDetach}
+              onEditChange={(text) => setDraft(cwd, path, text)}
+            />
+          ) : null}
         </div>
       ) : (
         // A read that failed is the one preview with a way out of it: nothing about the file itself says

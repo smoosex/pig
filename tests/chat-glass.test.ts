@@ -314,7 +314,7 @@ async function fixture(scenario: string): Promise<void> {
       assert.ok(!activeTab.classList.contains('hover:bg-glass-prompt-foreground/8'), 'hover cannot accumulate on the active capsule')
       assert.ok(!activeTab.classList.contains('solid:hover:bg-tab-hover-background'))
       const inactiveTab = faces.find((face) => face !== activeTab)!
-      assert.ok(inactiveTab.classList.contains('basis-7') && inactiveTab.classList.contains('grow'))
+      assert.ok(inactiveTab.classList.contains('basis-7') && inactiveTab.classList.contains('grow-1000'))
       const closeSlot = inactiveTab.querySelector<HTMLElement>('[data-tab-close-slot]')!
       assert.ok(closeSlot.classList.contains('invisible') && closeSlot.classList.contains('@min-[7rem]/session-tab:visible'))
       assert.ok(inactiveTab.querySelector('[data-tab-label]')!.classList.contains('max-w-0'))

@@ -19,6 +19,7 @@ async function runFixture(): Promise<void> {
   const { act, createElement: h } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useSessionsStore: store } = await import('../src/renderer/src/stores/sessions')
+  const { fileTabId } = await import('../src/renderer/src/stores/sessions/tabs-slice')
   const { TabBar } = await import('../src/renderer/src/components/TabBar')
   const tab = (id: string, cwd = '/p'): OpenTab => ({ id, cwd, kind: 'project', title: id, loadState: 'ready' })
   const container = document.createElement('div')
@@ -47,6 +48,20 @@ async function runFixture(): Promise<void> {
     await render([tab('A'), tab('C')], 'C')
     assert.deepEqual(animations.map((item) => item.element.dataset.tabKey), ['C'], 'only the new tab grows in')
     assert.deepEqual([animations[0].keyframes[0].offset, animations[0].keyframes[0].flexBasis], [0, '0px'], 'the new tab starts from nothing, not ends there')
+    const firstFace = container.querySelector<HTMLElement>('[data-tab-key="A"]')!
+    assert.ok(firstFace.classList.contains('grow-1000'), 'deactivating a lone tab keeps sum(flex-grow) >= 1 so the strip does not dip and rebound')
+
+    animations.length = 0
+    const fileId = fileTabId('/p', 'src/chapter.md')
+    await act(async () => {
+      await store.getState().openFileTab('/p', 'src/chapter.md')
+    })
+    assert.deepEqual(
+      animations.map((item) => item.element.dataset.tabKey),
+      [fileId],
+      'file tabs whose data-tab-key contains U+0000 still run their entry width animation'
+    )
+    assert.deepEqual([animations[0].keyframes[0].offset, animations[0].keyframes[0].flexBasis], [0, '0px'])
 
     animations.length = 0
     await render([tab('D', '/q')], 'D', '/q')

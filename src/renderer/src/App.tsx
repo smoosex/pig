@@ -99,7 +99,10 @@ function ThemeSync() {
 
 function HighlighterWarmup() {
   useEffect(() => {
-    const idle = requestIdleCallback(() => prewarmHighlighter(), { timeout: 3000 })
+    const idle = requestIdleCallback(() => {
+      prewarmHighlighter()
+      void import('./components/files/FileView').catch(() => {})
+    }, { timeout: 3000 })
     return () => cancelIdleCallback(idle)
   }, [])
 
