@@ -14,7 +14,7 @@ export class NonGitWriteMutex {
     const key = resolve(cwd)
     const holder = this.owners.get(key)
     if (holder && holder !== taskId) {
-      throw new Error(`Another Bot write task (${holder}) is already running in non-Git directory ${key}`)
+      throw new Error(`Another Bot write task (${holder}) is already running directly in project directory ${key}`)
     }
     this.owners.set(key, taskId)
   }

@@ -96,6 +96,18 @@ export async function resolveGitHead(cwd: string): Promise<string | undefined> {
   }
 }
 
+/** Current checked-out branch name (including unborn HEAD), or `detached/<shortSha>` when detached. */
+export async function resolveGitBranch(cwd: string): Promise<string | undefined> {
+  try {
+    const branch = (await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim()
+    return branch || undefined
+  } catch (error) {
+    if (!gitExit(error, 1)) return undefined
+    const head = await resolveGitHead(cwd).catch(() => undefined)
+    return head ? `detached/${head.slice(0, 8)}` : undefined
+  }
+}
+
 async function directoryIdentity(cwd: string): Promise<string | undefined> {
   try {
     const info = await lstat(cwd, { bigint: true })

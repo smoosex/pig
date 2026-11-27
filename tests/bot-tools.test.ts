@@ -12,6 +12,7 @@ function harness(opts: {
   mode?: PermissionMode
   confirmResult?: boolean
   hasGit?: boolean
+  branch?: string
   workspaceDir?: string
   soulPath?: string
   activeTools?: string[]
@@ -63,7 +64,12 @@ function harness(opts: {
       permissionsChanged.add(listener)
       return () => permissionsChanged.delete(listener)
     },
-    listOpenedProjects: async () => [{ cwd: '/repo/pig', name: 'pig', hasGit: opts.hasGit ?? true }],
+    listOpenedProjects: async () => [{
+      cwd: '/repo/pig',
+      name: 'pig',
+      hasGit: opts.hasGit ?? true,
+      ...((opts.hasGit ?? true) ? { branch: opts.branch ?? 'main' } : {})
+    }],
     openProject: async (path: string) => ({ cwd: path, name: 'demo' }),
     requestMoveProject: async (input) => {
       requestedMoves.push(input)
@@ -416,5 +422,60 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     expect(h.requestedMoves).toEqual([
       { projectCwd: '/repo/pig', suggestedFolderName: 'pig-next', suggestedParentDir: '~/Code' }
     ])
+  })
+
+  test('bot_start_task supports inPlace write tasks on main with default-mode confirmation and full-access Fast Ack', async () => {
+    let confirmReply = false
+    const h = harness({
+      mode: 'read-only',
+      branch: 'main',
+      confirm: async () => confirmReply
+    })
+    const startTool = h.tools.get('bot_start_task')!
+
+    await expect(startTool.execute('ip-read', {
+      projectCwd: '/repo/pig', title: 'Inspect', intent: 'Read file', mode: 'read', inPlace: true
+    })).rejects.toThrow(/mode="write"/)
+
+    await expect(startTool.execute('ip-ro', {
+      projectCwd: '/repo/pig', title: 'Edit main', intent: 'Modify main directly', mode: 'write', inPlace: true
+    })).rejects.toThrow(/Read-only/)
+    expect(h.delegatedInputs).toHaveLength(0)
+
+    h.setMode('default')
+    await expect(startTool.execute('ip-decline', {
+      projectCwd: '/repo/pig', title: 'Edit main', intent: 'Modify main directly', mode: 'write', inPlace: true
+    })).rejects.toThrow(/declined/)
+    expect(h.confirms).toHaveLength(1)
+    expect(h.confirms[0].title).toBe('Modify project checkout directly?')
+    expect(h.confirms[0].message).toContain('/repo/pig (main)')
+    expect(h.delegatedInputs).toHaveLength(0)
+
+    confirmReply = true
+    await startTool.execute('ip-approve', {
+      projectCwd: '/repo/pig', title: 'Edit main', intent: 'Modify main directly', mode: 'write', inPlace: true
+    })
+    expect(h.confirms).toHaveLength(2)
+    expect(h.delegatedInputs[0]).toMatchObject({
+      projectCwd: '/repo/pig',
+      mode: 'write',
+      inPlace: true
+    })
+
+    h.setMode('full-access')
+    await startTool.execute('ip-full', {
+      projectCwd: '/repo/pig', title: 'Fast main edit', intent: 'Modify main directly', mode: 'write', inPlace: true
+    })
+    expect(h.confirms).toHaveLength(2)
+    expect(h.delegatedInputs[1]).toMatchObject({
+      projectCwd: '/repo/pig',
+      mode: 'write',
+      inPlace: true
+    })
+
+    await startTool.execute('ip-default-wt', {
+      projectCwd: '/repo/pig', title: 'Normal edit', intent: 'Use worktree by default', mode: 'write'
+    })
+    expect(h.delegatedInputs[2]?.inPlace).toBeUndefined()
   })
 })

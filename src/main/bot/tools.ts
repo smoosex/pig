@@ -48,7 +48,7 @@ export interface BotToolsHost {
   soulPath?: string
   getPermissionMode: () => PermissionMode
   onPermissionsChanged?: (listener: () => void) => () => void
-  listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean; inSidebar?: boolean }>>
+  listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean; branch?: string; inSidebar?: boolean }>>
   openProject: (path: string, check?: () => void) => Promise<{ cwd: string; name: string }>
   requestMoveProject?: (input: {
     projectCwd: string
@@ -92,6 +92,9 @@ const startTaskSchema = obj({
   title: str({ minLength: 1 }),
   intent: str({ minLength: 1, description: 'Clear, self-contained specification of what to investigate, run, or change in the project workspace.' }),
   mode: oneOf(['read', 'write'] as const),
+  inPlace: opt(bool({
+    description: 'Optional (default false). Leave unset/false so existing Git repos use an isolated bot/<slug>-<id> worktree; set true ONLY when the user explicitly asks to modify main / the primary project checkout directly without a worktree.'
+  })),
   slug: opt(str({ minLength: 1 })),
   capabilities: opt(obj({ browser: opt(bool()) })),
   modelOverride: opt(obj({ provider: str({ minLength: 1 }), id: str({ minLength: 1 }) })),
@@ -224,7 +227,7 @@ export function createBotExtension(host: BotToolsHost) {
         if (!within(realTarget(workspaceRoot), target) && target !== realTarget(soulFile)) {
           return {
             block: true,
-            reason: 'Direct file writes outside the Bot workspace and SOUL.md are forbidden. Use bot_start_task so project changes run in an isolated worktree.'
+            reason: 'Direct file writes outside the Bot workspace and SOUL.md are forbidden. Use bot_start_task so project changes run in the project workspace or an isolated worktree.'
           }
         }
         host.onSideEffect(event.toolName)
@@ -336,7 +339,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'bot_start_task',
       label: 'Start project task',
-      description: 'Start working on an existing project (`projectCwd`) OR create and start building a brand-new project (`newProject: { folderName }`) asynchronously (<50ms Fast Ack; existing Git repos use an isolated bot/<slug>-<shortId> worktree, while newly created projects run directly in ~/pig_projects/<folderName> without cluttering Pig’s sidebar). Returns immediately with status="starting"; call send_message (type="text") in the SAME turn to tell the user in first person that YOU are working on it now (never say "background" or "delegating") and end your turn without polling.',
+      description: 'Start working on an existing project (`projectCwd`) OR create and start building a brand-new project (`newProject: { folderName }`) asynchronously (<50ms Fast Ack; existing Git repos default to an isolated bot/<slug>-<shortId> worktree, or modify the primary checkout directly when inPlace=true upon explicit user request; newly created projects run directly in ~/pig_projects/<folderName> without cluttering Pig’s sidebar). Returns immediately with status="starting"; call send_message (type="text") in the SAME turn to tell the user in first person that YOU are working on it now (never say "background" or "delegating") and end your turn without polling.',
       parameters: startTaskSchema,
       async execute(_id, rawParams, signal, _update, ctx) {
         const params = assertValid(startTaskSchema, rawParams, 'bot_start_task')
@@ -347,6 +350,9 @@ export function createBotExtension(host: BotToolsHost) {
         }
         if (hasNewProject && params.mode !== 'write') {
           throw new Error('Creating a new project via bot_start_task requires mode="write"')
+        }
+        if (params.inPlace && params.mode !== 'write') {
+          throw new Error('inPlace is only supported when mode="write"')
         }
         const guard = guardPermission(host, signal)
         try {
@@ -380,6 +386,16 @@ export function createBotExtension(host: BotToolsHost) {
               guard.check()
               if (!ok) throw new Error('User declined writing in non-Git directory')
               confirmSharedNonGitWrite = true
+            } else if (params.inPlace && params.mode === 'write' && guard.mode === 'default') {
+              const branchHint = target?.branch ? ` (${target.branch})` : ''
+              const ok = await host.confirmAction(
+                'Modify project checkout directly?',
+                `Allow Bot to modify ${params.projectCwd}${branchHint} directly in place without an isolated Git worktree?`,
+                ctx,
+                guard.signal
+              )
+              guard.check()
+              if (!ok) throw new Error('User declined writing directly in project checkout')
             }
           }
           host.onSideEffect('bot_start_task')
@@ -389,6 +405,7 @@ export function createBotExtension(host: BotToolsHost) {
             title: params.title,
             intent: params.intent,
             mode: params.mode,
+            ...(params.inPlace ? { inPlace: true } : {}),
             slug: params.slug,
             capabilities: params.capabilities,
             modelOverride: params.modelOverride,
@@ -468,7 +485,7 @@ export function createBotExtension(host: BotToolsHost) {
     pi.registerTool(defineTool({
       name: 'bot_followup_task',
       label: 'Follow up on project task',
-      description: 'Continue or retry your work on an existing stopped, failed, interrupted, or completed project task in its preserved worktree (<50ms Fast Ack). Tell the user in first person that YOU are continuing/retrying it now without mentioning "background" or "delegating". Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
+      description: 'Continue or retry your work on an existing stopped, failed, interrupted, or completed project task in its preserved workspace/worktree (<50ms Fast Ack). Tell the user in first person that YOU are continuing/retrying it now without mentioning "background" or "delegating". Omit modelOverride/thinkingOverride to use the Bot default execution model & thinking setting (or Pig global default if unset); pass them when the user explicitly requests a specific model or thinking level for this run.',
       parameters: followupSchema,
       async execute(_id, rawParams) {
         const params = assertValid(followupSchema, rawParams, 'bot_followup_task')

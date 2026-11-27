@@ -32,7 +32,7 @@ import { t } from '../i18n'
 import { pigPath } from '../pig-dir'
 import { listOpenedCwds } from '../opened-projects'
 import { openProjectDirectory } from '../project-open'
-import { isGitProject } from '../worktrees'
+import { isGitProject, resolveGitBranch } from '../worktrees'
 import { worktrees as projectWorktrees } from '../project-worktrees'
 import { createSessionRuntime } from '../pi/session-runtime'
 import { exportSession as exportAgentSession } from '../pi/session-actions'
@@ -313,12 +313,17 @@ export class BotService {
           const [cwds, managed] = await Promise.all([listOpenedCwds(), listManagedPigProjects()])
           const openedSet = new Set(cwds)
           const allCwds = [...cwds, ...managed.filter((cwd) => !openedSet.has(cwd))]
-          return Promise.all(allCwds.map(async (cwd) => ({
-            cwd,
-            name: basename(cwd),
-            hasGit: await isGitProject(cwd).catch(() => false),
-            inSidebar: openedSet.has(cwd)
-          })))
+          return Promise.all(allCwds.map(async (cwd) => {
+            const hasGit = await isGitProject(cwd).catch(() => false)
+            const branch = hasGit ? await resolveGitBranch(cwd).catch(() => undefined) : undefined
+            return {
+              cwd,
+              name: basename(cwd),
+              hasGit,
+              ...(branch ? { branch } : {}),
+              inSidebar: openedSet.has(cwd)
+            }
+          }))
         },
         openProject: async (path, check) => {
           const project = await openProjectDirectory(path, check)

@@ -66,6 +66,7 @@ $PIG_DIR/bot/
 | 场景 | 默认策略 |
 | --- | --- |
 | **Git 项目 + 写任务（默认）** | 宿主自动创建 Bot 专属 worktree（默认基于当前 `HEAD`），在其中创建并运行后台 Session。用户原工作目录完全不动，完成后**不自动合并**回用户分支。 |
+| **Git 项目 + 写任务（用户显式要求原位修改 `main` / 主目录，`inPlace: true`）** | 直接在项目主工作目录（当前检出分支，如 `main`）原位运行写任务，不创建 worktree，并对同一 `projectCwd` 的原位写任务加互斥锁避免并发写冲突；后续 `bot_followup_task` 继续沿用原位工作目录，之后其他未传 `inPlace` 的独立写任务仍恢复默认 worktree 隔离。`default` 权限模式下派活前弹确认卡，`full-access` 下直接秒返派活。 |
 | **Git 项目 + 只读任务** | 默认直接在项目目录（或指定 worktree）只读分析，不无谓创建 worktree。 |
 | **用户原目录存在未提交改动** | 不会静默复制未提交改动到 Bot worktree；若任务明确依赖本地未提交改动，Bot 需先向用户说明并确认处理方式，禁止在旧 `HEAD` 上验证却声称覆盖了用户正在改的版本。 |
 | **非 Git 目录** | 只读任务可直接执行；写任务需用户显式确认共用目录，并对同一 `cwd` 的 Bot 写任务串行互斥（同时明确告知宿主锁无法约束外部编辑器/终端写入）。 |
@@ -135,7 +136,7 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
    - `bot_list_projects`：列出当前窗口已注册的项目（`cwd`、`name`、`isGit`、当前分支、工作树是否脏、活跃任务数），让 Bot 在不盲猜路径的前提下决策。
    - `bot_open_project`：注册一个本地已有目录到 Pig 项目列表（遵循当前权限模式：`full-access` 直接放行、`default` 复用 `session_open_project` 审批链路、`read-only` 拒绝；不隐式建目录或 clone）。
    - `bot_request_move_project`：针对已打开或 `~/pig_projects/*` 下的空闲项目非阻塞唤起前端 `MoveProjectDialog`（预填建议文件夹名与父目录），由用户在 UI 确认路径后执行本地目录物理搬迁与全链路关联数据迁移（会话、Git worktree、空间、看板、书签、长期记忆与 Bot 任务）。
-   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——支持传入已有 `projectCwd` 或 `newProject: { folderName, displayName?, fromWorkspaceSubpath? }`（二选一）：仅做轻量参数/空目录预留校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`，使主会话可在同一轮同时发出 `bot_start_task` 与 `send_message`；**绝不在工具调用内同步等待 `git init`、`git worktree add`、`createSessionRuntime` 或后台首轮启动**。通过 `newProject` 新建的托管目录落位 `~/pig_projects/<folderName>`，默认不自动加入左侧项目栏（在 `BotTaskCard` 上展示「添加项目并查看」按需入列，`full-access` 直接放行、`default` 弹确认、`read-only` 拒绝），且首次任务及其后续 `bot_followup_task` 直接在主目录 `main` 分支原位写入，避免对空仓库多切一层冗余 worktree 导致主目录留空。往已打开的 Git 项目派活在 `full-access` / `default` 下免弹派活审批卡。
+   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——支持传入已有 `projectCwd` 或 `newProject: { folderName, displayName?, fromWorkspaceSubpath? }`（二选一），以及写任务可选 `inPlace?: boolean`（默认 `false`）：仅做轻量参数/空目录预留校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`，使主会话可在同一轮同时发出 `bot_start_task` 与 `send_message`；**绝不在工具调用内同步等待 `git init`、`git worktree add`、`createSessionRuntime` 或后台首轮启动**。已有 Git 项目写任务默认走独立 worktree；当用户明确要求直接修改 `main` / 主工作目录时传 `inPlace: true` 原位执行并记录实际检出分支（同一项目目录原位写任务互斥）。通过 `newProject` 新建的托管目录落位 `~/pig_projects/<folderName>`，默认不自动加入左侧项目栏（在 `BotTaskCard` 上展示「添加项目并查看」按需入列，`full-access` 直接放行、`default` 弹确认、`read-only` 拒绝），且首次任务及其后续 `bot_followup_task` 直接在主目录 `main` 分支原位写入，避免对空仓库多切一层冗余 worktree 导致主目录留空。往已打开的 Git 项目默认 worktree 派活在 `full-access` / `default` 下免弹派活审批卡；`inPlace: true` 在 `default` 下弹确认、`full-access` 下免弹。
    - `bot_list_tasks` / `bot_get_task`：从宿主账本读取真实状态、worktree 路径、分支、阻塞审批状态与 `latestReceipt`，不靠模型翻聊天记录猜。
    - `bot_inspect_task`：只读查看 Bot 自己名下指定 `taskId` 的最近进展、工具轨迹或受控截断的 diff 摘要；只读取当前仍受托管的活跃 Run 的实时记录；已完成或已接管的 Run 只使用账本中的既有回执，不读取后续会话消息。
    - `bot_stop_task`：按精确 `taskId` 停止对应 Run；若由本次工具调用发起并完成停止，返回 `runId` 和 `receipt`，当前轮通过 `send_message` 报告，不另发模型唤醒或系统交付卡。加入已在途的停止或调用时任务已终结，不重发旧回执。
@@ -226,7 +227,8 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 
 | 动作 | `full-access` | `default` | `read-only` |
 | --- | --- | --- | --- |
-| `bot_start_task`（已打开 Git 项目，写任务） | 直接派活（免弹派活审批） | 直接派活（免弹派活审批；后台执行受沙箱与越界审批约束） | 拒绝 |
+| `bot_start_task`（已打开 Git 项目，默认 worktree 写任务） | 直接派活（免弹派活审批） | 直接派活（免弹派活审批；后台执行受沙箱与越界审批约束） | 拒绝 |
+| `bot_start_task`（已打开 Git 项目，`inPlace: true` 原位写任务） | 直接派活（同一项目原位写互斥） | 弹审批确认原位修改并互斥 | 拒绝 |
 | `bot_start_task`（非 Git 目录，写任务） | 确认共用目录并串行互斥 | 显式审批确认共用目录并串行互斥 | 拒绝 |
 | `bot_open_project`（注册已有本地目录） | 直接放行 | 弹审批确认 | 拒绝 |
 | `bot_start_task`（传入 `newProject` 在 `~/pig_projects` 新建托管目录并原位写任务） | 直接派活 | 弹审批确认 | 拒绝 |

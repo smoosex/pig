@@ -46,7 +46,7 @@ export interface BotWorkspace {
   branch?: string
   baseHead?: string
   cleanedUpAt?: number
-  /** True only when the project directory was newly created for this task (`newProject`) and intentionally runs in place. */
+  /** True when a write task intentionally runs directly in the primary project checkout instead of an isolated Bot worktree. */
   inPlace?: boolean
 }
 
@@ -304,6 +304,8 @@ export interface BotDelegateTaskInput {
   title: string
   intent: string
   mode: BotTaskMode
+  /** When true on a write task, run directly in `projectCwd` (e.g. on `main`) instead of creating an isolated Bot worktree. */
+  inPlace?: boolean
   slug?: string
   capabilities?: BotTaskCapabilities
   modelOverride?: BotModelOverride

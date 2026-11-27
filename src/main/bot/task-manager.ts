@@ -19,7 +19,14 @@ import type {
   BotTaskReceipt
 } from '../../shared/bot'
 import type { SessionAgentTask, SessionStopOrigin } from '../../shared/session-agent'
-import { isGitProject, normalizeWorktreePath as resolve, resolveGitHead, type CreateWorktreeOptions, type GitWorktree } from '../worktrees'
+import {
+  isGitProject,
+  normalizeWorktreePath as resolve,
+  resolveGitBranch,
+  resolveGitHead,
+  type CreateWorktreeOptions,
+  type GitWorktree
+} from '../worktrees'
 import { BotStore } from './store'
 import { BotNoticeQueue } from './notice-queue'
 import { collectWorkspaceReceipt, inspectWorktreeSafety, NonGitWriteMutex, prepareGitWriteWorkspace } from './worktree-policy'
@@ -48,6 +55,7 @@ export interface BotTaskManagerDeps {
   reserveNewProject?: (input: BotNewProjectInput, check?: () => void) => Promise<{ cwd: string; createdTarget: boolean }>
   initializeNewProject?: (cwd: string, input: BotNewProjectInput & { createdTarget: boolean }) => Promise<void>
   isGitRepo?: (cwd: string) => Promise<boolean>
+  resolveBranch?: (cwd: string) => Promise<string | undefined>
   createWorktree: (projectCwd: string, options: CreateWorktreeOptions) => Promise<GitWorktree>
   verifyBotWorktree: (projectCwd: string, cwd: string, taskId: string) => Promise<GitWorktree>
   removeWorktree: (projectCwd: string, cwd: string, authorization: { taskId: string; confirmation?: string; check?: () => void }) => Promise<void>
@@ -102,10 +110,12 @@ export class BotTaskManager {
   /** In-flight background launch promises keyed by runId so tests and shutdown can observe settlement. */
   private readonly launchPromises = new Map<string, Promise<void>>()
   private readonly isGitRepo: (cwd: string) => Promise<boolean>
+  private readonly resolveBranch: (cwd: string) => Promise<string | undefined>
   private readonly collectReceipt: NonNullable<BotTaskManagerDeps['collectReceipt']>
 
   constructor(private readonly deps: BotTaskManagerDeps) {
     this.isGitRepo = deps.isGitRepo ?? isGitProject
+    this.resolveBranch = deps.resolveBranch ?? resolveGitBranch
     this.collectReceipt = deps.collectReceipt ?? collectWorkspaceReceipt
   }
 
@@ -192,6 +202,9 @@ export class BotTaskManager {
     if (hasNewProject && input.mode !== 'write') {
       throw new Error('Creating a new project requires mode="write"')
     }
+    if (input.inPlace && input.mode !== 'write') {
+      throw new Error('inPlace is only supported for write tasks')
+    }
 
     let normalizedProject: string
     let newProjectInit: (BotNewProjectInput & { createdTarget: boolean }) | undefined
@@ -210,6 +223,7 @@ export class BotTaskManager {
       }
     }
 
+    const directInProject = Boolean(newProjectInit || input.inPlace)
     const taskId = randomUUID()
     const runId = randomUUID()
     const now = Date.now()
@@ -233,7 +247,7 @@ export class BotTaskManager {
       workspace: {
         kind: 'project',
         cwd: normalizedProject,
-        ...(newProjectInit ? { inPlace: true } : {})
+        ...(directInProject ? { inPlace: true } : {})
       },
       status: 'starting',
       activeRunId: runId,
@@ -267,7 +281,7 @@ export class BotTaskManager {
       thinkingOverride: input.thinkingOverride,
       confirmSharedNonGitWrite: input.confirmSharedNonGitWrite,
       newProjectInit,
-      directInProject: Boolean(newProjectInit)
+      directInProject
     }).finally(() => {
       this.launchPromises.delete(runId)
     })
@@ -391,15 +405,24 @@ export class BotTaskManager {
       if (task.mode === 'read') {
         workspace = { kind: 'project', cwd: task.projectCwd }
       } else if (options.directInProject || (options.reuseExistingWorkspace && task.workspace.inPlace === true)) {
+        if (!isRepo && !options.newProjectInit && !options.confirmSharedNonGitWrite) {
+          throw new Error('Write tasks in a non-Git directory require explicit user confirmation to share the directory')
+        }
         this.nonGitMutex.acquire(task.projectCwd, taskId)
         heldNonGitCwd = task.projectCwd
-        const head = isRepo ? await resolveGitHead(task.projectCwd).catch(() => undefined) : undefined
+        const [head, currentBranch] = isRepo
+          ? await Promise.all([
+              resolveGitHead(task.projectCwd).catch(() => undefined),
+              this.resolveBranch(task.projectCwd).catch(() => undefined)
+            ])
+          : [undefined, undefined]
         const baseHead = task.workspace.baseHead ?? head
+        const branch = isRepo ? (currentBranch ?? task.workspace.branch ?? 'main') : undefined
         workspace = {
           kind: 'project',
           cwd: task.projectCwd,
           inPlace: true,
-          branch: task.workspace.branch ?? (isRepo ? 'main' : undefined),
+          ...(branch ? { branch } : {}),
           ...(baseHead ? { baseHead } : {})
         }
       } else if (isRepo) {

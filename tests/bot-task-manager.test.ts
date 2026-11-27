@@ -981,4 +981,121 @@ describe('BotTaskManager and BotNoticeQueue', () => {
     const laterTask = await manager.getTask(laterAck.taskId)
     expect(laterTask?.workspace.kind).toBe('worktree')
   })
+
+  test('inPlace write task modifies existing Git checkout directly, serializes concurrent inPlace writes, and keeps worktree as default', async () => {
+    let createWorktreeCalls = 0
+    const { manager, projectCwd, launched } = await makeFixture({
+      resolveBranch: async () => 'main',
+      createWorktree: async (_proj, opts) => {
+        createWorktreeCalls += 1
+        return {
+          cwd: `/tmp/wt-${opts.owner!.taskId.slice(0, 6)}`,
+          branch: `bot/isolated-${opts.owner!.taskId.slice(0, 6)}`,
+          isPrimary: false,
+          locked: false,
+          missing: false,
+          managed: true,
+          owner: opts.owner
+        }
+      }
+    })
+
+    await expect(manager.delegateTask({
+      projectCwd,
+      title: 'Read with inPlace',
+      intent: 'Inspect',
+      mode: 'read',
+      inPlace: true
+    }, 'full-access')).rejects.toThrow(/inPlace/)
+
+    const inPlaceAck = await manager.delegateTask({
+      projectCwd,
+      title: 'Update main directly',
+      intent: 'Edit README on main',
+      mode: 'write',
+      inPlace: true
+    }, 'full-access')
+    await manager.waitForLaunch(inPlaceAck.runId)
+
+    const inPlaceTask = await manager.getTask(inPlaceAck.taskId)
+    expect(inPlaceTask?.status).toBe('running')
+    expect(inPlaceTask?.workspace).toMatchObject({
+      kind: 'project',
+      cwd: inPlaceTask!.projectCwd,
+      inPlace: true,
+      branch: 'main'
+    })
+    expect(createWorktreeCalls).toBe(0)
+    expect(launched[0]?.cwd).toBe(inPlaceTask!.projectCwd)
+
+    const concurrentInPlace = await manager.delegateTask({
+      projectCwd,
+      title: 'Conflicting direct edit',
+      intent: 'Also edit main directly',
+      mode: 'write',
+      inPlace: true
+    }, 'full-access')
+    await manager.waitForLaunch(concurrentInPlace.runId)
+    const failedConcurrent = await manager.getTask(concurrentInPlace.taskId)
+    expect(failedConcurrent?.status).toBe('failed')
+    expect(failedConcurrent?.latestReceipt?.errorMessage).toContain('already running')
+
+    await manager.handleSessionTaskFinished({
+      taskId: 'stask-1',
+      sessionId: 'sess-1',
+      status: 'completed',
+      startedAt: Date.now(),
+      endedAt: Date.now(),
+      durationMs: 10,
+      reply: 'Updated main',
+      cost: 0,
+      usageIncomplete: false,
+      children: 0
+    })
+
+    const followupAck = await manager.followupTask(inPlaceAck.taskId, 'Polish wording on main', 'full-access')
+    await manager.waitForLaunch(followupAck.runId)
+    expect(createWorktreeCalls).toBe(0)
+    expect(launched[1]?.cwd).toBe(inPlaceTask!.projectCwd)
+    expect((await manager.getTask(inPlaceAck.taskId))?.workspace).toMatchObject({
+      kind: 'project',
+      cwd: inPlaceTask!.projectCwd,
+      inPlace: true,
+      branch: 'main'
+    })
+
+    await manager.handleSessionTaskFinished({
+      taskId: 'stask-2',
+      sessionId: 'sess-2',
+      status: 'completed',
+      startedAt: Date.now(),
+      endedAt: Date.now(),
+      durationMs: 10,
+      reply: 'Polished',
+      cost: 0,
+      usageIncomplete: false,
+      children: 0
+    })
+
+    const defaultWriteAck = await manager.delegateTask({
+      projectCwd,
+      title: 'Feature in worktree',
+      intent: 'Develop feature in isolated worktree',
+      mode: 'write'
+    }, 'full-access')
+    await manager.waitForLaunch(defaultWriteAck.runId)
+    expect(createWorktreeCalls).toBe(1)
+    expect((await manager.getTask(defaultWriteAck.taskId))?.workspace.kind).toBe('worktree')
+
+    const nonGit = await makeFixture({ isGitRepo: async () => false })
+    const unconfirmedInPlace = await nonGit.manager.delegateTask({
+      projectCwd: nonGit.projectCwd,
+      title: 'Non-git inPlace without confirm',
+      intent: 'Attempt write',
+      mode: 'write',
+      inPlace: true
+    }, 'full-access')
+    await nonGit.manager.waitForLaunch(unconfirmedInPlace.runId)
+    expect((await nonGit.manager.getTask(unconfirmedInPlace.taskId))?.status).toBe('failed')
+  })
 })
