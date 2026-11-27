@@ -1099,6 +1099,36 @@ async function runFixture(name: string): Promise<void> {
       second: { outputTokens: 30, durationMs: 600, measuredCalls: 1, totalCalls: 2, models: ['test/test'] }
     })
     assert.deepEqual(runtime().liveMessages, [])
+
+    // Expanded skill prompts carry `<skill ...>` in `content` while persisted turns project the
+    // original `/skill:...` input; `hydrateTurns` must match them via `pastedText` metadata.
+    const skillSource = '/skill:colab-operator'
+    const skillSegments = [{ type: 'skill' as const, name: 'colab-operator', text: skillSource }]
+    state().appendLiveMessage(meta.id, {
+      role: 'user',
+      content: '<skill name="colab-operator" location="/skills/colab-operator/SKILL.md">\n# Full body\n</skill>',
+      timestamp: 400,
+      pastedText: { body: skillSource, attachments: [], segments: skillSegments }
+    })
+    state().appendLiveMessage(meta.id, assistant(450, 12, 240))
+    api.getDisplayTurns = async () => ({
+      leafId: 'skill-turn', startIndex: 0, totalTurns: 3,
+      turns: [
+        ...display.turns,
+        {
+          id: 'skill-turn',
+          user: { text: skillSource, images: [], textAttachments: [], textSegments: skillSegments },
+          userTimestamp: 400,
+          answer: [{ type: 'text', text: 'done' }], branchSummaries: [], compactions: [], workBlocks: [true],
+          startedAt: 400, endedAt: 450, hasProcess: true, lastEntryId: 'skill-last'
+        }
+      ]
+    })
+    await state().hydrateTurns(meta.id)
+    assert.deepEqual(runtime().generationByTurnId['skill-turn'], {
+      outputTokens: 12, durationMs: 240, measuredCalls: 1, totalCalls: 1, models: ['test/test']
+    })
+    assert.deepEqual(runtime().liveMessages, [])
   } else if (name === 'queued-edit-draft') {
     const { useComposerDraftsStore: drafts } = await import('../src/renderer/src/stores/composer-drafts')
     const { serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
@@ -1127,6 +1157,17 @@ async function runFixture(name: string): Promise<void> {
     const { textToComposerDocument, serializeComposerDocument } = await import('../src/renderer/src/components/composer/document')
     drafts.getState().setContent(meta.id, textToComposerDocument('未发送的旧草稿'))
     drafts.getState().setImages(meta.id, [{ id: 'old', mimeType: 'image/jpeg', data: 'old-image' }])
+    // Unsettled live messages left on the departed branch (e.g. before the settlement timer fires)
+    // must be dropped instead of colliding with the destination branch's persisted turns.
+    state().setStreaming(meta.id, true)
+    state().appendLiveMessage(meta.id, { role: 'user', content: '<skill name="colab-operator" location="/SKILL.md">\nbody\n</skill>', timestamp: 900 })
+    state().appendLiveMessage(meta.id, {
+      role: 'assistant', timestamp: 910, api: 'test', provider: 'test', model: 'test', stopReason: 'aborted',
+      content: [],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      generation: { outputTokens: 0, durationMs: 0, measuredCalls: 0, totalCalls: 1, models: [] }
+    })
+    state().setStreaming(meta.id, false)
     const restoredPrompt = { text: '恢复的输入\n完整内容', images: [{ mimeType: 'image/png', data: 'image' }] }
     api.viewBranch = async (id, tip, options) => {
       assert.deepEqual([id, tip, options], [meta.id, 'user-node', { restoreUserInput: true }])
@@ -1134,6 +1175,9 @@ async function runFixture(name: string): Promise<void> {
     }
     await state().viewBranch(meta.id, 'user-node', { restoreUserInput: true })
     assert.deepEqual(runtime().turns.map((turn) => turn.id), ['previous-turn'])
+    assert.deepEqual(runtime().liveMessages, [])
+    assert.equal(runtime().elapsedByTurnId['previous-turn'], undefined)
+    assert.equal(runtime().generationByTurnId['previous-turn'], undefined)
     const draft = drafts.getState().drafts[meta.id]!
     assert.equal(serializeComposerDocument(draft.content!).text, restoredPrompt.text)
     assert.deepEqual(draft.images?.map(({ mimeType, data }) => ({ mimeType, data })), restoredPrompt.images)

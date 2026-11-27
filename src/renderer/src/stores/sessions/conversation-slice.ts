@@ -89,15 +89,39 @@ export const createConversationSlice: SessionSlice<
     const initial = get().runtime[sessionId]
     if (!initial) return
     const branchRequest = initial.branchRequest + 1
-    // A null tip rebinds to a leaf main already moved; it navigates nothing, so input stays enabled.
-    update(sessionId, tipId === null ? { branchRequest } : { branchRequest, isNavigatingBranch: true })
+    // A null tip rebinds to a leaf main already moved; drop the old branch's live state up front so
+    // events arriving on the new branch while `getDisplayTurns` is in flight are not wiped later,
+    // while explicit navigation waits until a summarizer can no longer be cancelled.
+    update(
+      sessionId,
+      tipId === null
+        ? {
+            branchRequest,
+            liveMessages: [],
+            streamElapsedMs: null,
+            pendingUserMessage: false,
+            toolUpdates: {},
+            liveCompactions: [],
+            retryNotice: null
+          }
+        : { branchRequest, isNavigatingBranch: true }
+    )
     try {
       const branch = tipId === null
         ? { ...await api.getDisplayTurns(sessionId), cancelled: false, restoredPrompt: undefined }
         : await api.viewBranch(sessionId, tipId, options)
       const latest = currentInstance(sessionId, initial)
       if (!latest || latest.branchRequest !== branchRequest || branch.cancelled) return
-      update(sessionId, { toolUpdates: {}, liveCompactions: [], retryNotice: null })
+      if (tipId !== null) {
+        update(sessionId, {
+          liveMessages: [],
+          streamElapsedMs: null,
+          pendingUserMessage: false,
+          toolUpdates: {},
+          liveCompactions: [],
+          retryNotice: null
+        })
+      }
       const branchViewId = branch.leafId === latest.leafId ? latest.branchViewId
         : (branch.leafId ? latest.branchViews[branch.leafId] : undefined) ?? createBranchViewId()
       const hydrated = await get().hydrateTurns(sessionId, {
@@ -228,6 +252,7 @@ export const createConversationSlice: SessionSlice<
                 }
               : {
                   liveMessages: rt.isStreaming ? rt.liveMessages : [],
+                  streamElapsedMs: rt.isStreaming ? rt.streamElapsedMs : null,
                   toolUpdates: rt.isStreaming ? rt.toolUpdates : {},
                   // Only a summary that was written is already in history; a failure never gets one.
                   liveCompactions: rt.isStreaming

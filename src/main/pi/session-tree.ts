@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { SessionTreeGutter, SessionTreeRow, SessionTreeView } from '../../shared/api'
 import { stripImageHintsFromContent } from '../../shared/image-hints'
+import { formatExpandedSkillPreview, parseExpandedSkillPrompt } from '../../shared/skill-mentions'
 import type { SessionSource } from './session-source'
 
 type TreeNode = {
@@ -56,6 +57,35 @@ function extractContent(content: unknown): string {
   for (const block of content) {
     if (block?.type === 'text' && typeof block.text === 'string') text += block.text
     if (text.length >= 120) break
+  }
+  return oneLine(text)
+}
+
+function extractUserContent(content: unknown): string {
+  const stripped = stripImageHintsFromContent(content)
+  if (typeof stripped === 'string') {
+    const trimmed = stripped.trim()
+    if (trimmed.startsWith('<skill name="')) {
+      const expanded = parseExpandedSkillPrompt(trimmed)
+      if (expanded) return oneLine(formatExpandedSkillPreview(expanded))
+    }
+    return oneLine(stripped)
+  }
+  if (!Array.isArray(stripped)) return ''
+  let text = ''
+  let maybeSkill: boolean | null = null
+  for (const block of stripped) {
+    if (block?.type !== 'text' || typeof block.text !== 'string') continue
+    text += block.text
+    if (maybeSkill === null && text.trimStart().length >= 13) {
+      maybeSkill = text.trimStart().startsWith('<skill name="')
+    }
+    if (maybeSkill === false && text.length >= 120) break
+  }
+  const trimmed = text.trim()
+  if (trimmed.startsWith('<skill name="')) {
+    const expanded = parseExpandedSkillPrompt(trimmed)
+    if (expanded) return oneLine(formatExpandedSkillPreview(expanded))
   }
   return oneLine(text)
 }
@@ -181,7 +211,7 @@ function labelOf(
 ): string {
   if (entry.type === 'message') {
     const role = entry.message?.role
-    if (role === 'user') return `user: ${extractContent(stripImageHintsFromContent(entry.message?.content))}`
+    if (role === 'user') return `user: ${extractUserContent(entry.message?.content)}`
     if (role === 'assistant') {
       const text = extractContent(entry.message?.content)
       if (text) return `assistant: ${text}`

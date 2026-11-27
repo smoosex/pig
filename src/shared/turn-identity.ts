@@ -1,8 +1,21 @@
+import { composePromptText, type PastedTextDisplayMetadata } from './pasted-text'
+
 /** Shared identity for a live user prompt and its persisted display turn. */
-export function userTurnRenderKey(user: { timestamp: number; content: unknown }): string {
+export function userTurnRenderKey(user: {
+  timestamp: number
+  content: unknown
+  pastedText?: PastedTextDisplayMetadata
+}): string {
   const blocks = Array.isArray(user.content) ? user.content : []
-  const text = typeof user.content === 'string' ? user.content
-    : blocks.filter(block => block.type === 'text').map(block => block.text).join('')
+  // Persisted turns resolve transformed prompts (such as expanded skills) back to their source
+  // input, so a live message carrying display metadata hashes that same source text.
+  const text = user.pastedText
+    ? user.pastedText.segments || user.pastedText.attachments.length === 0
+      ? user.pastedText.body
+      : composePromptText(user.pastedText.body, user.pastedText.attachments)
+    : typeof user.content === 'string'
+      ? user.content
+      : blocks.filter(block => block.type === 'text').map(block => block.text).join('')
   const imageCount = blocks.filter(block => block.type === 'image').length
   const value = JSON.stringify([text.slice(0, 256), imageCount])
   let hash = 2166136261
