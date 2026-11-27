@@ -10,7 +10,6 @@ import { api } from '../../ipc/api'
 import { useFilesStore, isDirty, type TreeDraft } from '../../stores/files'
 import { isUnder } from '../../lib/worktree-paths'
 import { useSessionsStore } from '../../stores/sessions'
-import { fileTabId } from '../../stores/sessions/tabs-slice'
 import { splitPath } from '../diff/file-entry'
 import { useT } from '../../hooks/useT'
 import { failureMessage } from '../../lib/ipc-error'
@@ -118,9 +117,9 @@ export function useTreeDrafts(cwd: string): TreeDrafts {
           // that a name it never asked about has appeared, and the change event that would is a moment
           // away at best.
           void files.loadDirectory(cwd, splitPath(created.path).directory)
-          // A folder is opened so the reader can carry on inside it; a file opens in its own tab.
+          // A folder is opened so the reader can carry on inside it; a newly created file opens pinned.
           if (request.kind === 'folder') files.toggleDirectory(cwd, created.path)
-          else void useSessionsStore.getState().openFileTab(cwd, created.path)
+          else void useSessionsStore.getState().openFileTab(cwd, created.path, { preview: false })
         },
         (failure: unknown) => complain('file.createFailed', failure)
       )
@@ -136,7 +135,12 @@ export function useTreeDrafts(cwd: string): TreeDrafts {
         () => {
           // The row is gone, so nothing may keep reading or editing what stood there.
           useFilesStore.getState().forgetDocument(cwd, path)
-          useSessionsStore.getState().closeTab(fileTabId(cwd, path))
+          const sessions = useSessionsStore.getState()
+          for (const tab of sessions.openTabs) {
+            if (tab.kind === 'file' && tab.cwd === cwd && tab.path && (tab.path === path || isUnder(tab.path, path))) {
+              sessions.closeTab(tab.id)
+            }
+          }
           // And the level it was in is read again, so the row stops being on screen.
           void useFilesStore.getState().loadDirectory(cwd, splitPath(path).directory)
         },

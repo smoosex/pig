@@ -116,6 +116,8 @@ export interface OpenTab {
   previewFallback?: SessionPreviewFallback
   /** A file tab's worktree-relative path; the tab's title is that file's name. */
   path?: string
+  /** A file tab opened for preview: reused by the next preview in the same scope until pinned or edited. */
+  preview?: boolean
   /** A changes tab shows one scope at a time; the title follows it. Older workspaces default to `all`. */
   diffScope?: DiffScope
   /** A history diff tab's source: one turn's recorded operations. */
@@ -224,8 +226,10 @@ export interface SessionsStore {
    * review column's rows point at a file and at the group the row was read under.
    */
   openChangesTab: (cwd: string, path?: string, scope?: DiffScope) => Promise<void>
-  /** Brings a file's tab to the front, opening it when the strip does not hold it. */
-  openFileTab: (cwd: string, path: string) => Promise<void>
+  /** Brings a file's tab to the front, reusing the scope's preview tab unless `preview: false` pins it. */
+  openFileTab: (cwd: string, path: string, options?: { preview?: boolean }) => Promise<void>
+  /** Promotes a preview file tab into a pinned tab that subsequent previews will not replace. */
+  pinFileTab: (tabId: string) => void
   /** Shows one turn's recorded changes in a pane beside the session. */
   openTurnDiffTab: (sessionId: string, turnId: string) => Promise<void>
   /** Resolves the new tab's id. `background` keeps the current selection (agent-opened tabs). */

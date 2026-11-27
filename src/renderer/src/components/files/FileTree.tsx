@@ -153,10 +153,15 @@ export function FileTree({ cwd, hidden = false }: { cwd: string; hidden?: boolea
                   onClick={() =>
                     entry.kind === 'directory'
                       ? filtering ? (setQuery(''), useFilesStore.getState().ensureDirectory(cwd, entry.path)) : toggleDirectory(cwd, entry.path)
-                      : void openFileTab(cwd, entry.path)
+                      : void openFileTab(cwd, entry.path, { preview: true })
                   }
+                  onDoubleClick={() => {
+                    if (entry.kind !== 'directory') {
+                      void openFileTab(cwd, entry.path, { preview: false })
+                    }
+                  }}
                   className={cn(
-                    'relative flex w-full items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',
+                    'relative flex w-full select-none items-center gap-1.5 rounded-sm py-1 pr-1 text-left text-xs',
                     sidebarRowSurface(shownPath === entry.path),
                     entry.ignored && 'text-muted-foreground',
                     shownPath === entry.path && 'text-sidebar-accent-foreground'

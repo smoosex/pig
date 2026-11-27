@@ -33,6 +33,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   const currentProjectCwd = useSessionsStore((state) => state.currentProjectCwd)
   const setActive = useSessionsStore((state) => state.setActive)
   const closeTab = useSessionsStore((state) => state.closeTab)
+  const pinFileTab = useSessionsStore((state) => state.pinFileTab)
   const tabListRef = useRef<HTMLDivElement>(null)
   const revealActiveTab = useCallback(() => {
     tabListRef.current?.querySelector<HTMLElement>('[data-tab-active]')?.scrollIntoView({
@@ -69,6 +70,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
   // One face per strip slot, shared by the live tab and the copy that collapses when it closes.
   const entries = displayTabs.map((tab) => {
     const merge = merges.get(tab.id)
+    const preview = tab.kind === 'file' && Boolean(tab.preview) && !merge?.merged
     return {
       key: tab.id,
       tab,
@@ -78,7 +80,8 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
         kind: tab.kind,
         path: tab.path,
         active: merge ? Boolean(activeTabId && merge.paneTabIds.includes(activeTabId)) : tab.id === activeTabId,
-        split: Boolean(merge?.merged)
+        split: Boolean(merge?.merged),
+        preview
       } satisfies LeavingSnapshot
     }
   })
@@ -168,8 +171,10 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
                       : (tab.loadState === 'error' ? tab.loadError : undefined)
                   }
                   split={snapshot.split}
+                  preview={snapshot.preview}
                   splitTabIds={merge?.paneTabIds}
                   onSelect={() => selectTab(tab.id)}
+                  onPin={snapshot.preview ? () => pinFileTab(tab.id) : undefined}
                   onClose={() => {
                     // The same released pointer can land on the neighbour's close slot, which the drag it
                     // just ended has revealed by hovering it: that click closes nothing.
@@ -201,6 +206,7 @@ export function TabBar({ sidebarTab }: { sidebarTab: SidebarTab }) {
               kind={activeTab.kind}
               path={activeTab.path}
               split={Boolean(merges.get(activeTab.id)?.merged)}
+              preview={activeTab.kind === 'file' && Boolean(activeTab.preview) && !merges.get(activeTab.id)?.merged}
               dragging
             />
           ) : null}
@@ -322,7 +328,9 @@ interface TabFaceProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onSelect'> 
   leaving?: boolean
   error?: string
   split?: boolean
+  preview?: boolean
   onSelect?: () => void
+  onPin?: () => void
   onClose?: () => void
   onRenameCommit?: (name: string) => void
   onRenameCancel?: () => void
@@ -346,8 +354,10 @@ function TabFace({
   leaving = false,
   error,
   split,
+  preview = false,
   className,
   onSelect,
+  onPin,
   onClose,
   onRenameCommit,
   onRenameCancel,
@@ -361,6 +371,7 @@ function TabFace({
       ref={ref}
       data-session-tab={listed ? true : undefined}
       data-tab-active={active && listed ? true : undefined}
+      data-tab-preview={preview && listed ? true : undefined}
       aria-current={active && listed ? true : undefined}
       aria-hidden={leaving || undefined}
       className={cn(
@@ -382,10 +393,15 @@ function TabFace({
         className
       )}
       onClick={onSelect}
+      onDoubleClick={onPin}
       {...rest}
     >
       {!dragging ? (
-        <span data-tab-close-slot className="group/close-slot invisible absolute top-0.5 left-1.5 flex size-6 items-center justify-center @min-[7rem]/session-tab:visible">
+        <span
+          data-tab-close-slot
+          onDoubleClick={(event) => event.stopPropagation()}
+          className="group/close-slot invisible absolute top-0.5 left-1.5 flex size-6 items-center justify-center @min-[7rem]/session-tab:visible"
+        >
           {onClose ? (
             <CloseButton
               streaming={streaming}
@@ -402,7 +418,7 @@ function TabFace({
         ) : (
           <TabKindIcon kind={kind} path={path} />
         )}
-        <span data-tab-label className={cn('min-w-0 truncate', dragging ? 'max-w-60' : ['max-w-0 opacity-0 transition-[max-width,opacity] duration-150 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full @min-[7rem]/session-tab:opacity-100', editing && 'max-w-full flex-1'])}>
+        <span data-tab-label className={cn('min-w-0 truncate', preview && !editing && 'italic', dragging ? 'max-w-60' : ['max-w-0 opacity-0 transition-[max-width,opacity] duration-150 motion-reduce:transition-none @min-[7rem]/session-tab:max-w-full @min-[7rem]/session-tab:opacity-100', editing && 'max-w-full flex-1'])}>
           {editing && onRenameCommit && onRenameCancel ? (
             <SessionRenameField
               // Renaming keeps text selectable without lifting the sortable tab.
@@ -449,6 +465,7 @@ interface LeavingSnapshot {
   path?: string
   active: boolean
   split: boolean
+  preview: boolean
 }
 
 function LeavingTabFace({ ghost, onDone }: { ghost: LeavingTab<LeavingSnapshot>; onDone: () => void }) {
@@ -457,7 +474,7 @@ function LeavingTabFace({ ghost, onDone }: { ghost: LeavingTab<LeavingSnapshot>;
     collapseLeavingTab(ref.current!, ghost.width, onDone)
     // The collapse is started once for this copy; later renders only reposition it.
   }, [])
-  const { label, kind, path, active, split } = ghost.snapshot
+  const { label, kind, path, active, split, preview } = ghost.snapshot
   return (
     <TabFace
       ref={ref}
@@ -467,6 +484,7 @@ function LeavingTabFace({ ghost, onDone }: { ghost: LeavingTab<LeavingSnapshot>;
       path={path}
       active={active}
       split={split}
+      preview={preview}
       style={{ flexBasis: ghost.width, flexGrow: 0, minWidth: 0 }}
     />
   )
@@ -483,8 +501,10 @@ function Tab({
   loading,
   error,
   split,
+  preview,
   splitTabIds,
   onSelect,
+  onPin,
   onClose
 }: {
   tabId: string
@@ -497,8 +517,10 @@ function Tab({
   loading: boolean
   error?: string
   split?: boolean
+  preview?: boolean
   splitTabIds?: string[]
   onSelect: () => void
+  onPin?: () => void
   onClose: () => void
 }) {
   const streaming = useSessionsStore((state) => {
@@ -535,10 +557,12 @@ function Tab({
       dirty={dirty}
       streaming={streaming}
       split={split}
+      preview={preview}
       editing={rename.editing}
       error={failure}
       title={failure ?? title}
       onSelect={onSelect}
+      onPin={onPin}
       onClose={onClose}
       onRenameCommit={rename.commit}
       onRenameCancel={rename.cancel}

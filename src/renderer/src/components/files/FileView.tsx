@@ -54,6 +54,7 @@ import { MarkdownText } from '../MarkdownText'
 import { cn } from '../../lib/utils'
 import { isComposingKey, isShortcutRecording, matchesShortcut } from '../../lib/shortcuts'
 import { useSessionsStore } from '../../stores/sessions'
+import { fileTabId } from '../../stores/sessions/tabs-slice'
 import { headingSlug, markdownImageSrc, markdownTarget } from './markdown-links'
 
 const MARKDOWN_PATH = /\.(md|markdown)$/i
@@ -130,7 +131,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
               else if (target.kind === 'file' && target.path === path) {
                 if (target.slug) scrollToAnchor(target.slug)
               } else if (target.kind === 'file') {
-                runExternal(() => openFileTab(cwd, target.path))
+                runExternal(() => openFileTab(cwd, target.path, { preview: true }))
               }
             }}
           >
@@ -352,7 +353,11 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
               revealPending={Boolean(revealPending)}
               editorOptions={reveal.editorOptions}
               onDetach={reveal.onDetach}
-              onEditChange={(text) => setDraft(cwd, path, text)}
+              onEditChange={(text) => {
+                if (useFilesStore.getState().documents[key]?.text === text) return
+                setDraft(cwd, path, text)
+                useSessionsStore.getState().pinFileTab?.(fileTabId(cwd, path))
+              }}
             />
           ) : null}
         </div>

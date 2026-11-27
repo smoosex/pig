@@ -80,7 +80,25 @@ export function useTabStripMotion<T>({
     }
     const keys = new Set(entries.map((entry) => entry.key))
     const priorKeys = new Set(prior.entries.map((entry) => entry.key))
-    const animates = (key: string) => !still.has(key) && !prior.still.has(key)
+    // An in-place replacement (retargeting a preview file tab or renaming an open file) swaps one slot's
+    // key without adding or closing a tab, so the strip keeps its width instead of collapsing and growing.
+    const replacedInPlace = new Set<string>()
+    if (
+      prior.entries.length === entries.length &&
+      entries.every(
+        (entry, index) =>
+          prior.entries[index].key === entry.key ||
+          (!priorKeys.has(entry.key) && !keys.has(prior.entries[index].key))
+      )
+    ) {
+      entries.forEach((entry, index) => {
+        if (prior.entries[index].key !== entry.key) {
+          replacedInPlace.add(entry.key)
+          replacedInPlace.add(prior.entries[index].key)
+        }
+      })
+    }
+    const animates = (key: string) => !still.has(key) && !prior.still.has(key) && !replacedInPlace.has(key)
     const motion = !reducedMotion()
     const elements = new Map<string, HTMLElement>()
     if (motion && listRef.current) {

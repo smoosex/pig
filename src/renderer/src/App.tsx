@@ -804,7 +804,7 @@ export default function App() {
                 await selectProjectCwd(cwd)
                 const store = useSessionsStore.getState()
                 if (openFilePath) {
-                  await store.openFileTab(cwd, openFilePath)
+                  await store.openFileTab(cwd, openFilePath, { preview: true })
                   if (openFileLine) useFilesStore.getState().revealLine(cwd, openFilePath, openFileLine)
                   return
                 }

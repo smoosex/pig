@@ -37,15 +37,15 @@ async function runFixture(name: string): Promise<void> {
   Reflect.deleteProperty(Element.prototype, 'animate')
   const { mock } = await import('bun:test')
   const opened: { path: string; scope?: string }[] = []
-  const filesOpened: string[] = []
+  const filesOpened: { path: string; preview?: boolean }[] = []
   const sessionState = {
     openTabs: [] as Pick<OpenTab, 'id' | 'kind' | 'cwd' | 'path'>[],
     activeTabId: null as string | null,
     openChangesTab: async (_cwd: string, path?: string, scope?: string) => {
       if (path) opened.push({ path, scope })
     },
-    openFileTab: async (_cwd: string, path: string) => {
-      filesOpened.push(path)
+    openFileTab: async (_cwd: string, path: string, options?: { preview?: boolean }) => {
+      filesOpened.push({ path, preview: options?.preview })
     }
   }
   mock.module('../src/renderer/src/stores/sessions', () => ({
@@ -525,9 +525,16 @@ async function runFixture(name: string): Promise<void> {
     assert.ok(ignoredToggle.classList.contains('aria-pressed:hover:bg-sidebar-foreground/12!'))
     assert.ok(!ignoredToggle.className.includes('backdrop-blur'))
 
-    // A file opens its own tab.
+    // Single-click previews a file; double-click pins it open.
     await click(row('src/work.ts'))
-    assert.deepEqual(filesOpened, ['src/work.ts'])
+    assert.deepEqual(filesOpened, [{ path: 'src/work.ts', preview: true }])
+    await act(async () => {
+      row('src/work.ts')!.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+    })
+    assert.deepEqual(filesOpened, [
+      { path: 'src/work.ts', preview: true },
+      { path: 'src/work.ts', preview: false }
+    ])
     sessionState.openTabs = [{ id: 'file', kind: 'file', cwd: CWD, path: 'src/work.ts' }]
     sessionState.activeTabId = 'file'
     await render(CWD)

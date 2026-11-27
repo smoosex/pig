@@ -64,7 +64,20 @@ export function SplitPaneContainer({
   const panes: PaneNode[] = tabId ? (group ? collectPaneNodes(group.root) : [{ id: tabId, tabId }]) : []
   const measuredPanes = useRef(panes)
   const topology = !tabId ? '' : group ? JSON.stringify(group.root, (key, value) => key === 'sizes' ? undefined : value) : tabId
-  const [scene, setScene] = useState<PaneScene>({ rects: {}, previous: {}, topology: '', transitionId: 0, animate: false })
+  const layoutTopology = !tabId
+    ? ''
+    : group
+      ? JSON.stringify(group.root, (key, value) => (key === 'sizes' || key === 'tabId' ? undefined : value))
+      : 'single'
+  const [scene, setScene] = useState<PaneScene>({
+    rects: {},
+    paneRects: {},
+    previous: {},
+    topology: '',
+    layoutTopology: '',
+    transitionId: 0,
+    animate: false
+  })
   const reduced = useReducedMotion()
   const workspaceVisible = useWorkspaceVisible()
   // Separate "container holds an active tab" (preserved while Settings covers the workspace)
@@ -102,22 +115,31 @@ export function SplitPaneContainer({
     const measure = () => {
       if (!active) return
       const bounds = element.getBoundingClientRect()
-      const rects = Object.fromEntries(slots.map(slot => {
+      const rects: Record<string, PaneRect> = {}
+      const paneRects: Record<string, PaneRect> = {}
+      for (const slot of slots) {
         const rect = slot.getBoundingClientRect()
-        return [slot.dataset.paneSlot!, { left: rect.left - bounds.left, top: rect.top - bounds.top, width: rect.width, height: rect.height }]
-      }))
+        const measured = { left: rect.left - bounds.left, top: rect.top - bounds.top, width: rect.width, height: rect.height }
+        rects[slot.dataset.paneSlot!] = measured
+        if (slot.dataset.paneNodeId) paneRects[slot.dataset.paneNodeId] = measured
+      }
       setScene(current => {
         const ids = Object.keys(rects)
         for (const id of ids) if (samePaneRect(current.rects[id], rects[id])) rects[id] = current.rects[id]
+        for (const [paneId, nextRect] of Object.entries(paneRects)) {
+          if (samePaneRect(current.paneRects[paneId], nextRect)) paneRects[paneId] = current.paneRects[paneId]
+        }
         if (current.topology === topology && ids.length === Object.keys(current.rects).length &&
           ids.every(id => rects[id] === current.rects[id])) return current
-        const topologyChanged = current.topology !== topology
+        const layoutChanged = current.layoutTopology !== layoutTopology
         return {
           rects,
+          paneRects,
           previous: current.rects,
           topology,
-          transitionId: topologyChanged ? current.transitionId + 1 : current.transitionId,
-          animate: topologyChanged && Object.keys(rects).some(id => current.rects[id])
+          layoutTopology,
+          transitionId: layoutChanged ? current.transitionId + 1 : current.transitionId,
+          animate: layoutChanged && Object.keys(rects).some(id => current.rects[id])
         }
       })
     }
@@ -281,7 +303,7 @@ export function SplitPaneContainer({
         </Group>
       )
     }
-    return <div data-pane-slot={node.tabId} className="h-full w-full" />
+    return <div data-pane-slot={node.tabId} data-pane-node-id={node.id} className="h-full w-full" />
   }
 
   for (const [id, rect] of Object.entries(scene.rects)) {
@@ -294,11 +316,17 @@ export function SplitPaneContainer({
     }
   }
 
+  const rectForNode = (node: PaneNode): PaneRect | undefined =>
+    scene.rects[node.tabId] ?? (group && scene.layoutTopology === layoutTopology ? scene.paneRects[node.id] : undefined)
+
   // Keep the active pane(s) mounted while Settings covers the workspace (workspaceVisible=false),
   // so non-chat tabs like FileView keep their editor mode and selection; only clear active panes
   // when switched to a home surface (containerActive=false).
   const visiblePanes = containerActive
-    ? (scene.topology === topology ? panes : measuredPanes.current).filter((node) => scene.rects[node.tabId])
+    ? (scene.topology === topology || (Boolean(group) && scene.layoutTopology === layoutTopology)
+        ? panes
+        : measuredPanes.current
+      ).filter((node) => rectForNode(node))
     : []
   for (const node of visiblePanes) {
     if (openChatTabIds.has(node.tabId)) lastPaneIds.current[node.tabId] = node.id
@@ -380,7 +408,7 @@ export function SplitPaneContainer({
       ? fromRect
       : retainedHidden
         ? (retainedRects.current[node.tabId] ?? { left: 0, top: 0, width: 0, height: 0 })
-        : (scene.rects[node.tabId] ?? { left: 0, top: 0, width: 0, height: 0 })
+        : (rectForNode(node) ?? { left: 0, top: 0, width: 0, height: 0 })
     const frameVisible = measureActive && mode === 'visible'
     const splitFrame = collapsing ? Boolean(wasSplit) : mode === 'visible' && Boolean(group)
     return (
@@ -424,7 +452,7 @@ export function SplitPaneContainer({
       aria-hidden={!containerVisible || undefined}
       className={cn('relative h-full w-full min-h-0 min-w-0 overflow-hidden', group && 'p-2', className)}
     >
-      {tabId ? (group ? renderLayoutNode(group.root) : <div data-pane-slot={tabId} className="h-full w-full" />) : null}
+      {tabId ? (group ? renderLayoutNode(group.root) : <div data-pane-slot={tabId} data-pane-node-id={tabId} className="h-full w-full" />) : null}
       <AnimatePresence initial={false} custom={{ ...scene, animate: scene.animate && !reduced }}>
         {frameEntries.map(renderFrame)}
       </AnimatePresence>
@@ -434,8 +462,10 @@ export function SplitPaneContainer({
 
 interface PaneScene {
   rects: Record<string, PaneRect>
+  paneRects: Record<string, PaneRect>
   previous: Record<string, PaneRect>
   topology: string
+  layoutTopology: string
   transitionId: number
   animate: boolean
 }
@@ -511,10 +541,13 @@ function PaneHeader({
   const rename = useSessionRename(tabId, tab?.meta?.path)
   const action = useProjectAction()
   const failure = action.error ?? rename.error ?? undefined
+  const preview = tab?.kind === 'file' && Boolean(tab.preview)
   const header = (
     <div
       data-pane-header="true"
+      data-pane-preview={preview ? 'true' : undefined}
       onPointerDown={rename.editing ? undefined : onPointerDown}
+      onDoubleClick={preview ? () => useSessionsStore.getState().pinFileTab(tabId) : undefined}
       className={cn(
         'flex h-7 shrink-0 cursor-grab items-center justify-between gap-1.5 border-b border-border/40 px-4 select-none transition-colors duration-200 motion-reduce:transition-none active:cursor-grabbing',
         isActive ? 'bg-glass-prompt-foreground/10 solid:bg-primary/10' : 'bg-muted/20'
@@ -524,7 +557,7 @@ function PaneHeader({
       {rename.editing ? (
         <SessionRenameField className="h-5 flex-1 select-text" value={renameValue} onCommit={rename.commit} onCancel={rename.cancel} />
       ) : (
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">{title}</span>
+        <span className={cn('min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground', preview && 'italic')}>{title}</span>
       )}
       {failure ? <CircleAlert role="img" aria-label={failure} className="size-3.5 shrink-0 text-destructive" /> : null}
       <Button
@@ -533,6 +566,7 @@ function PaneHeader({
         size="icon-xs"
         className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
         onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
           onClose()
