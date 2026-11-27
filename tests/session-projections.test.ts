@@ -207,4 +207,36 @@ describe('session tree projection', () => {
     expect(views['labeled-only']!.map((row) => row.id)).toEqual(['u1'])
     expect(views.all!.map((row) => row.id)).toEqual(['u1', 'a1', 'lbl', 'u2'])
   })
+
+  test('collapses expanded skill prompts in session tree user rows', () => {
+    const expanded = `<skill name="colab-operator" location="/Users/test/.agents/skills/colab-operator/SKILL.md">\n${'长说明\n'.repeat(40)}</skill>`
+    const entries = [
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: expanded } },
+      {
+        id: 'u2',
+        parentId: 'u1',
+        type: 'message',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: `${expanded}\n\n帮我连接 GPU\n\n[Image: original 800x600, displayed at 800x600. Multiply coordinates by 1.00 to map to original image.]` },
+            { type: 'image', mimeType: 'image/png', data: 'QUJD' }
+          ]
+        }
+      }
+    ] as unknown as SessionEntry[]
+    const source = {
+      sessionId: 'session-1',
+      leafId: () => 'u2',
+      entries: () => entries,
+      treeEntries: () => entries,
+      branch: () => entries,
+      branchIds: () => ['u1', 'u2']
+    } as SessionSource
+    const rows = buildSessionTreeViews(source, ['default']).default!
+    expect(rows.map((row) => row.text)).toEqual([
+      'user: /skill:colab-operator',
+      'user: /skill:colab-operator 帮我连接 GPU'
+    ])
+  })
 })
