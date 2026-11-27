@@ -45,11 +45,13 @@ import { Button } from '../ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '../ui/dropdown-menu'
+import { Separator } from '../ui/separator'
 import { useFileLineReveal } from './useFileLineReveal'
-import { Code, Eye } from 'lucide-react'
+import { ChevronDown, Code, Eye, SquareArrowOutUpRight } from 'lucide-react'
 import { MarkdownText } from '../MarkdownText'
 import { cn } from '../../lib/utils'
 import { isComposingKey, isShortcutRecording, matchesShortcut } from '../../lib/shortcuts'
@@ -261,21 +263,44 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
         >
           {saving ? t('file.saving') : t('file.save')}
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
-              {t('file.openWith')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => runExternal(() => api.openFileExternally(cwd, path))}>
-              {t('file.openDefault')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => runExternal(() => api.revealFileExternally(cwd, path))}>
-              {t('file.reveal')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="inline-flex h-6 shrink-0 items-center rounded-full border border-glass-button-border bg-glass-button-background bg-[image:var(--glass-button-sheen)] shadow-glass-button solid:border-border solid:bg-background solid:bg-none solid:shadow-none solid:dark:border-input solid:dark:bg-input/30">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-label={t('file.openDefault')}
+            title={t('file.openDefault')}
+            className="h-full rounded-l-full rounded-r-none border-0 pl-2.5 pr-1.5 text-glass-prompt-foreground active:translate-y-0 solid:text-foreground"
+            onClick={() => runExternal(() => api.openFileExternally(cwd, path))}
+          >
+            <SquareArrowOutUpRight className="size-3.5" />
+          </Button>
+          <Separator orientation="vertical" className="my-1 bg-glass-border solid:bg-border" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                aria-label={t('file.openWith')}
+                title={t('file.openWith')}
+                className="h-full rounded-l-none rounded-r-full border-0 pl-1.5 pr-2 text-muted-foreground"
+              >
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                <DropdownMenuItem onSelect={() => runExternal(() => api.openFileExternally(cwd, path))}>
+                  {t('file.openDefault')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => runExternal(() => api.revealFileExternally(cwd, path))}>
+                  {t('file.reveal')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       {document?.stale ? (

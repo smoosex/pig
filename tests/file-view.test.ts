@@ -266,8 +266,17 @@ async function runFixture(name: string): Promise<void> {
       throw new Error("Error invoking remote method 'files:open-externally': Error: 没有找到能打开它的程序")
     }
     await open('a.ts')
-    const trigger = [...container.querySelectorAll('button')].find((button) => button.textContent === '打开方式…')
-    assert.ok(trigger, 'the header hands the file to the desktop')
+    const directOpen = container.querySelector<HTMLButtonElement>('button[aria-label="用默认应用打开"]')
+    assert.ok(directOpen, 'the split pill offers a direct default-app icon button')
+    await React.act(async () => {
+      directOpen.click()
+      await sleep(0)
+    })
+    assert.equal(asked, 1, 'clicking the primary icon asks main to open the file directly')
+    assert.match(container.textContent ?? '', /打开失败：没有找到能打开它的程序/)
+
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="打开方式…"]')
+    assert.ok(trigger, 'the header hands the file to the desktop via the split menu trigger')
     await React.act(async () => {
       trigger.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, button: 0 }))
     })
@@ -285,7 +294,7 @@ async function runFixture(name: string): Promise<void> {
       item.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
       await sleep(0)
     })
-    assert.equal(asked, 1, 'the menu item asks main to open the file')
+    assert.equal(asked, 2, 'the menu item asks main to open the file')
     assert.match(container.textContent ?? '', /打开失败：没有找到能打开它的程序/, 'a refusal that arrives late is still said')
 
     // The pane is not remounted when the tab switches, so the message has to leave with the file.
