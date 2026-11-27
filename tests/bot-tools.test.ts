@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { BOT_MAIN_DISABLED_TOOLS, createBotExtension, type BotToolsHost } from '../src/main/bot/tools'
 import type { PermissionMode } from '../src/shared/permissions'
@@ -12,8 +12,6 @@ function harness(opts: {
   mode?: PermissionMode
   confirmResult?: boolean
   hasGit?: boolean
-  workspaceDir?: string
-  soulPath?: string
   activeTools?: string[]
   confirm?: (signal?: AbortSignal) => Promise<boolean>
   stopReceipt?: BotTaskReceipt
@@ -56,8 +54,6 @@ function harness(opts: {
 
   const host: BotToolsHost = {
     taskManager,
-    workspaceDir: opts.workspaceDir,
-    soulPath: opts.soulPath,
     getPermissionMode: () => mode,
     onPermissionsChanged: (listener) => {
       permissionsChanged.add(listener)
@@ -280,10 +276,10 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     expect(cleanDefault.cleanedTasks).toEqual(['t-2'])
   })
 
-  test('strips shell and search tools from Bot main session and blocks direct invocations', async () => {
+  test('strips file-writing, shell, and search tools from Bot main session and blocks direct invocations', async () => {
     const h = harness({})
     for (const fn of h.hooks.get('session_start') ?? []) await fn()
-    expect(h.getActiveTools()).toEqual(['read', 'edit', 'write', 'send_message'])
+    expect(h.getActiveTools()).toEqual(['read', 'send_message'])
 
     const callTool = async (toolName: string, input: unknown = {}) => {
       for (const fn of h.hooks.get('tool_call') ?? []) {
@@ -294,60 +290,33 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     }
 
     for (const disabled of Object.keys(BOT_MAIN_DISABLED_TOOLS)) {
-      const res = await callTool(disabled, { command: 'ls' })
+      const res = await callTool(disabled, { path: 'SOUL.md', command: 'ls' })
       expect(res?.block).toBe(true)
-      expect(res?.reason).toMatch(/bot_start_task/)
+      expect(res?.reason).toMatch(/persona_soul.*bot_start_task/)
     }
     expect(h.sideEffects).toEqual([])
   })
 
-  test('allows read anywhere, confines edit/write to Bot workspace and SOUL.md, and blocks symlink/tilde escapes', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'pig-bot-guard-'))
-    const workspaceDir = join(root, 'bot', 'workspace')
-    const personaDir = join(root, 'persona')
-    const projectDir = join(root, 'project')
-    mkdirSync(workspaceDir, { recursive: true })
-    mkdirSync(personaDir, { recursive: true })
-    mkdirSync(projectDir, { recursive: true })
-    const soulPath = join(personaDir, 'SOUL.md')
-    const userPath = join(personaDir, 'USER.md')
-    const projectFile = join(projectDir, 'index.ts')
-    writeFileSync(soulPath, '# Soul\n')
-    writeFileSync(userPath, '# User\n')
-    writeFileSync(projectFile, 'export const x = 1\n')
-    const escapeLink = join(workspaceDir, 'escape.ts')
-    symlinkSync(projectFile, escapeLink)
-
-    try {
-      const h = harness({ workspaceDir, soulPath })
-      const callTool = async (toolName: string, input: unknown) => {
-        for (const fn of h.hooks.get('tool_call') ?? []) {
-          const res = await fn({ toolName, input })
-          if (res) return res
-        }
-        return undefined
+  test('keeps read side-effect-free while marking persona/memory/settings/kanban mutations as side effects', async () => {
+    const h = harness({})
+    const callTool = async (toolName: string, input: unknown) => {
+      for (const fn of h.hooks.get('tool_call') ?? []) {
+        const res = await fn({ toolName, input })
+        if (res) return res
       }
-
-      // Single-file read stays allowed on project files and SOUL.md without marking side effects
-      expect(await callTool('read', { path: projectFile })).toBeUndefined()
-      expect(await callTool('read', { path: soulPath })).toBeUndefined()
-      expect(h.sideEffects).toEqual([])
-
-      // Scratch workspace relative/absolute paths and SOUL.md are allowed and mark side effects
-      expect(await callTool('write', { path: 'notes/draft.md' })).toBeUndefined()
-      expect(await callTool('edit', { path: soulPath })).toBeUndefined()
-      expect(h.sideEffects).toEqual(['write', 'edit'])
-
-      // Project files, sibling persona files, tilde paths, and symlink escapes inside workspace are blocked
-      for (const forbidden of [projectFile, userPath, '~/outside.txt', escapeLink, '../tasks.json']) {
-        const res = await callTool('edit', { path: forbidden })
-        expect(res?.block).toBe(true)
-        expect(res?.reason).toMatch(/bot_start_task/)
-      }
-      expect(h.sideEffects).toEqual(['write', 'edit'])
-    } finally {
-      rmSync(root, { recursive: true, force: true })
+      return undefined
     }
+
+    expect(await callTool('read', { path: '/repo/pig/README.md' })).toBeUndefined()
+    expect(await callTool('persona_soul', { action: 'read' })).toBeUndefined()
+    expect(await callTool('persona_user', { action: 'read' })).toBeUndefined()
+    expect(h.sideEffects).toEqual([])
+
+    expect(await callTool('persona_soul', { action: 'create', content: 'Sharp' })).toBeUndefined()
+    expect(await callTool('persona_user', { action: 'edit', expectedRevision: 'a'.repeat(64), oldText: 'x', newText: 'y' })).toBeUndefined()
+    expect(await callTool('memory_add', { scope: 'global', path: 'note.md', content: 'hi' })).toBeUndefined()
+    expect(await callTool('settings_update', { group: 'general' })).toBeUndefined()
+    expect(h.sideEffects).toEqual(['persona_soul', 'persona_user', 'memory_add', 'settings_update'])
   })
 
   test('bot_start_task newProject creates+starts in one step with permission checks and bot_request_move_project opens dialog non-blockingly', async () => {
@@ -376,7 +345,7 @@ describe('Bot extension tools and §5.5 permission matrix', () => {
     // default mode prompts confirmation once, then delegates Fast Ack
     h.setMode('default')
     const defaultRes = await startTool.execute('c2', {
-      newProject: { folderName: 'snake-game', fromWorkspaceSubpath: 'proto' },
+      newProject: { folderName: 'snake-game' },
       title: 'Snake',
       intent: 'Build snake game',
       mode: 'write'

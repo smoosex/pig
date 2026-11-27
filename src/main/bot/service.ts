@@ -304,8 +304,6 @@ export class BotService {
 
       const botExtension = createBotExtension({
         taskManager: this.taskManager,
-        workspaceDir: this.workspaceDir,
-        soulPath: pigPath('persona', 'SOUL.md'),
         getPermissionMode: () => sessionPermission(state.sessionId).mode,
         onPermissionsChanged,
         listOpenedProjects: async () => {

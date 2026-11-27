@@ -28,6 +28,7 @@ import { approvalDelegation } from './delegation'
 import { SESSION_TOOLS_PATH, mcpArguments, mcpDecision } from './mcp'
 import { onPermissionsChanged, readPermissionSettings } from './store'
 import { isSettingsToolPath, settingsApproval } from './settings'
+import { isPersonaToolParameters, PERSONA_TOOL_NAMES } from '../features/persona/tools'
 
 export interface PermissionOptions {
   cwd: string
@@ -334,9 +335,9 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         mode === 'full-access' ? 'MCP tools run without approval.' :
           mode === 'read-only' ? 'MCP tools run only when the server marks them read-only; other MCP calls are refused.' :
             'MCP tool calls the server does not mark read-only may ask the user first. If the user refuses, stop; do not reach the same goal through another tool.',
-        mode === 'full-access' ? 'Built-in settings updates, browser uploads and terminal input run without approval.' :
-          mode === 'read-only' ? 'Built-in settings updates, browser uploads and terminal input are refused in read-only mode.' :
-            'Every built-in settings update and browser upload requires separate user approval; terminal input asks unless this terminal was allowed for the session. If refused, stop; do not reach the same goal through another tool.',
+        mode === 'full-access' ? 'Built-in settings updates, persona document updates, browser uploads and terminal input run without approval.' :
+          mode === 'read-only' ? 'Built-in settings updates, persona document updates, browser uploads and terminal input are refused in read-only mode.' :
+            'Every built-in settings update, persona document update and browser upload requires separate user approval; terminal input asks unless this terminal was allowed for the session. If refused, stop; do not reach the same goal through another tool.',
         'Cross-session project registration, session creation/configuration, task sending and stopping require approval in default mode, are refused in read-only mode, and cannot raise target permissions above the caller. Session tools never authorize bypassing a refused operation.',
         'MCP server processes, the browser, the interactive terminal and trusted plugin code are not sandboxed. Other browser actions and terminal creation and reading are not covered by these approvals. This is not authorization to use them to bypass a refused operation.'
       ].join('\n')
@@ -355,6 +356,15 @@ export function permissionsExtension(options: PermissionOptions): ExtensionFacto
         if (!tool?.sourceInfo.path || resolve(tool.sourceInfo.path) !== resolve(sessionToolPath())) return { block: true, reason: 'Another extension replaced a session-control tool. Disable it or explicitly choose full access.' }
         if (mode === 'read-only') return { block: true, reason: 'Read-only mode does not allow session-control mutations' }
         // Main authorizes the actual operation at execution time, not merely batch preflight.
+      }
+      if ((PERSONA_TOOL_NAMES as readonly string[]).includes(event.toolName)) {
+        if (!isPersonaToolParameters(tool?.parameters)) {
+          return { block: true, reason: `Another extension replaced ${event.toolName}. Disable that extension or explicitly choose full access.` }
+        }
+        if (mode === 'read-only' && (event.input as { action?: unknown } | undefined)?.action !== 'read') {
+          return { block: true, reason: 'Read-only mode does not allow persona document updates. Do not retry with another tool.' }
+        }
+        return undefined
       }
       if (event.toolName === 'settings_update') {
         // A first-registration-wins replacement must not inherit or bypass the built-in gate.

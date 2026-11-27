@@ -4,15 +4,11 @@
  * worktree cleanup even in `full-access` mode.
  */
 import { randomUUID } from 'node:crypto'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 import { arr, bool, compile, int, obj, oneOf, opt, str, type Schema } from '@earendil-works/pi-schema'
 import { defineTool, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { THINKING_LEVELS } from '../../shared/api'
 import type { PermissionMode } from '../../shared/permissions'
 import { restrictPermissionMode } from '../permissions/mode'
-import { realTarget } from '../sandbox/path'
-import { within } from '../sandbox/policy'
 import type { BotDelegateTaskInput, BotTask, BotTimelineItem } from '../../shared/bot'
 import { BOT_SYSTEM_PROMPT, buildBotStyleReminder } from './prompt'
 import { resolveBotAttachments, stripHiddenBotTags } from './projection'
@@ -27,6 +23,8 @@ export const SEND_MESSAGE_PROMPT_GUIDELINES = [
 ]
 
 export const BOT_MAIN_DISABLED_TOOLS = {
+  edit: false,
+  write: false,
   bash: false,
   powershell: false,
   grep: false,
@@ -36,16 +34,18 @@ export const BOT_MAIN_DISABLED_TOOLS = {
 
 const BOT_DISABLED_MAIN_TOOL_NAMES = new Set<string>(Object.keys(BOT_MAIN_DISABLED_TOOLS))
 
-type PathUtils = { resolveToCwd(path: string, cwd: string): string }
-let pathUtils: Promise<PathUtils> | undefined
-const sdkPaths = () => (pathUtils ??= import(
-  pathToFileURL(join(dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))), 'core/tools/path-utils.js')).href
-))
+const BOT_EXTERNAL_MUTATING_TOOLS = new Set<string>([
+  'memory_add',
+  'memory_edit',
+  'memory_delete',
+  'settings_update',
+  'kanban_create',
+  'kanban_update',
+  'kanban_delete'
+])
 
 export interface BotToolsHost {
   taskManager: BotTaskManager
-  workspaceDir?: string
-  soulPath?: string
   getPermissionMode: () => PermissionMode
   onPermissionsChanged?: (listener: () => void) => () => void
   listOpenedProjects: () => Promise<Array<{ cwd: string; name: string; hasGit?: boolean; inSidebar?: boolean }>>
@@ -76,11 +76,7 @@ const newProjectSchema = obj({
   folderName: str({
     minLength: 1,
     description: 'New project folder name (no slashes, e.g. "snake-game"), created under ~/pig_projects/<folderName> and written directly in place on main.'
-  }),
-  fromWorkspaceSubpath: opt(str({
-    minLength: 1,
-    description: 'Optional relative path inside $PIG_DIR/bot/workspace ONLY when turning pre-existing scratch files from an earlier turn into a project.'
-  }))
+  })
 })
 
 const startTaskSchema = obj({
@@ -201,32 +197,19 @@ export function createBotExtension(host: BotToolsHost) {
       return { messages }
     })
 
-    // Enforce Bot main-session boundary: disable shell/search tools and confine edit/write to Bot workspace + SOUL.md.
-    pi.on('tool_call', async (event, ctx) => {
+    // Enforce Bot main-session boundary: disable file-writing, shell, and repository search tools.
+    pi.on('tool_call', async (event) => {
       if (BOT_DISABLED_MAIN_TOOL_NAMES.has(event.toolName)) {
         return {
           block: true,
-          reason: 'Shell and repository search tools are disabled in the Bot main session. Start a project run via bot_start_task instead.'
+          reason: 'File-writing, shell, and repository search tools are disabled in the Bot main session. Use persona_soul / persona_user for persona documents, memory_* for memories, or start a project run via bot_start_task.'
         }
       }
-      if (event.toolName === 'edit' || event.toolName === 'write') {
-        const rawPath = event.input && typeof event.input === 'object'
-          ? (event.input as { path?: unknown }).path
-          : undefined
-        if (typeof rawPath !== 'string' || !rawPath.trim()) {
-          return { block: true, reason: 'Invalid file path' }
-        }
-        const workspaceRoot = host.workspaceDir ?? ctx?.cwd ?? process.cwd()
-        const soulFile = host.soulPath ?? resolve(workspaceRoot, '..', '..', 'persona', 'SOUL.md')
-        const paths = await sdkPaths()
-        const resolved = paths.resolveToCwd(rawPath, workspaceRoot)
-        const target = realTarget(resolved)
-        if (!within(realTarget(workspaceRoot), target) && target !== realTarget(soulFile)) {
-          return {
-            block: true,
-            reason: 'Direct file writes outside the Bot workspace and SOUL.md are forbidden. Use bot_start_task so project changes run in an isolated worktree.'
-          }
-        }
+      if (
+        BOT_EXTERNAL_MUTATING_TOOLS.has(event.toolName) ||
+        ((event.toolName === 'persona_soul' || event.toolName === 'persona_user') &&
+          (event.input as { action?: unknown } | undefined)?.action !== 'read')
+      ) {
         host.onSideEffect(event.toolName)
       }
       return undefined

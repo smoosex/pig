@@ -6,7 +6,7 @@
 
 - 应用设置有唯一入口 `src/main/settings/`：`SettingsService` 同时服务设置页 IPC 与 Agent 工具，两边不能各写一套。
 - 白名单共八组：theme（外观、glass/solid、亮暗色板）、general（界面语言，不等于回复语言）、notifications（`completionNotifications` 完成通知、`approvalNotifications` 审批通知）、shortcuts（发送键与 `bindings` patch，校验仍由 `applyShortcutPatch` 负责，冲突报错、不自动停用占用者）、defaults（新会话默认模型与思考强度，与 Pi CLI 共用，按模型支持情况提供 off/minimal）、plugins（各插件的启用范围，不含安装/更新/卸载）、mcp（已配置服务器的全局启停，不含增删改；目录只给名称、描述、传输类型与启停，命令、URL、headers、env 可能带凭据，绝不外露）、persona（心情三维与自动变化开关，从下一轮任务生效）；Beam 边框只在设置页有。
-- 人格文件、观察员模型、会话级工具开关、凭据、provider 与任意路径/JSON 都不开放。
+- `SettingsService` 不开放人格文件（由内置人格工具 `persona_soul`／`persona_user` 与人格设置页维护）、观察员模型、会话级工具开关、凭据、provider 与任意路径/JSON。
 - plugins/mcp/persona 各有自己的存储与队列，revision 在 `updatePluginScopes` / `updateMcpEnabled` 的写入队列或人格锁内再校验一次，批量 patch 一次写入、任一项非法则整批不写；人格 revision 只覆盖 `controlsRevision`、历史序号与自动变化开关，不含心情数值：会话活动租约提交时会写回衰减后的心情，若算进来会产生假冲突；后台观察会追加历史，所以仍然冲突。
 - 人格的任何写入（含 Agent）经 `onPersonaControlsChanged` 由 main 广播 `persona:changed`，打开的人格设置页重读状态，保留未保存的文件草稿。
 - 插件与 MCP 写入后与设置页走同样的 `plugins:changed` / MCP 广播并刷新会话：空闲会话立即重载，运行中的（含发起修改的 Agent）等本轮结束，结果的 `application` 为 `sessions-reload`；重载失败返回 `ok: false` 但不回滚。

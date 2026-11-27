@@ -1146,6 +1146,7 @@ export const zh = {
     hostsTitle: '命令访问 {hosts} 被沙箱拦下，是否放行？', hostsMessage: '命令已经结束，放行后不会自动重跑，需要时由 Agent 再执行一次。', hostsSession: '本会话放行', hostsProject: '本项目放行', hostsDeny: '不放行',
     mcpTitle: '调用 MCP 工具 {server} / {tool}？', mcpMessage: '参数：\n{arguments}\n\n「本会话允许」会放行 {server} 的所有工具，直到会话结束。',
     settingsTitle: '允许这次应用设置修改？', settingsMessage: '分组：{group}\n修改：\n{patch}\n\n这会修改全局设置，不仅影响当前会话。',
+    personaTitle: '允许这次人格文档修改？', personaMessage: '文档：{file}（{action}）\n修改：\n{patch}\n\n这会修改全局「灵魂 / 关于你」文档并影响所有会话。',
     terminalTitle: '允许向终端发送输入？', terminalMessage: '终端不在沙箱中，输入可能执行命令。选择「允许此终端（本会话）」后，当前会话可继续向此终端发送输入，会话关闭后失效。\n\n终端：{terminal}\n操作：{detail}\n内容：{input}',
     terminalAllowSession: '允许此终端（本会话）', terminalType: '输入文字', terminalTypeSubmit: '输入文字并提交', terminalKey: '按键',
     browserUploadTitle: '允许网页访问本机文件？', browserUploadSensitive: '可能是受保护的敏感路径',
