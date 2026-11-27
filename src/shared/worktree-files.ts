@@ -1,11 +1,35 @@
 /**
- * URL scheme that serves local image files to the renderer (`pig-file://worktree/...` for worktree
- * files and `pig-file://local/...` for explicit local image paths in chat replies).
+ * URL scheme and MIME mapping for serving local image files to the renderer (`pig-file://worktree/...`
+ * for file tabs and Markdown previews inside opened worktrees, and `pig-file://local/...` for explicit
+ * local image paths in chat replies).
  *
  * The renderer has no direct filesystem access, so image paths are rewritten to `pig-file:` URLs and
  * main serves only verified regular image files without following final-segment symlinks.
  */
 export const WORKTREE_FILE_SCHEME = 'pig-file'
+
+export const MAX_WORKTREE_IMAGE_BYTES = 100 * 1024 * 1024
+
+const WORKTREE_IMAGE_TYPES: Record<string, string> = {
+  png: 'image/png',
+  apng: 'image/apng',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  jfif: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  svg: 'image/svg+xml'
+}
+
+export function worktreeImageMimeType(path: string): string | null {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  const dot = path.lastIndexOf('.')
+  if (dot <= slash + 1) return null
+  return WORKTREE_IMAGE_TYPES[path.slice(dot + 1).toLowerCase()] ?? null
+}
 
 export interface WorktreeFileTarget {
   cwd: string
@@ -14,8 +38,9 @@ export interface WorktreeFileTarget {
 }
 
 /** `pig-file://worktree/<cwd>/<path>`, each part escaped whole so neither can bleed into the other. */
-export function worktreeFileUrl(cwd: string, path: string): string {
-  return `${WORKTREE_FILE_SCHEME}://worktree/${encodeURIComponent(cwd)}/${encodeURIComponent(path)}`
+export function worktreeFileUrl(cwd: string, path: string, revision?: number): string {
+  const base = `${WORKTREE_FILE_SCHEME}://worktree/${encodeURIComponent(cwd)}/${encodeURIComponent(path)}`
+  return revision === undefined ? base : `${base}?r=${revision}`
 }
 
 /** `pig-file://local/<path>` for an absolute or `~/` image path outside open worktrees. */

@@ -1,5 +1,5 @@
 /**
- * Local images for Markdown previews and chat replies, served behind the `pig-file` scheme.
+ * Local images for file tabs, Markdown previews, and chat replies, served behind the `pig-file` scheme.
  *
  * `pig-file://worktree/<cwd>/<path>` enforces the same worktree root and path-traversal guards as a
  * file tab. `pig-file://local/<path>` serves explicit absolute or `~/` image files referenced in chat
@@ -7,27 +7,19 @@
  */
 import { constants } from 'node:fs'
 import { open, realpath } from 'node:fs/promises'
-import { basename, dirname, extname, join } from 'node:path'
-import { parseLocalImageFileUrl, parseWorktreeFileUrl } from '../../shared/worktree-files'
+import { basename, dirname, join } from 'node:path'
+import {
+  MAX_WORKTREE_IMAGE_BYTES,
+  parseLocalImageFileUrl,
+  parseWorktreeFileUrl,
+  worktreeImageMimeType
+} from '../../shared/worktree-files'
 import { readLanes } from '../git/limit'
 import { openedWorktree } from '../worktree-access'
 import { expandLocalInputPath } from './file'
 import { resolveWorktreePath } from './paths'
 import { isMissingError, readCapped } from './read'
 
-const IMAGE_TYPES: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  avif: 'image/avif',
-  bmp: 'image/bmp',
-  ico: 'image/x-icon',
-  svg: 'image/svg+xml'
-}
-
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 const OPEN_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | (constants.O_NONBLOCK ?? 0)
 
 const notFound = (): Response => new Response(null, { status: 404 })
@@ -38,7 +30,7 @@ async function serveImageFile(absolutePath: string, type: string): Promise<Respo
       const handle = await open(absolutePath, OPEN_FLAGS)
       try {
         const info = await handle.stat()
-        if (!info.isFile() || info.size > MAX_IMAGE_BYTES) return null
+        if (!info.isFile() || info.size > MAX_WORKTREE_IMAGE_BYTES) return null
         const buffer = Buffer.allocUnsafe(info.size)
         return buffer.subarray(0, await readCapped(handle, buffer))
       } finally {
@@ -72,7 +64,7 @@ async function serveImageFile(absolutePath: string, type: string): Promise<Respo
 }
 
 async function localImageResponse(rawPath: string): Promise<Response> {
-  const type = IMAGE_TYPES[extname(rawPath).slice(1).toLowerCase()]
+  const type = worktreeImageMimeType(rawPath)
   if (!type) return notFound()
   const target = expandLocalInputPath(rawPath)
   if (!target) return notFound()
@@ -95,7 +87,7 @@ export async function worktreeImageResponse(url: string): Promise<Response> {
 
   const target = parseWorktreeFileUrl(url)
   if (!target) return notFound()
-  const type = IMAGE_TYPES[extname(target.path).slice(1).toLowerCase()]
+  const type = worktreeImageMimeType(target.path)
   if (!type) return notFound()
   const root = await openedWorktree(target.cwd)
   if (!root) return notFound()

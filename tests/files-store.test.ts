@@ -338,6 +338,55 @@ async function runFixture(name: string): Promise<void> {
     throw new Error(`unknown move case ${name}`)
   }
 
+  if (name === 'image-refresh') {
+    let changed: ((cwd: string) => void) | undefined
+    let stamp = { mtimeMs: 10, size: 4_200_000 }
+    Object.assign(api, {
+      readFile: async () => ({ kind: 'image', mimeType: 'image/png', ...stamp }),
+      onDiffChanged: (listener: (cwd: string) => void) => {
+        changed = listener
+        return () => { changed = undefined }
+      }
+    } satisfies Partial<SessionApi>)
+    const {
+      fileKey,
+      rememberImageView,
+      savedImageView,
+      useFilesStore,
+      watchWorktreeFiles
+    } = await import('../src/renderer/src/stores/files')
+    const cwd = '/store-image'
+    const key = fileKey(cwd, 'art/hero.png')
+    const document = () => useFilesStore.getState().documents[key]!
+
+    watchWorktreeFiles()
+    await useFilesStore.getState().openDocument(cwd, 'art/hero.png')
+    assert.equal(document().preview, 'image')
+    assert.equal(document().bytes, 4_200_000)
+    const initialRevision = document().revision
+
+    // Unrelated worktree changes keep the image revision untouched so the viewport does not reload.
+    changed?.(cwd)
+    await sleep(0)
+    assert.equal(document().revision, initialRevision)
+
+    // Updating the image file on disk advances revision so `pig-file://...?r=` fetches fresh bytes.
+    stamp = { mtimeMs: 20, size: 4_500_000 }
+    changed?.(cwd)
+    await sleep(0)
+    assert.equal(document().revision, initialRevision + 1)
+    assert.equal(document().bytes, 4_500_000)
+
+    rememberImageView(key, { scale: 2, tx: 12, ty: -8, grid: true })
+    useFilesStore.getState().moveDocument(cwd, 'art/hero.png', 'art/hero-v2.png')
+    const movedKey = fileKey(cwd, 'art/hero-v2.png')
+    assert.deepEqual(savedImageView(movedKey), { scale: 2, tx: 12, ty: -8, grid: true })
+
+    useFilesStore.getState().releaseDocument(cwd, 'art/hero-v2.png')
+    assert.deepEqual(savedImageView(movedKey), { scale: 1, tx: 0, ty: 0, grid: false })
+    return
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -352,7 +401,8 @@ if (process.argv[2] === '--files-store-fixture') {
     release: 'closing a tab keeps a draft and lets a clean document go',
     'move-file': 'a rename re-keys the one document it names, draft included',
     'move-folder': 'a folder rename carries the drafts under it and leaves a prefix sibling',
-    'forget-folder': 'trashing a folder drops the drafts under it'
+    'forget-folder': 'trashing a folder drops the drafts under it',
+    'image-refresh': 'image tabs only bump revision when their own stamp changes and carry view state across renames'
   })) {
     test(`files store: ${description}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--files-store-fixture', name])

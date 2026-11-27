@@ -32,6 +32,9 @@ async function runFixture(): Promise<void> {
     assert.equal(served.headers.get('content-type'), 'image/png')
     assert.equal(served.headers.get('x-content-type-options'), 'nosniff')
     assert.deepEqual([...new Uint8Array(await served.arrayBuffer())], [0x89, 0x50, 0x4e, 0x47])
+    const busted = await worktreeImageResponse(worktreeFileUrl(root, 'docs/logo.png', 2))
+    assert.equal(busted.status, 200)
+    assert.equal(busted.headers.get('content-type'), 'image/png')
     for (const [cwd, path, why] of [
       [root, 'notes.txt', 'not an image'],
       [root, '../outside/leak.png', 'a path out of the worktree'],
