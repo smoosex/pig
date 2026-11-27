@@ -40,6 +40,7 @@ interface ProjectSpacesStore {
   spaces: ProjectSpace[]
   activeSpaceId: string
   assignments: Record<string, string>
+  lastCwds: Record<string, string>
   revision: number
   ready: boolean
   busy: boolean
@@ -54,6 +55,7 @@ interface ProjectSpacesStore {
   removeSpace: (id: string) => Promise<ProjectSpacesSnapshot | null>
   assignProject: (cwd: string, spaceId: string) => Promise<void>
   forgetProject: (cwd: string) => Promise<void>
+  rememberCwd: (spaceId: string, cwd: string) => Promise<void>
   applySnapshot: (snapshot: ProjectSpacesSnapshot) => void
 }
 
@@ -68,6 +70,7 @@ export const useProjectSpacesStore = create<ProjectSpacesStore>((set, get) => {
             spaces: snapshot.spaces,
             activeSpaceId: snapshot.activeSpaceId,
             assignments: snapshot.assignments,
+            lastCwds: snapshot.lastCwds ?? state.lastCwds,
             revision: snapshot.revision,
             ready: true,
             error: null
@@ -78,6 +81,7 @@ export const useProjectSpacesStore = create<ProjectSpacesStore>((set, get) => {
     spaces: initial.spaces,
     activeSpaceId: initial.activeSpaceId,
     assignments: initial.assignments,
+    lastCwds: initial.lastCwds ?? {},
     revision: -1,
     ready: false,
     busy: false,
@@ -160,15 +164,22 @@ export const useProjectSpacesStore = create<ProjectSpacesStore>((set, get) => {
 
     assignProject: async (cwd, spaceId) => {
       const prevAssignments = get().assignments
+      const prevLastCwds = get().lastCwds
+      const nextLastCwds = { ...prevLastCwds }
+      for (const [spaceKey, remembered] of Object.entries(nextLastCwds)) {
+        if (spaceKey !== spaceId && remembered === cwd) delete nextLastCwds[spaceKey]
+      }
+      if (!nextLastCwds[spaceId]) nextLastCwds[spaceId] = cwd
       set({
         assignments: { ...prevAssignments, [cwd]: spaceId },
+        lastCwds: nextLastCwds,
         error: null
       })
       if (!api?.spaces?.assignProject) return
       try {
         applySnapshot(await api.spaces.assignProject(cwd, spaceId))
       } catch (error) {
-        set({ assignments: prevAssignments, error: failureMessage(error) })
+        set({ assignments: prevAssignments, lastCwds: prevLastCwds, error: failureMessage(error) })
       }
     },
 
@@ -178,6 +189,19 @@ export const useProjectSpacesStore = create<ProjectSpacesStore>((set, get) => {
         applySnapshot(await api.spaces.forgetProject(cwd))
       } catch {
         // Best-effort cleanup after project removal.
+      }
+    },
+
+    rememberCwd: async (spaceId, cwd) => {
+      if (!spaceId || !cwd || get().lastCwds[spaceId] === cwd) return
+      set((state) => ({
+        lastCwds: { ...state.lastCwds, [spaceId]: cwd }
+      }))
+      if (!api?.spaces?.rememberCwd) return
+      try {
+        applySnapshot(await api.spaces.rememberCwd(spaceId, cwd))
+      } catch {
+        // Best-effort workspace selection persistence.
       }
     }
   }

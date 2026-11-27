@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, FolderPlus, PanelLeft, PanelRight, RotateCw } from 'lucide-react'
+import { PanelLeft, PanelRight, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useIsPresent } from 'motion/react'
 import { useSessionsStore, selectActiveSessionId } from './stores/sessions'
@@ -29,7 +29,7 @@ import { useModelCatalogStore } from './stores/model-catalog'
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert'
 import { Button } from './components/ui/button'
 import { ShortcutKbd } from './components/ShortcutKbd'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './components/ui/empty'
+import { Empty, EmptyDescription } from './components/ui/empty'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 import { Sidebar } from './components/Sidebar'
 import { DreamDialogHost } from './components/settings/DreamSettings'
@@ -39,11 +39,13 @@ import { useKanbanStore } from './stores/kanban'
 import { BotOrbButton } from './components/bot/BotOrbButton'
 import { BotPeekBubble } from './components/bot/BotPeekBubble'
 import { BotPage } from './components/bot/BotPage'
+import { EmptyProjectsView } from './components/EmptyProjectsView'
 import { KanbanHeader } from './components/kanban/KanbanHeader'
 import { KanbanIssueDialog } from './components/kanban/KanbanIssueDialog'
 import { KanbanToggleButton } from './components/kanban/KanbanToggleButton'
 import { KanbanView } from './components/kanban/KanbanView'
 import { useSidebarPreferences } from './components/sidebar/use-sidebar-preferences'
+import { useSpaceWorkspaceSync } from './components/sidebar/use-space-workspace-sync'
 import { sidebarSurfaceHover, sidebarSurfaceToggle } from './components/sidebar/sidebar-surface'
 import type { KanbanIssue, SidebarTab } from '../../shared/api'
 import { NewTabButton, TabBar, newStripSession } from './components/TabBar'
@@ -309,9 +311,16 @@ export default function App() {
   const botOpen = useBotStore((s) => s.open)
   const initBot = useBotStore((s) => s.init)
   const projectHome = Boolean(currentProjectCwd && !activeTabId)
+  const { activeSpace, spaceProjects } = useSpaceWorkspaceSync()
   /** What the projects half may still return to: a worktree nobody lists is not one of them. */
   const knownProjectCwds = new Set(
     projects.flatMap((project) => [
+      project.cwd,
+      ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
+    ])
+  )
+  const activeSpaceWorktreeCwds = new Set(
+    spaceProjects.flatMap((project) => [
       project.cwd,
       ...(project.worktrees ?? []).map((worktree) => worktree.cwd)
     ])
@@ -480,11 +489,6 @@ export default function App() {
   }, [initializeProjectWorkspaces, sidebarReady])
 
   useEffect(() => {
-    if (!workspaceRestoreReady || workspaceRestoreError || currentProjectCwd || activeTab || projects.length === 0) return
-    void selectProjectCwd(projects[0]!.cwd)
-  }, [activeTab, currentProjectCwd, projects, selectProjectCwd, workspaceRestoreError, workspaceRestoreReady])
-
-  useEffect(() => {
     void loadSettings()
     void loadReviewPrefs()
     void initBot()
@@ -620,6 +624,8 @@ export default function App() {
     rightSurfaceOpen,
     settingsOpen,
     botOpen,
+    activeSpace?.id,
+    spaceProjects.length,
     projects.length,
     openTabs.length,
     splitGroups,
@@ -634,7 +640,7 @@ export default function App() {
 
   useEffect(() => {
     if (!activeTab) {
-      if (currentProjectCwd) projectFocusCwd.current = currentProjectCwd
+      projectFocusCwd.current = currentProjectCwd
       return
     }
     if (isChatScope(activeTab)) chatFocusTabId.current = activeTab.id
@@ -653,7 +659,7 @@ export default function App() {
       currentProjectCwd,
       chatFocusTabId.current,
       projectFocusCwd.current ?? restoredProjectCwd,
-      knownProjectCwds
+      activeSpaceWorktreeCwds
     )
     if (action.kind === 'project') void selectProjectCwd(action.cwd)
   }
@@ -1025,22 +1031,12 @@ export default function App() {
                       <ProjectSessionHome cwd={currentProjectCwd!} />
                     </>
                   ) : workspaceRestoreReady && !restoreError ? (
-                    <Empty className="gap-4">
-                      <EmptyHeader>
-                        <EmptyTitle>{t('app.emptyProjectsTitle')}</EmptyTitle>
-                        <EmptyDescription>{t('app.emptyProjectsDescription')}</EmptyDescription>
-                      </EmptyHeader>
-                      <div className="flex flex-wrap items-center justify-center gap-2">
-                        <Button size="sm" onClick={() => void openProject()}>
-                          <FolderPlus data-icon="inline-start" />
-                          {t('sidebar.addProject')}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => useBotStore.getState().openBot()}>
-                          <Bot data-icon="inline-start" />
-                          {t('app.openBot')}
-                        </Button>
-                      </div>
-                    </Empty>
+                    <EmptyProjectsView
+                      activeSpace={activeSpace}
+                      onOpenProject={() => void openProject()}
+                      onOpenTerminal={() => useSessionsStore.getState().openTerminalTab(null)}
+                      onOpenBot={() => useBotStore.getState().openBot()}
+                    />
                   ) : (
                     <Empty className="gap-4">
                       <EmptyDescription>

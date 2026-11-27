@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import {
   DEFAULT_SPACE_ID,
   resolveProjectSpaceId,
+  resolveSpaceTargetCwd,
   type ProjectSpacesSnapshot
 } from '../src/shared/project-spaces'
 import { runSelf } from './helpers/subprocess.ts'
@@ -43,8 +44,14 @@ async function runStoreFixture(): Promise<void> {
     assert.equal(space2.name, '空间 2')
     assert.equal(space2.icon, 'rocket')
     assert.equal(afterCreate.activeSpaceId, space2.id)
+    assert.equal(afterCreate.lastCwds?.[space2.id], '/projects/b')
     assert.equal(resolveProjectSpaceId(afterCreate, '/projects/a'), DEFAULT_SPACE_ID)
     assert.equal(resolveProjectSpaceId(afterCreate, '/projects/b'), space2.id)
+
+    // Remember active worktree per space and verify legacy files without lastCwds still parse cleanly
+    const afterRemember = await store.rememberWorktree(DEFAULT_SPACE_ID, '/projects/a/wt-1')
+    assert.equal(afterRemember.lastCwds?.[DEFAULT_SPACE_ID], '/projects/a/wt-1')
+    assert.equal(afterRemember.lastCwds?.[space2.id], '/projects/b')
 
     // Rename and clear icon
     const afterUpdate = await store.update({ id: space2.id, name: '后端服务', icon: null })
@@ -57,8 +64,23 @@ async function runStoreFixture(): Promise<void> {
     assert.equal(afterRemove.spaces.length, 1)
     assert.equal(afterRemove.activeSpaceId, DEFAULT_SPACE_ID)
     assert.deepEqual(afterRemove.assignments, {})
+    assert.equal(afterRemove.lastCwds?.[space2.id], undefined)
     assert.equal(resolveProjectSpaceId(afterRemove, '/projects/b'), DEFAULT_SPACE_ID)
     assert.equal(resolveProjectSpaceId(afterRemove, '/projects/c'), DEFAULT_SPACE_ID)
+
+    // Legacy JSON without lastCwds loads without error
+    await writeFile(
+      file,
+      JSON.stringify({
+        revision: 9,
+        activeSpaceId: DEFAULT_SPACE_ID,
+        spaces: [{ id: DEFAULT_SPACE_ID, name: '' }],
+        assignments: {}
+      }),
+      'utf8'
+    )
+    const legacyLoaded = await store.getSnapshot()
+    assert.deepEqual(legacyLoaded.lastCwds, {})
 
     // Cannot delete the last remaining space
     await assert.rejects(() => store.remove(DEFAULT_SPACE_ID), /Cannot delete the last space/)
@@ -263,6 +285,191 @@ async function runUiFixture(): Promise<void> {
     await flush()
     assert.equal(container.querySelector('[data-space-id="space-2"] [data-space-icon]'), null)
     assert.ok(container.querySelector('[data-space-id="space-2"] [data-space-dot]'))
+
+    // Verify main-area synchronization via useSpaceWorkspaceSync + resolveSpaceTargetCwd:
+    // 1) Pure priority resolution: remembered lastCwd -> open content -> first project -> null for empty space
+    const probeSpaces = [
+      { id: 'default', name: '' },
+      { id: 'space-open', name: '有内容' },
+      { id: 'space-new', name: '仅项目' },
+      { id: 'space-empty', name: '空空间' }
+    ]
+    const probeProjects = [
+      { cwd: '/repo/p1' },
+      { cwd: '/repo/p2' },
+      { cwd: '/repo/p3' }
+    ]
+    const probeAssignments = {
+      '/repo/p2': 'space-open',
+      '/repo/p3': 'space-open'
+    }
+    assert.equal(
+      resolveSpaceTargetCwd({
+        spaceId: 'space-empty',
+        spaces: probeSpaces,
+        assignments: probeAssignments,
+        projects: probeProjects
+      }),
+      null
+    )
+    assert.equal(
+      resolveSpaceTargetCwd({
+        spaceId: 'space-open',
+        spaces: probeSpaces,
+        assignments: probeAssignments,
+        projects: probeProjects,
+        hasOpenContent: (cwd) => cwd === '/repo/p3'
+      }),
+      '/repo/p3',
+      'prefers worktree with open content when lastCwds has not recorded a choice yet'
+    )
+    assert.equal(
+      resolveSpaceTargetCwd({
+        spaceId: 'space-open',
+        spaces: probeSpaces,
+        assignments: probeAssignments,
+        lastCwds: { 'space-open': '/repo/p2' },
+        projects: probeProjects,
+        hasOpenContent: (cwd) => cwd === '/repo/p3'
+      }),
+      '/repo/p2',
+      'remembered lastCwds wins over other open tabs in the same space'
+    )
+
+    // 2) Live hook synchronization across space switches, empty spaces, new-session homes, and cross-space jumps
+    const { useSpaceWorkspaceSync } = await import('../src/renderer/src/components/sidebar/use-space-workspace-sync')
+    Object.assign(window.api, {
+      selectOpenProjectWorkspace: async () => {},
+      listWorktreeSessions: async () => [],
+      saveOpenToolTabs: async () => {},
+      saveOpenSplitLayouts: async () => {}
+    })
+    Object.assign(window.api.spaces, {
+      rememberCwd: async (spaceId: string, cwd: string) => {
+        snapshot = {
+          ...snapshot,
+          revision: snapshot.revision + 1,
+          lastCwds: { ...(snapshot.lastCwds ?? {}), [spaceId]: cwd }
+        }
+        return snapshot
+      }
+    })
+
+    snapshot = {
+      revision: 20,
+      activeSpaceId: 'default',
+      spaces: [
+        { id: 'default', name: '' },
+        { id: 'space-2', name: '空间 2' },
+        { id: 'space-empty', name: '空空间' }
+      ],
+      assignments: { '/repo/lumina': 'space-2' },
+      lastCwds: { default: '/repo/pig' }
+    }
+    useProjectSpacesStore.getState().applySnapshot(snapshot)
+    useSessionsStore.setState({
+      workspaceRestoreReady: true,
+      workspaceRestoreError: null,
+      projects: [
+        { cwd: '/repo/pig', name: 'pig', sessions: [] },
+        { cwd: '/repo/lumina', name: 'lumina', sessions: [] }
+      ],
+      openTabs: [
+        { id: 'sess-pig', cwd: '/repo/pig', title: 'Pig Session', kind: 'project', loadState: 'ready' }
+      ],
+      activeSessionByCwd: { '/repo/pig': 'sess-pig' },
+      activeTabByCwd: { '/repo/pig': 'sess-pig' },
+      currentProjectCwd: '/repo/pig',
+      activeTabId: 'sess-pig'
+    })
+
+    let latestSync!: ReturnType<typeof useSpaceWorkspaceSync>
+    function SyncProbe() {
+      latestSync = useSpaceWorkspaceSync()
+      return null
+    }
+    await act(async () => {
+      root.render(h(SyncProbe))
+    })
+    await flush()
+    assert.equal(useSessionsStore.getState().currentProjectCwd, '/repo/pig')
+    assert.equal(useSessionsStore.getState().activeTabId, 'sess-pig')
+
+    // Switch to Space 2 (/repo/lumina has no open tabs -> opens its New Session home: activeTabId === null)
+    await act(async () => {
+      await useProjectSpacesStore.getState().selectSpace('space-2')
+    })
+    await flush()
+    assert.equal(useSessionsStore.getState().currentProjectCwd, '/repo/lumina')
+    assert.equal(useSessionsStore.getState().activeTabId, null, 'project with no open tabs lands on New Session home')
+
+    // Switch to Empty Space -> clears currentProjectCwd & activeTabId so Empty Space screen renders
+    await act(async () => {
+      await useProjectSpacesStore.getState().selectSpace('space-empty')
+    })
+    await flush()
+    assert.equal(useSessionsStore.getState().currentProjectCwd, null)
+    assert.equal(useSessionsStore.getState().activeTabId, null)
+    assert.equal(latestSync.spaceProjects.length, 0)
+
+    // Switch back to Default -> restores /repo/pig and its open tab 'sess-pig'
+    await act(async () => {
+      await useProjectSpacesStore.getState().selectSpace('default')
+    })
+    await flush()
+    assert.equal(useSessionsStore.getState().currentProjectCwd, '/repo/pig')
+    assert.equal(useSessionsStore.getState().activeTabId, 'sess-pig')
+
+    // Explicitly jumping to /repo/lumina (e.g. from bookmark/notification) switches activeSpaceId to space-2
+    await act(async () => {
+      await useSessionsStore.getState().selectProjectCwd('/repo/lumina')
+    })
+    await flush()
+    assert.equal(useProjectSpacesStore.getState().activeSpaceId, 'space-2')
+    assert.equal(useSessionsStore.getState().currentProjectCwd, '/repo/lumina')
+
+    // 3) EmptyProjectsView renders the greeting + 3 action cards (with Move Project when other spaces have projects,
+    // and Terminal when globally empty)
+    const { EmptyProjectsView } = await import('../src/renderer/src/components/EmptyProjectsView')
+    let openProjectCalls = 0
+    let botCalls = 0
+    let terminalCalls = 0
+    await act(async () => {
+      await useProjectSpacesStore.getState().selectSpace('space-empty')
+    })
+    await act(async () => {
+      root.render(
+        h(EmptyProjectsView, {
+          activeSpace: { id: 'space-empty', name: '空空间' },
+          onOpenProject: () => { openProjectCalls++ },
+          onOpenBot: () => { botCalls++ },
+          onOpenTerminal: () => { terminalCalls++ }
+        })
+      )
+    })
+    await flush()
+    assert.ok(container.textContent?.includes('「空空间」还没有项目'))
+    assert.equal(container.querySelectorAll('[data-slot="card"]').length, 3)
+    assert.ok(container.querySelector('[data-empty-card="open-project"]'))
+    assert.ok(container.querySelector('[data-empty-card="move-project"]'))
+    assert.ok(container.querySelector('[data-empty-card="bot"]'))
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-empty-card="open-project"]')!.click()
+      container.querySelector<HTMLButtonElement>('[data-empty-card="bot"]')!.click()
+    })
+    assert.equal(openProjectCalls, 1)
+    assert.equal(botCalls, 1)
+
+    await act(async () => {
+      useSessionsStore.setState({ projects: [] })
+    })
+    await flush()
+    assert.ok(container.textContent?.includes('添加一个项目来启动你的第一个工作区'))
+    assert.ok(container.querySelector('[data-empty-card="terminal"]'))
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-empty-card="terminal"]')!.click()
+    })
+    assert.equal(terminalCalls, 1)
   } finally {
     await act(async () => { root.unmount() })
     container.remove()

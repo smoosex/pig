@@ -178,6 +178,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
   await api.spaces.remove('space-1')
   await api.spaces.assignProject('/repo', 'default')
   await api.spaces.forgetProject('/repo')
+  await api.spaces.rememberCwd('space-1', '/repo')
   await api.getCustomModels()
   await api.saveCustomProvider({ id: 'ollama', api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none', authHeader: false })
   await api.removeCustomProvider('ollama')
@@ -317,6 +318,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
     { channel: 'spaces:remove', args: ['space-1'] },
     { channel: 'spaces:assign-project', args: ['/repo', 'default'] },
     { channel: 'spaces:forget-project', args: ['/repo'] },
+    { channel: 'spaces:remember-cwd', args: ['space-1', '/repo'] },
     { channel: 'models:custom-get', args: [] },
     { channel: 'models:custom-save-provider', args: [{ id: 'ollama', api: 'openai-completions', baseUrl: 'http://localhost:11434/v1', authMode: 'none', authHeader: false }] },
     { channel: 'models:custom-remove-provider', args: ['ollama'] },

@@ -11,6 +11,7 @@ import type {
 import { assertBrowserSender } from '../browser/validation'
 import { projectSpaces } from '../project-spaces'
 import { requireOpenedProject } from '../project-worktrees'
+import { requireWorktree } from '../worktree-access'
 import { windowForEvent } from './window'
 
 function assertUi(event: IpcMainInvokeEvent): void {
@@ -71,5 +72,11 @@ export function registerProjectSpacesIpc(): void {
   ipcMain.handle('spaces:forget-project', async (event, cwd: string) => {
     assertUi(event)
     return broadcastChanged(await projectSpaces.forgetProject(cwd))
+  })
+
+  ipcMain.handle('spaces:remember-cwd', async (event, spaceId: string, cwd: string) => {
+    assertUi(event)
+    const verified = await requireWorktree(cwd)
+    return broadcastChanged(await projectSpaces.rememberWorktree(spaceId, verified))
   })
 }

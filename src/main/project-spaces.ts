@@ -91,11 +91,25 @@ function parseSnapshot(text: string): ProjectSpacesSnapshot {
     }
   }
 
+  const lastCwds: Record<string, string> = {}
+  if (data.lastCwds !== undefined) {
+    if (!data.lastCwds || typeof data.lastCwds !== 'object' || Array.isArray(data.lastCwds)) {
+      throw new Error('Invalid project space lastCwds')
+    }
+    for (const [spaceId, cwd] of Object.entries(data.lastCwds as Record<string, unknown>)) {
+      if (!spaceId || typeof cwd !== 'string' || !cwd) throw new Error('Invalid project space lastCwd')
+      if (ids.has(spaceId)) {
+        lastCwds[spaceId] = resolve(cwd)
+      }
+    }
+  }
+
   return {
     revision: data.revision as number,
     activeSpaceId,
     spaces,
-    assignments
+    assignments,
+    lastCwds
   }
 }
 
@@ -131,7 +145,8 @@ export class ProjectSpaceStore {
         revision: previous.revision + 1,
         activeSpaceId: updated.activeSpaceId,
         spaces: updated.spaces,
-        assignments: updated.assignments
+        assignments: updated.assignments,
+        lastCwds: updated.lastCwds ?? {}
       }
       const file = this.file()
       const temp = `${file}.${randomUUID()}.tmp`
@@ -185,10 +200,18 @@ export class ProjectSpaceStore {
       const assignments = moveProjectCwd
         ? { ...current.assignments, [moveProjectCwd]: id }
         : current.assignments
+      const lastCwds = { ...(current.lastCwds ?? {}) }
+      if (moveProjectCwd) {
+        for (const [spaceKey, remembered] of Object.entries(lastCwds)) {
+          if (remembered === moveProjectCwd) delete lastCwds[spaceKey]
+        }
+        lastCwds[id] = moveProjectCwd
+      }
       return {
         activeSpaceId: activate ? id : current.activeSpaceId,
         spaces: [...current.spaces, created],
-        assignments
+        assignments,
+        lastCwds
       }
     })
   }
@@ -240,11 +263,18 @@ export class ProjectSpaceStore {
         current.activeSpaceId === id
           ? (spaces[Math.min(index, spaces.length - 1)]?.id ?? targetId)
           : current.activeSpaceId
+      const lastCwds = { ...(current.lastCwds ?? {}) }
+      const removedLastCwd = lastCwds[id]
+      delete lastCwds[id]
+      if (removedLastCwd && !lastCwds[targetId]) {
+        lastCwds[targetId] = removedLastCwd
+      }
 
       return {
         activeSpaceId,
         spaces,
-        assignments
+        assignments,
+        lastCwds
       }
     })
   }
@@ -266,9 +296,37 @@ export class ProjectSpaceStore {
       } else {
         assignments[resolved] = spaceId
       }
+      const lastCwds = { ...(current.lastCwds ?? {}) }
+      if (lastCwds[currentSpace] === resolved) {
+        delete lastCwds[currentSpace]
+      }
+      if (!lastCwds[spaceId]) {
+        lastCwds[spaceId] = resolved
+      }
       return {
         ...current,
-        assignments
+        assignments,
+        lastCwds
+      }
+    })
+  }
+
+  rememberWorktree(spaceId: string, cwd: string): Promise<ProjectSpacesSnapshot> {
+    if (typeof spaceId !== 'string' || !spaceId) throw new Error('Invalid space identifier')
+    if (typeof cwd !== 'string' || !cwd) throw new Error('Worktree cwd is required')
+    const resolved = resolve(cwd)
+    return this.mutate((current) => {
+      if (!current.spaces.some((space) => space.id === spaceId)) {
+        throw new Error('Space not found')
+      }
+      const existing = current.lastCwds ?? {}
+      if (existing[spaceId] === resolved) return null
+      return {
+        ...current,
+        lastCwds: {
+          ...existing,
+          [spaceId]: resolved
+        }
       }
     })
   }
@@ -277,12 +335,20 @@ export class ProjectSpaceStore {
     if (typeof cwd !== 'string' || !cwd) throw new Error('Project cwd is required')
     const resolved = resolve(cwd)
     return this.mutate((current) => {
-      if (!(resolved in current.assignments)) return null
+      const hasAssignment = resolved in current.assignments
+      const prevLastCwds = current.lastCwds ?? {}
+      const hadLastCwd = Object.values(prevLastCwds).includes(resolved)
+      if (!hasAssignment && !hadLastCwd) return null
       const assignments = { ...current.assignments }
       delete assignments[resolved]
+      const lastCwds: Record<string, string> = {}
+      for (const [spaceKey, remembered] of Object.entries(prevLastCwds)) {
+        if (remembered !== resolved) lastCwds[spaceKey] = remembered
+      }
       return {
         ...current,
-        assignments
+        assignments,
+        lastCwds
       }
     })
   }
@@ -293,15 +359,24 @@ export class ProjectSpaceStore {
     if (source === target) return this.getSnapshot()
     return this.mutate((current) => {
       const assigned = current.assignments[source]
-      if (!assigned) return null
+      const prevLastCwds = current.lastCwds ?? {}
+      const hadLastCwd = Object.values(prevLastCwds).includes(source)
+      if (!assigned && !hadLastCwd) return null
       const assignments = { ...current.assignments }
-      if (!assignments[target]) {
-        assignments[target] = assigned
+      if (assigned) {
+        if (!assignments[target]) {
+          assignments[target] = assigned
+        }
+        delete assignments[source]
       }
-      delete assignments[source]
+      const lastCwds = { ...prevLastCwds }
+      for (const [spaceKey, remembered] of Object.entries(lastCwds)) {
+        if (remembered === source) lastCwds[spaceKey] = target
+      }
       return {
         ...current,
-        assignments
+        assignments,
+        lastCwds
       }
     })
   }

@@ -35,6 +35,7 @@ const api: SessionApi = {
     remove: (id) => ipcRenderer.invoke('spaces:remove', id),
     assignProject: (cwd, spaceId) => ipcRenderer.invoke('spaces:assign-project', cwd, spaceId),
     forgetProject: (cwd) => ipcRenderer.invoke('spaces:forget-project', cwd),
+    rememberCwd: (spaceId, cwd) => ipcRenderer.invoke('spaces:remember-cwd', spaceId, cwd),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, snapshot: import('../shared/project-spaces').ProjectSpacesSnapshot) => listener(snapshot)
       ipcRenderer.on('spaces:changed', handler)

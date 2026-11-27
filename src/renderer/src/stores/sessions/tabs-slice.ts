@@ -7,7 +7,9 @@ import { useComposerDraftsStore } from '../composer-drafts'
 import { isSubagentActive, useSubagentStore } from '../subagents'
 import { useSplitLayoutStore, paneOfTab } from '../split-layout'
 import { newSessionId } from '../../lib/session-id'
+import { resolveSpaceTargetCwd, resolveWorktreeSpaceId } from '../../../../shared/project-spaces'
 import { changesTabId } from '../../../../shared/tab-ids'
+import { useProjectSpacesStore } from '../project-spaces'
 import { t } from '../../lib/i18n'
 import { fillEmptySessionTitle } from './catalog'
 import { emptyRuntime } from './runtime'
@@ -351,7 +353,8 @@ export const createTabsSlice: SessionSlice<
           get().loadProjects(),
           // The chats half's tabs are restored here too, and a chat tab needs its listing for a title and
           // a path to load from: one scan for both halves is what keeps the restore a single step.
-          get().loadChats()
+          get().loadChats(),
+          useProjectSpacesStore.getState().load()
         ])
         const projects = get().projects
         const worktreeCwds = new Set<string>()
@@ -393,7 +396,7 @@ export const createTabsSlice: SessionSlice<
             tools
           }]
         })
-        const currentProjectCwd = persisted.currentCwd && worktreeCwds.has(persisted.currentCwd)
+        const rawCurrentCwd = persisted.currentCwd && worktreeCwds.has(persisted.currentCwd)
           ? persisted.currentCwd
           : null
         const restoredTabs: OpenTab[] = workspaces.flatMap((workspace) => {
@@ -454,9 +457,6 @@ export const createTabsSlice: SessionSlice<
         const activeSessionByCwd = Object.fromEntries(
           workspaces.map((workspace) => [workspace.cwd, workspace.activeSessionId])
         )
-        const activeSessionId = currentProjectCwd
-          ? activeSessionByCwd[currentProjectCwd] ?? null
-          : null
         // What each worktree was left on, kept only where that tab actually came back: this is the memory
         // `selectProjectCwd` reads, so a worktree the reader has not visited yet still opens its own tab.
         const restoredIds = new Set(restoredTabs.map((tab) => tab.id))
@@ -467,6 +467,25 @@ export const createTabsSlice: SessionSlice<
               : []
           )
         )
+        const spacesState = useProjectSpacesStore.getState()
+        const currentProjectCwd =
+          rawCurrentCwd === null
+            ? null
+            : resolveWorktreeSpaceId(spacesState, projects, rawCurrentCwd) === spacesState.activeSpaceId
+              ? rawCurrentCwd
+              : resolveSpaceTargetCwd({
+                  spaceId: spacesState.activeSpaceId,
+                  spaces: spacesState.spaces,
+                  assignments: spacesState.assignments,
+                  lastCwds: spacesState.lastCwds,
+                  projects,
+                  hasOpenContent: (cwd) =>
+                    Boolean(restoredActiveTabs[cwd] || activeSessionByCwd[cwd]) ||
+                    restoredTabs.some((tab) => tab.cwd === cwd)
+                })
+        const activeSessionId = currentProjectCwd
+          ? activeSessionByCwd[currentProjectCwd] ?? null
+          : null
         const restoredActiveTabId = currentProjectCwd ? restoredActiveTabs[currentProjectCwd] : undefined
         const activeProjectTabId = restoredActiveTabId ?? activeSessionId
         // The chats half restores a tab the way a worktree does: the one it was left on, if it came back.
